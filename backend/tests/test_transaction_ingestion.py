@@ -16,6 +16,12 @@ from models.sync_run import SyncRun
 from services import source_readiness
 import services.sync as sync_service
 from services.mlb_api import MLBApiClient
+from services.canonical_transaction_pitcher_acquisition import (
+    ROSTER_DESCRIPTION as TRANSACTION_IDENTITY_ROSTER_DESCRIPTION,
+    SOURCE as TRANSACTION_IDENTITY_SOURCE,
+    acquire_canonical_transaction_pitchers,
+)
+from services.public_recent_transactions import build_public_recent_transactions
 from services.transaction_ingestion import (
     ALIGNMENT_ALIGNED,
     ALIGNMENT_MISALIGNED,
@@ -390,6 +396,316 @@ def test_people_lookup_failure_stores_unresolved_without_guessing(app):
     assert result['records_stored'] == 1
     assert row.participant_role == 'unresolved'
     assert row.participant_role_authority == 'unresolved'
+
+
+def test_transaction_people_authority_bulk_acquires_one_team_neutral_pitcher(app):
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        normalized = ' '.join(statement.lower().split())
+        if 'pitchers' in normalized:
+            statements.append(normalized)
+
+    with app.app_context():
+        client = FakeTransactionClient(
+            [
+                _tx(transaction_id='one', player_mlb_id=700020),
+                _tx(transaction_id='two', player_mlb_id=700020),
+            ],
+            people={700020: {
+                'id': 700020,
+                'fullName': 'Acquired Transaction Arm',
+                'primaryPosition': {
+                    'code': '1',
+                    'abbreviation': 'P',
+                    'type': 'Pitcher',
+                },
+                'currentTeam': {'id': 999},
+            }},
+        )
+        event.listen(db.engine, 'before_cursor_execute', capture)
+        try:
+            sync_transactions(
+                client=client,
+                start_date=date(2026, 6, 27),
+                end_date=date(2026, 7, 4),
+                timestamp=datetime(2026, 7, 4, 12, 0, 0),
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', capture)
+        pitcher = Pitcher.query.filter_by(mlb_id=700020).one()
+        rows = PlayerTransaction.query.order_by(PlayerTransaction.id).all()
+
+    assert client.people_calls == [[700020]]
+    assert sum(value.startswith('select') for value in statements) == 2
+    assert sum(value.startswith('insert') for value in statements) == 1
+    assert pitcher.full_name == 'Acquired Transaction Arm'
+    assert pitcher.position == 'P'
+    assert pitcher.active is False
+    assert pitcher.team_id is None
+    assert pitcher.team_name is None
+    assert pitcher.team_abbreviation is None
+    assert pitcher.team_assignment_status is None
+    assert pitcher.roster_status == 'UNKNOWN'
+    assert pitcher.roster_status_source == TRANSACTION_IDENTITY_SOURCE
+    assert pitcher.roster_status_raw_description == TRANSACTION_IDENTITY_ROSTER_DESCRIPTION
+    assert {row.pitcher_id for row in rows} == {pitcher.id}
+    assert {row.from_team_id for row in rows} == {None}
+    assert {row.to_team_id for row in rows} == {113}
+
+
+def test_transaction_pitcher_acquisition_is_idempotent_and_reuses_existing(app):
+    with app.app_context():
+        client = FakeTransactionClient(
+            [_tx(transaction_id='retry', player_mlb_id=700021)],
+            people={700021: {
+                'id': 700021,
+                'fullName': 'Retry Arm',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            }},
+        )
+        first = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        first_pitcher = Pitcher.query.filter_by(mlb_id=700021).one()
+        second = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        pitchers = Pitcher.query.filter_by(mlb_id=700021).all()
+        row = PlayerTransaction.query.one()
+
+    assert first['records_created'] == 1
+    assert second['records_unchanged'] == 1
+    assert len(pitchers) == 1
+    assert pitchers[0].id == first_pitcher.id == row.pitcher_id
+    assert client.people_calls == [[700021]]
+
+
+def test_bulk_acquisition_conflict_reuses_canonical_row_created_after_prefetch(app):
+    with app.app_context():
+        concurrent = _pitcher(mlb_id=700026, name='Concurrent Winner', team_id=114)
+        result = acquire_canonical_transaction_pitchers(
+            people_by_mlb_id={700026: {
+                'id': 700026,
+                'fullName': 'Losing Candidate',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            }},
+            pitchers_by_mlb_id={},
+        )
+        rows = Pitcher.query.filter_by(mlb_id=700026).all()
+
+    assert result['created_count'] == 0
+    assert len(rows) == 1
+    assert rows[0].id == concurrent.id
+    assert result['pitchers_by_mlb_id'][700026].id == concurrent.id
+    assert rows[0].full_name == 'Concurrent Winner'
+
+
+@pytest.mark.parametrize(
+    'person',
+    (
+        {'id': 700022, 'fullName': 'Position Player', 'primaryPosition': {
+            'code': '6', 'abbreviation': 'SS', 'type': 'Infielder',
+        }},
+        {'id': 700022, 'fullName': 'Unknown Position'},
+        {'id': 999999, 'fullName': 'Conflicting Identity', 'primaryPosition': {
+            'code': '1', 'abbreviation': 'P', 'type': 'Pitcher',
+        }},
+        {'id': 700022, 'fullName': 'Ambiguous Role', 'primaryPosition': {
+            'code': '1', 'abbreviation': 'SS', 'type': 'Pitcher',
+        }},
+        {'id': 700022, 'primaryPosition': {
+            'code': '1', 'abbreviation': 'P', 'type': 'Pitcher',
+        }},
+    ),
+)
+def test_transaction_pitcher_acquisition_fails_closed_without_complete_person_authority(
+    app, person
+):
+    with app.app_context():
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(player_mlb_id=700022, player_full_name='Text Is Not Authority')],
+                people={700022: person},
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        pitcher = Pitcher.query.filter_by(mlb_id=700022).one_or_none()
+        row = PlayerTransaction.query.one()
+
+    assert pitcher is None
+    assert row.pitcher_id is None
+    assert row.explanatory_linkage_eligible is False
+
+
+def test_explicit_two_way_person_authority_acquires_pitcher_relevant_identity(app):
+    with app.app_context():
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(player_mlb_id=700023)],
+                people={700023: {
+                    'id': 700023,
+                    'fullName': 'Two Way Participant',
+                    'primaryPosition': {
+                        'code': 'Y', 'abbreviation': 'TWP', 'type': 'Two-Way Player',
+                    },
+                }},
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        pitcher = Pitcher.query.filter_by(mlb_id=700023).one()
+        row = PlayerTransaction.query.one()
+
+    assert pitcher.position == 'TWP'
+    assert pitcher.active is False
+    assert pitcher.team_id is None
+    assert row.pitcher_id == pitcher.id
+    assert row.participant_role == 'pitcher'
+
+
+def test_acquired_identity_clears_only_identity_and_natural_roster_correction(
+    app,
+):
+    with app.app_context():
+        client = FakeTransactionClient(
+            [_tx(
+                transaction_id='det-style',
+                player_mlb_id=700024,
+                transaction_type_code='CLW',
+                from_team_id=113,
+                to_team_id=114,
+            )],
+            people={700024: {
+                'id': 700024,
+                'fullName': 'Claimed Arm',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            }},
+        )
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        pitcher = Pitcher.query.filter_by(mlb_id=700024).one()
+        row = PlayerTransaction.query.one()
+        assert row.pitcher_id == pitcher.id
+        assert row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+        assert row.explanatory_linkage_eligible is False
+        assert build_public_recent_transactions(113, reference_date=date(2026, 7, 4))['status'] == 'partial'
+
+        _snapshot(pitcher, team_id=113)
+        second = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+        public = build_public_recent_transactions(113, reference_date=date(2026, 7, 4))
+
+    assert second['records_corrected'] == 1
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
+    assert row.explanatory_linkage_eligible is True
+    assert row.from_team_id == 113
+    assert row.to_team_id == 114
+    assert row.correction_count == 1
+    assert public['status'] == 'available'
+    assert public['events'][0]['type'] == CATEGORY_WAIVER_CLAIM
+
+
+def test_acquired_sfa_identity_remains_event_blocked(app):
+    with app.app_context():
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(
+                    transaction_id='sfa-stays-blocked',
+                    player_mlb_id=700025,
+                    transaction_type_code='SFA',
+                )],
+                people={700025: {
+                    'id': 700025,
+                    'fullName': 'Unsigned Authority Arm',
+                    'primaryPosition': {'code': '1', 'abbreviation': 'P'},
+                }},
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.pitcher_id is not None
+    assert row.normalized_category == CATEGORY_UNKNOWN
+    assert row.roster_snapshot_alignment == ALIGNMENT_NOT_APPLICABLE
+    assert row.explanatory_linkage_eligible is False
+
+
+def test_natural_resync_records_missing_to_canonical_linkage_correction(
+    app, monkeypatch
+):
+    import services.transaction_ingestion as transaction_ingestion
+
+    with app.app_context():
+        client = FakeTransactionClient(
+            [_tx(transaction_id='identity-correction', player_mlb_id=700027)],
+            people={700027: {
+                'id': 700027,
+                'fullName': 'Correction Arm',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            }},
+        )
+        real_acquisition = (
+            transaction_ingestion.acquire_canonical_transaction_pitchers
+        )
+        monkeypatch.setattr(
+            transaction_ingestion,
+            'acquire_canonical_transaction_pitchers',
+            lambda **kwargs: {
+                'pitchers_by_mlb_id': kwargs['pitchers_by_mlb_id'],
+                'candidate_ids': (),
+                'created_count': 0,
+            },
+        )
+        first = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        legacy = PlayerTransaction.query.one()
+        assert legacy.pitcher_id is None
+
+        monkeypatch.setattr(
+            transaction_ingestion,
+            'acquire_canonical_transaction_pitchers',
+            real_acquisition,
+        )
+        second = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+        pitcher = Pitcher.query.filter_by(mlb_id=700027).one()
+
+    assert first['records_created'] == 1
+    assert second['records_corrected'] == 1
+    assert row.pitcher_id == pitcher.id
+    assert row.correction_count == 1
+    assert row.correction_source == 'mlb_stats_api:transactions'
+    assert row.last_corrected_at == datetime(2026, 7, 4, 13, 0, 0)
 
 
 def test_typed_transaction_response_stores_fact_without_raw_or_free_text(app):

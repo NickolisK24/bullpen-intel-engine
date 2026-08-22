@@ -9,11 +9,14 @@ from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
+from services.canonical_transaction_pitcher_acquisition import (
+    acquire_canonical_transaction_pitchers,
+)
 from services.mlb_api import mlb_client
 from services.transaction_participant_qualification import (
     AUTHORITY_MLB_TRANSACTION,
     qualification_from_position,
-    qualify_transactions,
+    qualify_transactions_with_people,
     pitcher_qualification,
     source_position,
     unresolved_qualification,
@@ -288,11 +291,20 @@ def sync_transactions(
             if participant_ids else []
         )
     }
-    participant_qualifications = qualify_transactions(
+    qualification_batch = qualify_transactions_with_people(
         transactions,
         pitchers_by_mlb_id=pitchers_by_mlb_id,
         client=client,
     )
+    participant_qualifications = qualification_batch.qualifications
+    acquisition = acquire_canonical_transaction_pitchers(
+        people_by_mlb_id=qualification_batch.people_by_mlb_id,
+        pitchers_by_mlb_id=pitchers_by_mlb_id,
+    )
+    pitchers_by_mlb_id = acquisition['pitchers_by_mlb_id']
+    for mlb_id in acquisition['candidate_ids']:
+        if mlb_id in pitchers_by_mlb_id:
+            participant_qualifications[mlb_id] = pitcher_qualification()
     transaction_dates = {
         value
         for value in (
