@@ -47,6 +47,13 @@ from services.transaction_rehab_assignment import (
     SUBTYPE_REHAB_ASSIGNMENT,
     is_certified_non_material_rehab_assignment,
 )
+from services.roster_status_sync import (
+    ROSTER_TYPE_40_MAN,
+    ROSTER_TYPE_ACTIVE,
+    ROSTER_TYPE_FULL,
+    ROSTER_TYPE_NON_ROSTER,
+    persist_missing_exact_roster_status_snapshots,
+)
 from utils.db import db
 
 
@@ -59,6 +66,8 @@ class FakeTransactionClient:
         people_exc=None,
         team_metadata=None,
         team_metadata_exc=None,
+        rosters=None,
+        roster_exc=None,
     ):
         self.transactions = transactions if transactions is not None else []
         self.exc = exc
@@ -66,9 +75,12 @@ class FakeTransactionClient:
         self.people_exc = people_exc
         self.team_metadata = team_metadata or {}
         self.team_metadata_exc = team_metadata_exc
+        self.rosters = rosters or {}
+        self.roster_exc = roster_exc
         self.calls = []
         self.people_calls = []
         self.team_metadata_calls = []
+        self.roster_calls = []
 
     def get_transactions(self, **kwargs):
         self.calls.append(kwargs)
@@ -87,6 +99,12 @@ class FakeTransactionClient:
         if self.team_metadata_exc:
             raise self.team_metadata_exc
         return dict(self.team_metadata)
+
+    def get_team_roster(self, team_id, roster_type='pitchers', date=None, **_kwargs):
+        self.roster_calls.append((team_id, date, roster_type))
+        if self.roster_exc:
+            raise self.roster_exc
+        return list(self.rosters.get((team_id, date, roster_type), ()))
 
 
 @pytest.fixture
@@ -199,6 +217,68 @@ def _team_metadata(*, source_team_id=113, destination_team_id=555, parent_org_id
             'parent_org_id': parent_org_id,
             'season': 2026,
         },
+    }
+
+
+def _mlb_team_metadata(*team_ids):
+    return {
+        team_id: {
+            'team_id': team_id,
+            'sport_id': 1,
+            'parent_org_id': None,
+            'season': 2026,
+        }
+        for team_id in team_ids
+    }
+
+
+def _roster_entry(
+    mlb_id,
+    *,
+    status_code='RM',
+    status_description='Reassigned to Minors',
+):
+    return {
+        'person': {
+            'id': mlb_id,
+            'fullName': f'Roster Arm {mlb_id}',
+            'primaryPosition': {
+                'code': '1',
+                'abbreviation': 'P',
+                'name': 'Pitcher',
+                'type': 'Pitcher',
+            },
+        },
+        'position': {
+            'code': '1',
+            'abbreviation': 'P',
+            'name': 'Pitcher',
+            'type': 'Pitcher',
+        },
+        'status': {
+            'code': status_code,
+            'description': status_description,
+        },
+    }
+
+
+def _merged_roster_evidence(mlb_id, *roster_types):
+    entry = _roster_entry(mlb_id)
+    return {
+        'player_id': mlb_id,
+        'roster_types': set(roster_types),
+        'raw_statuses': [
+            (
+                roster_type,
+                {
+                    'raw_status': 'RM',
+                    'raw_status_code': 'RM',
+                    'raw_status_description': 'Reassigned to Minors',
+                },
+            )
+            for roster_type in roster_types
+        ],
+        'entries': {roster_type: entry for roster_type in roster_types},
     }
 
 
@@ -573,6 +653,426 @@ def test_explicit_two_way_person_authority_acquires_pitcher_relevant_identity(ap
     assert row.participant_role == 'pitcher'
 
 
+def test_newly_acquired_pitcher_uses_exact_endpoint_roster_evidence(app):
+    roster_entry = _roster_entry(700030)
+    client = FakeTransactionClient(
+        [_tx(
+            transaction_id='exact-claim',
+            player_mlb_id=700030,
+            from_team_id=113,
+            to_team_id=114,
+            transaction_type_code='CLW',
+        )],
+        people={700030: {
+            'id': 700030,
+            'fullName': 'Exact Claim Arm',
+            'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+        }},
+        team_metadata=_mlb_team_metadata(113, 114),
+        rosters={
+            (114, '2026-07-04', ROSTER_TYPE_40_MAN): [roster_entry],
+            (114, '2026-07-04', ROSTER_TYPE_FULL): [roster_entry],
+        },
+    )
+
+    with app.app_context():
+        result = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        pitcher = Pitcher.query.filter_by(mlb_id=700030).one()
+        snapshot = RosterStatusSnapshot.query.one()
+        row = PlayerTransaction.query.one()
+
+    assert snapshot.pitcher_id == pitcher.id
+    assert snapshot.team_id == 114
+    assert snapshot.snapshot_date == date(2026, 7, 4)
+    assert snapshot.roster_status == '40_MAN_ONLY'
+    assert snapshot.roster_status_raw == ROSTER_TYPE_40_MAN
+    assert snapshot.roster_status_raw_code is None
+    assert snapshot.active_roster is False
+    assert snapshot.forty_man_roster is True
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
+    assert row.alignment_reason_code == 'roster_snapshot_team_match'
+    assert row.from_team_id == 113
+    assert row.to_team_id == 114
+    assert pitcher.team_id is None
+    assert result['exact_roster_eligible_team_date_pairs'] == 2
+    assert result['exact_roster_requests'] == 8
+    assert result['exact_roster_source_matches'] == 1
+    assert result['exact_roster_source_omissions'] == 0
+    assert result['exact_roster_snapshots_created'] == 1
+
+
+def test_exact_roster_requests_deduplicate_team_date_and_snapshot_identity(app):
+    roster_entry = _roster_entry(700031, status_code='A', status_description='Active')
+    client = FakeTransactionClient(
+        [
+            _tx(transaction_id='dedupe-one', player_mlb_id=700031),
+            _tx(
+                transaction_id='dedupe-two',
+                player_mlb_id=700031,
+                transaction_type_code='SE',
+            ),
+        ],
+        people={700031: {
+            'id': 700031,
+            'fullName': 'Dedupe Arm',
+            'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+        }},
+        team_metadata=_mlb_team_metadata(113),
+        rosters={
+            (113, '2026-07-04', ROSTER_TYPE_ACTIVE): [roster_entry],
+            (113, '2026-07-04', ROSTER_TYPE_40_MAN): [roster_entry],
+            (113, '2026-07-04', ROSTER_TYPE_FULL): [roster_entry],
+        },
+    )
+
+    with app.app_context():
+        first = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        snapshot_id = RosterStatusSnapshot.query.one().id
+        second = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        snapshots = RosterStatusSnapshot.query.all()
+
+    assert first['exact_roster_eligible_team_date_pairs'] == 1
+    assert first['exact_roster_requests'] == 4
+    assert len(client.roster_calls) == 4
+    assert len(snapshots) == 1
+    assert snapshots[0].id == snapshot_id
+    assert second['exact_roster_eligible_team_date_pairs'] == 0
+    assert second['exact_roster_requests'] == 0
+
+
+def test_exact_roster_persistence_uses_bounded_snapshot_queries(app):
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        normalized = ' '.join(statement.lower().split())
+        if 'roster_status_snapshots' in normalized:
+            statements.append(normalized)
+
+    entries = [_roster_entry(700036), _roster_entry(700037)]
+    client = FakeTransactionClient(
+        [
+            _tx(transaction_id='bounded-one', player_mlb_id=700036),
+            _tx(transaction_id='bounded-two', player_mlb_id=700037),
+        ],
+        people={
+            700036: {
+                'id': 700036,
+                'fullName': 'Bounded One',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            },
+            700037: {
+                'id': 700037,
+                'fullName': 'Bounded Two',
+                'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+            },
+        },
+        team_metadata=_mlb_team_metadata(113),
+        rosters={(113, '2026-07-04', ROSTER_TYPE_FULL): entries},
+    )
+
+    with app.app_context():
+        event.listen(db.engine, 'before_cursor_execute', capture)
+        try:
+            sync_transactions(
+                client=client,
+                start_date=date(2026, 6, 27),
+                end_date=date(2026, 7, 4),
+                timestamp=datetime(2026, 7, 4, 12, 0, 0),
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', capture)
+        snapshot_count = RosterStatusSnapshot.query.count()
+
+    snapshot_selects = [value for value in statements if value.startswith('select')]
+    snapshot_inserts = [value for value in statements if value.startswith('insert')]
+    assert client.roster_calls == [
+        (113, '2026-07-04', ROSTER_TYPE_ACTIVE),
+        (113, '2026-07-04', ROSTER_TYPE_40_MAN),
+        (113, '2026-07-04', ROSTER_TYPE_FULL),
+        (113, '2026-07-04', ROSTER_TYPE_NON_ROSTER),
+    ]
+    assert len(snapshot_selects) == 2
+    assert len(snapshot_inserts) == 2
+    assert snapshot_count == 2
+
+
+def test_targeted_snapshot_writer_reuses_same_team_and_rejects_team_conflict(app):
+    with app.app_context():
+        same_team_pitcher = _pitcher(mlb_id=700038, team_id=113)
+        same_team = _snapshot(same_team_pitcher, team_id=113)
+        same_team_id = same_team.id
+        conflict_pitcher = _pitcher(mlb_id=700039, team_id=113)
+        conflict = _snapshot(conflict_pitcher, team_id=113)
+        conflict_id = conflict.id
+
+        same_result = persist_missing_exact_roster_status_snapshots([{
+            'pitcher': same_team_pitcher,
+            'team_id': 113,
+            'snapshot_date': date(2026, 7, 4),
+            'evidence': _merged_roster_evidence(700038, ROSTER_TYPE_FULL),
+        }], timestamp=datetime(2026, 7, 4, 13, 0, 0))
+        conflict_result = persist_missing_exact_roster_status_snapshots([{
+            'pitcher': conflict_pitcher,
+            'team_id': 114,
+            'snapshot_date': date(2026, 7, 4),
+            'evidence': _merged_roster_evidence(700039, ROSTER_TYPE_FULL),
+        }], timestamp=datetime(2026, 7, 4, 13, 0, 0))
+        same_after = db.session.get(RosterStatusSnapshot, same_team_id)
+        conflict_after = db.session.get(RosterStatusSnapshot, conflict_id)
+        failures = SyncFailure.query.filter_by(
+            entity_type='roster_status_snapshot_conflict',
+            resolved=False,
+        ).all()
+        same_state = (
+            same_after.team_id,
+            same_after.roster_status,
+            same_after.correction_count,
+        )
+        conflict_state = (
+            conflict_after.team_id,
+            conflict_after.roster_status,
+        )
+        failure_count = len(failures)
+
+    assert same_result == {
+        'created': 0,
+        'unchanged': 1,
+        'conflicts': 0,
+        'failure_records': 0,
+    }
+    assert same_state == (113, 'ACTIVE', 0)
+    assert conflict_result['created'] == 0
+    assert conflict_result['conflicts'] == 1
+    assert conflict_result['failure_records'] == 1
+    assert conflict_state == (113, 'ACTIVE')
+    assert failure_count == 1
+
+
+def test_existing_canonical_pitcher_does_not_trigger_historical_roster_replay(app):
+    with app.app_context():
+        pitcher = _pitcher(mlb_id=700032)
+        pitcher_id = pitcher.id
+        client = FakeTransactionClient(
+            [_tx(player_mlb_id=700032)],
+            team_metadata=_mlb_team_metadata(113),
+            rosters={
+                (113, '2026-07-04', ROSTER_TYPE_FULL): [_roster_entry(700032)],
+            },
+        )
+        result = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.pitcher_id == pitcher_id
+    assert row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+    assert client.roster_calls == []
+    assert result['exact_roster_newly_resolved_pitchers'] == 0
+
+
+@pytest.mark.parametrize(
+    ('rosters', 'expected_omissions'),
+    (
+        ({}, 1),
+        ({
+            (114, '2026-07-03', ROSTER_TYPE_FULL): [_roster_entry(700033)],
+        }, 1),
+        ({
+            (115, '2026-07-04', ROSTER_TYPE_FULL): [_roster_entry(700033)],
+        }, 1),
+    ),
+)
+def test_missing_nearest_date_or_wrong_team_source_evidence_fails_closed(
+    app, rosters, expected_omissions
+):
+    client = FakeTransactionClient(
+        [_tx(
+            player_mlb_id=700033,
+            from_team_id=113,
+            to_team_id=114,
+            transaction_type_code='CLW',
+        )],
+        people={700033: {
+            'id': 700033,
+            'fullName': 'Absent Exact Arm',
+            'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+        }},
+        team_metadata=_mlb_team_metadata(113, 114, 115),
+        rosters=rosters,
+    )
+
+    with app.app_context():
+        result = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+        snapshot_count = RosterStatusSnapshot.query.count()
+
+    assert snapshot_count == 0
+    assert row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+    assert result['exact_roster_source_omissions'] == expected_omissions
+    assert all(call[1] == '2026-07-04' for call in client.roster_calls)
+    assert all(call[0] in {113, 114} for call in client.roster_calls)
+
+
+def test_exact_roster_source_failure_and_endpoint_conflict_fail_closed(app):
+    person = {
+        'id': 700040,
+        'fullName': 'Fail Closed Arm',
+        'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+    }
+    failing_client = FakeTransactionClient(
+        [_tx(transaction_id='fetch-failure', player_mlb_id=700040)],
+        people={700040: person},
+        team_metadata=_mlb_team_metadata(113),
+        roster_exc=RuntimeError('exact roster unavailable'),
+    )
+    with app.app_context():
+        failed = sync_transactions(
+            client=failing_client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        failed_row = PlayerTransaction.query.one()
+        failed_snapshot_count = RosterStatusSnapshot.query.count()
+
+    assert failed['exact_roster_fetch_failures'] == 4
+    assert failed['exact_roster_source_omissions'] == 0
+    assert failed_snapshot_count == 0
+    assert failed_row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+
+    with app.app_context():
+        entry = _roster_entry(700041)
+        conflict_client = FakeTransactionClient(
+            [_tx(
+                transaction_id='endpoint-conflict',
+                player_mlb_id=700041,
+                from_team_id=113,
+                to_team_id=114,
+                transaction_type_code='CLW',
+            )],
+            people={700041: {
+                **person,
+                'id': 700041,
+                'fullName': 'Endpoint Conflict Arm',
+            }},
+            team_metadata=_mlb_team_metadata(113, 114),
+            rosters={
+                (113, '2026-07-04', ROSTER_TYPE_FULL): [entry],
+                (114, '2026-07-04', ROSTER_TYPE_FULL): [entry],
+            },
+        )
+        conflicted = sync_transactions(
+            client=conflict_client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        conflicted_row = PlayerTransaction.query.filter_by(
+            transaction_id='endpoint-conflict',
+        ).one()
+        conflict_snapshot_count = RosterStatusSnapshot.query.count()
+
+    assert conflicted['exact_roster_source_matches'] == 2
+    assert conflicted['exact_roster_source_conflicts'] == 1
+    assert conflict_snapshot_count == 0
+    assert conflicted_row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+
+
+def test_source_status_is_persisted_verbatim_without_event_synthesis(app):
+    active_entry = _roster_entry(700034, status_code='A', status_description='Active')
+    client = FakeTransactionClient(
+        [_tx(
+            player_mlb_id=700034,
+            from_team_id=113,
+            to_team_id=555,
+            transaction_type_code='OPT',
+        )],
+        people={700034: {
+            'id': 700034,
+            'fullName': 'Source Status Arm',
+            'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+        }},
+        team_metadata={
+            **_mlb_team_metadata(113),
+            555: {'team_id': 555, 'sport_id': 11, 'parent_org_id': 113, 'season': 2026},
+        },
+        rosters={
+            (113, '2026-07-04', ROSTER_TYPE_ACTIVE): [active_entry],
+            (113, '2026-07-04', ROSTER_TYPE_40_MAN): [active_entry],
+            (113, '2026-07-04', ROSTER_TYPE_FULL): [active_entry],
+        },
+    )
+
+    with app.app_context():
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        snapshot = RosterStatusSnapshot.query.one()
+        row = PlayerTransaction.query.one()
+
+    assert snapshot.roster_status == 'ACTIVE'
+    assert snapshot.roster_status_raw_code == 'A'
+    assert snapshot.active_roster is True
+    assert row.normalized_category == CATEGORY_OPTION
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
+
+
+@pytest.mark.parametrize('event_code', ('SFA', 'SC'))
+def test_exact_roster_acquisition_does_not_govern_unknown_events(app, event_code):
+    roster_entry = _roster_entry(700035)
+    client = FakeTransactionClient(
+        [_tx(player_mlb_id=700035, transaction_type_code=event_code)],
+        people={700035: {
+            'id': 700035,
+            'fullName': 'Unknown Event Arm',
+            'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
+        }},
+        team_metadata=_mlb_team_metadata(113),
+        rosters={(113, '2026-07-04', ROSTER_TYPE_FULL): [roster_entry]},
+    )
+
+    with app.app_context():
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+        snapshot_count = RosterStatusSnapshot.query.count()
+
+    assert snapshot_count == 1
+    assert row.normalized_category == CATEGORY_UNKNOWN
+    assert row.roster_snapshot_alignment == ALIGNMENT_NOT_APPLICABLE
+    assert row.explanatory_linkage_eligible is False
+
+
 def test_acquired_identity_clears_only_identity_and_natural_roster_correction(
     app,
 ):
@@ -664,6 +1164,10 @@ def test_natural_resync_records_missing_to_canonical_linkage_correction(
                 'fullName': 'Correction Arm',
                 'primaryPosition': {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher'},
             }},
+            team_metadata=_mlb_team_metadata(113),
+            rosters={
+                (113, '2026-07-04', ROSTER_TYPE_FULL): [_roster_entry(700027)],
+            },
         )
         real_acquisition = (
             transaction_ingestion.acquire_canonical_transaction_pitchers
@@ -699,10 +1203,13 @@ def test_natural_resync_records_missing_to_canonical_linkage_correction(
         )
         row = PlayerTransaction.query.one()
         pitcher = Pitcher.query.filter_by(mlb_id=700027).one()
+        snapshot = RosterStatusSnapshot.query.one()
 
     assert first['records_created'] == 1
     assert second['records_corrected'] == 1
     assert row.pitcher_id == pitcher.id
+    assert snapshot.pitcher_id == pitcher.id
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
     assert row.correction_count == 1
     assert row.correction_source == 'mlb_stats_api:transactions'
     assert row.last_corrected_at == datetime(2026, 7, 4, 13, 0, 0)

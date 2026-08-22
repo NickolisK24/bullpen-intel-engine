@@ -645,6 +645,22 @@ def test_canonical_transaction_pitcher_acquisition_pins_identity_boundary():
     assert 'Acquisition supplies only canonical identity.' in decision
 
 
+def test_transaction_exact_date_roster_evidence_pins_authority_boundary():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-transaction-exact-date-roster-evidence.md'
+    ).read_text(encoding='utf-8')
+    decision_flat = ' '.join(decision.split())
+
+    assert "newly resolved MLB person IDs" in decision
+    assert "exact `transaction_date`" in decision
+    assert "Every `(transaction_date, MLB team_id)` source request is deduplicated" in decision_flat
+    assert "nearest prior or next snapshots are prohibited inputs" in decision_flat
+    assert "`from_team_id` and `to_team_id` remain the only transaction-time ownership authority" in decision_flat
+    assert "does not correct or replay snapshots for existing canonical pitchers" in decision_flat
+    assert "Unknown `SFA`, `SC`, and uncertified `ASG` event authority remains blocked" in decision_flat
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (
