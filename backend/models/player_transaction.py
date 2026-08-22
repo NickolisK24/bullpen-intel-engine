@@ -30,6 +30,12 @@ class PlayerTransaction(db.Model):
         'participant_position_code',
         'participant_position_abbreviation',
         'participant_position_type',
+        'transaction_subtype',
+        'transaction_materiality',
+        'subtype_status',
+        'subtype_authority',
+        'subtype_reason_code',
+        'subtype_evidence',
         'source',
         'source_endpoint',
         'source_query_start_date',
@@ -61,6 +67,14 @@ class PlayerTransaction(db.Model):
             "participant_role IN ('pitcher', 'non_pitcher', 'unresolved')",
             name='ck_player_transactions_participant_role',
         ),
+        db.CheckConstraint(
+            "subtype_status IN ('certified', 'not_certified', 'unresolved')",
+            name='ck_player_transactions_subtype_status',
+        ),
+        db.CheckConstraint(
+            "transaction_materiality IN ('non_material', 'unresolved')",
+            name='ck_player_transactions_materiality',
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -87,6 +101,18 @@ class PlayerTransaction(db.Model):
     participant_position_code = db.Column(db.String(10))
     participant_position_abbreviation = db.Column(db.String(10))
     participant_position_type = db.Column(db.String(40))
+    transaction_subtype = db.Column(db.String(40))
+    transaction_materiality = db.Column(
+        db.String(20), nullable=False, default='unresolved'
+    )
+    subtype_status = db.Column(db.String(20), nullable=False, default='unresolved')
+    subtype_authority = db.Column(
+        db.String(60), nullable=False, default='unresolved'
+    )
+    subtype_reason_code = db.Column(
+        db.String(80), nullable=False, default='legacy_unclassified'
+    )
+    subtype_evidence = db.Column(db.JSON)
 
     source = db.Column(db.String(100), nullable=False)
     source_endpoint = db.Column(db.String(100), nullable=False)

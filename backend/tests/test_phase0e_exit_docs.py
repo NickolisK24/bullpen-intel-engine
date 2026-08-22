@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # transaction rows so public reads never need request-time person lookups. The
 # pin exists so a migration cannot enter the tree unnoticed; moving it is the
 # deliberate acknowledgement that one was reviewed and the head remains single.
-EXPECTED_ALEMBIC_HEAD = 'd8a2e4f6b9c1'
+EXPECTED_ALEMBIC_HEAD = 'e4b7c9d2a6f1'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',
