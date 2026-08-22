@@ -10,6 +10,7 @@ from flask import Flask
 from sqlalchemy import event
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.share_artifact import ShareArtifact
 from services import team_board_delta_substrate as delta
 from services import public_team_relief_work
 from services import public_serving_authority
@@ -84,6 +85,28 @@ def _artifact(*, artifact_id=44, state='stretched', label='Stretched'):
             },
         },
     )
+
+
+def _persist_artifact(artifact_id, represented_date, *, lifecycle_state='published'):
+    row = ShareArtifact(
+        id=artifact_id,
+        public_id=f'team-state-{artifact_id}',
+        artifact_type='team_state',
+        render_version='team-state-1.2.0',
+        team_id=TEAM_ID,
+        source_snapshot_id=100 + artifact_id,
+        product_date=represented_date,
+        lifecycle_state=lifecycle_state,
+        payload={},
+        trust_metadata={},
+        equivalence_key=f'team-state-{artifact_id}',
+        integrity_hash=f'integrity-{artifact_id}',
+        source='test',
+        published_at=datetime.combine(represented_date, datetime.min.time()),
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
 
 
 def _arm_record(
@@ -1869,6 +1892,9 @@ def test_previous_snapshot_resolution_is_one_bounded_query(app):
 
 
 def test_latest_team_state_resolver_uses_nearest_compatible_publication(app):
+    _persist_artifact(41, date(2026, 8, 16))
+    _persist_artifact(42, date(2026, 8, 17))
+    _persist_artifact(43, date(2026, 8, 18))
     older = delta.stamp_prospective_snapshot(
         source=_source(represented_date=date(2026, 8, 16), snapshot_id=41),
         readiness=_readiness(),
@@ -1904,6 +1930,8 @@ def test_latest_team_state_resolver_uses_nearest_compatible_publication(app):
 
 
 def test_latest_team_state_resolver_returns_nearest_failure_when_none_compare(app):
+    _persist_artifact(41, date(2026, 8, 17))
+    _persist_artifact(42, date(2026, 8, 18))
     previous = delta.stamp_prospective_snapshot(
         source=_source(represented_date=date(2026, 8, 17), snapshot_id=41),
         readiness=_readiness(),
@@ -1924,6 +1952,97 @@ def test_latest_team_state_resolver_returns_nearest_failure_when_none_compare(ap
     assert result['domains']['team_state']['status'] == delta.CONTRACT_INCOMPATIBLE
     assert result['comparison']['from_represented_date'] == '2026-08-17'
     assert result['comparison']['to_represented_date'] == '2026-08-18'
+
+
+def test_latest_team_state_resolver_never_falls_back_to_a_superseded_artifact(app):
+    superseded = _persist_artifact(41, date(2026, 8, 17))
+    replacement = _persist_artifact(42, date(2026, 8, 17))
+    _persist_artifact(43, date(2026, 8, 18))
+    older = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 17), snapshot_id=41),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=superseded.id, state='fresh', label='Fresh'),
+    )
+    corrected = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 17), snapshot_id=42),
+        readiness=_readiness(),
+        artifact=_artifact(
+            artifact_id=replacement.id, state='stretched', label='Stretched',
+        ),
+    )
+    delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 18), snapshot_id=43),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=43, state='vulnerable', label='Vulnerable'),
+    )
+    superseded.lifecycle_state = 'superseded'
+    superseded.superseded_at = datetime(2026, 8, 18, 13, 0)
+    payload = deepcopy(corrected.payload)
+    payload['domains']['team_state']['method_version'] = 'incompatible-method'
+    corrected.payload = payload
+    db.session.commit()
+
+    result = delta.resolve_latest_team_state_comparison(team_id=TEAM_ID)
+
+    assert result['domains']['team_state']['status'] == delta.METHOD_VERSION_MISMATCH
+    assert result['comparison']['previous_delta_snapshot_id'] == corrected.id
+    assert result['comparison']['previous_delta_snapshot_id'] != older.id
+
+
+def test_latest_team_state_resolver_does_not_roll_back_a_withdrawn_current_date(app):
+    _persist_artifact(41, date(2026, 8, 16))
+    withdrawn = _persist_artifact(42, date(2026, 8, 17))
+    delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 16), snapshot_id=41),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=41, state='fresh', label='Fresh'),
+    )
+    delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 17), snapshot_id=42),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=42, state='stretched', label='Stretched'),
+    )
+    withdrawn.lifecycle_state = 'withdrawn'
+    withdrawn.withdrawn_at = datetime(2026, 8, 18, 13, 0)
+    withdrawn.withdrawn_reason = 'source correction'
+    db.session.commit()
+
+    result = delta.resolve_latest_team_state_comparison(team_id=TEAM_ID)
+
+    assert result['domains']['team_state']['status'] == delta.CURRENT_MISSING
+    assert result['comparison']['from_represented_date'] is None
+    assert result['comparison']['to_represented_date'] is None
+
+
+def test_latest_team_state_resolver_uses_two_bounded_selects_for_history_and_lifecycle(app):
+    _persist_artifact(41, date(2026, 8, 17))
+    _persist_artifact(42, date(2026, 8, 18))
+    for represented_date, artifact_id in (
+        (date(2026, 8, 17), 41),
+        (date(2026, 8, 18), 42),
+    ):
+        delta.stamp_prospective_snapshot(
+            source=_source(
+                represented_date=represented_date, snapshot_id=artifact_id,
+            ),
+            readiness=_readiness(),
+            artifact=_artifact(artifact_id=artifact_id),
+        )
+    db.session.commit()
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith('SELECT'):
+            statements.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', capture)
+    try:
+        result = delta.resolve_latest_team_state_comparison(team_id=TEAM_ID)
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture)
+
+    assert result['domains']['team_state']['status'] == delta.COMPARABLE
+    assert len(statements) == 2
 
 
 def test_team_state_comparison_requires_both_frozen_public_labels():
