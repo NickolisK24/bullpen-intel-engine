@@ -601,6 +601,21 @@ def test_transaction_event_code_authority_decision_pins_bounded_taxonomy():
     assert 'Natural transaction resync' in decision
 
 
+def test_non_material_rehab_assignment_decision_pins_fail_closed_authority():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-non-material-rehab-assignment-authority.md'
+    ).read_text(encoding='utf-8')
+
+    assert '`asg_pitcher_rehab_assignment_v1`' in decision
+    assert 'season-specific `parentOrgId`' in decision
+    assert 'exact transaction-date roster snapshot' in decision
+    assert 'governed `non_material`' in decision
+    assert 'public reader independently revalidates' in decision
+    assert 'no bespoke backfill or historical publication mutation is authorized' in decision
+    assert '`SC`, `CLW`, `SFA`' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (
