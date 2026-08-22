@@ -18,6 +18,7 @@ from services.transaction_participant_qualification import (
     source_position,
     unresolved_qualification,
 )
+from services.transaction_rehab_assignment import classify_rehab_assignment
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -164,11 +165,19 @@ _TRANSACTION_FACT_FIELDS = (
     'participant_position_code',
     'participant_position_abbreviation',
     'participant_position_type',
+    'transaction_subtype',
+    'transaction_materiality',
+    'subtype_status',
+    'subtype_authority',
+    'subtype_reason_code',
+    'subtype_evidence',
     'source',
     'source_endpoint',
     'source_query_start_date',
     'source_query_end_date',
 )
+
+_SNAPSHOT_NOT_PROVIDED = object()
 
 # Public alias of the canonical stored-transaction fact fields, so read-only
 # consumers (for example the intraday reconciliation audit) can compare a source
@@ -282,6 +291,28 @@ def sync_transactions(
         pitchers_by_mlb_id=pitchers_by_mlb_id,
         client=client,
     )
+    transaction_dates = {
+        value
+        for value in (
+            _coerce_date(transaction.get('transaction_date'))
+            for transaction in transactions
+            if isinstance(transaction, dict)
+        )
+        if value is not None
+    }
+    roster_snapshots_by_pair = _exact_roster_snapshots_by_pitcher_and_date(
+        pitcher_ids={pitcher.id for pitcher in pitchers_by_mlb_id.values()},
+        snapshot_dates=transaction_dates,
+    )
+    team_metadata_by_season = {}
+    metadata_reader = getattr(client, 'get_team_metadata', None)
+    for season in sorted({value.year for value in transaction_dates}):
+        try:
+            team_metadata_by_season[season] = (
+                metadata_reader(season) if callable(metadata_reader) else {}
+            ) or {}
+        except Exception:  # fail closed; missing metadata cannot certify a subtype
+            team_metadata_by_season[season] = {}
     for transaction in transactions:
         if not isinstance(transaction, dict):
             detail = {
@@ -333,6 +364,8 @@ def sync_transactions(
             sync_run_id=sync_run_id,
             pitchers_by_mlb_id=pitchers_by_mlb_id,
             participant_qualifications=participant_qualifications,
+            roster_snapshots_by_pair=roster_snapshots_by_pair,
+            team_metadata_by_season=team_metadata_by_season,
         )
         if detail:
             if _record_transaction_failure(
@@ -420,6 +453,8 @@ def _values_from_transaction(
     sync_run_id,
     pitchers_by_mlb_id=None,
     participant_qualifications=None,
+    roster_snapshots_by_pair=None,
+    team_metadata_by_season=None,
 ):
     player_mlb_id = _int_or_none(transaction.get('player_mlb_id'))
     transaction_date = _coerce_date(transaction.get('transaction_date'))
@@ -456,6 +491,25 @@ def _values_from_transaction(
     from_team_id = _int_or_none(transaction.get('from_team_id'))
     to_team_id = _int_or_none(transaction.get('to_team_id'))
     il_list_type = _normalize_il_list_type(transaction.get('il_list_type'))
+    qualification = (participant_qualifications or {}).get(player_mlb_id)
+    if qualification is None and pitcher is not None:
+        qualification = pitcher_qualification()
+    if qualification is None:
+        qualification = qualification_from_position(
+            source_position(transaction),
+            authority=AUTHORITY_MLB_TRANSACTION,
+        )
+    if qualification is None:
+        qualification = unresolved_qualification()
+
+    roster_snapshot = _SNAPSHOT_NOT_PROVIDED
+    if roster_snapshots_by_pair is not None:
+        roster_snapshot = (
+            roster_snapshots_by_pair.get((pitcher.id, transaction_date))
+            if pitcher is not None else None
+        )
+    if roster_snapshot is _SNAPSHOT_NOT_PROVIDED:
+        roster_snapshot = _latest_exact_roster_snapshot(pitcher, transaction_date)
     values = {
         'transaction_id': transaction_id,
         'pitcher_id': pitcher.id if pitcher else None,
@@ -486,6 +540,7 @@ def _values_from_transaction(
         normalized_category=normalized_category,
         from_team_id=from_team_id,
         to_team_id=to_team_id,
+        roster_snapshot=roster_snapshot,
     )
     values['roster_snapshot_alignment'] = alignment
     values['alignment_reason_code'] = reason
@@ -493,17 +548,19 @@ def _values_from_transaction(
         normalized_category != CATEGORY_UNKNOWN
         and alignment == ALIGNMENT_ALIGNED
     )
-    qualification = (participant_qualifications or {}).get(player_mlb_id)
-    if qualification is None and pitcher is not None:
-        qualification = pitcher_qualification()
-    if qualification is None:
-        qualification = qualification_from_position(
-            source_position(transaction),
-            authority=AUTHORITY_MLB_TRANSACTION,
-        )
-    if qualification is None:
-        qualification = unresolved_qualification()
     values.update(qualification)
+    season_metadata = (team_metadata_by_season or {}).get(transaction_date.year, {})
+    values.update(classify_rehab_assignment(
+        transaction_type_code=type_code,
+        pitcher=pitcher,
+        participant_role=qualification.get('participant_role'),
+        from_team_id=from_team_id,
+        to_team_id=to_team_id,
+        transaction_date=transaction_date,
+        source_team_metadata=season_metadata.get(from_team_id),
+        destination_team_metadata=season_metadata.get(to_team_id),
+        roster_snapshot=roster_snapshot,
+    ))
     values['transaction_key'] = _transaction_key(values)
     return values, None
 
@@ -608,19 +665,16 @@ def _alignment_for(
     normalized_category,
     from_team_id,
     to_team_id,
+    roster_snapshot=_SNAPSHOT_NOT_PROVIDED,
 ):
     if normalized_category == CATEGORY_UNKNOWN:
         return ALIGNMENT_NOT_APPLICABLE, 'unknown_transaction_category'
     if pitcher is None:
         return ALIGNMENT_UNKNOWN, 'untracked_player_identity'
     snapshot = (
-        RosterStatusSnapshot.query
-        .filter_by(pitcher_id=pitcher.id, snapshot_date=transaction_date)
-        .order_by(
-            RosterStatusSnapshot.updated_at.desc(),
-            RosterStatusSnapshot.id.desc(),
-        )
-        .first()
+        _latest_exact_roster_snapshot(pitcher, transaction_date)
+        if roster_snapshot is _SNAPSHOT_NOT_PROVIDED
+        else roster_snapshot
     )
     if snapshot is None:
         return ALIGNMENT_NO_SNAPSHOT, 'roster_snapshot_missing'
@@ -630,6 +684,42 @@ def _alignment_for(
     if snapshot.team_id in source_team_ids:
         return ALIGNMENT_ALIGNED, 'roster_snapshot_team_match'
     return ALIGNMENT_MISALIGNED, 'roster_snapshot_team_mismatch'
+
+
+def _latest_exact_roster_snapshot(pitcher, snapshot_date):
+    if pitcher is None or snapshot_date is None:
+        return None
+    return (
+        RosterStatusSnapshot.query
+        .filter_by(pitcher_id=pitcher.id, snapshot_date=snapshot_date)
+        .order_by(
+            RosterStatusSnapshot.updated_at.desc(),
+            RosterStatusSnapshot.id.desc(),
+        )
+        .first()
+    )
+
+
+def _exact_roster_snapshots_by_pitcher_and_date(*, pitcher_ids, snapshot_dates):
+    """Prefetch exact-date snapshot authority in one bounded SELECT."""
+    pitcher_ids = set(pitcher_ids or ())
+    snapshot_dates = set(snapshot_dates or ())
+    if not pitcher_ids or not snapshot_dates:
+        return {}
+    rows = (
+        RosterStatusSnapshot.query
+        .filter(RosterStatusSnapshot.pitcher_id.in_(pitcher_ids))
+        .filter(RosterStatusSnapshot.snapshot_date.in_(snapshot_dates))
+        .order_by(
+            RosterStatusSnapshot.updated_at.asc(),
+            RosterStatusSnapshot.id.asc(),
+        )
+        .all()
+    )
+    return {
+        (row.pitcher_id, row.snapshot_date): row
+        for row in rows
+    }
 
 
 def _record_sync_window(

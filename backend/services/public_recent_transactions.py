@@ -36,6 +36,9 @@ from services.transaction_ingestion import (
     latest_transaction_sync_window,
 )
 from services.transaction_participant_qualification import is_proven_non_pitcher
+from services.transaction_rehab_assignment import (
+    is_certified_non_material_rehab_assignment,
+)
 
 
 CAPABILITY = 'public_recent_transactions_v1'
@@ -201,6 +204,8 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     withheld_count = 0
     for row in rows:
         if is_proven_non_pitcher(row):
+            continue
+        if is_certified_non_material_rehab_assignment(row):
             continue
         pitcher = pitchers.get(row.pitcher_id)
         label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)

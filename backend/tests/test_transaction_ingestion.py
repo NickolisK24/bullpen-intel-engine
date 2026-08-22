@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.fatigue_score  # noqa: F401
@@ -32,17 +33,35 @@ from services.transaction_ingestion import (
     normalize_transaction_category,
     sync_transactions,
 )
+from services.transaction_rehab_assignment import (
+    AUTHORITY as REHAB_AUTHORITY,
+    MATERIALITY_NON_MATERIAL,
+    STATUS_CERTIFIED,
+    SUBTYPE_REHAB_ASSIGNMENT,
+    is_certified_non_material_rehab_assignment,
+)
 from utils.db import db
 
 
 class FakeTransactionClient:
-    def __init__(self, transactions=None, exc=None, people=None, people_exc=None):
+    def __init__(
+        self,
+        transactions=None,
+        exc=None,
+        people=None,
+        people_exc=None,
+        team_metadata=None,
+        team_metadata_exc=None,
+    ):
         self.transactions = transactions if transactions is not None else []
         self.exc = exc
         self.people = people or {}
         self.people_exc = people_exc
+        self.team_metadata = team_metadata or {}
+        self.team_metadata_exc = team_metadata_exc
         self.calls = []
         self.people_calls = []
+        self.team_metadata_calls = []
 
     def get_transactions(self, **kwargs):
         self.calls.append(kwargs)
@@ -55,6 +74,12 @@ class FakeTransactionClient:
         if self.people_exc:
             raise self.people_exc
         return {player_id: self.people[player_id] for player_id in player_ids if player_id in self.people}
+
+    def get_team_metadata(self, season):
+        self.team_metadata_calls.append(season)
+        if self.team_metadata_exc:
+            raise self.team_metadata_exc
+        return dict(self.team_metadata)
 
 
 @pytest.fixture
@@ -107,14 +132,21 @@ def _pitcher(
     return pitcher
 
 
-def _snapshot(pitcher, *, snapshot_date=date(2026, 7, 4), team_id=None):
+def _snapshot(
+    pitcher,
+    *,
+    snapshot_date=date(2026, 7, 4),
+    team_id=None,
+    roster_status='ACTIVE',
+    active_roster=True,
+):
     row = RosterStatusSnapshot(
         pitcher_id=pitcher.id,
         mlb_id=pitcher.mlb_id,
         team_id=team_id or pitcher.team_id,
         snapshot_date=snapshot_date,
-        roster_status='ACTIVE',
-        active_roster=True,
+        roster_status=roster_status,
+        active_roster=active_roster,
         forty_man_roster=True,
         position_code='P',
         source='mlb_stats_api:roster_sync:active',
@@ -144,6 +176,23 @@ def _tx(**overrides):
     }
     data.update(overrides)
     return data
+
+
+def _team_metadata(*, source_team_id=113, destination_team_id=555, parent_org_id=113):
+    return {
+        source_team_id: {
+            'team_id': source_team_id,
+            'sport_id': 1,
+            'parent_org_id': None,
+            'season': 2026,
+        },
+        destination_team_id: {
+            'team_id': destination_team_id,
+            'sport_id': 11,
+            'parent_org_id': parent_org_id,
+            'season': 2026,
+        },
+    }
 
 
 def test_statsapi_transaction_client_extracts_structured_fields_only(monkeypatch):
@@ -215,6 +264,28 @@ def test_statsapi_people_client_batches_position_authority(monkeypatch):
 
     assert calls == [('/people', {'personIds': '700001,700002'})]
     assert set(people) == {700001, 700002}
+
+
+def test_statsapi_team_metadata_is_one_season_scoped_batch(monkeypatch):
+    client = MLBApiClient()
+    calls = []
+
+    def fake_get(endpoint, params=None):
+        calls.append((endpoint, params))
+        return {'teams': [
+            {'id': 113, 'sport': {'id': 1}, 'parentOrgId': None},
+            {'id': 555, 'sport': {'id': 11}, 'parentOrgId': 113},
+        ]}
+
+    monkeypatch.setattr(client, '_get', fake_get)
+
+    metadata = client.get_team_metadata(2026)
+
+    assert calls == [('/teams', {'season': 2026, 'hydrate': 'sport'})]
+    assert metadata == {
+        113: {'team_id': 113, 'sport_id': 1, 'parent_org_id': None, 'season': 2026},
+        555: {'team_id': 555, 'sport_id': 11, 'parent_org_id': 113, 'season': 2026},
+    }
 
 
 def test_ingestion_persists_explicit_participant_roles_with_one_batch_lookup(app):
@@ -839,3 +910,243 @@ def test_successful_storage_resolves_prior_identity_dead_letter(app):
     assert stored == 1
     assert row.resolved is True
     assert row.resolved_at is not None
+
+
+@pytest.mark.parametrize('roster_status', ['IL_15', 'IL_60'])
+def test_ingestion_certifies_non_material_rehab_from_exact_typed_authority(
+    app,
+    roster_status,
+):
+    with app.app_context():
+        pitcher = _pitcher(team_id=999)
+        mutable_pitcher_team_id = pitcher.team_id
+        snapshot = _snapshot(
+            pitcher,
+            team_id=113,
+            roster_status=roster_status,
+            active_roster=False,
+        )
+        snapshot_id = snapshot.id
+        client = FakeTransactionClient(
+            [_tx(
+                transaction_type_code='ASG',
+                from_team_id=113,
+                to_team_id=555,
+            )],
+            team_metadata=_team_metadata(),
+        )
+
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert client.team_metadata_calls == [2026]
+    assert row.normalized_category == CATEGORY_UNKNOWN
+    assert row.transaction_subtype == SUBTYPE_REHAB_ASSIGNMENT
+    assert row.transaction_materiality == MATERIALITY_NON_MATERIAL
+    assert row.subtype_status == STATUS_CERTIFIED
+    assert row.subtype_authority == REHAB_AUTHORITY
+    assert row.subtype_evidence['roster_snapshot_id'] == snapshot_id
+    assert row.subtype_evidence['roster_snapshot_date'] == '2026-07-04'
+    assert row.subtype_evidence['roster_team_id'] == 113
+    assert row.subtype_evidence['roster_status'] == roster_status
+    assert row.subtype_evidence['active_roster'] is False
+    assert row.subtype_evidence['destination_parent_org_id'] == 113
+    assert is_certified_non_material_rehab_assignment(row) is True
+    # Mutable current assignment is intentionally irrelevant.
+    assert mutable_pitcher_team_id == 999
+
+
+def test_rehab_certification_requires_exact_date_not_nearest_snapshot(app):
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(
+            pitcher,
+            snapshot_date=date(2026, 7, 3),
+            team_id=113,
+            roster_status='IL_15',
+            active_roster=False,
+        )
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(
+                    transaction_type_code='ASG',
+                    from_team_id=113,
+                    to_team_id=555,
+                )],
+                team_metadata=_team_metadata(),
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.subtype_status == 'unresolved'
+    assert row.subtype_reason_code == 'exact_roster_snapshot_missing'
+    assert is_certified_non_material_rehab_assignment(row) is False
+
+
+@pytest.mark.parametrize(
+    ('roster_status', 'active_roster', 'reason'),
+    [
+        ('40_MAN_ONLY', False, 'roster_snapshot_not_pitcher_il'),
+        ('ACTIVE', True, 'roster_snapshot_active'),
+    ],
+)
+def test_non_il_or_active_roster_asg_is_not_certified(
+    app,
+    roster_status,
+    active_roster,
+    reason,
+):
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(
+            pitcher,
+            team_id=113,
+            roster_status=roster_status,
+            active_roster=active_roster,
+        )
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(
+                    transaction_type_code='ASG',
+                    from_team_id=113,
+                    to_team_id=555,
+                )],
+                team_metadata=_team_metadata(),
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.subtype_status == 'not_certified'
+    assert row.subtype_reason_code == reason
+    assert is_certified_non_material_rehab_assignment(row) is False
+
+
+@pytest.mark.parametrize(
+    ('from_team_id', 'to_team_id', 'metadata', 'reason'),
+    [
+        (113, 555, _team_metadata(parent_org_id=114), 'destination_parent_org_mismatch'),
+        (None, 113, _team_metadata(), 'source_team_missing'),
+        (113, 114, {
+            113: {'team_id': 113, 'sport_id': 1, 'parent_org_id': None, 'season': 2026},
+            114: {'team_id': 114, 'sport_id': 1, 'parent_org_id': None, 'season': 2026},
+        }, 'destination_team_is_mlb'),
+    ],
+)
+def test_ambiguous_asg_shapes_remain_uncertified(
+    app,
+    from_team_id,
+    to_team_id,
+    metadata,
+    reason,
+):
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(
+            pitcher,
+            team_id=113,
+            roster_status='IL_15',
+            active_roster=False,
+        )
+        sync_transactions(
+            client=FakeTransactionClient(
+                [_tx(
+                    transaction_type_code='ASG',
+                    from_team_id=from_team_id,
+                    to_team_id=to_team_id,
+                )],
+                team_metadata=metadata,
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.subtype_reason_code == reason
+    assert is_certified_non_material_rehab_assignment(row) is False
+
+
+def test_rehab_authority_natural_resync_corrects_unresolved_current_window_row(app):
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(
+            pitcher,
+            team_id=113,
+            roster_status='IL_60',
+            active_roster=False,
+        )
+        transaction = _tx(
+            transaction_type_code='ASG',
+            from_team_id=113,
+            to_team_id=555,
+        )
+        sync_transactions(
+            client=FakeTransactionClient([transaction]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        first = PlayerTransaction.query.one()
+        assert first.subtype_status == 'unresolved'
+
+        result = sync_transactions(
+            client=FakeTransactionClient(
+                [transaction],
+                team_metadata=_team_metadata(),
+            ),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        corrected = PlayerTransaction.query.one()
+
+    assert result['records_corrected'] == 1
+    assert corrected.correction_count == 1
+    assert corrected.subtype_status == STATUS_CERTIFIED
+    assert is_certified_non_material_rehab_assignment(corrected) is True
+
+
+def test_rehab_ingestion_prefetches_exact_roster_rows_once(app):
+    with app.app_context():
+        first = _pitcher(mlb_id=700001)
+        second = _pitcher(mlb_id=700002)
+        for pitcher in (first, second):
+            _snapshot(
+                pitcher,
+                team_id=113,
+                roster_status='IL_15',
+                active_roster=False,
+            )
+        statements = []
+
+        def record_statement(conn, cursor, statement, parameters, context, executemany):
+            if 'roster_status_snapshots' in statement.lower() and statement.lstrip().upper().startswith('SELECT'):
+                statements.append(statement)
+
+        event.listen(db.engine, 'before_cursor_execute', record_statement)
+        try:
+            sync_transactions(
+                client=FakeTransactionClient(
+                    [
+                        _tx(transaction_id='one', player_mlb_id=first.mlb_id,
+                            transaction_type_code='ASG', from_team_id=113, to_team_id=555),
+                        _tx(transaction_id='two', player_mlb_id=second.mlb_id,
+                            transaction_type_code='ASG', from_team_id=113, to_team_id=555),
+                    ],
+                    team_metadata=_team_metadata(),
+                ),
+                start_date=date(2026, 6, 27),
+                end_date=date(2026, 7, 4),
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', record_statement)
+
+    assert len(statements) == 1

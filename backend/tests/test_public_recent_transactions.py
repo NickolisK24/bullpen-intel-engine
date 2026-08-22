@@ -13,6 +13,7 @@ from services.public_recent_transactions import (
     TRANSACTION_PUBLIC_LABELS,
     build_public_recent_transactions,
 )
+from services.transaction_rehab_assignment import AUTHORITY as REHAB_AUTHORITY
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -78,6 +79,7 @@ def _transaction(
     transaction_id,
     transaction_date,
     category='recall',
+    transaction_type_code=None,
     from_team_id=None,
     to_team_id=113,
     eligible=True,
@@ -86,6 +88,12 @@ def _transaction(
     participant_position_code=None,
     participant_position_abbreviation=None,
     participant_position_type=None,
+    transaction_subtype=None,
+    transaction_materiality='unresolved',
+    subtype_status='unresolved',
+    subtype_authority='unresolved',
+    subtype_reason_code='legacy_unclassified',
+    subtype_evidence=None,
 ):
     row = PlayerTransaction(
         transaction_key=f'key:{transaction_id}',
@@ -95,7 +103,7 @@ def _transaction(
         from_team_id=from_team_id,
         to_team_id=to_team_id,
         transaction_date=transaction_date,
-        transaction_type_code=category.upper(),
+        transaction_type_code=transaction_type_code or category.upper(),
         normalized_category=category,
         is_il_placement=category == 'il_placement',
         is_il_activation=category == 'il_activation',
@@ -106,6 +114,12 @@ def _transaction(
         participant_position_code=participant_position_code,
         participant_position_abbreviation=participant_position_abbreviation,
         participant_position_type=participant_position_type,
+        transaction_subtype=transaction_subtype,
+        transaction_materiality=transaction_materiality,
+        subtype_status=subtype_status,
+        subtype_authority=subtype_authority,
+        subtype_reason_code=subtype_reason_code,
+        subtype_evidence=subtype_evidence,
         source='mlb_stats_api:transactions',
         source_endpoint='/transactions',
         source_query_start_date=date(2026, 8, 11),
@@ -114,6 +128,39 @@ def _transaction(
     db.session.add(row)
     db.session.flush()
     return row
+
+
+def _certified_rehab_fields(pitcher, *, event_date, from_team_id=113, to_team_id=555):
+    return {
+        'category': 'unknown',
+        'transaction_type_code': 'ASG',
+        'eligible': False,
+        'participant_role': 'pitcher',
+        'participant_role_authority': 'canonical_pitcher_identity_v1',
+        'transaction_subtype': 'rehab_assignment',
+        'transaction_materiality': 'non_material',
+        'subtype_status': 'certified',
+        'subtype_authority': REHAB_AUTHORITY,
+        'subtype_reason_code': 'certified_rehab_assignment',
+        'subtype_evidence': {
+            'authority': REHAB_AUTHORITY,
+            'transaction_type_code': 'ASG',
+            'pitcher_id': pitcher.id,
+            'player_mlb_id': pitcher.mlb_id,
+            'participant_role': 'pitcher',
+            'from_team_id': from_team_id,
+            'to_team_id': to_team_id,
+            'destination_team_id': to_team_id,
+            'destination_sport_id': 11,
+            'destination_parent_org_id': from_team_id,
+            'metadata_season': event_date.year,
+            'roster_snapshot_id': 99,
+            'roster_snapshot_date': event_date.isoformat(),
+            'roster_team_id': from_team_id,
+            'roster_status': 'IL_15',
+            'active_roster': False,
+        },
+    }
 
 
 def test_projects_typed_team_events_in_newest_first_source_order(app):
@@ -316,6 +363,62 @@ def test_proven_non_pitcher_is_excluded_from_completeness_without_public_noise(a
     assert 'participant_role' not in payload
 
 
+def test_certified_non_material_rehab_is_excluded_without_public_noise(app):
+    with app.app_context():
+        _window()
+        verified = _pitcher(mlb_id=700030, name='Verified Arm')
+        rehab = _pitcher(mlb_id=700031, name='Rehab Arm')
+        _transaction(
+            verified,
+            transaction_id='verified',
+            transaction_date=date(2026, 8, 17),
+        )
+        event_date = date(2026, 8, 16)
+        _transaction(
+            rehab,
+            transaction_id='certified-rehab',
+            transaction_date=event_date,
+            from_team_id=113,
+            to_team_id=555,
+            **_certified_rehab_fields(rehab, event_date=event_date),
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'available'
+    assert [event['event_id'] for event in payload['events']] == ['verified']
+    assert payload['limitations'] == []
+    assert set(payload) == {
+        'capability', 'version', 'population_basis', 'status', 'events',
+        'window_start_date', 'window_end_date', 'represented_date', 'limitations',
+    }
+
+
+def test_uncertified_or_tampered_asg_remains_blocking(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700032, name='Ambiguous Assignment')
+        event_date = date(2026, 8, 16)
+        fields = _certified_rehab_fields(pitcher, event_date=event_date)
+        fields['subtype_evidence']['destination_parent_org_id'] = 114
+        _transaction(
+            pitcher,
+            transaction_id='tampered-rehab',
+            transaction_date=event_date,
+            from_team_id=113,
+            to_team_id=555,
+            **fields,
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'partial'
+    assert payload['events'] == []
+    assert 'withheld' in payload['limitations'][0]
+
+
 def test_participant_qualification_adds_no_public_reader_query(app):
     with app.app_context():
         _window()
@@ -342,6 +445,16 @@ def test_participant_qualification_adds_no_public_reader_query(app):
             participant_role='non_pitcher',
             participant_role_authority='mlb_people_primary_position_v1',
             participant_position_code='8',
+        )
+        rehab = _pitcher(mlb_id=700023, name='Rehab Arm')
+        event_date = date(2026, 8, 14)
+        _transaction(
+            rehab,
+            transaction_id='certified-rehab',
+            transaction_date=event_date,
+            from_team_id=113,
+            to_team_id=555,
+            **_certified_rehab_fields(rehab, event_date=event_date),
         )
         db.session.commit()
         statements = []

@@ -471,6 +471,26 @@ class MLBApiClient:
             return []
         return data.get('teams', [])
 
+    def get_team_metadata(self, season):
+        """Return season-scoped team level and parent-org authority in one GET."""
+        data = self._get('/teams', params={
+            'season': int(season),
+            'hydrate': 'sport',
+        })
+        teams = (data or {}).get('teams') or []
+        metadata = {}
+        for team in teams:
+            if not isinstance(team, dict) or team.get('id') is None:
+                continue
+            sport = team.get('sport') or {}
+            metadata[int(team['id'])] = {
+                'team_id': int(team['id']),
+                'sport_id': sport.get('id'),
+                'parent_org_id': team.get('parentOrgId'),
+                'season': int(season),
+            }
+        return metadata
+
     def get_team_roster(self, team_id, roster_type='pitchers', season=None, date=None, hydrate=None):
         """
         Get team roster.
