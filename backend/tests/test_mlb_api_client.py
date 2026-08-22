@@ -115,6 +115,20 @@ class TestTransientRetries:
         assert client._calls['n'] == 4
         assert client.metrics.retries == 3
 
+    def test_vargas_gamelog_read_timeout_exhausts_all_four_attempts(
+        self, app, monkeypatch, sleeps,
+    ):
+        client = _client_with_responses(monkeypatch, [
+            requests.exceptions.ReadTimeout('production-equivalent timeout'),
+        ])
+        with app.app_context():
+            with pytest.raises(MlbApiFetchError) as raised:
+                client.get_pitcher_game_logs(545121, season=2026)
+
+        assert client._calls['n'] == 4
+        assert client.metrics.retries == 3
+        assert '/people/545121/stats' in str(raised.value)
+
 
 class TestNonTransient:
     def test_404_is_not_retried(self, app, monkeypatch, sleeps):

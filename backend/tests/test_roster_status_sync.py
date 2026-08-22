@@ -38,6 +38,10 @@ from services.roster_status_sync import (
     classify_roster_evidence,
     sync_roster_statuses,
 )
+from services.bullpen_eligibility import (
+    STATUS_NON_PITCHER,
+    evaluate_bullpen_eligibility,
+)
 from utils.db import db
 
 
@@ -208,6 +212,51 @@ def test_classifies_merged_roster_evidence_by_precedence():
     assert bereavement['status'] == STATUS_BEREAVEMENT
     assert bereavement['raw_status_code'] == 'BRV'
     assert bereavement['raw_status_description'] == 'Bereavement List'
+
+
+def test_roster_sync_corrects_position_player_pitching_identity_population(client):
+    """Production-equivalent Vargas shape: a prior pitching appearance created
+    a stale local ``P`` identity, while current official roster evidence says
+    the active player is a first baseman.
+    """
+    with client.application.app_context():
+        player = seed_pitcher('Ildemaro Vargas', 545121)
+        rosters = {
+            (113, ROSTER_TYPE_ACTIVE): [
+                roster_entry(
+                    545121, 'Ildemaro Vargas', position='1B',
+                    status={'code': 'A', 'description': 'Active'},
+                ),
+            ],
+            (113, ROSTER_TYPE_40_MAN): [
+                roster_entry(
+                    545121, 'Ildemaro Vargas', position='1B',
+                    status={'code': 'A', 'description': 'Active'},
+                ),
+            ],
+            (113, ROSTER_TYPE_FULL): [],
+            (113, ROSTER_TYPE_NON_ROSTER): [],
+        }
+
+        result = sync_roster_statuses(
+            team_ids=[113], client=FakeRosterClient(rosters),
+        )
+
+        db.session.refresh(player)
+        assert result['errors'] == 0
+        assert player.roster_status == STATUS_ACTIVE
+        assert player.position == '1B'
+        eligibility = evaluate_bullpen_eligibility(
+            player, player.game_logs, reference_date=date.today(),
+        )
+        assert eligibility['eligible'] is False
+        assert eligibility['status'] == STATUS_NON_PITCHER
+        board = client.get('/api/bullpen/teams/113/board').get_json()
+        assert all(
+            card['pitcher_id'] != player.id
+            for group in board['groups']
+            for card in group['pitchers']
+        )
 
 
 def test_sync_persists_authoritative_roster_statuses(client):

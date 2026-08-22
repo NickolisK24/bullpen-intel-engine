@@ -27,10 +27,11 @@ from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
+from models.sync_failure import SyncFailure
 from services import dashboard_snapshot
 from services import publication_criticality as pc
 from services import slate_coverage
-from services.mlb_api import mlb_client
+from services.mlb_api import MlbApiFetchError, mlb_client
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_10, STATUS_UNKNOWN
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
@@ -220,9 +221,12 @@ def test_B_publish_path_withholds_when_critical_incomplete(app, monkeypatch):
 # ===========================================================================
 
 
-def _seed_lane_pitcher(mlb_id, roster_status):
+def _seed_lane_pitcher(mlb_id, roster_status, *, position='P', name=None):
     p = Pitcher(mlb_id=mlb_id, full_name=f'P{mlb_id}', team_id=108,
-                team_abbreviation='LAA', active=True, roster_status=roster_status)
+                team_abbreviation='LAA', active=True, roster_status=roster_status,
+                position=position)
+    if name is not None:
+        p.full_name = name
     db.session.add(p)
     db.session.flush()
     return p
@@ -259,3 +263,94 @@ def test_budget_exhaustion_classifies_remainder_by_criticality(app, monkeypatch)
     assert result['best_effort_budget_exhausted'] == 1
     assert result['unknown_budget_exhausted'] == 1
     assert result['lane_health'] == 'budget_exhausted'
+
+
+def test_vargas_equivalent_fetch_failure_is_dead_lettered_best_effort(
+    app, monkeypatch,
+):
+    _seed_lane_pitcher(
+        545121, STATUS_ACTIVE, position='1B', name='Ildemaro Vargas',
+    )
+
+    def fail(_mlb_id, season=None):
+        raise MlbApiFetchError(
+            'ReadTimeout', endpoint='/people/545121/stats',
+        )
+
+    monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs', fail)
+    result = sync_service.sync_recent_logs(
+        days_back=7, reference_date=SLATE,
+    )
+
+    assert result['records_failed'] == 1
+    assert result['critical_non_budget_failed'] == 0
+    assert result['unknown_non_budget_failed'] == 0
+    assert result['best_effort_non_budget_failed'] == 1
+    failure = SyncFailure.query.one()
+    assert failure.entity_type == 'pitcher_game_logs'
+    assert failure.entity_ref == '545121'
+    assert failure.resolved is False
+
+    publication = sync_service._publication_critical_from_legacy_pull(
+        pull=result, non_gamelog_critical_failed=0,
+    )
+    assert publication['complete'] is True
+    assert publication['publication_critical_unresolved'] == 0
+    assert publication['best_effort_deferred'] == 1
+    monkeypatch.setattr(
+        dashboard_snapshot.appearance_ledger, 'appearance_ledger_publish_block',
+        lambda **_kwargs: (None, {'reasons': []}),
+    )
+    _seed_complete_slate()
+    snapshot = dashboard_snapshot.store_dashboard_snapshot(
+        _partial_payload(), sync_run_id=_run(app).id, source='test', publish=True,
+        publication_critical_complete=publication['complete'],
+    )
+    assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+    assert snapshot.is_published is True
+
+
+def test_active_bullpen_fetch_failure_still_blocks_publication(app, monkeypatch):
+    _seed_lane_pitcher(545122, STATUS_ACTIVE, position='RP', name='Required Arm')
+
+    def fail(_mlb_id, season=None):
+        raise MlbApiFetchError(
+            'ReadTimeout', endpoint='/people/545122/stats',
+        )
+
+    monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs', fail)
+    result = sync_service.sync_recent_logs(
+        days_back=7, reference_date=SLATE,
+    )
+    publication = sync_service._publication_critical_from_legacy_pull(
+        pull=result, non_gamelog_critical_failed=0,
+    )
+
+    assert result['critical_non_budget_failed'] == 1
+    assert result['best_effort_non_budget_failed'] == 0
+    assert publication['complete'] is False
+    assert publication['publication_critical_unresolved'] == 1
+    monkeypatch.setattr(
+        dashboard_snapshot.appearance_ledger, 'appearance_ledger_publish_block',
+        lambda **_kwargs: (None, {'reasons': []}),
+    )
+    _seed_complete_slate()
+    snapshot = dashboard_snapshot.store_dashboard_snapshot(
+        _partial_payload(), sync_run_id=_run(app).id, source='test', publish=True,
+        publication_critical_complete=publication['complete'],
+    )
+    assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+    assert snapshot.is_published is False
+
+
+def test_scoped_failure_accounting_falls_back_to_strict_legacy_behavior():
+    publication = sync_service._publication_critical_from_legacy_pull(
+        pull={
+            'publication_critical_total': 1,
+            'best_effort_total': 0,
+            'gamelog_non_budget_failed': 1,
+        },
+        non_gamelog_critical_failed=0,
+    )
+    assert publication['complete'] is False
+    assert publication['publication_critical_unresolved'] == 1

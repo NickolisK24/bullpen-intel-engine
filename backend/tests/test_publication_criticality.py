@@ -24,6 +24,18 @@ def test_off_active_roster_statuses_are_best_effort():
         assert pc.criticality_for_roster_status(status) == pc.CRITICALITY_BEST_EFFORT
 
 
+def test_active_roster_position_player_is_best_effort_for_bullpen_publication():
+    assert pc.criticality_for_player(STATUS_ACTIVE, '1B') == pc.CRITICALITY_BEST_EFFORT
+
+
+def test_active_roster_pitcher_remains_publication_critical():
+    assert pc.criticality_for_player(STATUS_ACTIVE, 'RP') == pc.CRITICALITY_PUBLICATION_CRITICAL
+
+
+def test_unknown_position_does_not_create_a_best_effort_exception():
+    assert pc.criticality_for_player(STATUS_UNKNOWN, None) == pc.CRITICALITY_UNKNOWN
+
+
 def test_missing_or_unrecognized_roster_status_fails_closed_to_unknown():
     assert pc.criticality_for_roster_status(None) == pc.CRITICALITY_UNKNOWN
     assert pc.criticality_for_roster_status(STATUS_UNKNOWN) == pc.CRITICALITY_UNKNOWN
