@@ -1790,6 +1790,120 @@ no reconciliation semantics, no writer, no publication gate, no shadow
 threshold, no contract version and no schema moved. The shadow failure stays
 active because it reports something real.
 
+## Manual exact-one-game real-mutation qualification (D-056)
+
+The next controlled stage after the D-052 no-op qualification. It proves the
+lane can apply **one reviewed canonical statistical correction to one existing
+GameLog row in one completed game**, and change nothing else.
+
+**Mechanism only.** D-056 authorizes the path to exist. It authorizes no
+production run, no automated write, no scheduled write, no publication
+authority, no backfill, no multiple-game scope, and no identity mutation.
+**O-008 remains open**, and its gate still names scheduled write stability,
+rollback, observability and explicit founder approval alongside real-mutation
+proof.
+
+| | |
+|---|---|
+| workflow | `.github/workflows/manual-game-driven-real-mutation-qualification.yml` |
+| candidate audit | `.github/workflows/manual-real-mutation-candidate-audit.yml` |
+| qualification type | `manual_game_driven_real_mutation_qualification_v1` |
+| confirmation | `QUALIFY_REAL_MUTATION_GAME_<game_pk>` |
+| audit confirmation | `AUDIT_REAL_MUTATION_CANDIDATES` |
+| artifact | `game-driven-real-mutation-qualification-<run_id>` |
+
+### The four founder decisions this stage encodes
+
+1. **Mechanism authority is its own decision.** D-056 authorizes the machinery;
+   a production PASS would be a separate evidence-backed decision, exactly as
+   D-041 preceded D-052.
+2. **Unresolved field authority is a hard refusal.** See below.
+3. **Post-write failure fails hard.** Evidence is preserved; no automatic
+   compensating write is attempted, and this path is not a rollback tool.
+4. **The work item must already be `completed`.** This stage proves
+   re-reconciliation of a settled game, never first ingestion.
+
+### The candidate contract
+
+A valid v1 candidate is exactly one `update` row and any number of `unchanged`
+rows, where the updated row already exists, identifies one pitcher/game
+appearance, and changes **exactly one** governed statistical field whose source
+authority is resolved.
+
+Refused: inserts, blocked rows, more than one updated row, more than one changed
+field, identity creation or reactivation, appearance-team repair, authority
+reconciliation, canonical-outs correction, a provenance-only row, a non-final
+game, a missing or unfinished work item, and any field whose source authority is
+unresolved.
+
+### Field-authority gate
+
+`inherited_runners` and `inherited_runners_scored` are **refused** while the
+field-authority question recorded above in *"GameLog `inherited_runners` — field
+authority UNRESOLVED"* stays unresolved. The deciding diagnostic
+(`scripts/inspect_gamelog_field_authority.py`) has never been run against
+production, and nothing was added to `APPROVED_FALLBACK_FIELDS`.
+
+Game `824969` / pitcher `656240` is the historical case that motivated this
+stage and is retained as its **negative** example, in two regression tests. It
+is not the production candidate.
+
+### Expected effects, measured
+
+For one reviewed single-field statistical correction:
+
+```
+game_log_rows_written              1
+pitcher_rows_written               0
+appearance_team_rows_written       0
+correction_provenance_rows_written 1
+dead_letters_created               0
+work_items_updated                 1
+work_items_completed               1
+checkpoints_advanced               1
+commits_performed                  1
+correction_count delta            +1
+```
+
+Exact integers, never `>= 1`. `correction_provenance_rows_written` is **1**
+because the canonical writer stamps provenance on the row it corrects — the lane
+records that counter as `provenance_only_updates + statistical_corrections`.
+Pinning it to zero by analogy with the no-op contract refuses every correct run,
+and the canonical path proved that on first execution. For the same reason the
+planner appends `provenance_only_update` to the mutation categories of every
+genuine correction, so that category is permitted while a row the planner marks
+`is_provenance_only` is refused.
+
+`correction_count` is in the no-op contract's *required-unchanged* set and in
+this contract's *required-to-advance* set. The two bookkeeping contracts are
+deliberately separate.
+
+### Replay behaviour
+
+A re-run against an already-corrected row resolves **`NO_LONGER_MUTATING`**
+(exit 3), never PASS, and the workflow's final gate refuses to report success on
+it. One correction can never be counted twice. The same verdict covers a race
+the legacy writer won and a source revision that made the plan a no-op.
+
+Verdicts are `PASS` (0), `FAILED` (1), `UNPROVEN` (2), `NO_LONGER_MUTATING` (3),
+in that order of precedence: FAILED, then UNPROVEN, then NO_LONGER_MUTATING,
+then PASS.
+
+### Candidate discovery
+
+Candidates come from the bounded read-only audit, never from operator intuition
+(D-042). It reuses the no-op candidate audit's read-only machinery unchanged.
+**Zero eligible candidates is a completed audit, not a failure** — and with a
+clean shadow corpus it is the expected answer, because a real-mutation candidate
+exists only while shadow has caught a divergence the legacy writer has not yet
+resolved.
+
+The audit reports the stored value and the plan's target digest. It does not
+re-derive the value the plan would write: the lane's safe row report keeps
+intended values in-process and exports only their digest, and re-deriving them
+would be a second comparator. A human sees the change itself in the
+qualification's own reviewed shadow plan.
+
 ## Operator repair procedure
 
 ```bash

@@ -44,8 +44,8 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '4.2'
-EXPECTED_EFFECTIVE_DATE = 'August 15, 2026'
+EXPECTED_VERSION = '4.3'
+EXPECTED_EFFECTIVE_DATE = 'August 19, 2026'
 EXPECTED_MAIN = '66be1b57f2d523d643db82d605538771f656dfa9'
 
 # The gated generated-content publication commit and the scheduled run that
@@ -460,22 +460,25 @@ def test_d052_is_unchanged_in_meaning():
         assert phrase in row, phrase
 
 
-def test_decision_ledger_is_contiguous_through_d055():
-    """D-055 is additive, contiguous, and attributed to its work package."""
+def test_decision_ledger_is_contiguous_through_d056():
+    """D-056 is additive, contiguous, and attributed to its work package."""
     text = _roadmap_text()
 
     ids = re.findall(r'^\| (D-\d{3}) \|', text, re.MULTILINE)
     assert ids == [f'D-{number:03d}' for number in range(1, len(ids) + 1)], (
         'the Decision Ledger must stay contiguous and never renumber'
     )
-    assert ids[-1] == 'D-055'
+    assert ids[-1] == 'D-056'
 
-    assert 'Decision Ledger through D-055' in text
+    assert 'Decision Ledger through D-056' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
     assert 'D-054, added by UX-2B' in text
     assert 'D-055, added by Team Board Phase 2 Package 1' in text
+    assert (
+        'D-056, added by the game-driven real-mutation qualification package'
+    ) in text
 
     # A decision designed to expire is deliberately not a durable authority ID.
     assert 'DEP-001 (#601) created no Decision Ledger ID.' in text
@@ -507,25 +510,26 @@ def test_completion_log_records_the_closed_packages_with_evidence():
     assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_4_2_entry():
-    """The current edition names D-055 and preserves prior authority."""
+def test_revision_history_records_the_version_4_3_entry():
+    """The current edition names D-056 and preserves prior authority."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 4.2 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 4.3 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        'D-055',
-        'Team Board Phase 2 Package 1',
-        'already-public workload facts',
-        'fail-closed Rest Status',
-        'raw fatigue scores remain private',
-        'query-count invariance',
-        'D-001 through D-054 remain unchanged',
+        'D-056',
+        'game-driven real-mutation qualification package',
+        'one existing GameLog row on one resolved-authority field',
+        'inherited_runners',
+        'NO_LONGER_MUTATING and never a second PASS',
+        'authorizes no run',
+        'D-001 through D-055 remain unchanged',
+        'O-008 remains open',
     ):
         assert claimed in entry, claimed
 

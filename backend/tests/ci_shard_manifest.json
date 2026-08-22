@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 503.939,
+      "measured_seconds": 508.303,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -183,6 +183,10 @@
           "measured_seconds": 5.43
         },
         {
+          "path": "tests/test_real_mutation_qualification_execution.py",
+          "measured_seconds": 4.264
+        },
+        {
           "path": "tests/test_recommendation_v2_domain_foundation.py",
           "measured_seconds": 0.006
         },
@@ -333,7 +337,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 504.13,
+      "measured_seconds": 507.903,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -490,6 +494,14 @@
         {
           "path": "tests/test_public_why_copy_specificity.py",
           "measured_seconds": 0.5
+        },
+        {
+          "path": "tests/test_real_mutation_candidate_audit_execution.py",
+          "measured_seconds": 2.749
+        },
+        {
+          "path": "tests/test_real_mutation_qualification_contract.py",
+          "measured_seconds": 1.025
         },
         {
           "path": "tests/test_recommendation_engine_integration.py",
@@ -650,7 +662,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 505.86,
+      "measured_seconds": 509.03,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1029,6 +1041,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_real_mutation_qualification_replay.py",
+          "measured_seconds": 2.254
+        },
+        {
           "path": "tests/test_recommendation_builder.py",
           "measured_seconds": 0.0
         },
@@ -1235,7 +1251,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 504.86,
+      "measured_seconds": 507.497,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1412,6 +1428,14 @@
         {
           "path": "tests/test_qa_reliever_read_scenarios.py",
           "measured_seconds": 4.936
+        },
+        {
+          "path": "tests/test_real_mutation_candidate_audit_contract.py",
+          "measured_seconds": 0.92
+        },
+        {
+          "path": "tests/test_real_mutation_qualification_workflow_contract.py",
+          "measured_seconds": 1.717
         },
         {
           "path": "tests/test_recommendation_api.py",
