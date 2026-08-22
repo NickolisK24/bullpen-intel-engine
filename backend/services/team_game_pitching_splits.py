@@ -14,6 +14,7 @@ from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
 from models.team_game_pitching_split import TeamGamePitchingSplit
 from services import dead_letter, sync_metadata
+from services.appearance_team_authority import resolve_appearance_team
 from services.game_finality import (
     FINAL_AND_USABLE,
     classify_game_finality,
@@ -487,10 +488,10 @@ def _game_log_rows(game_pk):
 def _logs_by_team(log_rows):
     grouped = {}
     for entry in log_rows:
-        team_id = entry['pitcher'].team_id
-        if team_id is None:
+        appearance_team = resolve_appearance_team(entry['log'])
+        if not appearance_team.resolved:
             continue
-        grouped.setdefault(team_id, []).append(entry)
+        grouped.setdefault(appearance_team.team_id, []).append(entry)
     return grouped
 
 

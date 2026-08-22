@@ -991,6 +991,28 @@ def test_population_bases_do_not_claim_identical_cohorts():
     }) == 3
 
 
+def test_complete_rotation_read_is_available_and_real_limitations_remain_partial():
+    available = build_team_board_v2_payload(_board())
+    assert available['section_status']['rotation_impact'] == {
+        'status': 'available',
+        'reason_code': None,
+        'limitations': [],
+        'represented_date': '2026-08-16',
+    }
+
+    limited_rotation = deepcopy(ROTATION)
+    limited_rotation['status'] = 'limited_read'
+    limited_rotation['limitation_reasons'] = ['partial_source_coverage']
+    limited_rotation['limitations'] = ['Some completed team games lack complete pitching splits.']
+    partial = build_team_board_v2_payload(_board(rotation=limited_rotation))
+    assert partial['section_status']['rotation_impact'] == {
+        'status': 'partial',
+        'reason_code': 'partial_source_coverage',
+        'limitations': ['Some completed team games lack complete pitching splits.'],
+        'represented_date': '2026-08-16',
+    }
+
+
 def test_optional_failure_keeps_independent_sections_available():
     payload = build_team_board_v2_payload(
         _board(rotation={}),
