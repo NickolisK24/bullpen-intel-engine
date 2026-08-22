@@ -33,7 +33,7 @@ function PitcherSubject({ row, onSelectPitcher }) {
 }
 
 function ChangeRow({ row, groupKey, onSelectPitcher }) {
-  if (groupKey === 'team-state') {
+  if (groupKey === 'team-state' || groupKey === 'rest-status') {
     const hasWindow = row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
     return (
       <li className="min-w-0 py-panel first:pt-row last:pb-row">
@@ -68,14 +68,14 @@ function ChangeRow({ row, groupKey, onSelectPitcher }) {
 }
 
 function ChangeGroup({ group, onSelectPitcher }) {
-  const isTeamState = group.key === 'team-state'
+  const isTeamLevel = group.key === 'team-state' || group.key === 'rest-status'
   return (
     <section
-      className={`mt-section rounded-sm border p-panel tablet:p-section ${isTeamState ? 'border-line-default bg-surface-raised/45' : 'border-line-subtle bg-surface-raised/20'}`}
+      className={`mt-section rounded-sm border p-panel tablet:p-section ${isTeamLevel ? 'border-line-default bg-surface-raised/45' : 'border-line-subtle bg-surface-raised/20'}`}
       aria-labelledby={`what-changed-${group.key}-title`}
     >
       <div className="flex min-w-0 items-center justify-between gap-panel border-b border-line-subtle pb-panel">
-        <h3 id={`what-changed-${group.key}-title`} className={`type-overline ${isTeamState ? 'text-brand-gold' : 'text-text-tertiary'}`}>{group.label}</h3>
+        <h3 id={`what-changed-${group.key}-title`} className={`type-overline ${isTeamLevel ? 'text-brand-gold' : 'text-text-tertiary'}`}>{group.label}</h3>
         <span className="type-metadata tabular-nums text-text-tertiary">{group.rows.length}</span>
       </div>
       <ul className="divide-y divide-line-subtle">
@@ -111,6 +111,8 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
   const limitation = view.limitations[0] || null
   const teamStateUnavailable = view.teamStateComparison.status === 'unavailable'
   const teamStateLimitation = view.teamStateComparison.limitation
+  const restStatusUnavailable = view.restStatusComparison.status === 'unavailable'
+  const restStatusLimitation = view.restStatusComparison.limitation
   const hasGroups = view.groups.length > 0
 
   return (
@@ -135,13 +137,11 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
           <SectionState status="unavailable" title="No comparison baseline" message={limitation || 'No earlier completed game is available for comparison.'} className="mt-section" />
         ) : view.state === 'stale' ? (
           <SectionState status="unavailable" title="Comparison freshness blocked" message={limitation || 'Current workload data is not fresh enough to compare safely.'} className="mt-section" />
-        ) : view.state === 'no_changes' && teamStateUnavailable ? (
-          <SectionState
-            status="partial"
-            title="Team State comparison unavailable"
-            message={teamStateLimitation}
-            className="mt-section"
-          />
+        ) : view.state === 'no_changes' && (teamStateUnavailable || restStatusUnavailable) ? (
+          <>
+            {teamStateUnavailable && <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-section" />}
+            {restStatusUnavailable && <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />}
+          </>
         ) : view.state === 'no_changes' ? (
           <div className="section-state mt-section rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
             <p className="type-compact">No material changes were detected for this published comparison.</p>
@@ -151,6 +151,9 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
             {view.groups.map(group => <ChangeGroup key={group.key} group={group} onSelectPitcher={onSelectPitcher} />)}
             {teamStateUnavailable && teamStateLimitation && (
               <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-section" />
+            )}
+            {restStatusUnavailable && restStatusLimitation && (
+              <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />
             )}
             {limitation && <SectionState status="partial" title="Some change context is limited" message={limitation} className="mt-section" />}
           </>
