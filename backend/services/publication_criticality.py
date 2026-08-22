@@ -9,11 +9,11 @@ publication-critical or unknown-criticality failure must still withhold, and the
 existing finality / appearance-ledger / freshness / provenance gates are
 unchanged.
 
-This module owns ONE canonical classifier + completeness result. It reuses the
-canonical Roster Authority (``api.bullpen.build_team_roster_authority`` — the same
-active-bullpen authority Team Operations Readiness uses); it introduces no second
-roster registry and no second slate authority. Unknown criticality ALWAYS fails
-closed (treated as publication-critical for the publication gate).
+This module owns ONE canonical classifier + completeness result. Legacy work
+classification consumes the current roster-status and position caches populated
+from the same official roster evidence used by canonical Roster Authority; it
+introduces no second roster registry and no second slate authority. Unknown
+criticality ALWAYS fails closed (treated as publication-critical for the gate).
 """
 
 from __future__ import annotations
@@ -30,6 +30,15 @@ from services.roster_authority import (
 CRITICALITY_PUBLICATION_CRITICAL = 'publication_critical'
 CRITICALITY_BEST_EFFORT = 'best_effort'
 CRITICALITY_UNKNOWN = 'unknown'
+
+# Explicit current roster positions that cannot belong to BaseballOS's governed
+# bullpen population.  Unknown/blank positions are deliberately absent: they
+# continue through the roster-status classifier and therefore fail closed when
+# roster authority is unknown.  Two-way and pitching positions are also absent.
+EXPLICIT_NON_PITCHER_POSITIONS = frozenset({
+    'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'OF', 'IF', 'DH', 'PH',
+    'PR', 'UT', 'UTIL', 'UTILITY',
+})
 
 PUBLICATION_CRITICAL_COMPLETE = 'complete'
 PUBLICATION_CRITICAL_INCOMPLETE = 'incomplete'
@@ -48,12 +57,11 @@ def criticality_for_roster_status(roster_status) -> str:
     """Publication criticality for a game-log work item from its pitcher's synced
     canonical roster-status code.
 
-    Reuses the canonical Roster Authority category (``roster_status_category_for_status``
-    — no second roster registry, and no per-team query cost that would itself
-    starve the ingestion budget). The current active MLB roster is a safe SUPERSET
-    of the active bullpen — classifying an active-roster pitcher as
-    publication-critical never DEFERS a real active-bullpen arm, and at most
-    front-loads a few starters. Mapping:
+    Reuses the canonical roster-status category
+    (``roster_status_category_for_status`` — no second roster registry, and no
+    per-team query cost that would itself starve the ingestion budget). This
+    status-only primitive remains conservative; ``criticality_for_player`` adds
+    the governed explicit-non-pitcher exclusion. Mapping:
 
     * active MLB roster            -> ``publication_critical``
     * missing / unrecognized code  -> ``unknown`` (fail closed)
@@ -65,6 +73,22 @@ def criticality_for_roster_status(roster_status) -> str:
     if category == ROSTER_STATUS_CATEGORY_UNKNOWN:
         return CRITICALITY_UNKNOWN
     return CRITICALITY_BEST_EFFORT
+
+
+def criticality_for_player(roster_status, position) -> str:
+    """Classify one legacy player GameLog item against the public bullpen scope.
+
+    The legacy repair lane intentionally queries every locally active tracked
+    player, including position players who own legitimate pitching appearances.
+    An explicitly non-pitching current roster position cannot enter the governed
+    active-bullpen population, so its repair fetch is best-effort even when the
+    player is on the active MLB roster.  Missing or unfamiliar position evidence
+    never creates this exception and retains the fail-closed roster-status result.
+    """
+    normalized_position = str(position or '').strip().upper()
+    if normalized_position in EXPLICIT_NON_PITCHER_POSITIONS:
+        return CRITICALITY_BEST_EFFORT
+    return criticality_for_roster_status(roster_status)
 
 
 def build_publication_critical_result(
