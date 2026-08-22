@@ -55,7 +55,7 @@ class PlayerTransaction(db.Model):
             "'recall', 'option', 'il_placement', 'il_activation', "
             "'roster_activation', 'roster_deactivation', 'trade', 'dfa', "
             "'outright', 'release', 'contract_selection', 'suspension', "
-            "'bereavement', 'paternity', 'restricted', 'unknown')",
+            "'bereavement', 'paternity', 'restricted', 'waiver_claim', 'unknown')",
             name='ck_player_transactions_normalized_category',
         ),
         db.CheckConstraint(
