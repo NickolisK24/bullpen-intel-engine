@@ -24,6 +24,7 @@ from alembic.operations import Operations
 
 # Aliased on import: pytest would collect the helper as a test case otherwise.
 from tests.db_config import test_database_url as _test_database_url
+from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD
 
 
 VERSIONS = Path(__file__).resolve().parents[1] / 'migrations' / 'versions'
@@ -323,7 +324,7 @@ def test_the_revision_history_has_exactly_one_head():
             downs.update(re.findall(r"['\"]([^'\"]+)['\"]", down.group(1)))
 
     heads = [revision for revision in revisions if revision not in downs]
-    assert heads == ['c7f1b408d93a'], f'expected one head, found {heads}'
+    assert heads == [EXPECTED_ALEMBIC_HEAD], f'expected one head, found {heads}'
 
 
 def test_the_widening_revision_follows_the_previous_head():

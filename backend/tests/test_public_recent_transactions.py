@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
@@ -80,6 +81,11 @@ def _transaction(
     from_team_id=None,
     to_team_id=113,
     eligible=True,
+    participant_role='unresolved',
+    participant_role_authority='unresolved',
+    participant_position_code=None,
+    participant_position_abbreviation=None,
+    participant_position_type=None,
 ):
     row = PlayerTransaction(
         transaction_key=f'key:{transaction_id}',
@@ -95,6 +101,11 @@ def _transaction(
         is_il_activation=category == 'il_activation',
         roster_snapshot_alignment='aligned' if eligible else 'unknown',
         explanatory_linkage_eligible=eligible,
+        participant_role=participant_role,
+        participant_role_authority=participant_role_authority,
+        participant_position_code=participant_position_code,
+        participant_position_abbreviation=participant_position_abbreviation,
+        participant_position_type=participant_position_type,
         source='mlb_stats_api:transactions',
         source_endpoint='/transactions',
         source_query_start_date=date(2026, 8, 11),
@@ -176,6 +187,49 @@ def test_event_team_comes_from_stored_transaction_not_current_pitcher_assignment
     assert current['events'] == []
 
 
+def test_reference_date_bounds_public_chronology_without_rewriting_source_window(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700012, name='Reference Date Arm')
+        _transaction(
+            pitcher,
+            transaction_id='represented-date',
+            transaction_date=date(2026, 8, 17),
+        )
+        _transaction(
+            pitcher,
+            transaction_id='future-to-board',
+            transaction_date=date(2026, 8, 18),
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(
+            113,
+            reference_date=date(2026, 8, 17),
+        )
+
+    assert [event['event_id'] for event in payload['events']] == ['represented-date']
+    assert payload['window_start_date'] == '2026-08-11'
+    assert payload['window_end_date'] == '2026-08-17'
+    assert payload['represented_date'] == '2026-08-17'
+
+
+def test_reference_date_before_latest_source_window_fails_closed(app):
+    with app.app_context():
+        _window()
+        db.session.commit()
+
+        payload = build_public_recent_transactions(
+            113,
+            reference_date=date(2026, 8, 10),
+        )
+
+    assert payload['status'] == 'unavailable'
+    assert payload['events'] == []
+    assert payload['represented_date'] == '2026-08-10'
+    assert 'do not cover' in payload['limitations'][0]
+
+
 @pytest.mark.parametrize(
     ('category', 'description'),
     (
@@ -225,6 +279,150 @@ def test_unverified_identity_or_type_is_withheld_and_section_is_partial(app):
     assert [event['event_id'] for event in payload['events']] == ['verified']
     assert len(payload['limitations']) == 1
     assert 'withheld' in payload['limitations'][0]
+
+
+def test_proven_non_pitcher_is_excluded_from_completeness_without_public_noise(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700021, name='Verified Arm')
+        _transaction(
+            pitcher,
+            transaction_id='verified',
+            transaction_date=date(2026, 8, 17),
+        )
+        _transaction(
+            None,
+            transaction_id='position-player',
+            transaction_date=date(2026, 8, 16),
+            category='unknown',
+            eligible=False,
+            participant_role='non_pitcher',
+            participant_role_authority='mlb_people_primary_position_v1',
+            participant_position_code='6',
+            participant_position_abbreviation='SS',
+            participant_position_type='Infielder',
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'available'
+    assert [event['event_id'] for event in payload['events']] == ['verified']
+    assert payload['limitations'] == []
+    assert 'participant_role' not in payload
+
+
+def test_participant_qualification_adds_no_public_reader_query(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700022, name='Verified Arm')
+        _transaction(
+            pitcher,
+            transaction_id='verified',
+            transaction_date=date(2026, 8, 17),
+        )
+        _transaction(
+            None,
+            transaction_id='position-player-one',
+            transaction_date=date(2026, 8, 16),
+            eligible=False,
+            participant_role='non_pitcher',
+            participant_role_authority='mlb_people_primary_position_v1',
+            participant_position_code='6',
+        )
+        _transaction(
+            None,
+            transaction_id='position-player-two',
+            transaction_date=date(2026, 8, 15),
+            eligible=False,
+            participant_role='non_pitcher',
+            participant_role_authority='mlb_people_primary_position_v1',
+            participant_position_code='8',
+        )
+        db.session.commit()
+        statements = []
+
+        def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+            if statement.lstrip().upper().startswith('SELECT'):
+                statements.append(statement)
+
+        event.listen(db.engine, 'before_cursor_execute', capture)
+        try:
+            payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', capture)
+
+    assert payload['status'] == 'available'
+    assert [event_row['event_id'] for event_row in payload['events']] == ['verified']
+    assert len(statements) == 3  # latest window, team transactions, canonical pitchers
+
+
+@pytest.mark.parametrize(
+    ('authority', 'code', 'abbreviation', 'position_type'),
+    (
+        ('unresolved', '6', 'SS', 'Infielder'),
+        ('mlb_people_primary_position_v1', None, None, None),
+        ('mlb_people_primary_position_v1', 'Y', 'TWP', 'Two-Way Player'),
+    ),
+)
+def test_non_pitcher_stamp_must_carry_compatible_explicit_authority(
+    app, authority, code, abbreviation, position_type
+):
+    with app.app_context():
+        _window()
+        _transaction(
+            None,
+            transaction_id='not-proven-irrelevant',
+            transaction_date=date(2026, 8, 16),
+            eligible=False,
+            participant_role='non_pitcher',
+            participant_role_authority=authority,
+            participant_position_code=code,
+            participant_position_abbreviation=abbreviation,
+            participant_position_type=position_type,
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'partial'
+    assert payload['events'] == []
+
+
+def test_proven_pitcher_without_canonical_linkage_still_downgrades(app):
+    with app.app_context():
+        _window()
+        _transaction(
+            None,
+            transaction_id='unlinked-pitcher',
+            transaction_date=date(2026, 8, 16),
+            eligible=False,
+            participant_role='pitcher',
+            participant_role_authority='mlb_people_primary_position_v1',
+            participant_position_code='1',
+            participant_position_abbreviation='P',
+            participant_position_type='Pitcher',
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'partial'
+    assert payload['events'] == []
+
+
+def test_partial_source_window_remains_partial_when_failed_row_cannot_be_team_scoped(app):
+    with app.app_context():
+        _window(status='partial')
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'partial'
+    assert payload['events'] == []
+    assert payload['limitations'] == [
+        'Some records from the latest transaction source window are unavailable.'
+    ]
 
 
 def test_successful_empty_window_is_distinct_from_missing_failed_and_stale_authority(app):

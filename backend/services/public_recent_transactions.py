@@ -35,6 +35,7 @@ from services.transaction_ingestion import (
     WINDOW_STATUS_SUCCESS,
     latest_transaction_sync_window,
 )
+from services.transaction_participant_qualification import is_proven_non_pitcher
 
 
 CAPABILITY = 'public_recent_transactions_v1'
@@ -86,6 +87,9 @@ TRANSACTION_PUBLIC_DESCRIPTIONS = {
 
 SOURCE_UNAVAILABLE_LIMITATION = 'Recent official transaction records are unavailable.'
 SOURCE_STALE_LIMITATION = 'Recent official transaction records have not been verified recently.'
+SOURCE_WINDOW_NOT_COVERED_LIMITATION = (
+    'Recent official transaction records do not cover the represented Team Board date.'
+)
 SOURCE_PARTIAL_LIMITATION = 'Some records from the latest transaction source window are unavailable.'
 WITHHELD_EVENT_LIMITATION = (
     'Some recent transaction records are withheld because player identity, event type, '
@@ -158,11 +162,17 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
             limitation=SOURCE_STALE_LIMITATION,
             represented_date=end_date,
         )
+    represented_date = min(end_date, ref) if ref is not None else end_date
+    if represented_date < start_date:
+        return _unavailable(
+            limitation=SOURCE_WINDOW_NOT_COVERED_LIMITATION,
+            represented_date=represented_date,
+        )
 
     rows = (
         PlayerTransaction.query
         .filter(PlayerTransaction.transaction_date >= start_date)
-        .filter(PlayerTransaction.transaction_date <= end_date)
+        .filter(PlayerTransaction.transaction_date <= represented_date)
         .filter(or_(
             PlayerTransaction.from_team_id == team_id,
             PlayerTransaction.to_team_id == team_id,
@@ -190,6 +200,8 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     events = []
     withheld_count = 0
     for row in rows:
+        if is_proven_non_pitcher(row):
+            continue
         pitcher = pitchers.get(row.pitcher_id)
         label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)
         description_template = TRANSACTION_PUBLIC_DESCRIPTIONS.get(
@@ -230,8 +242,8 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
         'status': STATUS_PARTIAL if limitations else STATUS_AVAILABLE,
         'events': events,
         'window_start_date': _iso(start_date),
-        'window_end_date': _iso(end_date),
-        'represented_date': _iso(end_date),
+        'window_end_date': _iso(represented_date),
+        'represented_date': _iso(represented_date),
         'limitations': limitations,
     }
 
