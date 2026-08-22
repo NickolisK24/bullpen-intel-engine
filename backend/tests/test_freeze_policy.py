@@ -588,6 +588,19 @@ def test_transaction_participant_qualification_decision_pins_fail_closed_boundar
     assert '`from_team_id` and `to_team_id` remain unchanged' in decision
 
 
+def test_transaction_event_code_authority_decision_pins_bounded_taxonomy():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-transaction-event-code-authority.md'
+    ).read_text(encoding='utf-8')
+
+    assert '`CU` to `recall`' in decision
+    assert '`DES` to `dfa`' in decision
+    assert '`SE` to `contract_selection`' in decision
+    assert '`SC`, `ASG`, `CLW`, and `SFA` remain unresolved' in decision
+    assert 'Natural transaction resync' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (

@@ -20,6 +20,8 @@ from services.transaction_ingestion import (
     ALIGNMENT_MISALIGNED,
     ALIGNMENT_NO_SNAPSHOT,
     ALIGNMENT_NOT_APPLICABLE,
+    CATEGORY_CONTRACT_SELECTION,
+    CATEGORY_DFA,
     CATEGORY_IL_ACTIVATION,
     CATEGORY_IL_PLACEMENT,
     CATEGORY_OPTION,
@@ -27,6 +29,7 @@ from services.transaction_ingestion import (
     CATEGORY_UNKNOWN,
     TRANSACTION_FETCH_ENTITY_TYPE,
     TRANSACTION_IDENTITY_ENTITY_TYPE,
+    normalize_transaction_category,
     sync_transactions,
 )
 from utils.db import db
@@ -407,6 +410,65 @@ def test_unknown_type_maps_to_unknown_and_is_excluded_from_linkage(app):
     assert row.explanatory_linkage_eligible is False
     assert readiness['status'] == source_readiness.DEGRADED
     assert 'unknown_transaction_types_present' in readiness['reason_codes']
+
+
+@pytest.mark.parametrize(
+    ('type_code', 'category'),
+    (
+        ('CU', CATEGORY_RECALL),
+        ('DES', CATEGORY_DFA),
+        ('SE', CATEGORY_CONTRACT_SELECTION),
+    ),
+)
+def test_structured_event_codes_map_to_existing_categories(type_code, category):
+    assert normalize_transaction_category(type_code) == category
+
+
+@pytest.mark.parametrize('type_code', ('SC', 'ASG', 'CLW', 'SFA', 'NEW_CODE'))
+def test_unapproved_structured_event_codes_remain_unknown(type_code):
+    assert normalize_transaction_category(type_code) == CATEGORY_UNKNOWN
+
+
+def test_natural_resync_corrects_newly_governed_event_authority(app, monkeypatch):
+    import services.transaction_ingestion as transaction_ingestion
+
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(pitcher)
+        monkeypatch.delitem(transaction_ingestion._CATEGORY_BY_TYPE_CODE, 'CU')
+        first = sync_transactions(
+            client=FakeTransactionClient([
+                _tx(transaction_id='tx-natural-correction', transaction_type_code='CU'),
+            ]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+        assert row.normalized_category == CATEGORY_UNKNOWN
+        assert row.explanatory_linkage_eligible is False
+
+        monkeypatch.setitem(
+            transaction_ingestion._CATEGORY_BY_TYPE_CODE,
+            'CU',
+            CATEGORY_RECALL,
+        )
+        second = sync_transactions(
+            client=FakeTransactionClient([
+                _tx(transaction_id='tx-natural-correction', transaction_type_code='CU'),
+            ]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 13, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert first['records_created'] == 1
+    assert second['records_corrected'] == 1
+    assert row.normalized_category == CATEGORY_RECALL
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
+    assert row.explanatory_linkage_eligible is True
+    assert row.correction_count == 1
 
 
 def test_repeated_sync_is_idempotent_and_corrections_track_provenance(app):

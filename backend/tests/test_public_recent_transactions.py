@@ -231,14 +231,16 @@ def test_reference_date_before_latest_source_window_fails_closed(app):
 
 
 @pytest.mark.parametrize(
-    ('category', 'description'),
+    ('category', 'label', 'description'),
     (
-        ('il_placement', 'Typed Arm was placed on the injured list.'),
-        ('il_activation', 'Typed Arm was activated from the injured list.'),
-        ('contract_selection', "Typed Arm's contract was selected."),
+        ('recall', 'Recalled', 'Typed Arm was recalled.'),
+        ('dfa', 'Designated for assignment', 'Typed Arm was designated for assignment.'),
+        ('contract_selection', 'Contract selected', "Typed Arm's contract was selected."),
+        ('il_placement', 'Placed on injured list', 'Typed Arm was placed on the injured list.'),
+        ('il_activation', 'Activated from injured list', 'Typed Arm was activated from the injured list.'),
     ),
 )
-def test_structured_categories_author_reader_descriptions(app, category, description):
+def test_structured_categories_author_reader_descriptions(app, category, label, description):
     with app.app_context():
         _window()
         pitcher = _pitcher(mlb_id=700011, name='Typed Arm')
@@ -252,6 +254,8 @@ def test_structured_categories_author_reader_descriptions(app, category, descrip
 
         payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
 
+    assert payload['status'] == 'available'
+    assert payload['events'][0]['label'] == label
     assert payload['events'][0]['description'] == description
 
 
