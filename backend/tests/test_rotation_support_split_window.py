@@ -15,6 +15,7 @@ from services.rotation_support_pressure import (
     MATERIAL_EXCLUSION_LIMITATION,
     OPENER_BULK_LIMITATION,
     PARTIAL_SOURCE_COVERAGE_LIMITATION,
+    SPLIT_SOURCE_LIMITATIONS,
     STATUS_LIMITED,
     STATUS_SUPPORTIVE,
     build_team_rotation_support_pressure_from_splits,
@@ -183,6 +184,8 @@ def test_transaction_assignment_changes_do_not_drop_historical_team_games(app):
             ],
         }
         assert payload['games_excluded'] == 0
+        assert payload['limitations'] == []
+        assert payload['source_limitations'] == list(SPLIT_SOURCE_LIMITATIONS)
         assert INCOMPLETE_HISTORICAL_ATTRIBUTION_LIMITATION not in payload['limitations']
         assert 'split_row_missing' not in payload['excluded_game_reasons']
 
@@ -273,6 +276,45 @@ def test_short_start_definition_is_fewer_than_fifteen_outs(app):
         assert payload['short_start_rate'] == 0.33
         assert payload['thresholds']['short_start_outs'] == 15
         assert payload['thresholds']['short_start_max_outs'] == 14
+
+
+def test_inclusive_window_keeps_distinct_team_games_and_integer_outs(app):
+    with app.app_context():
+        starter = _pitcher('Boundary Starter', 9035, TEAM_A)
+        for game_pk, days_ago, bullpen_outs, total_outs in (
+            (8451, 0, 9, 27),
+            (8452, 6, 12, 30),
+            (8453, 7, 9, 27),
+            (8454, -1, 9, 27),
+        ):
+            _scheduled_game(game_pk, days_ago)
+            _split(
+                game_pk,
+                days_ago,
+                starter_pitcher=starter,
+                starter_outs=18,
+                bullpen_outs=bullpen_outs,
+                total_outs=total_outs,
+            )
+        _split(
+            8451,
+            0,
+            team_id=TEAM_B,
+            starter_pitcher=starter,
+            starter_outs=3,
+            bullpen_outs=24,
+        )
+        db.session.commit()
+
+        payload = _payload()
+
+        assert payload['window_start'] == '2026-06-12'
+        assert payload['reference_date'] == '2026-06-18'
+        assert payload['games_in_window'] == 2
+        assert payload['games_analyzed'] == 2
+        assert payload['starter_outs'] == 36
+        assert payload['bullpen_outs_required'] == 21
+        assert payload['bullpen_innings_required'] == 7.0
 
 
 def test_verified_opener_bulk_and_bullpen_games_stay_separate(app):
