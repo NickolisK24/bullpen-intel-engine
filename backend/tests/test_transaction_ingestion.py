@@ -33,16 +33,25 @@ from utils.db import db
 
 
 class FakeTransactionClient:
-    def __init__(self, transactions=None, exc=None):
+    def __init__(self, transactions=None, exc=None, people=None, people_exc=None):
         self.transactions = transactions if transactions is not None else []
         self.exc = exc
+        self.people = people or {}
+        self.people_exc = people_exc
         self.calls = []
+        self.people_calls = []
 
     def get_transactions(self, **kwargs):
         self.calls.append(kwargs)
         if self.exc:
             raise self.exc
         return list(self.transactions)
+
+    def get_people_info(self, player_ids):
+        self.people_calls.append(list(player_ids))
+        if self.people_exc:
+            raise self.people_exc
+        return {player_id: self.people[player_id] for player_id in player_ids if player_id in self.people}
 
 
 @pytest.fixture
@@ -168,6 +177,9 @@ def test_statsapi_transaction_client_extracts_structured_fields_only(monkeypatch
         'resolution_date': None,
         'player_mlb_id': 700001,
         'player_full_name': 'Structured Arm',
+        'participant_position_code': None,
+        'participant_position_abbreviation': None,
+        'participant_position_type': None,
         'from_team_id': 112,
         'to_team_id': 113,
         'transaction_type_code': 'D15',
@@ -181,6 +193,128 @@ def test_statsapi_transaction_client_extracts_structured_fields_only(monkeypatch
     }]
     assert 'injuryDescription' not in rows[0]
     assert 'raw' not in rows[0]
+
+
+def test_statsapi_people_client_batches_position_authority(monkeypatch):
+    client = MLBApiClient()
+    calls = []
+
+    def fake_get(endpoint, params=None):
+        calls.append((endpoint, params))
+        return {'people': [
+            {'id': 700001, 'primaryPosition': {'code': '1', 'abbreviation': 'P'}},
+            {'id': 700002, 'primaryPosition': {'code': '6', 'abbreviation': 'SS'}},
+        ]}
+
+    monkeypatch.setattr(client, '_get', fake_get)
+
+    people = client.get_people_info([700002, 700001, 700002])
+
+    assert calls == [('/people', {'personIds': '700001,700002'})]
+    assert set(people) == {700001, 700002}
+
+
+def test_ingestion_persists_explicit_participant_roles_with_one_batch_lookup(app):
+    with app.app_context():
+        pitcher = _pitcher(mlb_id=700001)
+        _snapshot(pitcher)
+        client = FakeTransactionClient(
+            [_tx(transaction_id='pitcher'), _tx(
+                transaction_id='position-player',
+                player_mlb_id=700002,
+                player_full_name='Position Player',
+            )],
+            people={700002: {
+                'id': 700002,
+                'primaryPosition': {'code': '6', 'abbreviation': 'SS', 'type': 'Infielder'},
+            }},
+        )
+
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        rows = {row.transaction_id: row for row in PlayerTransaction.query.all()}
+
+    assert rows['pitcher'].participant_role == 'pitcher'
+    assert rows['pitcher'].participant_role_authority == 'canonical_pitcher_identity_v1'
+    assert rows['position-player'].participant_role == 'non_pitcher'
+    assert rows['position-player'].participant_role_authority == 'mlb_people_primary_position_v1'
+    assert rows['position-player'].participant_position_code == '6'
+    assert client.people_calls == [[700002]]
+
+
+def test_source_position_authority_avoids_people_lookup(app):
+    with app.app_context():
+        client = FakeTransactionClient([_tx(
+            player_mlb_id=700003,
+            player_full_name='Source Position Player',
+            participant_position_code='2',
+            participant_position_abbreviation='C',
+            participant_position_type='Catcher',
+        )])
+
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.participant_role == 'non_pitcher'
+    assert row.participant_role_authority == 'mlb_transaction_primary_position_v1'
+    assert client.people_calls == []
+
+
+def test_missing_and_two_way_position_evidence_fail_closed_or_stay_relevant(app):
+    with app.app_context():
+        client = FakeTransactionClient(
+            [
+                _tx(transaction_id='missing', player_mlb_id=700010, player_full_name='Unknown Role'),
+                _tx(transaction_id='two-way', player_mlb_id=700011, player_full_name='Two Way'),
+            ],
+            people={
+                700010: {'id': 700010},
+                700011: {
+                    'id': 700011,
+                    'primaryPosition': {'code': 'Y', 'abbreviation': 'TWP', 'type': 'Two-Way Player'},
+                },
+            },
+        )
+
+        sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        rows = {row.transaction_id: row for row in PlayerTransaction.query.all()}
+
+    assert rows['missing'].participant_role == 'unresolved'
+    assert rows['two-way'].participant_role == 'pitcher'
+    assert rows['two-way'].pitcher_id is None
+
+
+def test_people_lookup_failure_stores_unresolved_without_guessing(app):
+    with app.app_context():
+        client = FakeTransactionClient(
+            [_tx(player_mlb_id=700099, player_full_name='Unresolved Participant')],
+            people_exc=RuntimeError('people unavailable'),
+        )
+        result = sync_transactions(
+            client=client,
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert result['records_stored'] == 1
+    assert row.participant_role == 'unresolved'
+    assert row.participant_role_authority == 'unresolved'
 
 
 def test_typed_transaction_response_stores_fact_without_raw_or_free_text(app):

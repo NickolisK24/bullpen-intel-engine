@@ -35,6 +35,7 @@ from services.transaction_ingestion import (
     WINDOW_STATUS_SUCCESS,
     latest_transaction_sync_window,
 )
+from services.transaction_participant_qualification import is_proven_non_pitcher
 
 
 CAPABILITY = 'public_recent_transactions_v1'
@@ -199,6 +200,8 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     events = []
     withheld_count = 0
     for row in rows:
+        if is_proven_non_pitcher(row):
+            continue
         pitcher = pitchers.get(row.pitcher_id)
         label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)
         description_template = TRANSACTION_PUBLIC_DESCRIPTIONS.get(

@@ -10,6 +10,14 @@ from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWi
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
 from services.mlb_api import mlb_client
+from services.transaction_participant_qualification import (
+    AUTHORITY_MLB_TRANSACTION,
+    qualification_from_position,
+    qualify_transactions,
+    pitcher_qualification,
+    source_position,
+    unresolved_qualification,
+)
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -148,6 +156,11 @@ _TRANSACTION_FACT_FIELDS = (
     'roster_snapshot_alignment',
     'alignment_reason_code',
     'explanatory_linkage_eligible',
+    'participant_role',
+    'participant_role_authority',
+    'participant_position_code',
+    'participant_position_abbreviation',
+    'participant_position_type',
     'source',
     'source_endpoint',
     'source_query_start_date',
@@ -248,6 +261,24 @@ def sync_transactions(
         transactions = []
 
     counts['records_fetched'] = len(transactions)
+    participant_ids = {
+        _int_or_none(transaction.get('player_mlb_id'))
+        for transaction in transactions
+        if isinstance(transaction, dict)
+    }
+    participant_ids.discard(None)
+    pitchers_by_mlb_id = {
+        pitcher.mlb_id: pitcher
+        for pitcher in (
+            Pitcher.query.filter(Pitcher.mlb_id.in_(participant_ids)).all()
+            if participant_ids else []
+        )
+    }
+    participant_qualifications = qualify_transactions(
+        transactions,
+        pitchers_by_mlb_id=pitchers_by_mlb_id,
+        client=client,
+    )
     for transaction in transactions:
         if not isinstance(transaction, dict):
             detail = {
@@ -297,6 +328,8 @@ def sync_transactions(
             end_date=end_date,
             timestamp=timestamp,
             sync_run_id=sync_run_id,
+            pitchers_by_mlb_id=pitchers_by_mlb_id,
+            participant_qualifications=participant_qualifications,
         )
         if detail:
             if _record_transaction_failure(
@@ -382,6 +415,8 @@ def _values_from_transaction(
     end_date,
     timestamp,
     sync_run_id,
+    pitchers_by_mlb_id=None,
+    participant_qualifications=None,
 ):
     player_mlb_id = _int_or_none(transaction.get('player_mlb_id'))
     transaction_date = _coerce_date(transaction.get('transaction_date'))
@@ -410,7 +445,11 @@ def _values_from_transaction(
 
     type_code = _string_or_none(transaction.get('transaction_type_code'))
     normalized_category = normalize_transaction_category(type_code)
-    pitcher = Pitcher.query.filter_by(mlb_id=player_mlb_id).first()
+    pitcher = (
+        pitchers_by_mlb_id.get(player_mlb_id)
+        if pitchers_by_mlb_id is not None
+        else Pitcher.query.filter_by(mlb_id=player_mlb_id).first()
+    )
     from_team_id = _int_or_none(transaction.get('from_team_id'))
     to_team_id = _int_or_none(transaction.get('to_team_id'))
     il_list_type = _normalize_il_list_type(transaction.get('il_list_type'))
@@ -451,6 +490,17 @@ def _values_from_transaction(
         normalized_category != CATEGORY_UNKNOWN
         and alignment == ALIGNMENT_ALIGNED
     )
+    qualification = (participant_qualifications or {}).get(player_mlb_id)
+    if qualification is None and pitcher is not None:
+        qualification = pitcher_qualification()
+    if qualification is None:
+        qualification = qualification_from_position(
+            source_position(transaction),
+            authority=AUTHORITY_MLB_TRANSACTION,
+        )
+    if qualification is None:
+        qualification = unresolved_qualification()
+    values.update(qualification)
     values['transaction_key'] = _transaction_key(values)
     return values, None
 

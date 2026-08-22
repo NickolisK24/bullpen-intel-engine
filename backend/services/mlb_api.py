@@ -387,6 +387,10 @@ class MLBApiClient:
         return None
 
     def _transaction_record(self, transaction, *, source_endpoint, params):
+        person = transaction.get('person') if isinstance(transaction, dict) else {}
+        primary_position = (
+            person.get('primaryPosition') if isinstance(person, dict) else {}
+        ) or {}
         return {
             'transaction_id': self._first_present(transaction, 'id', 'transactionId'),
             'transaction_date': self._first_present(
@@ -413,6 +417,9 @@ class MLBApiClient:
                 'playerId',
             ),
             'player_full_name': self._transaction_player_name(transaction),
+            'participant_position_code': primary_position.get('code'),
+            'participant_position_abbreviation': primary_position.get('abbreviation'),
+            'participant_position_type': primary_position.get('type'),
             'from_team_id': self._transaction_team_id(
                 transaction,
                 'fromTeam',
@@ -509,6 +516,19 @@ class MLBApiClient:
             return None
         people = data.get('people', [])
         return people[0] if people else None
+
+    def get_people_info(self, player_ids):
+        """Batch person metadata by MLB id in one bounded source request."""
+        ids = sorted({int(value) for value in player_ids if value is not None})
+        if not ids:
+            return {}
+        data = self._get('/people', params={'personIds': ','.join(map(str, ids))})
+        people = (data or {}).get('people') or []
+        return {
+            int(person['id']): person
+            for person in people
+            if isinstance(person, dict) and person.get('id') is not None
+        }
 
     def get_pitching_stats(self, player_id, season=None, stat_type='season'):
         """
