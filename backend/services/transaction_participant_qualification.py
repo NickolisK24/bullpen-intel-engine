@@ -7,6 +7,8 @@ not contact MLB or infer role from missing Pitcher rows.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 
 ROLE_PITCHER = 'pitcher'
 ROLE_NON_PITCHER = 'non_pitcher'
@@ -21,6 +23,12 @@ PITCHER_POSITION_CODES = frozenset({'1'})
 PITCHER_POSITION_ABBREVIATIONS = frozenset({'P'})
 TWO_WAY_POSITION_CODES = frozenset({'Y'})
 TWO_WAY_POSITION_ABBREVIATIONS = frozenset({'TWP'})
+
+
+@dataclass(frozen=True)
+class TransactionParticipantQualificationBatch:
+    qualifications: dict
+    people_by_mlb_id: dict
 
 
 def _text(value):
@@ -106,8 +114,14 @@ def source_position(transaction):
     }
 
 
-def qualify_transactions(transactions, *, pitchers_by_mlb_id, client):
-    """Return one qualification per MLB id with at most one people lookup."""
+def qualify_transactions_with_people(transactions, *, pitchers_by_mlb_id, client):
+    """Return qualifications and reusable MLB person authority in one batch.
+
+    Missing canonical identities whose structured transaction evidence already
+    looks pitcher-relevant still enter the people lookup.  Canonical acquisition
+    requires MLB person authority and must never rely on the transaction shape
+    alone.
+    """
     qualifications = {}
     lookup_ids = set()
     for transaction in transactions:
@@ -126,6 +140,8 @@ def qualify_transactions(transactions, *, pitchers_by_mlb_id, client):
         )
         if source['participant_role'] != ROLE_UNRESOLVED:
             qualifications[mlb_id] = source
+            if source['participant_role'] == ROLE_PITCHER:
+                lookup_ids.add(mlb_id)
         else:
             lookup_ids.add(mlb_id)
 
@@ -137,11 +153,36 @@ def qualify_transactions(transactions, *, pitchers_by_mlb_id, client):
             people = {}
     for mlb_id in lookup_ids:
         person = people.get(mlb_id) or people.get(str(mlb_id)) or {}
-        qualifications[mlb_id] = qualification_from_position(
+        person_qualification = qualification_from_position(
             person.get('primaryPosition') or {},
             authority=AUTHORITY_MLB_PEOPLE,
         )
-    return qualifications
+        if (
+            person_qualification['participant_role'] != ROLE_UNRESOLVED
+            or mlb_id not in qualifications
+        ):
+            qualifications[mlb_id] = person_qualification
+    people_by_mlb_id = {}
+    for raw_id, person in people.items():
+        try:
+            mlb_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if person:
+            people_by_mlb_id[mlb_id] = person
+    return TransactionParticipantQualificationBatch(
+        qualifications=qualifications,
+        people_by_mlb_id=people_by_mlb_id,
+    )
+
+
+def qualify_transactions(transactions, *, pitchers_by_mlb_id, client):
+    """Backward-compatible qualification-only wrapper."""
+    return qualify_transactions_with_people(
+        transactions,
+        pitchers_by_mlb_id=pitchers_by_mlb_id,
+        client=client,
+    ).qualifications
 
 
 def is_proven_non_pitcher(row):

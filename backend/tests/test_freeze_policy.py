@@ -630,6 +630,21 @@ def test_waiver_claim_authority_decision_pins_bounded_taxonomy():
     assert '`SC`, `SFA`, and uncertified `ASG` remain unresolved' in decision
 
 
+def test_canonical_transaction_pitcher_acquisition_pins_identity_boundary():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-canonical-transaction-pitcher-acquisition.md'
+    ).read_text(encoding='utf-8')
+    decision_flat = ' '.join(decision.split())
+
+    assert 'MLB person ID and the existing deduplicated MLB' in decision
+    assert '`/people` response explicitly proves pitcher or two-way' in decision
+    assert 'It carries no `team_id`' in decision
+    assert '`from_team_id` and `to_team_id` remain the only historical team authority' in decision_flat
+    assert 'one conflict-safe bulk insert' in decision
+    assert 'Acquisition supplies only canonical identity.' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (

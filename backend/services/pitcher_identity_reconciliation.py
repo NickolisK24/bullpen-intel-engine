@@ -256,7 +256,13 @@ def plan_identity(
 
 
 def minimal_identity_values(
-    *, player_mlb_id, line_name, line_position=None, position_override=False,
+    *,
+    player_mlb_id,
+    line_name,
+    line_position=None,
+    position_override=False,
+    source_authority=MINIMAL_IDENTITY_SOURCE,
+    roster_description=MINIMAL_IDENTITY_ROSTER_DESCRIPTION,
 ) -> dict:
     """The smallest identity that can own an appearance row.
 
@@ -271,7 +277,7 @@ def minimal_identity_values(
     make them look like a bullpen arm to every downstream eligibility read.
     """
     position = (line_position or '').strip().upper() or DEFAULT_PITCHER_POSITION
-    description = MINIMAL_IDENTITY_ROSTER_DESCRIPTION
+    description = roster_description
     if position_override:
         description = f'{description}{POSITION_OVERRIDE_SUFFIX}'
     return {
@@ -280,7 +286,7 @@ def minimal_identity_values(
         'position': DEFAULT_PITCHER_POSITION if position == 'PITCHER' else position,
         'active': False,
         'roster_status': STATUS_UNKNOWN,
-        'roster_status_source': MINIMAL_IDENTITY_SOURCE,
+        'roster_status_source': source_authority,
         'roster_status_raw_description': description,
     }
 
