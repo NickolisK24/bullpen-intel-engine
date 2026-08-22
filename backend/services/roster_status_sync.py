@@ -351,6 +351,34 @@ def _position_details(entry):
     }
 
 
+def _current_position_abbreviation(evidence):
+    """Return current roster position evidence suitable for ``Pitcher.position``.
+
+    The durable roster snapshot keeps MLB's code/name/type fields unchanged.
+    The legacy ``Pitcher.position`` cache, however, is consumed as an
+    abbreviation by bullpen eligibility, so only an explicit abbreviation is
+    applied.  Missing evidence preserves the prior value and therefore cannot
+    silently reclassify an unknown player out of publication-critical scope.
+    """
+    entry = _preferred_entry(evidence)
+    if not entry:
+        return None
+    position = entry.get('position') or {}
+    person = entry.get('person') or {}
+    primary = person.get('primaryPosition') or {}
+    value = position.get('abbreviation') or primary.get('abbreviation')
+    normalized = str(value or '').strip().upper()
+    return normalized[:10] or None
+
+
+def _apply_current_position_to_pitcher_cache(pitcher, evidence):
+    position = _current_position_abbreviation(evidence)
+    if position is None or pitcher.position == position:
+        return False
+    pitcher.position = position
+    return True
+
+
 def _bool_or_none(value):
     if isinstance(value, bool):
         return value
@@ -779,7 +807,14 @@ def sync_roster_statuses(
             reconciled_conflict_refs.append(pitcher.mlb_id)
 
             latest_snapshot = latest_roster_status_snapshot_for_pitcher(pitcher.id)
-            if latest_snapshot and _apply_snapshot_to_pitcher_cache(pitcher, latest_snapshot):
+            cache_changed = bool(
+                latest_snapshot
+                and _apply_snapshot_to_pitcher_cache(pitcher, latest_snapshot)
+            )
+            position_changed = _apply_current_position_to_pitcher_cache(
+                pitcher, evidence,
+            )
+            if cache_changed or position_changed:
                 changed += 1
             refreshed += 1
 

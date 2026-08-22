@@ -3446,6 +3446,61 @@ def _publication_critical_from_game_lane(
     )
 
 
+def _publication_critical_from_legacy_pull(
+    *, pull: dict, non_gamelog_critical_failed: int,
+) -> dict:
+    """Assemble the legacy lane's fail-closed completeness by item scope.
+
+    New producers expose non-budget failures split by criticality. The fallback
+    to the historical aggregate is intentionally strict so an older or malformed
+    producer can only over-withhold, never silently reclassify a failure.
+    """
+    split_failure_keys = (
+        'critical_non_budget_failed',
+        'unknown_non_budget_failed',
+        'best_effort_non_budget_failed',
+    )
+    has_scoped_failures = all(key in pull for key in split_failure_keys)
+    critical_unresolved = int(
+        pull.get('critical_non_budget_failed', 0)
+        if has_scoped_failures else pull.get('gamelog_non_budget_failed', 0)
+    )
+    unknown_unresolved = int(
+        pull.get('unknown_non_budget_failed', 0) if has_scoped_failures else 0
+    )
+    best_effort_unresolved = int(
+        pull.get('best_effort_non_budget_failed', 0) if has_scoped_failures else 0
+    )
+    critical_budget = int(pull.get('critical_budget_exhausted', 0))
+    unknown_budget = int(pull.get('unknown_budget_exhausted', 0))
+    best_effort_budget = int(pull.get('best_effort_budget_exhausted', 0))
+    critical_total = int(pull.get('publication_critical_total', 0))
+    best_effort_total = int(pull.get('best_effort_total', 0))
+
+    return publication_criticality.build_publication_critical_result(
+        critical_total=critical_total,
+        critical_completed=max(
+            critical_total
+            - critical_budget
+            - unknown_budget
+            - critical_unresolved
+            - unknown_unresolved,
+            0,
+        ),
+        critical_failed=critical_budget,
+        critical_unresolved=critical_unresolved,
+        unknown_criticality=unknown_budget + unknown_unresolved,
+        best_effort_total=best_effort_total,
+        best_effort_completed=max(
+            best_effort_total - best_effort_budget - best_effort_unresolved,
+            0,
+        ),
+        best_effort_deferred=best_effort_budget + best_effort_unresolved,
+        non_gamelog_critical_failed=non_gamelog_critical_failed,
+        authority_available=pull.get('criticality_authority_available', True),
+    )
+
+
 def _daily_sync_runtime_budget(run_started_monotonic: float) -> dict:
     stage_budget = _daily_sync_ingestion_budget_seconds()
     total_budget = _daily_sync_total_budget_seconds()
@@ -3712,10 +3767,10 @@ def sync_recent_logs(
 
     pitchers        = Pitcher.query.filter_by(active=True).all()
     # Publication-critical-first ordering (founder publication-critical contract):
-    # process current active-MLB-roster pitchers — a safe superset of the active
-    # bullpen, and the records required by the public trusted snapshot — before
-    # best-effort/historical corrections, so a runtime-budget shortfall can only
-    # DEFER best-effort work and can never starve publication-critical records.
+    # process current active-MLB-roster pitching candidates — a safe superset of
+    # the active bullpen and the records required by the public trusted snapshot
+    # — before best-effort/historical corrections, so a runtime-budget shortfall
+    # can only DEFER best-effort work and never starve publication-critical rows.
     # Criticality is read from each pitcher's already-synced canonical roster-status
     # code (in-memory, zero extra queries — it must not add pre-ingestion cost that
     # would worsen the very starvation this fixes). Unknown criticality is ordered
@@ -3728,7 +3783,9 @@ def sync_recent_logs(
     _criticality_by_id = {
         p.id: (
             publication_criticality.CRITICALITY_BEST_EFFORT if best_effort_only
-            else publication_criticality.criticality_for_roster_status(p.roster_status)
+            else publication_criticality.criticality_for_player(
+                p.roster_status, p.position,
+            )
         )
         for p in pitchers
     }
@@ -3806,6 +3863,20 @@ def sync_recent_logs(
     ledger_coverage_records = 0
     ledger_coverage_complete = 0
     ledger_coverage_incomplete = 0
+    non_budget_failed_by_criticality = {
+        publication_criticality.CRITICALITY_PUBLICATION_CRITICAL: 0,
+        publication_criticality.CRITICALITY_UNKNOWN: 0,
+        publication_criticality.CRITICALITY_BEST_EFFORT: 0,
+    }
+
+    def _count_non_budget_failure(criticality):
+        # A malformed classifier result must never become best-effort.
+        key = (
+            criticality
+            if criticality in non_budget_failed_by_criticality
+            else publication_criticality.CRITICALITY_UNKNOWN
+        )
+        non_budget_failed_by_criticality[key] += 1
 
     for index, pitcher in enumerate(pitchers):
         if (
@@ -3882,6 +3953,7 @@ def sync_recent_logs(
                            pitcher.full_name, pitcher.mlb_id, e)
             errors += 1
             records_failed += 1
+            _count_non_budget_failure(_criticality_by_id.get(pitcher.id))
             dead_letter.record_failure(
                 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
                 e,
@@ -3950,6 +4022,7 @@ def sync_recent_logs(
                     pitcher.full_name, pitcher.mlb_id, game_pk, e,
                 )
                 records_failed += 1
+                _count_non_budget_failure(_criticality_by_id.get(pitcher.id))
                 dead_letter.record_failure(
                     'game_log_record',
                     e,
@@ -3988,12 +4061,14 @@ def sync_recent_logs(
             elif result['status'] == 'unsafe':
                 records_failed += 1
                 correction_attempts_failed += 1
+                _count_non_budget_failure(_criticality_by_id.get(pitcher.id))
             elif result['status'] == 'unresolved_finality':
                 # Already dead-lettered inside the split ingester. Counted as a
                 # failed record so the run surfaces as partial — an appearance
                 # we could not prove final must never disappear silently.
                 records_failed += 1
                 unresolved_finality += 1
+                _count_non_budget_failure(_criticality_by_id.get(pitcher.id))
             elif result['status'] == 'skipped':
                 reason = result.get('reason')
                 if reason in skip_counts:
@@ -4044,6 +4119,9 @@ def sync_recent_logs(
     ):
         lane_health = 'all_window_splits_dropped'
         records_failed += 1
+        _count_non_budget_failure(
+            publication_criticality.CRITICALITY_PUBLICATION_CRITICAL
+        )
         logger.error(
             'Daily gameLog lane ingested nothing: %s split(s) in window, all '
             'dropped (not_completed=%s unresolved_finality=%s unsafe=%s). '
@@ -4104,16 +4182,25 @@ def sync_recent_logs(
         'lane_health':       lane_health,
         'budget_exhausted_pitchers': budget_exhausted_pitchers,
         # Publication-critical accounting (founder publication-critical contract).
-        # Non-budget lane failures (unresolved finality, unsafe corrections,
-        # malformed records, dead lane) are treated as publication-critical
-        # (fail closed): the aggregate is exposed so the completeness result is
-        # assembled by the one canonical helper in _complete_sync_phase.
+        # Non-budget item failures retain the affected player's criticality;
+        # lane-wide failures remain publication-critical. The historical total
+        # stays exposed for compatibility, while the scoped counters drive the
+        # completeness result in _complete_sync_phase.
         'publication_critical_total': _critical_total,
         'best_effort_total': _best_effort_total,
         'critical_budget_exhausted': critical_budget_exhausted,
         'unknown_budget_exhausted': unknown_budget_exhausted,
         'best_effort_budget_exhausted': best_effort_budget_exhausted,
         'gamelog_non_budget_failed': max(records_failed - budget_exhausted_pitchers, 0),
+        'critical_non_budget_failed': non_budget_failed_by_criticality[
+            publication_criticality.CRITICALITY_PUBLICATION_CRITICAL
+        ],
+        'unknown_non_budget_failed': non_budget_failed_by_criticality[
+            publication_criticality.CRITICALITY_UNKNOWN
+        ],
+        'best_effort_non_budget_failed': non_budget_failed_by_criticality[
+            publication_criticality.CRITICALITY_BEST_EFFORT
+        ],
         # The criticality classifier reads each pitcher's synced roster-status code
         # in-memory, so it is always available; individual unresolved roster codes
         # are counted as unknown-criticality (which fails closed) rather than as an
@@ -6611,27 +6698,10 @@ def run_daily_sync(
                     )
                 else:
                     publication_critical = (
-                        publication_criticality.build_publication_critical_result(
-                            critical_total=pull.get('publication_critical_total', 0),
-                            critical_completed=max(
-                                pull.get('publication_critical_total', 0)
-                                - pull.get('critical_budget_exhausted', 0)
-                                - pull.get('unknown_budget_exhausted', 0),
-                                0,
-                            ),
-                            critical_failed=pull.get('critical_budget_exhausted', 0),
-                            critical_unresolved=pull.get('gamelog_non_budget_failed', 0),
-                            unknown_criticality=pull.get('unknown_budget_exhausted', 0),
-                            best_effort_total=pull.get('best_effort_total', 0),
-                            best_effort_completed=max(
-                                pull.get('best_effort_total', 0)
-                                - pull.get('best_effort_budget_exhausted', 0),
-                                0,
-                            ),
-                            best_effort_deferred=pull.get('best_effort_budget_exhausted', 0),
-                            non_gamelog_critical_failed=non_gamelog_records_failed,
-                            authority_available=pull.get(
-                                'criticality_authority_available', True
+                        _publication_critical_from_legacy_pull(
+                            pull=pull,
+                            non_gamelog_critical_failed=(
+                                non_gamelog_records_failed
                             ),
                         )
                     )
