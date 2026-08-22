@@ -575,6 +575,19 @@ def test_recent_transactions_completeness_decision_pins_authority_boundary():
     assert 'Roster Context remains independently governed by `roster_authority_v1`' in decision
 
 
+def test_transaction_participant_qualification_decision_pins_fail_closed_boundary():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-transaction-participant-qualification.md'
+    ).read_text(encoding='utf-8')
+
+    assert '`primaryPosition`' in decision
+    assert 'Absence of a canonical `Pitcher` row never proves non-pitcher status.' in decision
+    assert 'Two-way evidence remains pitcher-relevant.' in decision
+    assert 'one deduplicated batch `/people` request' in decision
+    assert '`from_team_id` and `to_team_id` remain unchanged' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (

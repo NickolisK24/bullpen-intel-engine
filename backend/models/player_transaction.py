@@ -25,6 +25,11 @@ class PlayerTransaction(db.Model):
         'roster_snapshot_alignment',
         'alignment_reason_code',
         'explanatory_linkage_eligible',
+        'participant_role',
+        'participant_role_authority',
+        'participant_position_code',
+        'participant_position_abbreviation',
+        'participant_position_type',
         'source',
         'source_endpoint',
         'source_query_start_date',
@@ -52,6 +57,10 @@ class PlayerTransaction(db.Model):
             "'aligned', 'misaligned', 'unknown', 'no_snapshot', 'not_applicable')",
             name='ck_player_transactions_roster_alignment',
         ),
+        db.CheckConstraint(
+            "participant_role IN ('pitcher', 'non_pitcher', 'unresolved')",
+            name='ck_player_transactions_participant_role',
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -73,6 +82,11 @@ class PlayerTransaction(db.Model):
     roster_snapshot_alignment = db.Column(db.String(30), nullable=False, default='unknown')
     alignment_reason_code = db.Column(db.String(60))
     explanatory_linkage_eligible = db.Column(db.Boolean, nullable=False, default=False)
+    participant_role = db.Column(db.String(20), nullable=False, default='unresolved')
+    participant_role_authority = db.Column(db.String(60), nullable=False, default='unresolved')
+    participant_position_code = db.Column(db.String(10))
+    participant_position_abbreviation = db.Column(db.String(10))
+    participant_position_type = db.Column(db.String(40))
 
     source = db.Column(db.String(100), nullable=False)
     source_endpoint = db.Column(db.String(100), nullable=False)
@@ -112,6 +126,11 @@ class PlayerTransaction(db.Model):
             'roster_snapshot_alignment': self.roster_snapshot_alignment,
             'alignment_reason_code': self.alignment_reason_code,
             'explanatory_linkage_eligible': bool(self.explanatory_linkage_eligible),
+            'participant_role': self.participant_role,
+            'participant_role_authority': self.participant_role_authority,
+            'participant_position_code': self.participant_position_code,
+            'participant_position_abbreviation': self.participant_position_abbreviation,
+            'participant_position_type': self.participant_position_type,
             'source': self.source,
             'source_endpoint': self.source_endpoint,
             'source_query_start_date': _iso(self.source_query_start_date),

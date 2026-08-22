@@ -17,6 +17,7 @@ import yaml
 
 from services import game_driven_ingestion as lane
 from services import postgame_publication_incident_audit as audit
+from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -402,7 +403,7 @@ def test_126b_no_migration_was_added():
         if down:
             downs.add(down.group(1))
     heads = revisions - downs
-    assert heads == {'c7f1b408d93a'}, heads
+    assert heads == {EXPECTED_ALEMBIC_HEAD}, heads
 
     # And nothing in this package reaches for a schema change.
     for relative in (
