@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -186,6 +187,7 @@ def _team_state_sidecar(
     public_contract_version=PUBLIC_TEAM_STATE_CONTRACT,
     population_basis=None,
     trusted=True,
+    rested_arm_count=None,
 ):
     population_basis = population_basis or {
         'basis': 'status_only',
@@ -209,6 +211,44 @@ def _team_state_sidecar(
         source='test',
         published_at=published_at,
     ))
+    domains = {
+        'team_state': {
+            'method_version': method_version,
+            'contract_version': TEAM_STATE_METHOD_VERSION,
+            'public_contract_version': public_contract_version,
+            'population_basis': population_basis,
+            'trust_state': 'trusted',
+            'trust_data_state': 'current',
+            'freshness_state': 'current',
+            'trusted': trusted,
+        },
+    }
+    values = {
+        'team_state': {
+            'public_state': state,
+            'public_label': label,
+        },
+    }
+    if rested_arm_count is not None:
+        domains['rest_status'] = {
+            'method_version': delta_substrate.REST_STATUS_METHOD_VERSION,
+            'contract_version': delta_substrate.TEAM_BOARD_PACKAGE_CONTRACT,
+            'public_contract_version': delta_substrate.REST_STATUS_PUBLIC_CONTRACT_VERSION,
+            'population_basis': delta_substrate._canonical_rest_status_population_basis(),
+            'reference_date_policy': delta_substrate.REST_STATUS_REFERENCE_DATE_POLICY,
+            'availability_reference_date': (represented_date + timedelta(days=1)).isoformat(),
+            'source_authority': delta_substrate.FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+            'trusted': trusted,
+        }
+        values['rest_status'] = {
+            'available': True,
+            'active_arm_count': 8,
+            'rested_arm_count': rested_arm_count,
+            'worked_yesterday_count': 2,
+            'back_to_back_count': 1,
+            'summary': f'{rested_arm_count} rested options.',
+            'reason_code': None,
+        }
     row = DashboardSnapshot(
         snapshot_type=delta_substrate.SNAPSHOT_TYPE,
         status='ready',
@@ -232,24 +272,8 @@ def _team_state_sidecar(
                 'sync_run_id': artifact_id,
                 'subject_key': None,
             },
-            'domains': {
-                'team_state': {
-                    'method_version': method_version,
-                    'contract_version': TEAM_STATE_METHOD_VERSION,
-                    'public_contract_version': public_contract_version,
-                    'population_basis': population_basis,
-                    'trust_state': 'trusted',
-                    'trust_data_state': 'current',
-                    'freshness_state': 'current',
-                    'trusted': trusted,
-                },
-            },
-            'values': {
-                'team_state': {
-                    'public_state': state,
-                    'public_label': label,
-                },
-            },
+            'domains': domains,
+            'values': values,
         },
     )
     db.session.add(row)
@@ -275,6 +299,90 @@ def _change_ids(body, change_type=None):
 
 
 class TestTeamChangesEndpoint:
+    @pytest.mark.parametrize(('previous_count', 'current_count'), ((5, 7), (7, 5)))
+    def test_frozen_rested_options_change_is_a_meaningful_public_lane(
+        self, client, previous_count, current_count,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=481,
+                rested_arm_count=previous_count,
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=482,
+                rested_arm_count=current_count,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['team_state_change'] is None
+        assert body['rest_status_comparison'] == {
+            'status': 'changed',
+            'reason_code': None,
+            'from_represented_date': anchor.isoformat(),
+            'to_represented_date': current.isoformat(),
+            'limitation': None,
+        }
+        assert body['rest_status_change'] == {
+            'type': 'rest_status_change',
+            'field': 'rested_arm_count',
+            'label': 'Rested Options',
+            'from_value': previous_count,
+            'to_value': current_count,
+            'from_date': anchor.isoformat(),
+            'to_date': current.isoformat(),
+            'transition': f'{previous_count} → {current_count}',
+            'summary': (
+                f'Rested options moved from {previous_count} to {current_count}.'
+            ),
+        }
+
+    def test_unchanged_rested_options_remains_quiet(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=483,
+                rested_arm_count=5,
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=484,
+                rested_arm_count=5,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'no_changes'
+        assert body['rest_status_change'] is None
+        assert body['rest_status_comparison']['status'] == 'unchanged'
+
+    def test_rest_status_failure_does_not_suppress_team_state_change(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=485,
+                rested_arm_count=5,
+            )
+            row = _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=486,
+                rested_arm_count=7,
+            )
+            payload = deepcopy(row.payload)
+            payload['domains']['rest_status']['method_version'] = 'wrong-method'
+            row.payload = payload
+            db.session.commit()
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['team_state_change']['to_label'] == 'Vulnerable'
+        assert body['rest_status_change'] is None
+        assert body['rest_status_comparison']['status'] == 'unavailable'
+
     @pytest.mark.parametrize(
         ('from_state', 'from_label', 'to_state', 'to_label'),
         (

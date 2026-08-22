@@ -284,6 +284,17 @@ GAP30_TEAM_STATE_DELTA_PATHS = (
     'backend/services/team_changes.py',
 )
 
+# Gap #31, August 21 2026. What Changed may compare only the exact frozen
+# D-055 rested-arm count carried by compatible trusted publications. Newly
+# created sidecars retain that carrier directly; pre-activation natural
+# sidecars may read it from their immutable source package without mutation or
+# recomputation. Decision authority:
+# docs/decisions/2026-08-21-governed-rest-status-what-changed.md.
+GAP31_REST_STATUS_DELTA_PATHS = (
+    'backend/services/share_artifact_generation.py',
+    'backend/services/team_changes.py',
+)
+
 # Gap #51 Phase 1, August 20 2026. New immutable Team Board publications may
 # carry one dormant D-055 Rest Status object authored through the existing
 # semantic owner. Public readers remain on their pre-Phase-1 behavior until a

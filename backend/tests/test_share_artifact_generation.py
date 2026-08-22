@@ -244,6 +244,30 @@ def test_delta_sidecar_capture_is_prospective_and_never_backfills_reuse(app, mon
     assert captured[0]['readiness'] == _readiness()
 
 
+def test_generation_threads_frozen_rest_status_capture_to_new_sidecar(app, monkeypatch):
+    _eligible_env(monkeypatch)
+    snapshot = source_module.get_latest_dashboard_snapshot()
+    captured = []
+    frozen = {'capture_identity': 'frozen_d055_carrier'}
+    monkeypatch.setattr(
+        gen_module,
+        'try_build_rest_status_capture',
+        lambda **_kwargs: frozen,
+    )
+    monkeypatch.setattr(
+        gen_module,
+        'try_stamp_prospective_snapshot',
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    result = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_readiness()), snapshot=snapshot,
+    )
+
+    assert result.created_new is True
+    assert captured[0]['rest_status_capture'] is frozen
+
+
 def test_generation_threads_same_cycle_arm_read_capture_to_new_sidecar(app, monkeypatch):
     _eligible_env(monkeypatch)
     captured = []

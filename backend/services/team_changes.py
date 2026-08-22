@@ -29,6 +29,9 @@ TEAM_STATE_UNAVAILABLE = 'unavailable'
 TEAM_STATE_UNAVAILABLE_LIMITATION = (
     'Team State comparison is unavailable for this publication window.'
 )
+REST_STATUS_UNAVAILABLE_LIMITATION = (
+    'Rest Status comparison is unavailable for this publication window.'
+)
 
 STATUS_ORDER = {status: index for index, status in enumerate(BOARD_GROUP_ORDER)}
 
@@ -115,6 +118,14 @@ def _base_payload(team, freshness=None, generated_at=None):
             'from_represented_date': None,
             'to_represented_date': None,
             'limitation': TEAM_STATE_UNAVAILABLE_LIMITATION,
+        },
+        'rest_status_change': None,
+        'rest_status_comparison': {
+            'status': TEAM_STATE_UNAVAILABLE,
+            'reason_code': 'current_missing',
+            'from_represented_date': None,
+            'to_represented_date': None,
+            'limitation': REST_STATUS_UNAVAILABLE_LIMITATION,
         },
         'limitations': [],
         'freshness': freshness or {},
@@ -367,8 +378,8 @@ def _appearance_changes(team_id, anchor_date, current_date, pitcher_ids):
     return changes
 
 
-def _team_state_lane(team_id):
-    frozen = resolve_latest_team_state_comparison(team_id=team_id)
+def _team_state_lane(team_id, frozen=None):
+    frozen = frozen or resolve_latest_team_state_comparison(team_id=team_id)
     window = frozen.get('comparison') or {}
     domain = (frozen.get('domains') or {}).get('team_state') or {}
     status = domain.get('status')
@@ -415,13 +426,62 @@ def _team_state_lane(team_id):
     }
 
 
+def _rest_status_lane(frozen):
+    window = frozen.get('comparison') or {}
+    domain = (frozen.get('domains') or {}).get('rest_status') or {}
+    status = domain.get('status')
+    comparison = {
+        'status': TEAM_STATE_UNAVAILABLE,
+        'reason_code': domain.get('reason_code') or status,
+        'from_represented_date': window.get('from_represented_date'),
+        'to_represented_date': window.get('to_represented_date'),
+        'limitation': REST_STATUS_UNAVAILABLE_LIMITATION,
+    }
+    if status != DELTA_COMPARABLE:
+        return comparison, None
+
+    previous = domain.get('previous') or {}
+    current = domain.get('current') or {}
+    previous_count = previous.get('rested_arm_count')
+    current_count = current.get('rested_arm_count')
+    if previous_count == current_count:
+        comparison.update({
+            'status': TEAM_STATE_UNCHANGED,
+            'reason_code': None,
+            'limitation': None,
+        })
+        return comparison, None
+
+    comparison.update({
+        'status': TEAM_STATE_CHANGED,
+        'reason_code': None,
+        'limitation': None,
+    })
+    return comparison, {
+        'type': 'rest_status_change',
+        'field': 'rested_arm_count',
+        'label': 'Rested Options',
+        'from_value': previous_count,
+        'to_value': current_count,
+        'from_date': window.get('from_represented_date'),
+        'to_date': window.get('to_represented_date'),
+        'transition': f'{previous_count} → {current_count}',
+        'summary': (
+            f'Rested options moved from {previous_count} to {current_count}.'
+        ),
+    }
+
+
 def _apply_terminal_state(payload, state, reason_codes, limitations):
     team_state_change = payload.get('team_state_change')
-    if team_state_change:
+    rest_status_change = payload.get('rest_status_change')
+    if team_state_change or rest_status_change:
         payload.update({
             'state': STATE_CHANGES,
             'state_reason_codes': _merge_unique(
-                ['meaningful_changes_detected', 'team_state_change_detected'],
+                ['meaningful_changes_detected'],
+                ['team_state_change_detected'] if team_state_change else [],
+                ['rest_status_change_detected'] if rest_status_change else [],
                 reason_codes,
             ),
             'limitations': limitations,
@@ -445,10 +505,16 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
-    team_state_comparison, team_state_change = _team_state_lane(team_id)
+    frozen = resolve_latest_team_state_comparison(team_id=team_id)
+    team_state_comparison, team_state_change = _team_state_lane(
+        team_id, frozen=frozen,
+    )
+    rest_status_comparison, rest_status_change = _rest_status_lane(frozen)
     payload.update({
         'team_state_comparison': team_state_comparison,
         'team_state_change': team_state_change,
+        'rest_status_comparison': rest_status_comparison,
+        'rest_status_change': rest_status_change,
     })
 
     # Resolve the team's data-derived game dates up front and publish the current
@@ -539,11 +605,12 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         ),
     })
 
-    if pitcher_changes or team_summary or team_state_change:
+    if pitcher_changes or team_summary or team_state_change or rest_status_change:
         payload['state'] = STATE_CHANGES
         payload['state_reason_codes'] = _merge_unique(
             ['meaningful_changes_detected'],
             ['team_state_change_detected'] if team_state_change else [],
+            ['rest_status_change_detected'] if rest_status_change else [],
             team_reason_codes,
         )
     else:
