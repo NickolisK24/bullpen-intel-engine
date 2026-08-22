@@ -176,6 +176,49 @@ def test_event_team_comes_from_stored_transaction_not_current_pitcher_assignment
     assert current['events'] == []
 
 
+def test_reference_date_bounds_public_chronology_without_rewriting_source_window(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700012, name='Reference Date Arm')
+        _transaction(
+            pitcher,
+            transaction_id='represented-date',
+            transaction_date=date(2026, 8, 17),
+        )
+        _transaction(
+            pitcher,
+            transaction_id='future-to-board',
+            transaction_date=date(2026, 8, 18),
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(
+            113,
+            reference_date=date(2026, 8, 17),
+        )
+
+    assert [event['event_id'] for event in payload['events']] == ['represented-date']
+    assert payload['window_start_date'] == '2026-08-11'
+    assert payload['window_end_date'] == '2026-08-17'
+    assert payload['represented_date'] == '2026-08-17'
+
+
+def test_reference_date_before_latest_source_window_fails_closed(app):
+    with app.app_context():
+        _window()
+        db.session.commit()
+
+        payload = build_public_recent_transactions(
+            113,
+            reference_date=date(2026, 8, 10),
+        )
+
+    assert payload['status'] == 'unavailable'
+    assert payload['events'] == []
+    assert payload['represented_date'] == '2026-08-10'
+    assert 'do not cover' in payload['limitations'][0]
+
+
 @pytest.mark.parametrize(
     ('category', 'description'),
     (
@@ -225,6 +268,20 @@ def test_unverified_identity_or_type_is_withheld_and_section_is_partial(app):
     assert [event['event_id'] for event in payload['events']] == ['verified']
     assert len(payload['limitations']) == 1
     assert 'withheld' in payload['limitations'][0]
+
+
+def test_partial_source_window_remains_partial_when_failed_row_cannot_be_team_scoped(app):
+    with app.app_context():
+        _window(status='partial')
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['status'] == 'partial'
+    assert payload['events'] == []
+    assert payload['limitations'] == [
+        'Some records from the latest transaction source window are unavailable.'
+    ]
 
 
 def test_successful_empty_window_is_distinct_from_missing_failed_and_stale_authority(app):

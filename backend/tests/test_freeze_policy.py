@@ -562,6 +562,19 @@ def test_rotation_impact_completeness_decision_pins_authority_boundary():
     assert 'They no longer force a partial section' in decision
 
 
+def test_recent_transactions_completeness_decision_pins_authority_boundary():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-recent-transactions-completeness.md'
+    ).read_text(encoding='utf-8')
+
+    assert 'bounded source interval `[D-7, D]`' in decision
+    assert '`from_team_id` and `to_team_id`' in decision
+    assert 'Mutable current pitcher assignment has no role' in decision
+    assert 'Partial remains the correct public state' in decision
+    assert 'Roster Context remains independently governed by `roster_authority_v1`' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (
