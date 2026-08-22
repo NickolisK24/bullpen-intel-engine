@@ -11,14 +11,19 @@ never modified or backfilled.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 import logging
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, Mapping
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
+from services.bullpen_board import (
+    REST_STATUS_METHOD_VERSION,
+    REST_STATUS_PUBLIC_CONTRACT_VERSION,
+    is_valid_rest_status_carrier,
+)
 from services.pitcher_public_labels import (
     ARM_READ_METHOD_VERSION,
     ARM_READ_PUBLIC_CONTRACT_VERSION,
@@ -49,6 +54,10 @@ from services.public_serving_authority import (
     BULLPEN_MEMBERSHIP_POPULATION_BASIS,
     BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
     BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+    REST_STATUS_MEMBERSHIP_AUTHORITY,
+    REST_STATUS_POPULATION_AUTHORITY,
+    REST_STATUS_POPULATION_BASIS,
+    REST_STATUS_REFERENCE_DATE_POLICY,
     TEAM_BOARD_PACKAGE_CONTRACT,
 )
 from services.rotation_support_pressure import (
@@ -104,7 +113,7 @@ DOMAIN_READINESS = MappingProxyType({
     'team_state': READINESS_COMPARABLE_WHEN_STAMPED,
     'active_arm_count': READINESS_COMPARABLE_WHEN_STAMPED,
     'arm_read': READINESS_COMPARABLE_WHEN_STAMPED,
-    'rest_status': READINESS_NOT_YET_COMPARABLE,
+    'rest_status': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_7d': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_14d': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_concentration': READINESS_NOT_YET_COMPARABLE,
@@ -132,6 +141,14 @@ def _canonical_membership_population_basis():
         'population_authority': BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
         'membership_authority': BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
         'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+    }
+
+
+def _canonical_rest_status_population_basis():
+    return {
+        'basis': REST_STATUS_POPULATION_BASIS,
+        'population_authority': REST_STATUS_POPULATION_AUTHORITY,
+        'membership_authority': REST_STATUS_MEMBERSHIP_AUTHORITY,
     }
 
 
@@ -661,10 +678,73 @@ def try_build_bullpen_membership_capture(*, snapshot, team_id) -> dict | None:
         return None
 
 
+def build_rest_status_capture(*, snapshot, team_id) -> dict | None:
+    """Copy one frozen D-055 carrier without recalculating historical rest."""
+    package, team = _trusted_team_package(snapshot, team_id, domain='rest_status')
+    if 'rest_status' not in team:
+        return None
+    value = team.get('rest_status')
+    authority = _mapping(team.get('rest_status_authority'))
+    represented_date = _iso(getattr(snapshot, 'data_through', None))
+    reference_date = _iso(getattr(snapshot, 'availability_reference_date', None))
+    if (
+        getattr(snapshot, 'status', None) != 'ready'
+        or getattr(snapshot, 'is_published', False) is not True
+        or getattr(snapshot, 'published_at', None) is None
+        or not is_valid_rest_status_carrier(value)
+    ):
+        raise DeltaStampError('rest_status_value_unproven')
+    represented = _as_date(represented_date)
+    reference = _as_date(reference_date)
+    if represented is None or reference != represented + timedelta(days=1):
+        raise DeltaStampError('rest_status_reference_date_unproven')
+    if package.get('availability_reference_date') != reference_date:
+        raise DeltaStampError('rest_status_reference_date_unproven')
+    if (
+        authority.get('method_version') != REST_STATUS_METHOD_VERSION
+        or authority.get('public_contract_version')
+        != REST_STATUS_PUBLIC_CONTRACT_VERSION
+        or authority.get('team_board_package_contract')
+        != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('population_basis')
+        != _canonical_rest_status_population_basis()
+        or authority.get('reference_date_policy')
+        != REST_STATUS_REFERENCE_DATE_POLICY
+        or authority.get('availability_reference_date') != reference_date
+    ):
+        raise DeltaStampError('rest_status_authority_unproven')
+    return {
+        'team_id': int(team_id),
+        'represented_date': represented_date,
+        'availability_reference_date': reference_date,
+        'method_version': authority.get('method_version'),
+        'public_contract_version': authority.get('public_contract_version'),
+        'contract_version': authority.get('team_board_package_contract'),
+        'population_basis': deepcopy(dict(authority.get('population_basis'))),
+        'reference_date_policy': authority.get('reference_date_policy'),
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+        'value': deepcopy(dict(value)),
+    }
+
+
+def try_build_rest_status_capture(*, snapshot, team_id) -> dict | None:
+    try:
+        return build_rest_status_capture(snapshot=snapshot, team_id=team_id)
+    except Exception as exc:  # noqa: BLE001 - optional prospective domain
+        logger.warning(
+            'Rest Status capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            team_id,
+            getattr(snapshot, 'id', None),
+            type(exc).__name__,
+        )
+        return None
+
+
 def build_prospective_envelope(
     *, source, readiness, artifact, arm_read_capture=None,
     workload_window_capture=None, rotation_impact_capture=None,
     bullpen_membership_capture=None, deployment_profile_capture=None,
+    rest_status_capture=None,
 ) -> dict:
     """Build metadata from the exact governed read frozen by ``artifact``.
 
@@ -907,13 +987,43 @@ def build_prospective_envelope(
         envelope['values']['deployment_profile'] = deepcopy(
             dict(_mapping(deployment_profile_capture.get('value')))
         )
+    rest_status_capture = _mapping(rest_status_capture)
+    if rest_status_capture:
+        if (
+            rest_status_capture.get('team_id') != envelope['team_id']
+            or rest_status_capture.get('represented_date')
+            != envelope['represented_date']
+        ):
+            raise DeltaStampError('rest_status_identity_mismatch')
+        envelope['domains']['rest_status'] = {
+            'method_version': rest_status_capture.get('method_version'),
+            'contract_version': rest_status_capture.get('contract_version'),
+            'public_contract_version': (
+                rest_status_capture.get('public_contract_version')
+            ),
+            'population_basis': deepcopy(
+                rest_status_capture.get('population_basis')
+            ),
+            'reference_date_policy': (
+                rest_status_capture.get('reference_date_policy')
+            ),
+            'availability_reference_date': (
+                rest_status_capture.get('availability_reference_date')
+            ),
+            'source_authority': rest_status_capture.get('source_authority'),
+            'trusted': trusted,
+        }
+        envelope['values']['rest_status'] = deepcopy(
+            dict(_mapping(rest_status_capture.get('value')))
+        )
     return envelope
 
 
 def stamp_prospective_snapshot(
     *, source, readiness, artifact, arm_read_capture=None,
     workload_window_capture=None, rotation_impact_capture=None,
-    bullpen_membership_capture=None, deployment_profile_capture=None, session=None,
+    bullpen_membership_capture=None, deployment_profile_capture=None,
+    rest_status_capture=None, session=None,
 ):
     """Stage one append-only sidecar for a newly published Team State artifact."""
     session = session or db.session
@@ -926,6 +1036,7 @@ def stamp_prospective_snapshot(
         rotation_impact_capture=rotation_impact_capture,
         bullpen_membership_capture=bullpen_membership_capture,
         deployment_profile_capture=deployment_profile_capture,
+        rest_status_capture=rest_status_capture,
     )
     represented_date = _as_date(envelope.get('represented_date'))
     source_key = f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}'
@@ -968,7 +1079,8 @@ def stamp_prospective_snapshot(
 def try_stamp_prospective_snapshot(
     *, source, readiness, artifact, arm_read_capture=None,
     workload_window_capture=None, rotation_impact_capture=None,
-    bullpen_membership_capture=None, deployment_profile_capture=None, session=None,
+    bullpen_membership_capture=None, deployment_profile_capture=None,
+    rest_status_capture=None, session=None,
 ):
     """Capture a sidecar without making Share Artifact publication depend on it.
 
@@ -989,6 +1101,7 @@ def try_stamp_prospective_snapshot(
                 rotation_impact_capture=rotation_impact_capture,
                 bullpen_membership_capture=bullpen_membership_capture,
                 deployment_profile_capture=deployment_profile_capture,
+                rest_status_capture=rest_status_capture,
                 session=session,
             )
     except Exception as exc:  # noqa: BLE001 - optional capture must not block publish
@@ -1636,6 +1749,65 @@ def _compatible_deployment_domain(previous, current):
     return base
 
 
+def _compatible_rest_status_domain(previous, current):
+    domain = 'rest_status'
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
+    if current is None:
+        return _withheld(domain, CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), domain)
+        or not _domain_metadata(_payload(current), domain)
+    ):
+        return _withheld(domain, DOMAIN_NOT_READY)
+    base = _compatible_domain(previous, current, domain, domain)
+    if base.get('status') != COMPARABLE:
+        return base
+    previous_metadata = _domain_metadata(_payload(previous), domain)
+    current_metadata = _domain_metadata(_payload(current), domain)
+    for metadata, snapshot in (
+        (previous_metadata, previous),
+        (current_metadata, current),
+    ):
+        if (
+            metadata.get('method_version') != REST_STATUS_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != REST_STATUS_PUBLIC_CONTRACT_VERSION
+            or metadata.get('reference_date_policy')
+            != REST_STATUS_REFERENCE_DATE_POLICY
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or dict(_mapping(metadata.get('population_basis')))
+            != _canonical_rest_status_population_basis()
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        represented_date = _as_date(_payload(snapshot).get('represented_date'))
+        reference_date = _as_date(metadata.get('availability_reference_date'))
+        if (
+            represented_date is None
+            or reference_date != represented_date + timedelta(days=1)
+        ):
+            return _withheld(domain, REPRESENTED_DATE_INVALID)
+    previous_value = base.get('previous')
+    current_value = base.get('current')
+    if (
+        not is_valid_rest_status_carrier(previous_value)
+        or not is_valid_rest_status_carrier(current_value)
+        or previous_value.get('available') is not True
+        or current_value.get('available') is not True
+        or type(previous_value.get('rested_arm_count')) is not int
+        or type(current_value.get('rested_arm_count')) is not int
+    ):
+        return _withheld(domain, VALUE_MISSING)
+    base['movement'] = (
+        previous_value.get('rested_arm_count')
+        != current_value.get('rested_arm_count')
+    )
+    base['changed_fields'] = ['rested_arm_count'] if base['movement'] else []
+    return base
+
+
 def compare_snapshots(previous, current) -> dict:
     """Return raw values only for domains whose compatibility is proven."""
     previous_payload = _payload(previous)
@@ -1648,6 +1820,7 @@ def compare_snapshots(previous, current) -> dict:
             previous, current, 'active_arm_count', 'active_arm_count'
         ),
         'arm_read': _compatible_arm_read_domain(previous, current),
+        'rest_status': _compatible_rest_status_domain(previous, current),
         'workload_7d': _compatible_workload_domain(
             previous, current, window_days=7
         ),
@@ -1680,6 +1853,64 @@ def compare_snapshots(previous, current) -> dict:
         },
         'domains': domains,
     }
+
+
+def _project_frozen_rest_status(sidecars, *, team_id, session):
+    """Read legacy D-055 carriers from their immutable source snapshots.
+
+    This is a read-only bridge for natural publications created after the D-055
+    writer rollout but before Gap #31 sidecar stamping. It never recalculates,
+    writes, or backfills a historical package.
+    """
+    source_ids = {
+        _mapping(_payload(sidecar).get('source')).get('snapshot_id')
+        for sidecar in sidecars
+        if not _domain_metadata(_payload(sidecar), 'rest_status')
+        and _mapping(_payload(sidecar).get('source')).get('snapshot_authority')
+        == 'dashboard_snapshot'
+    }
+    source_ids.discard(None)
+    if not source_ids:
+        return list(sidecars)
+    source_snapshots = {
+        snapshot.id: snapshot
+        for snapshot in (
+            session.query(DashboardSnapshot)
+            .filter(DashboardSnapshot.id.in_(source_ids))
+            .all()
+        )
+    }
+    projected = []
+    for sidecar in sidecars:
+        payload = deepcopy(dict(_payload(sidecar)))
+        if not _domain_metadata(payload, 'rest_status'):
+            source_id = _mapping(payload.get('source')).get('snapshot_id')
+            capture = try_build_rest_status_capture(
+                snapshot=source_snapshots.get(source_id),
+                team_id=team_id,
+            )
+            if capture:
+                payload.setdefault('domains', {})['rest_status'] = {
+                    'method_version': capture.get('method_version'),
+                    'contract_version': capture.get('contract_version'),
+                    'public_contract_version': capture.get('public_contract_version'),
+                    'population_basis': deepcopy(capture.get('population_basis')),
+                    'reference_date_policy': capture.get('reference_date_policy'),
+                    'availability_reference_date': (
+                        capture.get('availability_reference_date')
+                    ),
+                    'source_authority': capture.get('source_authority'),
+                    'trusted': True,
+                }
+                payload.setdefault('values', {})['rest_status'] = deepcopy(
+                    capture.get('value')
+                )
+        projected.append(SimpleNamespace(
+            id=sidecar.id,
+            payload=payload,
+            data_through=sidecar.data_through,
+        ))
+    return projected
 
 
 def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
@@ -1730,6 +1961,11 @@ def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
         if _mapping(_payload(snapshot).get('source')).get('artifact_id')
         in active_artifact_ids
     ]
+    active_snapshots = _project_frozen_rest_status(
+        active_snapshots,
+        team_id=int(team_id),
+        session=session,
+    )
     current = next((
         snapshot
         for snapshot in active_snapshots

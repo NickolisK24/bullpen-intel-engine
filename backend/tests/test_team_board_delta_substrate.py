@@ -168,6 +168,7 @@ def _snapshot(
     workload_capture=None,
     rotation_capture=None,
     membership_capture=None,
+    rest_status_capture=None,
 ):
     envelope = delta.build_prospective_envelope(
         source=_source(represented_date=represented_date, snapshot_id=100 + snapshot_id),
@@ -177,8 +178,32 @@ def _snapshot(
         workload_window_capture=workload_capture,
         rotation_impact_capture=rotation_capture,
         bullpen_membership_capture=membership_capture,
+        rest_status_capture=rest_status_capture,
     )
     return SimpleNamespace(id=snapshot_id, payload=envelope)
+
+
+def _rest_status_capture(represented_date, rested_arm_count=5):
+    return {
+        'team_id': TEAM_ID,
+        'represented_date': represented_date.isoformat(),
+        'availability_reference_date': (represented_date + timedelta(days=1)).isoformat(),
+        'method_version': delta.REST_STATUS_METHOD_VERSION,
+        'public_contract_version': delta.REST_STATUS_PUBLIC_CONTRACT_VERSION,
+        'contract_version': delta.TEAM_BOARD_PACKAGE_CONTRACT,
+        'population_basis': delta._canonical_rest_status_population_basis(),
+        'reference_date_policy': delta.REST_STATUS_REFERENCE_DATE_POLICY,
+        'source_authority': delta.FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+        'value': {
+            'available': True,
+            'active_arm_count': 8,
+            'rested_arm_count': rested_arm_count,
+            'worked_yesterday_count': 2,
+            'back_to_back_count': 1,
+            'summary': f'{rested_arm_count} rested options.',
+            'reason_code': None,
+        },
+    }
 
 
 def _workload_window(
@@ -452,6 +477,40 @@ def _rotation_membership_carrier_snapshot(represented_date):
         },
     })
     return snapshot
+
+
+def _rest_status_carrier_snapshot(represented_date, rested_arm_count=5):
+    reference_date = represented_date + timedelta(days=1)
+    value = _rest_status_capture(represented_date, rested_arm_count)['value']
+    return SimpleNamespace(
+        id=601,
+        status='ready',
+        is_published=True,
+        published_at=datetime.combine(represented_date, datetime.min.time()),
+        data_through=represented_date,
+        availability_reference_date=reference_date,
+        payload={
+            'trusted_team_boards': {
+                'contract': delta.TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': represented_date.isoformat(),
+                'availability_reference_date': reference_date.isoformat(),
+                'by_team_id': {
+                    str(TEAM_ID): {
+                        'team': {'team_id': TEAM_ID},
+                        'rest_status': value,
+                        'rest_status_authority': {
+                            'method_version': delta.REST_STATUS_METHOD_VERSION,
+                            'public_contract_version': delta.REST_STATUS_PUBLIC_CONTRACT_VERSION,
+                            'team_board_package_contract': delta.TEAM_BOARD_PACKAGE_CONTRACT,
+                            'population_basis': delta._canonical_rest_status_population_basis(),
+                            'reference_date_policy': delta.REST_STATUS_REFERENCE_DATE_POLICY,
+                            'availability_reference_date': reference_date.isoformat(),
+                        },
+                    },
+                },
+            },
+        },
+    )
 
 
 def test_prospective_envelope_uses_canonical_team_state_method_owner():
@@ -1060,6 +1119,31 @@ def test_workload_capture_copies_exact_same_cycle_carrier_without_calculation():
     assert capture['carrier_contract_version'] == (
         public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
     )
+
+
+def test_rest_status_capture_copies_exact_frozen_carrier_without_recalculation():
+    represented_date = date(2026, 8, 18)
+    snapshot = _rest_status_carrier_snapshot(represented_date, rested_arm_count=6)
+
+    capture = delta.build_rest_status_capture(snapshot=snapshot, team_id=TEAM_ID)
+
+    frozen = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)][
+        'rest_status'
+    ]
+    assert capture['value'] == frozen
+    assert capture['value'] is not frozen
+    assert capture['method_version'] == delta.REST_STATUS_METHOD_VERSION
+    assert capture['availability_reference_date'] == '2026-08-19'
+
+
+def test_rest_status_capture_fails_closed_for_wrong_authority():
+    snapshot = _rest_status_carrier_snapshot(date(2026, 8, 18))
+    snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)][
+        'rest_status_authority'
+    ]['public_contract_version'] = 'wrong-contract'
+
+    with pytest.raises(delta.DeltaStampError, match='rest_status_authority_unproven'):
+        delta.build_rest_status_capture(snapshot=snapshot, team_id=TEAM_ID)
 
 
 def test_rotation_and_membership_capture_copy_same_cycle_publication_values():
@@ -2014,7 +2098,7 @@ def test_latest_team_state_resolver_does_not_roll_back_a_withdrawn_current_date(
     assert result['comparison']['to_represented_date'] is None
 
 
-def test_latest_team_state_resolver_uses_two_bounded_selects_for_history_and_lifecycle(app):
+def test_latest_team_state_resolver_uses_one_bounded_source_select_for_legacy_rest(app):
     _persist_artifact(41, date(2026, 8, 17))
     _persist_artifact(42, date(2026, 8, 18))
     for represented_date, artifact_id in (
@@ -2042,7 +2126,85 @@ def test_latest_team_state_resolver_uses_two_bounded_selects_for_history_and_lif
         event.remove(db.engine, 'before_cursor_execute', capture)
 
     assert result['domains']['team_state']['status'] == delta.COMPARABLE
-    assert len(statements) == 2
+    assert len(statements) == 3
+    assert sum('FROM dashboard_snapshots' in statement for statement in statements) == 2
+
+
+@pytest.mark.parametrize(('previous_count', 'current_count'), ((5, 7), (7, 5)))
+def test_rest_status_compares_frozen_rested_options(previous_count, current_count):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        rest_status_capture=_rest_status_capture(previous_date, previous_count),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        rest_status_capture=_rest_status_capture(current_date, current_count),
+    )
+
+    result = delta.compare_snapshots(previous, current)['domains']['rest_status']
+
+    assert result['status'] == delta.COMPARABLE
+    assert result['movement'] is True
+    assert result['changed_fields'] == ['rested_arm_count']
+    assert result['previous']['rested_arm_count'] == previous_count
+    assert result['current']['rested_arm_count'] == current_count
+
+
+def test_rest_status_same_value_is_comparable_without_movement():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    result = delta.compare_snapshots(
+        _snapshot(previous_date, snapshot_id=1, rest_status_capture=_rest_status_capture(previous_date)),
+        _snapshot(current_date, snapshot_id=2, rest_status_capture=_rest_status_capture(current_date)),
+    )['domains']['rest_status']
+
+    assert result['status'] == delta.COMPARABLE
+    assert result['movement'] is False
+
+
+@pytest.mark.parametrize(
+    ('mutation', 'reason'),
+    (
+        (lambda payload: payload['domains']['rest_status'].__setitem__('method_version', 'wrong'), delta.METHOD_VERSION_MISMATCH),
+        (lambda payload: payload['domains']['rest_status'].__setitem__('population_basis', {'basis': 'wrong'}), delta.POPULATION_BASIS_MISSING),
+        (lambda payload: payload['domains']['rest_status'].__setitem__('trusted', False), delta.FRESHNESS_UNTRUSTED),
+        (lambda payload: payload['values'].__setitem__('rest_status', None), delta.VALUE_MISSING),
+    ),
+)
+def test_rest_status_comparison_fails_closed_for_incompatible_authority(mutation, reason):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(previous_date, snapshot_id=1, rest_status_capture=_rest_status_capture(previous_date))
+    current = _snapshot(current_date, snapshot_id=2, rest_status_capture=_rest_status_capture(current_date))
+    mutation(previous.payload)
+
+    result = delta.compare_snapshots(previous, current)['domains']['rest_status']
+
+    assert result['status'] == reason
+
+
+def test_governed_unavailable_rest_status_is_not_a_comparable_zero():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    capture = _rest_status_capture(previous_date)
+    capture['value'] = {
+        'available': False,
+        'active_arm_count': None,
+        'rested_arm_count': None,
+        'worked_yesterday_count': None,
+        'back_to_back_count': None,
+        'summary': None,
+        'reason_code': 'roster_authority_unavailable',
+    }
+
+    result = delta.compare_snapshots(
+        _snapshot(previous_date, snapshot_id=1, rest_status_capture=capture),
+        _snapshot(current_date, snapshot_id=2, rest_status_capture=_rest_status_capture(current_date)),
+    )['domains']['rest_status']
+
+    assert result['status'] == delta.VALUE_MISSING
 
 
 def test_team_state_comparison_requires_both_frozen_public_labels():
@@ -2067,6 +2229,8 @@ def test_comparison_source_contains_no_historical_recompute_path():
         'recalculate_all_fatigue',
         'author_workload_windows',
         'build_public_team_relief_work_payload',
+        'author_rest_status',
+        'build_rest_status(',
         'GameLog.query',
     ):
         assert forbidden not in source

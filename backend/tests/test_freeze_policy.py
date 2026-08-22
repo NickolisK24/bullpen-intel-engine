@@ -403,6 +403,42 @@ def test_gap30_exception_is_exact_and_decision_linked():
     assert 'No classifier is rerun' in decision
 
 
+def test_gap31_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.GAP31_REST_STATUS_DELTA_PATHS
+    assert approved == (
+        'backend/services/share_artifact_generation.py',
+        'backend/services/team_changes.py',
+    )
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_changes.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifact_generation.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/what_changed_since_yesterday.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == ['backend/services/what_changed_since_yesterday.py']
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifacts.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/share_artifacts.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-21-governed-rest-status-what-changed.md'
+    ).read_text(encoding='utf-8')
+    for exact_path in approved:
+        assert f'`{exact_path}`' in decision
+    assert 'No historical Rest Status is recalculated or backfilled.' in decision
+
+
 def test_gap51_phase1_exception_is_exact_and_decision_linked():
     approved = freeze_policy.GAP51_REST_STATUS_CARRIER_PATHS
     assert approved == ('backend/services/bullpen_board.py',)

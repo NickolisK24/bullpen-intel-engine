@@ -42,6 +42,21 @@ const changes = {
     status: 'changed',
     limitation: null,
   },
+  rest_status_change: {
+    type: 'rest_status_change',
+    field: 'rested_arm_count',
+    label: 'Rested Options',
+    from_value: 5,
+    to_value: 7,
+    from_date: '2026-08-16',
+    to_date: '2026-08-18',
+    transition: '5 → 7',
+    summary: 'Rested options moved from 5 to 7.',
+  },
+  rest_status_comparison: {
+    status: 'changed',
+    limitation: null,
+  },
   pitcher_changes: [
     {
       type: 'status_change',
@@ -69,14 +84,17 @@ test('supported change groups render in materiality order with governed endpoint
   const view = getWhatChangedView(changes)
   const html = render({ changes })
 
-  assert.deepEqual(view.groups.map(group => group.key), ['team-state', 'arm-read', 'appearance'])
-  assert.ok(html.indexOf('Team State') < html.indexOf('Arm Read movement'))
+  assert.deepEqual(view.groups.map(group => group.key), ['team-state', 'rest-status', 'arm-read', 'appearance'])
+  assert.ok(html.indexOf('Team State') < html.indexOf('Rested Options'))
+  assert.ok(html.indexOf('Rested Options') < html.indexOf('Arm Read movement'))
   assert.ok(html.indexOf('Arm Read movement') < html.indexOf('New appearance / workload'))
   assert.match(html, /date(?:T|t)ime="2026-08-17"/)
   assert.match(html, /date(?:T|t)ime="2026-08-18"/)
   assert.ok(html.includes('Monitor → Limited'))
   assert.ok(html.includes('Stretched → Vulnerable'))
   assert.ok(html.includes(changes.team_state_change.summary))
+  assert.ok(html.includes(changes.rest_status_change.transition))
+  assert.ok(html.includes(changes.rest_status_change.summary))
   assert.match(html, /date(?:T|t)ime="2026-08-16"/)
   assert.ok(html.includes(changes.pitcher_changes[0].summary))
   assert.ok(html.includes('0 pitches'))
@@ -86,6 +104,7 @@ test('unknown categories are omitted rather than converted into no-change rows',
   const unsupported = {
     ...changes,
     team_state_change: null,
+    rest_status_change: null,
     pitcher_changes: [{ type: 'roster_status', pitcher_name: 'Current Arm', current_status: 'Optioned' }],
   }
   const html = render({ changes: unsupported })
@@ -184,6 +203,24 @@ test('an unavailable Team State lane remains disclosed beside proven appearance 
   assert.equal(html.includes('No material changes were detected'), false)
 })
 
+test('an unavailable Rest Status lane prevents a false quiet claim and stays scoped', () => {
+  const limitation = 'Backend-authored Rest Status comparison limitation.'
+  const unavailable = {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: { status: 'unchanged', limitation: null },
+    rest_status_change: null,
+    rest_status_comparison: { status: 'unavailable', limitation },
+    pitcher_changes: [],
+  }
+  const html = render({ changes: unavailable })
+
+  assert.equal(html.includes('No material changes were detected'), false)
+  assert.ok(html.includes('Rest Status comparison unavailable'))
+  assert.ok(html.includes(limitation))
+})
+
 test('arm subjects reuse the existing pitcher handoff without making whole rows interactive', () => {
   const html = render({ changes, onSelectPitcher: () => {} })
 
@@ -200,6 +237,7 @@ test('the view model presents the public contract without client snapshot or cat
     'workload_7d', 'workload_14d', 'rotation_impact', 'role_movement',
     "'Fresh'", "'Stretched'", "'Vulnerable'", 'from_state ===', 'to_state ===',
     'contract_incompatible', 'method_version_mismatch', 'previous_missing',
+    'from_value -', 'to_value -',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }

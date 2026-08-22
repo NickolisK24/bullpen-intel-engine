@@ -45,6 +45,7 @@ from services.team_board_delta_substrate import (
     build_arm_read_capture,
     try_build_bullpen_membership_capture,
     try_build_deployment_profile_capture,
+    try_build_rest_status_capture,
     try_build_rotation_impact_capture,
     try_build_workload_window_capture,
     try_stamp_prospective_snapshot,
@@ -629,6 +630,10 @@ def generate_team_state_artifact(
                 snapshot=snapshot,
                 team_id=team_id,
             ) if snapshot is not None else None
+            rest_status_capture = try_build_rest_status_capture(
+                snapshot=snapshot,
+                team_id=team_id,
+            ) if snapshot is not None else None
             try_stamp_prospective_snapshot(
                 source=source,
                 readiness=readiness,
@@ -638,6 +643,7 @@ def generate_team_state_artifact(
                 rotation_impact_capture=rotation_impact_capture,
                 bullpen_membership_capture=bullpen_membership_capture,
                 deployment_profile_capture=deployment_profile_capture,
+                rest_status_capture=rest_status_capture,
                 session=session,
             )
         audit = _record_audit(

@@ -23,6 +23,21 @@ function teamStateRows(change) {
   }]
 }
 
+function restStatusRows(change) {
+  if (change?.type !== 'rest_status_change') return []
+  const transition = textValue(change.transition)
+  if (!transition) return []
+  return [{
+    key: 'rest-status-change',
+    transition,
+    summary: textValue(change.summary),
+    fromDate: textValue(change.from_date),
+    fromDateLabel: formatDateOnly(change.from_date, { month: 'short' }),
+    toDate: textValue(change.to_date),
+    toDateLabel: formatDateOnly(change.to_date, { month: 'short' }),
+  }]
+}
+
 function teamStateComparisonView(comparison) {
   const source = comparison && typeof comparison === 'object' ? comparison : {}
   return {
@@ -70,6 +85,7 @@ export function getWhatChangedView(payload) {
   const changes = Array.isArray(source.pitcher_changes) ? source.pitcher_changes : []
   const groups = [
     { key: 'team-state', label: 'Team State', rows: teamStateRows(source.team_state_change) },
+    { key: 'rest-status', label: 'Rested Options', rows: restStatusRows(source.rest_status_change) },
     { key: 'arm-read', label: 'Arm Read movement', rows: statusRows(changes) },
     { key: 'appearance', label: 'New appearance / workload', rows: appearanceRows(changes) },
   ].filter(group => group.rows.length > 0)
@@ -84,6 +100,7 @@ export function getWhatChangedView(payload) {
       toLabel: formatDateOnly(comparison.current_game_date, { month: 'short' }),
     },
     teamStateComparison: teamStateComparisonView(source.team_state_comparison),
+    restStatusComparison: teamStateComparisonView(source.rest_status_comparison),
     groups,
     limitations: Array.isArray(source.limitations)
       ? source.limitations.map(textValue).filter(Boolean)
