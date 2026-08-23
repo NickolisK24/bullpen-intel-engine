@@ -1,4 +1,8 @@
+from contextlib import nullcontext
+from types import SimpleNamespace
+
 from services import intraday_reconcile
+from services import intraday_repair
 from services.intraday_repair import build_roster_repair_scope
 
 
@@ -110,3 +114,124 @@ def test_failed_audit_blocks_all_writes():
     ))
     assert scope['status'] == 'blocked'
     assert scope['reason'] == 'audit_not_successful'
+
+
+def _fake_app():
+    return SimpleNamespace(app_context=lambda: nullcontext())
+
+
+def _wire_sync_metadata(monkeypatch):
+    guard = SimpleNamespace(release=lambda: None)
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata,
+        'acquire_sync_writer_guard',
+        lambda **_kwargs: guard,
+    )
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata, 'start_sync_run', lambda **_kwargs: 91
+    )
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata, 'set_sync_stage', lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata,
+        'finish_sync_run',
+        lambda sync_run_id, **_kwargs: SimpleNamespace(id=sync_run_id),
+    )
+    monkeypatch.setattr(intraday_repair.db.session, 'commit', lambda: None)
+    monkeypatch.setattr(intraday_repair.db.session, 'rollback', lambda: None)
+
+
+def test_transaction_repair_executes_before_no_change_exit(monkeypatch):
+    _wire_sync_metadata(monkeypatch)
+    calls = []
+
+    result = intraday_repair.run_intraday_roster_repair(
+        _fake_app(),
+        audit_runner=lambda **_kwargs: _audit(),
+        repair_transaction_roster_evidence=True,
+        transaction_roster_repair=lambda **_kwargs: calls.append('transaction') or {
+            'status': 'success',
+            'repair_candidates': 1,
+            'roster_gets_attempted': 4,
+            'transactions_corrected': 0,
+        },
+    )
+
+    assert calls == ['transaction']
+    assert result['status'] == 'success'
+    assert result['transaction_roster_repair']['repair_candidates'] == 1
+    assert result['dashboard_snapshot_id'] is None
+    assert 'no publishable intraday changes' in result['message']
+
+
+def test_disabled_transaction_repair_preserves_ordinary_no_change(monkeypatch):
+    called = []
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata,
+        'acquire_sync_writer_guard',
+        lambda **_kwargs: called.append('writer'),
+    )
+
+    result = intraday_repair.run_intraday_roster_repair(
+        _fake_app(),
+        audit_runner=lambda **_kwargs: _audit(),
+        repair_transaction_roster_evidence=False,
+        transaction_roster_repair=lambda **_kwargs: called.append('transaction'),
+    )
+
+    assert result['status'] == 'success'
+    assert result['transaction_roster_repair'] is None
+    assert called == []
+
+
+def test_transaction_correction_survives_roster_no_change_and_publishes(monkeypatch):
+    _wire_sync_metadata(monkeypatch)
+    calls = []
+
+    result = intraday_repair.run_intraday_roster_repair(
+        _fake_app(),
+        audit_runner=lambda **_kwargs: _audit(),
+        repair_transaction_roster_evidence=True,
+        transaction_roster_repair=lambda **_kwargs: calls.append('transaction') or {
+            'status': 'success',
+            'repair_candidates': 1,
+            'roster_gets_attempted': 4,
+            'transactions_corrected': 1,
+        },
+        identity_repair=lambda _findings: calls.append('identity'),
+        roster_sync=lambda **_kwargs: calls.append('roster'),
+        recent_log_sync=lambda **_kwargs: calls.append('logs') or {
+            'errors': 0, 'records_failed': 0, 'new_logs_added': 0,
+            'logs_corrected': 0,
+        },
+        fatigue_recalc=lambda **_kwargs: calls.append('fatigue') or 0,
+        today_builder=lambda *_args, **_kwargs: {'status': 'ok', 'snapshot_id': 1},
+        tonight_builder=lambda *_args, **_kwargs: {'status': 'ok', 'snapshot_id': 2},
+        complete_with_snapshot=lambda *_args, **_kwargs: (
+            SimpleNamespace(id=91), SimpleNamespace(id=92)
+        ),
+        publication_proof_builder=lambda *_args, **_kwargs: {'verified': True},
+    )
+
+    assert result['status'] == 'success'
+    assert result['dashboard_snapshot_id'] == 92
+    assert calls == ['transaction', 'logs', 'fatigue']
+
+
+def test_enabled_transaction_repair_failure_is_visible(monkeypatch):
+    _wire_sync_metadata(monkeypatch)
+    result = intraday_repair.run_intraday_roster_repair(
+        _fake_app(),
+        audit_runner=lambda **_kwargs: _audit(),
+        repair_transaction_roster_evidence=True,
+        transaction_roster_repair=lambda **_kwargs: {
+            'status': 'failed',
+            'fetch_failures': 4,
+            'transactions_corrected': 0,
+        },
+    )
+
+    assert result['status'] == 'failed'
+    assert result['transaction_roster_repair']['fetch_failures'] == 4
+    assert 'incomplete' in result['error']

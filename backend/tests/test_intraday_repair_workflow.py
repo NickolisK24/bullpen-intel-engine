@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from scripts.run_intraday_repair import _parse_args
+
 
 WORKFLOW = (
     Path(__file__).resolve().parents[2]
@@ -30,6 +32,7 @@ def test_intraday_repair_uses_fail_closed_command():
     assert 'python backend/scripts/run_intraday_repair.py' in text
     assert '--source github_actions_intraday' in text
     assert '--days-back 7' in text
+    assert text.count('--repair-transaction-roster-evidence') == 1
     assert 'exit "$exit_code"' in text
 
 
@@ -40,3 +43,11 @@ def test_intraday_repair_requires_production_secrets_and_timeout():
     assert 'ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}' in text
     assert 'INTRADAY_REPAIR_COMMAND_TIMEOUT: 20m' in text
     assert 'timeout --kill-after=30s' in text
+    assert 'timeout-minutes: 25' in text
+
+
+def test_intraday_repair_cli_flag_is_explicit_and_disabled_by_default():
+    assert _parse_args([]).repair_transaction_roster_evidence is False
+    assert _parse_args([
+        '--repair-transaction-roster-evidence'
+    ]).repair_transaction_roster_evidence is True

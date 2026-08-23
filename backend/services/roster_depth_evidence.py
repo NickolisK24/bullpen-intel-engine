@@ -603,6 +603,61 @@ def mark_player_transaction_correction_for_roster_depth(
     )
 
 
+def mark_player_transaction_corrections_for_roster_depth(
+    transaction_rows,
+    *,
+    sync_run_id=None,
+    reason_code=REASON_ROSTER_DEPTH_CORRECTED,
+    batch_size=100,
+) -> dict:
+    """Mark evidence for several corrected transactions with two bounded reads."""
+    transaction_ids = sorted({
+        int(row.id)
+        for row in transaction_rows or ()
+        if row is not None and getattr(row, 'id', None) is not None
+    })
+    if not transaction_ids:
+        return {'marked_count': 0, 'evidence_ids': []}
+    citation_rows = (
+        db.session.query(EvidenceCitation.evidence_object_id, EvidenceCitation.source_pk)
+        .join(EvidenceObject, EvidenceCitation.evidence_object_id == EvidenceObject.id)
+        .filter(EvidenceCitation.source_table == 'player_transactions')
+        .filter(EvidenceCitation.source_pk.in_([str(value) for value in transaction_ids]))
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        .order_by(EvidenceCitation.id.asc())
+        .limit(batch_size)
+        .all()
+    )
+    source_pk_by_evidence = {}
+    for evidence_id, source_pk in citation_rows:
+        source_pk_by_evidence.setdefault(evidence_id, source_pk)
+    if not source_pk_by_evidence:
+        return {'marked_count': 0, 'evidence_ids': []}
+
+    rows = (
+        db.session.query(EvidenceObject)
+        .filter(EvidenceObject.id.in_(sorted(source_pk_by_evidence)))
+        .order_by(EvidenceObject.id.asc())
+        .all()
+    )
+    now = datetime.utcnow()
+    for row in rows:
+        row.recompute_status = EvidenceObject.RECOMPUTE_NEEDED
+        row.recompute_reason_codes = list(dict.fromkeys(
+            list(row.recompute_reason_codes or []) + [reason_code]
+        ))
+        row.invalidated_at = now
+        row.invalidated_by_source_table = 'player_transactions'
+        row.invalidated_by_source_pk = source_pk_by_evidence[row.id]
+        row.last_corrected_at = now
+        row.correction_count = (row.correction_count or 0) + 1
+        row.correction_source = 'upstream_source_correction'
+        if sync_run_id is not None:
+            row.sync_run_id = sync_run_id
+    db.session.flush()
+    return {'marked_count': len(rows), 'evidence_ids': [row.id for row in rows]}
+
+
 def rebuild_marked_roster_depth_evidence(
     *,
     sync_run_id=None,

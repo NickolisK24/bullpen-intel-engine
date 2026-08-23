@@ -58,7 +58,8 @@ jobs:
           timeout --kill-after=30s "$INTRADAY_REPAIR_COMMAND_TIMEOUT" \
             python backend/scripts/run_intraday_repair.py \
               --source github_actions_intraday \
-              --days-back 7
+              --days-back 7 \
+              --repair-transaction-roster-evidence
           exit_code=$?
           set -e
 
