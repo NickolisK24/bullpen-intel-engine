@@ -9,6 +9,7 @@ import models.prospect  # noqa: F401
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
+from models.sync_run import SyncRun
 from services.intraday_transaction_roster_repair import (
     CORRECTION_SOURCE,
     repair_current_window_transaction_roster_evidence,
@@ -162,6 +163,14 @@ def test_current_window_missing_snapshot_is_selected_and_repaired(app):
         pitcher = _pitcher(team_id=999)
         _window()
         transaction = _transaction(pitcher)
+        sync_run = SyncRun(
+            job_name='intraday_repair',
+            status='running',
+            source='test',
+            started_at=datetime(2026, 8, 22, 13, 0, 0),
+        )
+        db.session.add(sync_run)
+        db.session.flush()
         client = FakeRosterClient(
             metadata=_metadata(143),
             rosters={(143, DAY.isoformat(), ROSTER_TYPE_ACTIVE): [_entry(pitcher.mlb_id)]},
@@ -170,7 +179,7 @@ def test_current_window_missing_snapshot_is_selected_and_repaired(app):
         result = repair_current_window_transaction_roster_evidence(
             client=client,
             timestamp=datetime(2026, 8, 22, 13, 0, 0),
-            sync_run_id=81,
+            sync_run_id=sync_run.id,
         )
         db.session.commit()
         db.session.refresh(transaction)
