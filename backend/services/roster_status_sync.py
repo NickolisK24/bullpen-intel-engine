@@ -67,6 +67,8 @@ _CACHE_FIELDS = (
     ('roster_status_raw_description', 'roster_status_raw_description'),
 )
 
+_EXISTING_SNAPSHOT_NOT_PROVIDED = object()
+
 
 def _status_from_dict(status):
     if not isinstance(status, dict):
@@ -307,6 +309,62 @@ def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYP
     return dict(index), errors
 
 
+def build_exact_date_team_roster_status_index(
+    team_id,
+    snapshot_date,
+    *,
+    client=None,
+    roster_types=ROSTER_TYPES,
+):
+    """Read official roster evidence for exactly one team and represented date.
+
+    This deliberately does not use :class:`RunRosterEvidence`: that cache owns
+    current-run roster views and has no represented-date key.  Callers must
+    deduplicate ``(team_id, snapshot_date)`` before invoking this function.
+    Every declared roster view must succeed or the result fails closed.
+    """
+    client = client or mlb_client
+    index = defaultdict(lambda: {
+        'player_id': None,
+        'roster_types': set(),
+        'raw_statuses': [],
+        'entries': {},
+    })
+    errors = []
+    represented_date = (
+        snapshot_date.isoformat()
+        if hasattr(snapshot_date, 'isoformat')
+        else str(snapshot_date)
+    )
+
+    for roster_type in roster_types:
+        try:
+            entries = client.get_team_roster(
+                team_id,
+                roster_type=roster_type,
+                date=represented_date,
+            )
+        except Exception as exc:  # noqa: BLE001 - fail closed for this team/date
+            errors.append({
+                'reason': 'fetch_failed',
+                'team_id': team_id,
+                'snapshot_date': represented_date,
+                'roster_type': roster_type,
+                'entity_type': ROSTER_STATUS_FETCH_ENTITY_TYPE,
+                'error': str(exc),
+            })
+            continue
+        for entry in entries or ():
+            error = _record_evidence(index, team_id, roster_type, entry)
+            if error:
+                error['snapshot_date'] = represented_date
+                errors.append(error)
+
+    if errors:
+        return {}, errors
+    return dict(index), []
+
+
 def _team_ids_to_sync(team_ids=None):
     if team_ids:
         return list(dict.fromkeys(team_ids))
@@ -477,16 +535,26 @@ def _record_roster_failure(detail, *, sync_run_id=None):
     return failure is not None
 
 
-def _upsert_roster_status_snapshot(values, *, sync_run_id=None, timestamp=None):
+def _upsert_roster_status_snapshot(
+    values,
+    *,
+    sync_run_id=None,
+    timestamp=None,
+    existing_snapshot=_EXISTING_SNAPSHOT_NOT_PROVIDED,
+    allow_correction=True,
+    flush=True,
+):
     timestamp = timestamp or utc_now_naive()
-    existing = (
-        RosterStatusSnapshot.query
-        .filter_by(
-            pitcher_id=values['pitcher_id'],
-            snapshot_date=values['snapshot_date'],
+    existing = existing_snapshot
+    if existing is _EXISTING_SNAPSHOT_NOT_PROVIDED:
+        existing = (
+            RosterStatusSnapshot.query
+            .filter_by(
+                pitcher_id=values['pitcher_id'],
+                snapshot_date=values['snapshot_date'],
+            )
+            .first()
         )
-        .first()
-    )
 
     if existing and existing.team_id != values['team_id']:
         failure = dead_letter.record_failure(
@@ -514,8 +582,12 @@ def _upsert_roster_status_snapshot(values, *, sync_run_id=None, timestamp=None):
             first_seen_at=timestamp,
         )
         db.session.add(snapshot)
-        db.session.flush()
+        if flush:
+            db.session.flush()
         return snapshot, 'created', False
+
+    if not allow_correction:
+        return existing, 'unchanged', False
 
     changed = False
     for field in _SNAPSHOT_FACT_FIELDS:
@@ -536,12 +608,99 @@ def _upsert_roster_status_snapshot(values, *, sync_run_id=None, timestamp=None):
             sync_run_id=sync_run_id,
         )
         db.session.add(existing)
-        db.session.flush()
+        if flush:
+            db.session.flush()
         return existing, 'corrected', False
 
     db.session.add(existing)
-    db.session.flush()
+    if flush:
+        db.session.flush()
     return existing, 'unchanged', False
+
+
+def persist_missing_exact_roster_status_snapshots(
+    candidates,
+    *,
+    timestamp=None,
+    sync_run_id=None,
+):
+    """Persist a bounded set of exact-date source facts without replaying history.
+
+    ``candidates`` must already be independently source-matched and contains
+    ``pitcher``, ``team_id``, ``snapshot_date``, and merged roster ``evidence``.
+    One SELECT prefetches existing snapshots. Existing same-team facts are
+    retained unchanged; an existing different-team fact uses the canonical
+    conflict/dead-letter path. New rows reuse the canonical roster classifier,
+    snapshot constructor, provenance writer, and one final flush.
+    """
+    timestamp = timestamp or utc_now_naive()
+    deduped = {}
+    for candidate in candidates or ():
+        pitcher = candidate.get('pitcher')
+        snapshot_date = candidate.get('snapshot_date')
+        team_id = candidate.get('team_id')
+        if pitcher is None or snapshot_date is None or team_id is None:
+            continue
+        deduped[(pitcher.id, snapshot_date)] = candidate
+
+    if not deduped:
+        return {
+            'created': 0,
+            'unchanged': 0,
+            'conflicts': 0,
+            'failure_records': 0,
+        }
+
+    pitcher_ids = {key[0] for key in deduped}
+    snapshot_dates = {key[1] for key in deduped}
+    existing_rows = (
+        RosterStatusSnapshot.query
+        .filter(RosterStatusSnapshot.pitcher_id.in_(pitcher_ids))
+        .filter(RosterStatusSnapshot.snapshot_date.in_(snapshot_dates))
+        .all()
+    )
+    existing_by_key = {
+        (row.pitcher_id, row.snapshot_date): row
+        for row in existing_rows
+    }
+    counts = Counter()
+    for key, candidate in sorted(
+        deduped.items(),
+        key=lambda item: (item[0][1], item[0][0]),
+    ):
+        pitcher = candidate['pitcher']
+        evidence = candidate['evidence']
+        classification = classify_roster_evidence(evidence)
+        values = _snapshot_values(
+            pitcher=pitcher,
+            team_id=candidate['team_id'],
+            snapshot_date=candidate['snapshot_date'],
+            classification=classification,
+            evidence=evidence,
+            timestamp=timestamp,
+            sync_run_id=sync_run_id,
+        )
+        snapshot, action, failure_recorded = _upsert_roster_status_snapshot(
+            values,
+            sync_run_id=sync_run_id,
+            timestamp=timestamp,
+            existing_snapshot=existing_by_key.get(key),
+            allow_correction=False,
+            flush=False,
+        )
+        if snapshot is not None:
+            existing_by_key[key] = snapshot
+        counts[action] += 1
+        if failure_recorded:
+            counts['failure_records'] += 1
+
+    db.session.flush()
+    return {
+        'created': counts.get('created', 0),
+        'unchanged': counts.get('unchanged', 0),
+        'conflicts': counts.get('conflict', 0),
+        'failure_records': counts.get('failure_records', 0),
+    }
 
 
 def _notify_roster_depth_evidence_snapshot_correction(snapshot_row, *, sync_run_id=None):

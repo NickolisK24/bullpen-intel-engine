@@ -22,6 +22,7 @@ from services.transaction_participant_qualification import (
     unresolved_qualification,
 )
 from services.transaction_rehab_assignment import classify_rehab_assignment
+from services.transaction_roster_evidence import acquire_transaction_roster_evidence
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -314,10 +315,6 @@ def sync_transactions(
         )
         if value is not None
     }
-    roster_snapshots_by_pair = _exact_roster_snapshots_by_pitcher_and_date(
-        pitcher_ids={pitcher.id for pitcher in pitchers_by_mlb_id.values()},
-        snapshot_dates=transaction_dates,
-    )
     team_metadata_by_season = {}
     metadata_reader = getattr(client, 'get_team_metadata', None)
     for season in sorted({value.year for value in transaction_dates}):
@@ -327,6 +324,24 @@ def sync_transactions(
             ) or {}
         except Exception:  # fail closed; missing metadata cannot certify a subtype
             team_metadata_by_season[season] = {}
+    roster_acquisition = acquire_transaction_roster_evidence(
+        transactions=transactions,
+        newly_resolved_mlb_ids=acquisition['candidate_ids'],
+        pitchers_by_mlb_id=pitchers_by_mlb_id,
+        team_metadata_by_season=team_metadata_by_season,
+        client=client,
+        timestamp=timestamp,
+        sync_run_id=sync_run_id,
+    )
+    counts.update({
+        f'exact_roster_{key}': value
+        for key, value in roster_acquisition.items()
+        if key != 'error_details'
+    })
+    roster_snapshots_by_pair = _exact_roster_snapshots_by_pitcher_and_date(
+        pitcher_ids={pitcher.id for pitcher in pitchers_by_mlb_id.values()},
+        snapshot_dates=transaction_dates,
+    )
     for transaction in transactions:
         if not isinstance(transaction, dict):
             detail = {
@@ -836,6 +851,36 @@ def _summary(start_date, end_date, counts, errors):
         'records_failed': counts.get('records_failed', 0),
         'errors': counts.get('errors', 0),
         'error_details': errors,
+        'exact_roster_newly_resolved_pitchers': counts.get(
+            'exact_roster_newly_resolved_pitchers', 0,
+        ),
+        'exact_roster_eligible_team_date_pairs': counts.get(
+            'exact_roster_eligible_team_date_pairs', 0,
+        ),
+        'exact_roster_requests': counts.get(
+            'exact_roster_requests', 0,
+        ),
+        'exact_roster_source_matches': counts.get(
+            'exact_roster_source_matches', 0,
+        ),
+        'exact_roster_source_omissions': counts.get(
+            'exact_roster_source_omissions', 0,
+        ),
+        'exact_roster_source_conflicts': counts.get(
+            'exact_roster_source_conflicts', 0,
+        ),
+        'exact_roster_fetch_failures': counts.get(
+            'exact_roster_fetch_failures', 0,
+        ),
+        'exact_roster_snapshots_created': counts.get(
+            'exact_roster_snapshots_created', 0,
+        ),
+        'exact_roster_snapshots_unchanged': counts.get(
+            'exact_roster_snapshots_unchanged', 0,
+        ),
+        'exact_roster_snapshot_conflicts': counts.get(
+            'exact_roster_snapshot_conflicts', 0,
+        ),
     }
 
 
