@@ -53,20 +53,20 @@ def _is_mlb_team(team_id, transaction_date, team_metadata_by_season):
     return _positive_int(team.get('sport_id')) == 1
 
 
-def acquire_transaction_roster_evidence(
+def acquire_exact_transaction_roster_evidence(
     *,
     transactions,
-    newly_resolved_mlb_ids,
+    eligible_mlb_ids,
     pitchers_by_mlb_id,
     team_metadata_by_season,
     client,
     timestamp,
     sync_run_id=None,
 ):
-    """Acquire exact-date endpoint evidence for newly resolved identities only."""
-    newly_resolved = {
+    """Acquire exact-date endpoint evidence for an explicitly bounded identity set."""
+    eligible = {
         value
-        for value in (_positive_int(raw) for raw in newly_resolved_mlb_ids or ())
+        for value in (_positive_int(raw) for raw in eligible_mlb_ids or ())
         if value is not None and value in (pitchers_by_mlb_id or {})
     }
     targets_by_pair = defaultdict(set)
@@ -76,7 +76,7 @@ def acquire_transaction_roster_evidence(
             continue
         mlb_id = _positive_int(transaction.get('player_mlb_id'))
         transaction_date = _coerce_date(transaction.get('transaction_date'))
-        if mlb_id not in newly_resolved or transaction_date is None:
+        if mlb_id not in eligible or transaction_date is None:
             continue
         endpoint_added = False
         for raw_team_id in (
@@ -152,7 +152,7 @@ def acquire_transaction_roster_evidence(
         sync_run_id=sync_run_id,
     )
     return {
-        'newly_resolved_pitchers': len(newly_resolved),
+        'eligible_pitchers': len(eligible),
         'eligible_team_date_pairs': len(targets_by_pair),
         'requests': len(targets_by_pair) * len(ROSTER_TYPES),
         'source_matches': source_match_count,
@@ -173,4 +173,33 @@ def acquire_transaction_roster_evidence(
     }
 
 
-__all__ = ['acquire_transaction_roster_evidence']
+def acquire_transaction_roster_evidence(
+    *,
+    transactions,
+    newly_resolved_mlb_ids,
+    pitchers_by_mlb_id,
+    team_metadata_by_season,
+    client,
+    timestamp,
+    sync_run_id=None,
+):
+    """Acquire exact-date endpoint evidence for newly resolved identities only."""
+    result = acquire_exact_transaction_roster_evidence(
+        transactions=transactions,
+        eligible_mlb_ids=newly_resolved_mlb_ids,
+        pitchers_by_mlb_id=pitchers_by_mlb_id,
+        team_metadata_by_season=team_metadata_by_season,
+        client=client,
+        timestamp=timestamp,
+        sync_run_id=sync_run_id,
+    )
+    return {
+        'newly_resolved_pitchers': result.pop('eligible_pitchers'),
+        **result,
+    }
+
+
+__all__ = [
+    'acquire_exact_transaction_roster_evidence',
+    'acquire_transaction_roster_evidence',
+]

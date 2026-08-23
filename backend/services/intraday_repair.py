@@ -91,12 +91,17 @@ def run_intraday_roster_repair(
     tonight_builder=None,
     today_builder=None,
     publication_proof_builder=None,
+    repair_transaction_roster_evidence=False,
+    transaction_roster_repair=None,
 ):
     from services import sync as sync_service
     from services.intraday_identity_repair import apply_intraday_identity_findings
     from services.roster_status_sync import sync_roster_statuses
     from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
     from services.intelligence_surface_snapshot import generate_snapshot_for_date
+    from services.intraday_transaction_roster_repair import (
+        repair_current_window_transaction_roster_evidence,
+    )
 
     audit_runner = audit_runner or intraday_reconcile.run_intraday_audit
     identity_repair = identity_repair or apply_intraday_identity_findings
@@ -107,6 +112,9 @@ def run_intraday_roster_repair(
     tonight_builder = tonight_builder or generate_tonight_snapshot_for_date
     today_builder = today_builder or generate_snapshot_for_date
     publication_proof_builder = publication_proof_builder or build_candidate_publication_proof
+    transaction_roster_repair = (
+        transaction_roster_repair or repair_current_window_transaction_roster_evidence
+    )
 
     started_at = datetime.now(timezone.utc)
     result = {
@@ -116,6 +124,7 @@ def run_intraday_roster_repair(
         'started_at': started_at.isoformat(),
         'audit': None,
         'repair_scope': None,
+        'transaction_roster_repair': None,
         'identity_repair': None,
         'roster_sync': None,
         'recent_logs': None,
@@ -131,11 +140,11 @@ def run_intraday_roster_repair(
         result['audit'] = audit
         scope = build_roster_repair_scope(audit)
         result['repair_scope'] = scope
-        if scope['status'] == 'no_change':
+        if scope['status'] == 'no_change' and not repair_transaction_roster_evidence:
             result['status'] = sync_metadata.STATUS_SUCCESS
             result['message'] = 'No governed intraday roster changes detected.'
             return result
-        if scope['status'] != 'ready':
+        if scope['status'] not in ('ready', 'no_change'):
             result['message'] = 'Intraday roster changes were withheld because not every finding was safe.'
             return result
 
@@ -150,16 +159,71 @@ def run_intraday_roster_repair(
                 job_name=JOB_INTRADAY_REPAIR,
             )
 
+            transaction_result = None
+            if repair_transaction_roster_evidence:
+                sync_metadata.set_sync_stage(
+                    sync_run_id, sync_metadata.STAGE_TRANSACTIONS
+                )
+                transaction_result = transaction_roster_repair(
+                    sync_run_id=sync_run_id,
+                )
+                result['transaction_roster_repair'] = transaction_result
+                if (transaction_result or {}).get('status') != 'success':
+                    raise RuntimeError(
+                        'Intraday transaction roster-evidence repair was incomplete.'
+                    )
+                db.session.commit()
+
+            transactions_corrected = int(
+                (transaction_result or {}).get('transactions_corrected') or 0
+            )
+            if scope['status'] == 'no_change' and transactions_corrected == 0:
+                run = sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=sync_metadata.STATUS_SUCCESS,
+                    records_processed=int(
+                        (transaction_result or {}).get('repair_candidates') or 0
+                    ),
+                    errors=0,
+                    api_calls_made=int(
+                        (transaction_result or {}).get('roster_gets_attempted') or 0
+                    ),
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    job_name=JOB_INTRADAY_REPAIR,
+                    stage=sync_metadata.STAGE_TRANSACTIONS,
+                )
+                result['status'] = sync_metadata.STATUS_SUCCESS
+                result['sync_run_id'] = getattr(run, 'id', sync_run_id)
+                result['message'] = (
+                    'Transaction roster-evidence repair executed; no publishable '
+                    'intraday changes were produced.'
+                )
+                return result
+
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
-            identity_result = identity_repair(scope['identity_findings'])
+            identity_result = (
+                identity_repair(scope['identity_findings'])
+                if scope['status'] == 'ready'
+                else {'created': 0, 'reassigned': 0}
+            )
             result['identity_repair'] = identity_result
 
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
-            roster_result = roster_sync(
-                team_ids=scope['affected_team_ids'],
-                commit=False,
-                sync_run_id=sync_run_id,
-                snapshot_date=product_current_date(),
+            roster_result = (
+                roster_sync(
+                    team_ids=scope['affected_team_ids'],
+                    commit=False,
+                    sync_run_id=sync_run_id,
+                    snapshot_date=product_current_date(),
+                )
+                if scope['status'] == 'ready'
+                else {
+                    'pitchers_refreshed': 0,
+                    'pitchers_changed': 0,
+                    'errors': 0,
+                    'records_failed': 0,
+                }
             )
             result['roster_sync'] = roster_result
             if int(roster_result.get('errors') or 0) or int(roster_result.get('records_failed') or 0):
@@ -202,12 +266,15 @@ def run_intraday_roster_repair(
                     + int(log_result.get('new_logs_added') or 0)
                     + int(log_result.get('logs_corrected') or 0)
                     + identity_changes
+                    + transactions_corrected
                 ),
                 records_failed=0,
                 new_logs_added=int(log_result.get('new_logs_added') or 0),
                 pitchers_updated=int(roster_result.get('pitchers_changed') or 0) + identity_changes,
                 errors=0,
-                api_calls_made=0,
+                api_calls_made=int(
+                    (transaction_result or {}).get('roster_gets_attempted') or 0
+                ),
                 retries_used=0,
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
@@ -223,7 +290,10 @@ def run_intraday_roster_repair(
 
             result['status'] = sync_metadata.STATUS_SUCCESS
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
-            result['message'] = 'Intraday roster and identity repair published successfully.'
+            result['message'] = (
+                'Intraday roster, identity, and transaction authority repair '
+                'published successfully.'
+            )
             return result
         except sync_metadata.SyncWriterConflict as exc:
             db.session.rollback()

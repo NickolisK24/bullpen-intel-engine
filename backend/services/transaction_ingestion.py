@@ -669,6 +669,80 @@ def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
     return existing, 'unchanged'
 
 
+def realign_stored_transactions_from_exact_roster(
+    transactions,
+    *,
+    pitchers_by_id,
+    roster_snapshots_by_pair,
+    sync_run_id=None,
+    timestamp=None,
+    correction_source='mlb_stats_api:intraday_transaction_roster_repair',
+):
+    """Re-evaluate stored transactions from one bounded exact-snapshot map.
+
+    The caller owns candidate selection and supplies a prefetched map keyed by
+    ``(pitcher_id, transaction_date)``. This helper changes only the three
+    roster-alignment facts; event, identity, participant, and historical-team
+    authority remain untouched. Corrections share the canonical transaction
+    provenance fields and are flushed once after the bounded batch.
+    """
+    timestamp = timestamp or utc_now_naive()
+    corrected = 0
+    unchanged = 0
+    still_blocked = 0
+    corrected_rows = []
+    for row in transactions or ():
+        snapshot = (roster_snapshots_by_pair or {}).get(
+            (row.pitcher_id, row.transaction_date)
+        )
+        alignment, reason = _alignment_for(
+            pitcher=(pitchers_by_id or {}).get(row.pitcher_id),
+            transaction_date=row.transaction_date,
+            normalized_category=row.normalized_category,
+            from_team_id=row.from_team_id,
+            to_team_id=row.to_team_id,
+            roster_snapshot=snapshot,
+        )
+        eligible = (
+            row.normalized_category != CATEGORY_UNKNOWN
+            and alignment == ALIGNMENT_ALIGNED
+        )
+        changed = (
+            row.roster_snapshot_alignment != alignment
+            or row.alignment_reason_code != reason
+            or bool(row.explanatory_linkage_eligible) != eligible
+        )
+        if changed:
+            row.roster_snapshot_alignment = alignment
+            row.alignment_reason_code = reason
+            row.explanatory_linkage_eligible = eligible
+            row.updated_at = timestamp
+            source_provenance.record_source_correction(
+                row,
+                correction_source=correction_source,
+                sync_run_id=sync_run_id,
+                corrected_at=timestamp,
+            )
+            db.session.add(row)
+            corrected += 1
+            corrected_rows.append(row)
+        else:
+            unchanged += 1
+        if alignment != ALIGNMENT_ALIGNED:
+            still_blocked += 1
+
+    db.session.flush()
+    _notify_roster_depth_evidence_transaction_corrections(
+        corrected_rows,
+        sync_run_id=sync_run_id,
+    )
+    return {
+        'corrected': corrected,
+        'unchanged': unchanged,
+        'still_blocked': still_blocked,
+    }
+
+
 def _notify_roster_depth_evidence_transaction_correction(transaction_row, *, sync_run_id=None):
     try:
         from services.roster_depth_evidence import (
@@ -682,6 +756,29 @@ def _notify_roster_depth_evidence_transaction_correction(transaction_row, *, syn
         logger.warning(
             'Could not mark roster depth evidence for transaction correction id=%s: %s',
             getattr(transaction_row, 'id', None),
+            exc,
+        )
+        return {'marked_count': 0, 'evidence_ids': []}
+
+
+def _notify_roster_depth_evidence_transaction_corrections(
+    transaction_rows,
+    *,
+    sync_run_id=None,
+):
+    try:
+        from services.roster_depth_evidence import (
+            mark_player_transaction_corrections_for_roster_depth,
+        )
+        return mark_player_transaction_corrections_for_roster_depth(
+            transaction_rows,
+            sync_run_id=sync_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - correction marking must not block sync
+        logger.warning(
+            'Could not batch-mark roster depth evidence for transaction '
+            'corrections count=%s: %s',
+            len(transaction_rows or ()),
             exc,
         )
         return {'marked_count': 0, 'evidence_ids': []}

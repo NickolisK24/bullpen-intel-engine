@@ -22,6 +22,14 @@ def _parse_args(argv=None):
     )
     parser.add_argument('--source', default='github_actions')
     parser.add_argument('--days-back', type=int, default=7)
+    parser.add_argument(
+        '--repair-transaction-roster-evidence',
+        action='store_true',
+        help=(
+            'Repair exact-date roster evidence only for eligible current-window '
+            'stored transactions.'
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -40,6 +48,9 @@ def main(argv=None):
         app,
         source=str(args.source or 'github_actions')[:30],
         days_back=max(int(args.days_back or 0), 1),
+        repair_transaction_roster_evidence=bool(
+            args.repair_transaction_roster_evidence
+        ),
     )
     print(json.dumps(result, sort_keys=True, default=str))
     return 0 if result.get('status') == sync_metadata.STATUS_SUCCESS else 1
