@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 3.9 (DEP-001 closeout). What it guards:
+Re-pinned to Version 5.0 (Team Board 2.0 reconciliation). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -19,21 +19,20 @@ Re-pinned to Version 3.9 (DEP-001 closeout). What it guards:
     banning the number document-wide, because 398 is a legitimate value
     elsewhere, including as VOC-001's own trusted snapshot.
 
-  * A closed issue is not production proof. CI-003 (#598) is the active
-    objective, and the Roadmap must keep saying that its issue is closed while
-    the evidence it requires is outstanding. Collapsing those two into
-    "complete" is the exact error this file exists to catch, in the same shape
-    as the PR #639 guard it replaces.
+  * A closed issue is not production proof. CI-003 (#598) remains complete only
+    because its recorded run, tree, deployment, and routed-page evidence exist.
 
-  * Order is the contract. A roadmap that quietly promotes Portable Intelligence
-    ahead of the reliability work is the reordering this pins against.
+  * Order and package state are contracts. PRE-02B is the bounded active
+    objective; blocked, deferred, and backlogged work may not silently advance.
+
+  * Team Board package status is explicit. A completed user-facing package may
+    not become future work, and a partial package may not be called complete.
 
   * An acceptance that expires must keep its date visible.
 
-Narrow on purpose. Phase structure, protected assets, risks, stop conditions,
-the founder operating system, and the Decision Ledger's contents are not
-snapshotted here — only that the ledger gained no ID from a reconciliation and
-that D-051 and D-052 still say what they said.
+Narrow on purpose. Protected assets, risks, stop conditions, and the founder
+operating system are not snapshotted here. D-051 and D-052 remain invariant,
+while D-057 is pinned only to its bounded transport/composition authority.
 """
 
 from pathlib import Path
@@ -44,9 +43,9 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '4.2'
-EXPECTED_EFFECTIVE_DATE = 'August 15, 2026'
-EXPECTED_MAIN = '66be1b57f2d523d643db82d605538771f656dfa9'
+EXPECTED_VERSION = '5.0'
+EXPECTED_EFFECTIVE_DATE = 'August 23, 2026'
+EXPECTED_MAIN = 'c63877a5b3d835b7190030d28ff143bedcafe099'
 
 # The gated generated-content publication commit and the scheduled run that
 # produced it. Version 3.9 asserted no such commit existed; that was true when
@@ -72,14 +71,31 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# The approved order now that VOC-001 and DEP-001 have closed. The packages that
-# finished were removed; nothing was reordered.
-APPROVED_ORDER = (
-    'Permanent daily-sync work reduction',
-    'Portable Intelligence',
-    'Resume M-001 and visible evidence',
-    'Daily Habit and Consequence',
+# Version 5.0's current execution sequence. State is part of the contract:
+# blocked, deferred, and backlogged work must not silently become active.
+APPROVED_EXECUTION = (
+    (1, 'ACTIVE', 'PRE-02B — Team Board read-path consolidation'),
+    (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
+    (3, 'DEFERRED', 'Portable Intelligence'),
+    (4, 'DEFERRED', 'Runtime work reduction and React Router migration'),
+    (5, 'BACKLOGGED', 'Additional Team Board depth'),
 )
+
+TEAM_BOARD_PACKAGE_STATUSES = {
+    'PRE-01': 'PARTIAL',
+    'PRE-02': 'PARTIAL',
+    'TB-01': 'COMPLETE',
+    'TB-02': 'COMPLETE',
+    'TB-03': 'COMPLETE',
+    'TB-04': 'COMPLETE',
+    'TB-05': 'PARTIAL',
+    'TB-06': 'COMPLETE',
+    'TB-07': 'COMPLETE',
+    'TB-08': 'PARTIAL',
+    'TB-09': 'COMPLETE',
+    'TB-10': 'COMPLETE',
+    'TB-11': 'COMPLETE',
+}
 
 # Completed packages must not reappear as ordered future work.
 COMPLETED_PACKAGES = ('VOC-001', '#638', '#601', 'DEP-001', 'CI-003', '#598')
@@ -141,23 +157,46 @@ def _ledger_row(text, decision_id):
     return rows[0]
 
 
-def _next_approved_work_order(text):
-    """Return the work packages of the Next Approved Work table, in order."""
+def _next_approved_execution(text):
+    """Return rank, state, and package from the Next Approved Work table."""
     body = _section(text, '6. Next Approved Work')
-    packages = []
+    execution = []
     for line in body.splitlines():
         line = line.strip()
-        match = re.match(r'^\|\s*(\d+)\s*\|([^|]+)\|', line)
+        match = re.match(
+            r'^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|',
+            line,
+        )
         if match:
-            packages.append((int(match.group(1)), match.group(2).strip()))
-    assert packages, 'no ordered work packages found'
-    assert [rank for rank, _ in packages] == list(
-        range(1, len(packages) + 1)
+            execution.append((
+                int(match.group(1)),
+                match.group(2).strip(),
+                match.group(3).strip(),
+            ))
+    assert execution, 'no ordered work packages found'
+    assert [rank for rank, _, _ in execution] == list(
+        range(1, len(execution) + 1)
     ), 'work-package ranks must be contiguous and ascending'
-    return [package for _, package in packages]
+    return execution
 
 
-def test_roadmap_declares_version_4_1():
+def _team_board_package_statuses(text):
+    """Return the exact PRE/TB status map from the v5.0 reconciliation."""
+    body = _section(text, 'Team Board 2.0 Current Status')
+    statuses = {}
+    for line in body.splitlines():
+        match = re.match(
+            r'^\|\s*((?:PRE|TB)-\d{2})\s+—\s+[^|]+\|\s*([^|]+?)\s*\|',
+            line.strip(),
+        )
+        if match:
+            package, status = match.groups()
+            assert package not in statuses, f'duplicate package status for {package}'
+            statuses[package] = status.strip()
+    return statuses
+
+
+def test_roadmap_declares_version_5_0():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
@@ -166,18 +205,26 @@ def test_roadmap_declares_version_4_1():
     assert 'VERSION 3.9' not in text
 
 
-def test_effective_date_is_august_15_2026():
+def test_effective_date_is_august_23_2026():
     text = _roadmap_text()
 
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
     assert f'Effective {EXPECTED_EFFECTIVE_DATE}' in text
 
 
-def test_repository_basis_is_current_main_with_the_scoped_in_flight_branch():
+def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
     text = _roadmap_text()
 
     assert EXPECTED_MAIN in text
-    assert '| In-flight branch | `backend/team-board-workload-context` |' in text
+    assert (
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #727. |'
+        in text
+    )
+    assert (
+        '| Audit branch | `docs/team-board-roadmap-reconcile` | '
+        'Canonical roadmap reconciliation only. |'
+        in text
+    )
 
     # A superseded baseline must not still be claimed as current. The prior
     # basis may be named as history; it may not sit in the current-state row.
@@ -243,19 +290,17 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_daily_sync_work_reduction_is_the_active_objective():
-    """CI-003 closed, so the objective advances to the next approved item.
-
-    A sequencing consequence, not a new priority: the package below CI-003 in
-    the already-approved order moves up, and nothing is reordered around it.
-    """
+def test_pre_02b_is_the_active_objective():
+    """The reconciliation advances one bounded Team Board transport package."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | Permanent daily-sync work reduction |' in text
+    assert '| ACTIVE OBJECTIVE | Team Board read-path consolidation |' in text
+    assert 'The next bounded package is **PRE-02B — Team Board read-path consolidation**.' in text
 
     # No superseded objective may still be declared.
     assert '| ACTIVE OBJECTIVE | VOC-001 (#638)' not in text
     assert '| ACTIVE OBJECTIVE | CI-003 (#598)' not in text
+    assert '| ACTIVE OBJECTIVE | Permanent daily-sync work reduction |' not in text
 
 
 def test_the_new_objective_preserves_every_authority_boundary():
@@ -265,11 +310,11 @@ def test_the_new_objective_preserves_every_authority_boundary():
 
     for preserved in (
         'D-051',
-        'authoritative manual daily execution stays prohibited',
-        'legacy writer authority',
+        'prohibits an\nauthoritative manual daily execution',
+        'legacy sync/postgame writer remains\nthe baseball-data mutation authority',
         '`shadow`',
-        'backfill `off`',
-        'no game-driven write authority and no game-driven publication authority',
+        'backfill remains `off`',
+        'no game-driven write authority\nor game-driven publication authority is granted',
     ):
         assert preserved in body, preserved
 
@@ -405,37 +450,37 @@ def test_phase_1b_is_complete_in_both_phase_tables():
     assert '| Phase 1A - Authority Qualification | Complete - August 10, 2026 |' in text
 
 
-def test_approved_work_order_is_preserved_exactly():
-    packages = _next_approved_work_order(_roadmap_text())
+def test_approved_execution_order_and_states_are_preserved_exactly():
+    execution = _next_approved_execution(_roadmap_text())
 
-    assert len(packages) == len(APPROVED_ORDER)
-    for actual, expected in zip(packages, APPROVED_ORDER):
-        assert actual.startswith(expected), f'{actual!r} does not start with {expected!r}'
+    assert execution == list(APPROVED_EXECUTION)
+
+
+def test_team_board_package_statuses_are_exact_and_unique():
+    statuses = _team_board_package_statuses(_roadmap_text())
+
+    assert statuses == TEAM_BOARD_PACKAGE_STATUSES
 
 
 def test_completed_packages_are_not_listed_as_future_work():
-    packages = _next_approved_work_order(_roadmap_text())
+    packages = [package for _, _, package in _next_approved_execution(_roadmap_text())]
     joined = '\n'.join(packages)
 
     for completed in COMPLETED_PACKAGES:
         assert completed not in joined, completed
 
 
-def test_portable_intelligence_does_not_precede_the_reliability_work():
-    packages = _next_approved_work_order(_roadmap_text())
-    index = {package: position for position, package in enumerate(packages)}
+def test_deferred_work_does_not_precede_the_active_team_board_closeout():
+    execution = _next_approved_execution(_roadmap_text())
 
-    def position_of(prefix):
-        matches = [pos for package, pos in index.items() if package.startswith(prefix)]
-        assert len(matches) == 1, prefix
-        return matches[0]
-
-    portable = position_of('Portable Intelligence')
-    # #598 is no longer in this list at all: it is complete. The reliability
-    # work it used to sit above is now the head of the order, and Portable
-    # Intelligence still may not jump it.
-    assert position_of('Permanent daily-sync work reduction') < portable
-    assert portable < position_of('Resume M-001 and visible evidence')
+    assert execution[0] == APPROVED_EXECUTION[0]
+    assert all(state != 'ACTIVE' for _, state, _ in execution[1:])
+    assert (3, 'DEFERRED', 'Portable Intelligence') in execution
+    assert (
+        4,
+        'DEFERRED',
+        'Runtime work reduction and React Router migration',
+    ) in execution
 
 
 def test_authority_posture_is_unmoved():
@@ -460,22 +505,35 @@ def test_d052_is_unchanged_in_meaning():
         assert phrase in row, phrase
 
 
-def test_decision_ledger_is_contiguous_through_d055():
-    """D-055 is additive, contiguous, and attributed to its work package."""
+def test_decision_ledger_is_contiguous_through_d057():
+    """D-056 and bounded D-057 are additive and preserve prior authority."""
     text = _roadmap_text()
 
     ids = re.findall(r'^\| (D-\d{3}) \|', text, re.MULTILINE)
     assert ids == [f'D-{number:03d}' for number in range(1, len(ids) + 1)], (
         'the Decision Ledger must stay contiguous and never renumber'
     )
-    assert ids[-1] == 'D-055'
+    assert ids[-1] == 'D-057'
 
-    assert 'Decision Ledger through D-055' in text
+    assert 'Decision Ledger through D-057' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
     assert 'D-054, added by UX-2B' in text
     assert 'D-055, added by Team Board Phase 2 Package 1' in text
+    assert '| D-056 | Aug 18, 2026 |' in text
+
+    d057 = _ledger_row(text, 'D-057')
+    for phrase in (
+        'PRE-02B read-path consolidation as the single active objective',
+        'consolidate transport and duplicate population only',
+        'may not change baseball semantics',
+        'frontend interpretation authority',
+        'thresholds, writers, publication gates',
+        'governance/substrate-blocked depth',
+        'Standing execution decision',
+    ):
+        assert phrase in d057, phrase
 
     # A decision designed to expire is deliberately not a durable authority ID.
     assert 'DEP-001 (#601) created no Decision Ledger ID.' in text
@@ -507,27 +565,37 @@ def test_completion_log_records_the_closed_packages_with_evidence():
     assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_4_2_entry():
-    """The current edition names D-055 and preserves prior authority."""
+def test_revision_history_records_the_version_5_0_entry():
+    """The current edition records its audit basis, objective, and boundaries."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 4.2 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.0 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        'D-055',
-        'Team Board Phase 2 Package 1',
-        'already-public workload facts',
-        'fail-closed Rest Status',
-        'raw fatigue scores remain private',
-        'query-count invariance',
-        'D-001 through D-054 remain unchanged',
+        '`origin/main` `c63877a5`',
+        'baseline `e12d7603`',
+        'incorporated D-056',
+        'added D-057',
+        'PRE-02B read-path consolidation',
+        'without resolving them by implication',
     ):
         assert claimed in entry, claimed
+
+
+def test_revision_history_preserves_the_version_4_2_entry():
+    text = _roadmap_text()
+    rows = [
+        line for line in text.splitlines()
+        if line.startswith('| 4.2 | August 15, 2026 |')
+    ]
+    assert len(rows) == 1, 'exactly one historical Version 4.2 revision-history row'
+    for claimed in ('D-055', 'Team Board Phase 2 Package 1', 'fail-closed Rest Status'):
+        assert claimed in rows[0], claimed
 
 
 def test_revision_history_preserves_the_version_4_1_entry():
