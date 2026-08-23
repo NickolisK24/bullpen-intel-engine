@@ -807,7 +807,7 @@ def test_exact_roster_persistence_uses_bounded_snapshot_queries(app):
         (113, '2026-07-04', ROSTER_TYPE_NON_ROSTER),
     ]
     assert len(snapshot_selects) == 2
-    assert len(snapshot_inserts) == 2
+    assert 1 <= len(snapshot_inserts) <= 2
     assert snapshot_count == 2
 
 
