@@ -147,7 +147,7 @@ export function TeamBoardAnswerSkeleton({ team, teamSwitcher = null }) {
       data-testid="team-board-answer-skeleton"
     >
       <span className="sr-only">Loading the current Team Board answer.</span>
-      <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-start tablet:justify-between">
+      <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-end tablet:justify-between">
         <AnswerHeading teamName={teamName} teamAbbreviation={teamAbbreviation} teamSwitcher={teamSwitcher} />
         <SkeletonBlock className="h-9 w-32 shrink-0" />
       </div>
@@ -207,7 +207,7 @@ export default function TeamBoardAnswerBlock({
   return (
     <>
       <section className={answerSurfaceClass} aria-labelledby="team-board-answer-title" data-testid="team-board-answer-block">
-        <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-start tablet:justify-between">
+        <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-end tablet:justify-between">
           <AnswerHeading teamName={view.teamName} teamAbbreviation={view.teamAbbreviation} teamSwitcher={teamSwitcher} />
           {view.teamState.available && (
             <div

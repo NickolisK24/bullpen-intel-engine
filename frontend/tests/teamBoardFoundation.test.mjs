@@ -214,7 +214,8 @@ test('foundation exposes overflow instead of globally hiding it', () => {
   assert.match(indexCss, /\.team-board-shell\s*\{/)
   assert.match(indexCss, /\.active-arm-row\s*\{/)
   assert.match(indexCss, /@media \(min-width: 768px\)[\s\S]*grid-template-columns:\s*minmax\(10rem, 1\.5fr\)/)
-  assert.match(indexCss, /@media \(min-width: 1024px\)[\s\S]*grid-template-columns:\s*minmax\(14rem, 1\.6fr\)/)
+  assert.match(indexCss, /@media \(min-width: 1024px\)[\s\S]*grid-template-columns:\s*minmax\(12rem, 1\.6fr\)/)
+  assert.match(indexCss, /minmax\(7rem, 0\.45fr\)/)
   assert.match(indexCss, /overflow-wrap:\s*anywhere/)
 })
 

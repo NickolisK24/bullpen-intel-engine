@@ -177,6 +177,21 @@ test('header keeps one governed state, one currentness line, and the answer inta
   assert.ok(text(html).includes(answer.summary))
 })
 
+test('desktop Team Header aligns the labeled selector surface with the Team State badge', () => {
+  const teamSwitcher = React.createElement(
+    'div',
+    { 'data-testid': 'team-switcher' },
+    React.createElement('label', { htmlFor: 'team-board-selector' }, 'Team'),
+    React.createElement('select', { id: 'team-board-selector', defaultValue: '147' },
+      React.createElement('option', { value: '147' }, 'New York Yankees')),
+  )
+  const html = render({ read: read(), teamSwitcher })
+
+  assert.match(html, /tablet:flex-row tablet:items-end tablet:justify-between/)
+  assert.ok(html.indexOf('data-testid="team-switcher"') < html.indexOf('aria-label="Team State: Fresh"'))
+  assert.match(html, /<label for="team-board-selector">Team<\/label><select id="team-board-selector"/)
+})
+
 test('loading skeleton preserves the team identity and Answer Block hierarchy', () => {
   const html = renderToStaticMarkup(React.createElement(TeamBoardAnswerSkeleton, { team }))
   assert.ok(html.includes('data-testid="team-board-answer-skeleton"'))
