@@ -125,6 +125,38 @@ test('Arm Read markers use the governed neutral, caution, constrained, and withh
   assert.deepEqual(rows.map(row => [row.readTone, row.readMarker]), keys.map(([, tone, marker]) => [tone, marker]))
 })
 
+test('desktop table keeps Destination sized to its label and centers every governed Read on one axis', async () => {
+  const governedReads = [
+    ['clean_option', 'Clean Option'],
+    ['watch_arm', 'Watch Arm'],
+    ['rest_restricted', 'Limited Rest'],
+    ['limited_read', 'Limited Read'],
+  ]
+  const activeBullpen = {
+    population_basis: 'current_scored_bullpen_eligible_pitchers',
+    arm_count: governedReads.length,
+    arms: governedReads.map(([key, label], index) => arm({
+      pitcher_id: index + 1,
+      public_labels: {
+        role: { key: 'bridge_arm', label: 'Setup Arm' },
+        read: { key, label },
+      },
+    })),
+  }
+  const html = render({ read: read({ activeBullpen }) })
+  const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8')
+
+  assert.match(html, /class="active-arm-table__read">Read</)
+  assert.match(html, /class="active-arm-table__destination text-right">Destination</)
+  assert.equal((html.match(/class="active-arm-row__read min-w-0"/g) || []).length, governedReads.length)
+  for (const [, label] of governedReads) assert.ok(text(html).includes(label))
+  assert.match(css, /minmax\(7rem, 0\.5fr\)/)
+  assert.match(css, /minmax\(7rem, 0\.45fr\)/)
+  assert.match(css, /\.active-arm-table__read\s*{\s*@apply text-center;/)
+  assert.match(css, /\.active-arm-row__read\s*{\s*@apply items-center justify-center;/)
+  assert.match(css, /\.active-arm-table__destination\s*{\s*white-space: nowrap;/)
+})
+
 test('renders only authorized workload facts and preserves legitimate zero', () => {
   const html = render({ read: read() })
   const visible = text(html)

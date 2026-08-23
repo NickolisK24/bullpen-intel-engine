@@ -65,13 +65,13 @@ function TableHeader({ showLastGamePitches }) {
   return (
     <div className={`active-arm-table__header ${showLastGamePitches ? 'active-arm-row--with-last-p' : ''}`} aria-hidden="true">
       <span>Arm</span>
-      <span>Read</span>
+      <span className="active-arm-table__read">Read</span>
       <span className="text-right">Last / Rest</span>
       {showLastGamePitches && <span className="active-arm-table__last-p text-right">Last P</span>}
       <span className="text-right">7d App</span>
       <span className="text-right">7d P</span>
       <span className="active-arm-table__pattern">Pattern</span>
-      <span className="text-right">Destination</span>
+      <span className="active-arm-table__destination text-right">Destination</span>
     </div>
   )
 }

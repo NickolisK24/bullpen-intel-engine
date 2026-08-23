@@ -375,13 +375,22 @@
   @media (min-width: 768px) {
     .active-arm-table__header,
     .active-arm-row {
-      grid-template-columns: minmax(10rem, 1.5fr) minmax(7rem, 0.9fr) minmax(4.5rem, 0.55fr) minmax(3.5rem, 0.4fr) minmax(3.5rem, 0.4fr) minmax(4.5rem, 0.5fr);
+      grid-template-columns: minmax(10rem, 1.5fr) minmax(7rem, 0.9fr) minmax(4.5rem, 0.55fr) minmax(3.5rem, 0.4fr) minmax(3.5rem, 0.4fr) minmax(7rem, 0.5fr);
     }
     .active-arm-table__header {
       @apply grid items-end gap-panel border-b border-line-default py-meta font-board text-board-label font-medium uppercase text-text-tertiary;
     }
     .active-arm-row {
       @apply min-h-12 items-center gap-panel py-panel;
+    }
+    .active-arm-table__read {
+      @apply text-center;
+    }
+    .active-arm-row__read {
+      @apply items-center justify-center;
+    }
+    .active-arm-table__destination {
+      white-space: nowrap;
     }
     .active-arm-row__mobile-meta,
     .active-arm-row__pattern,
@@ -413,11 +422,11 @@
   @media (min-width: 1024px) {
     .active-arm-table__header,
     .active-arm-row {
-      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+      grid-template-columns: minmax(12rem, 1.6fr) minmax(7rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(7rem, 0.45fr);
     }
     .active-arm-table__header.active-arm-row--with-last-p,
     .active-arm-row--with-last-p {
-      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4rem, 0.3fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+      grid-template-columns: minmax(12rem, 1.6fr) minmax(7rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4rem, 0.3fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(7rem, 0.45fr);
     }
     .active-arm-row__last-p,
     .active-arm-table__last-p {
