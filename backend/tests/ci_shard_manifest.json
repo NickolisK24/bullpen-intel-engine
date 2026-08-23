@@ -893,6 +893,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_intraday_transaction_roster_repair.py",
+          "measured_seconds": 0.8
+        },
+        {
           "path": "tests/test_intraday_schedule_repair.py",
           "measured_seconds": 0.0
         },
