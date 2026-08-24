@@ -31,11 +31,14 @@ const {
   AUDIENCE_SIGNUP_SUCCESS,
   AudienceSignupFormView,
   IntelligenceSurfaceView,
+  SinceYesterdayBriefingView,
   getBullpenPictureView,
   getSinceYesterdayView,
   filterSinceYesterdayLanes,
   filterSinceYesterdayItems,
   buildSinceYesterdayTabs,
+  nextSinceYesterdayExpandedKey,
+  reduceSinceYesterdayInteraction,
   getDailyEditionView,
   sinceYesterdayCountClarity,
   getTonightCards,
@@ -267,6 +270,39 @@ const dashboardWithSinceYesterdayChanges = {
     ],
   },
 }
+
+const dashboardWithManySinceYesterdayChanges = (() => {
+  const expanded = clone(dashboardWithSinceYesterdayChanges)
+  const block = expanded.what_changed_since_yesterday
+  const additions = [
+    ['BOS-change', 111, 'Boston Red Sox', 'BOS', 'more_breathing_room', 'More breathing room', 2, 4],
+    ['PIT-change', 134, 'Pittsburgh Pirates', 'PIT', 'more_breathing_room', 'More breathing room', 1, 3],
+    ['CLE-change', 114, 'Cleveland Guardians', 'CLE', 'tighter_today', 'Tighter today', 4, 1],
+    ['ATH-change', 133, 'Athletics', 'ATH', 'structure_changed', 'Structure changed', 2, 5],
+  ].map(([key, teamId, teamName, teamAbbreviation, movementLane, movementLabel, previous, current]) => ({
+    key,
+    team_id: teamId,
+    team_name: teamName,
+    team_abbreviation: teamAbbreviation,
+    movement_lane: movementLane,
+    movement_label: movementLabel,
+    primary_delta: {
+      label: movementLane === 'structure_changed' ? 'Late-inning support arms' : 'Rested relievers',
+      previous,
+      current,
+      net_delta: movementLane === 'structure_changed' ? null : current - previous,
+    },
+    public_summary: `${teamName} detail.`,
+    public_context: `${teamName} context.`,
+  }))
+  block.items.push(...additions)
+  block.item_count = 6
+  block.summary.meaningful_change_count = 6
+  block.summary.more_breathing_room_count = 3
+  block.summary.tighter_today_count = 2
+  block.summary.structure_changed_count = 1
+  return expanded
+})()
 
 const dashboardWithSinceYesterdayQuiet = {
   ...dashboard,
@@ -1026,36 +1062,129 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.equal(htmlIncludes(sinceHtml, 'role="tablist"'), false)
   assert.equal(htmlIncludes(sinceHtml, 'Showing all 2 detailed team changes.'), false)
   assert.equal(htmlIncludes(sinceHtml, 'Find a team'), false)
-  // Primary delta anchor (numbers + signed net) and consolidated prose.
+  // Every changed team remains present as a compact row with the exact primary
+  // delta, while the full team reports are not mounted initially.
+  assert.ok(htmlIncludes(sinceHtml, 'New York Mets'))
+  assert.ok(htmlIncludes(sinceHtml, 'San Francisco Giants'))
   assert.ok(htmlIncludes(sinceHtml, 'Rested relievers'))
   assert.equal(htmlIncludes(sinceHtml, 'Rested arms'), false)
-  assert.ok(htmlIncludes(sinceHtml, '+2'))
-  assert.ok(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'))
-  assert.ok(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'))
-  assert.ok(htmlIncludes(sinceHtml, 'San Francisco has fewer rested relievers than yesterday.'))
-  // Compact workload evidence.
-  assert.ok(htmlIncludes(sinceHtml, 'Worked yesterday'))
-  assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
-  assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
-  // Expandable evidence keeps the structured rows available.
-  assert.ok(htmlIncludes(sinceHtml, 'Why this read?'))
-  assert.ok(htmlIncludes(sinceHtml, 'Resource pool'))
-  assert.ok(htmlIncludes(sinceHtml, 'Yesterday tight'))
-  assert.ok(htmlIncludes(sinceHtml, 'Today less tight'))
+  assert.match(sinceHtml, /Yesterday <\/span>3/)
+  assert.match(sinceHtml, /Today <\/span>5/)
+  assert.match(sinceHtml, /Yesterday <\/span>4/)
+  assert.match(sinceHtml, /Today <\/span>2/)
+  assert.equal(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'San Francisco has fewer rested relievers than yesterday.'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Worked yesterday'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Reed Garrett'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Why this read?'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Open bullpen board'), false)
+  assert.equal(countOccurrences(sinceHtml, 'aria-expanded="false"'), 2)
+  assert.equal(countOccurrences(sinceHtml, 'Show details'), 2)
   // Steady disclosure lists proven-steady teams only.
   assert.ok(htmlIncludes(sinceHtml, 'had no meaningful'))
   assert.ok(htmlIncludes(sinceHtml, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(sinceHtml, 'Toronto Blue Jays'))
-  // Team-board links carry the trusted-change provenance for evidence measurement.
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since_yesterday"'))
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since_yesterday"'))
-  // Two card evidence disclosures + one steady disclosure, none open by default.
-  assert.equal(countOccurrences(sinceHtml, '<details'), 2)
-  assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
+  // Only the steady disclosure mounts in the collapsed default state.
+  assert.equal(countOccurrences(sinceHtml, '<details'), 1)
+  assert.equal(countOccurrences(sinceHtml, '<summary'), 1)
   assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
   assert.equal(htmlIncludes(sinceHtml, 'what_changed_item_opened'), false)
   // The old repetitive headline line is no longer shown as separate prose.
   assert.equal(htmlIncludes(sinceHtml, 'Mets bullpen has more breathing room today.'), false)
+})
+
+test('Since Yesterday expands only the selected team and preserves its existing detail', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const expandedHtml = render(React.createElement(SinceYesterdayBriefingView, {
+    view,
+    expandedKey: 'NYM-what-changed',
+  }))
+
+  assert.ok(htmlIncludes(expandedHtml, 'aria-label="Collapse details for New York Mets"'))
+  assert.ok(htmlIncludes(expandedHtml, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(expandedHtml, 'aria-label="Expand details for San Francisco Giants"'))
+  assert.equal(countOccurrences(expandedHtml, 'aria-expanded="true"'), 1)
+  assert.equal(countOccurrences(expandedHtml, 'aria-expanded="false"'), 1)
+  assert.ok(htmlIncludes(expandedHtml, 'New York has more usable late-inning margin than yesterday.'))
+  assert.ok(htmlIncludes(expandedHtml, 'That creates more ways through a close game tonight.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Worked yesterday'))
+  assert.ok(htmlIncludes(expandedHtml, 'Reed Garrett'))
+  assert.ok(htmlIncludes(expandedHtml, '21 pitches'))
+  assert.ok(htmlIncludes(expandedHtml, 'Why this read?'))
+  assert.ok(htmlIncludes(expandedHtml, 'Resource pool'))
+  assert.ok(htmlIncludes(expandedHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since_yesterday"'))
+  assert.equal(htmlIncludes(expandedHtml, 'San Francisco has fewer rested relievers than yesterday.'), false)
+  assert.equal(htmlIncludes(expandedHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since_yesterday"'), false)
+})
+
+test('Since Yesterday one-open-row interaction toggles, switches, and resets on filtering', () => {
+  assert.equal(nextSinceYesterdayExpandedKey(null, 'NYM-what-changed'), 'NYM-what-changed')
+  assert.equal(nextSinceYesterdayExpandedKey('NYM-what-changed', 'NYM-what-changed'), null)
+  assert.equal(nextSinceYesterdayExpandedKey('NYM-what-changed', 'SF-what-changed'), 'SF-what-changed')
+
+  const initial = { activeKey: 'all', query: '', expandedKey: 'NYM-what-changed' }
+  assert.deepEqual(
+    reduceSinceYesterdayInteraction(initial, { type: 'activate', key: 'tighter_today' }),
+    { activeKey: 'tighter_today', query: '', expandedKey: null },
+  )
+  assert.deepEqual(
+    reduceSinceYesterdayInteraction(initial, { type: 'query', value: 'San Francisco' }),
+    { activeKey: 'all', query: 'San Francisco', expandedKey: null },
+  )
+  assert.deepEqual(
+    reduceSinceYesterdayInteraction({ ...initial, query: 'SF' }, { type: 'reset_query' }),
+    { activeKey: 'all', query: '', expandedKey: null },
+  )
+})
+
+test('Since Yesterday default ledger keeps every changed team in canonical lane and source order', () => {
+  const view = getSinceYesterdayView(dashboardWithManySinceYesterdayChanges, teams)
+  const html = render(React.createElement(SinceYesterdayBriefingView, { view }))
+
+  const names = [
+    'New York Mets',
+    'Boston Red Sox',
+    'Pittsburgh Pirates',
+    'San Francisco Giants',
+    'Cleveland Guardians',
+    'Athletics',
+  ]
+  names.forEach((name) => assert.ok(htmlIncludes(html, name)))
+  assert.equal(countOccurrences(html, 'Show details'), names.length)
+  assert.equal(countOccurrences(html, 'aria-expanded="false"'), names.length)
+  assert.ok(html.indexOf('New York Mets') < html.indexOf('Boston Red Sox'))
+  assert.ok(html.indexOf('Boston Red Sox') < html.indexOf('Pittsburgh Pirates'))
+  assert.ok(html.indexOf('San Francisco Giants') < html.indexOf('Cleveland Guardians'))
+  assert.ok(html.indexOf('More room') < html.indexOf('Tighter'))
+  assert.ok(html.indexOf('Tighter') < html.indexOf('Structure'))
+  assert.equal(countOccurrences(html, ' detail.'), 0)
+})
+
+test('Since Yesterday filters and search operate on compact rows without semantic reordering', () => {
+  const view = getSinceYesterdayView(dashboardWithManySinceYesterdayChanges, teams)
+  const tighterHtml = render(React.createElement(SinceYesterdayBriefingView, {
+    view,
+    activeKey: 'tighter_today',
+  }))
+
+  assert.ok(htmlIncludes(tighterHtml, 'Tighter'))
+  assert.ok(htmlIncludes(tighterHtml, 'San Francisco Giants'))
+  assert.ok(htmlIncludes(tighterHtml, 'Cleveland Guardians'))
+  assert.ok(tighterHtml.indexOf('San Francisco Giants') < tighterHtml.indexOf('Cleveland Guardians'))
+  assert.equal(htmlIncludes(tighterHtml, 'New York Mets'), false)
+  assert.equal(htmlIncludes(tighterHtml, 'Boston Red Sox'), false)
+  assert.equal(countOccurrences(tighterHtml, 'Show details'), 2)
+
+  const searchHtml = render(React.createElement(SinceYesterdayBriefingView, {
+    view,
+    query: 'Athletics',
+  }))
+  assert.ok(htmlIncludes(searchHtml, 'Find a team'))
+  assert.ok(htmlIncludes(searchHtml, 'Athletics'))
+  assert.ok(htmlIncludes(searchHtml, 'Late-inning support arms'))
+  assert.equal(htmlIncludes(searchHtml, 'New York Mets'), false)
+  assert.equal(countOccurrences(searchHtml, 'Show details'), 1)
 })
 
 test('Since Yesterday renders quiet comparable days without empty cards', async () => {
@@ -1126,7 +1255,7 @@ test('Since Yesterday hides legacy, missing, and fail-closed dashboard blocks', 
 
 })
 
-test('Since Yesterday markup stays semantic, single-column, and free of internal fields', () => {
+test('Since Yesterday markup stays semantic, compact, and free of internal fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
@@ -1140,7 +1269,10 @@ test('Since Yesterday markup stays semantic, single-column, and free of internal
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
 
-  assert.ok(htmlIncludes(sinceHtml, 'grid grid-cols-1'))
+  assert.ok(htmlIncludes(sinceHtml, 'min-h-12 w-full min-w-0 flex-col'))
+  assert.ok(htmlIncludes(sinceHtml, 'sm:flex-row'))
+  assert.equal(htmlIncludes(sinceHtml, 'sm:grid-cols-2'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'overflow-x'), false)
   assert.ok(htmlIncludes(sinceHtml, '<details'))
   assert.ok(htmlIncludes(sinceHtml, '<summary'))
   for (const raw of [
@@ -2462,7 +2594,7 @@ test('Since Yesterday structure lane renders a delta with no signed net', () => 
     teams,
   }))
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
-  assert.ok(htmlIncludes(sinceHtml, 'Structure changed'))
+  assert.ok(htmlIncludes(sinceHtml, 'Structure'))
   assert.ok(htmlIncludes(sinceHtml, 'Late-inning support arms'))
   assert.ok(htmlIncludes(sinceHtml, 'Late-inning support arms'))
   // A structural delta must not fabricate a +/- net value.
@@ -2506,8 +2638,16 @@ test('Since Yesterday item without a backend lane falls closed to the neutral la
     teams,
   }))
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
-  assert.ok(htmlIncludes(sinceHtml, 'Movement without a backend-authored lane.'))
+  assert.ok(htmlIncludes(sinceHtml, 'Athletics'))
+  assert.ok(htmlIncludes(sinceHtml, 'Rested arms'))
+  assert.equal(htmlIncludes(sinceHtml, 'Movement without a backend-authored lane.'), false)
   assert.equal(htmlIncludes(sinceHtml, 'Across MLB since yesterday'), false)
+
+  const expandedHtml = render(React.createElement(SinceYesterdayBriefingView, {
+    view,
+    expandedKey: 'ATH-what-changed',
+  }))
+  assert.ok(htmlIncludes(expandedHtml, 'Movement without a backend-authored lane.'))
 })
 
 // A day where the league summary counts more moving teams than there are
