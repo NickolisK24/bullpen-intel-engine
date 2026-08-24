@@ -19,6 +19,7 @@ import {
   UnavailableDataState,
 } from '../UI'
 import { formatFreshnessDate } from '../UI/Freshness'
+import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
 import {
   BULLPEN_LANDSCAPE_COLUMNS,
   getLandscapeView,
@@ -867,6 +868,58 @@ export function getTonightCards(response, teams = [], limit = 3) {
     .slice(0, limit)
 }
 
+function backendTokenLabel(value) {
+  const text = textValue(value)
+  if (!text) return null
+  return text.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+function resolveTonightSide(side, teams = []) {
+  const direct = teamOptionValue(side)
+  const byId = buildTeamsById(teams)
+  const team = direct?.teamId != null ? byId.get(direct.teamId) || direct : direct
+  const context = firstObjectValue(side?.bullpen_context) || {}
+  return {
+    status: textValue(side?.status) || 'unavailable',
+    teamId: team?.teamId ?? null,
+    teamName: cleanTeamName(side?.team_name ?? team?.teamName) || 'Team bullpen',
+    teamAbbr: textValue(side?.team_abbreviation ?? team?.teamAbbr),
+    href: teamBoardHrefIfResolvable(team, 'today'),
+    namedOptions: cleanTonightList(context?.clean_workload_option_names),
+    optionality: backendTokenLabel(context?.optionality_band),
+    concentration: backendTokenLabel(context?.concentration_band),
+    workloadShare: context?.top_three_workload_share_10d == null
+      ? null
+      : numberValue(context.top_three_workload_share_10d),
+    watchHeadline: cleanTonightCopy(side?.watch?.pregame_story?.headline)
+      || cleanTonightCopy(side?.watch?.headline),
+    limitations: cleanTonightList(side?.limitations),
+  }
+}
+
+export function getTonightGames(response, teams = []) {
+  const rawGames = Array.isArray(response?.games) ? response.games : []
+  return rawGames.map(game => {
+    const gamePk = numberValue(game?.game_pk)
+    const away = resolveTonightSide(game?.away, teams)
+    const home = resolveTonightSide(game?.home, teams)
+    if (gamePk == null || away.teamId == null || home.teamId == null) return null
+    const doubleheaderFlag = textValue(game?.doubleheader_flag)
+    return {
+      key: String(gamePk),
+      gamePk,
+      gameTime: formatUtcDateTimeEt(game?.game_time_utc, { includeDate: false }),
+      status: textValue(game?.status?.detailed)
+        || backendTokenLabel(game?.status?.normalized)
+        || textValue(game?.status?.abstract),
+      gameNumber: numberValue(game?.game_number),
+      doubleheader: Boolean(doubleheaderFlag && doubleheaderFlag !== 'N'),
+      away,
+      home,
+    }
+  }).filter(Boolean)
+}
+
 function pictureColumnByKey(landscapeView, key) {
   const column = (landscapeView?.columns || []).find(item => item.key === key)
   return column || { entries: [] }
@@ -1198,6 +1251,99 @@ function TonightCard({ card }) {
           View Team Bullpen State
         </Link>
       )}
+    </article>
+  )
+}
+
+function TonightSlateSide({ side, designation }) {
+  const hasContext = side.status === 'available'
+  const facts = [
+    side.optionality ? `Bullpen optionality: ${side.optionality}` : null,
+    side.concentration ? `Recent workload concentration: ${side.concentration}` : null,
+    side.workloadShare != null
+      ? `Top three relievers: ${side.workloadShare.toFixed(1)}% of 10-day bullpen workload`
+      : null,
+  ].filter(Boolean)
+
+  return (
+    <div className="min-w-0 p-3 sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            {designation}
+          </p>
+          <h4 className="mt-1 break-words font-display text-xl leading-tight tracking-wide text-chalk100">
+            {side.teamName}
+          </h4>
+        </div>
+        {side.href && (
+          <Link
+            to={side.href}
+            className="inline-flex min-h-10 shrink-0 items-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+            aria-label={`Open the bullpen board for ${side.teamName}`}
+          >
+            Team Board
+          </Link>
+        )}
+      </div>
+      {!hasContext ? (
+        <p className="mt-3 text-xs leading-relaxed text-chalk500" role="status">
+          Bullpen context is unavailable for this team. The matchup remains available.
+        </p>
+      ) : (
+        <>
+          {side.namedOptions.length > 0 && (
+            <div className="mt-3">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Named rested options
+              </p>
+              <p className="mt-1 break-words text-sm leading-relaxed text-chalk300">
+                {side.namedOptions.join(' · ')}
+              </p>
+            </div>
+          )}
+          {facts.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {facts.map(fact => (
+                <li key={fact} className="flex min-w-0 gap-2 text-xs leading-relaxed text-chalk400">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber/65" aria-hidden="true" />
+                  <span className="min-w-0 break-words">{fact}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {side.watchHeadline && (
+            <p className="mt-3 border-t border-dirt/70 pt-3 text-xs leading-relaxed text-chalk400">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Tonight's watch
+              </span>
+              <span className="mt-1 block">{side.watchHeadline}</span>
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function TonightSlateGame({ game }) {
+  const gameLabel = game.doubleheader && game.gameNumber
+    ? `Game ${game.gameNumber}`
+    : null
+  return (
+    <article className="min-w-0 overflow-hidden border border-dirt bg-dugout">
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-dirt bg-field/35 px-3 py-2 sm:px-4">
+        <h3 className="font-display text-lg tracking-wide text-chalk100">
+          {game.away.teamName} at {game.home.teamName}
+        </h3>
+        <p className="font-mono text-[10px] uppercase tracking-wider text-chalk400">
+          {[gameLabel, game.gameTime, game.status].filter(Boolean).join(' · ')}
+        </p>
+      </header>
+      <div className="grid min-w-0 grid-cols-1 divide-y divide-dirt sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <TonightSlateSide side={game.away} designation="Away bullpen" />
+        <TonightSlateSide side={game.home} designation="Home bullpen" />
+      </div>
     </article>
   )
 }
@@ -1741,6 +1887,7 @@ function TonightSection({
   dashboard,
 }) {
   const cards = getTonightCards(tonight, teams)
+  const games = getTonightGames(tonight, teams)
   const sectionLimitations = cleanTonightList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
   const missingCompletedPayload = !tonight && !loading && !error
@@ -1766,6 +1913,37 @@ function TonightSection({
         subtitle={TONIGHT_SECTION_SUBTITLE}
       >
         <TonightLoadingState />
+      </SectionShell>
+    )
+  }
+
+  if (games.length > 0) {
+    return (
+      <SectionShell
+        id="tonight"
+        title="Tonight's Bullpen Slate"
+        subtitle="The bullpen context carried for both clubs in every game. Descriptive only — no matchup winner or prediction."
+      >
+        <TonightContextRow
+          slateDate={slateDate}
+          freshness={rowFreshness}
+        />
+        <div className="space-y-3">
+          {games.map(game => (
+            <TonightSlateGame key={game.key} game={game} />
+          ))}
+        </div>
+        {sectionLimitations.length > 0 && (
+          <Disclosure label="Limits on tonight's read" className="mt-3">
+            <ul className="mt-2 space-y-1">
+              {sectionLimitations.map(item => (
+                <li key={item} className="text-xs leading-relaxed text-chalk500">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        )}
       </SectionShell>
     )
   }

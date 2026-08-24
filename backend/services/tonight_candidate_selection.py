@@ -395,6 +395,16 @@ def _normalize_bullpen_context(bc):
     return norm
 
 
+def public_tonight_bullpen_context(bullpen_context):
+    """Return the existing governed Tonight subset for slate composition.
+
+    This is the same normalization used by candidate selection.  Exposing the
+    pass-through helper keeps the game-slate transport from reimplementing any
+    optionality, workload, or named-arm meaning.
+    """
+    return _normalize_bullpen_context(bullpen_context)
+
+
 def _empty_bullpen_norm(*, available):
     return {
         'context_available': bool(available),

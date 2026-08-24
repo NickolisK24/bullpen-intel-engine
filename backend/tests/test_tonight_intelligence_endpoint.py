@@ -19,6 +19,7 @@ import services.tonight_intelligence_snapshot as tonight_snap
 import services.tonight_candidate_selection as tcs
 from utils.db import db
 from models.scheduled_game import ScheduledGame
+from models.slate_game import SlateGame
 import models.pitcher  # noqa: F401
 import models.game_log  # noqa: F401
 import models.fatigue_score  # noqa: F401
@@ -220,6 +221,36 @@ def test_public_cards_omit_strength_and_include_public_fields(client):
         assert key in card
     assert card['pregame_story']['label'] == "Tonight's Bullpen Watch"
     assert card['pregame_story']['watching'].startswith('Watch ')
+
+
+def test_endpoint_snapshot_carries_the_authoritative_game_slate(client):
+    with client.application.app_context():
+        _seed_playing_stretch(116)
+        _seed_playing_stretch(142)
+        db.session.add(SlateGame(
+            game_pk=900001,
+            game_date_et=_FIXED_TODAY,
+            game_time_utc=datetime(2026, 6, 26, 23, 10),
+            away_team_id=116,
+            home_team_id=142,
+            status_abstract='Preview',
+            status_detailed='Scheduled',
+            status_code='S',
+            normalized_state=SlateGame.STATE_UPCOMING,
+        ))
+        db.session.commit()
+        _warm_tonight_snapshot()
+
+    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    assert body['game_count'] == 1
+    assert len(body['games']) == 1
+    game = body['games'][0]
+    assert game['game_pk'] == 900001
+    assert game['status']['normalized'] == SlateGame.STATE_UPCOMING
+    assert game['away']['team_id'] == 116
+    assert game['home']['team_id'] == 142
+    assert game['away']['bullpen_context']['context_available'] is True
+    assert game['home']['bullpen_context']['context_available'] is True
 
 
 # ── Public-copy polish: served cards are team-neutral in prose ────────────────
