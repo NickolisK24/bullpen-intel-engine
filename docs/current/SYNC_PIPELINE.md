@@ -3,7 +3,7 @@
 **Status:** Current operational runbook  
 **Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current sync and publication authority posture. This document owns execution order and trust-gate detail.  
 **Owner:** Nickolis Kacludis  
-**Last reviewed:** August 14, 2026  
+**Last reviewed:** August 24, 2026
 **Workflow authority:** `.github/workflows/baseballos-sync.yml`
 
 This document describes the current production sync/publication workflow and
@@ -23,6 +23,8 @@ The most important facts are:
 - game-driven publication-authority transfer is **unapproved**;
 - authoritative **manual** daily execution is prohibited under D-051: the
   production full-daily runner is schedule-only and first-attempt-only;
+- scheduled intraday repair is retired for the remainder of 2026; its governed
+  implementation remains available only through controlled manual dispatch;
 - the existence of qualification machinery does not grant broader mutation authority.
 
 Do not describe the game-driven lane as `off`: daily and postgame are actively
@@ -38,10 +40,32 @@ recovery path: D-051 retired it, and the runner refuses it.
 | `daily` | scheduled morning run only (first attempt) | legacy writer authoritative; game-driven lane shadow-observed; trusted snapshot/public cache attempted after gates. Manual dispatch and reruns reach the D-051 runner guard and are refused before application/database initialization |
 | `postgame` | scheduled overnight passes or manual dispatch | completed-game reconciliation; game-driven lane shadow-observed after the legacy path; trusted publication follows existing gates |
 | `backfill` | manual only with explicit date | governed historical replay; no automatic broad backfill authority |
-| `intraday` | manual/read-only unless separately authorized | audit/reconciliation; does not silently gain write authority |
+| `intraday` | manual dispatch only; no scheduled repair for the remainder of 2026 | read-only audit or separately governed dormant repair; does not silently gain write authority |
 
 Exact cron values are runtime configuration in the workflow file and may change
 without changing the mode semantics above.
+
+The 2026 trade-deadline repair window has passed, so
+`.github/workflows/baseballos-intraday-repair.yml` has no `schedule` trigger.
+Its `workflow_dispatch` trigger, shared `baseballos-sync` concurrency group,
+writer guard, timeout, production-secret requirements, and fail-closed repair
+contract remain intact as a dormant diagnostic/repair capability. It is not a
+prerequisite for daily publication, postgame publication, Team Board serving,
+transaction ingestion, roster authority, Today, Tonight, or generated content.
+Daily and postgame authority are unchanged.
+
+Any 2027 preseason reactivation review must re-audit this capability against
+the then-current canonical public-state preparation and snapshot-publication
+contract before restoring a schedule. Reactivation requires a separate reviewed
+operations change; retaining manual dispatch is not approval to restore cron.
+
+For the remainder of 2026, the production cadence is:
+
+```text
+Daily sync -> canonical morning baseline
+Postgame sync -> completed-game workload/public-state updates
+Intraday repair -> dormant/manual-only seasonal capability
+```
 
 ## 3. Public Sync Order
 

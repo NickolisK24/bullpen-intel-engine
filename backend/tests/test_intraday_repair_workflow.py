@@ -9,16 +9,54 @@ WORKFLOW = (
     / 'workflows'
     / 'baseballos-intraday-repair.yml'
 )
+WORKFLOWS = WORKFLOW.parent
+PUBLIC_SYNC_WORKFLOW = WORKFLOWS / 'baseballos-sync.yml'
+SYNC_PIPELINE_DOC = (
+    Path(__file__).resolve().parents[2]
+    / 'docs'
+    / 'current'
+    / 'SYNC_PIPELINE.md'
+)
 
 
 def _workflow_text():
     return WORKFLOW.read_text(encoding='utf-8')
 
 
-def test_intraday_repair_has_bounded_daytime_cadence():
+def test_intraday_repair_is_dormant_and_manual_only():
     text = _workflow_text()
-    assert "cron: '0 0,16,20 * * *'" in text
-    assert text.count('cron:') == 1
+    assert '\n  schedule:' not in text
+    assert 'cron:' not in text
+    assert text.count('\n  workflow_dispatch:') == 1
+    for trigger in (
+        'push',
+        'pull_request',
+        'repository_dispatch',
+        'workflow_call',
+        'workflow_run',
+    ):
+        assert f'\n  {trigger}:' not in text
+    assert 'Dormant manual-only seasonal capability' in text
+
+
+def test_no_other_workflow_invokes_intraday_repair():
+    callers = [
+        path.name
+        for path in sorted(WORKFLOWS.glob('*.y*ml'))
+        if 'run_intraday_repair.py' in path.read_text(encoding='utf-8')
+    ]
+    assert callers == [WORKFLOW.name]
+
+
+def test_daily_and_postgame_automatic_cadence_is_unchanged():
+    text = PUBLIC_SYNC_WORKFLOW.read_text(encoding='utf-8')
+    assert text.count('- cron:') == 3
+    assert "- cron: '0 10 * * *'" in text
+    assert "- cron: '0 14 * * *'" in text
+    assert "- cron: '0 2,4,6 * * *'" in text
+    assert 'python backend/scripts/run_daily_sync.py' in text
+    assert 'python backend/scripts/run_postgame_refresh.py' in text
+    assert 'run_intraday_repair.py' not in text
 
 
 def test_intraday_repair_shares_public_sync_concurrency_lane():
@@ -51,3 +89,10 @@ def test_intraday_repair_cli_flag_is_explicit_and_disabled_by_default():
     assert _parse_args([
         '--repair-transaction-roster-evidence'
     ]).repair_transaction_roster_evidence is True
+
+
+def test_sync_runbook_records_the_seasonal_manual_only_posture():
+    text = SYNC_PIPELINE_DOC.read_text(encoding='utf-8')
+    assert 'scheduled intraday repair is retired for the remainder of 2026' in text
+    assert '2027 preseason reactivation review' in text
+    assert 'Daily and postgame authority are unchanged.' in text
