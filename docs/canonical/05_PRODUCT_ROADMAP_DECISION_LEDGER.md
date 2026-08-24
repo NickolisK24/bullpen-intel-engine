@@ -8,7 +8,7 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 5.1  ·  TEAM BOARD CLOSEOUT AND DAILY EDITION RECONCILIATION
+VERSION 5.2  ·  DAILY EDITION LEAD CLOSEOUT AND TONIGHT SLATE RECONCILIATION
 
 Owner: Nickolis Kacludis
 
@@ -52,17 +52,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 5.1 |
+| Version | 5.2 |
 | Effective date | August 24, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Audited `origin/main` at `4a39802c426872f8f9b4a9a72bd6899b3880db7b`, after PR #731. Historical Team Board readiness baseline: `e12d76033c05f9989393c8e4e115aeb61a7b3c13`; pre-closeout roadmap basis: `c63877a5b3d835b7190030d28ff143bedcafe099`. |
+| Repository basis | Audited `origin/main` at `6f91c4d467a716e56f955879938b4201e2c1ca9d`, after PR #733. Includes TODAY-01 implementation commit `77d77c56238844228bb07fcef9d173d3e1993e67`; historical Team Board closeout basis: `4a39802c426872f8f9b4a9a72bd6899b3880db7b`. |
 | Decision basis | Decision Ledger through D-057. No durable decision is added by this package closeout or ordinary roadmap sequencing. |
 | Audit basis | Repository history and current backend, frontend, workflow, runbook, contract-test, and canonical-document evidence through August 24, 2026. No production workflow, production mutation, or synthetic production evidence was used. |
-| Supersedes | Version 5.0 current-state, active-objective, Team Board closeout, and sequencing language while preserving its historical decisions and completion evidence. |
+| Supersedes | Version 5.1 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Team Board 2.0 remains the product center of gravity and its governed architecture/read path is complete. TODAY-01 may integrate existing trusted Today, Tonight, Dashboard, and Team Board owners into the Daily Edition; it may not add a prediction, ranking, new semantic engine, frontend interpretation authority, writer authority, publication authority, or governance-gated Team Board depth. D-001 through D-057 remain in force according to their recorded status. |
+| INTEGRATION RULE | Team Board 2.0 remains the product center of gravity and its governed architecture/read path is complete. TODAY-02 may compose existing trusted schedule and Tonight bullpen-context owners into a game-oriented slate; it may not add a prediction, ranking, new semantic engine, frontend interpretation authority, writer authority, publication authority, or governance-gated Team Board depth. D-001 through D-057 remain in force according to their recorded status. |
 | --- | --- |
 
 # Part I - Executive State
@@ -73,15 +73,15 @@ BaseballOS is a live public MLB bullpen-intelligence platform whose Team Board i
 
 The repository therefore no longer supports treating Team Board 2.0 or its read-path consolidation as unfinished. Core governed Team Board architecture and presentation are complete; PRE-01 residual token cleanup remains optional, while TB-05 depth and TB-08 source completeness remain intentionally partial or gated. Those future depth items do not reopen the core build. The next product need is to turn the already-built Today/Tonight substrate into the finite daily edition the Product Experience Standard requires.
 
-| CURRENT VERDICT | PRE-02B and PRE-02 are COMPLETE on audited `main`: initial Team Board render fell from five eager requests to the team directory plus `/board-v2`, team switching fell from four team-scoped requests to one, canonical What Changed is composed with section-local failure isolation, and share-card work is explicit and lazy. TB-05 and TB-08 remain partial for their accurately gated depth. The single active objective is TODAY-01 — Daily Edition lead integration. |
+| CURRENT VERDICT | TODAY-01 is COMPLETE on audited `main`: the public Today route makes one `/bullpen/intelligence/today` request, renders at most one backend-authored lead with named evidence and canonical Team Board handoff, stays quiet without a lead, and isolates owner failure from healthy Tonight and league content. The single active objective is TODAY-02 — Tonight Slate Bullpen Context. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | `4a39802c426872f8f9b4a9a72bd6899b3880db7b` | Audited `origin/main` after PR #731; includes PRE-02B commit `399692904e6abbf462b31dd9db92512e726bb045`. |
-| Audit branch | `docs/pre02b-roadmap-closeout` | Canonical roadmap reconciliation only. |
+| Repository main | `6f91c4d467a716e56f955879938b4201e2c1ca9d` | Audited `origin/main` after PR #733; includes TODAY-01 commit `77d77c56238844228bb07fcef9d173d3e1993e67`. |
+| Audit branch | `today/daily-edition-slate` | TODAY-01 closeout followed by the separately committed TODAY-02 implementation. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -104,36 +104,36 @@ The repository therefore no longer supports treating Team Board 2.0 or its read-
 
 ## 3. Active Objective
 
-| ACTIVE OBJECTIVE | TODAY-01 — Daily Edition lead integration |
+| ACTIVE OBJECTIVE | TODAY-02 — Tonight Slate Bullpen Context |
 | --- | --- |
 
-The next bounded package is **TODAY-01 — Daily Edition lead integration**.
-The public Today page already renders governed Since Yesterday, Tonight, league
-teaser, freshness, quiet, and Team Board handoff behavior, while the backend
-already owns a read-only `/intelligence/today` lead response. The public page
-does not currently request or render that existing lead owner. TODAY-01 closes
-that product-composition gap: add dated Daily Edition identity, consume at most
-one supported backend-authored lead with its strongest receipt, render an
-honest quiet/unavailable state, and hand named teams directly to Team Board.
+The next bounded package is **TODAY-02 — Tonight Slate Bullpen Context**.
+TODAY-01 is complete: the public Today page consumes the governed Today lead
+owner exactly once and preserves dated identity, named evidence, direct Team
+Board handoff, quiet days, and local failure behavior. The remaining daily-habit
+gap is that Tonight still presents at most three team-centric watch cards rather
+than orienting the reader across every game.
 
-TODAY-01 reuses the current Today lead, Tonight snapshot, Dashboard, and Team
-Board authorities. It does not create a new semantic engine, choose winners,
-predict outcomes, expose internal scores, manufacture a lead, expand public
-vocabulary, or alter any publication gate. Broader per-game Slate composition
-is outside this first package.
+TODAY-02 composes the existing game-centric schedule authority with the existing
+Tonight bullpen-context owner. It adds a compact per-game matchup/status row,
+descriptive context for both bullpens when available, and direct Team Board
+handoffs without per-game or per-team browser requests. Existing backend-authored
+watch cards remain valid context; no frontend selects arms, derives availability,
+calculates workload, or decides which bullpen is better.
 
-TODAY-01 exits when the root Today surface:
+TODAY-02 exits when the root Today surface:
 
-1. makes one read-only request to the existing `/intelligence/today` owner;
-2. presents a dated Daily Edition with at most one backend-authored lead, named
-   evidence, and a canonical Team Board destination;
-3. renders a deliberate quiet state when no lead is publishable and a scoped
-   unavailable state when the lead owner fails, without removing healthy
-   Tonight or league sections;
-4. preserves the existing Tonight snapshot, Dashboard, freshness, evidence,
-   and navigation contracts; and
-5. has frontend request/render/failure tests plus the relevant backend owner
-   contracts, production frontend build, and repository-required CI accounting.
+1. keeps exactly one request to `/bullpen/intelligence/tonight` and adds no
+   per-game, per-team, legacy-board, or per-arm fan-out;
+2. presents every authoritative game for the represented date with matchup,
+   canonical time/status, and both Team Board destinations;
+3. formats only backend-owned bullpen optionality, named clean-option, and
+   workload-concentration facts, omitting Team State or role fields that are not
+   safely carried by the current Tonight owner;
+4. preserves other games and independent Daily Edition sections when a team,
+   game, or the Tonight owner is partial or unavailable; and
+5. has backend pass-through/failure contracts, frontend request/render/failure/
+   responsive contracts, a production frontend build, and required CI accounting.
 
 All standing operational boundaries remain intact: D-051 still prohibits an
 authoritative manual daily execution; the legacy sync/postgame writer remains
@@ -233,7 +233,7 @@ The package-by-package and gap-register reconciliation is retained in Appendix D
 
 | Order | State | Work package | Scope |
 | --- | --- | --- | --- |
-| 1 | ACTIVE | TODAY-01 — Daily Edition lead integration | Integrate the existing governed Today lead into the public dated edition with one receipt-bearing lead or honest quiet state and direct Team Board handoff. No new intelligence engine or prediction. |
+| 1 | ACTIVE | TODAY-02 — Tonight Slate Bullpen Context | Compose the existing game schedule and Tonight bullpen-context owners into a compact every-game slate with two Team Board handoffs. No prediction, winner, frontend intelligence, or browser fan-out. |
 | 2 | BLOCKED | TB-08 source-completeness follow-up | Resume only after unresolved transaction authority is established; continue withholding in the meantime. No guessed event meaning. |
 | 3 | DEFERRED BY PRIOR DECISION | Portable Intelligence | Canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel remain valid; distribution follows a stronger Daily Edition rather than substituting for it. |
 | 4 | DATE-BOUND OBLIGATION | React Router migration (#645) | Complete or explicitly re-review before the accepted risk expires on 2026-11-13; the standing dependency gate enforces the date. |
@@ -286,7 +286,7 @@ migration lands or the acceptance is re-reviewed before then.
 | Permanent runtime work | Daily-sync work reduction — Deferred | Reduce candidate enumeration and repeated roster/transaction work without weakening D-051 after the active Team Board closeout. |
 | Portable Intelligence | #597 then #596 | Supported raster assets first; then artifact-specific crawler-visible title, description, image, URL, alt text, and actions. |
 | Visible evidence | M-001 and M-002 — Complete on Team Board | Preserve governed sample, evidence, failure, and rounding contracts; additional metrics need separate approval. |
-| Daily Habit | TODAY-01 — Active | Integrate the existing backend-authored Today lead into the dated public edition; retain current Tonight, quiet/failure, freshness, and Team Board handoff contracts. |
+| Daily Habit | TODAY-01 — Complete; TODAY-02 — Active | The dated edition consumes one backend-authored lead with quiet/failure isolation. Next, deepen the existing Tonight owner into a compact every-game two-bullpen slate using only governed carriers. |
 
 # Part III - Phased Roadmap
 
@@ -299,7 +299,7 @@ migration lands or the acceptance is re-reviewed before then.
 | Phase 1A - Authority Qualification | Complete - August 10, 2026 | D-052 phase exit; all broader game-driven write/publication/backfill authority remains unapproved. |
 | Phase 1B - Public Credibility Pass | Complete - August 12, 2026 | #590, #595, #591, #600, #594, and #638 all complete and production-verified. Maintain the vocabulary, copy-authority, and page-semantics regressions. |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Raster renderer, immutable asset, crawler metadata, actions, funnel. |
-| Phase 3 - Daily Habit and Consequence | Active | Team Board What Changed and the Today/Tonight substrate are integrated; TODAY-01 closes the missing Daily Edition lead composition before broader Slate depth. |
+| Phase 3 - Daily Habit and Consequence | Active | Team Board What Changed and TODAY-01 lead integration are complete; TODAY-02 is the bounded Tonight slate composition slice. |
 | Phase 4 - Offseason Intelligence Depth | Not started | Pitch trends, leverage/dependency, organizational depth, routed discovery, timeline/archive. |
 | Phase 5 - Opening Day 2027 | Not started | Complete daily relaunch with current trust and reliability proof. |
 | Phase 6 - Growth and Validation | Not started | Measured behavior and rights evidence choose direction. |
@@ -355,7 +355,7 @@ migration lands or the acceptance is re-reviewed before then.
 
 ## 14. Later and Parked
 
-Later: broader per-game Slate depth after TODAY-01, additional governed What Changed domains, named-arm evidence, starter exposure, pitch trends, leverage/dependency, organizational depth, routed discovery, state timeline, accessibility and technical-debt windows.
+Later: Slate depth beyond TODAY-02's governed carriers, additional governed What Changed domains, starter exposure, pitch trends, leverage/dependency, organizational depth, routed discovery, state timeline, accessibility and technical-debt windows.
 
 Parked until demand: Follow My Team, automated newsletter, game pages beyond the Slate, embeds, public API/exports, push notifications, professional sales tooling, sponsorship, and monetization tests.
 
@@ -376,7 +376,7 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-Version 5.1 adds no durable Decision Ledger ID. PRE-02B closure is implementation evidence, and advancing the already-canonical Daily Edition direction is ordinary roadmap sequencing. D-001 through D-057 remain unchanged and in force according to their recorded status.
+Version 5.2 adds no durable Decision Ledger ID. TODAY-01 closure is implementation evidence, and advancing the already-canonical Daily Edition direction is ordinary roadmap sequencing. D-001 through D-057 remain unchanged and in force according to their recorded status.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
@@ -410,7 +410,7 @@ The ledger is history and current policy at once, and until Version 4.0 the two 
 
 Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
 
-Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior decision status. Version 5.0 adds D-057 and records D-056 without changing D-001 through D-055. Version 5.1 changes no decision ID or status.
+Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior decision status. Version 5.0 adds D-057 and records D-056 without changing D-001 through D-055. Versions 5.1 and 5.2 change no decision ID or status.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -568,6 +568,7 @@ Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior d
 | Aug 24, 2026 | Operations | Postgame roster-publication parity | PR #729 / commit `2d91a1b2` | Postgame prepares and qualifies exact-date canonical roster authority before replacement Dashboard publication; unqualified or failed preparation withholds the replacement snapshot. | **Complete correctness repair.** Daily/postgame writer and publication authority are unchanged; no product objective was created. |
 | Aug 24, 2026 | Operations | Seasonal intraday retirement | PR #730 / commit `e86a220d` | Scheduled intraday trigger removed for the remainder of 2026; workflow remains manual-only, fail-closed, and dormant. | **Complete operations change.** Daily plus postgame remain the active scheduled cadence; reactivation requires a separate 2027 review. |
 | Aug 24, 2026 | Team Board 2.0 | PRE-02B read-path consolidation | PR #731 / commit `39969290` / merge `4a39802c` | Initial eager requests reduced 5 to 2; team switch reduced four team-scoped reads to one; `/changes` composed through its canonical owner; share-card loading made explicit and lazy; one canonical board build supplies the selected view. | **Complete.** PRE-02B, PRE-02, and BE-GAP-09 close without changing baseball semantics, failure isolation, legacy endpoint availability, writers, publication authority, sync behavior, or UX meaning. |
+| Aug 24, 2026 | Daily Habit | TODAY-01 Daily Edition lead integration | PR #733 / commit `77d77c56` / merge `6f91c4d4` | Public Today makes exactly one `/bullpen/intelligence/today` request; renders dated identity, at most one backend-authored lead, named reliever evidence, and canonical Team Board handoff; quiet and unavailable states remain local. | **Complete.** No frontend lead selection, backend semantic change, publication change, or coupling to healthy Tonight and league content. |
 
 ## DIST-003 (#594) Production Closeout Evidence
 
@@ -602,7 +603,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 | Phase 1A - Authority Qualification | Complete | Aug 10, 2026 | D-052; #593/OPS-002 closed; candidate audit and no-op PASS | No authority transfer; O-008 remains open |
 | Phase 1B - Vocabulary and Freshness | Complete | Aug 12, 2026 | #590, #595, #591, #600, #594, and #638 complete and production-verified; VOC-001 closed on trusted snapshot 398 proof | Maintain vocabulary, copy-authority, and page-semantics regressions |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started |  | Immutable artifact and historical page are production | Renderer, metadata, actions, funnel |
-| Phase 3 - Daily Habit and Consequence | Active |  | Governed Team Board What Changed, Today/Tonight substrate, quiet/failure states, and Team Board handoffs are integrated | TODAY-01 integrates the existing governed lead into the public Daily Edition; broader Slate depth remains later work |
+| Phase 3 - Daily Habit and Consequence | Active |  | Governed Team Board What Changed, Today/Tonight substrate, quiet/failure states, Team Board handoffs, and TODAY-01 lead integration are complete | TODAY-02 composes the existing schedule and Tonight bullpen-context owners into a compact every-game slate |
 | Phase 4 - Offseason Intelligence Depth | Not started |  | Candidate domains governed | Pitch, leverage, depth, routes, archive |
 | Phase 5 - Opening Day 2027 | Not started |  |  | Complete daily relaunch |
 | Phase 6 - Growth and Validation | Not started |  |  | Behavior and rights evidence choose direction |
@@ -610,7 +611,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 # Appendix C - Source Basis
 
 - BaseballOS Product Roadmap & Decision Ledger Version 4.2, effective August 15, 2026.
-- Audited repository `origin/main` `4a39802c426872f8f9b4a9a72bd6899b3880db7b` after PR #731; includes PRE-02B commit `399692904e6abbf462b31dd9db92512e726bb045`. Team Board readiness comparison baseline `e12d76033c05f9989393c8e4e115aeb61a7b3c13`; Version 5.0 basis `c63877a5b3d835b7190030d28ff143bedcafe099`.
+- Audited repository `origin/main` `6f91c4d467a716e56f955879938b4201e2c1ca9d` after PR #733; includes TODAY-01 commit `77d77c56238844228bb07fcef9d173d3e1993e67`. Historical Team Board closeout basis `4a39802c426872f8f9b4a9a72bd6899b3880db7b` after PR #731.
 - Gated generated-content publication commit `2e83fa0` on main, from scheduled run 31794183367 (attempt 1), Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, 2026.
 - Git authorship on main at this basis: every engineering commit authored by Nickolis Kacludis, plus the one `BaseballOS Automation` publication commit above.
 - Decision Ledger through D-057, including the dated D-056 record.
@@ -624,13 +625,13 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 ## Repository basis
 
-Current audited main: `4a39802c426872f8f9b4a9a72bd6899b3880db7b` after PR #731. Team Board 2.0's core governed architecture, presentation, and read path are complete. PRE-01 residual design-system cleanup remains optional; TB-05 governed depth and TB-08 source completeness remain accurately partial as recorded in Appendix D.
+Current audited main: `6f91c4d467a716e56f955879938b4201e2c1ca9d` after PR #733. Team Board 2.0's core governed architecture, presentation, and read path are complete. PRE-01 residual design-system cleanup remains optional; TB-05 governed depth and TB-08 source completeness remain accurately partial as recorded in Appendix D.
 
 SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
 ## Active objective
 
-The active objective is TODAY-01 Daily Edition lead integration.
+The active objective is TODAY-02 Tonight Slate Bullpen Context. TODAY-01 is complete on merged main: the public Today route consumes its owner once, preserves the backend-authored lead and named evidence, links to Team Board, remains quiet without a lead, and isolates lead-owner failure from healthy Tonight and league content.
 
 PRE-02B is complete under D-057. Current Team Board rendering uses the teams
 directory plus one `/board-v2` content request. Legacy `/board` remains an
@@ -644,7 +645,7 @@ A closed issue and recorded production proof remain different claims. Here both 
 
 ## Next approved sequence
 
-1) Integrate the existing governed Today lead into a finite dated Daily Edition under TODAY-01. 2) Keep TB-08 blocked until transaction authority resolves. 3) Keep Portable Intelligence deferred by prior decision and runtime work, additional Team Board depth, and Pitcher 2.0 backlogged unless their stated gates change.
+1) Compose the existing game schedule and Tonight bullpen-context owners into the bounded TODAY-02 every-game slate without browser fan-out or new semantics. 2) Keep TB-08 blocked until transaction authority resolves. 3) Keep Portable Intelligence deferred by prior decision and runtime work, additional Team Board depth, and Pitcher 2.0 backlogged unless their stated gates change.
 
 Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
@@ -742,3 +743,4 @@ not a reason to reopen the completed Team Board packages.
 | 4.2 | August 15, 2026 | Nickolis Kacludis | Added D-055 for Team Board Phase 2 Package 1: an additive projection of already-public workload facts from fatigue and availability records already loaded by the Team Board, plus one backend-authored, fail-closed Rest Status with exact date semantics. Required evidence remains nullable, incomplete or stale evidence never becomes zero, raw fatigue scores remain private, real query-count invariance is required, and no Team State, availability vocabulary, ranking, prediction, frontend derivation, reader-path acquisition, write authority, or publication authority changes. D-001 through D-054 remain unchanged. |
 | 5.0 | August 23, 2026 | Nickolis Kacludis | Reconciled Team Board 2.0 against `origin/main` `c63877a5` and the August 17 baseline `e12d7603`. Recorded the package, backend-gap, and frontend-gap truth; incorporated D-056; added D-057; advanced PRE-02B read-path consolidation as the single active objective; and preserved transaction, leverage, role-movement, performance-depth, historical, and prospective-delta gates without resolving them by implication. |
 | 5.1 | August 24, 2026 | Nickolis Kacludis | Reconciled `origin/main` `4a39802c` after PR #731. Closed PRE-02B, PRE-02, and BE-GAP-09 on exact request-path, composition, lazy-share, failure-isolation, and duplicate-owner-call evidence; recorded the completed PR #729 postgame roster-authority parity repair and PR #730 remainder-of-2026 scheduled intraday retirement; selected TODAY-01 Daily Edition lead integration as the sole active objective because the governed lead owner exists but is not consumed by the public Today page. Kept TB-08 blocked, React Router a 2026-11-13 dated obligation, Portable Intelligence deferred, and runtime, Team Board depth, and Pitcher 2.0 backlogged. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
+| 5.2 | August 24, 2026 | Nickolis Kacludis | Reconciled `origin/main` `6f91c4d4` after PR #733 and closed TODAY-01 on exact owner-request, backend-authored lead, named-evidence, Team Board handoff, quiet-state, and failure-isolation evidence. Selected TODAY-02 Tonight Slate Bullpen Context as the single active objective because the existing Tonight owner remains a three-card team watch while the canonical game schedule and bullpen-context owners can safely compose an every-game two-bullpen slate without new semantics or browser fan-out. Kept Team State and role facts out until the Tonight carrier safely owns them; kept TB-08 blocked, React Router date-bound, Portable Intelligence deferred, and infrastructure/depth packages backlogged. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
