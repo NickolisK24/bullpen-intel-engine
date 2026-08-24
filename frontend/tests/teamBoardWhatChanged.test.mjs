@@ -243,11 +243,12 @@ test('the view model presents the public contract without client snapshot or cat
   }
 })
 
-test('Team Board replaces its story request with the existing changes contract', async () => {
+test('Team Board consumes the composed What Changed contract', async () => {
   const source = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
 
-  assert.equal((source.match(/getTeamChanges\(selectedTeam\)/g) || []).length, 1)
+  assert.equal((source.match(/getTeamChanges\(selectedTeam\)/g) || []).length, 0)
   assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.ok(source.includes('teamBoardRead?.whatChanged'))
   assert.ok(source.includes('<TeamBoardWhatChanged'))
   assert.equal(source.includes('getTeamStory'), false)
   assert.equal(source.includes('<StoryCard'), false)

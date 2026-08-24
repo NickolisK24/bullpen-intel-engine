@@ -41,6 +41,8 @@ export function readTeamBoardV2(payload) {
     recentReliefWork: payload.recent_relief_work,
     gameContext: payload.game_context,
     performance: payload.performance,
+    whatChanged: payload.what_changed,
+    operatingState: payload.operating_state,
     sectionStatus: payload.section_status,
     limitations: payload.limitations,
   }

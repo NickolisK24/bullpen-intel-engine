@@ -1,7 +1,7 @@
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
-import { getTeamBoardV2, getTeamBullpenBoard, getTeamChanges, getTeamShareCard } from '../../../utils/api'
+import { getTeamBoardV2, getTeamShareCard } from '../../../utils/api'
 import { TeamBoardSkeleton, ErrorState, EmptyState, SectionPair } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
@@ -20,6 +20,15 @@ import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../u
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 
 export { resolveTeamId } from '../../../utils/evidenceLinks'
+
+export function createTeamShareCardLoader(
+  teamId,
+  loadArtifact = getTeamShareCard,
+  adaptArtifact = buildTeamShareCardFromArtifact,
+) {
+  if (teamId == null) return null
+  return () => loadArtifact(teamId).then(adaptArtifact)
+}
 
 const staticFetchState = (data) => ({
   data,
@@ -45,24 +54,10 @@ export default function TonightsBullpenBoard({
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   const selectedTeamRecord = teamList.find(team => Number(team.team_id) === Number(selectedTeam)) || boardPayload?.team || null
-  const board = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBullpenBoard(selectedTeam)),
-    [selectedTeam],
-  )
   const teamBoardV2 = useFetch(
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardV2(selectedTeam)),
     [selectedTeam],
   )
-
-  const changes = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamChanges(selectedTeam)),
-    [selectedTeam],
-  )
-  const shareCard = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamShareCard(selectedTeam)),
-    [selectedTeam],
-  )
-  const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
   const hasTeamBoardV2Override = (
     teamBoardV2Payload !== undefined
     || teamBoardV2Loading !== undefined
@@ -80,27 +75,36 @@ export default function TonightsBullpenBoard({
   const teamBoardAnswerRead = teamBoardRead && gameContextPayload !== undefined
     ? { ...teamBoardRead, gameContext: gameContextPayload }
     : teamBoardRead
-  const changesState = changesPayload !== undefined ? staticFetchState(changesPayload) : changes
-  const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
+  const changesState = changesPayload !== undefined
+    ? staticFetchState(changesPayload)
+    : {
+        data: teamBoardRead?.whatChanged || null,
+        loading: teamBoardV2State.loading,
+        error: teamBoardRead?.sectionStatus?.what_changed?.reason_code === 'what_changed_unavailable'
+          ? 'What Changed unavailable'
+          : null,
+        refetch: teamBoardV2State.refetch,
+      }
+  const operatingStatePayload = boardPayload !== undefined
+    ? boardPayload
+    : teamBoardRead?.operatingState || {}
+  const teamOperatingRead = toOperatingStateReadModel(operatingStatePayload, {
     scope: 'team',
-    team: boardState.data?.team,
+    team: operatingStatePayload?.team || selectedTeamRecord,
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
     includeRotationSupport: false,
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
-  const teamCard = buildTeamShareCardFromArtifact(shareCard.data)
+  const loadTeamCard = createTeamShareCardLoader(selectedTeam)
   const teamLinkFallbackPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
-  const teamDestinationUrl = teamCard?.destinationUrl
-    || (teamLinkFallbackPath ? `${EVIDENCE_CARD_ORIGIN}${teamLinkFallbackPath}` : null)
-  const teamEvidenceTarget = teamCard?.evidenceTarget
-    || (normalizedRequestedSection === 'team-relief-work'
+  const teamDestinationUrl = teamLinkFallbackPath ? `${EVIDENCE_CARD_ORIGIN}${teamLinkFallbackPath}` : null
+  const teamEvidenceTarget = normalizedRequestedSection === 'team-relief-work'
       ? 'team_relief_work'
       : normalizedRequestedSection === 'pitcher-lanes'
         ? 'pitcher_lanes'
-        : 'team_read')
-  const teamShareText = teamCard?.shareText
-    || `Current ${teamOperatingRead.teamName || 'team'} bullpen evidence on BaseballOS.`
+        : 'team_read'
+  const teamShareText = `Current ${teamOperatingRead.teamName || 'team'} bullpen evidence on BaseballOS.`
   const teamSwitcher = (
     <div className="w-full min-w-0 tablet:w-56">
       {teamList.length === 0 ? (
@@ -132,10 +136,10 @@ export default function TonightsBullpenBoard({
           <div className="mb-4 max-w-xs">{teamSwitcher}</div>
           <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
         </>
-      ) : boardState.loading ? (
+      ) : teamBoardV2State.loading ? (
         <TeamBoardSkeleton message="Building current bullpen board..." />
-      ) : boardState.error ? (
-        <ErrorState message={boardState.error} onRetry={boardState.refetch} />
+      ) : teamBoardV2State.error ? (
+        <ErrorState message={teamBoardV2State.error} onRetry={teamBoardV2State.refetch} />
       ) : (
         <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
@@ -262,7 +266,7 @@ export default function TonightsBullpenBoard({
             <div className="mt-section flex justify-end">
               <EvidenceShareMenu
                 variant="team-board"
-                cardModel={teamCard}
+                loadCardModel={loadTeamCard}
                 destinationUrl={teamDestinationUrl}
                 shareText={teamShareText}
                 context={{
