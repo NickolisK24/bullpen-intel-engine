@@ -339,7 +339,7 @@ test('Team Board no longer owns the StoryCard API seam', () => {
 
   assert.equal(source.includes('getTeamStory(selectedTeam)'), false)
   assert.equal(source.includes('<StoryCard'), false)
-  assert.ok(source.includes('getTeamChanges(selectedTeam)'))
+  assert.ok(source.includes('teamBoardRead?.whatChanged'))
   assert.ok(source.includes('<TeamBoardWhatChanged'))
   assert.ok(!source.includes('story_observation_engine'))
   assert.ok(!source.includes('story_construction_engine'))

@@ -682,16 +682,15 @@ test('share controls use the card-selected destination, target, and share text',
 
   // SC-03A cutover: the board sources the card from the canonical immutable
   // artifact (buildTeamShareCardFromArtifact), never the legacy client composer.
-  assert.ok(board.includes('buildTeamShareCardFromArtifact(shareCard.data)'))
+  assert.ok(board.includes('createTeamShareCardLoader(selectedTeam)'))
   assert.equal(board.includes('buildTeamEvidenceCard'), false)
-  assert.ok(board.includes('teamCard?.destinationUrl'))
-  assert.ok(board.includes('teamCard?.evidenceTarget'))
-  assert.ok(board.includes('teamCard?.shareText'))
+  assert.ok(board.includes('loadCardModel={loadTeamCard}'))
   assert.ok(board.includes('evidence_target: teamEvidenceTarget'))
   assert.equal(board.includes("current bullpen read, with the recent-work receipts"), false)
 
-  assert.ok(menu.includes('cardModel?.destinationUrl || destinationUrl'))
-  assert.ok(menu.includes('cardModel?.shareText || shareText'))
+  assert.ok(menu.includes('resolvedCardModel?.destinationUrl || destinationUrl'))
+  assert.ok(menu.includes('resolvedCardModel?.shareText || shareText'))
+  assert.ok(menu.includes('resolvedCardModel.evidenceTarget || context?.evidence_target'))
   assert.ok(menu.includes('destinationUrl: shareDestination'))
   assert.ok(menu.includes('shareText: nativeShareText'))
 

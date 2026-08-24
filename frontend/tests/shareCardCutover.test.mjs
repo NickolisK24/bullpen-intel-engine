@@ -62,21 +62,16 @@ test('the board sources its card from the canonical immutable artifact', () => {
   assert.ok(board.includes('getTeamShareCard'))
   assert.ok(board.includes("from '../../../utils/api'"))
   // ...and adapts ONLY that projection into the renderer/share-menu shape.
-  assert.ok(board.includes('buildTeamShareCardFromArtifact(shareCard.data)'))
+  assert.ok(board.includes('createTeamShareCardLoader(selectedTeam)'))
+  assert.ok(board.includes('loadCardModel={loadTeamCard}'))
   assert.ok(board.includes("from '../../../utils/shareCardArtifact'"))
 })
 
 test('the board never falls back to legacy composition when the artifact is absent', () => {
-  // teamCard is assigned purely from the artifact adapter, with no `||`
-  // fallback to a client-composed card. When the adapter returns null the share
-  // menu shows its controlled unavailable state.
-  const teamCardLine = board
-    .split('\n')
-    .find(line => line.includes('const teamCard ='))
-  assert.ok(teamCardLine, 'expected a `const teamCard =` assignment in the board')
-  assert.equal(teamCardLine.trim(), 'const teamCard = buildTeamShareCardFromArtifact(shareCard.data)')
+  // The on-demand artifact projection remains the only card model. The route
+  // fallback supplies a link, never a client-composed card.
   for (const composer of LEGACY_COMPOSERS) {
-    assert.equal(teamCardLine.includes(composer), false)
+    assert.equal(board.includes(composer), false)
   }
 })
 

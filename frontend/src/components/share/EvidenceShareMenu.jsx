@@ -20,6 +20,7 @@ function resultMessage(result) {
 
 export default function EvidenceShareMenu({
   cardModel = null,
+  loadCardModel = null,
   context,
   destinationUrl,
   shareText,
@@ -30,11 +31,21 @@ export default function EvidenceShareMenu({
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loadedCardModel, setLoadedCardModel] = useState(null)
+  const [cardLoadError, setCardLoadError] = useState(false)
   const rootRef = useRef(null)
   const busyRef = useRef(false)
-  const cardAvailable = Boolean(cardModel)
-  const shareDestination = cardModel?.destinationUrl || destinationUrl
-  const nativeShareText = cardModel?.shareText || shareText
+  const resolvedCardModel = cardModel || loadedCardModel
+  const cardAvailable = Boolean(resolvedCardModel)
+  const shareDestination = resolvedCardModel?.destinationUrl || destinationUrl
+  const nativeShareText = resolvedCardModel?.shareText || shareText
+  const resolvedContext = resolvedCardModel
+    ? {
+        ...context,
+        evidence_target: resolvedCardModel.evidenceTarget || context?.evidence_target,
+        data_through: resolvedCardModel.dataThrough || context?.data_through,
+      }
+    : context
   const isTeamBoard = variant === 'team-board'
 
   useEffect(() => {
@@ -58,6 +69,21 @@ export default function EvidenceShareMenu({
     }
   }, [open])
 
+  async function openMenu() {
+    const nextOpen = !open
+    setOpen(nextOpen)
+    if (!nextOpen || busy || cardModel || loadedCardModel || typeof loadCardModel !== 'function') return
+    setCardLoadError(false)
+    setBusy(true)
+    try {
+      setLoadedCardModel(await loadCardModel())
+    } catch {
+      setCardLoadError(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function run(action) {
     if (busyRef.current) return
     busyRef.current = true
@@ -67,12 +93,12 @@ export default function EvidenceShareMenu({
       let result
       if (action === 'share') {
         result = linkOnly
-          ? await shareExactLink({ destinationUrl: shareDestination, shareText: nativeShareText, context, cardModel })
-          : await shareEvidenceCard({ model: cardModel, shareText: nativeShareText, context })
+          ? await shareExactLink({ destinationUrl: shareDestination, shareText: nativeShareText, context: resolvedContext, cardModel: resolvedCardModel })
+          : await shareEvidenceCard({ model: resolvedCardModel, shareText: nativeShareText, context: resolvedContext })
       } else if (action === 'copy') {
-        result = await copyExactLink({ destinationUrl: shareDestination, context, cardModel })
+        result = await copyExactLink({ destinationUrl: shareDestination, context: resolvedContext, cardModel: resolvedCardModel })
       } else {
-        result = await downloadEvidenceCard({ model: cardModel, context })
+        result = await downloadEvidenceCard({ model: resolvedCardModel, context: resolvedContext })
       }
       setMessage(resultMessage(result))
       if (['shared_card', 'shared_link', 'copied', 'downloaded'].includes(result?.status)) {
@@ -94,7 +120,7 @@ export default function EvidenceShareMenu({
         aria-label="Open evidence sharing options"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(value => !value)}
+        onClick={openMenu}
         className={isTeamBoard
           ? 'min-h-11 rounded-sm border border-brand-blue/50 bg-transparent px-3 py-2 font-board text-board-metadata text-brand-blue hover:border-brand-blue hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus'
           : 'rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/40'}
@@ -139,7 +165,9 @@ export default function EvidenceShareMenu({
             </button>
           )}
           {!linkOnly && !cardAvailable && (
-            <p className="px-3 py-2 text-xs leading-relaxed text-chalk500">{CARD_UNAVAILABLE}</p>
+            <p className="px-3 py-2 text-xs leading-relaxed text-chalk500">
+              {cardLoadError ? 'Card could not be loaded right now.' : CARD_UNAVAILABLE}
+            </p>
           )}
         </div>
       )}

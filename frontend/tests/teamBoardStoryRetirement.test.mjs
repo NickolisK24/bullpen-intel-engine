@@ -101,7 +101,7 @@ test('Team Board retires StoryCard only after the structured What Changed replac
   const src = readSrc('components/bullpen/board/TonightsBullpenBoard.jsx')
   assert.equal(src.includes('<StoryCard'), false)
   assert.ok(src.includes('<TeamBoardWhatChanged'))
-  assert.ok(src.includes('getTeamChanges(selectedTeam)'))
+  assert.ok(src.includes('teamBoardRead?.whatChanged'))
   assert.equal(src.includes('teamBoardCanonicalView'), false)
   assert.equal(src.includes('shouldMountLegacyStoryPanel'), false)
   assert.equal(src.includes('VITE_USE_CANONICAL_TEAM_BOARD'), false)

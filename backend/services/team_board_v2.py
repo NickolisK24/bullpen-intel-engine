@@ -706,6 +706,53 @@ def _performance_status(performance, error, represented_date):
     )
 
 
+def _what_changed_status(what_changed, error, represented_date):
+    """Envelope the canonical Team Changes state without reauthoring it."""
+    if error:
+        return deepcopy(error)
+    if not isinstance(what_changed, dict):
+        return unavailable_section('what_changed_unavailable')
+
+    source_state = what_changed.get('state')
+    if source_state == STATUS_UNAVAILABLE:
+        status = STATUS_UNAVAILABLE
+    elif source_state in ('stale', STATUS_PARTIAL):
+        status = STATUS_PARTIAL
+    elif source_state in ('changes', 'no_changes', 'no_baseline'):
+        status = STATUS_AVAILABLE
+    else:
+        return unavailable_section('what_changed_state_unsupported')
+
+    result = _section_status(
+        status,
+        reason_code=(what_changed.get('state_reason_codes') or [None])[0],
+        limitations=what_changed.get('limitations') or [],
+        represented_date=(
+            (what_changed.get('comparison') or {}).get('current_game_date')
+            or represented_date
+        ),
+    )
+    result['source_state'] = source_state
+    return result
+
+
+def _operating_state_carrier(board):
+    """Carry the exact legacy disclosure inputs already built by board authority."""
+    return {
+        field: deepcopy(board.get(field))
+        for field in (
+            'team',
+            'freshness',
+            'team_state',
+            'context',
+            'roster_authority',
+            'team_shape',
+            'rotation_support_pressure',
+            'limitations',
+        )
+    }
+
+
 def build_team_board_v2_payload(
     board,
     *,
@@ -713,6 +760,7 @@ def build_team_board_v2_payload(
     recent_transactions=None,
     game_context=None,
     performance=None,
+    what_changed=None,
     section_errors=None,
 ):
     """Compose existing public read models without mutating their payloads."""
@@ -792,6 +840,11 @@ def build_team_board_v2_payload(
             errors.get('performance'),
             represented_date,
         ),
+        'what_changed': _what_changed_status(
+            what_changed,
+            errors.get('what_changed'),
+            represented_date,
+        ),
     }
 
     return {
@@ -826,6 +879,8 @@ def build_team_board_v2_payload(
         },
         'game_context': context,
         'performance': performance_read,
+        'what_changed': deepcopy(what_changed) if isinstance(what_changed, dict) else None,
+        'operating_state': _operating_state_carrier(board),
         'section_status': section_status,
         'limitations': deepcopy(board.get('limitations') or []),
     }
