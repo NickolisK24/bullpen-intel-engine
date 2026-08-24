@@ -39,6 +39,7 @@ const {
   getDailyEditionView,
   sinceYesterdayCountClarity,
   getTonightCards,
+  getTonightGames,
   submitAudienceSignup,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const {
@@ -374,6 +375,83 @@ const tonightEmpty = {
   cards: [],
   empty_reason: 'no_cards_cleared_bar',
   limitations: [],
+}
+
+const tonightSlate = {
+  ...tonightOk,
+  game_count: 2,
+  games: [
+    {
+      game_pk: 900001,
+      reference_date: '2026-06-25',
+      game_time_utc: '2026-06-25T23:10:00Z',
+      status: { abstract: 'Preview', detailed: 'Scheduled', code: 'S', normalized: 'upcoming' },
+      doubleheader_flag: 'N',
+      game_number: 1,
+      away: {
+        status: 'available',
+        team_id: 112,
+        team_name: 'Chicago Cubs',
+        team_abbreviation: 'CHC',
+        bullpen_context: {
+          context_available: true,
+          clean_workload_option_names: ['Porter Hodge', 'Daniel Palencia'],
+          optionality_band: 'thin',
+          concentration_band: 'concentrated',
+          top_three_workload_share_10d: 52.4,
+        },
+        watch: { pregame_story: { headline: 'Narrow bullpen margin before first pitch' } },
+        limitations: [],
+      },
+      home: {
+        status: 'available',
+        team_id: 158,
+        team_name: 'Milwaukee Brewers',
+        team_abbreviation: 'MIL',
+        bullpen_context: {
+          context_available: true,
+          clean_workload_option_names: ['Trevor Megill'],
+          optionality_band: 'flexible',
+          concentration_band: 'balanced',
+          top_three_workload_share_10d: 34,
+        },
+        watch: null,
+        limitations: [],
+      },
+    },
+    {
+      game_pk: 900002,
+      reference_date: '2026-06-25',
+      game_time_utc: '2026-06-26T02:10:00Z',
+      status: { abstract: 'Live', detailed: 'In Progress', code: 'I', normalized: 'live' },
+      doubleheader_flag: 'N',
+      game_number: 1,
+      away: {
+        status: 'available',
+        team_id: 137,
+        team_name: 'San Francisco Giants',
+        team_abbreviation: 'SF',
+        bullpen_context: {
+          context_available: true,
+          clean_workload_option_names: ['Ryan Walker'],
+          optionality_band: 'narrow',
+          concentration_band: null,
+          top_three_workload_share_10d: null,
+        },
+        watch: null,
+        limitations: [],
+      },
+      home: {
+        status: 'unavailable',
+        team_id: 141,
+        team_name: 'Toronto Blue Jays',
+        team_abbreviation: 'TOR',
+        bullpen_context: { context_available: false, clean_workload_option_names: [] },
+        watch: null,
+        limitations: ['bullpen_context_unavailable'],
+      },
+    },
+  ],
 }
 
 const landscape = {
@@ -1176,6 +1254,114 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   for (const raw of ['signal_family', 'schedule_pressure', 'internal_strength', 'ranking_score', 'recommendation', 'Do not render this field.', 'fatigue score', 'confidence score']) {
     assert.equal(html.includes(raw), false, raw)
   }
+})
+
+test('Tonight slate renders every game from the one owner response with both Team Board handoffs', () => {
+  const games = getTonightGames(tonightSlate, teams)
+  assert.equal(games.length, 2)
+  assert.equal(games[0].gamePk, 900001)
+  assert.equal(games[0].gameTime, '7:10 PM ET')
+  assert.equal(games[0].status, 'Scheduled')
+  assert.deepEqual(games[0].away.namedOptions, ['Porter Hodge', 'Daniel Palencia'])
+  assert.equal(games[0].away.workloadShare, 52.4)
+  assert.equal(games[0].away.href, '/bullpen?view=board&team=CHC&source=today')
+  assert.equal(games[0].home.href, '/bullpen?view=board&team=MIL&source=today')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightSlate,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Slate'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
+  assert.ok(htmlIncludes(html, 'San Francisco Giants at Toronto Blue Jays'))
+  assert.ok(htmlIncludes(html, '7:10 PM ET · Scheduled'))
+  assert.ok(htmlIncludes(html, '10:10 PM ET · In Progress'))
+  assert.ok(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'))
+  assert.ok(htmlIncludes(html, 'Bullpen optionality: Thin'))
+  assert.ok(htmlIncludes(html, 'Top three relievers: 52.4% of 10-day bullpen workload'))
+  assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=today"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=MIL&amp;source=today"'))
+  assert.equal(htmlIncludes(html, 'bullpen advantage'), false)
+})
+
+test('Tonight slate keeps healthy games and sides when one bullpen context is unavailable', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightSlate,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
+  assert.ok(htmlIncludes(html, 'San Francisco Giants at Toronto Blue Jays'))
+  assert.ok(htmlIncludes(html, 'Ryan Walker'))
+  assert.ok(htmlIncludes(html, 'Bullpen context is unavailable for this team. The matchup remains available.'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=today"'))
+  assert.equal(htmlIncludes(html, 'Top three relievers: 0.0%'), false)
+})
+
+test('Tonight slate drops one malformed game without removing the other games', () => {
+  const response = {
+    ...tonightSlate,
+    games: [
+      { game_pk: 1, away: null, home: null },
+      tonightSlate.games[0],
+    ],
+  }
+  const games = getTonightGames(response, teams)
+  assert.equal(games.length, 1)
+  assert.equal(games[0].gamePk, 900001)
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: response,
+    dashboard,
+    landscape,
+    teams,
+  }))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
+})
+
+test('Tonight quiet watch still renders the authoritative game slate without manufacturing a story', () => {
+  const quietSlate = {
+    ...tonightSlate,
+    status: 'empty',
+    cards: [],
+    card_count: 0,
+    empty_reason: 'no_tonight_signals',
+    games: tonightSlate.games.map(game => ({
+      ...game,
+      away: { ...game.away, watch: null },
+      home: { ...game.home, watch: null },
+    })),
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: quietSlate,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Slate'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s watch'), false)
+  assert.equal(htmlIncludes(html, 'No standout bullpen watch point tonight.'), false)
+})
+
+test('Tonight slate source keeps a one-column mobile stack and bounded desktop comparison', () => {
+  const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
+  assert.ok(source.includes('grid min-w-0 grid-cols-1 divide-y divide-dirt sm:grid-cols-2'))
+  assert.ok(source.includes('min-w-0 overflow-hidden border border-dirt bg-dugout'))
+  assert.equal(source.match(/useFetch\(getTonightIntelligence\)/g)?.length, 1)
+  assert.equal(source.includes('getTeamBoardV2'), false)
+  assert.equal(source.includes('getTeamBullpen'), false)
 })
 
 test('Tonight qualitative story payload survives the public safety filter', () => {

@@ -33,7 +33,7 @@ import models.prospect  # noqa: F401
 
 REF = date(2026, 6, 26)
 
-_SERVICE_KEYS = {'status', 'reference_date', 'cards', 'card_count',
+_SERVICE_KEYS = {'status', 'reference_date', 'cards', 'card_count', 'games', 'game_count',
                  'empty_reason', 'limitations'}
 _CONTRACT_KEYS = _SERVICE_KEYS | {'snapshot'}
 _CARD_KEYS = {'team_id', 'team_name', 'headline', 'summary', 'signal_type',

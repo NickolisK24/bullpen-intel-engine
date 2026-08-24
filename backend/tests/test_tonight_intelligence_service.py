@@ -40,9 +40,10 @@ def _sc(team_id=116, *, playing=True, days_until=3, games_until=3, games_next3=3
 
 
 def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0,
-         name='Detroit Tigers'):
+         name='Detroit Tigers', names=None):
     return {
         'context_available': True, 'clean_options_count': clean,
+        'clean_workload_option_names': list(names or []),
         'optionality_band': band, 'practical_close_game_paths_count': paths,
         'available_arms_count': 3, 'monitor_arms_count': 2, 'limited_arms_count': 1,
         'restricted_arms_count': 3, 'concentration_band': conc,
@@ -52,6 +53,24 @@ def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0,
 
 def _builder(pen_by_team):
     return lambda team_id, reference_date: pen_by_team.get(team_id)
+
+
+def _game(game_pk=900001, *, away=116, home=142, status='upcoming'):
+    return {
+        'game_pk': game_pk,
+        'game_date_et': REF,
+        'game_time_utc': '2026-06-26T23:10:00Z',
+        'away_team_id': away,
+        'home_team_id': home,
+        'status': {
+            'abstract': 'Preview',
+            'detailed': 'Scheduled',
+            'code': 'S',
+            'normalized': status,
+        },
+        'doubleheader_flag': 'N',
+        'game_number': 1,
+    }
 
 
 # ── Status ok with cards ──────────────────────────────────────────────────────
@@ -99,6 +118,66 @@ def test_card_count_matches_cards_length():
     assert out['card_count'] == len(out['cards'])
 
 
+def test_every_game_composes_both_existing_team_contexts_without_duplicate_builds():
+    calls = []
+    pens = {
+        116: _pen(name='Detroit Tigers', names=['Alex Lange', 'Tyler Holton']),
+        142: _pen(name='Minnesota Twins', clean=3, band='flexible',
+                  conc='balanced', share=31.2, names=['Jhoan Duran']),
+    }
+
+    def builder(team_id, reference_date):
+        calls.append((team_id, str(reference_date)))
+        return pens[team_id]
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=builder,
+        slate_games=[_game()],
+    )
+
+    assert out['game_count'] == 1
+    assert len(out['games']) == 1
+    game = out['games'][0]
+    assert game['game_pk'] == 900001
+    assert game['game_time_utc'] == '2026-06-26T23:10:00Z'
+    assert game['status'] == _game()['status']
+    assert game['away']['bullpen_context']['clean_workload_option_names'] == [
+        'Alex Lange', 'Tyler Holton',
+    ]
+    assert game['home']['bullpen_context']['top_three_workload_share_10d'] == 31.2
+    assert sorted(team_id for team_id, _ in calls) == [116, 142]
+    assert len(calls) == 2
+
+
+def test_one_team_context_failure_is_local_to_that_game_side():
+    def builder(team_id, reference_date):
+        if team_id == 142:
+            raise RuntimeError('sidecar unavailable')
+        return _pen(names=['Alex Lange'])
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=builder,
+        slate_games=[_game()],
+    )
+
+    game = out['games'][0]
+    assert game['away']['status'] == 'available'
+    assert game['away']['bullpen_context']['clean_workload_option_names'] == ['Alex Lange']
+    assert game['home']['status'] == 'unavailable'
+    assert game['home']['limitations'] == ['bullpen_context_unavailable']
+    assert game['home']['bullpen_context']['context_available'] is False
+
+
 # ── Empty states ──────────────────────────────────────────────────────────────
 
 def test_empty_no_schedule_context():
@@ -114,14 +193,39 @@ def test_empty_no_teams_playing():
     assert out['empty_reason'] == 'no_teams_playing_today'
 
 
+def test_postponed_game_keeps_canonical_status_without_manufacturing_bullpen_context():
+    postponed = _game(status='cancelled')
+    postponed['status'] = {
+        'abstract': 'Preview',
+        'detailed': 'Postponed',
+        'code': 'DR',
+        'normalized': 'cancelled',
+    }
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[_sc(116, playing=False)],
+        slate_games=[postponed],
+    )
+
+    assert out['status'] == 'empty'
+    assert out['empty_reason'] == 'no_teams_playing_today'
+    assert out['game_count'] == 1
+    assert out['games'][0]['status'] == postponed['status']
+    assert out['games'][0]['away']['status'] == 'unavailable'
+    assert out['games'][0]['home']['status'] == 'unavailable'
+
+
 def test_empty_no_signals():
     # Team plays but its bullpen is deep with an off day right after -> no signal.
     out = serve_tonight(
         REF, schedule_contexts=[_sc(116, days_until=5, games_until=5, games_next3=1)],
         bullpen_context_builder=_builder({116: _pen(clean=5, band='deep', paths=5,
-                                                    conc='balanced', share=20.0)}))
+                                                    conc='balanced', share=20.0)}),
+        slate_games=[_game(home=116, away=142)])
     assert out['status'] == 'empty'
     assert out['empty_reason'] == 'no_tonight_signals'
+    assert out['game_count'] == 1
+    assert out['games'][0]['game_pk'] == 900001
 
 
 # ── Reference date resolution ─────────────────────────────────────────────────
