@@ -22,6 +22,7 @@ from services import sync as sync_service
 from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows
 from services.public_fatigue_view import PUBLIC_WORKLOAD_FACT_FIELDS, public_workload_facts
+from services.roster_status import STATUS_ACTIVE, STATUS_IL_15
 from tests.db_config import (
     create_test_schema,
     drop_test_schema,
@@ -275,6 +276,150 @@ def trusted_app(tmp_path, monkeypatch):
         finally:
             db.session.remove()
             drop_test_schema(app)
+
+
+def _publish_frozen_replacement(reference_date, *, source):
+    timestamp = utc_now_naive()
+    run = SyncRun(
+        job_name=(
+            'daily_sync' if source == 'scheduled_sync' else 'postgame_refresh'
+        ),
+        started_at=timestamp - timedelta(minutes=1),
+        completed_at=timestamp,
+        status='success',
+        stage='published',
+        source='test',
+        latest_game_date=reference_date - timedelta(days=1),
+        latest_workload_date=reference_date - timedelta(days=1),
+        latest_fatigue_calculated_at=timestamp,
+    )
+    db.session.add(run)
+    db.session.flush()
+    payload = public_serving_authority.attach_frozen_team_boards(
+        _dashboard_payload(reference_date)
+    )
+    return dashboard_snapshot.store_dashboard_snapshot(
+        payload,
+        sync_run_id=run.id,
+        source=source,
+        publish=True,
+    )
+
+
+def test_postgame_d_plus_one_replacement_preserves_roster_dependent_team_board(
+    trusted_app,
+):
+    morning = trusted_app['snapshot']
+    next_reference_date = trusted_app['reference_date'] + timedelta(days=1)
+    seed_roster_readiness_snapshots([next_reference_date])
+
+    replacement = _publish_frozen_replacement(
+        next_reference_date,
+        source='postgame_refresh',
+    )
+
+    assert replacement.is_published is True
+    assert morning.is_published is False
+    assert replacement.availability_reference_date == next_reference_date
+
+    client = trusted_app['app'].test_client()
+    board = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
+    assert board['publication_authority']['snapshot_id'] == replacement.id
+
+    response = client.get(
+        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['active_bullpen']['arm_count'] > 0
+    assert body['rest_status']['available'] is True
+    assert body['rest_status']['rested_arm_count'] is not None
+    assert body['off_active_count']['status'] == 'available'
+    assert body['off_active_count']['value'] == 0
+    assert body['off_active_count']['context_label'] == 'Current roster context'
+    assert body['off_active_count']['summary'] == (
+        '0 bullpen arms are currently off the active roster.'
+    )
+    readiness = body['roster_context']['readiness']
+    assert readiness['claims_available'] is True
+    assert readiness['counts_withheld'] is False
+    assert readiness['coverage']['snapshot_date'] == next_reference_date.isoformat()
+
+
+def test_postgame_replacement_uses_new_roster_transitions_not_morning_values(
+    trusted_app,
+):
+    pitcher = trusted_app['pitcher']
+    morning_team = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]['by_team_id'][str(TEAM_ID)]
+    assert morning_team['roster_authority']['counts'][
+        'inactive_roster_context_count'
+    ] == 0
+
+    off_active_date = trusted_app['reference_date'] + timedelta(days=1)
+    pitcher.roster_status = STATUS_IL_15
+    pitcher.roster_status_source = 'test_fixture:postgame_transition'
+    pitcher.roster_status_updated_at = utc_now_naive()
+    db.session.commit()
+    seed_roster_readiness_snapshots([off_active_date])
+    off_active_snapshot = _publish_frozen_replacement(
+        off_active_date,
+        source='postgame_refresh',
+    )
+    off_active_team = off_active_snapshot.payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]['by_team_id'][str(TEAM_ID)]
+    assert off_active_team['roster_authority']['counts'][
+        'inactive_roster_context_count'
+    ] == 1
+    assert pitcher.id not in off_active_team['default_pitcher_ids']
+
+    active_date = off_active_date + timedelta(days=1)
+    pitcher.roster_status = STATUS_ACTIVE
+    pitcher.roster_status_source = 'test_fixture:postgame_transition'
+    pitcher.roster_status_updated_at = utc_now_naive()
+    db.session.commit()
+    seed_roster_readiness_snapshots([active_date])
+    active_snapshot = _publish_frozen_replacement(
+        active_date,
+        source='postgame_refresh',
+    )
+    active_team = active_snapshot.payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]['by_team_id'][str(TEAM_ID)]
+    assert active_team['roster_authority']['counts'][
+        'inactive_roster_context_count'
+    ] == 0
+    assert pitcher.id in active_team['default_pitcher_ids']
+
+
+def test_daily_and_postgame_freeze_equivalent_roster_dependent_fields(
+    trusted_app,
+):
+    reference_date = trusted_app['reference_date']
+    base_payload = _dashboard_payload(reference_date)
+    daily = public_serving_authority.attach_frozen_team_boards(
+        deepcopy(base_payload)
+    )
+    postgame = public_serving_authority.attach_frozen_team_boards(
+        deepcopy(base_payload)
+    )
+    daily_team = daily[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(TEAM_ID)]
+    postgame_team = postgame[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(TEAM_ID)]
+
+    for field in (
+        'default_pitcher_ids',
+        'bullpen_membership_authority',
+        'roster_authority',
+        'rest_status',
+        'rest_status_authority',
+    ):
+        assert postgame_team[field] == daily_team[field]
 
 
 def test_trusted_public_board_endpoint_serves_frozen_workload_facts_and_rest_status(

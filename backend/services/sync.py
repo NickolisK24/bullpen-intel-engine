@@ -35,7 +35,10 @@ from services import publication_criticality
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
-from services.availability_reference_date import resolve_product_day
+from services.availability_reference_date import (
+    product_availability_reference_date_from_metadata,
+    resolve_product_day,
+)
 from services.completed_game_context_payload_adapter import build_completed_game_payload
 from services.completed_game_context_service import (
     extract_completed_game_contexts,
@@ -60,6 +63,7 @@ from services.play_by_play_foundation import (
     FINAL_PBP_FETCH_ENTITY_TYPE,
     process_final_play_by_play_foundation,
 )
+from services.public_roster_readiness import build_public_roster_readiness
 from services.roster_evidence import build_run_roster_evidence
 from services.roster_status import STATUS_ACTIVE, STATUS_UNKNOWN
 from services.roster_status_sync import sync_roster_statuses
@@ -116,6 +120,9 @@ POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
 POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
 POSTGAME_PITCHING_LINE_AUTHORITY = 'completed_game_boxscore_pitching_section'
 POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS = 'ASSIGNED'
+POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE = (
+    'postgame_roster_authority_preparation_incomplete'
+)
 OFFICIAL_ROSTER_SYNC_SOURCE_PREFIX = 'mlb_stats_api:roster_sync:'
 OFFICIAL_TEAM_ASSIGNMENT_SOURCE_PREFIX = 'mlb_stats_api:team_assignment_sync:'
 POSTGAME_MARKER_STATUS_FULLY_PROCESSED = PostgameProcessedGame.STATUS_FULLY_PROCESSED
@@ -5602,6 +5609,101 @@ def complete_sync_run_with_snapshot(
         raise
 
 
+def _prepare_canonical_public_roster_authority(
+    reference_date,
+    *,
+    sync_run_id,
+    job_name,
+):
+    """Prepare and qualify the canonical roster state one publication will freeze.
+
+    Daily and postgame both use the same official roster-evidence pass for team
+    assignment and roster status. The caller owns lane-specific acquisition and
+    decides whether an unqualified result may continue to publication.
+    """
+    started = time.monotonic()
+    assignment_started = time.monotonic()
+    run_roster_evidence = build_run_roster_evidence()
+    team_assignment = sync_team_assignments(evidence=run_roster_evidence)
+    assignment_elapsed = round(time.monotonic() - assignment_started, 1)
+    sync_metadata.set_sync_stage(
+        sync_run_id,
+        sync_metadata.STAGE_TEAM_ASSIGNMENTS,
+    )
+    team_assignment_records_failed = record_sync_error_details(
+        'team_assignment_fetch',
+        team_assignment.get('error_details'),
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
+
+    roster_started = time.monotonic()
+    roster = sync_roster_statuses(
+        sync_run_id=sync_run_id,
+        snapshot_date=reference_date,
+        evidence=run_roster_evidence,
+    )
+    roster_elapsed = round(time.monotonic() - roster_started, 1)
+    sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
+
+    readiness = build_public_roster_readiness(
+        reference_date=reference_date,
+        scope='league',
+    )
+    coverage = readiness.get('coverage') or {}
+    exact_reference_date = (
+        reference_date is not None
+        and coverage.get('snapshot_date') == reference_date.isoformat()
+    )
+    assignment_errors = int(team_assignment.get('errors') or 0)
+    roster_errors = int(roster.get('errors') or 0)
+    roster_records_failed = int(roster.get('records_failed') or 0)
+    roster_conflicts = int(roster.get('snapshot_conflicts') or 0)
+    qualified = bool(
+        exact_reference_date
+        and readiness.get('claims_available') is True
+        and readiness.get('counts_withheld') is False
+        and coverage.get('complete') is True
+        and int(coverage.get('teams_missing_count') or 0) == 0
+        and assignment_errors == 0
+        and roster_errors == 0
+        and roster_records_failed == 0
+        and roster_conflicts == 0
+    )
+
+    reason_codes = list(readiness.get('reason_codes') or [])
+    if not exact_reference_date:
+        reason_codes.append('roster_snapshot_reference_date_mismatch')
+    if assignment_errors:
+        reason_codes.append('team_assignment_preparation_incomplete')
+    if roster_errors or roster_records_failed:
+        reason_codes.append('roster_status_preparation_incomplete')
+    if roster_conflicts:
+        reason_codes.append('roster_snapshot_conflict')
+
+    return {
+        'status': 'qualified' if qualified else 'unqualified',
+        'qualified': qualified,
+        'reference_date': (
+            reference_date.isoformat() if reference_date is not None else None
+        ),
+        'reason_codes': list(dict.fromkeys(reason_codes)),
+        'records_failed': (
+            team_assignment_records_failed + roster_records_failed
+        ),
+        'errors': assignment_errors + roster_errors,
+        'team_assignment': team_assignment,
+        'roster_status': roster,
+        'readiness': readiness,
+        'roster_evidence': run_roster_evidence.summary(),
+        'stage_timings': {
+            'team_assignments': assignment_elapsed,
+            'roster_statuses': roster_elapsed,
+            'total': round(time.monotonic() - started, 1),
+        },
+    }
+
+
 def _safe_run_progressive_team_publication(game_pks, *, sync_run_id, status, run_logger):
     """Progressive per-team Team State publication for the games that fully completed
     this postgame pass. Fail-soft: gated by the Share Artifact autogeneration flag and
@@ -5674,8 +5776,9 @@ def run_postgame_refresh(
     slates nearly free, and the lookback means a crashed overnight run
     self-heals on the next pass instead of leaving a permanent hole. An
     explicit ``schedule_date`` restricts the sweep to exactly that date
-    (manual replays). It leaves the full morning sync path intact: no roster
-    refresh, no full-league game-log sweep.
+    (manual replays). It leaves the full morning sync path intact and performs
+    only the canonical roster-authority preparation required for a replacement
+    public snapshot; it does not perform a full-league game-log sweep.
     """
     _ensure_logs_dir()
     log_file = _STATUS_DIR / 'postgame_refresh.log'
@@ -5725,6 +5828,9 @@ def run_postgame_refresh(
         'pitchers_reactivated': 0,
         'completed_game_contexts_upserted': 0,
         'completed_game_context_errors': 0,
+        'public_state_preparation': None,
+        'publication_withheld_reason': None,
+        'dashboard_snapshot_id': None,
         'intelligence_snapshot': 'skipped',
         'message': '',
     }
@@ -6071,6 +6177,84 @@ def run_postgame_refresh(
                     pitchers_updated,
                     round((time.perf_counter() - fatigue_started) * 1000, 1),
                 )
+
+                candidate_metadata = sync_metadata.collect_data_metadata()
+                candidate_reference_date = (
+                    product_availability_reference_date_from_metadata(
+                        candidate_metadata
+                    )
+                )
+                candidate_data_through = (
+                    candidate_reference_date - timedelta(days=1)
+                    if candidate_reference_date is not None
+                    else None
+                )
+                status['candidate_data_through'] = (
+                    candidate_data_through.isoformat()
+                    if candidate_data_through is not None
+                    else None
+                )
+                status['candidate_availability_reference_date'] = (
+                    candidate_reference_date.isoformat()
+                    if candidate_reference_date is not None
+                    else None
+                )
+                if candidate_reference_date is None:
+                    public_state_preparation = {
+                        'status': 'unqualified',
+                        'qualified': False,
+                        'reference_date': None,
+                        'reason_codes': [
+                            'availability_reference_date_unavailable'
+                        ],
+                        'records_failed': 0,
+                        'errors': 0,
+                    }
+                else:
+                    active_stage = sync_metadata.STAGE_TEAM_ASSIGNMENTS
+                    try:
+                        public_state_preparation = (
+                            _prepare_canonical_public_roster_authority(
+                                candidate_reference_date,
+                                sync_run_id=sync_run_id,
+                                job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                            )
+                        )
+                    except Exception as exc:
+                        status['public_state_preparation'] = {
+                            'status': 'failed',
+                            'qualified': False,
+                            'reference_date': candidate_reference_date.isoformat(),
+                            'reason_codes': [
+                                POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+                            ],
+                            'error': str(exc),
+                        }
+                        status['publication_withheld_reason'] = (
+                            POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+                        )
+                        raise RuntimeError(
+                            POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+                        ) from exc
+                    active_stage = sync_metadata.STAGE_ROSTER_STATUS
+
+                status['public_state_preparation'] = public_state_preparation
+                status['records_failed'] += int(
+                    public_state_preparation.get('records_failed') or 0
+                )
+                status['errors'] += int(
+                    public_state_preparation.get('errors') or 0
+                )
+                run_logger.info(
+                    'Postgame public roster authority preparation completed: '
+                    'data_through=%s availability_reference_date=%s '
+                    'status=%s reasons=%s.',
+                    status['candidate_data_through'],
+                    status['candidate_availability_reference_date'],
+                    public_state_preparation.get('status'),
+                    ','.join(public_state_preparation.get('reason_codes') or [])
+                    or 'none',
+                )
             else:
                 run_logger.info(
                     'Fatigue recalculation skipped: no postgame logs changed.'
@@ -6096,7 +6280,22 @@ def run_postgame_refresh(
             if progressive_result is not None:
                 status['progressive_team_publication'] = progressive_result
 
-            if status['records_failed']:
+            if (
+                changed_log_count > 0
+                and not (status.get('public_state_preparation') or {}).get(
+                    'qualified'
+                )
+            ):
+                status['status'] = sync_metadata.STATUS_PARTIAL
+                status['publication_withheld_reason'] = (
+                    POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+                )
+                status['message'] = (
+                    'Postgame workload was refreshed, but the replacement '
+                    'Dashboard snapshot was withheld because exact-date public '
+                    'roster authority was not qualified.'
+                )
+            elif status['records_failed']:
                 status['status'] = (
                     sync_metadata.STATUS_FAILED
                     if status['games_processed'] == 0 and status['newly_completed_games'] > 0
@@ -6113,7 +6312,12 @@ def run_postgame_refresh(
                 status['message'] = 'Completed games were checked; no tracked pitcher workload changed.'
 
             api_metrics = mlb_client.metrics.snapshot()
-            if changed_log_count > 0:
+            if (
+                changed_log_count > 0
+                and (status.get('public_state_preparation') or {}).get(
+                    'qualified'
+                ) is True
+            ):
                 active_stage = sync_metadata.STAGE_DASHBOARD_SNAPSHOT
                 completed_run, snapshot = complete_sync_run_with_snapshot(
                     sync_run_id,
@@ -6186,6 +6390,23 @@ def run_postgame_refresh(
                     )
                 else:
                     status['internal_enrichment'] = 'skipped_public_only'
+            elif changed_log_count > 0:
+                sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=status['status'],
+                    records_processed=changed_log_count,
+                    records_failed=status['records_failed'],
+                    new_logs_added=status['new_logs_added'],
+                    pitchers_updated=status['pitchers_updated'],
+                    errors=status['errors'],
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=status['message'],
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    stage=sync_metadata.STAGE_ROSTER_STATUS,
+                )
             else:
                 sync_metadata.finish_sync_run(
                     sync_run_id,
@@ -6343,15 +6564,25 @@ def run_daily_sync(
             # evidence below instead of fetching every roster view a second
             # time. Nothing is fetched until a consumer asks for it, and a
             # failed view stays a failure for both consumers.
-            run_roster_evidence = build_run_roster_evidence()
-            team_assignment = sync_team_assignments(evidence=run_roster_evidence)
-            stage_timings['team_assignments'] = round(time.monotonic() - stage_started, 1)
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
-            team_assignment_records_failed = record_sync_error_details(
-                'team_assignment_fetch',
-                team_assignment.get('error_details'),
+            roster_preparation = _prepare_canonical_public_roster_authority(
+                product_day.calendar_date,
                 sync_run_id=sync_run_id,
+                job_name=sync_metadata.JOB_DAILY_SYNC,
             )
+            team_assignment = roster_preparation['team_assignment']
+            roster = roster_preparation['roster_status']
+            run_roster_evidence_summary = roster_preparation['roster_evidence']
+            team_assignment_records_failed = (
+                roster_preparation['records_failed']
+                - int(roster.get('records_failed') or 0)
+            )
+            roster_records_failed = int(roster.get('records_failed') or 0)
+            stage_timings['team_assignments'] = roster_preparation[
+                'stage_timings'
+            ]['team_assignments']
+            stage_timings['roster_statuses'] = roster_preparation[
+                'stage_timings'
+            ]['roster_statuses']
             run_logger.info(
                 'Refreshed team assignment for %s pitchers (%s changed, %s reassigned, %s no org, %s unknown, %s errors)',
                 team_assignment['pitchers_refreshed'],
@@ -6362,15 +6593,6 @@ def run_daily_sync(
                 team_assignment['errors'],
             )
             active_stage = sync_metadata.STAGE_ROSTER_STATUS
-            stage_started = time.monotonic()
-            roster = sync_roster_statuses(
-                sync_run_id=sync_run_id,
-                snapshot_date=product_day.calendar_date,
-                evidence=run_roster_evidence,
-            )
-            stage_timings['roster_statuses'] = round(time.monotonic() - stage_started, 1)
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
-            roster_records_failed = roster.get('records_failed', 0)
             run_logger.info(
                 'Refreshed roster status for %s pitchers (%s changed, %s created, '
                 '%s corrected, %s unchanged, %s unknown, %s errors)',
@@ -6382,15 +6604,14 @@ def run_daily_sync(
                 roster['unknown_count'],
                 roster['errors'],
             )
-            roster_evidence_summary = run_roster_evidence.summary()
             run_logger.info(
                 'Roster evidence: %s teams x %s roster types = %s roster requests '
                 '(%s fetch failures) reused by %s',
-                roster_evidence_summary['teams_fetched'],
-                len(roster_evidence_summary['roster_types_fetched']),
-                roster_evidence_summary['roster_requests'],
-                roster_evidence_summary['fetch_failures'],
-                ', '.join(roster_evidence_summary['consumers']) or 'no consumers',
+                run_roster_evidence_summary['teams_fetched'],
+                len(run_roster_evidence_summary['roster_types_fetched']),
+                run_roster_evidence_summary['roster_requests'],
+                run_roster_evidence_summary['fetch_failures'],
+                ', '.join(run_roster_evidence_summary['consumers']) or 'no consumers',
             )
             active_stage = sync_metadata.STAGE_TRANSACTIONS
             stage_started = time.monotonic()
