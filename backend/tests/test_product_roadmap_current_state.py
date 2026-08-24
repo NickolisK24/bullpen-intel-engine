@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 5.3 (TODAY-02 closeout and pregame Team State sequencing). What it guards:
+Re-pinned to Version 5.5 (TODAY-04 closeout and rotation-context sequencing). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -22,8 +22,8 @@ Re-pinned to Version 5.3 (TODAY-02 closeout and pregame Team State sequencing). 
   * A closed issue is not production proof. CI-003 (#598) remains complete only
     because its recorded run, tree, deployment, and routed-page evidence exist.
 
-  * Order and package state are contracts. PRE-02B, PRE-02, TODAY-01, and TODAY-02
-    are complete; TODAY-03 is the bounded active objective; blocked, deferred, dated, and
+  * Order and package state are contracts. PRE-02B, PRE-02, and TODAY-01 through
+    TODAY-04 are complete; TODAY-05 is the bounded active objective; blocked, deferred, dated, and
     backlogged work may not silently advance.
 
   * Team Board package status is explicit. A completed user-facing package may
@@ -50,12 +50,14 @@ TODAY_SURFACE_PATH = (
 FRONTEND_API_PATH = REPO_ROOT / 'frontend' / 'src' / 'utils' / 'api.js'
 BULLPEN_API_PATH = REPO_ROOT / 'backend' / 'api' / 'bullpen.py'
 
-EXPECTED_VERSION = '5.4'
+EXPECTED_VERSION = '5.6'
 EXPECTED_EFFECTIVE_DATE = 'August 24, 2026'
-EXPECTED_MAIN = '326e4da29d255a8ba524894fe2d9c67784141af1'
+EXPECTED_MAIN = '773d3793e7a7f47a8c2fa4363ad1dcaba1ff5048'
 PRE_02B_COMMIT = '399692904e6abbf462b31dd9db92512e726bb045'
 TODAY_01_COMMIT = '77d77c56238844228bb07fcef9d173d3e1993e67'
 TODAY_02_COMMIT = '3adb502f724362bc3612f3bf2a799a1560938a53'
+TODAY_03_COMMIT = '08cf1c6a3267d3c7e5b93af4c2fa6a17dfe5e8d2'
+TODAY_04_COMMIT = '655be73cd52b012a8cce904d7b808af54d51fc3f'
 
 # The gated generated-content publication commit and the scheduled run that
 # produced it. Version 3.9 asserted no such commit existed; that was true when
@@ -81,10 +83,10 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# Version 5.3's current execution sequence. State is part of the contract:
+# Version 5.5's current execution sequence. State is part of the contract:
 # blocked, deferred, dated, and backlogged work must not silently become active.
 APPROVED_EXECUTION = (
-    (1, 'ACTIVE', 'TODAY-03 — Pregame Bullpen Signals'),
+    (1, 'ACTIVE', 'TODAY-05 — Rotation Transfer Context'),
     (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
     (3, 'DEFERRED BY PRIOR DECISION', 'Portable Intelligence'),
     (4, 'DATE-BOUND OBLIGATION', 'React Router migration (#645)'),
@@ -113,7 +115,7 @@ TEAM_BOARD_PACKAGE_STATUSES = {
 # Completed packages must not reappear as ordered future work.
 COMPLETED_PACKAGES = (
     'VOC-001', '#638', '#601', 'DEP-001', 'CI-003', '#598', 'PRE-02B',
-    'TODAY-01', 'TODAY-02',
+    'TODAY-01', 'TODAY-02', 'TODAY-03',
 )
 
 # The residual dependency acceptance is dated. If the date stops being visible,
@@ -212,7 +214,7 @@ def _team_board_package_statuses(text):
     return statuses
 
 
-def test_roadmap_declares_version_5_4():
+def test_roadmap_declares_version_5_6():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
@@ -233,13 +235,14 @@ def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
 
     assert EXPECTED_MAIN in text
     assert (
-        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #734; '
-        f'includes TODAY-02 commit `{TODAY_02_COMMIT}`. |'
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #736; '
+        'includes TODAY-04 commit `655be73c` and scoped guard repairs '
+        '`02b4d208` and `a19d19ae`. |'
         in text
     )
     assert (
-        '| Audit branch | `today/pregame-bullpen-context` | '
-        'TODAY-02 closeout followed by the separately committed TODAY-03 implementation. |'
+        '| Audit branch | `feat/rotation-context` | '
+        'TODAY-04 closeout followed by the separately committed TODAY-05 implementation. |'
         in text
     )
 
@@ -308,12 +311,12 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_today_03_is_the_single_active_objective():
-    """The reconciliation advances one bounded pregame Team State integration."""
+def test_today_05_is_the_single_active_objective():
+    """The reconciliation advances one bounded rotation-context integration."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | TODAY-03 — Pregame Bullpen Signals |' in text
-    assert 'The next bounded package is **TODAY-03 — Pregame Bullpen Signals**.' in text
+    assert '| ACTIVE OBJECTIVE | TODAY-05 — Rotation Transfer Context |' in text
+    assert 'The next bounded package is **TODAY-05 — Rotation Transfer Context**.' in text
 
     # No superseded objective may still be declared.
     assert '| ACTIVE OBJECTIVE | Team Board read-path consolidation |' not in text
@@ -362,10 +365,10 @@ def test_the_new_objective_preserves_every_authority_boundary():
         assert preserved in body, preserved
 
     for boundary in (
-        'no readiness calculation',
-        'per-team query fan-out',
-        'frontend state mapping',
-        'new baseball meaning',
+        'no starter query',
+        'recalculates rotation burden',
+        'forecast',
+        'browser request',
         'Recently-used and back-to-back arm selection',
         'late-inning role-arm context',
     ):
@@ -607,9 +610,9 @@ def test_decision_ledger_is_contiguous_through_d058():
 
     assert 'Decision Ledger through D-058' in text
 
-    # 5.3 is main's TODAY-02 closeout and adds no ID; 5.4 adds D-058. The
+    # 5.5 is main's TODAY-04 closeout and adds no ID; 5.6 adds D-058. The
     # narrative names only the latest no-ID edition, so assert that one.
-    assert 'Version 5.3 adds no durable Decision Ledger ID.' in text
+    assert 'Version 5.5 adds no durable Decision Ledger ID.' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
@@ -685,17 +688,22 @@ def test_completion_log_records_the_closed_packages_with_evidence():
         'Public Today makes exactly one `/bullpen/intelligence/today` request',
         'PR #734 / commit `3adb502f` / merge `326e4da2`',
         'One `/bullpen/intelligence/tonight` response carries every game',
+        'PR #735 / commit `08cf1c6a` / merge `14cdadb1`',
+        'Every eligible Tonight game side carries the exact published Team State block',
+        'PR #736 / commit `655be73c` / merge `773d3793`',
+        'Every eligible Tonight game side carries the exact frozen seven-day workload carrier',
+        'Scoped guard repairs `02b4d208` and `a19d19ae`',
     ):
         assert fragment in joined, fragment
 
-def test_revision_history_records_the_version_5_4_entry():
+def test_revision_history_records_the_version_5_6_entry():
     """The current edition names D-058 and preserves prior authority."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 5.4 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.6 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
@@ -714,8 +722,38 @@ def test_revision_history_records_the_version_5_4_entry():
         assert claimed in entry, claimed
 
 
+def test_revision_history_preserves_the_version_5_5_entry():
+    """5.5 is main's TODAY-04 closeout; 5.6 is additive to it."""
+    text = _roadmap_text()
+    rows = [
+        line for line in text.splitlines()
+        if line.startswith('| 5.5 | August 24, 2026 |')
+    ]
+    assert len(rows) == 1, 'exactly one historical Version 5.5 revision-history row'
+    for claimed in (
+        '`origin/main` `773d3793`',
+        'closed TODAY-04',
+        'TODAY-05 Rotation Transfer Context',
+        'frozen Team Board package already carries governed',
+        'No durable decision was added or changed',
+    ):
+        assert claimed in rows[0], claimed
+
+
+def test_revision_history_preserves_the_version_5_4_entry():
+    """5.4 is main's TODAY-03 closeout."""
+    text = _roadmap_text()
+    rows = [
+        line for line in text.splitlines()
+        if line.startswith('| 5.4 | August 24, 2026 |')
+    ]
+    assert len(rows) == 1, 'exactly one historical Version 5.4 revision-history row'
+    for claimed in ('`origin/main` `14cdadb1`', 'TODAY-04', 'seven-day workload carrier'):
+        assert claimed in rows[0], claimed
+
+
 def test_revision_history_preserves_the_version_5_3_entry():
-    """5.3 is main's TODAY-02 closeout; 5.4 is additive to it."""
+    """5.3 is main's TODAY-02 closeout."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()

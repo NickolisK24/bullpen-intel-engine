@@ -59,6 +59,42 @@ def _team_state(team_id):
     }
 
 
+def _recent_volume(team_id):
+    pitches = 137 if team_id == 116 else None
+    return {
+        'team_id': team_id,
+        'recent_bullpen_volume': {
+            'contract': 'team_board_workload_windows_carrier_v1',
+            'status': 'complete',
+            'reason_code': None,
+            'data_through': '2026-06-25',
+            'window_days': 7,
+            'window': {
+                'through': '2026-06-25',
+                'relief_appearances': 8,
+                'pitchers_in_relief': 5,
+                'pitches_total': pitches,
+            },
+        },
+    }
+
+
+def _rotation_context(team_id):
+    return {
+        'team_id': team_id,
+        'rotation_context': {
+            'contract': 'tonight_rotation_transfer_context_v1',
+            'source_contract': 'team_board_rotation_impact_carrier_v1',
+            'status': 'available',
+            'reason_code': None,
+            'reference_date': '2026-06-26',
+            'window_days': 7,
+            'short_start_count': 2 if team_id == 116 else 0,
+            'bullpen_innings_required': 14.0 if team_id == 116 else 8.2,
+        },
+    }
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
@@ -72,8 +108,12 @@ def client(tmp_path, monkeypatch):
         lambda team_id, reference_date: _pen(name=f'Team {team_id}'))
     monkeypatch.setattr(
         tonight_svc,
-        '_default_team_state_listing_builder',
-        lambda: {'teams': [_team_state(116), _team_state(142)]},
+        '_default_publication_sidecar_builder',
+        lambda: (
+            {'teams': [_team_state(116), _team_state(142)]},
+            {'teams': [_recent_volume(116), _recent_volume(142)]},
+            {'teams': [_rotation_context(116), _rotation_context(142)]},
+        ),
     )
     app = Flask(__name__)
     configure_test_database(app)
@@ -276,6 +316,12 @@ def test_endpoint_snapshot_carries_the_authoritative_game_slate(client):
     assert game['home']['bullpen_context']['context_available'] is True
     assert game['away']['team_state']['public_label'] == 'Fresh'
     assert game['home']['team_state']['public_label'] == 'Stretched'
+    assert game['away']['recent_bullpen_volume']['window']['pitches_total'] == 137
+    assert game['home']['recent_bullpen_volume']['window']['pitches_total'] is None
+    assert game['away']['rotation_context']['short_start_count'] == 2
+    assert game['away']['rotation_context']['bullpen_innings_required'] == 14.0
+    assert game['home']['rotation_context']['short_start_count'] == 0
+    assert game['home']['rotation_context']['bullpen_innings_required'] == 8.2
     assert game['away']['team_state']['data_through'] == '2026-06-25'
 
 

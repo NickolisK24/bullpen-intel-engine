@@ -141,14 +141,16 @@ FROZEN_EXAMPLES = (
         'backend/services/what_changed_since_yesterday.py',
     ),
     ('frozen public routes', _run_public_routes, 'backend/api/pitchers.py'),
-    # tonight_intelligence_snapshot rather than bullpen_board or
-    # dashboard_snapshot: those files hold reviewed branch-scoped exceptions
-    # for H-6/H-7 and D-054 respectively. Any other genuinely frozen path in the
-    # same catalogue proves the guard still refuses unapproved changes.
+    # what_changed_since_yesterday_public rather than bullpen_board,
+    # dashboard_snapshot, or tonight_intelligence_snapshot: those files hold
+    # reviewed branch-scoped exceptions for H-6/H-7, D-054, and the current
+    # TODAY snapshot-contract package respectively. Any other genuinely frozen
+    # path in the same catalogue
+    # proves the guard still refuses unapproved changes.
     (
         'phase 0E legacy public',
         _run_phase0e,
-        'backend/services/tonight_intelligence_snapshot.py',
+        'backend/services/what_changed_since_yesterday_public.py',
     ),
     (
         'appearance-team runtime surfaces',

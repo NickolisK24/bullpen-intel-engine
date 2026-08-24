@@ -309,7 +309,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         + freeze_policy.GAP51_REST_STATUS_CARRIER_PATHS
         + freeze_policy.GAP51_REST_STATUS_FROZEN_READER_PATHS
         + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
-        + freeze_policy.D056_TEAM_STATE_REFERENCE_DATE_PATHS,
+        + freeze_policy.D056_TEAM_STATE_REFERENCE_DATE_PATHS
+        + freeze_policy.TODAY05_TONIGHT_SNAPSHOT_CONTRACT_PATHS,
     )
     assert moved == [], (
         f'frozen legacy public surfaces changed: {moved}. A public route or '

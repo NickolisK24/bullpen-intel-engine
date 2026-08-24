@@ -46,6 +46,8 @@ EMPTY_NO_SCHEDULE_CONTEXT = 'no_schedule_context'
 EMPTY_NO_TEAMS_PLAYING = 'no_teams_playing_today'
 EMPTY_NO_SIGNALS = 'no_tonight_signals'
 TEAM_STATE_LISTING_UNAVAILABLE = 'tonight_team_state_listing_unavailable'
+RECENT_VOLUME_LISTING_UNAVAILABLE = 'tonight_recent_volume_listing_unavailable'
+ROTATION_CONTEXT_LISTING_UNAVAILABLE = 'tonight_rotation_context_listing_unavailable'
 
 # Fields carried on internal candidates that the public card must not expose.
 _INTERNAL_CARD_FIELDS = ('strength', 'reference_date')
@@ -53,7 +55,10 @@ _INTERNAL_CARD_FIELDS = ('strength', 'reference_date')
 
 def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None,
                   schedule_contexts=None, bullpen_context_builder=None,
-                  slate_games=None, team_state_listing_builder=None):
+                  slate_games=None, team_state_listing_builder=None,
+                  workload_listing_builder=None,
+                  rotation_listing_builder=None,
+                  publication_sidecar_builder=None):
     """Build the public Tonight response for a reference date.
 
     ``reference_date`` is a ``date``/ISO string, or ``None`` to use the product
@@ -78,11 +83,16 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
         bullpen_context_builder,
         slate_games,
         team_state_listing_builder,
+        workload_listing_builder,
+        rotation_listing_builder,
+        publication_sidecar_builder,
     )
 
 
 def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
-                    slate_games, team_state_listing_builder):
+                    slate_games, team_state_listing_builder,
+                    workload_listing_builder, rotation_listing_builder,
+                    publication_sidecar_builder):
     schedule_contexts = [s for s in (schedule_contexts or []) if s]
 
     if not schedule_contexts:
@@ -96,13 +106,39 @@ def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
         schedule_contexts,
         bullpen_context_builder,
     )
-    team_states = _build_team_states(team_state_listing_builder)
+    if (
+        team_state_listing_builder is None
+        and workload_listing_builder is None
+        and rotation_listing_builder is None
+    ):
+        sidecar_builder = (
+            publication_sidecar_builder or _default_publication_sidecar_builder
+        )
+        try:
+            team_state_listing, workload_listing, rotation_listing = sidecar_builder()
+        except Exception:  # noqa: BLE001 - sidecars remain optional
+            logger.warning('Tonight slate: publication sidecars failed', exc_info=True)
+            team_state_listing, workload_listing, rotation_listing = {}, {}, {}
+        team_states = _build_team_states(lambda: team_state_listing)
+        recent_volumes = _build_recent_volumes(lambda: workload_listing)
+        rotation_contexts = _build_rotation_contexts(lambda: rotation_listing)
+    else:
+        team_states = _build_team_states(team_state_listing_builder)
+        recent_volumes = _build_recent_volumes(workload_listing_builder)
+        rotation_contexts = _build_rotation_contexts(rotation_listing_builder)
     candidates = build_tonight_candidates(
         ref, limit=limit, schedule_contexts=schedule_contexts,
         bullpen_context_builder=lambda team_id, _reference_date: team_contexts.get(team_id))
 
     cards = [_public_card(c) for c in candidates]
-    games = _public_slate_games(slate_games, team_contexts, cards, team_states)
+    games = _public_slate_games(
+        slate_games,
+        team_contexts,
+        cards,
+        team_states,
+        recent_volumes,
+        rotation_contexts,
+    )
     if not candidates:
         return _empty(ref, EMPTY_NO_SIGNALS, games=games)
     return {
@@ -163,7 +199,56 @@ def _build_team_states(team_state_listing_builder):
     return states
 
 
-def _public_slate_games(slate_games, team_contexts, cards, team_states=None):
+def _build_recent_volumes(workload_listing_builder):
+    """Read frozen seven-day workload carriers once for the whole slate."""
+    builder = workload_listing_builder or _default_workload_listing_builder
+    try:
+        listing = builder()
+    except Exception:  # noqa: BLE001 - recent volume is optional per side
+        logger.warning('Tonight slate: published workload listing failed', exc_info=True)
+        return {}
+
+    rows = listing.get('teams') if isinstance(listing, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    volumes = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = row.get('team_id')
+        volume = row.get('recent_bullpen_volume')
+        if team_id is None or not isinstance(volume, dict):
+            continue
+        volumes[team_id] = deepcopy(volume)
+    return volumes
+
+
+def _build_rotation_contexts(rotation_listing_builder):
+    """Read frozen seven-day Rotation Impact carriers once for the slate."""
+    builder = rotation_listing_builder or _default_rotation_listing_builder
+    try:
+        listing = builder()
+    except Exception:  # noqa: BLE001 - rotation context is optional per side
+        logger.warning('Tonight slate: published rotation listing failed', exc_info=True)
+        return {}
+
+    rows = listing.get('teams') if isinstance(listing, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    contexts = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = row.get('team_id')
+        context = row.get('rotation_context')
+        if team_id is None or not isinstance(context, dict):
+            continue
+        contexts[team_id] = deepcopy(context)
+    return contexts
+
+
+def _public_slate_games(slate_games, team_contexts, cards, team_states=None,
+                        recent_volumes=None, rotation_contexts=None):
     cards_by_team = {
         card.get('team_id'): card
         for card in cards
@@ -189,18 +274,23 @@ def _public_slate_games(slate_games, team_contexts, cards, team_states=None):
                 team_contexts.get(away_team_id),
                 cards_by_team.get(away_team_id),
                 (team_states or {}).get(away_team_id),
+                (recent_volumes or {}).get(away_team_id),
+                (rotation_contexts or {}).get(away_team_id),
             ),
             'home': _public_team_side(
                 home_team_id,
                 team_contexts.get(home_team_id),
                 cards_by_team.get(home_team_id),
                 (team_states or {}).get(home_team_id),
+                (recent_volumes or {}).get(home_team_id),
+                (rotation_contexts or {}).get(home_team_id),
             ),
         })
     return games
 
 
-def _public_team_side(team_id, bullpen_context, card, team_state=None):
+def _public_team_side(team_id, bullpen_context, card, team_state=None,
+                      recent_volume=None, rotation_context=None):
     identity = (bullpen_context or {}).get('team') or {}
     public_context = public_tonight_bullpen_context(bullpen_context)
     available = public_context.get('context_available') is True
@@ -210,6 +300,8 @@ def _public_team_side(team_id, bullpen_context, card, team_state=None):
         'team_name': identity.get('team_name'),
         'team_abbreviation': identity.get('team_abbreviation'),
         'team_state': _public_team_state(team_state),
+        'recent_bullpen_volume': _public_recent_volume(recent_volume),
+        'rotation_context': _public_rotation_context(rotation_context),
         'bullpen_context': public_context,
         'watch': _public_watch(card),
         'limitations': [] if available else ['bullpen_context_unavailable'],
@@ -223,6 +315,20 @@ def _public_team_state(team_state):
         TEAM_STATE_READINESS_UNAVAILABLE,
         reason_code=TEAM_STATE_LISTING_UNAVAILABLE,
     )
+
+
+def _public_recent_volume(recent_volume):
+    if isinstance(recent_volume, dict):
+        return deepcopy(recent_volume)
+    from services.published_team_workload_listing import withheld_recent_volume
+    return withheld_recent_volume(RECENT_VOLUME_LISTING_UNAVAILABLE)
+
+
+def _public_rotation_context(rotation_context):
+    if isinstance(rotation_context, dict):
+        return deepcopy(rotation_context)
+    from services.published_team_rotation_listing import withheld_rotation_context
+    return withheld_rotation_context(ROTATION_CONTEXT_LISTING_UNAVAILABLE)
 
 
 def _public_watch(card):
@@ -260,6 +366,56 @@ def _default_team_state_listing_builder():
     # artifacts. Tonight composes its exact public blocks and derives no state.
     from services.league_team_state_listing import build_league_team_state_listing
     return build_league_team_state_listing()
+
+
+def _default_workload_listing_builder():
+    from services.published_team_workload_listing import (
+        build_published_team_workload_listing,
+    )
+    return build_published_team_workload_listing()
+
+
+def _default_rotation_listing_builder():
+    from services.published_team_rotation_listing import (
+        build_published_team_rotation_listing,
+    )
+    return build_published_team_rotation_listing()
+
+
+def _default_publication_sidecar_builder():
+    """Build all frozen sidecars from one trusted snapshot resolution."""
+    from services.league_team_state_listing import (
+        build_league_team_state_listing,
+        resolve_current_trusted_dashboard_snapshot,
+    )
+    from services.published_team_workload_listing import (
+        build_published_team_workload_listing,
+    )
+    from services.published_team_rotation_listing import (
+        build_published_team_rotation_listing,
+    )
+
+    resolved = resolve_current_trusted_dashboard_snapshot()
+
+    def resolver():
+        return resolved
+
+    try:
+        team_states = build_league_team_state_listing(snapshot_resolver=resolver)
+    except Exception:  # noqa: BLE001 - independent optional sidecar
+        logger.warning('Tonight slate: published Team State listing failed', exc_info=True)
+        team_states = {}
+    try:
+        workload = build_published_team_workload_listing(snapshot_resolver=resolver)
+    except Exception:  # noqa: BLE001 - independent optional sidecar
+        logger.warning('Tonight slate: published workload listing failed', exc_info=True)
+        workload = {}
+    try:
+        rotation = build_published_team_rotation_listing(snapshot_resolver=resolver)
+    except Exception:  # noqa: BLE001 - independent optional sidecar
+        logger.warning('Tonight slate: published rotation listing failed', exc_info=True)
+        rotation = {}
+    return team_states, workload, rotation
 
 
 def _public_card(candidate):

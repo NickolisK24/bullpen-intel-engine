@@ -13,6 +13,9 @@ from services.tonight_intelligence_service import serve_tonight
 
 REF = '2026-06-26'
 _REAL_DEFAULT_TEAM_STATE_LISTING_BUILDER = svc._default_team_state_listing_builder
+_REAL_DEFAULT_WORKLOAD_LISTING_BUILDER = svc._default_workload_listing_builder
+_REAL_DEFAULT_ROTATION_LISTING_BUILDER = svc._default_rotation_listing_builder
+_REAL_DEFAULT_PUBLICATION_SIDECAR_BUILDER = svc._default_publication_sidecar_builder
 
 _BANNED = (
     'will win', 'will lose', 'guaranteed', 'probability', 'odds', 'recommend',
@@ -28,6 +31,21 @@ def _empty_published_team_state_listing(monkeypatch):
         svc,
         '_default_team_state_listing_builder',
         lambda: {'teams': []},
+    )
+    monkeypatch.setattr(
+        svc,
+        '_default_workload_listing_builder',
+        lambda: {'teams': []},
+    )
+    monkeypatch.setattr(
+        svc,
+        '_default_rotation_listing_builder',
+        lambda: {'teams': []},
+    )
+    monkeypatch.setattr(
+        svc,
+        '_default_publication_sidecar_builder',
+        lambda: ({'teams': []}, {'teams': []}, {'teams': []}),
     )
 
 
@@ -104,6 +122,62 @@ def _team_state_listing(states):
         'teams': [
             {'team_id': team_id, 'team_state': state}
             for team_id, state in states.items()
+        ],
+    }
+
+
+def _recent_volume(*, appearances=8, pitchers=5, pitches=121,
+                   data_through='2026-06-25'):
+    return {
+        'contract': 'team_board_workload_windows_carrier_v1',
+        'status': 'complete',
+        'reason_code': None,
+        'data_through': data_through,
+        'window_days': 7,
+        'window': {
+            'through': data_through,
+            'relief_appearances': appearances,
+            'pitchers_in_relief': pitchers,
+            'pitches_total': pitches,
+            'appearances_with_pitches': appearances if pitches is not None else 0,
+            'start_relief_unknown': 0,
+            'sentence': 'Exact canonical appearance sentence.',
+            'pitchers_sentence': 'Exact canonical pitcher sentence.',
+            'pitches_sentence': 'Exact canonical pitch sentence.',
+        },
+    }
+
+
+def _workload_listing(volumes):
+    return {
+        'capability': 'published_team_workload_listing_v1',
+        'teams': [
+            {'team_id': team_id, 'recent_bullpen_volume': volume}
+            for team_id, volume in volumes.items()
+        ],
+    }
+
+
+def _rotation_context(*, short_starts=2, bullpen_innings=14.0,
+                      status='available', reference_date=REF):
+    return {
+        'contract': 'tonight_rotation_transfer_context_v1',
+        'source_contract': 'team_board_rotation_impact_carrier_v1',
+        'status': status,
+        'reason_code': None,
+        'reference_date': reference_date,
+        'window_days': 7,
+        'short_start_count': short_starts,
+        'bullpen_innings_required': bullpen_innings,
+    }
+
+
+def _rotation_listing(contexts):
+    return {
+        'capability': 'published_team_rotation_listing_v1',
+        'teams': [
+            {'team_id': team_id, 'rotation_context': context}
+            for team_id, context in contexts.items()
         ],
     }
 
@@ -201,6 +275,124 @@ def test_every_game_composes_both_existing_team_contexts_without_duplicate_build
     assert listing_calls == ['called']
 
 
+def test_recent_volume_passes_through_once_without_cross_team_leakage():
+    workload_calls = []
+    away_volume = _recent_volume(appearances=9, pitchers=6, pitches=144)
+    home_volume = _recent_volume(appearances=4, pitchers=3, pitches=None)
+
+    def workload_listing_builder():
+        workload_calls.append('called')
+        return _workload_listing({116: away_volume, 142: home_volume})
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        workload_listing_builder=workload_listing_builder,
+    )
+
+    game = out['games'][0]
+    assert workload_calls == ['called']
+    assert game['away']['recent_bullpen_volume'] == away_volume
+    assert game['home']['recent_bullpen_volume'] == home_volume
+    assert game['away']['recent_bullpen_volume'] != game['home']['recent_bullpen_volume']
+
+
+def test_recent_volume_failure_is_local_to_its_optional_domain():
+    def fail_listing():
+        raise RuntimeError('frozen workload unavailable')
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        team_state_listing_builder=lambda: _team_state_listing({
+            116: _team_state('Fresh'),
+            142: _team_state('Stretched'),
+        }),
+        workload_listing_builder=fail_listing,
+    )
+
+    game = out['games'][0]
+    assert game['away']['status'] == 'available'
+    assert game['home']['status'] == 'available'
+    assert game['away']['team_state']['public_label'] == 'Fresh'
+    assert game['home']['team_state']['public_label'] == 'Stretched'
+    assert game['away']['recent_bullpen_volume']['status'] == 'withheld'
+    assert game['home']['recent_bullpen_volume']['status'] == 'withheld'
+    assert game['away']['recent_bullpen_volume']['window'] is None
+
+
+def test_rotation_context_passes_through_once_without_cross_team_leakage():
+    listing_calls = []
+    away_context = _rotation_context(short_starts=3, bullpen_innings=16.1)
+    home_context = _rotation_context(short_starts=0, bullpen_innings=8.2)
+
+    def rotation_listing_builder():
+        listing_calls.append('called')
+        return _rotation_listing({116: away_context, 142: home_context})
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        rotation_listing_builder=rotation_listing_builder,
+    )
+
+    game = out['games'][0]
+    assert listing_calls == ['called']
+    assert game['away']['rotation_context'] == away_context
+    assert game['home']['rotation_context'] == home_context
+    assert game['away']['rotation_context'] != game['home']['rotation_context']
+
+
+def test_rotation_failure_is_local_to_rotation_context_only():
+    def fail_listing():
+        raise RuntimeError('frozen rotation context unavailable')
+
+    away_volume = _recent_volume(appearances=9, pitchers=6, pitches=144)
+    home_volume = _recent_volume(appearances=4, pitchers=3, pitches=None)
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        team_state_listing_builder=lambda: _team_state_listing({
+            116: _team_state('Fresh'),
+            142: _team_state('Stretched'),
+        }),
+        workload_listing_builder=lambda: _workload_listing({
+            116: away_volume,
+            142: home_volume,
+        }),
+        rotation_listing_builder=fail_listing,
+    )
+
+    game = out['games'][0]
+    assert game['away']['team_state']['public_label'] == 'Fresh'
+    assert game['home']['team_state']['public_label'] == 'Stretched'
+    assert game['away']['recent_bullpen_volume'] == away_volume
+    assert game['home']['recent_bullpen_volume'] == home_volume
+    assert game['away']['rotation_context']['status'] == 'withheld'
+    assert game['home']['rotation_context']['status'] == 'withheld'
+    assert game['away']['rotation_context']['short_start_count'] is None
+
+
 def test_team_state_passes_through_withheld_and_missing_without_cross_team_leakage():
     withheld = {
         'contract': 'team_state_public_v1',
@@ -270,6 +462,97 @@ def test_default_team_state_builder_delegates_to_canonical_listing(monkeypatch):
 
     assert _REAL_DEFAULT_TEAM_STATE_LISTING_BUILDER() is expected
     assert calls == ['called']
+
+
+def test_default_workload_builder_delegates_to_frozen_canonical_listing(monkeypatch):
+    import services.published_team_workload_listing as listing
+
+    expected = _workload_listing({116: _recent_volume()})
+    calls = []
+
+    def build_listing():
+        calls.append('called')
+        return expected
+
+    monkeypatch.setattr(
+        listing,
+        'build_published_team_workload_listing',
+        build_listing,
+    )
+
+    assert _REAL_DEFAULT_WORKLOAD_LISTING_BUILDER() is expected
+    assert calls == ['called']
+
+
+def test_default_rotation_builder_delegates_to_frozen_canonical_listing(monkeypatch):
+    import services.published_team_rotation_listing as listing
+
+    expected = _rotation_listing({116: _rotation_context()})
+    calls = []
+
+    def build_listing():
+        calls.append('called')
+        return expected
+
+    monkeypatch.setattr(
+        listing,
+        'build_published_team_rotation_listing',
+        build_listing,
+    )
+
+    assert _REAL_DEFAULT_ROTATION_LISTING_BUILDER() is expected
+    assert calls == ['called']
+
+
+def test_default_publication_sidecars_share_one_trusted_snapshot_resolution(monkeypatch):
+    import services.league_team_state_listing as state_listing
+    import services.published_team_workload_listing as workload_listing
+    import services.published_team_rotation_listing as rotation_listing
+
+    resolved = (object(), None)
+    resolver_calls = []
+    received = []
+
+    def resolve_snapshot():
+        resolver_calls.append('called')
+        return resolved
+
+    def build_states(*, snapshot_resolver):
+        received.append(snapshot_resolver())
+        return {'teams': [{'team_id': 116, 'team_state': _team_state('Fresh')}]}
+
+    def build_workload(*, snapshot_resolver):
+        received.append(snapshot_resolver())
+        return _workload_listing({116: _recent_volume()})
+
+    def build_rotation(*, snapshot_resolver):
+        received.append(snapshot_resolver())
+        return _rotation_listing({116: _rotation_context()})
+
+    monkeypatch.setattr(
+        state_listing,
+        'resolve_current_trusted_dashboard_snapshot',
+        resolve_snapshot,
+    )
+    monkeypatch.setattr(state_listing, 'build_league_team_state_listing', build_states)
+    monkeypatch.setattr(
+        workload_listing,
+        'build_published_team_workload_listing',
+        build_workload,
+    )
+    monkeypatch.setattr(
+        rotation_listing,
+        'build_published_team_rotation_listing',
+        build_rotation,
+    )
+
+    states, workload, rotation = _REAL_DEFAULT_PUBLICATION_SIDECAR_BUILDER()
+
+    assert resolver_calls == ['called']
+    assert received == [resolved, resolved, resolved]
+    assert states['teams'][0]['team_state']['public_label'] == 'Fresh'
+    assert workload['teams'][0]['recent_bullpen_volume']['status'] == 'complete'
+    assert rotation['teams'][0]['rotation_context']['status'] == 'available'
 
 
 def test_one_team_context_failure_is_local_to_that_game_side():
