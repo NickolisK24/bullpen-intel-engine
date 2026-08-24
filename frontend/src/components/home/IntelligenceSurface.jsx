@@ -5,6 +5,7 @@ import {
   getBullpenDashboard,
   getBullpenLandscape,
   getTeams,
+  getTodayIntelligence,
   getTonightIntelligence,
   signupAudience,
 } from '../../utils/api'
@@ -27,6 +28,12 @@ import {
 } from '../dashboard/syncStatusView'
 
 const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
+const DAILY_EDITION_TITLE = 'Daily Edition'
+const DAILY_EDITION_UNAVAILABLE_COPY =
+  'The Daily Edition lead is temporarily unavailable. The rest of Today is still available.'
+const DAILY_EDITION_UNAVAILABLE_REASONS = new Set([
+  'lead_story_unavailable',
+])
 const TONIGHT_SECTION_SUBTITLE =
   'What BaseballOS is watching before first pitch.'
 const TONIGHT_EMPTY_TITLE =
@@ -728,6 +735,86 @@ function TonightContextRow({ slateDate, freshness }) {
       )}
     </div>
   )
+}
+
+function dailyEditionTeam(lead, teams = []) {
+  const teamId = teamIdOf(lead?.team_id)
+  const fromDirectory = teamId == null ? null : buildTeamsById(teams).get(teamId)
+  const completed = firstObjectValue(lead?.package?.completed_game_context) || {}
+  const direct = teamOptionValue({
+    team_id: teamId,
+    team_name: completed.team_name,
+    team_abbreviation: completed.team_abbreviation,
+  })
+  return fromDirectory || direct || (teamId == null ? null : { teamId })
+}
+
+function namedRelieverEvidence(lead) {
+  const blocks = firstObjectValue(lead?.package?.evidence_blocks) || {}
+  const reliefAppearances = (Array.isArray(blocks.key_relief_appearances)
+    ? blocks.key_relief_appearances
+    : [])
+    .map(item => textValue(item?.name))
+    .filter(Boolean)
+  const availableRelievers = (Array.isArray(blocks.available_relievers)
+    ? blocks.available_relievers
+    : [])
+    .map(item => {
+      const name = textValue(item?.name)
+      if (!name) return null
+      return { name, status: textValue(item?.status) }
+    })
+    .filter(Boolean)
+  return { reliefAppearances, availableRelievers }
+}
+
+export function getDailyEditionView(response, teams = []) {
+  const referenceDate = textValue(response?.reference_date)
+  const dateLabel = formatFreshnessDate(referenceDate, { includeYear: true })
+  const emptyReason = textValue(response?.empty_reason)
+  const base = { referenceDate, dateLabel, emptyReason }
+
+  if (
+    payloadIsFailClosed(response) ||
+    DAILY_EDITION_UNAVAILABLE_REASONS.has(String(emptyReason || '').toLowerCase())
+  ) {
+    return { ...base, state: 'unavailable' }
+  }
+
+  const lead = firstObjectValue(response?.lead_story)
+  if (response?.status === 'empty' && !lead) {
+    return { ...base, state: 'quiet' }
+  }
+  if (response?.status !== 'ok' || !lead) {
+    return { ...base, state: 'unavailable' }
+  }
+
+  const draft = firstObjectValue(lead?.drafts?.team_story)
+  const headline = textValue(draft?.headline)
+  const body = textValue(draft?.body)
+  if (!headline || !body) {
+    return { ...base, state: 'unavailable' }
+  }
+
+  const team = dailyEditionTeam(lead, teams)
+  const teamName = cleanTeamName(team?.teamName)
+    || cleanTeamName(lead?.package?.completed_game_context?.team_name)
+    || textValue(team?.teamAbbr)
+  const evidence = (Array.isArray(draft.evidence) ? draft.evidence : [])
+    .map(textValue)
+    .filter(Boolean)
+  const namedEvidence = namedRelieverEvidence(lead)
+
+  return {
+    ...base,
+    state: 'available',
+    headline,
+    body,
+    teamName,
+    evidence,
+    ...namedEvidence,
+    href: teamBoardHrefIfResolvable(team, 'today'),
+  }
 }
 
 function resolveTonightTeam(card, teams = []) {
@@ -1517,6 +1604,134 @@ function SinceYesterdaySection({ dashboard, teams }) {
   )
 }
 
+function DailyEditionLoadingState() {
+  return (
+    <div
+      className="min-h-28 border border-amber/20 bg-dugout p-4 sm:p-5"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">Loading the Daily Edition lead.</span>
+      <div className="h-3 w-32 animate-pulse bg-dirt" aria-hidden="true" />
+      <div className="mt-4 h-5 w-4/5 max-w-xl animate-pulse bg-dirt" aria-hidden="true" />
+      <div className="mt-3 h-3 w-full max-w-2xl animate-pulse bg-dirt" aria-hidden="true" />
+      <div className="mt-2 h-3 w-2/3 max-w-xl animate-pulse bg-dirt" aria-hidden="true" />
+    </div>
+  )
+}
+
+function DailyEditionNamedEvidence({ view }) {
+  const hasAppearances = view.reliefAppearances.length > 0
+  const hasAvailable = view.availableRelievers.length > 0
+  if (!hasAppearances && !hasAvailable) return null
+
+  return (
+    <div className="mt-4 border-t border-dirt/75 pt-3" aria-label="Named reliever evidence">
+      <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Named relievers
+      </h4>
+      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {hasAppearances && (
+          <div>
+            <p className="text-xs font-semibold text-chalk300">Relief appearances</p>
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-chalk200">
+              {view.reliefAppearances.map((name, index) => (
+                <li key={`${name}-${index}`}>{name}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {hasAvailable && (
+          <div>
+            <p className="text-xs font-semibold text-chalk300">Available relievers</p>
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-chalk200">
+              {view.availableRelievers.map((item, index) => (
+                <li key={`${item.name}-${index}`}>
+                  {item.name}{item.status ? ` · ${item.status}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DailyEditionSection({
+  intelligence,
+  teams,
+  loading,
+  error,
+}) {
+  if (loading && !intelligence) {
+    return (
+      <SectionShell id="daily-edition" title={DAILY_EDITION_TITLE} className="mb-8">
+        <DailyEditionLoadingState />
+      </SectionShell>
+    )
+  }
+
+  const view = error && !intelligence
+    ? { state: 'unavailable', referenceDate: null, dateLabel: null }
+    : getDailyEditionView(intelligence, teams)
+
+  return (
+    <SectionShell id="daily-edition" title={DAILY_EDITION_TITLE} className="mb-8">
+      {view.dateLabel && (
+        <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          Edition for {view.dateLabel}
+        </p>
+      )}
+      {view.state === 'available' ? (
+        <article className="border border-amber/25 bg-dugout p-4 sm:p-5">
+          {view.teamName && (
+            <p className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+              {view.teamName}
+            </p>
+          )}
+          <h3 className="mt-1 font-display text-2xl tracking-wide text-chalk100 sm:text-3xl">
+            {view.headline}
+          </h3>
+          <p className="mt-3 max-w-3xl text-sm leading-relaxed text-chalk300 sm:text-base">
+            {view.body}
+          </p>
+          {view.evidence.length > 0 && (
+            <div className="mt-4 border-t border-dirt/75 pt-3">
+              <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Evidence
+              </h4>
+              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-chalk300">
+                {view.evidence.map((item, index) => (
+                  <li key={`${item}-${index}`}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <DailyEditionNamedEvidence view={view} />
+          {view.href && (
+            <div className="mt-5">
+              <Link
+                to={view.href}
+                className="inline-flex min-h-11 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+                aria-label={`Open the bullpen board for ${view.teamName || 'this team'}`}
+              >
+                Open {view.teamName ? `${view.teamName} ` : ''}bullpen board
+              </Link>
+            </div>
+          )}
+        </article>
+      ) : view.state === 'unavailable' ? (
+        <div className="border border-dirt bg-dugout p-4" role="status">
+          <p className="text-sm leading-relaxed text-chalk300">
+            {DAILY_EDITION_UNAVAILABLE_COPY}
+          </p>
+        </div>
+      ) : null}
+    </SectionShell>
+  )
+}
+
 function TonightSection({
   tonight,
   teams,
@@ -1758,6 +1973,9 @@ function AudienceSignupSection() {
 }
 
 export function IntelligenceSurfaceView({
+  intelligence = null,
+  intelligenceLoading = false,
+  intelligenceError = null,
   tonight = null,
   tonightLoading = false,
   tonightError = null,
@@ -1787,6 +2005,12 @@ export function IntelligenceSurfaceView({
       <SeesHeader />
       <FreshnessStamp freshness={pageFreshness} className="mb-4" />
       {pageIsStale && <StaleDataNotice dataThrough={pageDataThrough} onRetry={pageRetry} />}
+      <DailyEditionSection
+        intelligence={intelligence}
+        teams={teams}
+        loading={intelligenceLoading}
+        error={intelligenceError}
+      />
       <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}
@@ -1809,6 +2033,7 @@ export function IntelligenceSurfaceView({
 }
 
 export default function IntelligenceSurfacePage() {
+  const intelligence = useFetch(getTodayIntelligence)
   const tonight = useFetch(getTonightIntelligence)
   const landscape = useFetch(getBullpenLandscape)
   const dashboard = useFetch(getBullpenDashboard)
@@ -1816,6 +2041,9 @@ export default function IntelligenceSurfacePage() {
 
   return (
     <IntelligenceSurfaceView
+      intelligence={intelligence.data}
+      intelligenceLoading={intelligence.loading}
+      intelligenceError={intelligence.error}
       tonight={tonight.data}
       tonightLoading={tonight.loading}
       tonightError={tonight.error}
