@@ -1,15 +1,13 @@
-name: BaseballOS Intraday Roster Repair
+name: BaseballOS Intraday Roster Repair (Manual Only)
 
-# Lightweight public-state reconciliation between the morning daily sync and
-# overnight postgame passes. The command itself fails closed whenever the audit
+# Dormant manual-only seasonal capability for the remainder of 2026. It is not
+# part of the normal daily/postgame production cadence. The implementation is
+# preserved for controlled diagnosis or repair and must be re-audited against
+# the then-current public-state and snapshot-publication contracts before any
+# 2027 schedule is restored. The command itself fails closed whenever the audit
 # is incomplete, a finding is outside the authorized roster-status slice, or the
 # exact replacement dashboard snapshot is not serving.
 on:
-  schedule:
-    # Cron is UTC and does not observe DST. During daylight time these run at
-    # approximately noon, 4 PM, and 8 PM Eastern; during standard time they run
-    # at approximately 11 AM, 3 PM, and 7 PM Eastern.
-    - cron: '0 0,16,20 * * *'
   workflow_dispatch:
 
 # Share the same queue as daily, postgame, backfill, and schedule correction.
