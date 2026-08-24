@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test, { after, afterEach } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -35,6 +36,7 @@ const {
   filterSinceYesterdayLanes,
   filterSinceYesterdayItems,
   buildSinceYesterdayTabs,
+  getDailyEditionView,
   sinceYesterdayCountClarity,
   getTonightCards,
   submitAudienceSignup,
@@ -98,6 +100,15 @@ const intelligenceOk = {
         clean_options_count: 1,
         clean_options: [{ name: 'Erik Miller' }],
         optionality_band: 'thin',
+      },
+      evidence_blocks: {
+        key_relief_appearances: [
+          { name: 'Ryan Walker', innings: 1, runs_allowed: 3 },
+          { name: 'Camilo Doval', innings: 0.2, runs_allowed: 2 },
+        ],
+        available_relievers: [
+          { name: 'Erik Miller', status: 'Available' },
+        ],
       },
     },
     drafts: {
@@ -406,6 +417,18 @@ test('getTodayIntelligence calls the Intelligence Surface endpoint', async () =>
 
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, '/api/bullpen/intelligence/today?reference_date=2026-06-25')
+})
+
+test('Today mounts exactly one Daily Edition owner request with no team fan-out', () => {
+  const source = readFileSync(
+    new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.equal((source.match(/useFetch\(getTodayIntelligence\)/g) || []).length, 1)
+  assert.equal(source.includes('getTodayIntelligence('), false)
+  assert.equal(source.includes('getTeamBoardV2'), false)
+  assert.equal(source.includes('getTeamBullpen'), false)
 })
 
 test('getTonightIntelligence calls the Tonight Intelligence endpoint', async () => {
@@ -931,7 +954,7 @@ test('Since Yesterday markup stays semantic, single-column, and free of internal
   }
 })
 
-test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
+test('Intelligence Surface renders the governed lead without raw JSON fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
@@ -946,11 +969,11 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.equal(htmlIncludes(html, 'see the evidence behind each read'), false)
   assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
   assert.equal(htmlIncludes(html, 'Upcoming Games'), false)
-  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
-  assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
   assert.equal(htmlIncludes(html, 'The relievers could not hold the lead.'), false)
-  assert.equal(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'), false)
+  assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
   assert.equal(htmlIncludes(html, 'Published view current'), false)
   assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
   assert.equal(htmlIncludes(html, 'Generated at 11:30 PM ET'), false)
@@ -1244,7 +1267,8 @@ test('Tonight renders only returned cards and does not backfill from Around Base
   assert.equal(htmlIncludes(html, 'Late-game path worth monitoring'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
-  assert.equal(countOccurrences(html, 'source=today'), 1)
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Today&#x27;s Bullpen Picture')
+  assert.equal(countOccurrences(tonightHtml, 'source=today'), 1)
 })
 
 test('Tonight empty response shows honest empty state when dashboard observations exist', () => {
@@ -1496,7 +1520,7 @@ test('Tonight error shows unavailable state when dashboard observations exist', 
     teams,
   }))
 
-  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
@@ -1515,7 +1539,7 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
     teams,
   }))
 
-  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
@@ -1544,8 +1568,8 @@ test('fallback dashboard failure does not prevent Today sections rendering', () 
     teams,
   }))
 
-  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
-  assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
   assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
 })
@@ -1560,7 +1584,7 @@ test('Bullpen Picture failure does not prevent Today page rendering', () => {
     teams,
   }))
 
-  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
   assert.ok(htmlIncludes(html, 'No current bullpen read available.'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is temporarily unavailable.'))
@@ -1635,33 +1659,112 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(emptyHtml, 'No league bullpen picture is available for the current view.'))
 })
 
-test('Today renders no lead-story surface at all, so no story fallback can appear', () => {
-  // H-11: the lead-story view (and the enum title-casing helper that fed its
-  // metadata rows) was removed because Today never rendered it. The guarantee
-  // is now structural rather than conditional — there is no lead-story code
-  // path left to produce a fallback.
+test('Daily Edition renders the backend lead, named evidence, date, and Team Board handoff', () => {
+  const view = getDailyEditionView(intelligenceOk, teams)
+  assert.equal(view.state, 'available')
+  assert.equal(view.headline, intelligenceOk.lead_story.drafts.team_story.headline)
+  assert.equal(view.body, intelligenceOk.lead_story.drafts.team_story.body)
+  assert.deepEqual(view.reliefAppearances, ['Ryan Walker', 'Camilo Doval'])
+  assert.deepEqual(view.availableRelievers, [{ name: 'Erik Miller', status: 'Available' }])
+  assert.equal(view.href, '/bullpen?view=board&team=SF&source=today')
+
   const html = render(React.createElement(IntelligenceSurfaceView, {
-    intelligence: {
-      status: 'empty',
-      lead_story: null,
-      empty_reason: 'no_publishable_coin_story',
-      candidates_considered: 2,
-      publishable_candidates: 0,
-    },
-    dashboard: {},
-    landscape: null,
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
     teams,
   }))
 
-  assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
-  assert.equal(htmlIncludes(html, 'will only surface a lead story when the evidence is strong enough.'), false)
-  assert.equal(htmlIncludes(html, 'No bullpen story is ready from the most recent completed games.'), false)
-  // The retired enum-prettifier can no longer put a title-cased backend key on
-  // the page (e.g. no_publishable_coin_story -> "No Publishable Coin Story").
-  assert.equal(htmlIncludes(html, 'No Publishable Coin Story'), false)
-  assert.equal(htmlIncludes(html, 'Clean Options'), false)
-  assert.equal(htmlIncludes(html, 'Named Clean Options'), false)
-  assert.equal(htmlIncludes(html, 'Workload Concentration'), false)
+  assert.ok(htmlIncludes(html, 'Daily Edition'))
+  assert.ok(htmlIncludes(html, 'Edition for Jun 25, 2026'))
+  assert.ok(htmlIncludes(html, intelligenceOk.lead_story.drafts.team_story.headline))
+  assert.ok(htmlIncludes(html, intelligenceOk.lead_story.drafts.team_story.body))
+  assert.ok(htmlIncludes(html, 'Ryan Walker'))
+  assert.ok(htmlIncludes(html, 'Camilo Doval'))
+  assert.ok(htmlIncludes(html, 'Erik Miller · Available'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=today"'))
+  assert.ok(html.indexOf('Daily Edition') < html.indexOf('Tonight&#x27;s Bullpen Watch'))
+})
+
+test('Daily Edition quiet state stays short and preserves Tonight content', () => {
+  const quiet = {
+    status: 'empty',
+    reference_date: '2026-06-25',
+    lead_story: null,
+    empty_reason: 'no_publishable_coin_story',
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: quiet,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Daily Edition'))
+  assert.ok(htmlIncludes(html, 'Edition for Jun 25, 2026'))
+  assert.equal(htmlIncludes(html, 'No lead bullpen story'), false)
+  assert.equal(htmlIncludes(html, 'The Daily Edition lead is temporarily unavailable.'), false)
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+})
+
+test('Daily Edition unavailable state is local and preserves healthy page sections', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: {
+      status: 'empty',
+      reference_date: '2026-06-25',
+      lead_story: null,
+      empty_reason: 'lead_story_unavailable',
+    },
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'The Daily Edition lead is temporarily unavailable.'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
+})
+
+test('Daily Edition loading is compact and does not block healthy Tonight content', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: null,
+    intelligenceLoading: true,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.equal(countOccurrences(html, 'Daily Edition'), 2)
+  assert.equal(countOccurrences(html, 'id="daily-edition-title"'), 1)
+  assert.ok(htmlIncludes(html, 'Loading the Daily Edition lead.'))
+  assert.ok(htmlIncludes(html, 'min-h-28'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+})
+
+test('Daily Edition render follows refreshed response without retaining the prior lead', () => {
+  const first = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard,
+    teams,
+  }))
+  const next = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: {
+      status: 'empty',
+      reference_date: '2026-06-26',
+      lead_story: null,
+      empty_reason: 'no_publishable_coin_story',
+    },
+    dashboard,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(first, intelligenceOk.lead_story.drafts.team_story.headline))
+  assert.equal(htmlIncludes(next, intelligenceOk.lead_story.drafts.team_story.headline), false)
+  assert.ok(htmlIncludes(next, 'Edition for Jun 26, 2026'))
 })
 
 test('Explore links render to existing routes', () => {
