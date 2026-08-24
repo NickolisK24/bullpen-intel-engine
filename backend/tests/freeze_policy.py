@@ -361,6 +361,16 @@ TEAM_BOARD_PERFORMANCE_INTELLIGENCE_PATHS = (
     'backend/api/team_board_v2.py',
 )
 
+# TODAY-04, August 24 2026. The existing Tonight snapshot reader advances its
+# compatibility contract from ``tonight_v2`` to ``tonight_v3`` so cached
+# payloads predating the additive recent-bullpen-volume carrier cannot
+# masquerade as current. Snapshot authority, publication behavior, and every
+# baseball semantic remain unchanged; the version and fail-closed behavior are
+# pinned directly by test_tonight_intelligence_snapshot.py.
+TODAY04_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
+    'backend/services/tonight_intelligence_snapshot.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
