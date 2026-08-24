@@ -903,6 +903,26 @@ function resolveTonightRecentVolume(value) {
   }
 }
 
+function resolveTonightRotationContext(value) {
+  const carrier = firstObjectValue(value) || {}
+  const status = textValue(carrier?.status)
+  const supported = status === 'available' || status === 'partial'
+  const metric = key => {
+    const raw = carrier?.[key]
+    return raw == null ? null : numberValue(raw)
+  }
+  const shortStartCount = supported ? metric('short_start_count') : null
+  const bullpenInningsRequired = supported ? metric('bullpen_innings_required') : null
+  return {
+    available: supported && (shortStartCount != null || bullpenInningsRequired != null),
+    partial: status === 'partial',
+    referenceDate: supported ? textValue(carrier?.reference_date) : null,
+    windowDays: supported ? metric('window_days') : null,
+    shortStartCount,
+    bullpenInningsRequired,
+  }
+}
+
 function resolveTonightSide(side, teams = []) {
   const direct = teamOptionValue(side)
   const byId = buildTeamsById(teams)
@@ -916,6 +936,7 @@ function resolveTonightSide(side, teams = []) {
     href: teamBoardHrefIfResolvable(team, 'today'),
     teamState: resolveTonightTeamState(side?.team_state),
     recentVolume: resolveTonightRecentVolume(side?.recent_bullpen_volume),
+    rotationContext: resolveTonightRotationContext(side?.rotation_context),
     namedOptions: cleanTonightList(context?.clean_workload_option_names),
     optionality: backendTokenLabel(context?.optionality_band),
     concentration: backendTokenLabel(context?.concentration_band),
@@ -1307,6 +1328,14 @@ function TonightSlateSide({ side, designation }) {
       ? null
       : `${side.recentVolume.pitchesTotal} pitches`,
   ].filter(Boolean)
+  const rotationFacts = [
+    side.rotationContext.shortStartCount == null
+      ? null
+      : `${side.rotationContext.shortStartCount} short ${side.rotationContext.shortStartCount === 1 ? 'start' : 'starts'}`,
+    side.rotationContext.bullpenInningsRequired == null
+      ? null
+      : `${side.rotationContext.bullpenInningsRequired.toFixed(1)} bullpen innings`,
+  ].filter(Boolean)
 
   return (
     <div className="min-w-0 p-3 sm:p-4">
@@ -1363,6 +1392,24 @@ function TonightSlateSide({ side, designation }) {
           </div>
           <p className="mt-1 break-words text-xs leading-relaxed text-chalk300">
             {recentVolumeFacts.join(' · ')}
+          </p>
+        </div>
+      )}
+      {side.rotationContext.available && rotationFacts.length > 0 && (
+        <div className="mt-3">
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Rotation transfer
+            </p>
+            {side.rotationContext.referenceDate && (
+              <p className="font-mono text-[9px] uppercase tracking-wider text-chalk500">
+                {side.rotationContext.windowDays != null ? `${side.rotationContext.windowDays} days · ` : null}
+                Through {formatFreshnessDate(side.rotationContext.referenceDate)}
+              </p>
+            )}
+          </div>
+          <p className="mt-1 break-words text-xs leading-relaxed text-chalk300">
+            {rotationFacts.join(' · ')}
           </p>
         </div>
       )}

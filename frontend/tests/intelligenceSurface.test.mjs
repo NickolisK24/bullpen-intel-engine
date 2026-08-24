@@ -417,6 +417,16 @@ const tonightSlate = {
             pitches_total: 137,
           },
         },
+        rotation_context: {
+          contract: 'tonight_rotation_transfer_context_v1',
+          source_contract: 'team_board_rotation_impact_carrier_v1',
+          status: 'available',
+          reason_code: null,
+          reference_date: '2026-06-25',
+          window_days: 7,
+          short_start_count: 2,
+          bullpen_innings_required: 14.0,
+        },
         bullpen_context: {
           context_available: true,
           clean_workload_option_names: ['Porter Hodge', 'Daniel Palencia'],
@@ -455,6 +465,16 @@ const tonightSlate = {
             pitchers_in_relief: 4,
             pitches_total: null,
           },
+        },
+        rotation_context: {
+          contract: 'tonight_rotation_transfer_context_v1',
+          source_contract: 'team_board_rotation_impact_carrier_v1',
+          status: 'partial',
+          reason_code: 'partial_source_coverage',
+          reference_date: '2026-06-25',
+          window_days: 7,
+          short_start_count: 1,
+          bullpen_innings_required: null,
         },
         bullpen_context: {
           context_available: true,
@@ -498,6 +518,16 @@ const tonightSlate = {
           window_days: 7,
           window: null,
         },
+        rotation_context: {
+          contract: 'tonight_rotation_transfer_context_v1',
+          source_contract: 'team_board_rotation_impact_carrier_v1',
+          status: 'withheld',
+          reason_code: 'published_team_rotation_authority_invalid',
+          reference_date: null,
+          window_days: null,
+          short_start_count: null,
+          bullpen_innings_required: null,
+        },
         bullpen_context: {
           context_available: true,
           clean_workload_option_names: ['Ryan Walker'],
@@ -536,6 +566,16 @@ const tonightSlate = {
             pitchers_in_relief: 0,
             pitches_total: 0,
           },
+        },
+        rotation_context: {
+          contract: 'tonight_rotation_transfer_context_v1',
+          source_contract: 'team_board_rotation_impact_carrier_v1',
+          status: 'available',
+          reason_code: null,
+          reference_date: '2026-06-25',
+          window_days: 7,
+          short_start_count: 0,
+          bullpen_innings_required: 0.0,
         },
         bullpen_context: { context_available: false, clean_workload_option_names: [] },
         watch: null,
@@ -1371,6 +1411,19 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.equal(games[0].home.recentVolume.pitchesTotal, null)
   assert.equal(games[1].away.recentVolume.available, false)
   assert.equal(games[1].home.recentVolume.pitchesTotal, 0)
+  assert.deepEqual(games[0].away.rotationContext, {
+    available: true,
+    partial: false,
+    referenceDate: '2026-06-25',
+    windowDays: 7,
+    shortStartCount: 2,
+    bullpenInningsRequired: 14.0,
+  })
+  assert.equal(games[0].home.rotationContext.partial, true)
+  assert.equal(games[0].home.rotationContext.bullpenInningsRequired, null)
+  assert.equal(games[1].away.rotationContext.available, false)
+  assert.equal(games[1].home.rotationContext.shortStartCount, 0)
+  assert.equal(games[1].home.rotationContext.bullpenInningsRequired, 0)
   assert.equal(games[0].home.teamState.available, false)
   assert.equal(games[0].home.teamState.label, null)
   assert.equal(games[0].away.href, '/bullpen?view=board&team=CHC&source=today')
@@ -1400,6 +1453,11 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.ok(htmlIncludes(html, '9 relief appearances · 6 pitchers in relief · 137 pitches'))
   assert.ok(htmlIncludes(html, '5 relief appearances · 4 pitchers in relief'))
   assert.ok(htmlIncludes(html, '0 relief appearances · 0 pitchers in relief · 0 pitches'))
+  assert.ok(htmlIncludes(html, 'Rotation transfer'))
+  assert.ok(htmlIncludes(html, '7 days · Through Jun 25'))
+  assert.ok(htmlIncludes(html, '2 short starts · 14.0 bullpen innings'))
+  assert.ok(htmlIncludes(html, '1 short start'))
+  assert.ok(htmlIncludes(html, '0 short starts · 0.0 bullpen innings'))
   assert.ok(htmlIncludes(html, 'Bullpen optionality: Thin'))
   assert.ok(htmlIncludes(html, 'Top three relievers: 52.4% of 10-day bullpen workload'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
@@ -1407,6 +1465,7 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=MIL&amp;source=today"'))
   assert.equal(htmlIncludes(html, 'bullpen advantage'), false)
   assert.equal(htmlIncludes(html, '5 relief appearances · 4 pitchers in relief · 0 pitches'), false)
+  assert.equal(htmlIncludes(html, '1 short start · 0.0 bullpen innings'), false)
 })
 
 test('Tonight slate keeps healthy games and sides when one bullpen context is unavailable', () => {
@@ -1487,6 +1546,8 @@ test('Tonight slate source keeps a one-column mobile stack and bounded desktop c
   assert.equal(source.includes('public_state ==='), false)
   assert.equal(source.includes("case 'fresh'"), false)
   assert.equal(source.includes('getGameLog'), false)
+  assert.equal(source.includes('likely short start'), false)
+  assert.equal(source.includes('rotation advantage'), false)
 })
 
 test('Tonight Team State remains a backend pass-through with no prediction language', () => {

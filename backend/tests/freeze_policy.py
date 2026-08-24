@@ -371,6 +371,14 @@ TODAY04_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
     'backend/services/tonight_intelligence_snapshot.py',
 )
 
+# TODAY-05, August 24 2026. The same frozen Tonight snapshot reader advances to
+# ``tonight_v4`` so cached payloads predating the additive rotation-context
+# carrier cannot appear current. The TODAY-04 exception above is retained as
+# historical package evidence but is no longer the active branch approval.
+TODAY05_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
+    'backend/services/tonight_intelligence_snapshot.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
