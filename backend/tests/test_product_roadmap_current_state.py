@@ -319,8 +319,8 @@ def test_today_01_is_the_single_active_objective():
     assert '| ACTIVE OBJECTIVE | Permanent daily-sync work reduction |' not in text
 
 
-def test_today_01_is_grounded_in_an_existing_unconsumed_lead_owner():
-    """This guard should go stale when TODAY-01 actually integrates the owner."""
+def test_today_01_integrates_the_existing_lead_owner_once():
+    """The active package consumes its existing owner without request fan-out."""
     today_surface = TODAY_SURFACE_PATH.read_text(encoding='utf-8')
     frontend_api = FRONTEND_API_PATH.read_text(encoding='utf-8')
     bullpen_api = BULLPEN_API_PATH.read_text(encoding='utf-8')
@@ -328,7 +328,9 @@ def test_today_01_is_grounded_in_an_existing_unconsumed_lead_owner():
     assert "@bullpen_bp.route('/intelligence/today', methods=['GET'])" in bullpen_api
     assert 'serve_today_lead_story(reference_date=reference_date)' in bullpen_api
     assert 'export const getTodayIntelligence' in frontend_api
-    assert 'getTodayIntelligence' not in today_surface
+    assert today_surface.count('useFetch(getTodayIntelligence)') == 1
+    assert 'getTeamBoardV2' not in today_surface
+    assert 'getTeamBullpen' not in today_surface
 
     # TODAY-01 composes the lead into a functioning Daily Edition; it is not a
     # replacement for the already-adopted Tonight and league sections.
