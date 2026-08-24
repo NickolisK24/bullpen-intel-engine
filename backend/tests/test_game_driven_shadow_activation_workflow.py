@@ -371,11 +371,10 @@ def test_no_foundation_3c_workflow_was_recreated():
         assert 'foundation-3c' not in path.name.lower()
 
 
-# The scheduled workflows that already existed. Separating a job must not add
-# a third: a new scheduled lane would run outside this workflow's concurrency
-# group and could overlap a production sync.
+# The sole remaining scheduled workflow after the 2026 seasonal intraday repair
+# retirement. Separating a job must not add another scheduled lane outside this
+# workflow's concurrency group where it could overlap a production sync.
 EXISTING_SCHEDULED_WORKFLOWS = (
-    'baseballos-intraday-repair.yml',
     'baseballos-sync.yml',
 )
 
