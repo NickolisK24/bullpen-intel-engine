@@ -41,6 +41,24 @@ def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0, name='Detr
     }
 
 
+def _team_state(team_id):
+    label = 'Fresh' if team_id == 116 else 'Stretched'
+    return {
+        'team_id': team_id,
+        'team_state': {
+            'contract': 'team_state_public_v1',
+            'available': True,
+            'public_state': label.lower(),
+            'public_label': label,
+            'summary': f'Exact {label} summary.',
+            'outcome': 'available',
+            'unavailable_message': None,
+            'reason_code': None,
+            'data_through': '2026-06-25',
+        },
+    }
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
@@ -52,6 +70,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(
         tcs, '_default_bullpen_context_builder',
         lambda team_id, reference_date: _pen(name=f'Team {team_id}'))
+    monkeypatch.setattr(
+        tonight_svc,
+        '_default_team_state_listing_builder',
+        lambda: {'teams': [_team_state(116), _team_state(142)]},
+    )
     app = Flask(__name__)
     configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -251,6 +274,9 @@ def test_endpoint_snapshot_carries_the_authoritative_game_slate(client):
     assert game['home']['team_id'] == 142
     assert game['away']['bullpen_context']['context_available'] is True
     assert game['home']['bullpen_context']['context_available'] is True
+    assert game['away']['team_state']['public_label'] == 'Fresh'
+    assert game['home']['team_state']['public_label'] == 'Stretched'
+    assert game['away']['team_state']['data_through'] == '2026-06-25'
 
 
 # ── Public-copy polish: served cards are team-neutral in prose ────────────────
@@ -320,7 +346,7 @@ def test_read_failure_returns_honest_503_without_leaking_db_error(client, monkey
     from services.snapshot_read_guard import SnapshotReadUnavailable
 
     def _raise(*a, **k):
-        raise SnapshotReadUnavailable('tonight', _FIXED_TODAY, 'tonight_v1')
+        raise SnapshotReadUnavailable('tonight', _FIXED_TODAY, 'tonight_v2')
 
     monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', _raise)
 
