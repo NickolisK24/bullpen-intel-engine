@@ -12,6 +12,7 @@ from services import tonight_intelligence_service as svc
 from services.tonight_intelligence_service import serve_tonight
 
 REF = '2026-06-26'
+_REAL_DEFAULT_TEAM_STATE_LISTING_BUILDER = svc._default_team_state_listing_builder
 
 _BANNED = (
     'will win', 'will lose', 'guaranteed', 'probability', 'odds', 'recommend',
@@ -19,6 +20,15 @@ _BANNED = (
     ' lock', 'pick', 'edge', 'fatigue score', 'confidence score',
     'will happen', 'expected to happen', 'healthy', 'injury-free',
 )
+
+
+@pytest.fixture(autouse=True)
+def _empty_published_team_state_listing(monkeypatch):
+    monkeypatch.setattr(
+        svc,
+        '_default_team_state_listing_builder',
+        lambda: {'teams': []},
+    )
 
 
 def _sc(team_id=116, *, playing=True, days_until=3, games_until=3, games_next3=3,
@@ -73,6 +83,31 @@ def _game(game_pk=900001, *, away=116, home=142, status='upcoming'):
     }
 
 
+def _team_state(label, *, data_through='2026-06-25'):
+    code = label.lower()
+    return {
+        'contract': 'team_state_public_v1',
+        'available': True,
+        'public_state': code,
+        'public_label': label,
+        'summary': f'Exact {label} summary.',
+        'outcome': 'available',
+        'unavailable_message': None,
+        'reason_code': None,
+        'data_through': data_through,
+    }
+
+
+def _team_state_listing(states):
+    return {
+        'capability': 'league_team_state_listing_v1',
+        'teams': [
+            {'team_id': team_id, 'team_state': state}
+            for team_id, state in states.items()
+        ],
+    }
+
+
 # ── Status ok with cards ──────────────────────────────────────────────────────
 
 def test_ok_with_cards():
@@ -120,6 +155,7 @@ def test_card_count_matches_cards_length():
 
 def test_every_game_composes_both_existing_team_contexts_without_duplicate_builds():
     calls = []
+    listing_calls = []
     pens = {
         116: _pen(name='Detroit Tigers', names=['Alex Lange', 'Tyler Holton']),
         142: _pen(name='Minnesota Twins', clean=3, band='flexible',
@@ -130,6 +166,13 @@ def test_every_game_composes_both_existing_team_contexts_without_duplicate_build
         calls.append((team_id, str(reference_date)))
         return pens[team_id]
 
+    away_state = _team_state('Fresh')
+    home_state = _team_state('Stretched')
+
+    def state_listing_builder():
+        listing_calls.append('called')
+        return _team_state_listing({116: away_state, 142: home_state})
+
     out = serve_tonight(
         REF,
         schedule_contexts=[
@@ -138,6 +181,7 @@ def test_every_game_composes_both_existing_team_contexts_without_duplicate_build
         ],
         bullpen_context_builder=builder,
         slate_games=[_game()],
+        team_state_listing_builder=state_listing_builder,
     )
 
     assert out['game_count'] == 1
@@ -150,8 +194,82 @@ def test_every_game_composes_both_existing_team_contexts_without_duplicate_build
         'Alex Lange', 'Tyler Holton',
     ]
     assert game['home']['bullpen_context']['top_three_workload_share_10d'] == 31.2
+    assert game['away']['team_state'] == away_state
+    assert game['home']['team_state'] == home_state
     assert sorted(team_id for team_id, _ in calls) == [116, 142]
     assert len(calls) == 2
+    assert listing_calls == ['called']
+
+
+def test_team_state_passes_through_withheld_and_missing_without_cross_team_leakage():
+    withheld = {
+        'contract': 'team_state_public_v1',
+        'available': False,
+        'public_state': None,
+        'public_label': None,
+        'summary': None,
+        'outcome': 'readiness_unavailable',
+        'unavailable_message': 'Exact governed unavailable message.',
+        'reason_code': 'published_team_state_artifact_missing',
+        'data_through': '2026-06-25',
+    }
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        team_state_listing_builder=lambda: _team_state_listing({116: withheld}),
+    )
+
+    game = out['games'][0]
+    assert game['away']['team_state'] == withheld
+    assert game['home']['team_state']['available'] is False
+    assert game['home']['team_state']['public_label'] is None
+    assert game['home']['team_state']['reason_code'] == 'tonight_team_state_listing_unavailable'
+    assert game['home']['team_state'] != game['away']['team_state']
+
+
+def test_team_state_listing_failure_is_local_to_team_state_domain():
+    def fail_listing():
+        raise RuntimeError('published Team State unavailable')
+
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({116: _pen(), 142: _pen()}),
+        slate_games=[_game()],
+        team_state_listing_builder=fail_listing,
+    )
+
+    game = out['games'][0]
+    assert game['away']['status'] == 'available'
+    assert game['home']['status'] == 'available'
+    assert game['away']['bullpen_context']['context_available'] is True
+    assert game['home']['bullpen_context']['context_available'] is True
+    assert game['away']['team_state']['available'] is False
+    assert game['home']['team_state']['available'] is False
+
+
+def test_default_team_state_builder_delegates_to_canonical_listing(monkeypatch):
+    import services.league_team_state_listing as listing
+
+    expected = _team_state_listing({116: _team_state('Vulnerable')})
+    calls = []
+
+    def build_listing():
+        calls.append('called')
+        return expected
+
+    monkeypatch.setattr(listing, 'build_league_team_state_listing', build_listing)
+
+    assert _REAL_DEFAULT_TEAM_STATE_LISTING_BUILDER() is expected
+    assert calls == ['called']
 
 
 def test_one_team_context_failure_is_local_to_that_game_side():

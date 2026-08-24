@@ -36,7 +36,7 @@ from utils.time import utc_now_naive
 logger = logging.getLogger(__name__)
 
 # Bump to invalidate every stored snapshot without a data migration.
-TONIGHT_SNAPSHOT_VERSION = 'tonight_v1'
+TONIGHT_SNAPSHOT_VERSION = 'tonight_v2'
 
 SERVED_FROM_SNAPSHOT = 'snapshot'
 SERVED_FROM_ON_DEMAND = 'on_demand'

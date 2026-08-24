@@ -874,6 +874,18 @@ function backendTokenLabel(value) {
   return text.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
+function resolveTonightTeamState(value) {
+  const state = firstObjectValue(value) || {}
+  const label = cleanTonightCopy(state?.public_label)
+  const available = state?.available === true && Boolean(label)
+  return {
+    available,
+    label: available ? label : null,
+    unavailableMessage: available ? null : cleanTonightCopy(state?.unavailable_message),
+    dataThrough: textValue(state?.data_through),
+  }
+}
+
 function resolveTonightSide(side, teams = []) {
   const direct = teamOptionValue(side)
   const byId = buildTeamsById(teams)
@@ -885,6 +897,7 @@ function resolveTonightSide(side, teams = []) {
     teamName: cleanTeamName(side?.team_name ?? team?.teamName) || 'Team bullpen',
     teamAbbr: textValue(side?.team_abbreviation ?? team?.teamAbbr),
     href: teamBoardHrefIfResolvable(team, 'today'),
+    teamState: resolveTonightTeamState(side?.team_state),
     namedOptions: cleanTonightList(context?.clean_workload_option_names),
     optionality: backendTokenLabel(context?.optionality_band),
     concentration: backendTokenLabel(context?.concentration_band),
@@ -1257,6 +1270,7 @@ function TonightCard({ card }) {
 
 function TonightSlateSide({ side, designation }) {
   const hasContext = side.status === 'available'
+  const teamStateDate = formatFreshnessDate(side.teamState.dataThrough)
   const facts = [
     side.optionality ? `Bullpen optionality: ${side.optionality}` : null,
     side.concentration ? `Recent workload concentration: ${side.concentration}` : null,
@@ -1284,6 +1298,26 @@ function TonightSlateSide({ side, designation }) {
           >
             Team Board
           </Link>
+        )}
+      </div>
+      <div className="mt-3 border-y border-dirt/70 py-2.5">
+        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Team State
+          </p>
+          {teamStateDate && (
+            <p className="font-mono text-[9px] uppercase tracking-wider text-chalk500">
+              Data through {teamStateDate}
+            </p>
+          )}
+        </div>
+        <p className="mt-1 break-words text-sm font-semibold text-chalk100">
+          {side.teamState.available ? side.teamState.label : 'Team State unavailable'}
+        </p>
+        {!side.teamState.available && side.teamState.unavailableMessage && (
+          <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            {side.teamState.unavailableMessage}
+          </p>
         )}
       </div>
       {!hasContext ? (

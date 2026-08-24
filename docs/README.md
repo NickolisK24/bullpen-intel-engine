@@ -23,7 +23,7 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 24, 2026, with audited `origin/main` at `6f91c4d4`:
+As of August 24, 2026, with audited `origin/main` at `326e4da2`:
 
 - **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
 - **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
@@ -31,7 +31,8 @@ As of August 24, 2026, with audited `origin/main` at `6f91c4d4`:
 - **CI-003 (#598) is complete.** Naturally scheduled run `31794183367` (attempt 1) produced the gated, tree-exact, machine-attributed commit `2e83fa0` under `BaseballOS Automation`; the commit's tree equals the validated tree `1c9d7dc`; the Vercel deployment succeeded; and read-only verification of `https://baseballos.app/team/ATH` served trusted snapshot `411`, sync run `721`, and data through `2026-08-13` under `trusted_dashboard_publication_v1`. Issue #598 is closed as completed. The full chain — natural schedule, generated-content gate, frontend tests, production build, tree-exact staging, machine commit, push, deployment, live routed page — is proven.
 - **PRE-02B and PRE-02 are complete.** Team Board initial render now uses the teams directory plus `/board-v2`; What Changed is composed, legacy `/board` is no longer a Team Board render dependency, and share-card loading is explicit and lazy. TB-05 and TB-08 remain intentionally partial for governance/source-authority depth.
 - **TODAY-01 Daily Edition lead integration is complete.** The public Today route consumes the governed lead owner once, renders its dated lead and named evidence without frontend selection, and keeps quiet/unavailable behavior local.
-- **TODAY-02 Tonight Slate Bullpen Context is the single active objective.** It composes the existing game schedule and Tonight bullpen-context owners into compact two-bullpen game rows with direct Team Board handoffs; it adds no prediction, winner, new semantic engine, or browser fan-out.
+- **TODAY-02 Tonight Slate Bullpen Context is complete.** One Tonight response carries every game, canonical time/status, both existing bullpen contexts, and both Team Board handoffs without browser fan-out, fabricated zero, matchup interpretation, or cross-game failure coupling.
+- **TODAY-03 Pregame Bullpen Signals is the single active objective.** It is bounded to batch-composing the exact already-published public Team State block into both sides of the existing Tonight slate; it adds no state calculation, role-arm selection, prediction, or browser request.
 - **Scheduled intraday repair is retired for the remainder of 2026.** The capability remains dormant/manual-only; daily plus postgame are the active scheduled cadence. Postgame now qualifies exact-date canonical roster authority before replacement public-snapshot publication.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
 - **Authoritative manual daily execution is prohibited under D-051.** The production full-daily runner is schedule-only and first-attempt-only; manual dispatch and reruns are refused before application startup.

@@ -41,6 +41,10 @@ _CARD_KEYS = {'team_id', 'team_name', 'headline', 'summary', 'signal_type',
               'bullpen_context', 'limitations'}
 
 
+def test_snapshot_version_invalidates_pre_team_state_payloads():
+    assert TONIGHT_SNAPSHOT_VERSION == 'tonight_v2'
+
+
 def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0, name='Detroit Tigers'):
     return {
         'context_available': True, 'clean_options_count': clean,
