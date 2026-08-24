@@ -44,6 +44,11 @@ def client(monkeypatch):
         'build_public_team_performance_payload',
         lambda _team_id, board: _performance(),
     )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_team_changes_payload',
+        lambda _team_id, freshness=None, generated_at=None: _what_changed(),
+    )
     return app.test_client()
 TEAM_STATE = {
     'contract': 'public_team_state_v1',
@@ -343,6 +348,22 @@ def _performance(*, status='partial'):
     }
 
 
+def _what_changed(*, state='no_changes'):
+    return {
+        'capability': 'what_changed_since_last_game',
+        'state': state,
+        'state_reason_codes': ['no_meaningful_changes_detected'],
+        'comparison': {
+            'current_game_date': '2026-08-16',
+            'anchor_game_date': '2026-08-15',
+        },
+        'team_state_comparison': {'status': 'unchanged'},
+        'rest_status_comparison': {'status': 'unchanged'},
+        'pitcher_changes': [],
+        'limitations': [],
+    }
+
+
 def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     board = _board()
     relief = _relief_work()
@@ -355,6 +376,7 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
         recent_transactions=_recent_transactions(),
         game_context=context,
         performance=_performance(),
+        what_changed=_what_changed(),
     )
 
     assert payload['capability'] == CAPABILITY
@@ -369,7 +391,47 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     assert payload['game_context'] == context
     assert payload['performance'] == _performance()
     assert payload['section_status']['performance']['status'] == 'partial'
+    assert payload['what_changed'] == _what_changed()
+    assert payload['section_status']['what_changed'] == {
+        'status': 'available',
+        'reason_code': 'no_meaningful_changes_detected',
+        'limitations': [],
+        'represented_date': '2026-08-16',
+        'source_state': 'no_changes',
+    }
+    assert payload['operating_state'] == {
+        key: board.get(key)
+        for key in (
+            'team',
+            'freshness',
+            'team_state',
+            'context',
+            'roster_authority',
+            'team_shape',
+            'rotation_support_pressure',
+            'limitations',
+        )
+    }
     assert (board, relief, context) == originals
+
+
+@pytest.mark.parametrize(
+    ('source_state', 'section_status'),
+    [
+        ('changes', 'available'),
+        ('no_changes', 'available'),
+        ('no_baseline', 'available'),
+        ('stale', 'partial'),
+        ('unavailable', 'unavailable'),
+    ],
+)
+def test_what_changed_source_states_survive_composition(source_state, section_status):
+    source = _what_changed(state=source_state)
+    payload = build_team_board_v2_payload(_board(), what_changed=source)
+
+    assert payload['what_changed'] == source
+    assert payload['section_status']['what_changed']['source_state'] == source_state
+    assert payload['section_status']['what_changed']['status'] == section_status
 
 
 def test_active_bullpen_matches_legacy_population_and_preserves_unknowns():
@@ -1096,7 +1158,7 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 
 
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
-    calls = {'board': 0, 'relief': 0, 'game': 0, 'transactions': 0}
+    calls = {'board': 0, 'relief': 0, 'game': 0, 'transactions': 0, 'changes': 0}
 
     def board(team_id):
         calls['board'] += 1
@@ -1120,19 +1182,61 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
         assert reference_date.isoformat() == '2026-08-16'
         return _recent_transactions()
 
+    def changes(team_id, freshness=None, generated_at=None):
+        calls['changes'] += 1
+        assert team_id == 1
+        assert freshness == {'data_through': '2026-08-16'}
+        assert generated_at == '2026-08-17T12:00:00+00:00'
+        return _what_changed()
+
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', game)
     monkeypatch.setattr(team_board_v2_api, 'build_public_recent_transactions', transactions)
+    monkeypatch.setattr(team_board_v2_api, 'build_team_changes_payload', changes)
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'relief': 1, 'game': 1, 'transactions': 1}
+    assert calls == {'board': 1, 'relief': 1, 'game': 1, 'transactions': 1, 'changes': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
     assert payload['recently_used_arms']['value'] == 1
     assert payload['recently_used_arms']['window_label'] == 'Last 3 days'
+    assert payload['what_changed'] == _what_changed()
+
+
+def test_route_scopes_what_changed_failure_without_destroying_core(client, monkeypatch):
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id: _board())
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_team_relief_work_payload',
+        lambda _team_id: _relief_work(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_team_game_context',
+        lambda _team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: _recent_transactions(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_team_changes_payload',
+        lambda _team_id, freshness=None, generated_at=None: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+    )
+
+    payload = client.get('/api/bullpen/teams/1/board-v2').get_json()
+    assert payload['team_state'] == TEAM_STATE
+    assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert payload['recent_transactions'] == _recent_transactions()
+    assert payload['what_changed'] is None
+    assert payload['section_status']['what_changed'] == unavailable_section(
+        'what_changed_unavailable'
+    )
 
 
 def test_route_scopes_optional_failure_without_destroying_core(client, monkeypatch):
