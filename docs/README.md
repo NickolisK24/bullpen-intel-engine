@@ -23,7 +23,7 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 24, 2026, with audited `origin/main` at `14cdadb1`:
+As of August 24, 2026, with audited `origin/main` at `773d3793`:
 
 - **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
 - **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
@@ -33,7 +33,8 @@ As of August 24, 2026, with audited `origin/main` at `14cdadb1`:
 - **TODAY-01 Daily Edition lead integration is complete.** The public Today route consumes the governed lead owner once, renders its dated lead and named evidence without frontend selection, and keeps quiet/unavailable behavior local.
 - **TODAY-02 Tonight Slate Bullpen Context is complete.** One Tonight response carries every game, canonical time/status, both existing bullpen contexts, and both Team Board handoffs without browser fan-out, fabricated zero, matchup interpretation, or cross-game failure coupling.
 - **TODAY-03 Pregame Bullpen Signals is complete.** Every eligible Tonight side carries the exact published Team State block and represented date from one league-listing read, with local unavailable behavior and no new browser request or frontend derivation.
-- **TODAY-04 Recent Bullpen Volume is the single active objective.** It is bounded to batch-composing the exact frozen seven-day bullpen workload carrier into both sides of the existing Tonight slate; it adds no raw-log query, named-arm selection, workload threshold, prediction, or browser request.
+- **TODAY-04 Recent Bullpen Volume is complete.** Every eligible Tonight side carries the exact frozen seven-day bullpen workload carrier through one shared trusted-snapshot resolution, with nullable pitch evidence, local failures, no raw-log query or Team Board rebuild, and no browser-request growth.
+- **TODAY-05 Rotation Transfer Context is the single active objective.** It is bounded to batch-composing at most two exact facts from the frozen seven-day Rotation Impact carrier into both sides of the existing Tonight slate; it adds no starter query, recalculation, forecast, comparison, generated sentence, or browser request.
 - **Scheduled intraday repair is retired for the remainder of 2026.** The capability remains dormant/manual-only; daily plus postgame are the active scheduled cadence. Postgame now qualifies exact-date canonical roster authority before replacement public-snapshot publication.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
 - **Authoritative manual daily execution is prohibited under D-051.** The production full-daily runner is schedule-only and first-attempt-only; manual dispatch and reruns are refused before application startup.

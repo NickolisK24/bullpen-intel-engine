@@ -171,6 +171,10 @@
           "measured_seconds": 0.1
         },
         {
+          "path": "tests/test_published_team_rotation_listing.py",
+          "measured_seconds": 0.1
+        },
+        {
           "path": "tests/test_published_team_workload_listing.py",
           "measured_seconds": 0.1
         },
