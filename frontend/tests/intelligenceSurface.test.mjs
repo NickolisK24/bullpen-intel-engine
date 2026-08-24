@@ -43,6 +43,8 @@ const {
   sinceYesterdayCountClarity,
   getTonightCards,
   getTonightGames,
+  nextTonightExpandedGameKey,
+  TonightSlateLedgerView,
   submitAudienceSignup,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const {
@@ -465,6 +467,7 @@ const tonightSlate = {
         },
         bullpen_context: {
           context_available: true,
+          clean_options_count: 2,
           clean_workload_option_names: ['Porter Hodge', 'Daniel Palencia'],
           optionality_band: 'thin',
           concentration_band: 'concentrated',
@@ -514,6 +517,7 @@ const tonightSlate = {
         },
         bullpen_context: {
           context_available: true,
+          clean_options_count: 1,
           clean_workload_option_names: ['Trevor Megill'],
           optionality_band: 'flexible',
           concentration_band: 'balanced',
@@ -566,6 +570,7 @@ const tonightSlate = {
         },
         bullpen_context: {
           context_available: true,
+          clean_options_count: 1,
           clean_workload_option_names: ['Ryan Walker'],
           optionality_band: 'narrow',
           concentration_band: null,
@@ -1519,12 +1524,15 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   }
 })
 
-test('Tonight slate renders every game from the one owner response with both Team Board handoffs', () => {
+test('Tonight slate keeps every game compact by default from the one owner response', () => {
   const games = getTonightGames(tonightSlate, teams)
   assert.equal(games.length, 2)
   assert.equal(games[0].gamePk, 900001)
   assert.equal(games[0].gameTime, '7:10 PM ET')
   assert.equal(games[0].status, 'Scheduled')
+  assert.equal(games[0].away.cleanOptionsCount, 2)
+  assert.equal(games[0].home.cleanOptionsCount, 1)
+  assert.equal(games[1].home.cleanOptionsCount, null)
   assert.deepEqual(games[0].away.namedOptions, ['Porter Hodge', 'Daniel Palencia'])
   assert.equal(games[0].away.workloadShare, 52.4)
   assert.deepEqual(games[0].away.teamState, {
@@ -1574,39 +1582,65 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.ok(htmlIncludes(html, 'San Francisco Giants at Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, '7:10 PM ET · Scheduled'))
   assert.ok(htmlIncludes(html, '10:10 PM ET · In Progress'))
-  assert.ok(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'))
-  assert.ok(htmlIncludes(html, 'Team State'))
+  assert.ok(htmlIncludes(html, '2 rested options'))
+  assert.ok(htmlIncludes(html, '1 rested option'))
   assert.ok(htmlIncludes(html, 'Fresh'))
   assert.ok(htmlIncludes(html, 'Team State unavailable'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+  assert.equal(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'), false)
+  assert.equal(htmlIncludes(html, 'Recent bullpen workload'), false)
+  assert.equal(htmlIncludes(html, 'Rotation transfer'), false)
+  assert.equal(htmlIncludes(html, 'Narrow bullpen margin before first pitch'), false)
+  assert.equal(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=today"'), false)
+  assert.equal(htmlIncludes(html, 'bullpen advantage'), false)
+})
+
+test('Tonight slate reveals one unchanged full game detail with both Team Board handoffs', () => {
+  const games = getTonightGames(tonightSlate, teams)
+  const html = render(React.createElement(TonightSlateLedgerView, {
+    games,
+    expandedKey: games[0].key,
+  }))
+
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'))
   assert.ok(htmlIncludes(html, 'A current Team State read is not available for this bullpen because no current bullpen evidence could be assembled.'))
   assert.ok(htmlIncludes(html, 'Data through Jun 24'))
   assert.ok(htmlIncludes(html, 'Recent bullpen workload'))
-  assert.ok(htmlIncludes(html, '7 days through Jun 24'))
   assert.ok(htmlIncludes(html, '9 relief appearances · 6 pitchers in relief · 137 pitches'))
   assert.ok(htmlIncludes(html, '5 relief appearances · 4 pitchers in relief'))
-  assert.ok(htmlIncludes(html, '0 relief appearances · 0 pitchers in relief · 0 pitches'))
   assert.ok(htmlIncludes(html, 'Rotation transfer'))
-  assert.ok(htmlIncludes(html, '7 days · Through Jun 25'))
   assert.ok(htmlIncludes(html, '2 short starts · 14.0 bullpen innings'))
   assert.ok(htmlIncludes(html, '1 short start'))
-  assert.ok(htmlIncludes(html, '0 short starts · 0.0 bullpen innings'))
   assert.ok(htmlIncludes(html, 'Bullpen optionality: Thin'))
   assert.ok(htmlIncludes(html, 'Top three relievers: 52.4% of 10-day bullpen workload'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=today"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=MIL&amp;source=today"'))
-  assert.equal(htmlIncludes(html, 'bullpen advantage'), false)
-  assert.equal(htmlIncludes(html, '5 relief appearances · 4 pitchers in relief · 0 pitches'), false)
-  assert.equal(htmlIncludes(html, '1 short start · 0.0 bullpen innings'), false)
+  assert.equal(htmlIncludes(html, '0 relief appearances · 0 pitchers in relief · 0 pitches'), false)
+  assert.equal(htmlIncludes(html, '0 short starts · 0.0 bullpen innings'), false)
+})
+
+test('Tonight slate expansion is one game at a time and can collapse', () => {
+  assert.equal(nextTonightExpandedGameKey(null, '900001'), '900001')
+  assert.equal(nextTonightExpandedGameKey('900001', '900002'), '900002')
+  assert.equal(nextTonightExpandedGameKey('900002', '900002'), null)
+
+  const games = getTonightGames(tonightSlate, teams)
+  const secondHtml = render(React.createElement(TonightSlateLedgerView, {
+    games,
+    expandedKey: '900002',
+  }))
+  assert.equal(htmlIncludes(secondHtml, 'Porter Hodge · Daniel Palencia'), false)
+  assert.ok(htmlIncludes(secondHtml, 'Ryan Walker'))
+  assert.equal(countOccurrences(secondHtml, 'aria-expanded="true"'), 1)
 })
 
 test('Tonight slate keeps healthy games and sides when one bullpen context is unavailable', () => {
-  const html = render(React.createElement(IntelligenceSurfaceView, {
-    intelligence: intelligenceOk,
-    tonight: tonightSlate,
-    dashboard,
-    landscape,
-    teams,
+  const games = getTonightGames(tonightSlate, teams)
+  const html = render(React.createElement(TonightSlateLedgerView, {
+    games,
+    expandedKey: games[1].key,
   }))
 
   assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
@@ -1671,6 +1705,10 @@ test('Tonight quiet watch still renders the authoritative game slate without man
 test('Tonight slate source keeps a one-column mobile stack and bounded desktop comparison', () => {
   const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
   assert.ok(source.includes('grid min-w-0 grid-cols-1 divide-y divide-dirt sm:grid-cols-2'))
+  assert.ok(source.includes('break-words font-semibold text-chalk100'))
+  assert.ok(source.includes('aria-expanded={expanded}'))
+  assert.ok(source.includes('min-h-11 w-full min-w-0'))
+  assert.ok(source.includes("const gameIdentity = games.map(game => game.key).join('|')"))
   assert.ok(source.includes('min-w-0 overflow-hidden border border-dirt bg-dugout'))
   assert.equal(source.match(/useFetch\(getTonightIntelligence\)/g)?.length, 1)
   assert.equal(source.includes('getTeamBoardV2'), false)
