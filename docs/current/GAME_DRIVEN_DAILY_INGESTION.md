@@ -1790,13 +1790,13 @@ no reconciliation semantics, no writer, no publication gate, no shadow
 threshold, no contract version and no schema moved. The shadow failure stays
 active because it reports something real.
 
-## Manual exact-one-game real-mutation qualification (D-056)
+## Manual exact-one-game real-mutation qualification (D-058)
 
 The next controlled stage after the D-052 no-op qualification. It proves the
 lane can apply **one reviewed canonical statistical correction to one existing
 GameLog row in one completed game**, and change nothing else.
 
-**Mechanism only.** D-056 authorizes the path to exist. It authorizes no
+**Mechanism only.** D-058 authorizes the path to exist. It authorizes no
 production run, no automated write, no scheduled write, no publication
 authority, no backfill, no multiple-game scope, and no identity mutation.
 **O-008 remains open**, and its gate still names scheduled write stability,
@@ -1814,7 +1814,7 @@ proof.
 
 ### The four founder decisions this stage encodes
 
-1. **Mechanism authority is its own decision.** D-056 authorizes the machinery;
+1. **Mechanism authority is its own decision.** D-058 authorizes the machinery;
    a production PASS would be a separate evidence-backed decision, exactly as
    D-041 preceded D-052.
 2. **Unresolved field authority is a hard refusal.** See below.

@@ -596,11 +596,11 @@ def test_route_preserves_snapshot_read_failure_as_honest_503(monkeypatch):
         assert leak not in raw
 
 
-def test_d054_is_the_next_contiguous_ledger_decision():
+def test_d054_remains_in_the_contiguous_ledger_through_d058():
     roadmap = (
         REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
     ).read_text(encoding='utf-8')
     assert '| D-054 | Aug 15, 2026 |' in roadmap
-    assert 'Decision Ledger through D-054' in roadmap
+    assert 'Decision Ledger through D-058' in roadmap
     assert 'D-054, added by UX-2B' in roadmap
     assert 'represented + withheld = expected = 30' in roadmap

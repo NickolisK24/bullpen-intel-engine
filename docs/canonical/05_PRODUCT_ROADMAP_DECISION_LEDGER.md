@@ -8,15 +8,15 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 4.3  ·  GAME-DRIVEN REAL-MUTATION QUALIFICATION MECHANISM
+VERSION 5.1  ·  GAME-DRIVEN REAL-MUTATION QUALIFICATION MECHANISM
 
 Owner: Nickolis Kacludis
 
-Effective August 19, 2026
+Effective August 24, 2026
 
 # Contents
 
-This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority and records the governed Team Board workload-context decision without altering prior authority decisions.
+This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority, reconciles Team Board 2.0 against current `main`, and preserves the historical decisions that led to the present state.
 
 01  Document Control
 
@@ -42,7 +42,9 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 
 12  Appendix C - Source Basis
 
-13  Appendix D - Revision History
+13  Appendix D - Team Board 2.0 Audit Reconciliation
+
+14  Appendix E - Revision History
 
 # Document Control
 
@@ -50,36 +52,36 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 4.3 |
-| Effective date | August 19, 2026 |
+| Version | 5.1 |
+| Effective date | August 24, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at 66be1b57f2d523d643db82d605538771f656dfa9 after PR #668. Team Board Phase 2 Package 1 implementation branch: `backend/team-board-workload-context`. |
-| Decision basis | Decision Ledger through D-056; Version 4.3 adds the game-driven real-mutation qualification mechanism while preserving D-001 through D-055 unchanged |
-| Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591; CI-003 (#598) gated publication commit `2e83fa0` on main from scheduled run 31794183367; H-5 through H-12 documentation and public-surface closeouts through PR #659 |
-| Supersedes | Version 4.1 current-state wording while preserving all durable prior decisions and completion evidence |
+| Repository basis | Audited `origin/main` at `c63877a5b3d835b7190030d28ff143bedcafe099`, after PR #727. Historical Team Board readiness baseline: `e12d76033c05f9989393c8e4e115aeb61a7b3c13`. |
+| Decision basis | Decision Ledger through D-058. D-056 is incorporated from its accepted decision record; D-057 records the execution-state reconciliation; D-058 adds the game-driven real-mutation qualification mechanism. |
+| Audit basis | Repository history and current backend, frontend, public-route, contract-test, and canonical-document evidence through August 23, 2026. No production mutation or synthetic production evidence was used. |
+| Supersedes | Nothing. Version 5.1 is additive to Version 5.0: it adds D-058 and changes no current state, audit basis, active objective, or prior decision. |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | D-055 permits the Team Board to embed a minimal set of already-public workload facts from records its authority already loaded and to author one fail-closed Rest Status block. It adds no Team State or availability vocabulary, score exposure, ranking, prediction, frontend derivation, reader-path acquisition, write authority, or publication authority. D-001 through D-054 remain unchanged, including D-051 through D-054. |
+| INTEGRATION RULE | Team Board 2.0 is the product center of gravity. D-057 advances only read-path consolidation: it does not change Team State, thresholds, public vocabulary, API meaning, frontend interpretation authority, writer authority, publication authority, or any governance-gated depth. D-001 through D-056 remain in force according to their recorded status. |
 | --- | --- |
 
 # Part I - Executive State
 
 ## 1. Current Product Position
 
-BaseballOS is a live public MLB bullpen-intelligence platform with a mature trust foundation, a defensible canonical appearance record, governed publication gates, immutable historical claims, and production evidence strong enough to close the game-driven ingestion authority-qualification phase without granting production write authority.
+BaseballOS is a live public MLB bullpen-intelligence platform whose Team Board is now the product center of gravity. Between the August 17 readiness baseline and audited `main`, the repository landed the visual foundation, a versioned composed read model, all eleven Team Board presentation packages, backend-owned Team State explanation, governed workload and Rest Status reads, Team Board ERA and WHIP, rotation impact, transaction chronology, structured What Changed, and responsive closeout.
 
-The Public Credibility Pass is closed. Raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, routed team previews are production-verified, and public vocabulary/glossary ownership is production-verified. Attention has moved from public credibility to delivery reliability and supply-chain hygiene: dependency risk on the production request path is remediated and continuously audited, and the generated-content publication gate is closed end to end — from naturally scheduled execution through to a verified live routed page. The next ordered work is permanent daily-sync work reduction.
+The repository therefore no longer supports treating Team Board 2.0 as a future frontend build. The principal user-facing surface is complete for the currently governed scope. The remaining work is narrower: consolidate its overlapping browser/read path, close transaction source completeness only when authority permits, and keep unapproved leverage, role-movement, extra performance, and prospective delta domains out of public presentation.
 
-| CURRENT VERDICT | The Public Credibility Pass is closed: #595, #591, #600, #594, and #638 are all complete and production-verified. Dependency risk (#601) is remediated on main and now has a standing CI control, with one time-boxed frontend acceptance expiring 2026-11-13. CI-003 (#598) is complete and production-verified: naturally scheduled run 31794183367 published gated commit `2e83fa0`, Vercel deployment succeeded, and the live routed page served snapshot 411 / sync run 721 / data through 2026-08-13. The next ordered package is permanent daily-sync work reduction, which preserves D-051 in full. |
+| CURRENT VERDICT | Team Board 2.0 is substantially complete on audited `main`. TB-01, TB-02, TB-03, TB-04, TB-06, TB-07, TB-09, TB-10, and TB-11 meet their current canonical exit conditions. TB-05 is partial because deeper leverage and role-movement meaning remains governance-gated. TB-08 is partial because the chronology correctly withholds unresolved source/event/evidence cases. PRE-02 remains partial because a Team Board selection still initiates five HTTP requests, including both `/board` and `/board-v2`. The single active objective is bounded Team Board read-path consolidation. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | 66be1b57f2d523d643db82d605538771f656dfa9 | Current baseline after PR #668. The Version 4.1 baseline was 893d216 after PR #665. |
-| In-flight branch | `backend/team-board-workload-context` | Team Board Phase 2 Package 1 implementation only; no commit, push, pull request, or merge before review. |
+| Repository main | `c63877a5b3d835b7190030d28ff143bedcafe099` | Audited `origin/main` after PR #727. |
+| Audit branch | `docs/team-board-roadmap-reconcile` | Canonical roadmap reconciliation only. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -100,28 +102,31 @@ The Public Credibility Pass is closed. Raw public scores are contained, governed
 
 ## 3. Active Objective
 
-| ACTIVE OBJECTIVE | Permanent daily-sync work reduction |
+| ACTIVE OBJECTIVE | Team Board read-path consolidation |
 | --- | --- |
 
-CI-003 (#598) is complete and production-verified, so the active objective
-advances to the next item in the previously approved order, unchanged. This is
-a sequencing consequence of a package closing, not a new decision: nothing was
-reprioritized, and no work package changed scope.
+The next bounded package is **PRE-02B — Team Board read-path consolidation**.
+The current browser loads the team directory and then independently requests
+`/board`, `/board-v2`, `/changes`, and the team-state share-card payload. The
+versioned endpoint already composes the board, game context, performance,
+recent transactions, and recent relief work, but the page still loads the
+legacy board for disclosure/share fallback and separately loads changes and
+share data. That leaves duplicate population/query work and two board contracts
+active in one view.
 
-The objective is to reduce avoidable upstream and runtime work on the daily
-lane — candidate enumeration, repeatedly refetching the same full roster
-families, replaying a fixed transaction window — without weakening any trust
-boundary. It preserves in full:
+PRE-02B must establish one canonical Team Board response for the content needed
+to render the current page, retire redundant eager reads, preserve independent
+section failure behavior, and leave every baseball semantic with its current
+backend owner. Share generation may remain an explicit user action if it is not
+part of the render contract. This package changes transport and composition
+only: no Team State, threshold, Rest Status, workload, transaction, performance,
+role, rotation, or What Changed meaning may move or change.
 
-- D-051: scheduled, first-attempt-only production daily execution; authoritative manual daily execution stays prohibited;
-- legacy writer authority for baseball-data mutation;
-- daily and postgame game-driven lanes in `shadow`, granting no durable write or publication authority;
-- backfill `off`;
-- no game-driven write authority and no game-driven publication authority.
-
-Longer timeouts are not the intended end state, and stage reordering, retries,
-continuation machinery, schema changes, and any authority transfer remain
-separate decisions.
+All standing operational boundaries remain intact: D-051 still prohibits an
+authoritative manual daily execution; the legacy sync/postgame writer remains
+the baseball-data mutation authority; daily and postgame game-driven lanes
+remain in `shadow`; backfill remains `off`; and no game-driven write authority
+or game-driven publication authority is granted.
 
 ### CI-003 (#598) closeout — complete
 
@@ -201,14 +206,18 @@ This is supply-chain hygiene. No baseball semantics, publication gate, source au
 
 ## 6. Next Approved Work
 
-The Public Credibility Pass is complete: #595 (public score containment), #591 (backend-owned Why copy), #600 (contextual H1/accessibility structure), #594 (routed team previews), and #638 (public vocabulary/glossary parity) are all complete and production-verified. DEP-001 (#601) is complete on main, and CI-003 (#598) is complete and production-verified. The order below is the previously approved sequence with the finished packages removed; nothing was reprioritized.
+The sequence below replaces the stale order that still treated M-001 and public
+What Changed as future work.
 
-| Order | Work package | Scope |
-| --- | --- | --- |
-| 1 | Permanent daily-sync work reduction | Reduce avoidable upstream/runtime work without weakening D-051 or publication gates. |
-| 2 | Portable Intelligence | #597 then #596: canonical raster renderer, artifact-specific crawler metadata, share actions, and evidence-inspection funnel. |
-| 3 | Resume M-001 and visible evidence | Active Bullpen ERA, named-arm evidence, starter exposure, then Daily Habit work. |
-| 4 | Daily Habit and Consequence | Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior. |
+The package-by-package and gap-register reconciliation is retained in Appendix D.
+
+| Order | State | Work package | Scope |
+| --- | --- | --- | --- |
+| 1 | ACTIVE | PRE-02B — Team Board read-path consolidation | Remove redundant eager Team Board reads and duplicated population work without changing public semantics or failure isolation. |
+| 2 | BLOCKED | TB-08 source-completeness follow-up | Resume only after unresolved transaction authority is established; continue withholding in the meantime. No guessed event meaning. |
+| 3 | DEFERRED | Portable Intelligence | Canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel remain valid but are not the active Team Board closeout. |
+| 4 | DEFERRED | Runtime work reduction and React Router migration | Preserve D-051; complete or re-review #645 before its 2026-11-13 expiry. |
+| 5 | BACKLOGGED | Additional Team Board depth | Extra performance metrics, historical routes, and additional governed delta domains require separate evidence and approval. |
 
 One dated obligation sits outside this order and does not wait for it: the
 React Router acceptance recorded under #645 expires **2026-11-13**, and the
@@ -251,10 +260,11 @@ migration lands or the acceptance is re-reviewed before then.
 | --- | --- | --- |
 | CI/reliability | #598 - Complete | Generated-content commits cannot bypass validation or obscure provenance. Implementation is on main, and the full chain is production-verified: scheduled run 31794183367, gated commit `2e83fa0`, successful deployment, and a live routed page serving snapshot 411. |
 | Dependencies | #601 - Complete | Known backend/frontend advisories assessed; request-path risk remediated; test dependencies removed from the production runtime; a standing read-only CI gate refuses unreviewed production dependency risk. Residual React Router acceptance expires 2026-11-13 under #645. |
-| Permanent runtime work | Daily-sync work reduction | Reduce candidate enumeration and repeated roster/transaction work without weakening D-051. |
+| Team Board closeout | PRE-02B — Active | Consolidate the current five-request Team Board view and retire redundant board population without changing semantics. |
+| Permanent runtime work | Daily-sync work reduction — Deferred | Reduce candidate enumeration and repeated roster/transaction work without weakening D-051 after the active Team Board closeout. |
 | Portable Intelligence | #597 then #596 | Supported raster assets first; then artifact-specific crawler-visible title, description, image, URL, alt text, and actions. |
-| Visible evidence | M-001 then named-arm/starter context | Resume approved evidence work only after Public Credibility Pass exit. |
-| Daily Habit | Public What Changed and Today lead | Comparable trusted change, receipt-bearing copy, quiet-day suppression, and game-aware status without prediction. |
+| Visible evidence | M-001 and M-002 — Complete on Team Board | Preserve governed sample, evidence, failure, and rounding contracts; additional metrics need separate approval. |
+| Daily Habit | Public What Changed — Complete on Team Board | Current governed change lanes, receipt-bearing copy, and quiet/no-baseline/stale behavior are live; additional delta domains remain deferred. |
 
 # Part III - Phased Roadmap
 
@@ -263,11 +273,11 @@ migration lands or the acceptance is re-reviewed before then.
 | Phase | Status | Exit / remaining work |
 | --- | --- | --- |
 | Phase 0 - Canonical Trust Closeout | Complete | Maintain official-line, starter, outs, appearance-team, and publication-gate regressions. |
-| Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after public-credibility work. |
+| Phase 1 - Evidence Completeness | Complete for current Team Board scope | M-001 and M-002 are implemented and integrated; future metrics are separate packages. |
 | Phase 1A - Authority Qualification | Complete - August 10, 2026 | D-052 phase exit; all broader game-driven write/publication/backfill authority remains unapproved. |
 | Phase 1B - Public Credibility Pass | Complete - August 12, 2026 | #590, #595, #591, #600, #594, and #638 all complete and production-verified. Maintain the vocabulary, copy-authority, and page-semantics regressions. |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Raster renderer, immutable asset, crawler metadata, actions, funnel. |
-| Phase 3 - Daily Habit and Consequence | Not started | Public What Changed, team movement, Today lead, game-aware slate, quiet-day behavior. |
+| Phase 3 - Daily Habit and Consequence | Partial | Team Board What Changed and quiet/failure behavior are integrated; broader Today/slate habit work remains deferred. |
 | Phase 4 - Offseason Intelligence Depth | Not started | Pitch trends, leverage/dependency, organizational depth, routed discovery, timeline/archive. |
 | Phase 5 - Opening Day 2027 | Not started | Complete daily relaunch with current trust and reliability proof. |
 | Phase 6 - Growth and Validation | Not started | Measured behavior and rights evidence choose direction. |
@@ -316,14 +326,15 @@ migration lands or the acceptance is re-reviewed before then.
 ## 13. Near-Term Backlog
 
 - React Router v7 migration (#645) before the 2026-11-13 acceptance expiry.
-- Permanent daily-sync work reduction.
+- PRE-02B Team Board read-path consolidation is active, not backlog.
+- Permanent daily-sync work reduction after PRE-02B.
 - Portable Intelligence: canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel.
-- Resume M-001 Active Bullpen ERA after the Public Credibility Pass.
-- Named-arm evidence expansion and starter-exposure context after M-001.
+- TB-08 transaction completeness only after unresolved event/source authority is decided.
+- Named-arm evidence expansion and starter-exposure context remain optional depth after current Team Board closeout.
 
 ## 14. Later and Parked
 
-Later: named-arm evidence, starter exposure, Public What Changed, team movement, pitch trends, leverage/dependency, organizational depth, routed discovery, state timeline, story-engine consolidation, accessibility and technical-debt windows.
+Later: additional governed What Changed domains, named-arm evidence, starter exposure, Today lead work, pitch trends, leverage/dependency, organizational depth, routed discovery, state timeline, accessibility and technical-debt windows.
 
 Parked until demand: Follow My Team, automated newsletter, game pages beyond the Slate, embeds, public API/exports, push notifications, professional sales tooling, sponsorship, and monetization tests.
 
@@ -344,7 +355,7 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-Version 4.2 adds D-055 as a durable Team Board read-contract decision. D-001 through D-054 remain in force and unchanged; D-050 through D-055 are included below because they govern the current operating and authority posture.
+Version 5.1 adds D-058, the game-driven real-mutation qualification mechanism. Version 5.0 incorporated D-056 from its dated decision record and added D-057 as the durable execution-state reconciliation. D-001 through D-057 remain in force according to their recorded status.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
@@ -352,7 +363,11 @@ D-054, added by UX-2B, governs how an all-club reader may list already-published
 
 D-055, added by Team Board Phase 2 Package 1, governs how the Team Board may project already-public workload facts from its loaded authority and author one fail-closed Rest Status without exposing scores, recalculating workload, or creating frontend interpretation authority. It changes no Team State, availability, snapshot, acquisition, write, or publication authority.
 
-D-056, added by the game-driven real-mutation qualification package, governs how one reviewed canonical statistical correction may be applied to one existing GameLog row in one completed game under manual owner-only authorization. It refuses unresolved source authority, identity mutation, appearance-team repair, multi-row and multi-field mutation, and publication authority, and its existence authorizes no production qualification run. O-008 remains open.
+D-056 corrects the availability reference date used by published Team State and its matching card read without changing Contract A, thresholds, vocabulary, roster authority, or publication authority. Its repository correction is complete; only a separate natural-production proof can close the decision record's production-observation note.
+
+D-057 records that Team Board 2.0's currently governed user-facing packages are substantially complete and makes PRE-02B read-path consolidation the single active objective. It grants no authority to activate blocked transaction, leverage, performance, role-movement, historical, or prospective-delta semantics.
+
+D-058, added by the game-driven real-mutation qualification package, governs how one reviewed canonical statistical correction may be applied to one existing GameLog row in one completed game under manual owner-only authorization. It refuses unresolved source authority, identity mutation, appearance-team repair, multi-row and multi-field mutation, and publication authority, and its existence authorizes no production qualification run. O-008 remains open.
 
 DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the residual React Router advisories is a dated, revocable security decision recorded in `docs/decisions/2026-08-13-react-router-v7-security-defer.md` and machine-enforced by `.github/dependency-audit-accepted.json` — deliberately not a durable authority decision, because it is designed to expire.
 
@@ -371,7 +386,7 @@ The ledger is history and current policy at once, and until Version 4.0 the two 
 
 Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
 
-Version 4.0 amended D-013 through D-053. Versions 4.1, 4.2 and 4.3 change no prior decision status.
+Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior decision status. Version 5.0 adds D-057 and records D-056 without changing D-001 through D-055. Version 5.1 adds D-058 without changing D-001 through D-057.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -430,20 +445,27 @@ Version 4.0 amended D-013 through D-053. Versions 4.1, 4.2 and 4.3 change no pri
 | D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; production-exercised and production-verified August 14, 2026: scheduled run 31794183367 produced gated commit `2e83fa0` under the machine identity, deployment succeeded, and read-only verification of the live routed page served trusted snapshot 411. Amends D-013 by scoping it to human-authored engineering work. |
 | D-054 | Aug 15, 2026 | The league Dashboard may serve a neutral listing of already-published Team State artifacts pinned to one current trusted Dashboard snapshot. One immutable 30-club registry owns denominator integrity and fallback identity only; live directory identity may improve labels but never membership. The listing computes no Team State, derives no state from counts, introduces no ranking or new public state vocabulary, and must preserve `represented + withheld = expected = 30` with Withheld remaining a publication state rather than a Team State. | Standing read-only publication-serving boundary |
 | D-055 | Aug 15, 2026 | The Team Board may embed the exact already-public `days_since_last_appearance`, `appearances_last_7`, and `pitches_last_7_days` workload values plus the governed `back_to_back` availability input from records its authority already loaded, and may author a fail-closed Rest Status using the fixed date definitions recorded in the decision. Missing or stale required evidence withholds every Rest Status count rather than inventing zero. No score, Team State or availability change, frontend derivation, ranking, prediction, reader-path acquisition, write authority, or publication authority is added. | Standing additive public-read boundary |
-| D-056 | Aug 19, 2026 | A manual exact-one-game real-mutation qualification mechanism may exist: `workflow_dispatch` only, `main` only, repository-owner only, expected-HEAD-SHA bound, reviewed-fingerprint bound, exact one game, and limited to one statistical correction to one existing GameLog row on one resolved-authority field. It refuses unresolved source authority (`inherited_runners` explicitly), identity mutation, appearance-team repair, multi-row and multi-field mutation, inserts, blocked rows, provenance-only rows, publication authority, backfill, and scheduled execution. Expected effects are exact integers measured through the canonical path, including `correction_provenance_rows_written = 1` and `correction_count` +1. A replay resolves NO_LONGER_MUTATING and never a second PASS. A post-write realization failure fails hard and attempts no compensating write. **Existence of this machinery authorizes no production qualification run and no automated write authority. O-008 remains open.** | Adopted — mechanism authority only |
+| D-056 | Aug 18, 2026 | Published Team State and its matching card read use the canonical next-day availability reference date while roster membership remains anchored to the represented baseball date. Contract A, thresholds, vocabulary, partitions, artifact schema, roster authority, and publication authority are unchanged. | Adopted; repository correction complete, corrected natural-production observation remains separately required |
+| D-057 | Aug 23, 2026 | Repository evidence at `c63877a` establishes the current Team Board 2.0 package state recorded in Appendix D and advances PRE-02B read-path consolidation as the single active objective. The package may consolidate transport and duplicate population only; it may not change baseball semantics, frontend interpretation authority, API meaning, thresholds, writers, publication gates, or activate governance/substrate-blocked depth. | Standing execution decision |
+| D-058 | Aug 19, 2026 | A manual exact-one-game real-mutation qualification mechanism may exist: `workflow_dispatch` only, `main` only, repository-owner only, expected-HEAD-SHA bound, reviewed-fingerprint bound, exact one game, and limited to one statistical correction to one existing GameLog row on one resolved-authority field. It refuses unresolved source authority (`inherited_runners` explicitly), identity mutation, appearance-team repair, multi-row and multi-field mutation, inserts, blocked rows, provenance-only rows, publication authority, backfill, and scheduled execution. Expected effects are exact integers measured through the canonical path, including `correction_provenance_rows_written = 1` and `correction_count` +1. A replay resolves NO_LONGER_MUTATING and never a second PASS. A post-write realization failure fails hard and attempts no compensating write. **Existence of this machinery authorizes no production qualification run and no automated write authority. O-008 remains open.** | Adopted — mechanism authority only |
 
 ## 16. Open Decisions
 
 | ID | Decision required | Gate | Current default |
 | --- | --- | --- | --- |
-| O-001 | Resolved by D-021 | Closed | Performance family established; M-001 remains unimplemented and non-public. |
+| O-001 | Resolved by D-021 and Team Board performance decisions | Closed | M-001 and M-002 are public on Team Board; other metrics require separate decisions. |
 | O-002 | Current-versus-shared comparison contract | Trusted comparability and public UX | Historical page remains frozen only. |
 | O-003 | Canonical server renderer technology and storage | Artifact contract, hosting cost, and performance | Transitional browser renderer only. |
 | O-004 | Public leverage calculation and table | Complete source coverage and reproducible method | Legacy/partial claims remain bounded. |
 | O-005 | Routed team URL shape and surface ownership | Product route and SEO plan | Current Team Board remains canonical live destination. |
 | O-006 | Whether account/sign-in remains after Follow My Team review | Demonstrated retention value | Keep internal auth substrate; no broad account push. |
 | O-007 | Resolved by D-052 | Closed | A completed durable candidate was found read-only and game 823924 passed the exact no-op qualification contract. |
-| O-008 | Game-driven automated write and later publication-authority transfer | Real-mutation proof, scheduled write stability, rollback, observability, and explicit founder approval | **Open.** Daily/postgame shadow; backfill off; legacy writer authoritative. D-056 built the real-mutation qualification mechanism; no production run has occurred, and the mechanism satisfies none of the five gates on its own. |
+| O-008 | Game-driven automated write and later publication-authority transfer | Real-mutation proof, scheduled write stability, rollback, observability, and explicit founder approval | Daily/postgame shadow; backfill off; legacy writer authoritative. D-058 built the real-mutation qualification mechanism; no production run has occurred, and the mechanism satisfies none of the five gates on its own. |
+| O-009 | Public entry/leverage bands and role-movement semantics | Explicit product definitions, source authority, materiality, and public copy | Current descriptive roles/deployment only; no leverage or movement publication. |
+| O-010 | Unresolved transaction event/source categories (`SC`, `SFA`, uncertified `ASG`, malformed/unknown codes) | Structured source authority and deterministic classification | Recent Transactions remains partial and fails closed. |
+| O-011 | Activation of prospective arm-read, workload, rotation, membership, and deployment deltas | Two compatible natural endpoints per domain, certification, reader contract, and product approval | Sidecars may remain observational; current `/changes` lanes only. |
+| O-012 | Public multi-day density reads, including 4-in-6 | Explicit public product definition, complete-window authority, copy, and placement | Team Board publishes governed back-to-back/current windows only; 4-in-6 remains excluded. |
+| O-013 | Performance beyond Team Board ERA and WHIP, or performance on Team State/share surfaces | Metric-specific contract, sample, evidence, copy, and surface approval | M-001/M-002 remain Team Board-only; all other metrics/surfaces are withheld. |
 
 # Part VII - Founder Operating System
 
@@ -516,7 +538,11 @@ Version 4.0 amended D-013 through D-053. Versions 4.1, 4.2 and 4.3 change no pri
 | Aug 14, 2026 | CI | CI-003 first gated generated-content publication (#598) | Scheduled run 31794183367 (attempt 1) / commit `2e83fa0` | The scheduled daily export published under the D-053 gate: generated from trusted publication, delivery integrity proven, canonical frontend tests and production build run against the exact generated tree, tree identity recorded, committed as `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, and fast-forward pushed. | **Complete.** The gated, tree-exact, machine-attributed commit the closeout requires, taken from a naturally authorized scheduled run rather than a forced one — natural schedule, tree exactness (validated tree equals committed tree), and machine identity all satisfied. The deployment and routed-production verification follow in the next entry. |
 | Aug 14, 2026 | CI | CI-003 deployment and routed-production verification (#598) | Vercel deployment on commit `2e83fa0`; read-only `https://baseballos.app/team/ATH` | Vercel status on the generated commit: success. The live routed page served HTML matching the generated artifact, carrying `baseballos:snapshot-id="411"`, `baseballos:sync-run-id="721"`, `baseballos:data-through="2026-08-13"`, `baseballos:authority-contract="trusted_dashboard_publication_v1"`, Team State `Vulnerable` in metadata, unfurl, and body, and the expected evidence line `No relievers are marked Unavailable.` | **Complete.** This closes CI-003. The full chain is proven end to end: natural scheduled execution, generated-content gate, frontend tests, production build, tree-exact staging, machine-authored commit, push to `main`, successful deployment, and a live routed page serving the expected snapshot. Verification was read-only; no production state was mutated. Issue #598 closed as completed with all six acceptance criteria met. D-051, D-052, and D-053 are unchanged, and this grants no broader game-driven write or publication authority. |
 | Aug 14, 2026 | Human Quality | Document authority reconciliation (H-12) | This edition | Nine competing-authority defects closed across the canonical library, current subsystem contracts, code-cited document paths, and secondary-document status labelling. | **Complete.** Documentation and documentation-reference reconciliation only. No sync mode, publication gate, write authority, baseball logic, schema, or dependency changed. |
-| Aug 19, 2026 | Phase 1A follow-on | Manual exact-one-game real-mutation qualification mechanism | `ops/game-driven-mutation-qualification` / D-056 | Repository implementation only. Qualification service and runner, read-only candidate audit service and runner, two manual workflows, 310 new tests across six files, CI shard manifest updated and verified. | **No production execution occurred.** Two contract assumptions were corrected by measurement against the canonical path: a real correction writes `correction_provenance_rows_written = 1` and carries the `provenance_only_update` mutation category. No canonical lane, planner, comparator, realization, identity or sync-metadata module changed. `inherited_runners` stays refused and unresolved. O-008 remains open. |
+| Aug 17, 2026 | Team Board 2.0 | Foundation, composed read model, Answer Block, Active Bullpen, Usage & Rest | PRs #682-#687 | Backend/frontend contract and regression evidence on main | Unified Team State summary authority; landed visual foundation, `/board-v2`, dense arm rows, and governed usage/rest presentation. |
+| Aug 18, 2026 | Team Board 2.0 | Workload, Roles, Rotation, Transactions, Relief Work, delta substrate | PRs #688-#694 / D-056 | Repository contracts and frozen-substrate tests | Corrected Team State reference date and filled the remaining first-pass Team Board sections without activating ungoverned delta meaning. |
+| Aug 19, 2026 | Phase 1A follow-on | Manual exact-one-game real-mutation qualification mechanism | `ops/game-driven-mutation-qualification` / D-058 | Repository implementation only. Qualification service and runner, read-only candidate audit service and runner, two manual workflows, 310 new tests across six files, CI shard manifest updated and verified. | **No production execution occurred.** Two contract assumptions were corrected by measurement against the canonical path: a real correction writes `correction_provenance_rows_written = 1` and carries the `provenance_only_update` mutation category. No canonical lane, planner, comparator, realization, identity or sync-metadata module changed. `inherited_runners` stays refused and unresolved. O-008 remains open. |
+| Aug 20-21, 2026 | Team Board 2.0 | Governed UX and public intelligence closeout | PRs #696-#717 | Integrated backend/frontend regression suites | Added frozen Rest Status, Team State and Rested Options change lanes, M-001/M-002, recently-used/off-active reads, rotation completeness, receipt ledger, responsive closeout, and regression proof. |
+| Aug 22-23, 2026 | Team Board 2.0 | Transaction authority narrowing and final alignment | PRs #718-#727 | Fail-closed transaction contracts and Team Board alignment tests | Narrowed participant/event/evidence withholding, added intraday repair, and closed desktop destination/read alignment. Unresolved source categories remain explicit. |
 
 ## DIST-003 (#594) Production Closeout Evidence
 
@@ -547,22 +573,22 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 | Phase | Status | Exit date | Evidence | Remaining work |
 | --- | --- | --- | --- | --- |
 | Phase 0 - Canonical Trust Closeout | Complete | Jul 29, 2026 | Independent official-line, starter, outs, appearance-team, and aggregation closeout | Maintain regression and publication gates |
-| Phase 1 - Evidence Completeness | In progress / paused |  | D-021 through D-030 establish M-001 contract | Registry, backend read, Team Board, evidence, tests |
+| Phase 1 - Evidence Completeness | Complete for current Team Board scope | Aug 21, 2026 | M-001 and M-002 backend reads, Team Board integration, evidence, and tests | Additional metrics require separate approval |
 | Phase 1A - Authority Qualification | Complete | Aug 10, 2026 | D-052; #593/OPS-002 closed; candidate audit and no-op PASS | No authority transfer; O-008 remains open |
 | Phase 1B - Vocabulary and Freshness | Complete | Aug 12, 2026 | #590, #595, #591, #600, #594, and #638 complete and production-verified; VOC-001 closed on trusted snapshot 398 proof | Maintain vocabulary, copy-authority, and page-semantics regressions |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started |  | Immutable artifact and historical page are production | Renderer, metadata, actions, funnel |
-| Phase 3 - Daily Habit and Consequence | Not started |  | Comparability and surface foundations exist | What Changed, lead, slate, quiet day |
+| Phase 3 - Daily Habit and Consequence | Partial |  | Governed Team Board What Changed and quiet/failure states are integrated | Today lead and broader slate habit work remain deferred |
 | Phase 4 - Offseason Intelligence Depth | Not started |  | Candidate domains governed | Pitch, leverage, depth, routes, archive |
 | Phase 5 - Opening Day 2027 | Not started |  |  | Complete daily relaunch |
 | Phase 6 - Growth and Validation | Not started |  |  | Behavior and rights evidence choose direction |
 
 # Appendix C - Source Basis
 
-- BaseballOS Product Roadmap & Decision Ledger Version 3.9, effective August 13, 2026.
-- Repository main b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. The August 13 baseline was e3ad8bd after PR #647, with CI run 31729458591 green on that commit.
+- BaseballOS Product Roadmap & Decision Ledger Version 4.2, effective August 15, 2026.
+- Audited repository `origin/main` `c63877a5b3d835b7190030d28ff143bedcafe099` after PR #727; Team Board readiness comparison baseline `e12d76033c05f9989393c8e4e115aeb61a7b3c13`.
 - Gated generated-content publication commit `2e83fa0` on main, from scheduled run 31794183367 (attempt 1), Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, 2026.
 - Git authorship on main at this basis: every engineering commit authored by Nickolis Kacludis, plus the one `BaseballOS Automation` publication commit above.
-- Decision Ledger through D-054.
+- Decision Ledger through D-058, including the dated D-056 record and the dated D-058 game-driven real-mutation qualification record.
 - GitHub issue state through August 14, 2026: #595, #591, #600, #594, #638, #601, and #598 closed as completed; #645, #597, #596, and the #589 tracker open.
 - CI-003 routed-production verification: read-only `https://baseballos.app/team/ATH`, serving `baseballos:snapshot-id="411"`, `baseballos:sync-run-id="721"`, `baseballos:data-through="2026-08-13"`, `baseballos:authority-contract="trusted_dashboard_publication_v1"`, Team State `Vulnerable`.
 - Production evidence retained for #590, #592, #593, #595, #591, #600, #594, #638, OPS-002, and Phase 1A authority qualification.
@@ -572,13 +598,13 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 ## Repository basis
 
-Current main: 893d216bdf8d21654fad26f9726e9c4c29a94b0c after PR #665. UX-2B implementation is confined to `backend/league-team-state-listing` until review. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
+Current audited main: `c63877a5b3d835b7190030d28ff143bedcafe099` after PR #727. Team Board 2.0 is substantially complete for its governed scope; PRE-02 composition, TB-05 governed depth, and TB-08 source completeness remain as recorded in Appendix D.
 
 SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
 ## Active objective
 
-The active objective is permanent daily-sync work reduction — the next package in the previously approved order, reached because CI-003 (#598) closed.
+The active objective is PRE-02B Team Board read-path consolidation under D-057.
 
 CI-003 is complete and production-verified. Its repository implementation and the PR #642 result-transport repair are on main; the first scheduled exercise refused correctly rather than publishing; the repair merged after that run; scheduled run 31794183367 then produced the gated, tree-exact, machine-attributed commit `2e83fa0`; the deployment succeeded; and read-only verification of the live routed page served trusted snapshot 411, sync run 721, and data through 2026-08-13. Issue #598 is closed as completed.
 
@@ -586,11 +612,83 @@ A closed issue and recorded production proof remain different claims. Here both 
 
 ## Next approved sequence
 
-1) Permanent daily-sync work reduction, preserving D-051 in full. 2) Begin Portable Intelligence — #597 then #596. 3) Resume M-001 and visible evidence. 4) Daily Habit and consequence work.
+1) Consolidate the Team Board render path without semantic change. 2) Revisit TB-08 only after transaction authority resolves. 3) Keep Portable Intelligence, permanent daily-sync work reduction, and additional Team Board depth deferred in the order recorded in Section 6.
 
 Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
-# Appendix D - Revision History
+# Appendix D - Team Board 2.0 Audit Reconciliation
+
+## Team Board 2.0 Current Status
+
+`COMPLETE` means the adopted user-facing capability is integrated, uses the
+correct semantic owner, and has material contract/UI coverage. It does not make
+unapproved adjacent depth part of that package.
+
+| Package | Status | Current evidence | Remaining scope |
+| --- | --- | --- | --- |
+| PRE-01 — Visual Foundation | PARTIAL | Shared type/spacing/container tokens, Active Arm Row, hierarchy skeletons, section-level failure states, semantic labels, responsive layout contracts, overflow and accessibility regressions are adopted by Team Board. | Retire duplicate/dead compatibility colors and inherited decorative noise/glow only through a separate design-system cleanup; current audit did not repeat live 390/768/1440 browser smoke. No longer a prerequisite package. |
+| PRE-02 — Team Board Read Model v2 | PARTIAL | `/board-v2` composes board, game context, performance, recent transactions, and relief work; browser story/game-context/relief-work fan-out was reduced; Team State is backend-owned. | The selected view still makes five requests: team directory plus `/board`, `/board-v2`, `/changes`, and share-card data. Retire the redundant legacy board and remaining eager fan-out under PRE-02B. |
+| TB-01 — Answer Block | COMPLETE | Canonical Team State, backend summary, game context, recently-used count, off-active count, loading/error states, and alignment are integrated and tested. | None for the adopted package. |
+| TB-02 — Active Bullpen | COMPLETE | Card-to-row conversion uses `ActiveArmRow`; grouped arm reads and workload facts come from the versioned adapter and retain partial/error behavior. | None for the adopted package. |
+| TB-03 — Recent Usage & Rest | COMPLETE | Recent-use windows and frozen D-055 Rest Status are integrated; `/board` and `/board-v2` share the frozen carrier. | Additional arm-read delta publication is a separate gated change domain. |
+| TB-04 — Workload Overview | COMPLETE | Governed 7/14-day facts, concentration, and the single daily-outs chart are backend-authored and rendered without frontend baseball math. | Workload-window delta activation remains separate and deferred. |
+| TB-05 — Roles & Deployment | PARTIAL | Current role distribution and descriptive 14-day deployment profiles are integrated and tested. | Public entry/leverage bands and role-movement meaning require explicit governance; prospective movement is not public. |
+| TB-06 — Performance | COMPLETE | M-001 Active Bullpen ERA and M-002 Active Bullpen WHIP are published on Team Board with exact samples, fail-closed values, evidence, and tests. | Other metrics and Team State/share performance gates remain deferred or blocked; they are not part of this completed scope. |
+| TB-07 — Rotation Impact | COMPLETE | Complete-input seven-day rotation impact, backend summary, receipts, and frontend presentation are integrated. | Literal recent-series burden and opener/bulk context remain deferred. |
+| TB-08 — Roster & Transactions | PARTIAL | Off-active count and a backend-authored, fail-closed recent transaction chronology are integrated. Participant, event, waiver, rehab, pitcher-acquisition, exact-date roster evidence, and intraday repair packages narrowed withholding. | `SC`, `SFA`, uncertified `ASG`, malformed/unknown events, unresolved participant identity, and independent evidence failures still withhold completeness. |
+| TB-09 — What Changed | COMPLETE | The Team Board renders actual backend-authored Team State, Rested Options, arm-status, and appearance/workload changes with governed quiet, no-baseline, stale, partial, and unavailable states. | Prospective arm-read, workload, rotation, membership, and deployment delta domains remain unactivated future depth. |
+| TB-10 — Recent Relief Work | COMPLETE | Team-scoped relief ledger, game context, evidence receipts, handoffs, and failure isolation are integrated through `/board-v2`. | None for the adopted package. |
+| TB-11 — Responsive Polish | COMPLETE | Mobile-first chapter layout, desktop density, focus behavior, row/column alignment, and responsive closeout regressions landed through PR #727. | Repeat live viewport smoke when a runnable representative environment is available; do not infer production proof from tests alone. |
+
+## Backend Gap Reconciliation
+
+| Gap | State | Reconciliation |
+| --- | --- | --- |
+| BE-GAP-01 — Team State summary authority | CLOSED | `team_state_public_vocabulary` and the published readiness payload now own state and explanation; the Team Board adapter no longer falls back to `context.health` for Team State. |
+| BE-GAP-02 — Recent usage projection / multi-day patterns | CLOSED | Versioned recent-use and rest projections expose governed current windows and recently-used counts. |
+| BE-GAP-03 — Team workload aggregate | CLOSED | Team workload windows, concentration, and daily relief-outs history are versioned backend fields consumed by Team Board. |
+| BE-GAP-04 — Transaction chronology read model | PARTIALLY CLOSED | Reader and frontend exist; source/event/participant/evidence incompleteness still fails closed. |
+| BE-GAP-05 — Rotation authored sentence / calendar fields | CLOSED | Backend Rotation Impact owns the current seven-day sentence, window, receipts, and completeness contract. Literal recent-series burden is a separate deferred definition. |
+| BE-GAP-06 — Roles & deployment | PARTIALLY CLOSED | Current roles and descriptive deployment profile are public; leverage/entry bands and movement semantics remain governance-gated. |
+| BE-GAP-07 — Team State delta | CLOSED | Compatible frozen publications author Team State change and fail closed when comparison is unsafe. |
+| BE-GAP-08 — Performance publication | CLOSED | M-001 and M-002 are public on Team Board under their governed sample/evidence contracts. Additional metrics remain outside this gap's adopted scope. |
+| BE-GAP-09 — Team Board composition/query duplication | PARTIALLY CLOSED | `/board-v2` reduced service fan-out but the browser still loads legacy `/board`, `/changes`, and share data separately. |
+| BE-GAP-10 — Workload population divergence | CLOSED | D-055 population/query invariance, null-preservation, frozen Rest Status reads, and shared board/v2 carrier tests close the divergence. |
+
+## Frontend Gap Reconciliation
+
+The August 17 audit's frontend concerns are retained here once, then retired as
+active IDs when closed or absorbed. Residual design-token cleanup is backlog,
+not a reason to reopen the completed Team Board packages.
+
+| Gap | State | Reconciliation |
+| --- | --- | --- |
+| FE-01 — Typography scale | CLOSED | Named Team Board type roles are tokenized and adopted. |
+| FE-02 — Spacing scale | CLOSED | Named board rhythm and panel/section spacing are adopted. |
+| FE-03 — Container-width system | CLOSED | Team Board shell and reading widths are explicit. |
+| FE-04 — 390/768/1440 responsive contracts | PARTIALLY CLOSED | Breakpoints and layout regressions exist; this audit did not repeat live browser viewport proof. |
+| FE-05 — Active Arm Row primitive | CLOSED | `ActiveArmRow` is the active bullpen renderer, not an unused class. |
+| FE-06 — Hierarchy-preserving skeleton | CLOSED | Team Board and section skeletons preserve chapter hierarchy. |
+| FE-07 — Non-destructive partial/error behavior | CLOSED | Section-local unavailable/error/retry states prevent whole-board destruction. |
+| FE-08 — Canonical arm-read semantic styles | CLOSED | Governed labels map to shared presentation styles without new baseball meaning. |
+| FE-09 — Duplicate/dead color tokens | PARTIALLY CLOSED | Team Board uses the new token family; compatibility colors remain elsewhere. |
+| FE-10 — Decorative amber/glow/noise chrome | PARTIALLY CLOSED | Local Team Board dependency was removed; inherited/global compatibility effects remain. |
+| FE-11 — `overflow-x:hidden` masking | CLOSED | Team Board regressions require visible overflow defects rather than masking them. |
+| FE-12 — Accessibility regression protection | CLOSED | Heading, focus, keyboard, label, and partial-state coverage is present. |
+| FE-13 — Answer Block contract/presentation | CLOSED | Backend-owned answer, summary figures, loading, retry, and alignment are integrated. |
+| FE-14 — Active Bullpen card overload | CLOSED | Dense rows replace repeated cards. |
+| FE-15 — Recent Usage presentation | CLOSED | Governed usage rows are integrated. |
+| FE-16 — Rest Status presentation | CLOSED | Frozen backend Rest Status renders without frontend recomputation. |
+| FE-17 — Workload Overview presentation | CLOSED | Governed facts and one chart are integrated without browser baseball math. |
+| FE-18 — Roles & Deployment presentation | CLOSED | Current governed profile renders; ungoverned depth is withheld rather than invented. |
+| FE-19 — Performance presentation | CLOSED | ERA/WHIP sample and unavailable states render verbatim. |
+| FE-20 — Rotation Impact presentation | CLOSED | Backend summary and receipts are integrated. |
+| FE-21 — Roster & Transactions presentation | CLOSED | Current roster context and fail-closed chronology render; backend completeness remains partial. |
+| FE-22 — Mislabelled What Changed / story substitution | CLOSED | `/changes` now drives actual governed change states; the story request is retired from Team Board. |
+| FE-23 — Recent Relief Work presentation | CLOSED | Receipt-bearing ledger and pitcher handoff are integrated. |
+| FE-24 — Responsive density, alignment, and pitcher handoff | CLOSED | Closeout and PR #727 lock chapter density, destination/read alignment, focus return, and no unsupported History destination. |
+
+# Appendix E - Revision History
 
 | Version | Date | Author | Summary |
 | --- | --- | --- | --- |
@@ -609,4 +707,5 @@ Running alongside this order, and not gated by it: complete or re-review the Rea
 | 4.0 | August 14, 2026 | Nickolis Kacludis | Reconciled current state through PR #659/main b2f0e90 and closed the roadmap half of the H-12 document-authority audit. Recorded CI-003 (#598) **complete and production-verified**, which Version 3.9 could not: scheduled run 31794183367, a `schedule` event on attempt 1, produced gated commit `2e83fa0` on main under `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree and committed tree both `1c9d7dc`, trusted snapshot 411, sync run 721, and data through August 13; the Vercel deployment on that commit succeeded; and read-only verification of the live routed page `https://baseballos.app/team/ATH` served snapshot 411, sync run 721, data through 2026-08-13, authority contract `trusted_dashboard_publication_v1`, and Team State `Vulnerable` in metadata, unfurl, and body. Issue #598 is closed as completed with all six acceptance criteria met. Version 3.9 said no such commit existed and an earlier draft of this edition said the deployment half was outstanding; both were true when written and false by the time this edition was finalized, which is exactly the staleness this document's update rule exists to catch. Advanced the active objective to the next already-approved item, permanent daily-sync work reduction — a sequencing consequence of a package closing, not a new priority, with D-051, legacy writer authority, daily/postgame shadow, backfill off, and the unapproved game-driven write and publication authority all preserved. Retained the failed-closed first scheduled attempt 31693516516 and the PR #642 repair in the Completion Log as historical progression, distinguished from current status. Recorded the H-1 and H-5 through H-11 closeouts across PRs #650 through #659 in the Completion Log, and the H-12 reconciliation itself. Introduced a Decision status vocabulary — Permanent, Standing, Adopted, Amended, Superseded, Historical — so a narrowed decision no longer reads identically to one still in force, and applied it only where a later decision had already done that work. Amended D-013 accordingly: sole human authorship is scoped to engineering work, the governed generated-content publication job is its single approved machine exception under D-053, that identity is a publisher rather than a second author, and the no-AI-attribution rule is unchanged and absolute. Updated D-053's status from "not production-verified" to production-exercised on August 14. No Decision Ledger ID was added, weakened, renumbered, or removed; D-051 and D-052 stand unchanged; the approved sequence is preserved exactly; and the shadow, backfill, legacy-writer, and publication authority posture is untouched. |
 | 4.1 | August 15, 2026 | Nickolis Kacludis | Added D-054 for UX-2B: a read-only, non-ranking 30-club Team State listing pinned to one current trusted Dashboard snapshot, with one immutable registry owning denominator integrity and fallback identity, existing immutable Share Artifacts owning published state, and the governed public Team State projection remaining the sole vocabulary owner. Recorded `represented + withheld = expected = 30`, kept Withheld outside Team State, rejected Pitcher-derived membership, live MLB reader calls, cross-snapshot artifact selection, frontend derivation, and per-team fan-out, and left D-001 through D-053 unchanged. |
 | 4.2 | August 15, 2026 | Nickolis Kacludis | Added D-055 for Team Board Phase 2 Package 1: an additive projection of already-public workload facts from fatigue and availability records already loaded by the Team Board, plus one backend-authored, fail-closed Rest Status with exact date semantics. Required evidence remains nullable, incomplete or stale evidence never becomes zero, raw fatigue scores remain private, real query-count invariance is required, and no Team State, availability vocabulary, ranking, prediction, frontend derivation, reader-path acquisition, write authority, or publication authority changes. D-001 through D-054 remain unchanged. |
-| 4.3 | August 19, 2026 | Nickolis Kacludis | Added D-056 for the game-driven real-mutation qualification package: a manual, workflow-dispatch-only, main-only, repository-owner-only, expected-SHA and reviewed-fingerprint bound qualification limited to one statistical correction to one existing GameLog row on one resolved-authority field, plus a bounded read-only candidate audit. Unresolved source authority is refused and `inherited_runners` stays excluded; identity mutation, appearance-team repair, multi-row and multi-field mutation, inserts, blocked rows, provenance-only rows, backfill, scheduled execution and publication authority are all refused. Expected effects are exact integers measured through the canonical path; a replay resolves NO_LONGER_MUTATING and never a second PASS; a post-write realization failure fails hard and attempts no compensating write. The mechanism has never been run in production and authorizes no run. D-001 through D-055 remain unchanged, O-008 remains open, and the daily/postgame shadow, backfill-off, legacy-writer and publication posture is untouched. |
+| 5.0 | August 23, 2026 | Nickolis Kacludis | Reconciled Team Board 2.0 against `origin/main` `c63877a5` and the August 17 baseline `e12d7603`. Recorded the package, backend-gap, and frontend-gap truth; incorporated D-056; added D-057; advanced PRE-02B read-path consolidation as the single active objective; and preserved transaction, leverage, role-movement, performance-depth, historical, and prospective-delta gates without resolving them by implication. |
+| 5.1 | August 24, 2026 | Nickolis Kacludis | Added D-058 for the game-driven real-mutation qualification package: a manual, workflow-dispatch-only, main-only, repository-owner-only, expected-SHA and reviewed-fingerprint bound qualification limited to one statistical correction to one existing GameLog row on one resolved-authority field, plus a bounded read-only candidate audit. Unresolved source authority is refused and `inherited_runners` stays excluded; identity mutation, appearance-team repair, multi-row and multi-field mutation, inserts, blocked rows, provenance-only rows, backfill, scheduled execution and publication authority are all refused. Expected effects are exact integers measured through the canonical path; a replay resolves NO_LONGER_MUTATING and never a second PASS; a post-write realization failure fails hard and attempts no compensating write. The mechanism has never been run in production and authorizes no run. The decision was taken on August 19, 2026 and was drafted as D-056; Version 5.0 assigned D-056 to the Team State availability reference date and D-057 to the execution-state reconciliation while this package was unmerged, so it is recorded here under the next free ID, D-058, with its original decision date. No prior ID is renumbered. D-001 through D-057 remain unchanged, O-008 remains open, and the daily/postgame shadow, backfill-off, legacy-writer and publication posture is untouched. |

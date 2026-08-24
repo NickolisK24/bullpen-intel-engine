@@ -1,8 +1,8 @@
-# D-056 — Manual exact-one-game real-mutation qualification mechanism
+# D-058 — Manual exact-one-game real-mutation qualification mechanism
 
 - **Date:** 2026-08-19
 - **Status:** Approved founder decision. **Mechanism authority only.** No production qualification run has occurred and none is authorized by this decision.
-- **Scope:** One new manual qualification path and one new read-only candidate audit for the game-driven ingestion lane. No change to baseball semantics, to the canonical lane, planner, comparator, realization or identity services, to publication authority, to D-051, D-052, D-053, D-054 or D-055, or to any schema.
+- **Scope:** One new manual qualification path and one new read-only candidate audit for the game-driven ingestion lane. No change to baseball semantics, to the canonical lane, planner, comparator, realization or identity services, to publication authority, to D-051 through D-057, or to any schema.
 
 ## Context
 
