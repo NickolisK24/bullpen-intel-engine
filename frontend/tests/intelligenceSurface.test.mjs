@@ -393,6 +393,17 @@ const tonightSlate = {
         team_id: 112,
         team_name: 'Chicago Cubs',
         team_abbreviation: 'CHC',
+        team_state: {
+          contract: 'team_state_public_v1',
+          available: true,
+          public_state: 'fresh',
+          public_label: 'Fresh',
+          summary: 'The bullpen has broad current operating room.',
+          outcome: 'available',
+          unavailable_message: null,
+          reason_code: null,
+          data_through: '2026-06-24',
+        },
         bullpen_context: {
           context_available: true,
           clean_workload_option_names: ['Porter Hodge', 'Daniel Palencia'],
@@ -408,6 +419,17 @@ const tonightSlate = {
         team_id: 158,
         team_name: 'Milwaukee Brewers',
         team_abbreviation: 'MIL',
+        team_state: {
+          contract: 'team_state_public_v1',
+          available: false,
+          public_state: null,
+          public_label: null,
+          summary: null,
+          outcome: 'readiness_unavailable',
+          unavailable_message: 'A current Team State read is not available for this bullpen because no current bullpen evidence could be assembled.',
+          reason_code: 'published_team_state_artifact_missing',
+          data_through: '2026-06-24',
+        },
         bullpen_context: {
           context_available: true,
           clean_workload_option_names: ['Trevor Megill'],
@@ -431,6 +453,17 @@ const tonightSlate = {
         team_id: 137,
         team_name: 'San Francisco Giants',
         team_abbreviation: 'SF',
+        team_state: {
+          contract: 'team_state_public_v1',
+          available: true,
+          public_state: 'vulnerable',
+          public_label: 'Vulnerable',
+          summary: 'The bullpen has very little current operating room.',
+          outcome: 'available',
+          unavailable_message: null,
+          reason_code: null,
+          data_through: '2026-06-24',
+        },
         bullpen_context: {
           context_available: true,
           clean_workload_option_names: ['Ryan Walker'],
@@ -446,6 +479,17 @@ const tonightSlate = {
         team_id: 141,
         team_name: 'Toronto Blue Jays',
         team_abbreviation: 'TOR',
+        team_state: {
+          contract: 'team_state_public_v1',
+          available: true,
+          public_state: 'stretched',
+          public_label: 'Stretched',
+          summary: 'The bullpen has reduced current operating room.',
+          outcome: 'available',
+          unavailable_message: null,
+          reason_code: null,
+          data_through: '2026-06-24',
+        },
         bullpen_context: { context_available: false, clean_workload_option_names: [] },
         watch: null,
         limitations: ['bullpen_context_unavailable'],
@@ -1264,6 +1308,14 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.equal(games[0].status, 'Scheduled')
   assert.deepEqual(games[0].away.namedOptions, ['Porter Hodge', 'Daniel Palencia'])
   assert.equal(games[0].away.workloadShare, 52.4)
+  assert.deepEqual(games[0].away.teamState, {
+    available: true,
+    label: 'Fresh',
+    unavailableMessage: null,
+    dataThrough: '2026-06-24',
+  })
+  assert.equal(games[0].home.teamState.available, false)
+  assert.equal(games[0].home.teamState.label, null)
   assert.equal(games[0].away.href, '/bullpen?view=board&team=CHC&source=today')
   assert.equal(games[0].home.href, '/bullpen?view=board&team=MIL&source=today')
 
@@ -1281,6 +1333,11 @@ test('Tonight slate renders every game from the one owner response with both Tea
   assert.ok(htmlIncludes(html, '7:10 PM ET · Scheduled'))
   assert.ok(htmlIncludes(html, '10:10 PM ET · In Progress'))
   assert.ok(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'))
+  assert.ok(htmlIncludes(html, 'Team State'))
+  assert.ok(htmlIncludes(html, 'Fresh'))
+  assert.ok(htmlIncludes(html, 'Team State unavailable'))
+  assert.ok(htmlIncludes(html, 'A current Team State read is not available for this bullpen because no current bullpen evidence could be assembled.'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 24'))
   assert.ok(htmlIncludes(html, 'Bullpen optionality: Thin'))
   assert.ok(htmlIncludes(html, 'Top three relievers: 52.4% of 10-day bullpen workload'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
@@ -1301,6 +1358,8 @@ test('Tonight slate keeps healthy games and sides when one bullpen context is un
   assert.ok(htmlIncludes(html, 'Chicago Cubs at Milwaukee Brewers'))
   assert.ok(htmlIncludes(html, 'San Francisco Giants at Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, 'Ryan Walker'))
+  assert.ok(htmlIncludes(html, 'Vulnerable'))
+  assert.ok(htmlIncludes(html, 'Stretched'))
   assert.ok(htmlIncludes(html, 'Bullpen context is unavailable for this team. The matchup remains available.'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=today"'))
   assert.equal(htmlIncludes(html, 'Top three relievers: 0.0%'), false)
@@ -1362,6 +1421,24 @@ test('Tonight slate source keeps a one-column mobile stack and bounded desktop c
   assert.equal(source.match(/useFetch\(getTonightIntelligence\)/g)?.length, 1)
   assert.equal(source.includes('getTeamBoardV2'), false)
   assert.equal(source.includes('getTeamBullpen'), false)
+  assert.equal(source.includes('public_state ==='), false)
+  assert.equal(source.includes("case 'fresh'"), false)
+})
+
+test('Tonight Team State remains a backend pass-through with no prediction language', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightSlate,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  for (const forbidden of ['Bullpen edge', 'Advantage:', 'Likely closer', 'Likely next reliever']) {
+    assert.equal(htmlIncludes(html, forbidden), false, forbidden)
+  }
+  assert.equal(htmlIncludes(html, 'freshness score'), false)
+  assert.equal(htmlIncludes(html, 'Team State score'), false)
 })
 
 test('Tonight qualitative story payload survives the public safety filter', () => {

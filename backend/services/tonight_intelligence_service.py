@@ -20,6 +20,7 @@ story builder) with no contract change.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 
 from models.slate_game import SlateGame
@@ -28,6 +29,10 @@ from services.schedule_context import build_schedule_contexts_for_date
 from services.tonight_candidate_selection import (
     build_tonight_candidates,
     public_tonight_bullpen_context,
+)
+from services.team_state_public_vocabulary import (
+    TEAM_STATE_READINESS_UNAVAILABLE,
+    team_state_unavailable,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,7 @@ STATUS_EMPTY = 'empty'
 EMPTY_NO_SCHEDULE_CONTEXT = 'no_schedule_context'
 EMPTY_NO_TEAMS_PLAYING = 'no_teams_playing_today'
 EMPTY_NO_SIGNALS = 'no_tonight_signals'
+TEAM_STATE_LISTING_UNAVAILABLE = 'tonight_team_state_listing_unavailable'
 
 # Fields carried on internal candidates that the public card must not expose.
 _INTERNAL_CARD_FIELDS = ('strength', 'reference_date')
@@ -47,7 +53,7 @@ _INTERNAL_CARD_FIELDS = ('strength', 'reference_date')
 
 def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None,
                   schedule_contexts=None, bullpen_context_builder=None,
-                  slate_games=None):
+                  slate_games=None, team_state_listing_builder=None):
     """Build the public Tonight response for a reference date.
 
     ``reference_date`` is a ``date``/ISO string, or ``None`` to use the product
@@ -71,11 +77,12 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
         limit,
         bullpen_context_builder,
         slate_games,
+        team_state_listing_builder,
     )
 
 
 def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
-                    slate_games):
+                    slate_games, team_state_listing_builder):
     schedule_contexts = [s for s in (schedule_contexts or []) if s]
 
     if not schedule_contexts:
@@ -89,12 +96,13 @@ def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
         schedule_contexts,
         bullpen_context_builder,
     )
+    team_states = _build_team_states(team_state_listing_builder)
     candidates = build_tonight_candidates(
         ref, limit=limit, schedule_contexts=schedule_contexts,
         bullpen_context_builder=lambda team_id, _reference_date: team_contexts.get(team_id))
 
     cards = [_public_card(c) for c in candidates]
-    games = _public_slate_games(slate_games, team_contexts, cards)
+    games = _public_slate_games(slate_games, team_contexts, cards, team_states)
     if not candidates:
         return _empty(ref, EMPTY_NO_SIGNALS, games=games)
     return {
@@ -130,7 +138,32 @@ def _build_team_contexts(ref, schedule_contexts, bullpen_context_builder):
     return contexts
 
 
-def _public_slate_games(slate_games, team_contexts, cards):
+def _build_team_states(team_state_listing_builder):
+    """Read the existing published Team State listing once for the whole slate."""
+    builder = team_state_listing_builder or _default_team_state_listing_builder
+    try:
+        listing = builder()
+    except Exception:  # noqa: BLE001 - Team State is optional per game side
+        logger.warning('Tonight slate: published Team State listing failed', exc_info=True)
+        return {}
+
+    rows = listing.get('teams') if isinstance(listing, dict) else None
+    if not isinstance(rows, list):
+        return {}
+
+    states = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = row.get('team_id')
+        team_state = row.get('team_state')
+        if team_id is None or not isinstance(team_state, dict):
+            continue
+        states[team_id] = deepcopy(team_state)
+    return states
+
+
+def _public_slate_games(slate_games, team_contexts, cards, team_states=None):
     cards_by_team = {
         card.get('team_id'): card
         for card in cards
@@ -155,17 +188,19 @@ def _public_slate_games(slate_games, team_contexts, cards):
                 away_team_id,
                 team_contexts.get(away_team_id),
                 cards_by_team.get(away_team_id),
+                (team_states or {}).get(away_team_id),
             ),
             'home': _public_team_side(
                 home_team_id,
                 team_contexts.get(home_team_id),
                 cards_by_team.get(home_team_id),
+                (team_states or {}).get(home_team_id),
             ),
         })
     return games
 
 
-def _public_team_side(team_id, bullpen_context, card):
+def _public_team_side(team_id, bullpen_context, card, team_state=None):
     identity = (bullpen_context or {}).get('team') or {}
     public_context = public_tonight_bullpen_context(bullpen_context)
     available = public_context.get('context_available') is True
@@ -174,10 +209,20 @@ def _public_team_side(team_id, bullpen_context, card):
         'team_id': team_id,
         'team_name': identity.get('team_name'),
         'team_abbreviation': identity.get('team_abbreviation'),
+        'team_state': _public_team_state(team_state),
         'bullpen_context': public_context,
         'watch': _public_watch(card),
         'limitations': [] if available else ['bullpen_context_unavailable'],
     }
+
+
+def _public_team_state(team_state):
+    if isinstance(team_state, dict):
+        return deepcopy(team_state)
+    return team_state_unavailable(
+        TEAM_STATE_READINESS_UNAVAILABLE,
+        reason_code=TEAM_STATE_LISTING_UNAVAILABLE,
+    )
 
 
 def _public_watch(card):
@@ -208,6 +253,13 @@ def _default_bullpen_context_builder(team_id, reference_date):
         team_id,
         reference_date,
     )
+
+
+def _default_team_state_listing_builder():
+    # D-054's listing is the one batch reader for immutable published Team State
+    # artifacts. Tonight composes its exact public blocks and derives no state.
+    from services.league_team_state_listing import build_league_team_state_listing
+    return build_league_team_state_listing()
 
 
 def _public_card(candidate):
