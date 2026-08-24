@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
@@ -1475,39 +1475,6 @@ function TonightSlateGame({ game }) {
   )
 }
 
-function sinceYesterdayNetLabel(netDelta) {
-  if (typeof netDelta !== 'number' || netDelta === 0) return null
-  return netDelta > 0 ? `+${netDelta}` : String(netDelta)
-}
-
-function SinceYesterdayPrimaryDelta({ delta }) {
-  if (!delta) return null
-  const net = sinceYesterdayNetLabel(delta.netDelta)
-  return (
-    <div className="mt-3">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-        {delta.label}
-      </p>
-      <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-display text-3xl leading-none tracking-wide text-chalk100">
-          <span className="sr-only">Yesterday </span>{delta.previous}
-        </span>
-        <span aria-hidden="true" className="font-display text-2xl leading-none text-chalk500">
-          →
-        </span>
-        <span className="font-display text-3xl leading-none tracking-wide text-amber">
-          <span className="sr-only">today </span>{delta.current}
-        </span>
-        {net && (
-          <span className="font-mono text-xs uppercase tracking-wider text-chalk300">
-            <span className="sr-only">net change </span>{net}
-          </span>
-        )}
-      </p>
-    </div>
-  )
-}
-
 function SinceYesterdayWorkload({ rows }) {
   if (!rows || rows.length === 0) return null
   return (
@@ -1582,21 +1549,45 @@ function SinceYesterdayRestedBasis({ item }) {
   )
 }
 
-function SinceYesterdayCard({ item }) {
+function sinceYesterdayDetailId(item) {
+  return `since-yesterday-detail-${String(item.key || 'team').replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+function SinceYesterdayCompactDelta({ item }) {
+  const delta = item.primaryDelta
+  if (delta) {
+    return (
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+        <span className="text-chalk300">{delta.label}</span>
+        <span className="whitespace-nowrap font-mono text-xs tracking-wide text-chalk100">
+          <span className="sr-only">Yesterday </span>{delta.previous}
+          <span className="mx-1.5 text-chalk500" aria-hidden="true">→</span>
+          <span className="text-amber"><span className="sr-only">Today </span>{delta.current}</span>
+        </span>
+      </span>
+    )
+  }
+  if (item.hasRestedCounts) {
+    return (
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+        <span className="text-chalk300">Rested arms</span>
+        <span className="whitespace-nowrap font-mono text-xs tracking-wide text-chalk100">
+          <span className="sr-only">Yesterday </span>{item.yesterdayRestedCount}
+          <span className="mx-1.5 text-chalk500" aria-hidden="true">→</span>
+          <span className="text-amber"><span className="sr-only">Today </span>{item.todayRestedCount}</span>
+        </span>
+      </span>
+    )
+  }
+  return item.movementLabel ? (
+    <span className="text-sm text-chalk300">{item.movementLabel}</span>
+  ) : null
+}
+
+function SinceYesterdayDetail({ item, detailId }) {
   const explanation = item.summary || item.headline
   return (
-    <article className="flex flex-col border border-dirt bg-dugout p-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          {item.teamName}
-        </h3>
-        {item.movementLabel && (
-          <span className="shrink-0 border border-dirt/75 bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-chalk300">
-            {item.movementLabel}
-          </span>
-        )}
-      </div>
-      <SinceYesterdayPrimaryDelta delta={item.primaryDelta} />
+    <div id={detailId} className="border-t border-dirt px-3 pb-4 pt-1 sm:px-4">
       <SinceYesterdayRestedBasis item={item} />
       {explanation && (
         <p className="mt-3 text-sm leading-relaxed text-chalk300">{explanation}</p>
@@ -1622,7 +1613,63 @@ function SinceYesterdayCard({ item }) {
           </Link>
         </div>
       )}
+    </div>
+  )
+}
+
+function SinceYesterdayRow({ item, expanded, onToggle }) {
+  const detailId = sinceYesterdayDetailId(item)
+  return (
+    <article className="min-w-0 border-b border-dirt last:border-b-0">
+      <button
+        type="button"
+        aria-expanded={expanded ? 'true' : 'false'}
+        aria-controls={detailId}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} details for ${item.teamName}`}
+        onClick={onToggle}
+        className="flex min-h-12 w-full min-w-0 flex-col items-stretch gap-1.5 px-3 py-3 text-left transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/60 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
+      >
+        <span className="min-w-0 text-sm font-medium leading-snug text-chalk100">
+          {item.teamName}
+        </span>
+        <span className="flex min-w-0 items-center justify-between gap-3 sm:justify-end">
+          <SinceYesterdayCompactDelta item={item} />
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk500">
+            {expanded ? 'Hide details' : 'Show details'}
+          </span>
+        </span>
+      </button>
+      {expanded && <SinceYesterdayDetail item={item} detailId={detailId} />}
     </article>
+  )
+}
+
+function SinceYesterdayLedger({ groups, expandedKey, onToggle }) {
+  return (
+    <div className="space-y-3">
+      {groups.map(group => (
+        <section key={group.key} className="min-w-0 border border-dirt bg-dugout">
+          <div className="flex items-center justify-between gap-3 border-b border-dirt bg-field/45 px-3 py-2 sm:px-4">
+            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
+              {group.shortLabel}
+            </h3>
+            <span className="font-display text-base leading-none tracking-wide text-chalk500" aria-label={`${group.items.length} ${group.items.length === 1 ? 'team' : 'teams'}`}>
+              {group.items.length}
+            </span>
+          </div>
+          <div>
+            {group.items.map(item => (
+              <SinceYesterdayRow
+                key={item.key}
+                item={item}
+                expanded={expandedKey === item.key}
+                onToggle={() => onToggle(item.key)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   )
 }
 
@@ -1765,32 +1812,78 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
   )
 }
 
-function SinceYesterdayBriefing({ view }) {
+function sinceYesterdayGroupsForTab(tab, visibleItems) {
+  if (!tab || visibleItems.length === 0) return []
+  if (tab.key === SINCE_YESTERDAY_ALL_TAB_KEY) {
+    return buildSinceYesterdayLanes(visibleItems).map(lane => ({
+      ...lane,
+      shortLabel: SINCE_YESTERDAY_LANE_BY_KEY.get(lane.key)?.shortLabel || lane.label,
+    }))
+  }
+  const lane = SINCE_YESTERDAY_LANE_BY_KEY.get(tab.key)
+  return [{
+    key: tab.key,
+    label: lane?.label || tab.label,
+    shortLabel: lane?.shortLabel || tab.shortLabel,
+    items: visibleItems,
+  }]
+}
+
+export function nextSinceYesterdayExpandedKey(currentKey, selectedKey) {
+  return currentKey === selectedKey ? null : selectedKey
+}
+
+export function reduceSinceYesterdayInteraction(state, action) {
+  if (action.type === 'activate') {
+    return { ...state, activeKey: action.key, expandedKey: null }
+  }
+  if (action.type === 'query') {
+    return { ...state, query: action.value, expandedKey: null }
+  }
+  if (action.type === 'reset_query') {
+    return { ...state, query: '', expandedKey: null }
+  }
+  if (action.type === 'toggle') {
+    return {
+      ...state,
+      expandedKey: nextSinceYesterdayExpandedKey(state.expandedKey, action.key),
+    }
+  }
+  return state
+}
+
+export function SinceYesterdayBriefingView({
+  view,
+  activeKey = SINCE_YESTERDAY_ALL_TAB_KEY,
+  query = '',
+  expandedKey = null,
+  onActivate = () => {},
+  onQueryChange = () => {},
+  onResetQuery = () => {},
+  onToggle = () => {},
+}) {
   const tabs = view.tabs && view.tabs.length > 0
     ? view.tabs
     : buildSinceYesterdayTabs(view.items || [])
-  const [activeKey, setActiveKey] = useState(SINCE_YESTERDAY_ALL_TAB_KEY)
   const showTabs = (view.items || []).length >= 4 && tabs.length > 2
-  // Search persists across tab switches; it only ever filters the cards inside
-  // whichever tab is active.
-  const [query, setQuery] = useState('')
   // If the active tab is no longer available (data refreshed), fall back to All
   // so the panel and tablist can never disagree.
   const activeTab = showTabs ? (tabs.find(tab => tab.key === activeKey) || tabs[0]) : tabs[0]
   const effectiveKey = activeTab ? activeTab.key : SINCE_YESTERDAY_ALL_TAB_KEY
   const clarity = sinceYesterdayCountClarity(activeTab, view.summary)
   const visibleItems = filterSinceYesterdayItems(activeTab ? activeTab.items : [], query)
+  const groups = sinceYesterdayGroupsForTab(activeTab, visibleItems)
   const trimmedQuery = query.trim()
   const hasMatches = visibleItems.length > 0
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
-      {showTabs && <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />}
+      {showTabs && <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={onActivate} />}
       {(view.items || []).length >= 6 && (
         <SinceYesterdayTeamSearch
           query={query}
-          onChange={setQuery}
-          onReset={() => setQuery('')}
+          onChange={onQueryChange}
+          onReset={onResetQuery}
         />
       )}
       <div
@@ -1806,11 +1899,11 @@ function SinceYesterdayBriefing({ view }) {
           </p>
         )}
         {hasMatches ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {visibleItems.map(item => (
-              <SinceYesterdayCard key={item.key} item={item} />
-            ))}
-          </div>
+          <SinceYesterdayLedger
+            groups={groups}
+            expandedKey={expandedKey}
+            onToggle={onToggle}
+          />
         ) : (
           <div className="border border-dirt bg-dugout p-4" role="status">
             <p className="text-sm leading-relaxed text-chalk300">
@@ -1819,7 +1912,7 @@ function SinceYesterdayBriefing({ view }) {
             </p>
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={onResetQuery}
               className="mt-3 inline-flex min-h-10 items-center border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
             >
               Reset search
@@ -1830,6 +1923,26 @@ function SinceYesterdayBriefing({ view }) {
       <SinceYesterdaySteadyDisclosure summary={view.summary} />
       {view.footerCopy && <p className="mt-4 text-xs leading-relaxed text-chalk500">{view.footerCopy}</p>}
     </>
+  )
+}
+
+function SinceYesterdayBriefing({ view }) {
+  const [interaction, dispatch] = useReducer(reduceSinceYesterdayInteraction, {
+    activeKey: SINCE_YESTERDAY_ALL_TAB_KEY,
+    query: '',
+    expandedKey: null,
+  })
+  return (
+    <SinceYesterdayBriefingView
+      view={view}
+      activeKey={interaction.activeKey}
+      query={interaction.query}
+      expandedKey={interaction.expandedKey}
+      onActivate={key => dispatch({ type: 'activate', key })}
+      onQueryChange={value => dispatch({ type: 'query', value })}
+      onResetQuery={() => dispatch({ type: 'reset_query' })}
+      onToggle={key => dispatch({ type: 'toggle', key })}
+    />
   )
 }
 
