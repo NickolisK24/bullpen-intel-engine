@@ -49,6 +49,18 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sync_service, 'recalculate_all_fatigue', lambda reference_date=None: 0,
     )
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: {
+            'status': 'qualified',
+            'qualified': True,
+            'reference_date': reference_date.isoformat(),
+            'reason_codes': [],
+            'records_failed': 0,
+            'errors': 0,
+        },
+    )
 
     def fake_complete(sync_run_id, **kwargs):
         run = sync_metadata.finish_sync_run(

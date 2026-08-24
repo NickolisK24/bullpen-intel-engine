@@ -10,6 +10,7 @@ import services.sync as sync_service
 from services import sync_metadata
 from utils.db import db
 from models.game_log import GameLog
+from models.dashboard_snapshot import DashboardSnapshot
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
@@ -26,6 +27,18 @@ _DEFAULT_PBP = object()
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda reference_date=None: 2)
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: {
+            'status': 'qualified',
+            'qualified': True,
+            'reference_date': reference_date.isoformat(),
+            'reason_codes': [],
+            'records_failed': 0,
+            'errors': 0,
+        },
+    )
 
     def fake_complete(sync_run_id, **kwargs):
         run = sync_metadata.finish_sync_run(
@@ -78,6 +91,34 @@ def _seed_pitchers():
     db.session.add_all([home, away])
     db.session.commit()
     return home, away
+
+
+def _seed_published_morning_snapshot():
+    morning_run = SyncRun(
+        source='morning_test',
+        job_name=sync_metadata.JOB_DAILY_SYNC,
+        started_at=datetime(2026, 6, 20, 9, 55, 0),
+        completed_at=datetime(2026, 6, 20, 10, 0, 0),
+        status=sync_metadata.STATUS_SUCCESS,
+        stage=sync_metadata.STAGE_PUBLISHED,
+    )
+    db.session.add(morning_run)
+    db.session.flush()
+    morning = DashboardSnapshot(
+        snapshot_type='bullpen_dashboard',
+        sync_run_id=morning_run.id,
+        status='ready',
+        is_published=True,
+        payload={'morning': True},
+        payload_version=1,
+        data_through=date(2026, 6, 19),
+        availability_reference_date=date(2026, 6, 20),
+        snapshot_generated_at=datetime(2026, 6, 20, 10, 0, 0),
+        source='scheduled_sync',
+    )
+    db.session.add(morning)
+    db.session.commit()
+    return morning.id
 
 
 def _game(game_pk=7001, status_code='F', detailed_state='Final', abstract_state='Final'):
@@ -297,6 +338,11 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
     with app.app_context():
         _seed_pitchers()
     _patch_mlb(monkeypatch, [_game()])
+    monkeypatch.setattr(
+        sync_service,
+        'recalculate_all_fatigue',
+        lambda reference_date=None: events.append('fatigue_recalculation') or 2,
+    )
 
     def fake_complete(sync_run_id, **kwargs):
         events.append('dashboard_snapshot_publish')
@@ -338,6 +384,21 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
     )
     monkeypatch.setattr(
         sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: (
+            events.append('public_roster_authority_preparation')
+            or {
+                'status': 'qualified',
+                'qualified': True,
+                'reference_date': reference_date.isoformat(),
+                'reason_codes': [],
+                'records_failed': 0,
+                'errors': 0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
         '_safe_build_workload_recovery_evidence_stage',
         lambda *args, **kwargs: (
             events.append(sync_metadata.STAGE_WORKLOAD_EVIDENCE)
@@ -367,6 +428,8 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
     assert status['dashboard_snapshot_id'] == 456
     assert status['intelligence_snapshot'] == 'ok'
     assert events == [
+        'fatigue_recalculation',
+        'public_roster_authority_preparation',
         'dashboard_snapshot_publish',
         'intelligence_snapshot_publish',
         sync_metadata.STAGE_WORKLOAD_EVIDENCE,
@@ -380,9 +443,25 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
 
 
 def test_postgame_refresh_public_only_skips_internal_enrichment(app, monkeypatch):
+    preparation_calls = []
     with app.app_context():
         _seed_pitchers()
     _patch_mlb(monkeypatch, [_game()])
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: (
+            preparation_calls.append(reference_date)
+            or {
+                'status': 'qualified',
+                'qualified': True,
+                'reference_date': reference_date.isoformat(),
+                'reason_codes': [],
+                'records_failed': 0,
+                'errors': 0,
+            }
+        ),
+    )
     monkeypatch.setattr(
         sync_service,
         '_safe_build_workload_recovery_evidence_stage',
@@ -409,11 +488,174 @@ def test_postgame_refresh_public_only_skips_internal_enrichment(app, monkeypatch
     assert status['status'] == sync_metadata.STATUS_SUCCESS
     assert status['dashboard_snapshot_id'] == 123
     assert status['internal_enrichment'] == 'skipped_public_only'
+    assert preparation_calls == [date(2026, 6, 21)]
     with app.app_context():
         run = SyncRun.query.order_by(SyncRun.id.desc()).first()
         assert run.job_name == sync_metadata.JOB_POSTGAME_REFRESH
         assert run.stage == sync_metadata.STAGE_PUBLISHED
         assert SyncJob.query.count() == 0
+
+
+def test_canonical_roster_preparation_reuses_evidence_and_qualifies_exact_date(
+    monkeypatch,
+):
+    reference_date = date(2026, 6, 21)
+    events = []
+    run_evidence = SimpleNamespace(summary=lambda: {'roster_requests': 60})
+
+    monkeypatch.setattr(
+        sync_service,
+        'build_run_roster_evidence',
+        lambda: events.append('build_evidence') or run_evidence,
+    )
+
+    def team_assignments(*, evidence):
+        assert evidence is run_evidence
+        events.append('team_assignments')
+        return {'errors': 0, 'error_details': []}
+
+    def roster_statuses(*, sync_run_id, snapshot_date, evidence):
+        assert sync_run_id == 99
+        assert snapshot_date == reference_date
+        assert evidence is run_evidence
+        events.append('roster_statuses')
+        return {
+            'errors': 0,
+            'records_failed': 0,
+            'snapshot_conflicts': 0,
+        }
+
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', team_assignments)
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', roster_statuses)
+    monkeypatch.setattr(
+        sync_service,
+        'record_sync_error_details',
+        lambda *_args, **_kwargs: 0,
+    )
+    monkeypatch.setattr(
+        sync_service.sync_metadata,
+        'set_sync_stage',
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        sync_service,
+        'build_public_roster_readiness',
+        lambda **_kwargs: {
+            'claims_available': True,
+            'counts_withheld': False,
+            'reason_codes': [],
+            'coverage': {
+                'snapshot_date': reference_date.isoformat(),
+                'complete': True,
+                'teams_missing_count': 0,
+            },
+        },
+    )
+
+    result = sync_service._prepare_canonical_public_roster_authority(
+        reference_date,
+        sync_run_id=99,
+        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    )
+
+    assert events == ['build_evidence', 'team_assignments', 'roster_statuses']
+    assert result['qualified'] is True
+    assert result['reference_date'] == reference_date.isoformat()
+    assert result['roster_evidence'] == {'roster_requests': 60}
+
+
+def test_unqualified_next_date_roster_authority_preserves_morning_snapshot(
+    app,
+    monkeypatch,
+):
+    with app.app_context():
+        _seed_pitchers()
+        morning_id = _seed_published_morning_snapshot()
+
+    _patch_mlb(monkeypatch, [_game()])
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: {
+            'status': 'unqualified',
+            'qualified': False,
+            'reference_date': reference_date.isoformat(),
+            'reason_codes': ['roster_snapshot_team_coverage_incomplete'],
+            'records_failed': 0,
+            'errors': 0,
+        },
+    )
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *_args, **_kwargs: pytest.fail(
+            'unqualified postgame state must not reach Dashboard publication'
+        ),
+    )
+
+    status = sync_service.run_postgame_refresh(
+        app,
+        schedule_date=date(2026, 6, 20),
+        source='test',
+        include_internal_enrichment=False,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_PARTIAL
+    assert status['dashboard_snapshot_id'] is None
+    assert status['candidate_data_through'] == '2026-06-20'
+    assert status['candidate_availability_reference_date'] == '2026-06-21'
+    assert status['publication_withheld_reason'] == (
+        sync_service.POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+    )
+    with app.app_context():
+        serving = DashboardSnapshot.query.filter_by(is_published=True).one()
+        assert serving.id == morning_id
+        assert DashboardSnapshot.query.count() == 1
+
+
+def test_roster_preparation_exception_preserves_published_morning_snapshot(
+    app,
+    monkeypatch,
+):
+    with app.app_context():
+        _seed_pitchers()
+        morning_id = _seed_published_morning_snapshot()
+
+    _patch_mlb(monkeypatch, [_game()])
+
+    def fail_preparation(*_args, **_kwargs):
+        raise RuntimeError('synthetic exact-date roster acquisition failure')
+
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        fail_preparation,
+    )
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *_args, **_kwargs: pytest.fail(
+            'failed roster preparation must not reach Dashboard publication'
+        ),
+    )
+
+    status = sync_service.run_postgame_refresh(
+        app,
+        schedule_date=date(2026, 6, 20),
+        source='test',
+        include_internal_enrichment=False,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_FAILED
+    assert status['dashboard_snapshot_id'] is None
+    assert status['publication_withheld_reason'] == (
+        sync_service.POSTGAME_ROSTER_AUTHORITY_PREPARATION_INCOMPLETE
+    )
+    assert status['public_state_preparation']['status'] == 'failed'
+    with app.app_context():
+        serving = DashboardSnapshot.query.filter_by(is_published=True).one()
+        assert serving.id == morning_id
+        assert DashboardSnapshot.query.count() == 1
 
 
 def test_postgame_refresh_is_idempotent_for_already_processed_games(app, monkeypatch):

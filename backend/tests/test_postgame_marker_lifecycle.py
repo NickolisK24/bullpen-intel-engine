@@ -26,6 +26,18 @@ SCHEDULE_DATE = date(2026, 6, 20)
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda reference_date=None: 2)
+    monkeypatch.setattr(
+        sync_service,
+        '_prepare_canonical_public_roster_authority',
+        lambda reference_date, **_kwargs: {
+            'status': 'qualified',
+            'qualified': True,
+            'reference_date': reference_date.isoformat(),
+            'reason_codes': [],
+            'records_failed': 0,
+            'errors': 0,
+        },
+    )
     monkeypatch.setenv('POSTGAME_REFRESH_SNAPSHOT', 'false')
 
     def fake_complete(sync_run_id, **kwargs):
