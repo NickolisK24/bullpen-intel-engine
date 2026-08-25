@@ -17,10 +17,10 @@ import {
 } from '../../dashboard/syncStatusView'
 import { isSampleFreshness } from '../../UI/Freshness'
 import {
-  currentUserBaseballDay,
   dayAwareAppearanceReason,
   dayAwareAppearanceReasons,
   isWorkloadAppearance,
+  productCurrentDateFromFreshness,
   workloadAppearanceDetailLabel,
 } from '../../../utils/appearanceLanguage'
 import { getPitcherLabels, PITCHER_ROLE_LABELS, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
@@ -582,7 +582,7 @@ export function getRolesSummaryView(roles) {
   }
 }
 
-export function getBoardCardView(card, freshness = null, now = new Date()) {
+export function getBoardCardView(card, freshness = null) {
   // Styling is keyed by the engine status; the visible label is the backend's
   // published public form when it supplied one, so the browser is not the thing
   // deciding that Monitor reads as On Watch.
@@ -592,17 +592,16 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
   )
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
   const showDataNote = dataState && !['fresh', 'unknown'].includes(dataState)
-  // "Today" / "Yesterday" on a workload label are relative to the user's actual current day,
-  // NOT the platform data-through date (which can lag behind the real day after a morning sync).
-  // The platform date stays separate, in the Data Freshness / "Data through" provenance below.
-  const userDay = currentUserBaseballDay(now)
+  // Relative workload copy uses the backend-owned ET product day. Data-through
+  // remains separate provenance and the browser/device timezone owns neither.
+  const productCurrentDate = productCurrentDateFromFreshness(freshness)
   const lastAppearance = [
     card?.last_workload_appearance,
     card?.lastWorkloadAppearance,
     card?.last_appearance,
     card?.lastAppearance,
   ].find(isWorkloadAppearance) || null
-  const lastAppearanceLabel = workloadAppearanceDetailLabel(lastAppearance)
+  const lastAppearanceLabel = workloadAppearanceDetailLabel(lastAppearance, productCurrentDate)
   const confidence = String(card?.confidence || '').trim().toLowerCase()
   const workloadFacts = getGovernedWorkloadFacts(card)
   return {
@@ -612,13 +611,13 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
     badge,
     confidenceLabel: formatConfidence(card?.confidence),
     showConfidence: !['high', ''].includes(confidence),
-    shortReason: lastAppearanceLabel ? null : dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
+    shortReason: lastAppearanceLabel ? null : dayAwareAppearanceReason(card?.short_reason, lastAppearance, productCurrentDate) || null,
     lastAppearance,
     lastAppearanceLabel,
     workloadFacts,
     dataState,
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
-    reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, userDay),
+    reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, productCurrentDate),
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     pitcherLabels: getPitcherLabels(card),
     // The one public role conclusion, resolved in authority order:

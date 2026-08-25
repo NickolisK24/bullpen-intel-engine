@@ -9,6 +9,7 @@ import api.bullpen as bullpen_api
 import models.prospect  # noqa: F401
 import services.availability as availability_service
 import services.availability_snapshot as availability_snapshot
+import services.board_freshness as board_freshness
 import services.bullpen_eligibility as bullpen_eligibility
 import services.bullpen_population as bullpen_population
 import services.game_context as game_context
@@ -175,6 +176,21 @@ def test_product_day_resolver_records_utc_fallback_limitation():
     assert resolved.calendar_date == date(2026, 6, 10)
     assert resolved.timezone_name == 'UTC'
     assert resolved.limitations == (PRODUCT_TIMEZONE_UTC_FALLBACK_LIMITATION,)
+
+
+def test_board_freshness_keeps_represented_date_separate_from_runtime_product_day(monkeypatch):
+    monkeypatch.setattr(
+        board_freshness,
+        'published_snapshot_freshness_block',
+        lambda: {'data_through': '2026-08-24', 'availability_reference_date': '2026-08-25'},
+    )
+    monkeypatch.setattr(board_freshness, 'product_current_date', lambda: date(2026, 8, 25))
+
+    freshness = board_freshness.board_freshness_block()
+
+    assert freshness['data_through'] == '2026-08-24'
+    assert freshness['availability_reference_date'] == '2026-08-25'
+    assert freshness['product_current_date'] == '2026-08-25'
 
 
 def test_dashboard_uses_data_derived_reference_date_not_runtime_today(client, monkeypatch):

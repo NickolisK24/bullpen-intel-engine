@@ -289,9 +289,8 @@ test('compact card skips zero-pitch rows for last workload context', () => {
   assert.equal(cardView.shortReason, null)
 })
 
-// Day-aware workload labels (the reported bug): the "Today" / "Yesterday" anchor is the user's
-// ACTUAL current day, never the platform data-through date. Scenario: synced at 6am ET on
-// June 26 with data through completed games on June 25.
+// Day-aware workload labels use the backend-owned ET product day, never the
+// platform data-through date or the viewer device timezone.
 test('last-workload label reads Yesterday for a June 25 workload viewed on June 26', () => {
   const card = {
     pitcher_id: 1,
@@ -299,10 +298,11 @@ test('last-workload label reads Yesterday for a June 25 workload viewed on June 
     availability_status: 'Available',
     last_workload_appearance: { game_date: '2026-06-25', pitches: 22 },
   }
-  // The platform data-through date is June 25 (it lags one day behind the user's real day).
-  // Anchoring on it would wrongly read "Today"; anchoring on the user day (June 26) reads Yesterday.
-  const view26 = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
-  assert.equal(view26.lastAppearanceLabel, 'Jun 25 • 22 pitches')
+  const view26 = view.getBoardCardView(card, {
+    data_through: '2026-06-25',
+    product_current_date: '2026-06-26',
+  })
+  assert.equal(view26.lastAppearanceLabel, 'Jun 25 (Yesterday) • 22 pitches')
 })
 
 test('last-workload label reads Today for a June 26 workload viewed on June 26', () => {
@@ -312,8 +312,11 @@ test('last-workload label reads Today for a June 26 workload viewed on June 26',
     availability_status: 'Available',
     last_workload_appearance: { game_date: '2026-06-26', pitches: 15 },
   }
-  const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
-  assert.equal(cardView.lastAppearanceLabel, 'Jun 26 • 15 pitches')
+  const cardView = view.getBoardCardView(card, {
+    data_through: '2026-06-25',
+    product_current_date: '2026-06-26',
+  })
+  assert.equal(cardView.lastAppearanceLabel, 'Jun 26 (Today) • 15 pitches')
 })
 
 test('last-workload label shows a stable date for workloads older than yesterday', () => {
@@ -323,7 +326,10 @@ test('last-workload label shows a stable date for workloads older than yesterday
     availability_status: 'Available',
     last_workload_appearance: { game_date: '2026-06-24', pitches: 31 },
   }
-  const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
+  const cardView = view.getBoardCardView(card, {
+    data_through: '2026-06-25',
+    product_current_date: '2026-06-26',
+  })
   assert.equal(cardView.lastAppearanceLabel, 'Jun 24 • 31 pitches')
 })
 
@@ -338,7 +344,15 @@ test('the data-through provenance still shows the platform date, not the user cu
 })
 
 test('Why? disclosure surfaces engine reasons and limitations', () => {
-  const html = renderWithOptions({ board: populatedBoard, now: new Date(2026, 5, 4) })
+  const html = renderWithOptions({
+    board: {
+      ...populatedBoard,
+      freshness: {
+        ...populatedBoard.freshness,
+        product_current_date: '2026-06-04',
+      },
+    },
+  })
   assert.ok(htmlIncludes(html, 'Why?'))
   assert.ok(htmlIncludes(html, '18 pitches today'))
   assert.ok(htmlIncludes(html, '29 pitches yesterday'))

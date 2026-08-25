@@ -12,6 +12,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.prospect  # noqa: F401
+import services.board_freshness as board_freshness
 import services.sync as sync_service
 from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
@@ -124,3 +125,17 @@ def test_player_detail_active_pitcher_final_availability_matches_workload_signal
     assert detail['availability']['availability_status'] == detail['workload_signal']['availability_status']
     assert detail['availability']['availability_status'] == 'Available'
     assert detail['availability']['roster_status']['label'] == 'Active MLB'
+
+
+def test_player_detail_carries_product_day_without_rewriting_persisted_days_rest(
+    client, monkeypatch,
+):
+    monkeypatch.setattr(board_freshness, 'product_current_date', lambda: date(2026, 8, 25))
+    with client.application.app_context():
+        pitcher = seed_pitcher('Reference Day Reliever', 656272, STATUS_ACTIVE)
+        pitcher_id = pitcher.id
+
+    detail = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
+
+    assert detail['freshness']['product_current_date'] == '2026-08-25'
+    assert detail['current_fatigue']['days_since_last_appearance'] == 3

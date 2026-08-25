@@ -17,10 +17,24 @@ from services import sync_metadata
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
     product_availability_reference_date_from_sync_status,
+    product_current_date,
 )
 
 
 _SNAPSHOT_NOT_SUPPLIED = object()
+
+
+def _with_product_current_date(freshness):
+    """Attach the runtime ET product day without mutating frozen provenance."""
+    result = dict(freshness or {})
+    try:
+        current_date = product_current_date()
+    except Exception:
+        current_date = None
+    result['product_current_date'] = (
+        current_date.isoformat() if current_date is not None else None
+    )
+    return result
 
 
 def sync_status_freshness_block(status_payload=None):
@@ -168,5 +182,5 @@ def board_freshness_block(*, use_published=True):
     if use_published:
         published = published_snapshot_freshness_block()
         if published is not None:
-            return published
-    return sync_status_freshness_block()
+            return _with_product_current_date(published)
+    return _with_product_current_date(sync_status_freshness_block())

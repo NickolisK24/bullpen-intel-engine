@@ -59,17 +59,9 @@ export function platformDateFromFreshness(freshness) {
   )
 }
 
-// The user's ACTUAL current calendar day (local), as a baseball-day string (YYYY-MM-DD).
-// This is the anchor for "Today" / "Yesterday" workload labels — distinct from the platform
-// data-through date, the availability reference date, and the latest completed game date.
-// `now` is injectable so the relative-day labels are deterministic in tests.
-export function currentUserBaseballDay(now = new Date()) {
-  const date = now instanceof Date ? now : new Date(now)
-  if (Number.isNaN(date.getTime())) return null
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+export function productCurrentDateFromFreshness(freshness) {
+  const current = baseballDay((freshness || {}).product_current_date)
+  return current?.iso || null
 }
 
 export function normalizeAppearance(input) {
@@ -157,8 +149,9 @@ export function baseballDayDiff(appearanceDate, platformDate) {
 export function relativeAppearanceLabel(appearanceDate, platformDate) {
   const diff = baseballDayDiff(appearanceDate, platformDate)
   if (diff == null) return null
-  if (diff <= 0) return 'today'
+  if (diff === 0) return 'today'
   if (diff === 1) return 'yesterday'
+  if (diff < 0) return null
   return `${diff} days ago`
 }
 
@@ -233,7 +226,10 @@ export function dayAwareAppearanceReason(reason, appearance, platformDate) {
 
   const count = numericPitchCount(match[1])
   if (normalized.pitches != null && count !== normalized.pitches) return reason
-  return appearancePitchReason(count, normalized.gameDate, platformDate) || reason
+  const relative = appearancePitchReason(count, normalized.gameDate, platformDate)
+  if (relative) return relative
+  const absoluteDate = displayBaseballDate(normalized.gameDate)
+  return absoluteDate ? `${count} ${pitchNoun(count)} on ${absoluteDate}` : reason
 }
 
 export function dayAwareAppearanceReasons(reasons, appearance, platformDate) {
