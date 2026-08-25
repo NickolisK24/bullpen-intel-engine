@@ -74,9 +74,12 @@ function DomainSection({ domain, labelA, labelB }) {
   )
 }
 
-export default function BullpenComparisonView({ payload }) {
+export default function BullpenComparisonView({ payload, sideLabels = null, showShare = true }) {
   const view = getComparisonView(payload)
   if (!view.hasComparison) return <EmptyState title="Comparison unavailable" subtitle="This comparison could not be established from the current publication." />
+
+  const labelA = sideLabels?.teamA || view.labelA
+  const labelB = sideLabels?.teamB || view.labelB
 
   const teamARef = normalizeTeamReference(view.teamA)
   const teamBRef = normalizeTeamReference(view.teamB)
@@ -97,13 +100,13 @@ export default function BullpenComparisonView({ payload }) {
         </div>
 
         <div className="grid gap-3 border-y border-dirt py-4 md:grid-cols-2 md:gap-8">
-          <TeamState label={view.labelA} state={view.teamStateA} />
-          <TeamState label={view.labelB} state={view.teamStateB} />
+          <TeamState label={labelA} state={view.teamStateA} />
+          <TeamState label={labelB} state={view.teamStateB} />
         </div>
         {view.teamStateStatus === 'withheld' && <p className="border-b border-dirt py-3 text-sm text-chalk500">{view.teamStateMessage}</p>}
 
         <div id="comparison-evidence" tabIndex={-1} className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-          {view.domains.map(domain => <DomainSection key={domain.key} domain={domain} labelA={view.labelA} labelB={view.labelB} />)}
+          {view.domains.map(domain => <DomainSection key={domain.key} domain={domain} labelA={labelA} labelB={labelB} />)}
         </div>
       </section>
 
@@ -115,14 +118,14 @@ export default function BullpenComparisonView({ payload }) {
         </div>
       </section>
 
-      <div className="flex justify-end border-t border-dirt pt-4">
+      {showShare && <div className="flex justify-end border-t border-dirt pt-4">
         <EvidenceShareMenu
           cardModel={cardModel}
           destinationUrl={destinationUrl}
           shareText={shareText}
           context={{ surface: 'compare_bullpens', cardType: 'comparison', team_a_ref: teamARef, team_b_ref: teamBRef, evidence_target: 'comparison_evidence', data_through: view.representedDate }}
         />
-      </div>
+      </div>}
     </div>
   )
 }

@@ -311,6 +311,184 @@ def test_installed_public_route_uses_compact_projection_without_board_builds(mon
     assert 'team_b' not in body
 
 
+def _slate_game():
+    return SimpleNamespace(to_dict=lambda: {
+        'game_pk': 900001,
+        'game_date_et': '2026-08-25',
+        'game_time_utc': '2026-08-25T23:10:00Z',
+        'home_team_id': 2,
+        'away_team_id': 1,
+        'status': {
+            'abstract': 'Preview',
+            'detailed': 'Scheduled',
+            'code': 'S',
+            'normalized': 'upcoming',
+        },
+        'doubleheader_flag': 'Y',
+        'game_number': 2,
+    })
+
+
+def test_scheduled_game_matchup_reuses_carrier_with_away_home_order(monkeypatch):
+    _install_owners(monkeypatch)
+    payload = trusted_compare_authority.build_scheduled_game_matchup_payload(
+        _slate_game(),
+        _snapshot(),
+        directory={},
+    )
+
+    assert payload['capability'] == 'scheduled_game_matchup_v1'
+    assert payload['game'] == {
+        'game_pk': 900001,
+        'reference_date': '2026-08-25',
+        'game_time_utc': '2026-08-25T23:10:00Z',
+        'status': {
+            'abstract': 'Preview',
+            'detailed': 'Scheduled',
+            'code': 'S',
+            'normalized': 'upcoming',
+        },
+        'doubleheader_flag': 'Y',
+        'game_number': 2,
+        'away': {
+            'team_id': 1,
+            'team_name': 'Team ACE',
+            'team_abbreviation': 'ACE',
+        },
+        'home': {
+            'team_id': 2,
+            'team_name': 'Team BEA',
+            'team_abbreviation': 'BEA',
+        },
+    }
+    assert payload['comparison']['contract'] == comparison.CONTRACT
+    assert payload['comparison']['teams']['team_a']['team_id'] == 1
+    assert payload['comparison']['teams']['team_b']['team_id'] == 2
+
+
+def test_scheduled_game_route_selects_snapshot_once_without_board_builds(monkeypatch):
+    _install_owners(monkeypatch)
+    calls = []
+    comparison_calls = []
+    snapshot = _snapshot()
+    build_comparison = trusted_compare_authority.build_current_bullpen_comparison
+
+    class Query:
+        def filter_by(self, **filters):
+            calls.append(('game', filters))
+            return self
+
+        def one_or_none(self):
+            return _slate_game()
+
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'SlateGame',
+        SimpleNamespace(query=Query()),
+    )
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'valid_team_directory',
+        lambda: calls.append('directory') or {},
+    )
+    monkeypatch.setattr(
+        trusted_compare_authority.authority.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot',
+        lambda: calls.append('snapshot') or snapshot,
+    )
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'build_current_bullpen_comparison',
+        lambda resolved_snapshot, away_team_id, home_team_id: (
+            comparison_calls.append((resolved_snapshot, away_team_id, home_team_id))
+            or build_comparison(resolved_snapshot, away_team_id, home_team_id)
+        ),
+    )
+    monkeypatch.setattr(
+        public_serving_authority,
+        'build_published_team_board',
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('full board rebuilt')),
+    )
+    app = Flask(__name__)
+    with app.test_request_context('/api/bullpen/matchups/900001'):
+        response = trusted_compare_authority.trusted_game_matchup_view(900001)
+        body = response.get_json()
+
+    assert calls == [('game', {'game_pk': 900001}), 'directory', 'snapshot']
+    assert comparison_calls == [(snapshot, 1, 2)]
+    assert body['comparison']['contract'] == comparison.CONTRACT
+    assert body['game']['away']['team_id'] == 1
+    assert body['game']['home']['team_id'] == 2
+
+
+def test_scheduled_game_route_returns_local_not_found(monkeypatch):
+    query = SimpleNamespace(
+        filter_by=lambda **filters: SimpleNamespace(one_or_none=lambda: None),
+    )
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'SlateGame',
+        SimpleNamespace(query=query),
+    )
+    app = Flask(__name__)
+    with app.test_request_context('/api/bullpen/matchups/999999'):
+        response, status_code = trusted_compare_authority.trusted_game_matchup_view(999999)
+
+    assert status_code == 404
+    assert response.get_json() == {
+        'capability': 'scheduled_game_matchup_v1',
+        'contract': 'scheduled_game_matchup_entry_v1',
+        'status': 'not_found',
+        'reason_code': 'scheduled_game_not_found',
+        'game': None,
+        'comparison': None,
+    }
+
+
+def test_scheduled_game_identity_survives_comparison_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'build_current_bullpen_comparison',
+        lambda *args: (None, 'published_team_missing'),
+    )
+    payload = trusted_compare_authority.build_scheduled_game_matchup_payload(
+        _slate_game(),
+        _snapshot(),
+        directory={
+            1: {'team_id': 1, 'team_name': 'Away Club', 'team_abbreviation': 'AWY'},
+            2: {'team_id': 2, 'team_name': 'Home Club', 'team_abbreviation': 'HME'},
+        },
+    )
+
+    assert payload['status'] == 'partial'
+    assert payload['reason_code'] == 'published_team_missing'
+    assert payload['comparison'] is None
+    assert payload['game']['away']['team_name'] == 'Away Club'
+    assert payload['game']['home']['team_name'] == 'Home Club'
+
+
+def test_scheduled_game_identity_survives_comparison_owner_failure(monkeypatch):
+    monkeypatch.setattr(
+        trusted_compare_authority,
+        'build_current_bullpen_comparison',
+        lambda *args: (_ for _ in ()).throw(RuntimeError('optional owner failed')),
+    )
+    payload = trusted_compare_authority.build_scheduled_game_matchup_payload(
+        _slate_game(),
+        _snapshot(),
+        directory={
+            1: {'team_id': 1, 'team_name': 'Away Club', 'team_abbreviation': 'AWY'},
+            2: {'team_id': 2, 'team_name': 'Home Club', 'team_abbreviation': 'HME'},
+        },
+    )
+
+    assert payload['status'] == 'partial'
+    assert payload['reason_code'] == 'scheduled_game_comparison_unavailable'
+    assert payload['comparison'] is None
+    assert payload['game']['away']['team_name'] == 'Away Club'
+    assert payload['game']['home']['team_name'] == 'Home Club'
+
+
 def test_source_has_no_board_reconstruction_or_winner_fields():
     source = open(trusted_compare_authority.__file__, encoding='utf-8').read()
     assert 'build_board_payload' not in source

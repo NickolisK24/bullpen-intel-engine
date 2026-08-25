@@ -96,6 +96,10 @@ export function normalizePitcherId(pitcherId) {
   return positiveInteger(pitcherId)
 }
 
+export function normalizeGameId(gameId) {
+  return positiveInteger(gameId)
+}
+
 export function normalizeBullpenSource(source) {
   const value = cleanText(source).toLowerCase()
   return VALID_SOURCES.has(value) ? value : null
@@ -135,6 +139,11 @@ export function buildComparisonHref(teamARef, teamBRef, options = {}) {
   if (teamB) params.set('team_b', teamB)
   if (source) params.set('source', source)
   return hrefFromParams(params, section)
+}
+
+export function buildMatchupHref(gameId) {
+  const normalizedGameId = normalizeGameId(gameId)
+  return normalizedGameId == null ? null : `/matchup/${normalizedGameId}`
 }
 
 export function buildPitcherHref(pitcherId, options = {}) {

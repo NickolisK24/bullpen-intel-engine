@@ -5,6 +5,7 @@ import {
   buildAllPitchersHref,
   buildCanonicalBullpenHref,
   buildComparisonHref,
+  buildMatchupHref,
   buildPitcherHref,
   buildTeamBoardHref,
   normalizeBullpenSource,
@@ -75,6 +76,13 @@ test('pitcher links use the standalone canonical identity and reject invalid ids
   )
   assert.equal(buildPitcherHref('12x', { teamRef: teams[0] }), '/bullpen?view=board&team=BOS')
   assert.equal(buildPitcherHref(-1, { teamRef: teams[0] }), '/bullpen?view=board&team=BOS')
+})
+
+test('scheduled matchup links use the stable game identity route', () => {
+  assert.equal(buildMatchupHref(900001), '/matchup/900001')
+  assert.equal(buildMatchupHref('900002'), '/matchup/900002')
+  assert.equal(buildMatchupHref('bad'), null)
+  assert.equal(buildMatchupHref(-1), null)
 })
 
 test('invalid team, source, section, and incompatible parameters are omitted', () => {
