@@ -10,7 +10,6 @@ import {
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
-import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
@@ -151,6 +150,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
               rosterStatus={rosterStatus}
               freshness={freshness}
               lastAppearance={mostRecentAppearance}
+              fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}
             />
           ) : (
             <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5">
@@ -160,13 +160,6 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
               </p>
             </section>
           )}
-
-          <ExplanationDisclosure
-            buttonLabel="Why this availability?"
-            contextLabel="Availability explanation"
-            disabled={!pitcherId}
-            fetchExplanation={() => getAvailabilityExplanation(pitcherId)}
-          />
 
           <RecentWorkPanel
             pitcherId={pitcherId}

@@ -321,14 +321,13 @@ test('PitcherDetail mounts one composed recent-work section without duplicate pr
     'utf8',
   )
   const summaryIndex = source.indexOf('<AvailabilitySummary')
-  const explanationIndex = source.indexOf('<ExplanationDisclosure')
   const mountIndex = source.indexOf('<RecentWorkPanel')
 
   assert.notEqual(summaryIndex, -1)
-  assert.notEqual(explanationIndex, -1)
   assert.notEqual(mountIndex, -1)
   assert.ok(summaryIndex < mountIndex)
-  assert.ok(explanationIndex < mountIndex)
+  assert.equal(source.includes('<ExplanationDisclosure'), false)
+  assert.ok(source.includes('fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}'))
   assert.equal((source.match(/<RecentWorkPanel/g) || []).length, 1)
   assert.ok(source.includes('payload={recentWork}'))
   assert.ok(source.includes('inningsLastSevenDays={cf?.innings_last_7_days}'))
@@ -361,6 +360,7 @@ test('legacy availability/fatigue copy still renders with existing fixtures', ()
         reasons: ['Workload signal: Monitor.'],
         limitations: ['No injury information available'],
       },
+      initialDetailsOpen: true,
     }),
   )
 

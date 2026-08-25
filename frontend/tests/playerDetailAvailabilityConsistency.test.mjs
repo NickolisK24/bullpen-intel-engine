@@ -54,7 +54,7 @@ function finalAvailability(rosterLabel, rosterStatus, workloadStatus) {
 
 function renderSummary(payload) {
   return renderToStaticMarkup(
-    React.createElement(AvailabilitySummary, payload),
+    React.createElement(AvailabilitySummary, { ...payload, initialDetailsOpen: true }),
   )
 }
 
@@ -177,6 +177,8 @@ test('PitcherDetail passes final availability workload signal and roster status 
   assert.ok(source.includes('rosterStatus={rosterStatus}'))
   assert.ok(source.includes('freshness={freshness}'))
   assert.ok(source.includes('lastAppearance={mostRecentAppearance}'))
+  assert.ok(source.includes('fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}'))
+  assert.equal(source.includes('<ExplanationDisclosure'), false)
 })
 
 test('PitcherDetail leads with availability and workload facts instead of a black-box score', () => {
@@ -238,10 +240,11 @@ test('PitcherDetail leads with availability and workload facts instead of a blac
   })
 
   assert.ok(htmlIncludes(html, 'Final availability: Limited'))
-  assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
-  assert.ok(htmlIncludes(html, '61 pitches across three appearances in the last seven days.'))
-  assert.ok(htmlIncludes(html, 'Limitations'))
-  assert.ok(htmlIncludes(html, 'No injury information available.'))
+  assert.ok(htmlIncludes(html, 'View availability details'))
+  assert.equal(htmlIncludes(html, 'Final Availability Reasons'), false)
+  assert.equal(htmlIncludes(html, '61 pitches across three appearances in the last seven days.'), false)
+  assert.equal(htmlIncludes(html, 'Limitations'), false)
+  assert.equal(htmlIncludes(html, 'No injury information available.'), false)
   assert.ok(htmlIncludes(html, 'Pitches / 7d'))
   assert.equal(htmlIncludes(html, 'Recent Workload Snapshot'), false)
   assert.ok(htmlIncludes(html, '61'))

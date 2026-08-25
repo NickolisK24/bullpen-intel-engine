@@ -47,7 +47,7 @@ test('AvailabilityBadge renders non-current data state when requested', () => {
   assert.ok(htmlIncludes(html, 'Data: Outside Freshness Window'))
 })
 
-test('AvailabilitySummary renders status, confidence, reasons, and limitations for every fixture', () => {
+test('AvailabilitySummary keeps the canonical answer and metadata compact by default', () => {
   for (const row of availabilityFixtureRows) {
     const status = row.availability.availability_status
     const label = getAvailabilityStatusLabel(status)
@@ -56,7 +56,7 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
       React.createElement(AvailabilitySummary, { availability: row.availability }),
     )
 
-    assert.ok(htmlIncludes(html, 'Final Availability'))
+    assert.ok(htmlIncludes(html, 'Availability'))
     assert.ok(htmlIncludes(html, label))
     assert.ok(htmlIncludes(html, 'Roster Status'))
     assert.ok(htmlIncludes(html, 'Read Confidence'))
@@ -65,16 +65,39 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
     // 'Data Status' is the separate platform-wide public family.
     assert.ok(htmlIncludes(html, 'Workload Data'))
     assert.equal(htmlIncludes(html, 'Data Status'), false)
-    assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
-    assert.ok(htmlIncludes(html, 'Limitations'))
+    assert.ok(htmlIncludes(html, 'View availability details'))
+    assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+    assert.equal(htmlIncludes(html, 'Final Availability Reasons'), false)
+    assert.equal(htmlIncludes(html, 'Limitations'), false)
 
     for (const reason of row.availability.reasons) {
-      assert.ok(htmlIncludes(html, reason))
+      assert.equal(htmlIncludes(html, reason), false)
     }
     for (const limitation of row.availability.limitations) {
-      assert.ok(htmlIncludes(html, limitation))
+      assert.equal(htmlIncludes(html, limitation), false)
     }
   }
+})
+
+test('AvailabilitySummary disclosure preserves exact reason order and limitations', () => {
+  const availability = {
+    availability_status: 'Limited',
+    confidence: 'medium',
+    data_state: 'fresh',
+    reasons: ['First governed reason.', 'Second governed reason.', 'Third governed reason.'],
+    limitations: ['No injury information available.', 'No team-reported availability data available.'],
+  }
+  const html = renderToStaticMarkup(
+    React.createElement(AvailabilitySummary, { availability, initialDetailsOpen: true }),
+  )
+
+  assert.ok(htmlIncludes(html, 'Hide availability details'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(html.indexOf('First governed reason.') < html.indexOf('Second governed reason.'))
+  assert.ok(html.indexOf('Second governed reason.') < html.indexOf('Third governed reason.'))
+  for (const limitation of availability.limitations) assert.ok(htmlIncludes(html, limitation))
 })
 
 test('AvailabilitySummary separates roster-adjusted final availability from workload signal', () => {
@@ -104,6 +127,7 @@ test('AvailabilitySummary separates roster-adjusted final availability from work
     React.createElement(AvailabilitySummary, {
       availability: finalAvailability,
       workloadSignal,
+      initialDetailsOpen: true,
     }),
   )
 
