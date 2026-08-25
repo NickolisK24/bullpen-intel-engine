@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Disclosure } from '../UI'
 
 import {
@@ -226,6 +226,8 @@ export default function ExplanationDisclosure({
   initialExplanation = null,
   initialOpen = false,
   disabled = false,
+  embedded = false,
+  active = false,
 }) {
   const [open, setOpen] = useState(initialOpen)
   const [explanationView, setExplanationView] = useState(initialExplanation)
@@ -245,12 +247,63 @@ export default function ExplanationDisclosure({
     }
   }
 
+  useEffect(() => {
+    if (disabled || !embedded || !active || explanationView || typeof fetchExplanation !== 'function') return undefined
+
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    fetchExplanation()
+      .then(value => {
+        if (!cancelled) setExplanationView(value)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [active, disabled, embedded, explanationView, fetchExplanation])
+
   const handleToggle = async (event) => {
     const nextOpen = event.currentTarget.open
     setOpen(nextOpen)
     if (nextOpen) {
       await loadExplanation()
     }
+  }
+
+  const explanationContent = loading ? (
+    <div className="rounded border border-dirt bg-field/60 p-3 font-mono text-xs text-chalk400" role="status" aria-live="polite">
+      Loading explanation...
+    </div>
+  ) : error ? (
+    <UnavailableExplanation
+      explanationView={{
+        isContractSafe: false,
+        isFailClosed: true,
+        limitations: [
+          {
+            limitation_type: 'insufficient_context',
+            summary: 'Explanation details could not be loaded safely.',
+          },
+        ],
+      }}
+    />
+  ) : explanationView ? (
+    <ExplanationDetails explanationView={explanationView} />
+  ) : (
+    <div className="rounded border border-dirt bg-field/60 p-3 font-mono text-xs text-chalk400">
+      Explanation details have not been requested.
+    </div>
+  )
+
+  if (embedded) {
+    return active ? <div className="mt-2">{explanationContent}</div> : null
   }
 
   return (
@@ -263,34 +316,7 @@ export default function ExplanationDisclosure({
       ariaLabel={contextLabel}
       className="bg-chalk/20"
     >
-      {open && (
-        <div className="mt-2">
-          {loading ? (
-            <div className="rounded border border-dirt bg-field/60 p-3 font-mono text-xs text-chalk400" role="status" aria-live="polite">
-              Loading explanation...
-            </div>
-          ) : error ? (
-            <UnavailableExplanation
-              explanationView={{
-                isContractSafe: false,
-                isFailClosed: true,
-                limitations: [
-                  {
-                    limitation_type: 'insufficient_context',
-                    summary: 'Explanation details could not be loaded safely.',
-                  },
-                ],
-              }}
-            />
-          ) : explanationView ? (
-            <ExplanationDetails explanationView={explanationView} />
-          ) : (
-            <div className="rounded border border-dirt bg-field/60 p-3 font-mono text-xs text-chalk400">
-              Explanation details have not been requested.
-            </div>
-          )}
-        </div>
-      )}
+      {open && <div className="mt-2">{explanationContent}</div>}
     </Disclosure>
   )
 }

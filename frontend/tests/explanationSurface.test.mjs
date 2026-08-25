@@ -242,6 +242,7 @@ test('does not render prohibited explanation surface language', () => {
 
 test('Pitcher detail uses the certified availability explanation client without dashboard card stacks', () => {
   assert.ok(pitcherDetailSource.includes('getAvailabilityExplanation'))
-  assert.ok(pitcherDetailSource.includes('Why this availability?'))
+  assert.ok(pitcherDetailSource.includes('fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}'))
+  assert.equal(pitcherDetailSource.includes('<ExplanationDisclosure'), false)
   assert.equal(/per-pitcher explanation card stacks|comparison/i.test(pitcherDetailSource), false)
 })
