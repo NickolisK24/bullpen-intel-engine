@@ -138,11 +138,14 @@ export function buildComparisonHref(teamARef, teamBRef, options = {}) {
 }
 
 export function buildPitcherHref(pitcherId, options = {}) {
-  return buildTeamBoardHref(options.teamRef, {
-    pitcher: pitcherId,
-    source: options.source,
-    section: options.section,
-  })
+  const normalizedPitcherId = normalizePitcherId(pitcherId)
+  if (normalizedPitcherId == null) {
+    return buildTeamBoardHref(options.teamRef, {
+      source: options.source,
+      section: options.section,
+    })
+  }
+  return `/pitcher/${normalizedPitcherId}`
 }
 
 export function buildAllPitchersHref(options = {}) {

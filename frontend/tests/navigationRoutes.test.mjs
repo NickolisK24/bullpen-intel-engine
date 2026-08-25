@@ -19,6 +19,7 @@ after(async () => {
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const { legacyPitcherDestination } = await server.ssrLoadModule('/src/components/bullpen/BullpenRoute.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -73,6 +74,34 @@ test('/today redirects to the Today surface and catch-all routes home', () => {
   assert.equal(routeByPath('/')?.Component?.name, 'Home')
   assert.equal(routeByPath('/today')?.redirectTo, '/')
   assert.equal(routeByPath('*')?.redirectTo, '/')
+})
+
+test('Pitcher Detail has a first-class standalone route', () => {
+  assert.equal(routeByPath('/pitcher/:id')?.Component?.name, 'PitcherPage')
+})
+
+test('legacy Pitcher query URLs canonicalize without loops or unsafe return targets', () => {
+  assert.equal(
+    legacyPitcherDestination('?view=board&team=BOS&pitcher=123&source=stories'),
+    '/pitcher/123',
+  )
+  assert.equal(legacyPitcherDestination('?view=board&team=BOS'), null)
+  assert.equal(legacyPitcherDestination('?view=pitchers&pitcher=123'), null)
+  assert.equal(legacyPitcherDestination('?view=board&pitcher=bad&return=https://example.com'), null)
+})
+
+test('standalone Pitcher shell owns one request and never mounts Team Board dependencies', () => {
+  const page = readFileSync(new URL('../src/components/bullpen/PitcherPage.jsx', import.meta.url), 'utf8')
+  const detail = readFileSync(new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url), 'utf8')
+  const route = readFileSync(new URL('../src/components/bullpen/BullpenRoute.jsx', import.meta.url), 'utf8')
+
+  assert.equal((detail.match(/getPitcherFatigue\(pitcherId\)/g) || []).length, 1)
+  for (const forbidden of ['getTeams', 'getTeamBoardV2', 'TonightsBullpenBoard', 'getPitcherRecentWork']) {
+    assert.equal(page.includes(forbidden), false, forbidden)
+  }
+  assert.ok(page.includes('Pitcher unavailable'))
+  assert.ok(page.includes('<PitcherDetail pitcherId={pitcherId} />'))
+  assert.ok(route.includes('<Navigate to={destination} replace />'))
 })
 
 test('app startup clears stale preferred team launch storage', () => {

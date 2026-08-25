@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import useEvidenceHashNavigation from '../../hooks/useEvidenceHashNavigation'
@@ -15,7 +15,6 @@ import {
   resolveTeamReference,
 } from '../../utils/evidenceLinks'
 import { LoadingPane, ErrorState, EmptyState, SectionHeader } from '../UI'
-import PitcherDetail from './PitcherDetail'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
@@ -95,18 +94,12 @@ export default function Bullpen() {
   const [sortBy, setSortBy]               = useState(DEFAULT_FINDER_SORT)
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
-  const boardDetailRegionRef = useRef(null)
-  const boardPitcherOriginRef = useRef(null)
-  const restoreBoardPitcherFocusRef = useRef(false)
-  const showBoardDetail = viewMode === BULLPEN_VIEWS.BOARD && urlState.pitcherId != null
-
   const teams    = useFetch(getTeams)
   const teamList = teams.data || []
   const teamsReady = !teams.loading && !teams.error && teamList.length > 0
   const selectedTeam = resolveTeamId(teamList, urlState.team)
   const canonicalTeam = resolveTeamReference(teamList, urlState.team)
   const activeTeamRef = canonicalTeam || urlState.team
-  const selectedPitcher = showBoardDetail ? { pitcher_id: urlState.pitcherId } : null
   useEvidenceHashNavigation(viewMode)
 
   useEffect(() => {
@@ -125,17 +118,6 @@ export default function Bullpen() {
     const currentHref = `${location.pathname}${location.search}${location.hash}`
     if (canonicalHref !== currentHref) navigate(canonicalHref, { replace: true })
   }, [location.hash, location.pathname, location.search, navigate, teamList, teamsReady, urlState])
-
-  useEffect(() => {
-    if (showBoardDetail) {
-      boardDetailRegionRef.current?.focus()
-    } else if (restoreBoardPitcherFocusRef.current) {
-      restoreBoardPitcherFocusRef.current = false
-      const origin = boardPitcherOriginRef.current
-      boardPitcherOriginRef.current = null
-      if (origin?.isConnected) origin.focus({ preventScroll: true })
-    }
-  }, [showBoardDetail, selectedPitcher?.pitcher_id])
 
   const handleViewChange = (nextView) => {
     if (nextView === BULLPEN_VIEWS.COMPARE) {
@@ -163,19 +145,6 @@ export default function Bullpen() {
     }))
   }
 
-  const handleBoardPitcherSelect = (pitcherId, origin) => {
-    boardPitcherOriginRef.current = origin || null
-    handlePitcherSelect(pitcherId)
-  }
-
-  const closeSelectedPitcher = () => {
-    restoreBoardPitcherFocusRef.current = true
-    navigate(buildTeamBoardHref(activeTeamRef, {
-      source: urlState.source,
-      section: urlState.section,
-    }), { replace: true })
-  }
-
   const handleComparisonTeamChange = (side, teamId) => {
     const changedTeam = resolveTeamReference(teamList, teamId)
     const teamA = side === 'a' ? changedTeam : resolveTeamReference(teamList, urlState.teamA)
@@ -201,7 +170,7 @@ export default function Bullpen() {
   return (
     <div className={viewMode === BULLPEN_VIEWS.BOARD
       ? 'team-board-shell'
-      : `p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
+      : 'p-4 sm:p-6 lg:p-8 mx-auto max-w-7xl'}>
       <SectionHeader
         as="h1"
         title={getBullpenPageIdentity(viewMode, teamList, urlState)}
@@ -240,21 +209,8 @@ export default function Bullpen() {
             requestedTeam={urlState.team}
             requestedSection={urlState.section}
             onSelectTeam={handleTeamSelect}
-            onSelectPitcher={handleBoardPitcherSelect}
+            onSelectPitcher={handlePitcherSelect}
           />
-          {showBoardDetail && (
-            <div
-              ref={boardDetailRegionRef}
-              tabIndex={-1}
-              role="region"
-              aria-label="Selected pitcher detail"
-              className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:p-6"
-            >
-              <div className="mx-auto max-w-5xl">
-                <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />
-              </div>
-            </div>
-          )}
         </>
       ) : viewMode === BULLPEN_VIEWS.COMPARE ? (
         <TeamBullpenComparison

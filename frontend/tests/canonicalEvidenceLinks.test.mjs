@@ -68,10 +68,10 @@ test('comparison links preserve left and right order and exact evidence', () => 
   )
 })
 
-test('pitcher links keep known team context and reject invalid ids', () => {
+test('pitcher links use the standalone canonical identity and reject invalid ids', () => {
   assert.equal(
     buildPitcherHref(123456, { teamRef: teams[0], source: 'pitcher_search' }),
-    '/bullpen?view=board&team=BOS&pitcher=123456&source=pitcher_search',
+    '/pitcher/123456',
   )
   assert.equal(buildPitcherHref('12x', { teamRef: teams[0] }), '/bullpen?view=board&team=BOS')
   assert.equal(buildPitcherHref(-1, { teamRef: teams[0] }), '/bullpen?view=board&team=BOS')
@@ -125,6 +125,7 @@ test('team resolution waits for the supplied list and canonicalizes supported re
 
 test('URL ownership is wired through navigation for team, comparison, pitcher, and all-pitcher changes', () => {
   const bullpen = readFileSync(new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url), 'utf8')
+  const bullpenRoute = readFileSync(new URL('../src/components/bullpen/BullpenRoute.jsx', import.meta.url), 'utf8')
   const board = readFileSync(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
   const comparison = readFileSync(new URL('../src/components/bullpen/board/TeamBullpenComparison.jsx', import.meta.url), 'utf8')
 
@@ -133,6 +134,8 @@ test('URL ownership is wired through navigation for team, comparison, pitcher, a
   assert.ok(bullpen.includes('navigate(buildComparisonHref(teamA, teamB'))
   assert.ok(bullpen.includes('navigate(buildAllPitchersHref({ teamRef: team'))
   assert.ok(bullpen.includes('navigate(buildPitcherHref(pitcherId'))
+  assert.equal(bullpen.includes('PitcherDetail'), false)
+  assert.ok(bullpenRoute.includes('<Navigate to={destination} replace />'))
   assert.ok(bullpen.includes("navigate(canonicalHref, { replace: true })"))
   assert.ok(board.includes('onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}'))
   assert.ok(board.includes('onSelectPitcher={onSelectPitcher}'))

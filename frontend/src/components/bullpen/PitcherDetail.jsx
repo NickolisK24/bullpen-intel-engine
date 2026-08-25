@@ -15,42 +15,29 @@ import ObservedDeployment from './ObservedDeployment'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
-function ClosePitcherDetailButton({ onClose }) {
-  return (
-    <button
-      type="button"
-      onClick={onClose}
-      aria-label="Close selected pitcher detail"
-      className="shrink-0 rounded px-2 py-1 text-lg leading-none text-chalk400 hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-amber/70"
-    >
-      ✕
-    </button>
-  )
-}
-
-export default function PitcherDetail({ pitcherId, onClose }) {
+export default function PitcherDetail({ pitcherId }) {
   const { data, loading, error, refetch } = useFetch(
     () => getPitcherFatigue(pitcherId),
     [pitcherId],
   )
 
   if (loading) return (
-    <div className="card h-full">
-      <div className="flex justify-end border-b border-dirt p-2"><ClosePitcherDetailButton onClose={onClose} /></div>
+    <div className="card min-h-80">
+      <h1 className="sr-only">Pitcher</h1>
       <LoadingPane message="Loading pitcher..." />
     </div>
   )
   if (error) return (
-    <div className="card h-full">
-      <div className="flex justify-end border-b border-dirt p-2"><ClosePitcherDetailButton onClose={onClose} /></div>
+    <div className="card min-h-80">
+      <h1 className="sr-only">Pitcher unavailable</h1>
       <ErrorState message={error} onRetry={refetch} />
     </div>
   )
 
-  return <PitcherDetailContent data={data} pitcherId={pitcherId} onClose={onClose} />
+  return <PitcherDetailContent data={data} pitcherId={pitcherId} />
 }
 
-export function PitcherDetailContent({ data, pitcherId, onClose }) {
+export function PitcherDetailContent({ data, pitcherId }) {
   const {
     pitcher,
     current_fatigue: cf,
@@ -86,12 +73,12 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
   ]
 
   return (
-    <div className="card sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
+    <article className="card w-full min-w-0 max-w-full">
       {/* Header */}
       <div className="card-header gap-3">
         <div className="min-w-0">
           <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
-          <h2 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h2>
+          <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h1>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
             <span>·</span>
@@ -100,7 +87,6 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
         </div>
-        <ClosePitcherDetailButton onClose={onClose} />
       </div>
 
       {hasCurrentRead ? (
@@ -180,6 +166,6 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
           No recent workload read is available yet.
         </div>
       )}
-    </div>
+    </article>
   )
 }
