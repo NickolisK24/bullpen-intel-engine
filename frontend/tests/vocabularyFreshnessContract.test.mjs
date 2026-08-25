@@ -87,6 +87,7 @@ const GOVERNED_SURFACES = [
   '../src/components/bullpen/board/BullpenBoardView.jsx',
   '../src/components/bullpen/board/TeamGameContextCard.jsx',
   '../src/components/bullpen/RecentWorkPanel.jsx',
+  '../src/components/bullpen/WorkloadPatterns.jsx',
   '../src/components/stories/Stories.jsx',
   '../src/components/explanations/ExplanationDisclosure.jsx',
   '../src/components/share/TeamStateArtifactCard.jsx',

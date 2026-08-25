@@ -10,6 +10,7 @@ import {
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
+import WorkloadPatterns from './WorkloadPatterns'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
@@ -167,6 +168,8 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             inningsLastSevenDays={cf?.innings_last_7_days}
             error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
           />
+
+          <WorkloadPatterns workloadSignal={workloadSignal} />
         </div>
       ) : (
         <div className="p-8 text-center text-chalk400 font-mono text-sm">
