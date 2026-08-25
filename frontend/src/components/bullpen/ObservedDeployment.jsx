@@ -73,13 +73,13 @@ export default function ObservedDeployment({ context }) {
 
   return (
     <section
-      className="rounded border border-dirt bg-field/45 p-3 sm:p-4"
+      className="min-w-0 py-1"
       aria-labelledby="pitcher-observed-deployment-title"
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <h3 id="pitcher-observed-deployment-title" className="font-display text-base tracking-wider text-chalk100">
+        <h2 id="pitcher-observed-deployment-title" className="font-display text-base tracking-wider text-chalk100">
           Observed Deployment
-        </h3>
+        </h2>
         {(view.windowDays != null || view.dataThrough) && (
           <p className="font-mono text-[11px] text-chalk500">
             {view.windowDays != null && `${view.windowDays}-day window`}
@@ -93,7 +93,7 @@ export default function ObservedDeployment({ context }) {
 
       {view.state === 'available' ? (
         <>
-          <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+          <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 xl:grid-cols-3">
             {view.facts.map(({ key, label, value, dateTime }) => (
               <div key={key} className="min-w-0 border-t border-dirt/70 pt-2">
                 <dt className="break-words font-mono text-[10px] leading-tight text-chalk600">{label}</dt>

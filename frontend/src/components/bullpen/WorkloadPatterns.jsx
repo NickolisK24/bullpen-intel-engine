@@ -43,15 +43,15 @@ export default function WorkloadPatterns({ workloadSignal }) {
 
   return (
     <section
-      className="rounded border border-dirt bg-field/45 p-3 sm:p-4"
+      className="min-w-0 py-1"
       aria-labelledby="pitcher-workload-patterns-title"
     >
-      <h3 id="pitcher-workload-patterns-title" className="font-display text-base tracking-wider text-chalk100">
+      <h2 id="pitcher-workload-patterns-title" className="font-display text-base tracking-wider text-chalk100">
         Workload Patterns
-      </h3>
+      </h2>
 
       {view.available ? (
-        <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+        <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 xl:grid-cols-4">
           {view.facts.map(({ key, label, value }) => (
             <div key={key} className="min-w-0 border-t border-dirt/70 pt-2">
               <dt className="break-words font-mono text-[10px] leading-tight text-chalk600">{label}</dt>

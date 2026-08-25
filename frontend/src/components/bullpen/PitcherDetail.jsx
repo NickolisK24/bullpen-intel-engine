@@ -75,7 +75,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
   return (
     <article className="card w-full min-w-0 max-w-full">
       {/* Header */}
-      <div className="card-header gap-3">
+      <div className="card-header gap-3 bg-field/25">
         <div className="min-w-0">
           <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
           <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h1>
@@ -90,16 +90,16 @@ export function PitcherDetailContent({ data, pitcherId }) {
       </div>
 
       {hasCurrentRead ? (
-        <div className="min-w-0 p-4 space-y-5 sm:p-5">
+        <div className="min-w-0 p-4 sm:p-5 lg:p-6">
           <section
-            className="rounded border border-dirt bg-field/55 p-3 sm:p-4"
+            className="rounded border border-amber/30 bg-field/70 p-3 shadow-sm sm:p-4"
             aria-labelledby="pitcher-current-state-title"
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 id="pitcher-current-state-title" className="font-display text-base tracking-wider text-chalk100">
+                <h2 id="pitcher-current-state-title" className="font-display text-lg tracking-wider text-chalk100">
                   Current Bullpen Situation
-                </h3>
+                </h2>
                 <div className="mt-1 font-mono text-xs text-chalk400">
                   {rosterStatus?.label || 'Roster status unavailable'}
                 </div>
@@ -132,34 +132,41 @@ export function PitcherDetailContent({ data, pitcherId }) {
             )}
           </section>
 
-          {availability ? (
-            <AvailabilitySummary
-              availability={availability}
-              workloadSignal={workloadSignal}
-              rosterStatus={rosterStatus}
-              freshness={freshness}
-              lastAppearance={mostRecentAppearance}
-              fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}
+          <div className="mt-6 space-y-5 border-t border-dirt/70 pt-5 sm:mt-7 sm:space-y-6 sm:pt-6">
+            {availability ? (
+              <AvailabilitySummary
+                availability={availability}
+                workloadSignal={workloadSignal}
+                rosterStatus={rosterStatus}
+                freshness={freshness}
+                lastAppearance={mostRecentAppearance}
+                fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}
+              />
+            ) : (
+              <section className="border-b border-dirt/70 pb-5 sm:pb-6" aria-labelledby="pitcher-availability-title">
+                <h2 id="pitcher-availability-title" className="font-display text-base tracking-wider text-chalk100">
+                  Availability
+                </h2>
+                <p className="mt-2 text-sm font-mono leading-relaxed text-chalk400">
+                  Current availability is not available for this pitcher yet.
+                </p>
+              </section>
+            )}
+
+            <RecentWorkPanel
+              pitcherId={pitcherId}
+              payload={recentWork}
+              inningsLastSevenDays={cf?.innings_last_7_days}
+              error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
             />
-          ) : (
-            <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5">
-              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Current Status</div>
-              <p className="mt-2 text-sm font-mono leading-relaxed text-chalk400">
-                Current availability is not available for this pitcher yet.
-              </p>
-            </section>
-          )}
+          </div>
 
-          <RecentWorkPanel
-            pitcherId={pitcherId}
-            payload={recentWork}
-            inningsLastSevenDays={cf?.innings_last_7_days}
-            error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
-          />
-
-          <WorkloadPatterns workloadSignal={workloadSignal} />
-
-          <ObservedDeployment context={deploymentContext} />
+          <div className="mt-7 grid min-w-0 gap-5 border-t border-dirt/70 pt-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-6 lg:pt-6">
+            <WorkloadPatterns workloadSignal={workloadSignal} />
+            <div className="min-w-0 border-t border-dirt/70 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <ObservedDeployment context={deploymentContext} />
+            </div>
+          </div>
         </div>
       ) : (
         <div className="p-8 text-center text-chalk400 font-mono text-sm">
