@@ -99,6 +99,7 @@ from services.narrative_memory import (
 )
 from services.pitcher_public_labels import PUBLIC_ROLE_COMPOSITION_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
+from services.public_recent_work import build_public_recent_work_payload
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
@@ -593,6 +594,45 @@ def get_pitcher_fatigue(pitcher_id):
 
     last_workload_appearance = last_workload_appearance_from_logs(logs)
 
+    role_logs = role_logs_by_pitcher([pitcher_id], reference_date=reference_date)
+    population_contexts = eligible_bullpen_pitcher_contexts(
+        [pitcher],
+        include_stale=True,
+        include_inactive_context=True,
+        include_unknown_roster=True,
+        reference_date=reference_date,
+    )
+    eligibility = (
+        population_contexts[0].get('eligibility')
+        if population_contexts
+        else None
+    )
+    role, pitcher_labels, public_role_read = author_role_read_labels(
+        {
+            'pitcher': pitcher,
+            'availability': availability,
+            'eligibility': eligibility,
+            'roster_status': roster_status,
+        },
+        role_logs,
+        reference_date,
+    )
+
+    recent_work = None
+    recent_work_status = {'status': 'available'}
+    try:
+        recent_work = build_public_recent_work_payload(
+            pitcher_id,
+            pitcher=pitcher,
+            freshness=freshness,
+        )
+    except Exception:
+        current_app.logger.exception(
+            'Optional public recent-work carrier unavailable for pitcher %s',
+            pitcher_id,
+        )
+        recent_work_status = {'status': 'unavailable'}
+
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         # ``current_fatigue`` keeps its name because Pitcher Detail reads the
@@ -606,6 +646,11 @@ def get_pitcher_fatigue(pitcher_id):
         'freshness':       freshness,
         'last_appearance': last_workload_appearance,
         'last_workload_appearance': last_workload_appearance,
+        'role':              role,
+        'pitcher_labels':    pitcher_labels,
+        'public_role_read':  public_role_read,
+        'recent_work':       recent_work,
+        'recent_work_status': recent_work_status,
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [public_workload_facts(s) for s in history],
     })

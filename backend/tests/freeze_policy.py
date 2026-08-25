@@ -379,6 +379,16 @@ TODAY05_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
     'backend/services/tonight_intelligence_snapshot.py',
 )
 
+# PIT-01, August 24 2026. The existing Pitcher detail route composes canonical
+# role/read labels and the unchanged public recent-work carrier into one bounded
+# current-state response. The recent-work service accepts already-resolved
+# pitcher/freshness inputs solely to avoid duplicate lookup work; its standalone
+# route, facts, date semantics, and sentences remain unchanged.
+PIT01_PITCHER_CURRENT_STATE_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/services/public_recent_work.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

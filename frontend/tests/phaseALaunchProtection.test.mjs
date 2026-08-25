@@ -10,7 +10,7 @@ test('Pitcher Detail source has no score-first chart or threshold framing', asyn
 
   const availabilityIndex = source.indexOf('<AvailabilitySummary')
   const workloadFactsIndex = source.indexOf('Recent Workload Snapshot')
-  const recentWorkIndex = source.indexOf('<RecentWorkPanel pitcherId={pitcherId} />')
+  const recentWorkIndex = source.indexOf('<RecentWorkPanel')
 
   assert.notEqual(availabilityIndex, -1)
   assert.notEqual(workloadFactsIndex, -1)

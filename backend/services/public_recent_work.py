@@ -33,12 +33,21 @@ class PitcherNotFoundError(LookupError):
     pass
 
 
-def build_public_recent_work_payload(pitcher_id):
-    pitcher = Pitcher.query.filter(Pitcher.id == pitcher_id).one_or_none()
+def build_public_recent_work_payload(pitcher_id, *, pitcher=None, freshness=None):
+    """Build the canonical recent-work carrier.
+
+    Aggregate composition layers may pass an already-resolved pitcher and
+    freshness block. The standalone endpoint retains the same lookup behavior
+    when those inputs are omitted.
+    """
     if pitcher is None:
+        pitcher = Pitcher.query.filter(Pitcher.id == pitcher_id).one_or_none()
+        if pitcher is None:
+            raise PitcherNotFoundError(pitcher_id)
+    elif pitcher.id != pitcher_id:
         raise PitcherNotFoundError(pitcher_id)
 
-    freshness = board_freshness.board_freshness_block()
+    freshness = freshness if freshness is not None else board_freshness.board_freshness_block()
     anchor = _parse_data_through(freshness.get('data_through'))
     payload = {
         'capability': CAPABILITY,

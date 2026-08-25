@@ -1634,6 +1634,116 @@ class TestBoardEndpoint:
             'pitches': 12,
         }
         assert body['availability']['availability_status']
+        assert body['pitcher_labels']['role']['label'] in {
+            'Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear',
+        }
+        assert body['pitcher_labels']['read']['label'] in {
+            'Clean Option', 'Watch Arm', 'Limited Rest', 'Unavailable', 'Limited Read',
+        }
+        assert body['recent_work_status'] == {'status': 'available'}
+        assert body['recent_work']['capability'] == 'public_recent_work'
+        assert body['recent_work']['pitcher']['id'] == pitcher_id
+
+    def test_pitcher_detail_passes_through_role_read_and_reuses_resolved_inputs(
+        self,
+        client,
+        monkeypatch,
+    ):
+        import api.bullpen as bullpen_api
+
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Current State Reliever',
+                team_id=141,
+                team_abbr='TOR',
+                mlb_id=14122,
+                innings=[1.0, 1.0, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            pitcher_id = pitcher.id
+
+        expected_role = {'role_key': 'setup', 'role': 'Setup Arm', 'confidence': 'high'}
+        expected_labels = {
+            'role': {'key': 'setup_arm', 'label': 'Setup Arm', 'source': 'backend:test'},
+            'read': {'key': 'watch_arm', 'label': 'Watch Arm', 'source': 'backend:test'},
+        }
+        expected_public_role = {
+            'kind': 'public_role_read',
+            'key': 'setup_arm',
+            'label': 'Setup Arm',
+            'headline': 'Setup Arm',
+            'confidence': 'high',
+            'reason': 'Observed setup usage.',
+            'evidence': [],
+            'limitations': [],
+            'source': 'backend:test',
+        }
+        captured = {}
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'author_role_read_labels',
+            lambda record, logs, reference_date: (
+                expected_role,
+                expected_labels,
+                expected_public_role,
+            ),
+        )
+
+        def fake_recent_work(requested_id, *, pitcher=None, freshness=None):
+            captured.update({
+                'requested_id': requested_id,
+                'pitcher': pitcher,
+                'freshness': freshness,
+            })
+            return {'capability': 'public_recent_work', 'pitcher': {'id': requested_id}}
+
+        monkeypatch.setattr(bullpen_api, 'build_public_recent_work_payload', fake_recent_work)
+
+        body = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
+
+        assert body['role'] == expected_role
+        assert body['pitcher_labels'] == expected_labels
+        assert body['public_role_read'] == expected_public_role
+        assert captured['requested_id'] == pitcher_id
+        assert captured['pitcher'].id == pitcher_id
+        assert captured['freshness'] == body['freshness']
+
+    def test_pitcher_detail_keeps_core_current_state_when_recent_work_fails(
+        self,
+        client,
+        monkeypatch,
+    ):
+        import api.bullpen as bullpen_api
+
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Recent Work Failure Reliever',
+                team_id=145,
+                team_abbr='CWS',
+                mlb_id=14522,
+                innings=[1.0, 1.0],
+                days_ago=[1, 4],
+                roster_status=STATUS_ACTIVE,
+            )
+            pitcher_id = pitcher.id
+
+        def fail_recent_work(*args, **kwargs):
+            raise RuntimeError('optional recent work failure')
+
+        monkeypatch.setattr(bullpen_api, 'build_public_recent_work_payload', fail_recent_work)
+
+        response = client.get(f'/api/bullpen/fatigue/{pitcher_id}')
+        body = response.get_json()
+
+        assert response.status_code == 200
+        assert body['pitcher']['id'] == pitcher_id
+        assert body['pitcher_labels']['role']['label']
+        assert body['pitcher_labels']['read']['label']
+        assert body['current_fatigue'] is not None
+        assert body['recent_work'] is None
+        assert body['recent_work_status'] == {'status': 'unavailable'}
 
     def test_pitcher_detail_keeps_raw_zero_row_out_of_workload_summary(self, client):
         with client.application.app_context():

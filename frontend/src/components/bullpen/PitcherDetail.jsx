@@ -13,6 +13,8 @@ import AvailabilitySummary from './AvailabilitySummary'
 import { formatWorkloadCount } from './relieverFinderView'
 import RecentWorkPanel from './RecentWorkPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
+import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
 // Spring-training detector — covers both the MLB gameType code and the
 // "SIM"/"Simulated" opponent markers that sneak through on some feeds.
@@ -66,6 +68,9 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
     freshness,
     last_appearance: lastAppearance,
     last_workload_appearance: lastWorkloadAppearance,
+    pitcher_labels: pitcherLabels,
+    recent_work: recentWork,
+    recent_work_status: recentWorkStatus,
     recent_logs,
   } = data || {}
   const platformDate = platformDateFromFreshness(freshness)
@@ -75,14 +80,24 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
   const legacyAppearance = isWorkloadAppearance(lastAppearance) ? normalizeAppearance(lastAppearance) : null
   const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, platformDate)
-  const hasCurrentRead = Boolean(cf || availability)
+  const hasCurrentRead = Boolean(cf || availability || pitcherLabels)
   const workloadFacts = cf ? [
     { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
     { label: 'Pitches/7d', value: formatWorkloadCount(cf.pitches_last_7_days) },
-    { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
+    { label: 'Apps/7d',    value: formatWorkloadCount(cf.appearances_last_7) },
     { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
-    { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
+    { label: 'Apps/14d',   value: formatWorkloadCount(cf.appearances_last_14) },
   ] : []
+  const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
+  const teamBoardHref = teamReference ? buildTeamBoardHref(teamReference) : null
+  const currentStateFacts = [
+    { label: 'Current Role', value: pitcherLabels?.role?.label },
+    { label: 'Current Read', value: pitcherLabels?.read?.label },
+    { label: 'Last Used', value: mostRecentAppearanceLabel },
+    { label: 'Days Rest', value: cf?.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : null },
+    { label: 'Appearances / 7d', value: cf?.appearances_last_7 },
+    { label: 'Pitches / 7d', value: cf?.pitches_last_7_days },
+  ]
 
   return (
     <div className="card sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
@@ -90,7 +105,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
       <div className="card-header gap-3">
         <div className="min-w-0">
           <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
-          <div className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</div>
+          <h2 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h2>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
             <span>·</span>
@@ -104,6 +119,47 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
 
       {hasCurrentRead ? (
         <div className="min-w-0 p-4 space-y-5 sm:p-5">
+          <section
+            className="rounded border border-dirt bg-field/55 p-3 sm:p-4"
+            aria-labelledby="pitcher-current-state-title"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 id="pitcher-current-state-title" className="font-display text-base tracking-wider text-chalk100">
+                  Current Bullpen Situation
+                </h3>
+                <div className="mt-1 font-mono text-xs text-chalk400">
+                  {rosterStatus?.label || 'Roster status unavailable'}
+                </div>
+              </div>
+              {freshness?.data_through && (
+                <div className="font-mono text-[11px] text-chalk500">
+                  {DATA_THROUGH_LABEL} <span className="text-chalk300">{freshness.data_through}</span>
+                </div>
+              )}
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3">
+              {currentStateFacts.map(({ label, value }) => (
+                <div key={label} className="min-w-0 border-t border-dirt/70 pt-2">
+                  <dt className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{label}</dt>
+                  <dd className="mt-1 break-words font-mono text-sm font-semibold text-chalk200">
+                    {value ?? '—'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            {teamBoardHref && (
+              <a
+                href={teamBoardHref}
+                className="mt-3 inline-flex min-h-11 items-center rounded border border-dirt px-3 font-mono text-xs font-semibold text-chalk300 hover:border-amber/60 hover:text-amber focus-visible:ring-2 focus-visible:ring-amber/70"
+              >
+                Open {pitcher?.team_name || pitcher?.team_abbreviation} Team Board
+              </a>
+            )}
+          </section>
+
           {availability ? (
             <AvailabilitySummary
               availability={availability}
@@ -152,7 +208,11 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             </>
           )}
 
-          <RecentWorkPanel pitcherId={pitcherId} />
+          <RecentWorkPanel
+            pitcherId={pitcherId}
+            payload={recentWork}
+            error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
+          />
 
           {/* Recent logs — proper table */}
           {recent_logs?.length > 0 && (
@@ -190,7 +250,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
                             )}
                           </td>
                           <td className="text-right font-mono text-xs text-chalk200">{fmtIP(log.innings_pitched, log.innings_pitched_outs)}</td>
-                          <td className="text-right font-mono text-xs text-chalk200">{log.pitches_thrown ?? 0}</td>
+                          <td className="text-right font-mono text-xs text-chalk200">{formatWorkloadCount(log.pitches_thrown)}</td>
                         </tr>
                       )
                     })}
