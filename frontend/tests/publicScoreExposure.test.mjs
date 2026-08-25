@@ -209,10 +209,10 @@ test('pitcher detail renders workload facts and availability from the narrowed p
   )
 
   assert.ok(html.includes('Narrowed Contract Arm'))
-  assert.ok(html.includes('Recent Workload Snapshot'))
   // Counted workload facts still render: pitches and appearances over 7 days.
   assert.ok(html.includes('41'))
-  assert.ok(html.includes('Pitches/7d'))
+  assert.ok(html.includes('Pitches / 7d'))
+  assert.equal(html.includes('Recent Workload Snapshot'), false)
   // The 0-100 framing never appears.
   assert.equal(html.includes('0-100'), false)
   assert.equal(/\bWorkload Index\b/.test(html), false)
