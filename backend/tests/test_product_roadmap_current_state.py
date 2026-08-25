@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 5.6 (TODAY-05 closeout and Tonight scanability sequencing). What it guards:
+Re-pinned to Version 5.7 (TODAY-06/current Today phase closeout and Pitcher 2.0 entry). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -23,8 +23,8 @@ Re-pinned to Version 5.6 (TODAY-05 closeout and Tonight scanability sequencing).
     because its recorded run, tree, deployment, and routed-page evidence exist.
 
   * Order and package state are contracts. PRE-02B, PRE-02, and TODAY-01 through
-    TODAY-05 are complete; TODAY-06 is the bounded active objective; blocked, deferred, dated, and
-    backlogged work may not silently advance.
+    TODAY-06 are complete; PIT-01 is the bounded active objective; blocked,
+    deferred, dated, and backlogged work may not silently advance.
 
   * Team Board package status is explicit. A completed user-facing package may
     not become future work, and a partial package may not be called complete.
@@ -50,15 +50,16 @@ TODAY_SURFACE_PATH = (
 FRONTEND_API_PATH = REPO_ROOT / 'frontend' / 'src' / 'utils' / 'api.js'
 BULLPEN_API_PATH = REPO_ROOT / 'backend' / 'api' / 'bullpen.py'
 
-EXPECTED_VERSION = '5.6'
+EXPECTED_VERSION = '5.7'
 EXPECTED_EFFECTIVE_DATE = 'August 24, 2026'
-EXPECTED_MAIN = '6360a4b5096f6151a6fd84cb197791cae05e84f5'
+EXPECTED_MAIN = 'f545eb700408b18f5987b7fab0c868c4b6b65dd1'
 PRE_02B_COMMIT = '399692904e6abbf462b31dd9db92512e726bb045'
 TODAY_01_COMMIT = '77d77c56238844228bb07fcef9d173d3e1993e67'
 TODAY_02_COMMIT = '3adb502f724362bc3612f3bf2a799a1560938a53'
 TODAY_03_COMMIT = '08cf1c6a3267d3c7e5b93af4c2fa6a17dfe5e8d2'
 TODAY_04_COMMIT = '655be73cd52b012a8cce904d7b808af54d51fc3f'
 TODAY_05_COMMIT = '5b0668c4455161606a913b3300e1f9733f03b093'
+TODAY_06_COMMIT = '4f513395216984c1e7332ad071f063c2de04dd6e'
 
 # The gated generated-content publication commit and the scheduled run that
 # produced it. Version 3.9 asserted no such commit existed; that was true when
@@ -84,16 +85,16 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# Version 5.6's current execution sequence. State is part of the contract:
+# Version 5.7's current execution sequence. State is part of the contract:
 # blocked, deferred, dated, and backlogged work must not silently become active.
 APPROVED_EXECUTION = (
-    (1, 'ACTIVE', 'TODAY-06 — Tonight Slate Scanability'),
+    (1, 'ACTIVE', 'PIT-01 — Pitcher Current State'),
     (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
     (3, 'DEFERRED BY PRIOR DECISION', 'Portable Intelligence'),
     (4, 'DATE-BOUND OBLIGATION', 'React Router migration (#645)'),
     (5, 'BACKLOGGED', 'Runtime work reduction'),
     (6, 'BACKLOGGED', 'Additional Team Board depth'),
-    (7, 'NEXT-PHASE CANDIDATE', 'Pitcher 2.0'),
+    (7, 'CURRENT PHASE', 'Pitcher 2.0'),
 )
 
 TEAM_BOARD_PACKAGE_STATUSES = {
@@ -116,7 +117,7 @@ TEAM_BOARD_PACKAGE_STATUSES = {
 # Completed packages must not reappear as ordered future work.
 COMPLETED_PACKAGES = (
     'VOC-001', '#638', '#601', 'DEP-001', 'CI-003', '#598', 'PRE-02B',
-    'TODAY-01', 'TODAY-02', 'TODAY-03', 'TODAY-04', 'TODAY-05',
+    'TODAY-01', 'TODAY-02', 'TODAY-03', 'TODAY-04', 'TODAY-05', 'TODAY-06',
 )
 
 # The residual dependency acceptance is dated. If the date stops being visible,
@@ -236,15 +237,14 @@ def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
 
     assert EXPECTED_MAIN in text
     assert (
-        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #738; '
-        'includes TODAY-05 commit `5b0668c4` and Since Yesterday compaction '
-        'commit `d8611aea`. |'
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #739; '
+        'includes TODAY-06 commit `4f513395`. |'
         in text
     )
     assert (
-        '| Audit branch | `today/next-daily-package` | '
-        'TODAY-05 and presentation closeout followed by the separately committed '
-        'TODAY-06 implementation. |'
+        '| Audit branch | `pitcher/pitcher-2-entry` | '
+        'TODAY-06/current Today phase closeout followed by the separately committed '
+        'PIT-01 implementation. |'
         in text
     )
 
@@ -313,12 +313,12 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_today_06_is_the_single_active_objective():
-    """The reconciliation advances one bounded Tonight scanability package."""
+def test_pit_01_is_the_single_active_objective():
+    """The reconciliation advances one bounded Pitcher current-state package."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | TODAY-06 — Tonight Slate Scanability |' in text
-    assert 'The next bounded package is **TODAY-06 — Tonight Slate Scanability**.' in text
+    assert '| ACTIVE OBJECTIVE | PIT-01 — Pitcher Current State |' in text
+    assert 'The next bounded package is **PIT-01 — Pitcher Current State**.' in text
 
     # No superseded objective may still be declared.
     assert '| ACTIVE OBJECTIVE | Team Board read-path consolidation |' not in text
@@ -367,10 +367,11 @@ def test_the_new_objective_preserves_every_authority_boundary():
         assert preserved in body, preserved
 
     for boundary in (
-        'changes no ordering, ranking, prediction, backend semantics, snapshot',
-        'browser request',
-        'Named recently-used and back-to-back arm selection',
-        'late-inning role-arm context',
+        'never derives\n   role, read, roster state, rest status, availability, or workload class',
+        'adds no second eager recent-work request',
+        'no prediction, internal fatigue score',
+        'Appearance-ledger redesign',
+        'dynamic role movement',
     ):
         assert boundary in body, boundary
 
@@ -599,7 +600,7 @@ def test_d052_is_unchanged_in_meaning():
 
 
 def test_decision_ledger_is_contiguous_through_d057():
-    """TODAY-05 closeout and ordinary sequencing add no durable decision."""
+    """TODAY-06 closeout and ordinary sequencing add no durable decision."""
     text = _roadmap_text()
 
     ids = re.findall(r'^\| (D-\d{3}) \|', text, re.MULTILINE)
@@ -610,7 +611,7 @@ def test_decision_ledger_is_contiguous_through_d057():
     assert 'D-058' not in text
 
     assert 'Decision Ledger through D-057' in text
-    assert 'Version 5.6 adds no durable Decision Ledger ID.' in text
+    assert 'Version 5.7 adds no durable Decision Ledger ID.' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
@@ -677,26 +678,28 @@ def test_completion_log_records_the_closed_packages_with_evidence():
         'Every eligible Tonight game side carries exact short-start and bullpen-innings facts',
         'PR #738 / commit `d8611aea` / merge `6360a4b5`',
         'Initial 390px section height fell approximately 78.5%',
+        'PR #739 / commit `4f513395` / merge `f545eb70`',
+        'This closes the current governed Today/Tonight phase.',
     ):
         assert fragment in joined, fragment
 
 
-def test_revision_history_records_the_version_5_6_entry():
+def test_revision_history_records_the_version_5_7_entry():
     """The current edition records its audit basis, objective, and boundaries."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 5.6 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.7 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        '`origin/main` `6360a4b5`',
-        'Closed TODAY-05',
-        'Since Yesterday compaction',
-        'TODAY-06 Tonight Slate Scanability',
+        '`origin/main` `f545eb70`',
+        'Closed TODAY-06',
+        'Closed the current governed Today/Tonight phase',
+        'PIT-01 Pitcher Current State',
         'No durable decision was added or changed',
     ):
         assert claimed in entry, claimed
