@@ -52,10 +52,10 @@ function RecentWorkSummary({ workload, inningsLastSevenDays }) {
   if (!hasSummary) return null
 
   return (
-    <div className="rounded border border-dirt bg-field/45 p-3" aria-labelledby="recent-work-summary-title">
-      <h4 id="recent-work-summary-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
+    <div className="border-y border-dirt/70 py-3" aria-labelledby="recent-work-summary-title">
+      <h3 id="recent-work-summary-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
         Recent Work Summary
-      </h4>
+      </h3>
       <dl className="mt-2 grid grid-cols-3 gap-2">
         {facts.map(({ label, value }) => (
           <div key={label} className="min-w-0 border-t border-dirt/70 pt-2">
@@ -77,10 +77,10 @@ function RecentAppearanceLedger({ lines, absenceSentence }) {
   const appearances = asArray(lines)
 
   return (
-    <div className="rounded border border-dirt bg-field/45 p-3" aria-labelledby="recent-appearance-ledger-title">
-      <h4 id="recent-appearance-ledger-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
+    <div aria-labelledby="recent-appearance-ledger-title">
+      <h3 id="recent-appearance-ledger-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
         Recent Appearances
-      </h4>
+      </h3>
       {appearances.length === 0 ? (
         <p className="mt-2 font-mono text-sm leading-relaxed text-chalk400">
           {textValue(absenceSentence) || 'No recent appearances are represented.'}
@@ -157,10 +157,10 @@ export default function RecentWorkPanel({
   }
 
   return (
-    <section className="space-y-3" aria-labelledby="recent-work-title">
-      <h3 id="recent-work-title" className="font-display text-base tracking-wider text-chalk100">
+    <section className="space-y-4" aria-labelledby="recent-work-title">
+      <h2 id="recent-work-title" className="font-display text-base tracking-wider text-chalk100">
         Recent Work
-      </h3>
+      </h2>
       <RecentWorkSummary
         workload={data?.workload}
         inningsLastSevenDays={inningsLastSevenDays}

@@ -214,7 +214,7 @@ test('recent appearance rows stay factual and field-based', () => {
     assert.ok(htmlIncludes(html, text), text)
   }
 
-  assert.equal((html.match(/<h4[^>]*>Recent Appearances<\/h4>/g) || []).length, 1)
+  assert.equal((html.match(/<h3[^>]*>Recent Appearances<\/h3>/g) || []).length, 1)
   assert.equal((html.match(/dateTime="2026-07-03"/g) || []).length, 1)
   assert.equal((html.match(/dateTime="2026-07-01"/g) || []).length, 1)
   assert.ok(html.indexOf('2026-07-03') < html.indexOf('2026-07-01'))

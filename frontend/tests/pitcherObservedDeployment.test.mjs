@@ -199,6 +199,17 @@ test('deployment failure leaves PIT-01 through PIT-04 healthy', () => {
   ]) {
     assert.ok(html.includes(expected), expected)
   }
+  assert.equal((html.match(/<h1\b/g) || []).length, 1)
+  assert.equal((html.match(/<h2\b/g) || []).length, 5)
+  const sectionOrder = [
+    'Current Bullpen Situation',
+    'Availability',
+    'Recent Work',
+    'Workload Patterns',
+    'Observed Deployment',
+  ].map(label => html.indexOf(label))
+  assert.ok(sectionOrder.every(index => index >= 0))
+  assert.deepEqual([...sectionOrder].sort((a, b) => a - b), sectionOrder)
 })
 
 test('Observed Deployment adds no request or frontend baseball authority', async () => {
@@ -239,8 +250,7 @@ test('responsive source remains compact at mobile and desktop widths', async () 
   for (const className of [
     'min-w-0',
     'grid-cols-2',
-    'sm:grid-cols-3',
-    'lg:grid-cols-5',
+    'xl:grid-cols-3',
     'break-words',
   ]) {
     assert.ok(source.includes(className), className)

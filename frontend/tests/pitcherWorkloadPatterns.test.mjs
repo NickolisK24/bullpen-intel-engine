@@ -198,7 +198,7 @@ test('presentation stays responsive descriptive and bounded to governed facts', 
     'utf8',
   )
 
-  for (const className of ['min-w-0', 'grid-cols-2', 'sm:grid-cols-3', 'lg:grid-cols-4', 'break-words']) {
+  for (const className of ['min-w-0', 'grid-cols-2', 'xl:grid-cols-4', 'break-words']) {
     assert.ok(source.includes(className), className)
   }
   assert.equal(source.includes('overflow-x'), false)

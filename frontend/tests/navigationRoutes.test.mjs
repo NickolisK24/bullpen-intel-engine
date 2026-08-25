@@ -104,6 +104,37 @@ test('standalone Pitcher shell owns one request and never mounts Team Board depe
   assert.ok(route.includes('<Navigate to={destination} replace />'))
 })
 
+test('standalone Pitcher hierarchy keeps one dominant answer and responsive supporting context', () => {
+  const detail = readFileSync(new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url), 'utf8')
+  const availability = readFileSync(new URL('../src/components/bullpen/AvailabilitySummary.jsx', import.meta.url), 'utf8')
+  const recentWork = readFileSync(new URL('../src/components/bullpen/RecentWorkPanel.jsx', import.meta.url), 'utf8')
+  const patterns = readFileSync(new URL('../src/components/bullpen/WorkloadPatterns.jsx', import.meta.url), 'utf8')
+  const deployment = readFileSync(new URL('../src/components/bullpen/ObservedDeployment.jsx', import.meta.url), 'utf8')
+
+  assert.ok(detail.includes('border border-amber/30 bg-field/70'))
+  assert.ok(detail.includes('lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]'))
+  assert.ok(detail.includes('lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0'))
+  assert.ok(availability.includes('border-b border-dirt/70 pb-5'))
+  assert.ok(recentWork.includes('border-y border-dirt/70 py-3'))
+  assert.ok(patterns.includes('className="min-w-0 py-1"'))
+  assert.ok(deployment.includes('className="min-w-0 py-1"'))
+
+  const sectionMounts = [
+    '<AvailabilitySummary',
+    '<RecentWorkPanel',
+    '<WorkloadPatterns',
+    '<ObservedDeployment',
+  ].map(token => detail.indexOf(token))
+  assert.ok(sectionMounts.every(index => index >= 0))
+  assert.deepEqual([...sectionMounts].sort((a, b) => a - b), sectionMounts)
+
+  for (const source of [detail, availability, recentWork, patterns, deployment]) {
+    assert.equal(source.includes('overflow-x-auto'), false)
+    assert.equal(source.includes('h-screen'), false)
+    assert.equal(source.includes('fixed inset'), false)
+  }
+})
+
 test('app startup clears stale preferred team launch storage', () => {
   const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 

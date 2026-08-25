@@ -71,11 +71,11 @@ export default function AvailabilitySummary({
   const isCurrentData = summary.dataStateView.isCurrent === true
 
   return (
-    <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5" aria-labelledby="pitcher-availability-title">
+    <section className="border-b border-dirt/70 pb-5 sm:pb-6" aria-labelledby="pitcher-availability-title">
       <div className="min-w-0">
-        <h3 id="pitcher-availability-title" className="font-display text-base tracking-wider text-chalk100">
+        <h2 id="pitcher-availability-title" className="font-display text-base tracking-wider text-chalk100">
           Availability
-        </h3>
+        </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AvailabilityBadge availability={availability} ariaLabelPrefix="Final availability" />
         </div>
