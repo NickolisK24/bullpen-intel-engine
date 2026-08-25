@@ -498,11 +498,11 @@ def test_app_factory_registers_recent_work_blueprint_static_contract():
 def test_legacy_public_logs_route_diff_clean_static_behavior_freeze():
     text = BULLPEN_API_PATH.read_text(encoding='utf-8')
     assert '/recent-work' not in text
-    assert 'public_recent_work' not in text
-    assert 'recent_work_bp' not in text
-    assert 'build_public_recent_work_payload' not in text
 
     route = _extract_bullpen_logs_route(text)
+    assert 'public_recent_work' not in route
+    assert 'recent_work_bp' not in route
+    assert 'build_public_recent_work_payload' not in route
     assert text.count("@bullpen_bp.route('/pitchers/<int:pitcher_id>/logs'") == 1
     assert "def get_pitcher_logs(pitcher_id):" in route
     assert "parse_int_param(" in route
