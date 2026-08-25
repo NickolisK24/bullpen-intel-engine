@@ -401,6 +401,16 @@ SD01_UNIFIED_SEARCH_PATHS = (
     'backend/api/search.py',
 )
 
+# PI-01, August 25 2026. The existing Team State share entry may project its
+# already-published, integrity-verified artifact through the canonical public
+# citation contract. This exact route remains read-only and lazy; it does not
+# alter Team State, evidence selection, publication, or appearance-team
+# authority. The route's lifecycle and integrity behavior is pinned by the
+# focused Share Artifact endpoint and public-read tests.
+PI01_TEAM_STATE_CITATION_PATHS = (
+    'backend/api/share_cards.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
