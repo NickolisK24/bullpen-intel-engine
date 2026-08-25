@@ -266,15 +266,13 @@ test('the operating card keeps its team heading everywhere else', () => {
 
 // ── Compare section levels (AC-2) ──────────────────────────────────────────
 
-test('comparison keeps three reader-facing page sections and integrates state into headers', () => {
+test('comparison keeps a logical heading hierarchy and integrates state into the comparison header', () => {
   const html = renderToStaticMarkup(
     React.createElement(MemoryRouter, null,
       React.createElement(BullpenComparisonView, { payload: differingComparison }),
     ),
   )
-  for (const label of [
-    'Side-by-side Bullpen Read', 'Comparison', 'Full Team Boards',
-  ]) {
+  for (const label of ['Current Bullpen Comparison', 'Full Team Boards']) {
     assert.ok(
       new RegExp(`<h2[^>]*>${escapeRegExp(label)}</h2>`).test(html),
       `comparison section "${label}" is not a h2`,
@@ -284,7 +282,10 @@ test('comparison keeps three reader-facing page sections and integrates state in
   assert.equal(/<h2[^>]*>Freshness<\/h2>/.test(html), false)
   assert.ok(htmlIncludes(html, 'Aces'))
   assert.ok(htmlIncludes(html, 'Bears'))
-  // Nothing in the comparison body jumps to h3 ahead of those sections.
+  for (const label of ['Rest', 'Recent Workload — 7 Days', 'Rotation Transfer', 'Availability']) {
+    assert.ok(new RegExp(`<h3[^>]*>${escapeRegExp(label)}</h3>`).test(html), `${label} is not a domain h3`)
+  }
+  // Nothing in the comparison body jumps to h3 ahead of its contextual h2.
   const firstH2 = html.indexOf('<h2')
   const firstH3 = html.indexOf('<h3')
   assert.ok(firstH2 > -1)
