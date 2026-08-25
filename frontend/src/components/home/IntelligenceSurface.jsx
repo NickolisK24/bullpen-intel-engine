@@ -937,6 +937,9 @@ function resolveTonightSide(side, teams = []) {
     teamState: resolveTonightTeamState(side?.team_state),
     recentVolume: resolveTonightRecentVolume(side?.recent_bullpen_volume),
     rotationContext: resolveTonightRotationContext(side?.rotation_context),
+    cleanOptionsCount: context?.clean_options_count == null
+      ? null
+      : numberValue(context.clean_options_count),
     namedOptions: cleanTonightList(context?.clean_workload_option_names),
     optionality: backendTokenLabel(context?.optionality_band),
     concentration: backendTokenLabel(context?.concentration_band),
@@ -1453,25 +1456,107 @@ function TonightSlateSide({ side, designation }) {
   )
 }
 
-function TonightSlateGame({ game }) {
+function TonightSlateCompactSide({ side, designation }) {
+  return (
+    <span className="block min-w-0 px-3 py-2.5 text-left sm:px-4">
+      <span className="block font-mono text-[9px] uppercase tracking-widest text-chalk500">
+        {designation}
+      </span>
+      <span className="mt-1 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <span className="min-w-0 break-words font-semibold text-chalk100">
+          {side.teamName}
+        </span>
+        <span className="shrink-0 text-xs text-chalk300">
+          {side.teamState.available ? side.teamState.label : 'Team State unavailable'}
+        </span>
+      </span>
+      {side.cleanOptionsCount != null && (
+        <span className="mt-1 block text-xs text-chalk500">
+          {side.cleanOptionsCount} rested {side.cleanOptionsCount === 1 ? 'option' : 'options'}
+        </span>
+      )}
+    </span>
+  )
+}
+
+export function nextTonightExpandedGameKey(currentKey, requestedKey) {
+  return currentKey === requestedKey ? null : requestedKey
+}
+
+function TonightSlateGame({ game, expanded = false, onToggle = () => {} }) {
   const gameLabel = game.doubleheader && game.gameNumber
     ? `Game ${game.gameNumber}`
     : null
+  const detailId = `tonight-game-${game.key}-detail`
+  const matchup = `${game.away.teamName} at ${game.home.teamName}`
   return (
     <article className="min-w-0 overflow-hidden border border-dirt bg-dugout">
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-dirt bg-field/35 px-3 py-2 sm:px-4">
-        <h3 className="font-display text-lg tracking-wide text-chalk100">
-          {game.away.teamName} at {game.home.teamName}
-        </h3>
-        <p className="font-mono text-[10px] uppercase tracking-wider text-chalk400">
-          {[gameLabel, game.gameTime, game.status].filter(Boolean).join(' · ')}
-        </p>
-      </header>
-      <div className="grid min-w-0 grid-cols-1 divide-y divide-dirt sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-        <TonightSlateSide side={game.away} designation="Away bullpen" />
-        <TonightSlateSide side={game.home} designation="Home bullpen" />
-      </div>
+      <button
+        type="button"
+        className="block min-h-11 w-full min-w-0 bg-field/35 text-left transition-colors hover:bg-field/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/60"
+        aria-expanded={expanded}
+        aria-controls={detailId}
+        aria-label={`${expanded ? 'Hide' : 'Show'} bullpen context for ${matchup}`}
+        onClick={() => onToggle(game.key)}
+      >
+        <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-dirt px-3 py-2 sm:px-4">
+          <span className="font-display text-lg tracking-wide text-chalk100">
+            {matchup}
+          </span>
+          <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-chalk400">
+            <span>{[gameLabel, game.gameTime, game.status].filter(Boolean).join(' · ')}</span>
+            <span className="text-amber" aria-hidden="true">{expanded ? '−' : '+'}</span>
+            <span className="sr-only">{expanded ? 'Hide details' : 'Show details'}</span>
+          </span>
+        </span>
+        <span className="grid min-w-0 grid-cols-1 divide-y divide-dirt sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <TonightSlateCompactSide side={game.away} designation="Away bullpen" />
+          <TonightSlateCompactSide side={game.home} designation="Home bullpen" />
+        </span>
+      </button>
+      {expanded && (
+        <div
+          id={detailId}
+          className="grid min-w-0 grid-cols-1 divide-y divide-dirt border-t border-dirt sm:grid-cols-2 sm:divide-x sm:divide-y-0"
+        >
+          <TonightSlateSide side={game.away} designation="Away bullpen detail" />
+          <TonightSlateSide side={game.home} designation="Home bullpen detail" />
+        </div>
+      )}
     </article>
+  )
+}
+
+export function TonightSlateLedgerView({ games, expandedKey = null, onToggle = () => {} }) {
+  return (
+    <div className="space-y-2">
+      {games.map(game => (
+        <TonightSlateGame
+          key={game.key}
+          game={game}
+          expanded={expandedKey === game.key}
+          onToggle={onToggle}
+        />
+      ))}
+    </div>
+  )
+}
+
+function TonightSlateLedger({ games }) {
+  const [expandedKey, setExpandedKey] = useState(null)
+  const gameIdentity = games.map(game => game.key).join('|')
+  useEffect(() => {
+    setExpandedKey(null)
+  }, [gameIdentity])
+  const handleToggle = requestedKey => {
+    setExpandedKey(currentKey => nextTonightExpandedGameKey(currentKey, requestedKey))
+  }
+  return (
+    <TonightSlateLedgerView
+      games={games}
+      expandedKey={expandedKey}
+      onToggle={handleToggle}
+    />
   )
 }
 
@@ -2168,11 +2253,7 @@ function TonightSection({
           slateDate={slateDate}
           freshness={rowFreshness}
         />
-        <div className="space-y-3">
-          {games.map(game => (
-            <TonightSlateGame key={game.key} game={game} />
-          ))}
-        </div>
+        <TonightSlateLedger games={games} />
         {sectionLimitations.length > 0 && (
           <Disclosure label="Limits on tonight's read" className="mt-3">
             <ul className="mt-2 space-y-1">
