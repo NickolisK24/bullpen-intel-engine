@@ -5,7 +5,8 @@ import Footer from './components/layout/Footer'
 import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
-import Bullpen from './components/bullpen/Bullpen'
+import BullpenRoute from './components/bullpen/BullpenRoute'
+import PitcherPage from './components/bullpen/PitcherPage'
 import About from './components/about/About'
 import HowToRead from './components/guide/HowToRead'
 import Methodology from './components/methodology/Methodology'
@@ -26,7 +27,8 @@ export const APP_ROUTES = [
   { path: '/', Component: Home },
   { path: '/today', redirectTo: '/' },
   { path: '/dashboard', Component: Dashboard },
-  { path: '/bullpen', Component: Bullpen },
+  { path: '/bullpen', Component: BullpenRoute },
+  { path: '/pitcher/:id', Component: PitcherPage },
   { path: '/stories', Component: Stories },
   { path: '/about', Component: About },
   { path: '/how-to-read', Component: HowToRead },

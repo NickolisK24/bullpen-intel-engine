@@ -275,15 +275,16 @@ test('Last P is conditional and absent rather than a permanently withheld column
   assert.equal(html.includes('active-arm-row--with-last-p'), false)
 })
 
-test('pitcher-detail close restores focus to the originating whole row', async () => {
+test('pitcher selection uses normal history navigation to the standalone destination', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
     'utf8',
   )
 
-  assert.ok(source.includes('boardPitcherOriginRef.current = origin || null'))
-  assert.ok(source.includes('restoreBoardPitcherFocusRef.current = true'))
-  assert.ok(source.includes('if (origin?.isConnected) origin.focus({ preventScroll: true })'))
+  assert.ok(source.includes('navigate(buildPitcherHref(pitcherId'))
+  assert.equal(source.includes('boardPitcherOriginRef'), false)
+  assert.equal(source.includes('restoreBoardPitcherFocusRef'), false)
+  assert.equal(source.includes('fixed inset-0'), false)
 })
 
 test('production reuses one v2 request and retires only the grouped Team Board roster UI', async () => {

@@ -153,6 +153,34 @@ def test_valid_board_evidence_context(evidence_target, team_ref, pitcher_id):
     assert normalized['evidence_target'] == evidence_target
 
 
+def test_standalone_pitcher_route_preserves_bounded_measurement_context():
+    normalized = normalize_page_view(payload(
+        route='/pitcher/:id',
+        surface='pitcher_detail',
+        pitcher_id='123',
+        evidence_target='pitcher_detail',
+    ))
+    assert normalized['route'] == '/pitcher/:id'
+    assert normalized['surface'] == 'pitcher_detail'
+    assert normalized['pitcher_id'] == 123
+    assert normalized['team_ref'] is None
+    assert normalized['view_mode'] is None
+
+    assert normalize_page_view(payload(
+        route='/pitcher/:id',
+        surface='pitcher_detail',
+        pitcher_id='bad',
+        evidence_target='pitcher_detail',
+    )) is None
+    assert normalize_page_view(payload(
+        route='/pitcher/:id',
+        surface='pitcher_detail',
+        pitcher_id='123',
+        evidence_target='pitcher_detail',
+        team_ref='BOS',
+    )) is None
+
+
 def test_comparison_visible_order_is_preserved_and_same_team_is_narrowed():
     reverse = normalize_page_view(payload(
         route='/bullpen', surface='compare_bullpens', view_mode='compare',

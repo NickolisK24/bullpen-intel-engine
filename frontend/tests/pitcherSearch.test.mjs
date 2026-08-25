@@ -103,7 +103,7 @@ test('Pitcher Search stays out of the Team Board primary path', async () => {
   assert.equal(bullpenSource.includes('<PitcherSearch'), false)
   assert.ok(bullpenSource.includes('id="reliever-finder-search"'))
   assert.ok(bullpenSource.includes('navigate(buildPitcherHref(pitcherId'))
-  assert.ok(bullpenSource.includes('<PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />'))
+  assert.equal(bullpenSource.includes('<PitcherDetail'), false)
   assert.ok(apiSource.includes('export const searchPitchers'))
   assert.ok(apiSource.includes('/pitchers/search'))
 })

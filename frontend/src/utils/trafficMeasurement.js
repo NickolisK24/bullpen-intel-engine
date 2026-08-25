@@ -107,6 +107,15 @@ export function canonicalPage(pathname, search = '', hash = '') {
   if (STATIC_ROUTES[path]) {
     return { route: path, surface: STATIC_ROUTES[path] }
   }
+  const pitcherRoute = path.match(/^\/pitcher\/([1-9]\d*)$/)
+  if (pitcherRoute) {
+    return {
+      route: '/pitcher/:id',
+      surface: 'pitcher_detail',
+      pitcher_id: Number(pitcherRoute[1]),
+      evidence_target: 'pitcher_detail',
+    }
+  }
   if (path !== '/bullpen') return null
 
   const params = new URLSearchParams(search)

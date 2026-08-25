@@ -115,6 +115,8 @@ test('current-state answer passes through canonical role read roster workload an
 
   assert.equal(html.includes('fatigue_score'), false)
   assert.equal(html.includes('likely tonight'), false)
+  assert.match(html, /<h1[^>]*>Test Pitcher<\/h1>/)
+  assert.equal(html.includes('Close selected pitcher detail'), false)
 })
 
 test('missing workload counts and composed ledger pitch facts stay missing rather than becoming zero', () => {
@@ -162,4 +164,7 @@ test('Pitcher detail uses one eager owner request and the composed recent-work p
   assert.equal(source.includes('getPitcherRecentWork'), false)
   assert.ok(source.includes('payload={recentWork}'))
   assert.ok(source.includes("recentWorkStatus?.status === 'unavailable'"))
+  assert.equal(source.includes('max-h-[calc(100vh-3rem)]'), false)
+  assert.equal(source.includes('overflow-y-auto'), false)
+  assert.equal(source.includes('sticky top-6'), false)
 })

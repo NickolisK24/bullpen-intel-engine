@@ -97,6 +97,16 @@ test('canonical route mapping excludes private, admin, and wildcard routes', () 
   assert.equal(canonicalPage('/anything'), null)
 })
 
+test('standalone Pitcher route records bounded canonical identity without raw path cardinality', () => {
+  assert.deepEqual(canonicalPage('/pitcher/123456'), {
+    route: '/pitcher/:id',
+    surface: 'pitcher_detail',
+    pitcher_id: 123456,
+    evidence_target: 'pitcher_detail',
+  })
+  assert.equal(canonicalPage('/pitcher/not-a-pitcher'), null)
+})
+
 test('bullpen mapping retains only route-compatible allowlisted context and never raw query', () => {
   const page = canonicalPage('/bullpen', '?view=compare&team_a=nyy&team_b=bos&team=sea&pitcher=42&secret=token')
   assert.deepEqual(page, {

@@ -27,12 +27,18 @@ PUBLIC_ROUTE_SURFACES = {
     '/signin': 'sign_in',
     '/auth/verify': 'auth_verify',
 }
+PITCHER_ROUTE = '/pitcher/:id'
+PITCHER_SURFACE = 'pitcher_detail'
 BULLPEN_SURFACES = {
     'board': 'bullpen_board',
     'compare': 'compare_bullpens',
     'pitchers': 'all_pitchers',
 }
-SURFACE_ALLOWLIST = frozenset((*PUBLIC_ROUTE_SURFACES.values(), *BULLPEN_SURFACES.values()))
+SURFACE_ALLOWLIST = frozenset((
+    *PUBLIC_ROUTE_SURFACES.values(),
+    *BULLPEN_SURFACES.values(),
+    PITCHER_SURFACE,
+))
 
 PAYLOAD_KEYS = frozenset({
     'view_id',
@@ -134,7 +140,7 @@ def normalize_route(value):
         return None
     if route != '/':
         route = route.rstrip('/')
-    if route == '/bullpen' or route in PUBLIC_ROUTE_SURFACES:
+    if route in {'/bullpen', PITCHER_ROUTE} or route in PUBLIC_ROUTE_SURFACES:
         return route
     return None
 
@@ -316,6 +322,22 @@ def normalize_page_view(payload, *, user_agent=''):
             normalized_team_a = None
             normalized_team_b = None
             normalized_pitcher = None
+    elif route == PITCHER_ROUTE:
+        normalized_pitcher = normalize_pitcher_id(pitcher_id)
+        if normalized_pitcher is None:
+            return None
+        if any(value not in (None, '') for value in (
+            view_mode, team_ref, team_a_ref, team_b_ref, payload.get('entry_source'),
+        )):
+            return None
+        if evidence_target != 'pitcher_detail':
+            return None
+        surface = PITCHER_SURFACE
+        view_mode = None
+        normalized_team = None
+        normalized_team_a = None
+        normalized_team_b = None
+        entry_source = None
     else:
         surface = PUBLIC_ROUTE_SURFACES[route]
         if any(value not in (None, '') for value in (
