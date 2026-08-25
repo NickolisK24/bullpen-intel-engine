@@ -1,7 +1,6 @@
 import { useFetch } from '../../hooks/useFetch'
 import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
-import { LoadingPane, ErrorState, Divider } from '../UI'
-import { fmtIP, fmtDate } from '../../utils/formatters'
+import { LoadingPane, ErrorState } from '../UI'
 import {
   isWorkloadAppearance,
   latestWorkloadAppearanceFromLogs,
@@ -10,18 +9,10 @@ import {
   workloadAppearanceDetailLabel,
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
-import { formatWorkloadCount } from './relieverFinderView'
 import RecentWorkPanel from './RecentWorkPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
-
-// Spring-training detector — covers both the MLB gameType code and the
-// "SIM"/"Simulated" opponent markers that sneak through on some feeds.
-const isSpringTraining = (log) =>
-  log?.game_type === 'S' ||
-  log?.opponent_abbreviation === 'SIM' ||
-  log?.opponent === 'Simulated'
 
 function ClosePitcherDetailButton({ onClose }) {
   return (
@@ -81,13 +72,6 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
   const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, platformDate)
   const hasCurrentRead = Boolean(cf || availability || pitcherLabels)
-  const workloadFacts = cf ? [
-    { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
-    { label: 'Pitches/7d', value: formatWorkloadCount(cf.pitches_last_7_days) },
-    { label: 'Apps/7d',    value: formatWorkloadCount(cf.appearances_last_7) },
-    { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
-    { label: 'Apps/14d',   value: formatWorkloadCount(cf.appearances_last_14) },
-  ] : []
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
   const teamBoardHref = teamReference ? buildTeamBoardHref(teamReference) : null
   const currentStateFacts = [
@@ -177,13 +161,6 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             </section>
           )}
 
-          {mostRecentAppearanceLabel && (
-            <div className="rounded border border-dirt bg-field/50 p-3">
-              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Most Recent Workload Appearance</div>
-              <div className="mt-1 font-mono text-sm font-semibold text-chalk200">{mostRecentAppearanceLabel}</div>
-            </div>
-          )}
-
           <ExplanationDisclosure
             buttonLabel="Why this availability?"
             contextLabel="Availability explanation"
@@ -191,74 +168,12 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             fetchExplanation={() => getAvailabilityExplanation(pitcherId)}
           />
 
-          {workloadFacts.length > 0 && (
-            <>
-              <Divider label="Recent Workload Snapshot" />
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {workloadFacts.map(({ label, value }) => (
-                  <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
-                    <div className="font-mono font-semibold text-chalk200">{value}</div>
-                    <div className="text-chalk600 text-[10px] font-mono mt-0.5">{label}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="rounded border border-dirt bg-field/40 px-3 py-2 text-xs font-mono leading-relaxed text-chalk400">
-                Workload units describe recent usage only; they do not describe injury status or future performance.
-              </div>
-            </>
-          )}
-
           <RecentWorkPanel
             pitcherId={pitcherId}
             payload={recentWork}
+            inningsLastSevenDays={cf?.innings_last_7_days}
             error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
           />
-
-          {/* Recent logs — proper table */}
-          {recent_logs?.length > 0 && (
-            <>
-              <Divider label="Recent Appearances" />
-              <div className="overflow-x-auto -mx-1">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Opponent</th>
-                      <th className="text-right">IP</th>
-                      <th className="text-right">P</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recent_logs.slice(0, 8).map(log => {
-                      const st = isSpringTraining(log)
-                      return (
-                        <tr key={log.id}>
-                          <td className="text-chalk200 font-mono text-xs whitespace-nowrap">{fmtDate(log.game_date)}</td>
-                          <td className="font-mono text-xs">
-                            {st ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <span
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono tracking-wider"
-                                  style={{ backgroundColor: 'rgba(245,166,35,0.12)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)' }}
-                                >
-                                  ST
-                                </span>
-                                <span className="text-chalk400">vs {log.opponent_abbreviation ?? log.opponent ?? 'SIM'}</span>
-                              </span>
-                            ) : (
-                              <span className="text-chalk400">vs {log.opponent_abbreviation ?? log.opponent ?? '---'}</span>
-                            )}
-                          </td>
-                          <td className="text-right font-mono text-xs text-chalk200">{fmtIP(log.innings_pitched, log.innings_pitched_outs)}</td>
-                          <td className="text-right font-mono text-xs text-chalk200">{formatWorkloadCount(log.pitches_thrown)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
         </div>
       ) : (
         <div className="p-8 text-center text-chalk400 font-mono text-sm">

@@ -22,15 +22,13 @@ const { PitcherDetailContent } = await server.ssrLoadModule(
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-// Read the value rendered inside one Recent Workload Snapshot tile. Each tile
-// emits its value div immediately before its label div, so scoping the match by
-// label keeps the assertion off every other tile — a legitimate zero elsewhere
-// can never satisfy or mask a Pitches/7d assertion.
-function workloadTileValue(html, label) {
+// Read one PIT-01 current-state fact without allowing a legitimate zero from a
+// different fact to satisfy the missing-not-zero contract.
+function currentStateFactValue(html, label) {
   const match = html.match(
-    new RegExp(`>([^<>]*)</div><div[^>]*>${escapeRegExp(label)}</div>`),
+    new RegExp(`<dt[^>]*>${escapeRegExp(label)}</dt><dd[^>]*>([^<>]*)</dd>`),
   )
-  return match ? match[1] : null
+  return match ? match[1].trim() : null
 }
 
 function detailData(pitchesLastSevenDays) {
@@ -76,25 +74,25 @@ function renderData(data) {
 const renderDetail = (pitchesLastSevenDays) => renderData(detailData(pitchesLastSevenDays))
 
 test('unknown seven-day pitch workload renders as unavailable, not a fabricated zero', () => {
-  const value = workloadTileValue(renderDetail(null), 'Pitches/7d')
+  const value = currentStateFactValue(renderDetail(null), 'Pitches / 7d')
 
   assert.equal(value, '—')
   assert.notEqual(value, '0')
 })
 
 test('undefined seven-day pitch workload renders as unavailable, not a fabricated zero', () => {
-  const value = workloadTileValue(renderDetail(undefined), 'Pitches/7d')
+  const value = currentStateFactValue(renderDetail(undefined), 'Pitches / 7d')
 
   assert.equal(value, '—')
   assert.notEqual(value, '0')
 })
 
 test('a legitimate zero seven-day pitch workload still renders zero', () => {
-  assert.equal(workloadTileValue(renderDetail(0), 'Pitches/7d'), '0')
+  assert.equal(currentStateFactValue(renderDetail(0), 'Pitches / 7d'), '0')
 })
 
 test('a counted seven-day pitch workload renders unchanged', () => {
-  assert.equal(workloadTileValue(renderDetail(41), 'Pitches/7d'), '41')
+  assert.equal(currentStateFactValue(renderDetail(41), 'Pitches / 7d'), '41')
 })
 
 test('current-state answer passes through canonical role read roster workload and team handoff', () => {
@@ -119,23 +117,27 @@ test('current-state answer passes through canonical role read roster workload an
   assert.equal(html.includes('likely tonight'), false)
 })
 
-test('missing workload counts and raw pitch facts stay missing rather than becoming zero', () => {
+test('missing workload counts and composed ledger pitch facts stay missing rather than becoming zero', () => {
   const data = detailData(null)
   data.current_fatigue.appearances_last_7 = null
   data.current_fatigue.appearances_last_14 = undefined
-  data.recent_logs = [{
-    id: 1,
-    game_date: '2026-08-15',
-    opponent_abbreviation: 'BOS',
-    innings_pitched: 1,
-    innings_pitched_outs: 3,
-    pitches_thrown: null,
-  }]
+  data.recent_work = {
+    capability: 'public_recent_work',
+    recent_appearances: [{
+      id: 1,
+      game_date: '2026-08-15',
+      opponent_abbreviation: 'BOS',
+      innings_pitched: 1,
+      innings_pitched_outs: 3,
+      pitches_thrown: null,
+    }],
+    workload: { window_14: { appearances: null, pitches_total: null } },
+  }
   const html = renderData(data)
 
-  assert.equal(workloadTileValue(html, 'Apps/7d'), '—')
-  assert.equal(workloadTileValue(html, 'Apps/14d'), '—')
-  assert.ok(html.includes('<td class="text-right font-mono text-xs text-chalk200">—</td>'))
+  assert.equal(currentStateFactValue(html, 'Appearances / 7d'), '—')
+  assert.ok(html.includes('Appearances / 14d'))
+  assert.equal(html.includes('0 P'), false)
 })
 
 test('recent-work failure is local to its panel and keeps the current-state answer', () => {

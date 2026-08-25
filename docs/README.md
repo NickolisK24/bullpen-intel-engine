@@ -23,7 +23,7 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 24, 2026, with audited `origin/main` at `f545eb70`:
+As of August 25, 2026, with audited `origin/main` at `8036a27b`:
 
 - **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
 - **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
@@ -36,7 +36,8 @@ As of August 24, 2026, with audited `origin/main` at `f545eb70`:
 - **TODAY-04 Recent Bullpen Volume is complete.** Every eligible Tonight side carries the exact frozen seven-day bullpen workload carrier through one shared trusted-snapshot resolution, with nullable pitch evidence, local failures, no raw-log query or Team Board rebuild, and no browser-request growth.
 - **The current governed Today/Tonight phase is complete.** TODAY-01 through TODAY-06 provide the dated backend-authored lead, compact Since Yesterday ledger, every-game bullpen context, and compact one-at-a-time Tonight detail with no aggregate request fan-out or frontend baseball meaning.
 - **Since Yesterday remains compact by default.** Every detailed team and its canonical explanation remain reachable through one-at-a-time expansion; backend What Changed semantics and the request graph are unchanged.
-- **PIT-01 Pitcher Current State is the single active objective.** It is bounded to one backend-authored current-state answer using canonical identity, roster, public role, Arm Read, latest-appearance, workload, freshness, and team-handoff owners, plus consolidation of the existing eager recent-work read.
+- **PIT-01 Pitcher Current State is complete.** One eager Pitcher owner response now carries the backend-authored identity, roster, public role, Arm Read, latest-workload, freshness, Team Board handoff, and composed recent-work facts; missing evidence stays missing and optional recent-work failure stays local.
+- **PIT-02 Recent Work & Appearance Consolidation is the single active objective.** It is bounded to one concise summary and one newest-first ledger from the already-composed canonical recent-work owner, retiring duplicate presentation without changing availability, semantics, or requests.
 - **Scheduled intraday repair is retired for the remainder of 2026.** The capability remains dormant/manual-only; daily plus postgame are the active scheduled cadence. Postgame now qualifies exact-date canonical roster authority before replacement public-snapshot publication.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
 - **Authoritative manual daily execution is prohibited under D-051.** The production full-daily runner is schedule-only and first-attempt-only; manual dispatch and reruns are refused before application startup.

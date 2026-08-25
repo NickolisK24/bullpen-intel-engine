@@ -95,6 +95,18 @@ const recentWorkPayload = {
       loss: true,
       save_situation: true,
     },
+    {
+      game_date: '2026-07-01',
+      opponent: 'New York Yankees',
+      opponent_abbreviation: 'NYY',
+      innings_pitched: 1,
+      innings_pitched_outs: 3,
+      pitches_thrown: null,
+      strikeouts: 1,
+      walks: 0,
+      hits_allowed: 0,
+      runs_allowed: 0,
+    },
   ],
   workload: {
     window_7: {
@@ -150,22 +162,22 @@ test('fetches the public pitcher recent-work route without privileged headers', 
   assert.equal(headerKeys(calls[0].options.headers).includes('x-admin-token'), false)
 })
 
-test('renders endpoint-authored sentences verbatim', () => {
-  const html = renderPanel({ payload: recentWorkPayload })
+test('renders one compact summary with canonical deeper-window facts', () => {
+  const html = renderPanel({ payload: recentWorkPayload, inningsLastSevenDays: 5 / 3 })
 
-  for (const sentence of [
-    recentWorkPayload.roster_status.sentence,
-    recentWorkPayload.freshness.label,
-    recentWorkPayload.last_appearance.sentence,
-    recentWorkPayload.last_appearance.timing_sentence,
-    ...recentWorkPayload.last_appearance.fact_sentences,
-    recentWorkPayload.workload.window_7.sentence,
-    recentWorkPayload.workload.window_7.pitches_sentence,
-    recentWorkPayload.workload.window_14.sentence,
+  for (const fact of [
+    'Recent Work Summary',
+    'IP / 7d',
+    '1.2',
+    'Appearances / 14d',
+    'Pitches / 14d',
     recentWorkPayload.workload.window_14.pitches_sentence,
   ]) {
-    assert.ok(htmlIncludes(html, sentence), sentence)
+    assert.ok(htmlIncludes(html, fact), fact)
   }
+  assert.equal(htmlIncludes(html, recentWorkPayload.workload.window_7.sentence), false)
+  assert.equal(htmlIncludes(html, recentWorkPayload.roster_status.sentence), false)
+  assert.equal(htmlIncludes(html, recentWorkPayload.last_appearance.sentence), false)
 })
 
 test('renders absence sentences verbatim when supplied', () => {
@@ -201,6 +213,12 @@ test('recent appearance rows stay factual and field-based', () => {
   ]) {
     assert.ok(htmlIncludes(html, text), text)
   }
+
+  assert.equal((html.match(/<h4[^>]*>Recent Appearances<\/h4>/g) || []).length, 1)
+  assert.equal((html.match(/dateTime="2026-07-03"/g) || []).length, 1)
+  assert.equal((html.match(/dateTime="2026-07-01"/g) || []).length, 1)
+  assert.ok(html.indexOf('2026-07-03') < html.indexOf('2026-07-01'))
+  assert.equal(html.includes('0 P'), false)
 })
 
 test('renders safe loading and error states', () => {
@@ -284,7 +302,20 @@ test('source guard blocks internal endpoint and private field references from th
   }
 })
 
-test('PitcherDetail mounts the panel additively before the raw logs table', async () => {
+test('recent-work ledger stacks on mobile and aligns densely without horizontal overflow', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/RecentWorkPanel.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.ok(source.includes('min-w-0'))
+  assert.ok(source.includes('flex-wrap'))
+  assert.ok(source.includes('sm:grid-cols-[minmax(9rem,1fr)_minmax(0,2fr)]'))
+  assert.equal(source.includes('overflow-x-auto'), false)
+  assert.equal(source.includes('<table'), false)
+})
+
+test('PitcherDetail mounts one composed recent-work section without duplicate presentations', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url),
     'utf8',
@@ -292,18 +323,18 @@ test('PitcherDetail mounts the panel additively before the raw logs table', asyn
   const summaryIndex = source.indexOf('<AvailabilitySummary')
   const explanationIndex = source.indexOf('<ExplanationDisclosure')
   const mountIndex = source.indexOf('<RecentWorkPanel')
-  const logsIndex = source.indexOf('{recent_logs?.length > 0')
 
   assert.notEqual(summaryIndex, -1)
   assert.notEqual(explanationIndex, -1)
   assert.notEqual(mountIndex, -1)
-  assert.notEqual(logsIndex, -1)
   assert.ok(summaryIndex < mountIndex)
   assert.ok(explanationIndex < mountIndex)
-  assert.ok(mountIndex < logsIndex)
+  assert.equal((source.match(/<RecentWorkPanel/g) || []).length, 1)
   assert.ok(source.includes('payload={recentWork}'))
-  assert.ok(source.includes('Most Recent Workload Appearance'))
-  assert.ok(source.includes('recent_logs.slice(0, 8).map(log =>'))
+  assert.ok(source.includes('inningsLastSevenDays={cf?.innings_last_7_days}'))
+  assert.equal(source.includes('Most Recent Workload Appearance'), false)
+  assert.equal(source.includes('Recent Workload Snapshot'), false)
+  assert.equal(source.includes('recent_logs.slice(0, 8).map(log =>'), false)
 })
 
 test('legacy availability/fatigue copy still renders with existing fixtures', () => {
