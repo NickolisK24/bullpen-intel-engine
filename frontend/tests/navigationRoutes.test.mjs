@@ -5,6 +5,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
+import { differingComparison } from './fixtures/bullpenComparisonFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -20,6 +21,7 @@ after(async () => {
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const { legacyPitcherDestination } = await server.ssrLoadModule('/src/components/bullpen/BullpenRoute.jsx')
+const { MatchupPageView } = await server.ssrLoadModule('/src/components/bullpen/MatchupPage.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -78,6 +80,75 @@ test('/today redirects to the Today surface and catch-all routes home', () => {
 
 test('Pitcher Detail has a first-class standalone route', () => {
   assert.equal(routeByPath('/pitcher/:id')?.Component?.name, 'PitcherPage')
+})
+
+test('scheduled Matchup has a first-class standalone route', () => {
+  assert.equal(routeByPath('/matchup/:gameId')?.Component?.name, 'MatchupPage')
+})
+
+test('standalone Matchup renders game identity around the shared comparison', () => {
+  const payload = {
+    capability: 'scheduled_game_matchup_v1',
+    status: 'available',
+    game: {
+      game_pk: 900001,
+      reference_date: '2026-08-25',
+      game_time_utc: '2026-08-25T23:10:00Z',
+      status: { detailed: 'Scheduled', normalized: 'upcoming' },
+      doubleheader_flag: 'Y',
+      game_number: 2,
+      away: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' },
+      home: { team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA' },
+    },
+    comparison: differingComparison.comparison,
+  }
+  const html = render(React.createElement(MatchupPageView, { payload }))
+
+  assert.ok(htmlIncludes(html, '<h1'))
+  assert.ok(htmlIncludes(html, 'Aces at Bears'))
+  assert.ok(htmlIncludes(html, 'Game 2 · 7:10 PM ET · Scheduled'))
+  assert.ok(htmlIncludes(html, 'Away · Aces'))
+  assert.ok(htmlIncludes(html, 'Home · Bears'))
+  assert.ok(htmlIncludes(html, 'Rested Options'))
+  assert.ok(htmlIncludes(html, 'Open the Aces board'))
+  assert.ok(htmlIncludes(html, 'Open the Bears board'))
+})
+
+test('standalone Matchup keeps game identity when comparison is unavailable', () => {
+  const payload = {
+    status: 'partial',
+    game: {
+      game_pk: 900001,
+      reference_date: '2026-08-25',
+      away: { team_name: 'Aces' },
+      home: { team_name: 'Bears' },
+    },
+    comparison: null,
+  }
+  const html = render(React.createElement(MatchupPageView, { payload }))
+  assert.ok(htmlIncludes(html, 'Aces at Bears'))
+  assert.ok(htmlIncludes(html, 'Bullpen comparison unavailable'))
+})
+
+test('standalone Matchup owns one eager request with no Team Board fan-out', () => {
+  const page = readFileSync(new URL('../src/components/bullpen/MatchupPage.jsx', import.meta.url), 'utf8')
+  const api = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
+  assert.equal((page.match(/getScheduledGameMatchup\(gameId\)/g) || []).length, 1)
+  assert.ok(page.includes('<BullpenComparisonView'))
+  assert.ok(api.includes('request(`/bullpen/matchups/${encodeURIComponent(gameId)}`)'))
+  assert.equal(page.includes('overflow-x-auto'), false)
+  assert.equal(page.includes('min-w-['), false)
+  assert.equal(page.includes('<Navigate'), false)
+  for (const forbidden of ['getTeams', 'getTeamBoardV2', 'getTonightIntelligence', 'getTeamBullpenComparison']) {
+    assert.equal(page.includes(forbidden), false, forbidden)
+  }
+})
+
+test('standalone Matchup keeps loading and game-not-found states local', () => {
+  const loading = render(React.createElement(MatchupPageView, { loading: true }))
+  const missing = render(React.createElement(MatchupPageView, { error: 'Scheduled game not found' }))
+  assert.ok(htmlIncludes(loading, 'Loading scheduled game matchup'))
+  assert.ok(htmlIncludes(missing, 'Scheduled game not found'))
 })
 
 test('legacy Pitcher query URLs canonicalize without loops or unsafe return targets', () => {

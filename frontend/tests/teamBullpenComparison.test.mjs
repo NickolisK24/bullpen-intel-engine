@@ -22,6 +22,21 @@ test('renders the aligned current-state domains for both teams', () => {
   }
 })
 
+test('shared presentation accepts neutral away and home entry labels', () => {
+  const html = renderToStaticMarkup(React.createElement(
+    MemoryRouter,
+    null,
+    React.createElement(BullpenComparisonView, {
+      payload: differingComparison,
+      sideLabels: { teamA: 'Away · Aces', teamB: 'Home · Bears' },
+      showShare: false,
+    }),
+  ))
+  assert.ok(includes(html, 'Away · Aces'))
+  assert.ok(includes(html, 'Home · Bears'))
+  assert.equal(includes(html, 'Share'), false)
+})
+
 test('uses backend-authored public unavailable without frontend summation', () => {
   const v = view.getComparisonView(differingComparison)
   const availability = v.domains.find(domain => domain.key === 'availability')

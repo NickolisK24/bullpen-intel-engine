@@ -1568,6 +1568,7 @@ test('Tonight slate keeps every game compact by default from the one owner respo
   assert.equal(games[0].home.teamState.label, null)
   assert.equal(games[0].away.href, '/bullpen?view=board&team=CHC&source=today')
   assert.equal(games[0].home.href, '/bullpen?view=board&team=MIL&source=today')
+  assert.equal(games[0].matchupHref, '/matchup/900001')
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -1587,6 +1588,8 @@ test('Tonight slate keeps every game compact by default from the one owner respo
   assert.ok(htmlIncludes(html, 'Fresh'))
   assert.ok(htmlIncludes(html, 'Team State unavailable'))
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+  assert.ok(htmlIncludes(html, 'href="/matchup/900001"'))
+  assert.ok(htmlIncludes(html, 'Compare bullpens'))
   assert.equal(htmlIncludes(html, 'Porter Hodge · Daniel Palencia'), false)
   assert.equal(htmlIncludes(html, 'Recent bullpen workload'), false)
   assert.equal(htmlIncludes(html, 'Rotation transfer'), false)
@@ -1711,6 +1714,7 @@ test('Tonight slate source keeps a one-column mobile stack and bounded desktop c
   assert.ok(source.includes("const gameIdentity = games.map(game => game.key).join('|')"))
   assert.ok(source.includes('min-w-0 overflow-hidden border border-dirt bg-dugout'))
   assert.equal(source.match(/useFetch\(getTonightIntelligence\)/g)?.length, 1)
+  assert.equal(source.includes('getScheduledGameMatchup'), false)
   assert.equal(source.includes('getTeamBoardV2'), false)
   assert.equal(source.includes('getTeamBullpen'), false)
   assert.equal(source.includes('public_state ==='), false)

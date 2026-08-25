@@ -7,6 +7,7 @@ import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import BullpenRoute from './components/bullpen/BullpenRoute'
 import PitcherPage from './components/bullpen/PitcherPage'
+import MatchupPage from './components/bullpen/MatchupPage'
 import About from './components/about/About'
 import HowToRead from './components/guide/HowToRead'
 import Methodology from './components/methodology/Methodology'
@@ -29,6 +30,7 @@ export const APP_ROUTES = [
   { path: '/dashboard', Component: Dashboard },
   { path: '/bullpen', Component: BullpenRoute },
   { path: '/pitcher/:id', Component: PitcherPage },
+  { path: '/matchup/:gameId', Component: MatchupPage },
   { path: '/stories', Component: Stories },
   { path: '/about', Component: About },
   { path: '/how-to-read', Component: HowToRead },

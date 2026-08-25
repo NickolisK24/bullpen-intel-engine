@@ -31,6 +31,7 @@ def test_retired_routes_are_absent_and_preserved_routes_remain(monkeypatch):
     assert '/api/me/primary-team' in rules
     assert '/api/system/email-delivery-health' in rules
     assert '/api/bullpen/dashboard' in rules
+    assert '/api/bullpen/matchups/<int:game_pk>' in rules
     assert '/api/system/pipeline-health' in rules
     assert '/api/system/internal/pitcher-evidence' in rules
     assert '/api/traffic/page-view' in rules

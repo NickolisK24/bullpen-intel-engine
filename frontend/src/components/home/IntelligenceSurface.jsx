@@ -9,7 +9,7 @@ import {
   getTonightIntelligence,
   signupAudience,
 } from '../../utils/api'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { buildMatchupHref, buildTeamBoardHref } from '../../utils/evidenceLinks'
 import {
   Disclosure,
   FreshnessBadge,
@@ -969,6 +969,7 @@ export function getTonightGames(response, teams = []) {
         || textValue(game?.status?.abstract),
       gameNumber: numberValue(game?.game_number),
       doubleheader: Boolean(doubleheaderFlag && doubleheaderFlag !== 'N'),
+      matchupHref: buildMatchupHref(gamePk),
       away,
       home,
     }
@@ -1514,6 +1515,17 @@ function TonightSlateGame({ game, expanded = false, onToggle = () => {} }) {
           <TonightSlateCompactSide side={game.home} designation="Home bullpen" />
         </span>
       </button>
+      {game.matchupHref && (
+        <div className="flex justify-end border-t border-dirt px-3 py-2 sm:px-4">
+          <Link
+            to={game.matchupHref}
+            className="inline-flex min-h-11 items-center rounded border border-dirt bg-field/45 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+            aria-label={`Compare bullpens for ${matchup}`}
+          >
+            Compare bullpens
+          </Link>
+        </div>
+      )}
       {expanded && (
         <div
           id={detailId}

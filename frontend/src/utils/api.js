@@ -477,6 +477,9 @@ export const getTeamBullpenComparison = (teamA, teamB, params = {}) => {
   const q = new URLSearchParams({ team_a: teamA, team_b: teamB, ...params }).toString()
   return request(`/bullpen/teams/compare?${q}`)
 }
+export const getScheduledGameMatchup = gameId => (
+  request(`/bullpen/matchups/${encodeURIComponent(gameId)}`)
+)
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // League-wide bullpen landing summary: availability snapshot, Team Context
 // health, and usage-role composition. Context only (no ranking/selection).

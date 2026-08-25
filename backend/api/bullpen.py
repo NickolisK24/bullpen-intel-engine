@@ -2186,6 +2186,13 @@ def compare_team_bullpens():
     })
 
 
+@bullpen_bp.route('/matchups/<int:game_pk>', methods=['GET'])
+def get_scheduled_game_matchup(game_pk):
+    """Scheduled game identity plus the shared current bullpen comparison."""
+    from services.trusted_compare_authority import trusted_game_matchup_view
+    return trusted_game_matchup_view(game_pk)
+
+
 # ─── Narrative Memory diagnostic (read-only) ─────────────────────────────────
 
 def _diagnostic_error(message, status_code=400, reason_code='invalid_request'):
