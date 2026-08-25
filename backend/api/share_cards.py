@@ -23,7 +23,7 @@ contract — those remain deferred.
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from services.share_artifact_integrity import ShareArtifactIntegrityError
 
@@ -59,3 +59,32 @@ def get_team_state_share_card(team_id):
         # SC-03A shape. The active Team Board renderer uses ``artifact`` only.
         'card': card,
     }), 200
+
+
+@share_cards_bp.route('/since-yesterday/<int:team_id>', methods=['GET'])
+def get_since_yesterday_share_artifact(team_id):
+    """Read one exact, immutable published bullpen-change citation."""
+    from services.share_artifact_public import RESULT_OK, project_public_share_artifact
+    from services.share_artifact_repository import (
+        get_published_since_yesterday_change_artifact,
+    )
+
+    current_date = request.args.get('current_date')
+    prior_date = request.args.get('prior_date')
+    try:
+        artifact = get_published_since_yesterday_change_artifact(
+            team_id,
+            current_date=current_date,
+            prior_date=prior_date,
+        )
+        result = project_public_share_artifact(artifact)
+    except (TypeError, ValueError):
+        return jsonify({'available': False, 'reason': 'comparison_dates_invalid'}), 200
+    except Exception:
+        return jsonify({'available': False, 'reason': 'unavailable'}), 503
+
+    if artifact is None:
+        return jsonify({'available': False, 'reason': 'no_published_artifact'}), 200
+    if result.status != RESULT_OK:
+        return jsonify({'available': False, 'reason': result.status}), 503
+    return jsonify({'available': True, 'artifact': result.view}), 200

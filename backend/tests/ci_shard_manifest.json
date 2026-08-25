@@ -345,7 +345,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 504.13,
+      "measured_seconds": 504.14,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -578,6 +578,10 @@
         {
           "path": "tests/test_share_artifact_domain.py",
           "measured_seconds": 23.684
+        },
+        {
+          "path": "tests/test_since_yesterday_share_artifact.py",
+          "measured_seconds": 0.01
         },
         {
           "path": "tests/test_slate_coverage.py",

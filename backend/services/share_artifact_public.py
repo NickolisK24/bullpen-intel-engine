@@ -248,6 +248,9 @@ def _legacy_trust_line(confidence) -> str:
 
 
 def _public_view(artifact, session) -> dict:
+    if artifact.artifact_type == 'since_yesterday_change':
+        return _public_since_yesterday_view(artifact, session)
+
     document = _mapping(artifact.payload)
     team = _mapping(document.get('team'))
     authority = _mapping(document.get('authority'))
@@ -345,6 +348,76 @@ def _public_view(artifact, session) -> dict:
     if card is not None:
         view['card'] = card
 
+    if artifact.lifecycle_state == LIFECYCLE_SUPERSEDED:
+        view['superseded'] = _replacement_pointer(artifact, session)
+    return view
+
+
+def _public_since_yesterday_view(artifact, session) -> dict:
+    """Whitelist one frozen Since Yesterday change without recomputing it."""
+    document = _mapping(artifact.payload)
+    team = _mapping(document.get('team'))
+    authority = _mapping(document.get('authority'))
+    change = _mapping(document.get('change'))
+    public_copy = _mapping(document.get('public_copy'))
+    evidence = []
+    for row in artifact.evidence or ():
+        snapshot = _mapping(row.snapshot)
+        evidence.append({
+            'label': snapshot.get('label'),
+            'yesterday': snapshot.get('yesterday'),
+            'today': snapshot.get('today'),
+        })
+    view = {
+        'public_id': artifact.public_id,
+        'artifact_type': artifact.artifact_type,
+        'schema_version': artifact.schema_version,
+        'render_version': artifact.render_version,
+        'payload_version': document.get('payload_version'),
+        'lifecycle_state': artifact.lifecycle_state,
+        'is_historical': True,
+        'generated_at': _iso(artifact.created_at),
+        'published_at': _iso(artifact.published_at),
+        'product_date': _iso(artifact.product_date),
+        'team': {
+            'team_id': team.get('team_id'),
+            'team_name': team.get('team_name'),
+            'team_abbreviation': team.get('team_abbreviation'),
+        },
+        'authority': {
+            'current_data_through': authority.get('current_data_through'),
+            'previous_data_through': authority.get('previous_data_through'),
+            'change_capability': authority.get('change_capability'),
+        },
+        'change': {
+            key: change.get(key)
+            for key in (
+                'movement_lane', 'movement_label', 'primary_delta',
+                'public_headline', 'public_summary', 'public_context',
+                'yesterday_rested_count', 'today_rested_count', 'workload_added',
+            )
+        },
+        'freshness': {
+            'previous_data_through': authority.get('previous_data_through'),
+            'current_data_through': authority.get('current_data_through'),
+            'published_at': _iso(artifact.published_at),
+        },
+        'evidence': evidence,
+        'limitations': [str(item) for item in (document.get('limitations') or ())],
+        'copy': {
+            'headline': public_copy.get('headline'),
+            'summary': public_copy.get('summary'),
+            'why': public_copy.get('why'),
+            'description': public_copy.get('description'),
+            'alt_text': public_copy.get('alt_text'),
+        },
+        'routes': {
+            'share_url': share_route(artifact.public_id),
+            'team_url': _team_route(team.get('team_abbreviation')),
+            'methodology_url': METHODOLOGY_ROUTE,
+            'data_trust_url': DATA_TRUST_ROUTE,
+        },
+    }
     if artifact.lifecycle_state == LIFECYCLE_SUPERSEDED:
         view['superseded'] = _replacement_pointer(artifact, session)
     return view

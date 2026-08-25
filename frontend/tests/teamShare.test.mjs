@@ -241,7 +241,7 @@ test('stories use the bounded link-only menu without fetching card data', () => 
 
 test('Team card fail-closed state withholds every published-citation action', () => {
   const menu = readFileSync('src/components/share/EvidenceShareMenu.jsx', 'utf8')
-  assert.ok(menu.includes('disabled={busy || (!linkOnly && !cardAvailable)}'))
+  assert.ok(menu.includes("disabled={busy || (typeof loadCardModel === 'function' && !cardAvailable) || (!linkOnly && !cardAvailable)}"))
   assert.ok(menu.includes('Copy published link'))
   assert.equal(menu.includes("disabled={busy}\n            onClick={() => run('copy')}"), false)
 })

@@ -472,6 +472,9 @@ export const getTeamStory = (teamId, params = {}) => {
 export const getTeamShareCard = (teamId, params = {}) => {
   return request(`/share-cards/team-state/${encodeURIComponent(teamId)}${buildQuery(params)}`)
 }
+export const getSinceYesterdayShareArtifact = (teamId, params = {}) => (
+  request(`/share-cards/since-yesterday/${encodeURIComponent(teamId)}${buildQuery(params)}`)
+)
 // What Changed Since Last Game — followed-team change summary.
 // Descriptive only (no ranking/selection/recommendation).
 export const getTeamChanges = (teamId) => request(`/bullpen/teams/${teamId}/changes`)

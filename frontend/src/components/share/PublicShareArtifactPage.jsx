@@ -57,7 +57,9 @@ function useDocumentMetadata(state, artifact, publicId) {
     if (typeof document === 'undefined') return
     const indexable = state === SHARE_STATE.OK || state === SHARE_STATE.SUPERSEDED
     const team = artifact?.team?.team_name
-    const label = artifact?.team_state?.public_label
+    const label = artifact?.artifact_type === 'since_yesterday_change'
+      ? 'Since Yesterday'
+      : artifact?.team_state?.public_label
     const title =
       indexable && team
         ? `${team} bullpen — ${label || 'Team State'} (${artifact?.product_date || ''}) · ${SITE}`
@@ -199,7 +201,7 @@ function HistoricalContextBar({ dataThrough, publishedAt, scope }) {
 export function ArtifactView({ artifact, superseded }) {
   if (!artifact) return <ApiErrorState publicId={null} />
   const freshness = artifact.freshness || {}
-  const dataThrough = freshness.data_through || artifact.product_date
+  const dataThrough = freshness.data_through || freshness.current_data_through || artifact.product_date
   const scope = artifact.publication_scope || null
   // A team-state-1.2.0 artifact carries a backend-owned card block. When present we
   // render the code-rendered card FIRST, then the historical/immutable explanation
@@ -231,10 +233,70 @@ export function ArtifactView({ artifact, superseded }) {
         </aside>
       ) : null}
 
-      {card ? <TeamStateArtifactCard card={card} /> : <LegacyArtifactBody artifact={artifact} />}
+      {artifact.artifact_type === 'since_yesterday_change'
+        ? <SinceYesterdayArtifactBody artifact={artifact} />
+        : card ? <TeamStateArtifactCard card={card} /> : <LegacyArtifactBody artifact={artifact} />}
 
       <ArtifactDestinations routes={artifact.routes || {}} team={artifact.team || {}} />
     </article>
+  )
+}
+
+function SinceYesterdayArtifactBody({ artifact }) {
+  const team = artifact.team || {}
+  const change = artifact.change || {}
+  const copy = artifact.copy || {}
+  const freshness = artifact.freshness || {}
+  const evidence = Array.isArray(artifact.evidence) ? artifact.evidence : []
+  const delta = change.primary_delta || {}
+  return (
+    <>
+      <section className="card border border-amber/30 p-5 sm:p-6" aria-labelledby="portable-change-title">
+        <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">
+          {team.team_name || 'Bullpen'} · Published change
+        </p>
+        <h1 id="portable-change-title" className="mt-2 font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">
+          {copy.headline || 'Since Yesterday'}
+        </h1>
+        {copy.summary ? <p className="mt-3 text-base leading-relaxed text-chalk200">{copy.summary}</p> : null}
+        {delta.label && delta.previous != null && delta.current != null ? (
+          <div className="mt-4 border-t border-dirt pt-4">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{delta.label}</p>
+            <p className="mt-1 font-display text-3xl tracking-wide text-chalk100">
+              {delta.previous}<span className="mx-2 text-chalk500" aria-hidden="true">→</span><span className="text-amber">{delta.current}</span>
+            </p>
+          </div>
+        ) : null}
+        {copy.why ? <p className="mt-4 text-sm leading-relaxed text-chalk300"><span className="font-semibold text-chalk200">Why it matters: </span>{copy.why}</p> : null}
+      </section>
+
+      <section className="card p-5 sm:p-6" aria-labelledby="portable-change-evidence">
+        <h2 id="portable-change-evidence" className="section-title text-xl">Evidence behind the change</h2>
+        {evidence.length ? (
+          <dl className="mt-3 space-y-3">
+            {evidence.map((item, index) => (
+              <div key={`${item.label || 'evidence'}-${index}`} className="border-t border-dirt pt-3 first:border-t-0 first:pt-0">
+                <dt className="text-sm text-chalk300">{item.label || 'Bullpen evidence'}</dt>
+                <dd className="mt-1 font-mono text-sm text-chalk100">
+                  <span className="sr-only">Previous </span>{item.yesterday ?? '—'}
+                  <span className="mx-2 text-chalk500" aria-hidden="true">→</span>
+                  <span className="text-amber"><span className="sr-only">Current </span>{item.today ?? '—'}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : <p className="mt-3 text-sm text-chalk400">No supporting evidence was recorded on this artifact.</p>}
+      </section>
+
+      <section className="card p-5 sm:p-6" aria-labelledby="portable-change-dates">
+        <h2 id="portable-change-dates" className="section-title text-xl">Compared views</h2>
+        <p className="mt-3 text-sm text-chalk300">
+          <time dateTime={freshness.previous_data_through}>{fmtDate(freshness.previous_data_through) || 'Previous view'}</time>
+          <span className="mx-2 text-chalk500" aria-hidden="true">→</span>
+          <time dateTime={freshness.current_data_through}>{fmtDate(freshness.current_data_through) || 'Current view'}</time>
+        </p>
+      </section>
+    </>
   )
 }
 

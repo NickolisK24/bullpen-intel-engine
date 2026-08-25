@@ -76,7 +76,9 @@ export default function EvidenceShareMenu({
     setCardLoadError(false)
     setBusy(true)
     try {
-      setLoadedCardModel(await loadCardModel())
+      const loaded = await loadCardModel()
+      if (loaded) setLoadedCardModel(loaded)
+      else setCardLoadError(true)
     } catch {
       setCardLoadError(true)
     } finally {
@@ -136,8 +138,8 @@ export default function EvidenceShareMenu({
           <button
             type="button"
             role="menuitem"
-            disabled={busy || (!linkOnly && !cardAvailable)}
-            title={!linkOnly && !cardAvailable ? CARD_UNAVAILABLE : undefined}
+            disabled={busy || (typeof loadCardModel === 'function' && !cardAvailable) || (!linkOnly && !cardAvailable)}
+            title={!cardAvailable && typeof loadCardModel === 'function' ? CARD_UNAVAILABLE : undefined}
             onClick={() => run('share')}
             className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
@@ -146,8 +148,8 @@ export default function EvidenceShareMenu({
           <button
             type="button"
             role="menuitem"
-            disabled={busy || (!linkOnly && !cardAvailable)}
-            title={!linkOnly && !cardAvailable ? CARD_UNAVAILABLE : undefined}
+            disabled={busy || (typeof loadCardModel === 'function' && !cardAvailable) || (!linkOnly && !cardAvailable)}
+            title={!cardAvailable && typeof loadCardModel === 'function' ? CARD_UNAVAILABLE : undefined}
             onClick={() => run('copy')}
             className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
@@ -165,9 +167,11 @@ export default function EvidenceShareMenu({
               {isTeamBoard ? 'Download image' : 'Download card'}
             </button>
           )}
-          {!linkOnly && !cardAvailable && (
+          {!cardAvailable && typeof loadCardModel === 'function' && (
             <p className="px-3 py-2 text-xs leading-relaxed text-chalk500">
-              {cardLoadError ? 'Card could not be loaded right now.' : CARD_UNAVAILABLE}
+              {cardLoadError
+                ? (linkOnly ? 'Published link could not be loaded right now.' : 'Card could not be loaded right now.')
+                : (linkOnly ? 'Loading published link…' : CARD_UNAVAILABLE)}
             </p>
           )}
         </div>

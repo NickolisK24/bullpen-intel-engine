@@ -150,6 +150,58 @@ def get_team_state_artifact_for_version(
     return _verify_or_fail(artifact, verify)
 
 
+def get_published_since_yesterday_change_artifact(
+    team_id: int,
+    *,
+    current_date,
+    prior_date,
+    verify: bool = True,
+    session=None,
+) -> Optional[ShareArtifact]:
+    """Return the active citation for one exact adjacent comparison pair.
+
+    The lookup never substitutes another product date or comparison pair. A
+    corrected publication supersedes its predecessor, so the newest remaining
+    published row is the canonical active citation.
+    """
+    try:
+        current_date = (
+            current_date if isinstance(current_date, date)
+            else date.fromisoformat(str(current_date))
+        )
+        prior_date = (
+            prior_date if isinstance(prior_date, date)
+            else date.fromisoformat(str(prior_date))
+        )
+    except (TypeError, ValueError):
+        raise ValueError('comparison_dates_invalid')
+
+    session = session or db.session
+    candidates = (
+        session.query(ShareArtifact)
+        .filter(
+            ShareArtifact.artifact_type == 'since_yesterday_change',
+            ShareArtifact.team_id == team_id,
+            ShareArtifact.product_date == current_date,
+            ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED,
+        )
+        .order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
+        .all()
+    )
+    for artifact in candidates:
+        authority = (
+            artifact.payload.get('authority', {})
+            if isinstance(artifact.payload, dict)
+            else {}
+        )
+        if (
+            authority.get('current_data_through') == current_date.isoformat()
+            and authority.get('previous_data_through') == prior_date.isoformat()
+        ):
+            return _verify_or_fail(artifact, verify)
+    return None
+
+
 def list_recent_team_state_artifacts(
     *,
     team_id: Optional[int] = None,

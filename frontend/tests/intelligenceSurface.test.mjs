@@ -1110,7 +1110,9 @@ test('Since Yesterday expands only the selected team and preserves its existing 
   assert.ok(htmlIncludes(expandedHtml, 'aria-expanded="true"'))
   assert.ok(htmlIncludes(expandedHtml, 'aria-label="Expand details for San Francisco Giants"'))
   assert.equal(countOccurrences(expandedHtml, 'aria-expanded="true"'), 1)
-  assert.equal(countOccurrences(expandedHtml, 'aria-expanded="false"'), 1)
+  // One collapsed team row plus the closed citation share menu.
+  assert.equal(countOccurrences(expandedHtml, 'aria-expanded="false"'), 2)
+  assert.ok(htmlIncludes(expandedHtml, 'Open evidence sharing options'))
   assert.ok(htmlIncludes(expandedHtml, 'New York has more usable late-inning margin than yesterday.'))
   assert.ok(htmlIncludes(expandedHtml, 'That creates more ways through a close game tonight.'))
   assert.ok(htmlIncludes(expandedHtml, 'Worked yesterday'))
