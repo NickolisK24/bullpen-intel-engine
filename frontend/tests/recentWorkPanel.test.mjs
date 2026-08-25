@@ -291,7 +291,7 @@ test('PitcherDetail mounts the panel additively before the raw logs table', asyn
   )
   const summaryIndex = source.indexOf('<AvailabilitySummary')
   const explanationIndex = source.indexOf('<ExplanationDisclosure')
-  const mountIndex = source.indexOf('<RecentWorkPanel pitcherId={pitcherId} />')
+  const mountIndex = source.indexOf('<RecentWorkPanel')
   const logsIndex = source.indexOf('{recent_logs?.length > 0')
 
   assert.notEqual(summaryIndex, -1)
@@ -301,6 +301,7 @@ test('PitcherDetail mounts the panel additively before the raw logs table', asyn
   assert.ok(summaryIndex < mountIndex)
   assert.ok(explanationIndex < mountIndex)
   assert.ok(mountIndex < logsIndex)
+  assert.ok(source.includes('payload={recentWork}'))
   assert.ok(source.includes('Most Recent Workload Appearance'))
   assert.ok(source.includes('recent_logs.slice(0, 8).map(log =>'))
 })

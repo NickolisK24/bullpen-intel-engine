@@ -1339,6 +1339,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
             + freeze_policy.GAP32_WORKLOAD_WINDOW_PATHS
             + freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
             + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
+            + freeze_policy.PIT01_PITCHER_CURRENT_STATE_PATHS
         ),
     )
     assert moved == [], (
