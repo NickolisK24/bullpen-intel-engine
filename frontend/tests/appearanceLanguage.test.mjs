@@ -2,19 +2,20 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  appearanceDisplayDate,
   appearanceDetailLabel,
   appearancePitchReason,
   compactAppearanceLabel,
   compactWorkloadAppearanceLabel,
-  currentUserBaseballDay,
   dayAwareAppearanceReason,
   latestWorkloadAppearanceFromLogs,
   platformDateFromFreshness,
+  productCurrentDateFromFreshness,
   relativeAppearanceLabel,
   workloadAppearanceDetailLabel,
 } from '../src/utils/appearanceLanguage.js'
 
-test('appearance date equal to current platform date renders today', () => {
+test('appearance date equal to current product date renders today', () => {
   const appearance = { game_date: '2026-06-20', pitches: 15 }
   const platformDate = '2026-06-20'
 
@@ -24,7 +25,7 @@ test('appearance date equal to current platform date renders today', () => {
   assert.equal(appearanceDetailLabel(appearance, platformDate), 'Jun 20 (Today) • 15 pitches')
 })
 
-test('appearance date one calendar day before platform date renders yesterday', () => {
+test('appearance date one calendar day before product date renders yesterday', () => {
   const appearance = { game_date: '2026-06-19', pitches: 21 }
   const platformDate = '2026-06-20'
 
@@ -44,23 +45,35 @@ test('older appearance dates use days-ago reasons and date fallback displays', (
   assert.equal(appearanceDetailLabel(appearance, platformDate), 'Jun 14 • 12 pitches')
 })
 
-test('same-day evening resync uses data-through date instead of next availability date', () => {
+test('represented data-through and product-relative labels use separate date authorities', () => {
   const freshness = {
-    data_through: '2026-06-20',
-    latest_workload_date: '2026-06-20',
-    last_successful_sync: '2026-06-21T03:03:00Z',
-    availability_reference_date: '2026-06-21',
+    data_through: '2026-08-24',
+    latest_workload_date: '2026-08-24',
+    availability_reference_date: '2026-08-25',
+    product_current_date: '2026-08-25',
   }
-  const platformDate = platformDateFromFreshness(freshness)
+  const representedDate = platformDateFromFreshness(freshness)
+  const productDate = productCurrentDateFromFreshness(freshness)
   const rewritten = dayAwareAppearanceReason(
     '15 pitches yesterday',
-    { game_date: '2026-06-20', pitches: 15 },
-    platformDate,
+    { game_date: '2026-08-24', pitches: 15 },
+    productDate,
   )
 
-  assert.equal(platformDate, '2026-06-20')
-  assert.equal(rewritten, '15 pitches today')
-  assert.notEqual(rewritten, '15 pitches yesterday')
+  assert.equal(representedDate, '2026-08-24')
+  assert.equal(productDate, '2026-08-25')
+  assert.equal(rewritten, '15 pitches yesterday')
+  assert.equal(
+    workloadAppearanceDetailLabel({ game_date: '2026-08-24', pitches: 15 }, productDate),
+    'Aug 24 (Yesterday) • 15 pitches',
+  )
+})
+
+test('August 25 product date labels only August 25 and August 24 relatively', () => {
+  const productDate = '2026-08-25'
+  assert.equal(appearanceDisplayDate('2026-08-25', productDate), 'Aug 25 (Today)')
+  assert.equal(appearanceDisplayDate('2026-08-24', productDate), 'Aug 24 (Yesterday)')
+  assert.equal(appearanceDisplayDate('2026-08-23', productDate), 'Aug 23')
 })
 
 test('workload labels use compact workload language for valid appearances', () => {
@@ -106,20 +119,24 @@ test('latest workload appearance skips newer zero-pitch raw rows', () => {
   })
 })
 
-test('currentUserBaseballDay returns the user local calendar day and is injectable', () => {
-  // Deterministic with an injected Date — this is the anchor for "Today" / "Yesterday".
-  assert.equal(currentUserBaseballDay(new Date(2026, 5, 26, 6, 0, 0)), '2026-06-26')
-  assert.equal(currentUserBaseballDay(new Date(2026, 0, 3, 23, 59, 0)), '2026-01-03')
+test('product current date is accepted only from the backend freshness carrier', () => {
+  assert.equal(
+    productCurrentDateFromFreshness({ product_current_date: '2026-08-25' }),
+    '2026-08-25',
+  )
+  assert.equal(productCurrentDateFromFreshness({ data_through: '2026-08-24' }), null)
+  assert.equal(productCurrentDateFromFreshness({ product_current_date: 'not-a-date' }), null)
+  assert.equal(productCurrentDateFromFreshness(null), null)
+})
 
-  // It is the user's real day, NOT the platform data-through date. On June 26, a June 25
-  // workload is one day before today, so it reads "yesterday" against this anchor.
-  const userDay = currentUserBaseballDay(new Date(2026, 5, 26))
-  assert.equal(userDay, '2026-06-26')
-  assert.equal(relativeAppearanceLabel('2026-06-25', userDay), 'yesterday')
-  assert.equal(relativeAppearanceLabel('2026-06-26', userDay), 'today')
+test('relative labels cross month and year boundaries by calendar day', () => {
+  assert.equal(appearanceDetailLabel({ game_date: '2026-08-31', pitches: 12 }, '2026-09-01'), 'Aug 31 (Yesterday) • 12 pitches')
+  assert.equal(appearanceDetailLabel({ game_date: '2026-12-31', pitches: 13 }, '2027-01-01'), 'Dec 31 (Yesterday) • 13 pitches')
+})
 
-  // No argument → uses the real current day (a valid YYYY-MM-DD string).
-  assert.match(currentUserBaseballDay(), /^\d{4}-\d{2}-\d{2}$/)
-  // An invalid date is handled safely.
-  assert.equal(currentUserBaseballDay(new Date('not-a-date')), null)
+test('missing product date fails closed to absolute appearance wording', () => {
+  const appearance = { game_date: '2026-08-24', pitches: 15 }
+  assert.equal(appearanceDetailLabel(appearance, null), 'Aug 24 • 15 pitches')
+  assert.equal(dayAwareAppearanceReason('15 pitches yesterday', appearance, null), '15 pitches on Aug 24')
+  assert.equal(relativeAppearanceLabel('2026-08-24', null), null)
 })

@@ -306,8 +306,8 @@ function factValue(value, unit, singularUnit = unit) {
   return `${value} ${value === 1 ? singularUnit : unit}`
 }
 
-function PitcherCard({ card, freshness, onViewDetails, now }) {
-  const view = getBoardCardView(card, freshness, now)
+function PitcherCard({ card, freshness, onViewDetails }) {
+  const view = getBoardCardView(card, freshness)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
     <div className="rounded-lg border border-dirt bg-field/60 p-3">
@@ -379,7 +379,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
   )
 }
 
-function BoardGroup({ group, freshness, onViewDetails, now }) {
+function BoardGroup({ group, freshness, onViewDetails }) {
   return (
     <section className="card overflow-hidden" aria-label={`${group.label} group`}>
       <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
@@ -399,7 +399,7 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {group.pitchers.map(card => (
-              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} now={now} />
+              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} />
             ))}
           </div>
         )}
@@ -418,7 +418,6 @@ export default function BullpenBoardView({
   showRoutineFreshness = true,
   showRosterContext = true,
   emptyState = null,
-  now,
 }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
@@ -459,7 +458,7 @@ export default function BullpenBoardView({
         <>
           <div className="grid gap-5 xl:grid-cols-2">
             {groups.map(group => (
-              <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} now={now} />
+              <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} />
             ))}
           </div>
           <div className="mt-5"><PitcherLabelKey /></div>

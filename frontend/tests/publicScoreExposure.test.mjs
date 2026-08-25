@@ -167,7 +167,7 @@ test('the payload fixtures carry none of the removed API fields', () => {
 // ── Consumers work without the removed fields ───────────────────────────────
 
 test('the board card view model renders from a card with no composite', () => {
-  const view = getBoardCardView(narrowedBoardCard, null, new Date('2026-06-05T18:00:00Z'))
+  const view = getBoardCardView(narrowedBoardCard, { product_current_date: '2026-06-05' })
 
   assert.equal(view.name, 'Narrowed Contract Arm')
   assert.equal(view.status, 'Limited')

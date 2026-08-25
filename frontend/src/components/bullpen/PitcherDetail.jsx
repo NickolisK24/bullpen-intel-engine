@@ -5,7 +5,7 @@ import {
   isWorkloadAppearance,
   latestWorkloadAppearanceFromLogs,
   normalizeAppearance,
-  platformDateFromFreshness,
+  productCurrentDateFromFreshness,
   workloadAppearanceDetailLabel,
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
@@ -63,13 +63,13 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
     recent_work_status: recentWorkStatus,
     recent_logs,
   } = data || {}
-  const platformDate = platformDateFromFreshness(freshness)
+  const productCurrentDate = productCurrentDateFromFreshness(freshness)
   const workloadAppearance = isWorkloadAppearance(lastWorkloadAppearance)
     ? normalizeAppearance(lastWorkloadAppearance)
     : null
   const legacyAppearance = isWorkloadAppearance(lastAppearance) ? normalizeAppearance(lastAppearance) : null
   const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
-  const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, platformDate)
+  const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, productCurrentDate)
   const hasCurrentRead = Boolean(cf || availability || pitcherLabels)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
   const teamBoardHref = teamReference ? buildTeamBoardHref(teamReference) : null

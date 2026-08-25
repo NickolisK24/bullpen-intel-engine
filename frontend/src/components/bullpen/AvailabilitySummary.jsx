@@ -9,7 +9,7 @@ import {
 } from './availabilityView'
 import {
   dayAwareAppearanceReasons,
-  platformDateFromFreshness,
+  productCurrentDateFromFreshness,
 } from '../../utils/appearanceLanguage'
 
 function FactList({ items, emptyText, variant = 'reason' }) {
@@ -60,8 +60,8 @@ export default function AvailabilitySummary({
   const [detailsOpen, setDetailsOpen] = useState(initialDetailsOpen)
   const detailsId = `pitcher-availability-details-${useId().replace(/:/g, '')}`
   const summary = getAvailabilitySummary(availability)
-  const platformDate = platformDateFromFreshness(freshness)
-  const reasons = dayAwareAppearanceReasons(summary.reasons, lastAppearance, platformDate)
+  const productCurrentDate = productCurrentDateFromFreshness(freshness)
+  const reasons = dayAwareAppearanceReasons(summary.reasons, lastAppearance, productCurrentDate)
   const workloadSummary = workloadSignal ? getAvailabilitySummary(workloadSignal) : null
   const resolvedRosterStatus = getRosterStatusSummary(
     rosterStatus || availability?.roster_status,

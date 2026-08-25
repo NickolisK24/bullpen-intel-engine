@@ -151,12 +151,13 @@ test('final availability reasons use day-aware appearance wording', () => {
     freshness: {
       data_through: '2026-06-20',
       availability_reference_date: '2026-06-21',
+      product_current_date: '2026-06-21',
     },
     lastAppearance: { game_date: '2026-06-20', pitches: 15 },
   })
 
-  assert.ok(htmlIncludes(html, '15 pitches today'))
-  assert.equal(htmlIncludes(html, '15 pitches yesterday'), false)
+  assert.ok(htmlIncludes(html, '15 pitches yesterday'))
+  assert.equal(htmlIncludes(html, '15 pitches today'), false)
 })
 
 test('PitcherDetail passes final availability workload signal and roster status to the summary', async () => {
@@ -222,6 +223,7 @@ test('PitcherDetail leads with availability and workload facts instead of a blac
     freshness: {
       data_through: '2026-07-05',
       availability_reference_date: '2026-07-06',
+      product_current_date: '2026-07-06',
     },
     last_workload_appearance: {
       game_date: '2026-07-05',
@@ -240,6 +242,9 @@ test('PitcherDetail leads with availability and workload facts instead of a blac
   })
 
   assert.ok(htmlIncludes(html, 'Final availability: Limited'))
+  assert.ok(htmlIncludes(html, 'Data through'))
+  assert.ok(htmlIncludes(html, '2026-07-05'))
+  assert.ok(htmlIncludes(html, 'Jul 5 (Yesterday) • 28 pitches'))
   assert.ok(htmlIncludes(html, 'View availability details'))
   assert.equal(htmlIncludes(html, 'Final Availability Reasons'), false)
   assert.equal(htmlIncludes(html, '61 pitches across three appearances in the last seven days.'), false)
