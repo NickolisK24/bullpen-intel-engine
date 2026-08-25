@@ -99,6 +99,13 @@ from services.narrative_memory import (
 )
 from services.pitcher_public_labels import PUBLIC_ROLE_COMPOSITION_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
+from services.public_team_relief_work import (
+    DEPLOYMENT_PROFILE_METHOD_VERSION,
+    DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+    DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+    DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+    author_deployment_profile,
+)
 from services.public_recent_work import build_public_recent_work_payload
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
@@ -539,6 +546,78 @@ def get_latest_workload_snapshot():
     return response
 
 
+PITCHER_DEPLOYMENT_CONTEXT_CONTRACT = 'pitcher_observed_deployment_context_v1'
+
+
+def _pitcher_deployment_context(pitcher, freshness):
+    """Copy one pitcher's exact profile from the canonical deployment owner."""
+    data_through = (freshness or {}).get('data_through')
+    if pitcher.team_id is None:
+        return {
+            'contract': PITCHER_DEPLOYMENT_CONTEXT_CONTRACT,
+            'status': 'withheld',
+            'reason_code': 'represented_team_unavailable',
+            'data_through': data_through,
+            'window_days': None,
+            'source_contract': None,
+            'method_version': DEPLOYMENT_PROFILE_METHOD_VERSION,
+            'public_contract_version': DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+            'reference_date_policy': DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+            'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+            'profile': None,
+            'limitations': [],
+        }
+
+    deployment = author_deployment_profile(
+        pitcher.team_id,
+        data_through=data_through,
+    )
+    profile = next(
+        (
+            item for item in deployment.get('profiles') or []
+            if item.get('pitcher_id') == pitcher.id
+        ),
+        None,
+    )
+    limitations = (
+        list(profile.get('limitations') or [])
+        if profile is not None
+        else list(deployment.get('limitations') or [])
+    )
+    return {
+        'contract': PITCHER_DEPLOYMENT_CONTEXT_CONTRACT,
+        'status': deployment.get('status'),
+        'reason_code': deployment.get('reason_code'),
+        'data_through': deployment.get('data_through'),
+        'window_days': deployment.get('window_days'),
+        'source_contract': deployment.get('contract'),
+        'method_version': DEPLOYMENT_PROFILE_METHOD_VERSION,
+        'public_contract_version': DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+        'reference_date_policy': DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+        'population_basis': deployment.get('population_basis'),
+        'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+        'profile': profile,
+        'limitations': limitations,
+    }
+
+
+def _unavailable_pitcher_deployment_context(freshness):
+    return {
+        'contract': PITCHER_DEPLOYMENT_CONTEXT_CONTRACT,
+        'status': 'unavailable',
+        'reason_code': 'deployment_context_unavailable',
+        'data_through': (freshness or {}).get('data_through'),
+        'window_days': None,
+        'source_contract': None,
+        'method_version': DEPLOYMENT_PROFILE_METHOD_VERSION,
+        'public_contract_version': DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+        'reference_date_policy': DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+        'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+        'profile': None,
+        'limitations': [],
+    }
+
+
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])
 def get_pitcher_fatigue(pitcher_id):
     """Get detailed fatigue profile for a single pitcher."""
@@ -633,6 +712,15 @@ def get_pitcher_fatigue(pitcher_id):
         )
         recent_work_status = {'status': 'unavailable'}
 
+    try:
+        deployment_context = _pitcher_deployment_context(pitcher, freshness)
+    except Exception:
+        current_app.logger.exception(
+            'Optional observed-deployment carrier unavailable for pitcher %s',
+            pitcher_id,
+        )
+        deployment_context = _unavailable_pitcher_deployment_context(freshness)
+
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         # ``current_fatigue`` keeps its name because Pitcher Detail reads the
@@ -651,6 +739,7 @@ def get_pitcher_fatigue(pitcher_id):
         'public_role_read':  public_role_read,
         'recent_work':       recent_work,
         'recent_work_status': recent_work_status,
+        'deployment_context': deployment_context,
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [public_workload_facts(s) for s in history],
     })
