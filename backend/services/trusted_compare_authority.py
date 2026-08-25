@@ -2,56 +2,15 @@
 
 D-051 requires both comparison sides to describe the same trusted publication.
 This adapter selects the published Dashboard snapshot exactly once per request and
-renders both team boards from that immutable authority, so a publication that
-lands mid-request cannot produce a mixed comparison.
+projects both teams into a compact read model from that immutable authority, so a
+publication that lands mid-request cannot produce a mixed comparison.
 """
-
-from copy import deepcopy
-from datetime import datetime, timezone
-from typing import Mapping
 
 from flask import jsonify, request
 
 from api.query_params import QueryParamError, parse_positive_int_param, query_param_error_response
 from services import public_serving_authority as authority
-from services.bullpen_board import build_board_payload
-from services.bullpen_comparison import build_team_comparison
-
-
-def _board_from_snapshot(snapshot, team_id, *, include_stale=False, freshness=None):
-    team_package, reason = authority._team_package(snapshot, team_id)
-    if team_package is None:
-        return authority._unavailable_board(team_id, reason, snapshot=snapshot)
-
-    freshness = dict(freshness or authority._trusted_board_freshness(snapshot))
-    records = authority._records_for_view(team_package, include_stale)
-    payload = build_board_payload(
-        team=deepcopy(team_package.get('team') or {'team_id': team_id}),
-        records=records,
-        freshness=freshness,
-        limitations=list(freshness.get('limitations') or []),
-        roster_authority=deepcopy(team_package.get('roster_authority') or {}),
-        generated_at=(
-            snapshot.snapshot_generated_at.isoformat()
-            if snapshot.snapshot_generated_at
-            else None
-        ),
-        workload_concentration=deepcopy(
-            team_package.get('workload_concentration') or {}
-        ),
-        capacity_intelligence=deepcopy(
-            team_package.get('capacity_intelligence') or {}
-        ),
-        rotation_support_pressure=deepcopy(
-            team_package.get('rotation_support_pressure') or {}
-        ),
-        bullpen_stability=deepcopy(team_package.get('bullpen_stability') or {}),
-        bullpen_environment=deepcopy(team_package.get('bullpen_environment') or {}),
-    )
-    payload['team_state'] = authority._published_team_state(snapshot, team_id)
-    payload['publication_authority'] = authority.publication_authority(snapshot)
-    payload['served_from'] = 'trusted_dashboard_snapshot'
-    return payload
+from services.current_bullpen_comparison import build_current_bullpen_comparison
 
 
 def trusted_team_compare_view():
@@ -69,52 +28,33 @@ def trusted_team_compare_view():
             )
         )
 
-    include_stale = authority._truthy(request.args.get('include_stale'))
     snapshot = authority.dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None:
-        board_a = authority._unavailable_board(
-            team_a, authority.TEAM_BOARD_UNAVAILABLE, snapshot=None
-        )
-        board_b = authority._unavailable_board(
-            team_b, authority.TEAM_BOARD_UNAVAILABLE, snapshot=None
-        )
-        publication_authority = None
-    else:
-        # One freshness overlay and one snapshot selection for the whole response.
-        # A new publication may land after this point, but this request remains a
-        # coherent read of the authority it selected at entry.
-        freshness = authority._trusted_board_freshness(snapshot)
-        board_a = _board_from_snapshot(
-            snapshot,
-            team_a,
-            include_stale=include_stale,
-            freshness=freshness,
-        )
-        board_b = _board_from_snapshot(
-            snapshot,
-            team_b,
-            include_stale=include_stale,
-            freshness=freshness,
-        )
-        publication_authority = authority.publication_authority(snapshot)
+        return jsonify({
+            'capability': 'current_bullpen_comparison_v1',
+            'status': 'snapshot_unavailable',
+            'reason_code': authority.TEAM_BOARD_UNAVAILABLE,
+            'comparison': None,
+            'publication_authority': None,
+        })
 
-    comparison = build_team_comparison(
-        board_a,
-        board_b,
-        generated_at=datetime.now(timezone.utc).isoformat(),
-    )
-    unavailable = (
-        board_a.get('status') == 'snapshot_unavailable'
-        or board_b.get('status') == 'snapshot_unavailable'
-    )
+    # The snapshot is selected once. Every domain below is projected from that
+    # immutable publication; no Team Board is rebuilt or serialized.
+    comparison, reason = build_current_bullpen_comparison(snapshot, team_a, team_b)
+    if comparison is None:
+        return jsonify({
+            'capability': 'current_bullpen_comparison_v1',
+            'status': 'snapshot_unavailable',
+            'reason_code': reason,
+            'comparison': None,
+            'publication_authority': authority.publication_authority(snapshot),
+        })
     return jsonify({
-        'capability': 'team_bullpen_comparison',
-        'status': 'snapshot_unavailable' if unavailable else 'ok',
-        'generated_at': comparison['generated_at'],
+        'capability': 'current_bullpen_comparison_v1',
+        'status': comparison['status'],
         'ranking_applied': False,
         'selection_made': False,
-        'team_a': board_a,
-        'team_b': board_b,
+        'prediction_applied': False,
         'comparison': comparison,
-        'publication_authority': publication_authority,
+        'publication_authority': authority.publication_authority(snapshot),
     })

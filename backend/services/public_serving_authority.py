@@ -42,7 +42,6 @@ from services.bullpen_board import (
     is_valid_rest_status_carrier,
     last_workload_appearance_from_logs,
 )
-from services.bullpen_comparison import build_team_comparison
 from services.bullpen_population import eligible_bullpen_pitcher_contexts, usage_logs_by_pitcher
 from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
@@ -784,26 +783,35 @@ def trusted_team_compare_view():
         return query_param_error_response(
             QueryParamError('team_a', 'team_a and team_b query parameters are required.')
         )
-    include_stale = _truthy(request.args.get('include_stale'))
-    board_a = build_published_team_board(team_a, include_stale=include_stale)
-    board_b = build_published_team_board(team_b, include_stale=include_stale)
-    generated_at = datetime.now(timezone.utc).isoformat()
-    comparison = build_team_comparison(board_a, board_b, generated_at=generated_at)
-    same_authority = (
-        (board_a.get('publication_authority') or {}).get('snapshot_id')
-        == (board_b.get('publication_authority') or {}).get('snapshot_id')
-    )
-    status = 'ok' if same_authority and board_a.get('status') != 'snapshot_unavailable' and board_b.get('status') != 'snapshot_unavailable' else 'snapshot_unavailable'
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is None:
+        return jsonify({
+            'capability': 'current_bullpen_comparison_v1',
+            'status': 'snapshot_unavailable',
+            'reason_code': TEAM_BOARD_UNAVAILABLE,
+            'comparison': None,
+            'publication_authority': None,
+        })
+
+    # Import lazily to keep the frozen-package builder free of a module cycle.
+    from services.current_bullpen_comparison import build_current_bullpen_comparison
+    comparison, reason = build_current_bullpen_comparison(snapshot, team_a, team_b)
+    if comparison is None:
+        return jsonify({
+            'capability': 'current_bullpen_comparison_v1',
+            'status': 'snapshot_unavailable',
+            'reason_code': reason,
+            'comparison': None,
+            'publication_authority': publication_authority(snapshot),
+        })
     return jsonify({
-        'capability': 'team_bullpen_comparison',
-        'status': status,
-        'generated_at': comparison['generated_at'],
+        'capability': 'current_bullpen_comparison_v1',
+        'status': comparison['status'],
         'ranking_applied': False,
         'selection_made': False,
-        'team_a': board_a,
-        'team_b': board_b,
+        'prediction_applied': False,
         'comparison': comparison,
-        'publication_authority': board_a.get('publication_authority') if same_authority else None,
+        'publication_authority': publication_authority(snapshot),
     })
 
 

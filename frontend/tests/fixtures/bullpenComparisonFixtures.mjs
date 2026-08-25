@@ -1,125 +1,67 @@
-// Fixtures mirroring GET /api/bullpen/teams/compare. Builds two real board
-// payloads with makeBoard and a comparison block matching the backend shape.
+const DATA_THROUGH = '2026-06-04'
 
-import { makeBoard } from './bullpenBoardFixtures.mjs'
+const teamState = (label, code, dataThrough = DATA_THROUGH) => ({
+  contract: 'team_state_public_v1', available: true, public_state: code,
+  public_label: label, summary: `${label} summary.`, outcome: 'available',
+  unavailable_message: null, reason_code: null, data_through: dataThrough,
+})
+const count = (counts, ...keys) => keys.reduce((total, key) => total + (counts?.[key] || 0), 0)
 
-const DIMENSIONS = [
-  { key: 'available', metric: 'available', descriptor: 'classified Available', reasonLabel: 'Available' },
-  // Public vocabulary, mirroring backend/services/bullpen_comparison.py. The
-  // engine keys stay as they are; only the reader-facing text is public.
-  { key: 'restricted', metric: 'restricted', descriptor: 'marked Unavailable', reasonLabel: 'Unavailable' },
-  { key: 'monitor', metric: 'monitor', descriptor: 'in the On Watch group', reasonLabel: 'On Watch' },
-]
-
-function cardsFor(counts) {
-  const out = {}
-  let id = 0
-  for (const [status, n] of Object.entries(counts)) {
-    out[status] = Array.from({ length: n }, () => ({ pitcher_id: ++id + status.length * 1000, name: `${status}${id}`, availability_status: status }))
+function buildComparison(a = {}, b = {}, overrides = {}) {
+  const teamA = a.team || { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' }
+  const teamB = b.team || { team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA' }
+  const countsA = a.counts || { Available: 6, Monitor: 2, Avoid: 1, Unavailable: 1 }
+  const countsB = b.counts || { Available: 3, Monitor: 2, Avoid: 3, Unavailable: 2 }
+  const dateA = a.freshness?.data_through || DATA_THROUGH
+  const dateB = b.freshness?.data_through || DATA_THROUGH
+  const sharedDate = dateA === dateB ? dateA : null
+  const domains = {
+    team_state: { status: sharedDate ? 'available' : 'withheld', reason_code: null, message: sharedDate ? null : 'Team State comparison is unavailable for this publication.', team_a: sharedDate ? teamState('Fresh', 'fresh', dateA) : null, team_b: sharedDate ? teamState('Stretched', 'stretched', dateB) : null },
+    rest: { status: 'available', reason_code: null, message: null, team_a: { rested_options: 5, worked_yesterday: 2, back_to_back: 1 }, team_b: { rested_options: 2, worked_yesterday: 4, back_to_back: 2 } },
+    workload: { status: 'available', reason_code: null, message: null, team_a: { window_days: 7, relief_appearances: 9, contributing_relievers: 6, pitches: 121 }, team_b: { window_days: 7, relief_appearances: 12, contributing_relievers: 7, pitches: 164 } },
+    rotation: { status: 'available', reason_code: null, message: null, team_a: { window_days: 7, short_starts: 1, bullpen_innings: 11.1 }, team_b: { window_days: 7, short_starts: 3, bullpen_innings: 16.2 } },
+    availability: {
+      status: 'available', reason_code: null, message: null,
+      team_a: { available: count(countsA, 'Available'), on_watch: count(countsA, 'Monitor'), limited: count(countsA, 'Limited'), unavailable: count(countsA, 'Avoid', 'Unavailable') },
+      team_b: { available: count(countsB, 'Available'), on_watch: count(countsB, 'Monitor'), limited: count(countsB, 'Limited'), unavailable: count(countsB, 'Avoid', 'Unavailable') },
+    },
   }
-  return out
-}
-
-function observation(dim, labelA, labelB, a, b) {
-  let leader = 'tie'
-  let statement = `Both bullpens currently have the same number of relievers ${dim.descriptor} (${a}).`
-  if (a > b) {
-    leader = 'A'
-    statement = `The ${labelA} currently have more relievers ${dim.descriptor}.`
-  } else if (a < b) {
-    leader = 'B'
-    statement = `The ${labelB} currently have more relievers ${dim.descriptor}.`
-  }
-  return {
-    dimension: dim.key,
-    reason_label: dim.reasonLabel,
-    statement,
-    leader,
-    team_a_value: a,
-    team_b_value: b,
-    reasons: [`${labelA} ${dim.reasonLabel}: ${a}.`, `${labelB} ${dim.reasonLabel}: ${b}.`],
-  }
-}
-
-export function makeComparison(a, b) {
-  const boardA = makeBoard({ team: a.team, cardsByStatus: cardsFor(a.counts), freshness: a.freshness })
-  const boardB = makeBoard({ team: b.team, cardsByStatus: cardsFor(b.counts), freshness: b.freshness })
-  const labelA = a.team?.team_name || 'Team A'
-  const labelB = b.team?.team_name || 'Team B'
-  const mA = boardA.context.metrics
-  const mB = boardB.context.metrics
-
-  const observations = DIMENSIONS.map(d => observation(d, labelA, labelB, mA[d.metric], mB[d.metric]))
-  const allTied = observations.every(o => o.leader === 'tie')
-  const bothEmpty = mA.total_relievers === 0 && mB.total_relievers === 0
-
-  let summary
-  if (bothEmpty) summary = { state: 'no_data', statement: 'Neither bullpen has relievers in the current freshness window.', reasons: [] }
-  else if (allTied) summary = { state: 'similar', statement: 'Both bullpens currently show similar availability distributions.', reasons: observations.map(o => o.statement) }
-  else summary = { state: 'differ', statement: 'These bullpens currently show different availability profiles.', reasons: observations.map(o => o.statement) }
-
-  const confA = boardA.context.confidence
-  const confB = boardB.context.confidence
-  const confSet = new Set([confA, confB])
-  let confidence = 'high'
-  if (confSet.size === 1 && confSet.has('none')) confidence = 'none'
-  else if (confSet.has('none') || confSet.has('low')) confidence = 'low'
-
-  const limitations = []
-  for (const [label, board] of [[labelA, boardA], [labelB, boardB]]) {
-    for (const lim of board.context.limitations || []) limitations.push(`${label}: ${lim}`)
-  }
-
   const comparison = {
-    capability: 'team_bullpen_comparison',
-    generated_at: '2026-06-05T00:00:00+00:00',
-    ranking_applied: false,
-    selection_made: false,
+    capability: 'current_bullpen_comparison_v1', contract: 'current_bullpen_comparison_carrier_v1',
+    status: sharedDate ? 'available' : 'partial', represented_date: sharedDate || dateA,
+    ranking_applied: false, selection_made: false, prediction_applied: false,
     teams: {
-      team_a: { label: labelA, team: boardA.team },
-      team_b: { label: labelB, team: boardB.team },
+      team_a: { ...teamA, team_board_href: `/bullpen?view=board&team=${teamA.team_abbreviation}&source=comparison` },
+      team_b: { ...teamB, team_board_href: `/bullpen?view=board&team=${teamB.team_abbreviation}&source=comparison` },
     },
-    snapshot: { team_a: mA, team_b: mB },
-    observations,
-    summary,
-    confidence,
-    team_confidence: { team_a: confA, team_b: confB },
-    freshness: {
-      team_a: { is_current: boardA.freshness.is_current, label: boardA.freshness.label, data_through: boardA.freshness.data_through, last_successful_sync: boardA.freshness.last_successful_sync },
-      team_b: { is_current: boardB.freshness.is_current, label: boardB.freshness.label, data_through: boardB.freshness.data_through, last_successful_sync: boardB.freshness.last_successful_sync },
-    },
-    limitations,
+    domains,
+    limitations: [],
+    ...overrides,
   }
-
-  return {
-    capability: 'team_bullpen_comparison',
-    generated_at: '2026-06-05T00:00:00+00:00',
-    ranking_applied: false,
-    selection_made: false,
-    team_a: boardA,
-    team_b: boardB,
-    comparison,
-  }
+  return { capability: 'current_bullpen_comparison_v1', status: comparison.status, comparison }
 }
 
-// Aces clearly more available; Bears more restricted.
-export const differingComparison = makeComparison(
-  { team: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' }, counts: { Available: 6, Monitor: 2, Avoid: 1, Unavailable: 1 } },
-  { team: { team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA' }, counts: { Available: 3, Monitor: 2, Avoid: 3, Unavailable: 2 } },
-)
+export function makeComparison(a = {}, b) {
+  if (b !== undefined || a?.team || a?.counts || a?.freshness) return buildComparison(a, b || {})
+  return buildComparison({}, {}, a)
+}
 
-// Identical distributions → similar.
-export const similarComparison = makeComparison(
-  { team: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' }, counts: { Available: 4, Monitor: 2, Avoid: 1, Unavailable: 1 } },
-  { team: { team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA' }, counts: { Available: 4, Monitor: 2, Avoid: 1, Unavailable: 1 } },
+export const differingComparison = buildComparison()
+export const similarComparison = buildComparison(
+  { counts: { Available: 4, Monitor: 2, Limited: 1, Avoid: 1 } },
+  { counts: { Available: 4, Monitor: 2, Limited: 1, Avoid: 1 } },
 )
-
-// Bears bullpen is stale → degraded confidence.
-export const staleComparison = makeComparison(
-  { team: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' }, counts: { Available: 5, Monitor: 1 } },
-  {
-    team: { team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA' },
-    counts: { Monitor: 1 },
-    freshness: { data_through: '2026-04-01', is_current: false, label: 'Historical baseball data through 2026-04-01.', last_successful_sync: null, limitations: ['Latest game date is outside the 14-day freshness window.'] },
+const staleBase = buildComparison(
+  { freshness: { data_through: DATA_THROUGH } },
+  { freshness: { data_through: '2026-04-01' } },
+)
+export const staleComparison = {
+  ...staleBase,
+  comparison: {
+    ...staleBase.comparison,
+    domains: {
+      ...staleBase.comparison.domains,
+      rotation: { status: 'withheld', reason_code: 'comparison_authority_mismatch', message: 'Rotation transfer comparison is unavailable for this publication.', team_a: null, team_b: null },
+    },
   },
-)
+}

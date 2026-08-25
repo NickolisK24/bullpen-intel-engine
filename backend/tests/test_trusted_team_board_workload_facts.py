@@ -1014,25 +1014,28 @@ def test_live_and_frozen_board_records_match_on_workload_facts(trusted_app):
         assert frozen_by_pitcher[pitcher_id]['workload_facts'] == live_record['workload_facts']
 
 
-def test_trusted_compare_retains_workload_facts_for_both_teams(trusted_app):
+def test_trusted_compare_projects_compact_workload_for_both_teams(trusted_app):
     response = trusted_app['app'].test_client().get(
         f'/api/bullpen/teams/compare?team_a={TEAM_ID}&team_b={OTHER_TEAM_ID}'
     )
     assert response.status_code == 200
     body = response.get_json()
 
-    for side, pitcher, expected_days, expected_appearances, expected_pitches in (
-        ('team_a', trusted_app['pitcher'], 2, 3, 41),
-        ('team_b', trusted_app['other_pitcher'], 1, 2, None),
+    assert 'team_a' not in body
+    assert 'team_b' not in body
+    frozen_teams = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]['by_team_id']
+    for side, team_id in (
+        ('team_a', TEAM_ID),
+        ('team_b', OTHER_TEAM_ID),
     ):
-        board = body[side]
-        cards = [card for group in board['groups'] for card in group['pitchers']]
-        card = next(item for item in cards if item['pitcher_id'] == pitcher.id)
-        assert board['served_from'] == 'trusted_dashboard_snapshot'
-        assert card['workload_facts']['days_since_last_appearance'] == expected_days
-        assert card['workload_facts']['appearances_last_7'] == expected_appearances
-        assert card['workload_facts']['pitches_last_7_days'] == expected_pitches
-        assert isinstance(card['workload_facts']['back_to_back'], bool)
+        frozen_window = frozen_teams[str(team_id)]['workload_windows']['windows']['window_7']
+        workload = body['comparison']['domains']['workload'][side]
+        assert workload['window_days'] == 7
+        assert workload['relief_appearances'] == frozen_window['relief_appearances']
+        assert workload['contributing_relievers'] == frozen_window['pitchers_in_relief']
+        assert workload['pitches'] == frozen_window['pitches_total']
 
 
 def _all_keys(value):

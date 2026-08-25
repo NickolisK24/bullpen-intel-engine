@@ -1,127 +1,77 @@
-import { formatConfidence, getAvailabilityBadgeView, getAvailabilityStatusLabel } from '../availabilityView'
-import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
-import { getDataProvenance } from './tonightsBullpenBoardView'
 import { readPublicTeamState } from '../../../adapters/publicTeamState'
 
-// Snapshot rows shown in the side-by-side table, in the board's reading order.
-// Counts are descriptive only — no scores, ranks, or grades.
-const SNAPSHOT_ROWS = [
-  { keys: ['available'], label: 'Available', status: 'Available' },
-  { keys: ['monitor'], label: 'On Watch', status: 'Monitor' },
-  { keys: ['limited'], label: 'Limited', status: 'Limited' },
-  { keys: ['avoid', 'unavailable'], label: 'Unavailable', status: 'Unavailable' },
+const DOMAIN_DEFINITIONS = [
+  { key: 'rest', label: 'Rest', rows: [['rested_options', 'Rested Options'], ['worked_yesterday', 'Worked Yesterday'], ['back_to_back', 'Back-to-Back']] },
+  { key: 'workload', label: 'Recent Workload — 7 Days', rows: [['relief_appearances', 'Relief Appearances'], ['contributing_relievers', 'Contributing Relievers'], ['pitches', 'Pitches']] },
+  { key: 'rotation', label: 'Rotation Transfer', rows: [['short_starts', 'Short Starts'], ['bullpen_innings', 'Bullpen Innings']] },
+  { key: 'availability', label: 'Availability', rows: [['available', 'Available'], ['on_watch', 'On Watch'], ['limited', 'Limited'], ['unavailable', 'Unavailable']] },
 ]
 
-const LEADER_TONE = {
-  A: { color: '#6ee7b7' },
-  B: { color: '#93c5fd' },
-  tie: { color: '#cbd5e1' },
-}
+const displayValue = value => value == null ? '—' : value
 
-function safeMetrics(metrics) {
-  const m = metrics || {}
-  const value = key => {
-    if (m[key] == null || m[key] === '') return null
-    const numeric = Number(m[key])
-    return Number.isFinite(numeric) ? numeric : null
-  }
+function domainView(domain, definition) {
+  const value = domain || {}
   return {
-    total_relievers: value('total_relievers'),
-    available: value('available'),
-    monitor: value('monitor'),
-    limited: value('limited'),
-    avoid: value('avoid'),
-    unavailable: value('unavailable'),
-    restricted: value('restricted'),
-    pct_available: value('pct_available'),
-    pct_unavailable: value('pct_unavailable'),
-    // The public "Unavailable" row combines the Avoid and Unavailable groups
-    // (getAvailabilityStatusLabel folds Avoid into Unavailable), so its matching
-    // percentage is pct_restricted — the share of that same combined population.
-    // pct_unavailable alone counts only the strict Unavailable group and would
-    // read 0% next to a non-zero combined count.
-    pct_restricted: value('pct_restricted'),
-  }
-}
-
-// Comparison copy comes from the same guarded board context as the Team Board,
-// so it is rendered as the backend published it. The substitution table that
-// used to sit here is gone: public vocabulary is decided by
-// backend/services/public_bullpen_copy.py (FE-001 / #591).
-function displayPublicCopy(value) {
-  return value
-}
-
-function sumMetrics(metrics, keys) {
-  const values = keys.map(key => metrics?.[key]).filter(value => value != null)
-  return values.length > 0 ? values.reduce((total, value) => total + value, 0) : null
-}
-
-function freshnessRow(freshness) {
-  const f = freshness || {}
-  const isCurrent = f.is_current !== false
-  const provenance = getDataProvenance(f)
-  return {
-    isCurrent,
-    isStale: !isCurrent,
-    label: f.label || null,
-    dataThroughRaw: f.data_through || null,
-    dataThrough: fmtDataDate(f.data_through) || null,
-    completedGamesLine: provenance.completedGamesLine,
-    lastSync: fmtSyncDate(f.last_successful_sync) || null,
-    healthLabel: provenance.label,
-    provenanceDetail: provenance.detail,
-    throughHint: provenance.throughHint,
-    dot: provenance.tone.dot,
+    key: definition.key,
+    label: definition.label,
+    status: value.status || 'withheld',
+    message: value.message || `${definition.label} comparison is unavailable.`,
+    limitations: Array.isArray(value.limitations) ? value.limitations : [],
+    rows: definition.rows.map(([key, label]) => ({
+      key,
+      label,
+      valueA: displayValue(value.team_a?.[key]),
+      valueB: displayValue(value.team_b?.[key]),
+    })),
   }
 }
 
 export function getComparisonView(payload) {
-  const comparison = payload?.comparison || null
-  if (!comparison) {
-    return { hasComparison: false }
+  const comparison = payload?.comparison
+  if (!comparison) return { hasComparison: false }
+
+  const teamA = comparison.teams?.team_a || {}
+  const teamB = comparison.teams?.team_b || {}
+  const stateDomain = comparison.domains?.team_state || {}
+  const availability = comparison.domains?.availability || {}
+  const snapshot = [
+    ['Available', 'available'],
+    ['On Watch', 'on_watch'],
+    ['Limited', 'limited'],
+    ['Unavailable', 'unavailable'],
+  ].map(([label, key]) => ({
+    label,
+    valueA: availability.team_a?.[key] ?? null,
+    valueB: availability.team_b?.[key] ?? null,
+  }))
+  const isDegraded = comparison.status !== 'available'
+  const freshness = {
+    dataThroughRaw: comparison.represented_date || null,
+    dataThrough: comparison.represented_date || null,
+    isCurrent: !isDegraded,
+    isStale: isDegraded,
   }
-
-  const labelA = comparison.teams?.team_a?.label || 'Team A'
-  const labelB = comparison.teams?.team_b?.label || 'Team B'
-  const metricsA = safeMetrics(comparison.snapshot?.team_a)
-  const metricsB = safeMetrics(comparison.snapshot?.team_b)
-
-  const snapshot = SNAPSHOT_ROWS.map(row => ({
-    label: getAvailabilityStatusLabel(row.label || row.status),
-    badge: getAvailabilityBadgeView(row.status),
-    valueA: sumMetrics(metricsA, row.keys),
-    valueB: sumMetrics(metricsB, row.keys),
-  }))
-
-  const observations = (Array.isArray(comparison.observations) ? comparison.observations : []).map(o => ({
-    dimension: o.dimension,
-    statement: displayPublicCopy(o.statement),
-    leader: o.leader,
-    leaderTone: LEADER_TONE[o.leader] || LEADER_TONE.tie,
-    reasons: Array.isArray(o.reasons) ? o.reasons.map(displayPublicCopy) : [],
-  }))
-  const confidence = comparison.confidence || 'high'
-
   return {
     hasComparison: true,
-    labelA,
-    labelB,
-    metricsA,
-    metricsB,
+    status: comparison.status,
+    representedDate: comparison.represented_date || null,
+    teamA,
+    teamB,
+    labelA: teamA.team_name || teamA.team_abbreviation || 'Team A',
+    labelB: teamB.team_name || teamB.team_abbreviation || 'Team B',
+    teamStateStatus: stateDomain.status || 'withheld',
+    teamStateMessage: stateDomain.message || 'Team State comparison is unavailable.',
+    teamStateA: readPublicTeamState(stateDomain.team_a),
+    teamStateB: readPublicTeamState(stateDomain.team_b),
+    domains: DOMAIN_DEFINITIONS.map(definition => domainView(comparison.domains?.[definition.key], definition)),
+    limitations: Array.isArray(comparison.limitations) ? comparison.limitations : [],
+    // Retained for the existing immutable comparison share-artifact builder.
+    // These rows are a direct projection of the backend-authored public
+    // availability carrier; they do not reconstruct baseball meaning.
     snapshot,
-    observations,
-    confidence,
-    confidenceLabel: formatConfidence(confidence),
-    isDegraded: confidence === 'low' || confidence === 'none',
-    showConfidence: !['high', ''].includes(String(confidence).toLowerCase()),
-    limitations: Array.isArray(comparison.limitations) ? comparison.limitations.map(displayPublicCopy) : [],
-    freshnessA: freshnessRow(comparison.freshness?.team_a),
-    freshnessB: freshnessRow(comparison.freshness?.team_b),
-    // Each side carries the same backend-owned Team State contract its own team
-    // board carries. Nothing is combined, ranked, or inferred across the two: a
-    // side whose state is fail-closed stays fail-closed on its own.
-    teamStateA: readPublicTeamState(comparison.teams?.team_a?.team_state),
-    teamStateB: readPublicTeamState(comparison.teams?.team_b?.team_state),
+    observations: [],
+    isDegraded,
+    freshnessA: freshness,
+    freshnessB: freshness,
   }
 }
