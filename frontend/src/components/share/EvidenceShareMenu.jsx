@@ -110,7 +110,7 @@ export default function EvidenceShareMenu({
     }
   }
 
-  if (!shareDestination) return null
+  if (!shareDestination && typeof loadCardModel !== 'function') return null
 
   return (
     <div ref={rootRef} className={`relative inline-flex ${className}`} data-evidence-share-menu>
@@ -141,16 +141,17 @@ export default function EvidenceShareMenu({
             onClick={() => run('share')}
             className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
-            {linkOnly ? 'Share exact link' : 'Share card'}
+            {linkOnly ? 'Share exact link' : isTeamBoard ? 'Share published observation' : 'Share card'}
           </button>
           <button
             type="button"
             role="menuitem"
-            disabled={busy}
+            disabled={busy || (!linkOnly && !cardAvailable)}
+            title={!linkOnly && !cardAvailable ? CARD_UNAVAILABLE : undefined}
             onClick={() => run('copy')}
             className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
-            Copy exact link
+            {isTeamBoard ? 'Copy published link' : 'Copy exact link'}
           </button>
           {!linkOnly && (
             <button
@@ -161,7 +162,7 @@ export default function EvidenceShareMenu({
               onClick={() => run('download')}
               className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
             >
-              Download card
+              {isTeamBoard ? 'Download image' : 'Download card'}
             </button>
           )}
           {!linkOnly && !cardAvailable && (

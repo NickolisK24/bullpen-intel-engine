@@ -167,16 +167,23 @@ test('internal readiness wording cannot reach a share surface', async () => {
 
 test('the share card only accepts a canonical public Team State', async () => {
   const mod = await server.ssrLoadModule('/src/utils/shareCardArtifact.js')
-  const projection = headline => ({
+  const projection = label => ({
     available: true,
-    card: {
-      source: 'immutable_share_artifact',
-      team: { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' },
-      headline,
-      summary: 'A summary.',
-      receipts: [],
+    artifact: {
+      public_id: 'abc123',
+      artifact_type: 'team_state',
+      lifecycle_state: 'published',
       product_date: '2026-08-13',
-      trust: {},
+      copy: { description: 'A summary.', alt_text: 'A published Team State.' },
+      evidence: [],
+      routes: { share_url: '/share/abc123' },
+      card: {
+        card_version: 'team-state-1.2.0',
+        artifact_context: { data_through: '2026-08-13' },
+        team: { team_id: 1, canonical_name: 'Test Club', abbreviation: 'TST' },
+        state: { public_label: label, headline: `Test Club bullpen — ${label}`, why: 'A summary.' },
+        limitations: [],
+      },
     },
   })
   for (const label of publicTeamState.PUBLIC_TEAM_STATE_LABELS) {

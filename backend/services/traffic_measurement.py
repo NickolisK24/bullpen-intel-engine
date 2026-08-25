@@ -26,6 +26,7 @@ PUBLIC_ROUTE_SURFACES = {
     '/trust': 'data_trust',
     '/signin': 'sign_in',
     '/auth/verify': 'auth_verify',
+    '/share/:publicId': 'shared_artifact',
 }
 PITCHER_ROUTE = '/pitcher/:id'
 PITCHER_SURFACE = 'pitcher_detail'

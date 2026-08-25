@@ -118,7 +118,7 @@ def test_current_truth_link_points_at_this_artifacts_own_team_board(app, monkeyp
     view = load_public_share_artifact(artifact.public_id).view
 
     assert view['team']['team_abbreviation'] == 'TST'
-    assert view['routes']['team_url'] == '/bullpen?view=board&team=TST'
+    assert view['routes']['team_url'] == '/bullpen?view=board&team=TST&source=share'
     # Still a first-party route built from constants, never an artifact URL.
     assert view['routes']['team_url'].startswith('/bullpen')
 
@@ -126,14 +126,14 @@ def test_current_truth_link_points_at_this_artifacts_own_team_board(app, monkeyp
 def test_current_truth_link_falls_back_when_no_abbreviation_was_stored(app, monkeypatch):
     artifact = _publish(monkeypatch)
     result = load_public_share_artifact(artifact.public_id)
-    assert result.view['routes']['team_url'] == '/bullpen?view=board&team=TST'
+    assert result.view['routes']['team_url'] == '/bullpen?view=board&team=TST&source=share'
 
     # An artifact whose frozen team block carries no abbreviation still gets a
     # working current-truth destination rather than a malformed one.
     assert public_module._team_route(None) == '/bullpen'
     assert public_module._team_route('   ') == '/bullpen'
-    assert public_module._team_route('../evil') == '/bullpen?view=board&team=EVIL'
-    assert public_module._team_route(' tor ') == '/bullpen?view=board&team=TOR'
+    assert public_module._team_route('../evil') == '/bullpen?view=board&team=EVIL&source=share'
+    assert public_module._team_route(' tor ') == '/bullpen?view=board&team=TOR&source=share'
 
 
 def test_unknown_and_malformed_public_id_are_not_found(app):

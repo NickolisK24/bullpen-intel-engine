@@ -100,7 +100,7 @@ test('published artifact renders a designed historical read with public copy', (
   // G. Destinations — historical vs live distinct.
   assert.match(html, /Methodology/)
   assert.match(html, /Data &amp; Trust/)
-  assert.match(html, /current bullpen surface/)
+  assert.match(html, /Open current Arizona Diamondbacks bullpen board/)
   assert.match(html, /live, not this historical snapshot/)
   // Exactly one h1.
   assert.equal((html.match(/<h1/g) || []).length, 1)

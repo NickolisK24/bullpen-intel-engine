@@ -121,6 +121,18 @@ def test_invalid_or_unsafe_input_records_nothing(traffic_app, changes):
         assert TrafficPageView.query.count() == 0
 
 
+def test_public_share_artifact_page_view_uses_bounded_route_without_public_id():
+    normalized = normalize_page_view(payload(
+        route='/share/:publicId',
+        surface='shared_artifact',
+    ))
+    assert normalized is not None
+    assert normalized['route'] == '/share/:publicId'
+    assert normalized['surface'] == 'shared_artifact'
+    assert normalized['team_ref'] is None
+    assert normalized['pitcher_id'] is None
+
+
 def test_surface_allowlist_and_safe_comparison_context():
     normalized = normalize_page_view(payload(
         route='/bullpen', surface='compare_bullpens', view_mode='compare',

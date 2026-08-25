@@ -1,28 +1,17 @@
 /**
- * Artifact-backed Share Card adapter (Share Cards SC-03A cutover).
+ * Canonical Team State Share Artifact adapter.
  *
- * The active Share Card entry points consume a canonical, published, immutable
- * Share Artifact through the backend compatibility projection
- * (GET /api/share-cards/team-state/<team_id>) instead of composing card
- * intelligence in the browser. This module ONLY adapts that governed projection
- * into the shape the existing renderer / share menu already consume — it
- * composes no intelligence and invents no copy. When no published artifact
- * exists it yields null, so the share menu shows its controlled unavailable
- * state; it never falls back to the legacy client-side composer.
- *
- * Transitional: the existing browser PNG renderer and share controls remain for
- * now but render only immutable-artifact-backed data. This adapter is removed
- * once the SC-06/SC-07 renderer consumes the canonical payload directly.
+ * The Team Board resolves one published, integrity-verified public artifact
+ * lazily. This module only adapts that immutable public projection into the
+ * existing browser renderer model; it does not author or recalculate baseball
+ * meaning.
  */
 
 import { PUBLIC_TEAM_STATE_LABELS } from '../adapters/publicTeamState'
 
-// Canonical public origin for share links. Defined here so the active entry
-// points no longer depend on the deprecated client-side card composer module.
 export const EVIDENCE_CARD_ORIGIN = 'https://baseballos.app'
+const TEAM_STATE_CARD_VERSION = 'team-state-1.2.0'
 
-const COMPATIBILITY_SOURCE = 'immutable_share_artifact'
-const TEAM_CARD_LIMITATION = 'Describes current workload. Does not predict usage or outcomes.'
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -39,39 +28,49 @@ function formatDataThroughLabel(iso) {
   return `${MONTHS[month - 1]} ${day}, ${year}`
 }
 
-/**
- * Adapt the backend compatibility projection response into the team card model
- * consumed by the existing renderer and share menu. Returns null when no
- * published artifact backs the card (never fabricates a card).
- */
+function artifactShareUrl(artifact) {
+  const publicId = artifact?.public_id
+  const path = artifact?.routes?.share_url
+  if (!publicId || typeof path !== 'string') return null
+  if (!path.startsWith('/share/') || !path.endsWith(`/${publicId}`)) return null
+  return `${EVIDENCE_CARD_ORIGIN}${path}`
+}
+
 export function buildTeamShareCardFromArtifact(response) {
   if (!response || response.available !== true) return null
-  const card = response.card
-  if (!card || card.source !== COMPATIBILITY_SOURCE) return null
+  const artifact = response.artifact
+  if (
+    !artifact
+    || artifact.artifact_type !== 'team_state'
+    || artifact.lifecycle_state !== 'published'
+  ) return null
 
-  const team = card.team || {}
-  const abbr = (team.team_abbreviation || '').toString()
-  const teamName = team.team_name || abbr || 'Team'
-  // The card's state badge must carry a canonical public Team State. The
-  // backend projection resolves it from the artifact's internal status code, so
-  // anything else here is a contract violation rather than a display choice —
-  // and the card is withheld instead of stamping a non-canonical word onto a
-  // shareable image. This is the same fail-closed gate the evidence-card model
-  // applies before it will build receipts for a state.
-  const statusLabel = card.headline || null
-  if (!PUBLIC_TEAM_STATE_LABELS.includes(statusLabel)) return null
-  const summary = card.summary || null
-  const receipts = Array.isArray(card.receipts)
-    ? card.receipts.map((item) => (item ? item.detail : null)).filter(Boolean).slice(0, 3)
+  const card = artifact.card
+  const team = card?.team || {}
+  const state = card?.state || {}
+  const statusLabel = state.public_label || null
+  const destinationUrl = artifactShareUrl(artifact)
+  if (
+    !card
+    || card.card_version !== TEAM_STATE_CARD_VERSION
+    || !PUBLIC_TEAM_STATE_LABELS.includes(statusLabel)
+    || !destinationUrl
+  ) return null
+
+  const abbr = String(team.abbreviation || '')
+  const teamName = team.canonical_name || abbr || 'Team'
+  const summary = state.why || state.headline || null
+  const receipts = Array.isArray(artifact.evidence)
+    ? artifact.evidence.map((item) => item?.detail).filter(Boolean).slice(0, 3)
     : []
-  const dataThrough = card.product_date || null
-  const headline = (summary || statusLabel || teamName).toString().toUpperCase()
-  const destinationUrl =
-    `${EVIDENCE_CARD_ORIGIN}/bullpen?view=board&team=${encodeURIComponent(abbr)}#team-relief-work`
+  const dataThrough = card.artifact_context?.data_through || artifact.product_date || null
+  const limitations = Array.isArray(card.limitations)
+    ? card.limitations.filter(Boolean)
+    : []
 
   return {
     cardType: 'team',
-    headline,
+    headline: String(state.headline || statusLabel || teamName).toUpperCase(),
     stateLabel: statusLabel,
     supportingLine: null,
     summary,
@@ -80,22 +79,16 @@ export function buildTeamShareCardFromArtifact(response) {
     receipts,
     dataThrough,
     dataThroughLabel: formatDataThroughLabel(dataThrough),
-    limitation: TEAM_CARD_LIMITATION,
+    limitation: limitations[0] || null,
     evidenceSection: 'team-relief-work',
     evidenceTarget: 'team_relief_work',
-    evidenceCtaLabel: 'SEE THE CURRENT TEAM RELIEF WORK',
+    evidenceCtaLabel: 'OPEN THE PUBLISHED OBSERVATION',
     destinationUrl,
     displayUrl: destinationUrl.replace(/^https?:\/\//, ''),
-    shareText: `${teamName} current bullpen read. See the current BaseballOS evidence.`,
-    altText: `BaseballOS team state card for ${teamName}. ${statusLabel || ''} ${summary || ''}`
-      .trim()
-      .slice(0, 320),
-    fileName: `baseballos-${(abbr || 'team').toLowerCase()}-bullpen-${dataThrough || 'current'}.png`,
-    artifactPublicId: card.public_id || null,
-    source: card.source,
-    // cardVersion / storyAngle are intentionally omitted: the governed values are
-    // not in the legacy share-action tracker allowlist, so supplying them would
-    // cause the tracker to reject the action. Omitting keeps share-action
-    // tracking working (the action is still recorded via the caller context).
+    shareText: artifact.copy?.description || state.headline || statusLabel,
+    altText: artifact.copy?.alt_text || `${teamName} published Team State: ${statusLabel}`,
+    fileName: `baseballos-${(abbr || 'team').toLowerCase()}-team-state-${dataThrough || 'published'}.png`,
+    artifactPublicId: artifact.public_id,
+    source: 'immutable_share_artifact',
   }
 }

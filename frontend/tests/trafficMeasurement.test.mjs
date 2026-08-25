@@ -107,6 +107,14 @@ test('standalone Pitcher route records bounded canonical identity without raw pa
   assert.equal(canonicalPage('/pitcher/not-a-pitcher'), null)
 })
 
+test('public Share Artifact route records bounded identity without its public id', () => {
+  assert.deepEqual(canonicalPage('/share/abc123'), {
+    route: '/share/:publicId',
+    surface: 'shared_artifact',
+  })
+  assert.equal(canonicalPage('/share/not/valid'), null)
+})
+
 test('bullpen mapping retains only route-compatible allowlisted context and never raw query', () => {
   const page = canonicalPage('/bullpen', '?view=compare&team_a=nyy&team_b=bos&team=sea&pitcher=42&secret=token')
   assert.deepEqual(page, {
