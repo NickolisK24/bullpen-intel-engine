@@ -11,6 +11,7 @@ import {
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
 import WorkloadPatterns from './WorkloadPatterns'
+import ObservedDeployment from './ObservedDeployment'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
@@ -62,6 +63,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
     pitcher_labels: pitcherLabels,
     recent_work: recentWork,
     recent_work_status: recentWorkStatus,
+    deployment_context: deploymentContext,
     recent_logs,
   } = data || {}
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
@@ -170,6 +172,8 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
           />
 
           <WorkloadPatterns workloadSignal={workloadSignal} />
+
+          <ObservedDeployment context={deploymentContext} />
         </div>
       ) : (
         <div className="p-8 text-center text-chalk400 font-mono text-sm">

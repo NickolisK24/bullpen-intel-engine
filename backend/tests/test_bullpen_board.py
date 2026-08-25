@@ -1710,6 +1710,185 @@ class TestBoardEndpoint:
         assert captured['pitcher'].id == pitcher_id
         assert captured['freshness'] == body['freshness']
 
+    def test_pitcher_detail_composes_exact_deployment_profile_once(
+        self,
+        client,
+        monkeypatch,
+    ):
+        import api.bullpen as bullpen_api
+
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Observed Deployment Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11323,
+                innings=[1.0, 1.0],
+                days_ago=[1, 4],
+                roster_status=STATUS_ACTIVE,
+            )
+            pitcher_id = pitcher.id
+
+        profile = {
+            'pitcher_id': pitcher_id,
+            'pitcher_mlb_id': 11323,
+            'pitcher_name': 'Observed Deployment Reliever',
+            'appearances_analyzed': 4,
+            'saves': 0,
+            'holds': 2,
+            'games_finished': 0,
+            'appearances_with_games_finished': 3,
+            'multi_inning_appearances': 0,
+            'appearances_with_outs': 4,
+            'most_recent_multi_inning_date': None,
+            'limitations': [],
+            'summary': 'Canonical owner summary.',
+        }
+        calls = []
+
+        def fake_deployment(team_id, *, data_through):
+            calls.append({'team_id': team_id, 'data_through': data_through})
+            return {
+                'contract': 'team_board_deployment_profile_carrier_v1',
+                'status': 'complete',
+                'reason_code': None,
+                'data_through': data_through,
+                'window_days': 14,
+                'population_basis': 'official_appearance_team_relief_appearances',
+                'profiles': [
+                    {'pitcher_id': pitcher_id + 1000, 'saves': 9},
+                    profile,
+                ],
+                'limitations': ['Other pitcher limitation must not cross pitchers.'],
+            }
+
+        monkeypatch.setattr(bullpen_api, 'author_deployment_profile', fake_deployment)
+
+        body = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
+        context = body['deployment_context']
+
+        assert calls == [{
+            'team_id': 113,
+            'data_through': body['freshness']['data_through'],
+        }]
+        assert context == {
+            'contract': 'pitcher_observed_deployment_context_v1',
+            'status': 'complete',
+            'reason_code': None,
+            'data_through': body['freshness']['data_through'],
+            'window_days': 14,
+            'source_contract': 'team_board_deployment_profile_carrier_v1',
+            'method_version': 'public_team_deployment_profile_v1',
+            'public_contract_version': 'public_team_deployment_profile_public_v1',
+            'reference_date_policy': 'calendar_day_inclusive_through_date_v1',
+            'population_basis': 'official_appearance_team_relief_appearances',
+            'population_authority': 'game_log.appearance_team_id_resolved',
+            'profile': profile,
+            'limitations': profile['limitations'],
+        }
+
+    def test_pitcher_detail_deployment_uses_canonical_team_appearance_filters(
+        self,
+        client,
+    ):
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Team Owned Deployment Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11324,
+                innings=[1.0, 1.2, 1.0, 1.0, 1.0],
+                days_ago=[1, 2, 3, 4, 5],
+                roster_status=STATUS_ACTIVE,
+                games_started=[0, 0, 0, 1, 0],
+            )
+            pitcher_id = pitcher.id
+            logs = (
+                GameLog.query
+                .filter_by(pitcher_id=pitcher_id)
+                .order_by(GameLog.game_date.desc())
+                .all()
+            )
+
+            for log in logs:
+                log.appearance_team_status = GameLog.APPEARANCE_TEAM_RESOLVED
+                log.appearance_team_id = 113
+                log.appearance_team_source = 'boxscore_side'
+                log.appearance_team_reason = 'appearance_team_resolved_boxscore'
+
+            logs[0].save = True
+            logs[0].games_finished = 1
+            logs[1].hold = True
+            logs[1].games_finished = None
+            logs[2].appearance_team_id = 158
+            logs[2].save = True
+            logs[3].hold = True  # Credited start: excluded by the owner.
+            logs[4].appearance_team_status = GameLog.APPEARANCE_TEAM_UNRESOLVED
+            logs[4].appearance_team_id = None
+            logs[4].appearance_team_source = None
+            logs[4].appearance_team_reason = 'appearance_team_unresolved'
+            db.session.commit()
+            expected_multi_inning_date = logs[1].game_date.isoformat()
+
+        body = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
+        context = body['deployment_context']
+        profile = context['profile']
+
+        assert context['status'] == 'complete'
+        assert context['window_days'] == 14
+        assert profile['pitcher_id'] == pitcher_id
+        assert profile['appearances_analyzed'] == 2
+        assert profile['saves'] == 1
+        assert profile['holds'] == 1
+        assert profile['games_finished'] == 1
+        assert profile['appearances_with_games_finished'] == 1
+        assert profile['multi_inning_appearances'] == 1
+        assert profile['appearances_with_outs'] == 2
+        assert profile['most_recent_multi_inning_date'] == expected_multi_inning_date
+        assert profile['limitations'] == [
+            'Games-finished counts include only appearances with recorded finish authority.'
+        ]
+
+    def test_pitcher_detail_keeps_core_sections_when_deployment_fails(
+        self,
+        client,
+        monkeypatch,
+    ):
+        import api.bullpen as bullpen_api
+
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Deployment Failure Reliever',
+                team_id=145,
+                team_abbr='CWS',
+                mlb_id=14523,
+                innings=[1.0, 1.0],
+                days_ago=[1, 4],
+                roster_status=STATUS_ACTIVE,
+            )
+            pitcher_id = pitcher.id
+
+        calls = []
+
+        def fail_deployment(*args, **kwargs):
+            calls.append((args, kwargs))
+            raise RuntimeError('optional deployment failure')
+
+        monkeypatch.setattr(bullpen_api, 'author_deployment_profile', fail_deployment)
+
+        response = client.get(f'/api/bullpen/fatigue/{pitcher_id}')
+        body = response.get_json()
+
+        assert response.status_code == 200
+        assert len(calls) == 1
+        assert body['pitcher']['id'] == pitcher_id
+        assert body['pitcher_labels']['role']['label']
+        assert body['pitcher_labels']['read']['label']
+        assert body['availability']['availability_status']
+        assert body['recent_work_status'] == {'status': 'available'}
+        assert body['deployment_context']['status'] == 'unavailable'
+        assert body['deployment_context']['reason_code'] == 'deployment_context_unavailable'
+
     def test_pitcher_detail_keeps_core_current_state_when_recent_work_fails(
         self,
         client,
