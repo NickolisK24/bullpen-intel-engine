@@ -444,6 +444,10 @@ export const searchPitchers    = (params = {}) => {
   const queryParams = typeof params === 'string' ? { q: params } : params
   return request(`/pitchers/search${buildQuery(queryParams)}`)
 }
+export const searchDiscovery   = (params = {}) => {
+  const queryParams = typeof params === 'string' ? { q: params } : params
+  return request(`/search${buildQuery(queryParams)}`)
+}
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
 export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`)
 

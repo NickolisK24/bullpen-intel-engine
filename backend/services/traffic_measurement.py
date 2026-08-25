@@ -63,7 +63,7 @@ PAYLOAD_KEYS = frozenset({
 
 ENTRY_SOURCE_ALLOWLIST = frozenset({
     'today', 'dashboard', 'landscape', 'stories', 'comparison',
-    'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card',
+    'all_pitchers', 'pitcher_search', 'search', 'share', 'share_link', 'share_card',
     'since_yesterday',
 })
 EVIDENCE_TARGET_ALLOWLIST = frozenset({

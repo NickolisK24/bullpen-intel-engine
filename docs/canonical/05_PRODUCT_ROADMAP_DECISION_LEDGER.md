@@ -8,7 +8,7 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 5.8  ·  PITCHER CURRENT-STATE CLOSEOUT AND RECENT-WORK RECONCILIATION
+VERSION 5.9  ·  PITCHER AND MATCHUP CORE CLOSEOUT · SEARCH/DISCOVERY ACTIVATION
 
 Owner: Nickolis Kacludis
 
@@ -52,17 +52,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 5.8 |
+| Version | 5.9 |
 | Effective date | August 25, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Audited `origin/main` at `8036a27b8f90bf65721af9662a36ad111dc8cb21`, after PR #740. Includes PIT-01 implementation commit `edf1209b453ccaa3461c1c3ea19cd18bf5735657`, scoped legacy-route guard repair `aca8e18436af732ddfbe2e3d9a46e9b379979267`, and merge `8036a27b8f90bf65721af9662a36ad111dc8cb21`; historical Today/Tonight phase closeout basis: `f545eb700408b18f5987b7fab0c868c4b6b65dd1`. |
+| Repository basis | Audited `origin/main` at `16f72766c05c2732d78f1b00ff6baedc65bc9bc2`, after PR #749. Includes PIT-02 through PIT-07, CMP-01, CMP-02, the standalone Pitcher and scheduled Matchup destinations, and the shared `current_bullpen_comparison_carrier_v1`; historical Today/Tonight phase closeout basis: `f545eb700408b18f5987b7fab0c868c4b6b65dd1`. |
 | Decision basis | Decision Ledger through D-057. No durable decision is added by this package closeout or ordinary roadmap sequencing. |
 | Audit basis | Repository history and current backend, frontend, workflow, runbook, contract-test, and canonical-document evidence through August 24, 2026. No production workflow, production mutation, or synthetic production evidence was used. |
-| Supersedes | Version 5.7 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
+| Supersedes | Version 5.8 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Team Board 2.0 remains the product center of gravity and the completed Today/Tonight phase is the daily-habit entry. PIT-02 may consolidate only existing backend-owned recent-work windows, latest-appearance context, and appearance-ledger facts into one summary and one ledger; it may not invent availability, role, workload, leverage, performance, prediction, or frontend baseball meaning. D-001 through D-057 remain in force according to their recorded status. |
+| INTEGRATION RULE | Team Board 2.0, Today/Tonight, Pitcher 2.0, and Matchup/Compare are core-complete for their current governed scopes. SD-01 may unify discovery of canonical team, pitcher, and current scheduled-game identities, but it may not rank baseball subjects, summarize intelligence, create new entity authority, or alter destination semantics. D-001 through D-057 remain in force according to their recorded status. |
 | --- | --- |
 
 # Part I - Executive State
@@ -71,17 +71,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 
 BaseballOS is a live public MLB bullpen-intelligence platform whose Team Board is the product center of gravity. Between the August 17 readiness baseline and audited `main`, the repository landed the visual foundation, a versioned composed read model, all eleven Team Board presentation packages, backend-owned Team State explanation, governed workload and Rest Status reads, Team Board ERA and WHIP, rotation impact, transaction chronology, structured What Changed, responsive closeout, and the consolidated read path.
 
-The repository therefore no longer supports treating Team Board 2.0, its read-path consolidation, the current governed Today/Tonight build, or the Pitcher current-state foundation as unfinished. Core governed Team Board architecture and presentation are complete; the Daily Edition supplies a dated lead, compact change ledger, every-game bullpen context, and a finite scan-friendly Tonight slate; and the Pitcher detail now opens with one backend-authored current-state answer from canonical identity, roster, role, Arm Read, latest-workload, freshness, and team-handoff owners. PRE-01 residual token cleanup remains optional, while TB-05 depth and TB-08 source completeness remain intentionally partial or gated. Those future depth items do not reopen the core builds. The next product-spine need is to consolidate the duplicated recent-work presentation already carried by the canonical Pitcher response.
+The repository therefore no longer supports treating Team Board 2.0, the current governed Today/Tonight build, Pitcher 2.0, or Matchup/Compare as unfinished foundations. Pitcher now supplies canonical current situation, availability, recent work, workload patterns, observed deployment, a standalone destination, and a coherent responsive hierarchy. Manual Compare and scheduled Matchup share one governed carrier with aligned Team State, rest, workload, rotation, availability, and per-domain comparability. PRE-01 residual token cleanup remains optional, while TB-05 depth and TB-08 source completeness remain intentionally partial or gated. Those future depth items do not reopen the core builds. The next product-spine need is one coherent Search/Discovery entry across the stable team, pitcher, and Matchup destinations.
 
-| CURRENT VERDICT | PIT-01 is COMPLETE on audited `main`: identity/team, canonical roster status, public role, Arm Read, latest workload appearance, days rest, seven-day workload, represented date, and Team Board handoff render from one eager Pitcher owner response with composed recent work, missing-not-zero behavior, local optional failure, and no frontend baseball semantics. The single active objective is PIT-02 — Recent Work & Appearance Consolidation. |
+| CURRENT VERDICT | PIT-01 through PIT-07 and CMP-01 through CMP-02 are COMPLETE on audited `main`. Pitcher 2.0 and Matchup/Compare are core-complete for their current governed scopes. The single active objective is SD-01 — Unified Entity Search. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | `8036a27b8f90bf65721af9662a36ad111dc8cb21` | Audited `origin/main` after PR #740; includes PIT-01 commit `edf1209b` and guard repair `aca8e184`. |
-| Audit branch | `feat/pitcher-recent-work` | PIT-01 closeout followed by the separately committed PIT-02 implementation. |
+| Repository main | `16f72766c05c2732d78f1b00ff6baedc65bc9bc2` | Audited `origin/main` after PR #749; includes Pitcher 2.0 through PIT-07 and Matchup/Compare through CMP-02. |
+| Audit branch | `search/unified-discovery` | Batched Pitcher/Matchup phase closeout followed by the separately committed SD-01 implementation. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -104,43 +104,36 @@ The repository therefore no longer supports treating Team Board 2.0, its read-pa
 
 ## 3. Active Objective
 
-| ACTIVE OBJECTIVE | PIT-02 — Recent Work & Appearance Consolidation |
+| ACTIVE OBJECTIVE | SD-01 — Unified Entity Search |
 | --- | --- |
 
-The next bounded package is **PIT-02 — Recent Work & Appearance Consolidation**.
-PIT-01 is complete on PR #740: the Pitcher detail now presents identity/team,
-canonical roster status, backend-authored public role and Arm Read, latest
-workload appearance, days rest, seven-day workload, represented date, and the
-Team Board handoff from one eager `/bullpen/fatigue/:id` response. The existing
-public recent-work carrier is composed server-side, optional recent-work failure
-stays local, and missing counts or pitches remain missing rather than zero.
+The next bounded package is **SD-01 — Unified Entity Search**.
+PIT-02 through PIT-07 are complete across PRs #741 through #747, making Pitcher
+2.0 core-complete without promoting ungoverned performance, leverage, or history.
+CMP-01 and CMP-02 are complete across PRs #748 and #749: manual Compare and
+scheduled Matchup now share one compact comparison carrier, one comparability
+contract, and canonical Team Board handoffs without prediction or winner logic.
 
-Below that current-state answer, the Pitcher detail still repeats the same
-recent-work facts across a most-recent-appearance block, a workload snapshot,
-the public recent-work panel, and a second recent-appearances table. The canonical
-response already owns the valid 7/14-day workload windows, latest appearance,
-and bounded newest-first appearance ledger. Consolidating that presentation is
-therefore executable without a new intelligence model, new request, or backend
-semantic owner.
+Search/Discovery already has canonical destination routes, a bounded pitcher-name
+owner, a 30-club team directory, and today's governed scheduled-game authority.
+What is missing is one obvious entry that resolves those identities without
+loading destination intelligence or forcing users to know which finder owns the
+entity first.
 
-PIT-02 exits when the public Pitcher detail:
+SD-01 exits when the public application:
 
-1. presents one clearly headed Recent Work section with one concise canonical
-   summary and one newest-first recent-appearance ledger;
-2. represents each recent appearance once and retires duplicate presentation of
-   latest-appearance, workload-window, and raw-log facts while preserving every
-   valid canonical detail;
-3. continues to open from one eager `/bullpen/fatigue/:id` owner response with
-   no eager standalone recent-work, per-game, per-appearance, or Team Board read;
-4. preserves missing, empty, partial, and unavailable evidence without turning
-   it into zero or removing the PIT-01 answer or Availability section; and
-5. remains dense and overflow-safe around 390px and aligned around 1440px, with
-   no availability compaction, role movement, leverage, performance, pitch
-   trends, history, prediction, or frontend baseball interpretation.
-
-Availability redesign, role movement, usage by inning/leverage, performance
-expansion, pitch trends, and historical movement remain later bounded Pitcher
-2.0 packages. PIT-02 changes presentation and read-model use only.
+1. provides one obvious `/search` destination reachable from global navigation;
+2. resolves teams, pitchers, and product-day scheduled Matchups through one
+   bounded debounced request using existing identity authorities;
+3. groups deterministic identity results and routes each result to its existing
+   canonical Team Board, `/pitcher/:id`, or `/matchup/:gameId` destination;
+4. preserves duplicate-name and off-active context without silently choosing an
+   identity, while empty, partial-owner, and total-failure states remain honest;
+5. adds no per-result reads, baseball ranking, recommendation, intelligence
+   summary, persistent index, historical game engine, or destination-semantic
+   change; and
+6. remains keyboard-operable, screen-reader grouped, and overflow-safe around
+   390px while using desktop width intentionally around 1440px.
 
 All standing operational boundaries remain intact: D-051 still prohibits an
 authoritative manual daily execution; the legacy sync/postgame writer remains
@@ -240,13 +233,14 @@ The package-by-package and gap-register reconciliation is retained in Appendix D
 
 | Order | State | Work package | Scope |
 | --- | --- | --- | --- |
-| 1 | ACTIVE | PIT-02 — Recent Work & Appearance Consolidation | Consolidate the already-composed canonical recent-work windows, latest appearance, and newest-first appearance facts into one concise summary and one ledger; retire duplicate presentation without changing semantics or requests. |
+| 1 | ACTIVE | SD-01 — Unified Entity Search | Add one globally reachable search destination and one bounded mixed-identity request for canonical teams, pitchers, and product-day scheduled Matchups; route results to existing destinations without baseball ranking or destination reads. |
 | 2 | BLOCKED | TB-08 source-completeness follow-up | Resume only after unresolved transaction authority is established; continue withholding in the meantime. No guessed event meaning. |
 | 3 | DEFERRED BY PRIOR DECISION | Portable Intelligence | Canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel remain valid; distribution follows a stronger Daily Edition rather than substituting for it. |
 | 4 | DATE-BOUND OBLIGATION | React Router migration (#645) | Complete or explicitly re-review before the accepted risk expires on 2026-11-13; the standing dependency gate enforces the date. |
 | 5 | BACKLOGGED | Runtime work reduction | No current correctness, currentness, performance, or sustainable-operation blocker requires infrastructure to displace the active product slice. Preserve D-051. |
 | 6 | BACKLOGGED | Additional Team Board depth | Extra performance metrics, historical routes, role/leverage movement, and additional governed delta domains require separate evidence and approval. |
-| 7 | CURRENT PHASE | Pitcher 2.0 | PIT-01 current state is complete; PIT-02 consolidates recent work and appearances while availability redesign, leverage, performance, pitch-trend, and historical depth remain separately governed later packages. |
+| 7 | COMPLETE PHASE | Pitcher 2.0 and Matchup/Compare | PIT-01 through PIT-07 and CMP-01 through CMP-02 are core-complete; deeper performance, leverage, named-arm, and history work remains separately governed expansion. |
+| 8 | CURRENT PHASE | Search / Discovery | SD-01 unifies canonical identity discovery without changing Team Board, Pitcher, Matchup, or baseball semantics. |
 
 One dated obligation sits outside this order and does not wait for it: the
 React Router acceptance recorded under #645 expires **2026-11-13**, and the
@@ -307,7 +301,7 @@ migration lands or the acceptance is re-reviewed before then.
 | Phase 1B - Public Credibility Pass | Complete - August 12, 2026 | #590, #595, #591, #600, #594, and #638 all complete and production-verified. Maintain the vocabulary, copy-authority, and page-semantics regressions. |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Raster renderer, immutable asset, crawler metadata, actions, funnel. |
 | Phase 3 - Daily Habit and Consequence | Complete for current governed scope | Team Board What Changed and TODAY-01 through TODAY-06 are complete; the Daily Edition is dated, finite, scan-friendly, failure-isolated, and directly hands off to Team Board depth. |
-| Phase 4 - Offseason Intelligence Depth | Active | PIT-01 current state is complete and PIT-02 is the bounded recent-work consolidation package; pitch trends, leverage/dependency, organizational depth, routed discovery, and timeline/archive remain later packages. |
+| Phase 4 - Offseason Intelligence Depth | Active - Search / Discovery | Pitcher 2.0 and Matchup/Compare are core-complete. SD-01 is the bounded unified identity-discovery package; Portable Intelligence and History / Memory remain the next product-spine phases. |
 | Phase 5 - Opening Day 2027 | Not started | Complete daily relaunch with current trust and reliability proof. |
 | Phase 6 - Growth and Validation | Not started | Measured behavior and rights evidence choose direction. |
 
@@ -383,7 +377,7 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-Version 5.8 adds no durable Decision Ledger ID. PIT-01 closure and PIT-02 activation are implementation and ordinary roadmap-sequencing evidence. D-001 through D-057 remain unchanged and in force according to their recorded status.
+Version 5.9 adds no durable Decision Ledger ID. Closing PIT-02 through PIT-07 and CMP-01 through CMP-02, then activating SD-01, are implementation and ordinary roadmap-sequencing evidence. D-001 through D-057 remain unchanged and in force according to their recorded status.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
@@ -583,6 +577,8 @@ Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior d
 | Aug 24, 2026 | Daily Habit UX | Compact Since Yesterday presentation | PR #738 / commit `d8611aea` / merge `6360a4b5` | Every detailed payload team remains represented as a compact canonical-delta row; one selected team's unchanged full explanation, evidence, and Team Board CTA mounts on request; filter/search changes clear stale expansion. | **Complete presentation refinement.** Initial 390px section height fell approximately 78.5%; What Changed semantics, ordering, requests, publication, and backend authority are unchanged. |
 | Aug 24, 2026 | Daily Habit | TODAY-06 Tonight Slate Scanability | PR #739 / commit `4f513395` / merge `f545eb70` | Every slate game remains visible in backend order as a compact row with matchup, time/status, both Team States, and exact Rested Options; one selected game's unchanged full two-bullpen context mounts on request. | **Complete.** Zero browser-request, backend-call, and snapshot-contract growth; Team Board handoffs, quiet/partial behavior, missing evidence, responsive density, and every ranking/prediction boundary remain intact. This closes the current governed Today/Tonight phase. |
 | Aug 25, 2026 | Pitcher 2.0 | PIT-01 Pitcher Current State | PR #740 / commit `edf1209b` / guard repair `aca8e184` / merge `8036a27b` | One eager `/bullpen/fatigue/:id` response carries pitcher/team identity, canonical roster status, backend-owned public role and Arm Read, latest workload appearance, days rest, seven-day appearances/pitches, represented date, Team Board handoff, and the unchanged public recent-work carrier. | **Complete.** Missing counts and pitches remain missing rather than zero; optional recent-work failure stays local; the standalone recent-work endpoint and frozen legacy logs route remain intact; no internal score, prediction, frontend semantic derivation, or availability change was introduced. |
+| Aug 25, 2026 | Pitcher 2.0 | PIT-02 through PIT-07 core closeout | PRs #741-#747 / merges `a10e29e4`, `cc128d07`, `21c0eab5`, `e8d3af8f`, `60824b97`, `3a8c9bb7`, `0722de60` | Consolidated recent work, compacted availability evidence, added governed workload patterns and observed deployment, separated product-relative date wording, established canonical `/pitcher/:id`, and unified the standalone visual hierarchy. | **Core complete.** One eager Pitcher owner remains; deeper performance, leverage, role movement, pitch trends, and history stay separately governed expansion. |
+| Aug 25, 2026 | Matchup / Compare | CMP-01 and CMP-02 core closeout | PRs #748-#749 / merges `17cfc862`, `16f72766` | Manual Compare and scheduled `/matchup/:gameId` share `current_bullpen_comparison_carrier_v1`, aligned domain comparability, missing-not-zero behavior, local withholding, canonical Team Board handoffs, and responsive neutral presentation. | **Core complete.** No leader, winner, edge, prediction, named-arm selection, Team Board rebuild, or browser fan-out was introduced. |
 
 ## DIST-003 (#594) Production Closeout Evidence
 
@@ -618,7 +614,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 | Phase 1B - Vocabulary and Freshness | Complete | Aug 12, 2026 | #590, #595, #591, #600, #594, and #638 complete and production-verified; VOC-001 closed on trusted snapshot 398 proof | Maintain vocabulary, copy-authority, and page-semantics regressions |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started |  | Immutable artifact and historical page are production | Renderer, metadata, actions, funnel |
 | Phase 3 - Daily Habit and Consequence | Complete for current governed scope | Aug 24, 2026 | Governed Team Board What Changed, TODAY-01 through TODAY-06, compact Since Yesterday, finite Tonight detail, one-request owners, and local quiet/failure states | Later Daily Edition depth requires a separately governed material product gap; no TODAY-07 is implied |
-| Phase 4 - Offseason Intelligence Depth | Active |  | PIT-01 current state is complete; PIT-02 activates one bounded recent-work summary and appearance-ledger consolidation from the already-composed canonical owner | Availability redesign, leverage, performance, pitch-trend, role-movement, and history packages remain separate |
+| Phase 4 - Offseason Intelligence Depth | Active - Search / Discovery |  | Pitcher 2.0 and Matchup/Compare are core-complete; SD-01 activates one bounded unified identity-search destination | Portable Intelligence, History / Memory, and separately governed intelligence expansion remain later phases |
 | Phase 5 - Opening Day 2027 | Not started |  |  | Complete daily relaunch |
 | Phase 6 - Growth and Validation | Not started |  |  | Behavior and rights evidence choose direction |
 
@@ -645,7 +641,7 @@ SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), a
 
 ## Active objective
 
-The active objective is PIT-02 Recent Work & Appearance Consolidation. PIT-01 is complete on merged main: the public Pitcher detail opens from one eager owner response and presents canonical identity, roster, role, Arm Read, latest workload, represented date, and team handoff while preserving missing evidence and local optional failure. TODAY-01 through TODAY-06 remain complete.
+The active objective is SD-01 Unified Entity Search. PIT-01 through PIT-07 and CMP-01 through CMP-02 are complete on merged main: Pitcher 2.0 and Matchup/Compare have stable canonical destinations, bounded request graphs, local optional failure, missing-not-zero behavior, and no frontend baseball authorship. TODAY-01 through TODAY-06 remain complete.
 
 PRE-02B is complete under D-057. Current Team Board rendering uses the teams
 directory plus one `/board-v2` content request. Legacy `/board` remains an
@@ -659,7 +655,7 @@ A closed issue and recorded production proof remain different claims. Here both 
 
 ## Next approved sequence
 
-1) Consolidate PIT-02 into one canonical recent-work summary and one newest-first appearance ledger using the already-composed public recent-work owner, without duplicate presentation, new browser reads, frontend baseball meaning, or missing-to-zero fallbacks. 2) Keep availability redesign, leverage, performance, role-movement, pitch-trend, and historical packages separate. 3) Keep TB-08 blocked until transaction authority resolves and Portable Intelligence deferred by prior decision; keep runtime work and additional Team Board depth backlogged unless their stated gates change.
+1) Deliver SD-01 as one globally reachable, bounded identity-search destination for teams, pitchers, and product-day scheduled Matchups, with canonical links and no per-result reads or baseball ranking. 2) Continue Search / Discovery only until canonical entity discovery, accessibility, bounded requests, and ambiguity handling are core-complete; then follow the agreed sequence into Portable Intelligence and History / Memory. 3) Keep TB-08 blocked until transaction authority resolves; keep runtime work and additional Team Board or intelligence depth backlogged unless their stated gates change.
 
 Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
@@ -764,3 +760,4 @@ not a reason to reopen the completed Team Board packages.
 | 5.6 | August 24, 2026 | Nickolis Kacludis | Reconciled `origin/main` `6360a4b5` after PR #738. Closed TODAY-05 on exact frozen Rotation Impact pass-through, one shared trusted-snapshot resolution, missing-evidence, local-failure, zero-browser-request, `tonight_v4`, and no-forecast evidence. Recorded PR #738's completed Since Yesterday compaction as a presentation refinement: every detailed team remains reachable, one detail mounts at a time, initial mobile height fell approximately 78.5%, and semantics and requests are unchanged. Audited the full Today surface and selected TODAY-06 Tonight Slate Scanability because the every-game slate now carries enough governed context but mounts two full reports per game, conflicting with the finite-edition and ten-second scanability standards. Kept named-arm selection, role-arm context, literal series burden, and new matchup sentences gated or unsupported; made Pitcher 2.0 the next-phase candidate after this Tier 1 exit; kept TB-08 blocked, React Router date-bound, Portable Intelligence deferred, and infrastructure/depth packages backlogged. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
 | 5.7 | August 24, 2026 | Nickolis Kacludis | Reconciled `origin/main` `f545eb70` after PR #739. Closed TODAY-06 on exact backend-order representation, compact game identity, immediately visible Team State and Rested Options, one-at-a-time unchanged detail, zero browser-request/backend-call/snapshot growth, local failure, responsive-density, and ranking/prediction-boundary evidence. Closed the current governed Today/Tonight phase rather than manufacturing TODAY-07. Audited the live Pitcher detail route, its two eager owner reads, roster/workload presentation, canonical role/read owners, and missing-to-zero fallbacks; selected PIT-01 Pitcher Current State as the sole active objective, bounded to a backend-authored identity/roster/role/read/latest-workload/freshness answer and recent-work transport consolidation. Kept Pitcher ledger redesign, leverage, performance depth, role movement, pitch trends, and history as later packages; kept TB-08 blocked, React Router date-bound, Portable Intelligence deferred, and infrastructure/Team Board depth backlogged. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
 | 5.8 | August 25, 2026 | Nickolis Kacludis | Reconciled `origin/main` `8036a27b` after PR #740. Closed PIT-01 on exact canonical identity/roster/role/Arm Read/latest-workload/freshness/team-handoff pass-through, one eager Pitcher owner response, composed recent work, missing-not-zero behavior, and local optional failure evidence. Selected PIT-02 Recent Work & Appearance Consolidation as the sole active objective because the canonical response already carries one bounded recent-work owner while the frontend repeats its latest-appearance, workload-window, and appearance-ledger facts across multiple blocks. Bounded PIT-02 to one concise summary and one newest-first ledger with no availability redesign, leverage, performance, role movement, pitch trends, history, request growth, or frontend baseball meaning. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
+| 5.9 | August 25, 2026 | Nickolis Kacludis | Reconciled `origin/main` `16f72766` after PR #749. Closed PIT-02 through PIT-07 and declared Pitcher 2.0 core-complete on consolidated recent work, compact availability, governed workload patterns, observed deployment, canonical standalone routing, and coherent responsive hierarchy. Closed CMP-01 and CMP-02 and declared Matchup/Compare core-complete on one trusted comparison carrier shared by manual Compare and scheduled Matchup, exact per-domain comparability, local withholding, canonical Team Board handoffs, and no ranking or prediction. Selected SD-01 Unified Entity Search as the sole active objective, bounded to one globally reachable search destination, one debounced mixed-identity request, deterministic team/pitcher/product-day Matchup groups, and canonical destinations with no baseball summary, persistent index, per-result read, or destination-semantic change. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |

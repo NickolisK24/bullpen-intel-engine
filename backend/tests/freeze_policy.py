@@ -389,6 +389,18 @@ PIT01_PITCHER_CURRENT_STATE_PATHS = (
     'backend/services/public_recent_work.py',
 )
 
+# SD-01, August 25 2026. The unified discovery package adds one bounded public
+# identity-search route. It composes the existing team directory, pitcher-search,
+# and product-day schedule owners and returns canonical identities only: no
+# destination intelligence, baseball ranking, or write path is introduced.
+#
+# The Phase 0E public-prefix guard still protects every other backend/api path.
+# This exact-path exception becomes inert after merge because the file will no
+# longer differ from origin/main.
+SD01_UNIFIED_SEARCH_PATHS = (
+    'backend/api/search.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

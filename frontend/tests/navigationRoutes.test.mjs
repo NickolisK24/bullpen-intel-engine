@@ -37,7 +37,7 @@ const internalShareTitleLabels = [
   'Hidden Capacity Loss',
   'Thinning Trust Lane',
 ]
-const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/stories', '/methodology', '/trust']
+const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/search', '/stories', '/methodology', '/trust']
 const safeHeroDescription = 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'
 const blockedEvidenceCopyPatterns = [
   /see the evidence behind/i,
@@ -231,7 +231,7 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   const html = render(React.createElement(Sidebar))
   // Primary destinations use plain baseball labels; the old ambiguous
   // "Dashboard"/"Bullpen" and population-overstating "All Pitchers" are gone.
-  const primaryLabels = ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories']
+  const primaryLabels = ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories']
   const supportingLabels = ['How to Read', 'Methodology', 'Data &amp; Trust', 'About']
   const routeIndexes = publicProductRoutes.map(route => html.indexOf(`href="${route}"`))
 
@@ -243,9 +243,9 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   for (const route of publicProductRoutes) {
     assert.ok(htmlIncludes(html, `href="${route}"`), route)
   }
-  // Compare Bullpens and Reliever Finder are direct destinations from the menu.
+  // Compare Bullpens and unified Search are direct destinations from the menu.
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+  assert.ok(htmlIncludes(html, 'href="/search"'))
   // Ambiguous or population-overstating labels no longer appear.
   assert.equal(htmlIncludes(html, '>Dashboard<'), false)
   assert.equal(htmlIncludes(html, 'All Pitchers'), false)

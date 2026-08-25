@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 5.8 (PIT-01 closeout and PIT-02 activation). What it guards:
+Re-pinned to Version 5.9 (Pitcher/Matchup core closeout and SD-01 activation). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -23,8 +23,9 @@ Re-pinned to Version 5.8 (PIT-01 closeout and PIT-02 activation). What it guards
     because its recorded run, tree, deployment, and routed-page evidence exist.
 
   * Order and package state are contracts. PRE-02B, PRE-02, TODAY-01 through
-    TODAY-06, and PIT-01 are complete; PIT-02 is the bounded active objective; blocked,
-    deferred, dated, and backlogged work may not silently advance.
+    TODAY-06, PIT-01 through PIT-07, and CMP-01 through CMP-02 are complete;
+    SD-01 is the bounded active objective; blocked, deferred, dated, and
+    backlogged work may not silently advance.
 
   * Team Board package status is explicit. A completed user-facing package may
     not become future work, and a partial package may not be called complete.
@@ -50,9 +51,9 @@ TODAY_SURFACE_PATH = (
 FRONTEND_API_PATH = REPO_ROOT / 'frontend' / 'src' / 'utils' / 'api.js'
 BULLPEN_API_PATH = REPO_ROOT / 'backend' / 'api' / 'bullpen.py'
 
-EXPECTED_VERSION = '5.8'
+EXPECTED_VERSION = '5.9'
 EXPECTED_EFFECTIVE_DATE = 'August 25, 2026'
-EXPECTED_MAIN = '8036a27b8f90bf65721af9662a36ad111dc8cb21'
+EXPECTED_MAIN = '16f72766c05c2732d78f1b00ff6baedc65bc9bc2'
 PRE_02B_COMMIT = '399692904e6abbf462b31dd9db92512e726bb045'
 TODAY_01_COMMIT = '77d77c56238844228bb07fcef9d173d3e1993e67'
 TODAY_02_COMMIT = '3adb502f724362bc3612f3bf2a799a1560938a53'
@@ -86,16 +87,17 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# Version 5.8's current execution sequence. State is part of the contract:
+# Version 5.9's current execution sequence. State is part of the contract:
 # blocked, deferred, dated, and backlogged work must not silently become active.
 APPROVED_EXECUTION = (
-    (1, 'ACTIVE', 'PIT-02 — Recent Work & Appearance Consolidation'),
+    (1, 'ACTIVE', 'SD-01 — Unified Entity Search'),
     (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
     (3, 'DEFERRED BY PRIOR DECISION', 'Portable Intelligence'),
     (4, 'DATE-BOUND OBLIGATION', 'React Router migration (#645)'),
     (5, 'BACKLOGGED', 'Runtime work reduction'),
     (6, 'BACKLOGGED', 'Additional Team Board depth'),
-    (7, 'CURRENT PHASE', 'Pitcher 2.0'),
+    (7, 'COMPLETE PHASE', 'Pitcher 2.0 and Matchup/Compare'),
+    (8, 'CURRENT PHASE', 'Search / Discovery'),
 )
 
 TEAM_BOARD_PACKAGE_STATUSES = {
@@ -218,7 +220,7 @@ def _team_board_package_statuses(text):
     return statuses
 
 
-def test_roadmap_declares_version_5_3():
+def test_roadmap_declares_current_version():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
@@ -239,13 +241,13 @@ def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
 
     assert EXPECTED_MAIN in text
     assert (
-        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #740; '
-        'includes PIT-01 commit `edf1209b` and guard repair `aca8e184`. |'
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #749; '
+        'includes Pitcher 2.0 through PIT-07 and Matchup/Compare through CMP-02. |'
         in text
     )
     assert (
-        '| Audit branch | `feat/pitcher-recent-work` | '
-        'PIT-01 closeout followed by the separately committed PIT-02 implementation. |'
+        '| Audit branch | `search/unified-discovery` | '
+        'Batched Pitcher/Matchup phase closeout followed by the separately committed SD-01 implementation. |'
         in text
     )
 
@@ -314,12 +316,13 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_pit_02_is_the_single_active_objective():
-    """The reconciliation advances one bounded recent-work consolidation package."""
+def test_sd_01_is_the_single_active_objective():
+    """The reconciliation advances one bounded unified-discovery package."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | PIT-02 — Recent Work & Appearance Consolidation |' in text
-    assert 'The next bounded package is **PIT-02 — Recent Work & Appearance Consolidation**.' in text
+    assert '| ACTIVE OBJECTIVE | SD-01 — Unified Entity Search |' in text
+    assert 'The next bounded package is **SD-01 — Unified Entity Search**.' in text
+    assert '| ACTIVE OBJECTIVE | PIT-02 — Recent Work & Appearance Consolidation |' not in text
     assert '| ACTIVE OBJECTIVE | PIT-01 — Pitcher Current State |' not in text
 
     # No superseded objective may still be declared.
@@ -369,11 +372,11 @@ def test_the_new_objective_preserves_every_authority_boundary():
         assert preserved in body, preserved
 
     for boundary in (
-        'represents each recent appearance once',
-        'no eager standalone recent-work, per-game, per-appearance, or Team Board read',
-        'no availability compaction, role movement, leverage, performance, pitch',
-        'frontend baseball interpretation',
-        'Availability redesign, role movement, usage by inning/leverage',
+        'one obvious `/search` destination',
+        'one\n   bounded debounced request',
+        'duplicate-name and off-active context',
+        'adds no per-result reads, baseball ranking, recommendation, intelligence',
+        'persistent index, historical game engine, or destination-semantic',
     ):
         assert boundary in body, boundary
 
@@ -613,7 +616,7 @@ def test_decision_ledger_is_contiguous_through_d057():
     assert 'D-058' not in text
 
     assert 'Decision Ledger through D-057' in text
-    assert 'Version 5.8 adds no durable Decision Ledger ID.' in text
+    assert 'Version 5.9 adds no durable Decision Ledger ID.' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
@@ -684,25 +687,30 @@ def test_completion_log_records_the_closed_packages_with_evidence():
         'This closes the current governed Today/Tonight phase.',
         'PR #740 / commit `edf1209b` / guard repair `aca8e184` / merge `8036a27b`',
         'One eager `/bullpen/fatigue/:id` response carries pitcher/team identity',
+        'PRs #741-#747 / merges `a10e29e4`, `cc128d07`, `21c0eab5`, `e8d3af8f`, `60824b97`, `3a8c9bb7`, `0722de60`',
+        'PIT-02 through PIT-07 core closeout',
+        'PRs #748-#749 / merges `17cfc862`, `16f72766`',
+        'CMP-01 and CMP-02 core closeout',
     ):
         assert fragment in joined, fragment
 
 
-def test_revision_history_records_the_version_5_8_entry():
+def test_revision_history_records_the_version_5_9_entry():
     """The current edition records its audit basis, objective, and boundaries."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 5.8 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.9 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        '`origin/main` `8036a27b`',
-        'Closed PIT-01',
-        'PIT-02 Recent Work & Appearance Consolidation',
+        '`origin/main` `16f72766`',
+        'Closed PIT-02 through PIT-07',
+        'Closed CMP-01 and CMP-02',
+        'SD-01 Unified Entity Search',
         'No durable decision was added or changed',
     ):
         assert claimed in entry, claimed
