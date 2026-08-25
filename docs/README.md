@@ -23,7 +23,7 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 25, 2026, with audited `origin/main` at `16f72766`:
+As of August 25, 2026, with audited `origin/main` at `87bf735b`:
 
 - **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
 - **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
@@ -38,7 +38,8 @@ As of August 25, 2026, with audited `origin/main` at `16f72766`:
 - **Since Yesterday remains compact by default.** Every detailed team and its canonical explanation remain reachable through one-at-a-time expansion; backend What Changed semantics and the request graph are unchanged.
 - **Pitcher 2.0 is core-complete through PIT-07.** Its standalone `/pitcher/:id` destination presents canonical current situation, compact availability, consolidated recent work, governed workload patterns, observed deployment, and a coherent responsive hierarchy from one eager Pitcher owner response.
 - **Matchup/Compare is core-complete through CMP-02.** Manual Compare and scheduled `/matchup/:gameId` reuse one governed comparison carrier with aligned Team State, rest, workload, rotation, availability, local comparability withholding, and direct Team Board handoffs.
-- **SD-01 Unified Entity Search is the single active objective.** It is bounded to one globally reachable Search destination and one debounced identity request for canonical teams, pitchers, and product-day scheduled Matchups, without baseball ranking, intelligence summaries, or per-result reads.
+- **Search/Discovery is core-complete through SD-01.** The global `/search` destination resolves canonical teams, pitchers, and product-day scheduled Matchups through one bounded request with deterministic identity relevance and no baseball ranking or per-result reads.
+- **PI-01 Team State Portable Citation is the single active objective.** It is bounded to making the immutable `/share/:publicId` observation the canonical Team State share target while preserving the current Team Board as a separate current-context handoff.
 - **Scheduled intraday repair is retired for the remainder of 2026.** The capability remains dormant/manual-only; daily plus postgame are the active scheduled cadence. Postgame now qualifies exact-date canonical roster authority before replacement public-snapshot publication.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
 - **Authoritative manual daily execution is prohibited under D-051.** The production full-daily runner is schedule-only and first-attempt-only; manual dispatch and reruns are refused before application startup.
