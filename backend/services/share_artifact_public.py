@@ -122,6 +122,21 @@ def load_public_share_artifact(public_id: Any, *, session=None) -> PublicArtifac
     if artifact is None:
         return PublicArtifactResult(RESULT_NOT_FOUND)
 
+    return project_public_share_artifact(artifact, session=session)
+
+
+def project_public_share_artifact(artifact, *, session=None) -> PublicArtifactResult:
+    """Project one already-resolved artifact through the canonical public contract.
+
+    This is the shared boundary for the permanent public-id read and the lazy
+    Team Board share entry. It performs the same lifecycle and integrity checks
+    either way; callers cannot bypass the public whitelist by resolving the
+    artifact through another repository query first.
+    """
+    session = session or db.session
+    if artifact is None:
+        return PublicArtifactResult(RESULT_NOT_FOUND)
+
     state = artifact.lifecycle_state
 
     # Draft existence must not be publicly discoverable.
@@ -185,7 +200,10 @@ def _team_route(team_abbreviation) -> Optional[str]:
     abbreviation = re.sub(r'[^A-Z0-9-]', '', team_abbreviation.strip().upper())
     if not abbreviation:
         return TEAM_SURFACE_ROUTE
-    return f'{TEAM_SURFACE_ROUTE}?view={TEAM_SURFACE_VIEW}&team={abbreviation}'
+    return (
+        f'{TEAM_SURFACE_ROUTE}?view={TEAM_SURFACE_VIEW}&team={abbreviation}'
+        '&source=share'
+    )
 
 
 def _public_state(team_state: Mapping[str, Any], public_copy: Mapping[str, Any]) -> Optional[dict]:

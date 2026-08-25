@@ -739,6 +739,15 @@ def test_share_card_endpoint_serves_published_artifact(share_card_client, monkey
     assert resp.status_code == 200
     body = resp.get_json()
     assert body['available'] is True
+    assert body['artifact']['public_id'] == body['card']['public_id']
+    assert body['artifact']['lifecycle_state'] == 'published'
+    assert body['artifact']['payload_version'] == TEAM_STATE_LATEST
+    assert body['artifact']['card']['card_version'] == TEAM_STATE_LATEST
+    assert body['artifact']['routes']['share_url'] == f"/share/{body['artifact']['public_id']}"
+    assert body['artifact']['routes']['team_url'] == '/bullpen?view=board&team=TST&source=share'
+    assert body['artifact']['copy']['description']
+    assert body['artifact']['copy']['alt_text']
+    assert body['artifact']['evidence']
     assert body['card']['source'] == COMPATIBILITY_SOURCE
     assert body['card']['team']['team_id'] == TEAM_ID
 

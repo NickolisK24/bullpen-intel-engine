@@ -116,6 +116,9 @@ export function canonicalPage(pathname, search = '', hash = '') {
       evidence_target: 'pitcher_detail',
     }
   }
+  if (/^\/share\/[A-Za-z0-9._-]{1,64}$/.test(path)) {
+    return { route: '/share/:publicId', surface: 'shared_artifact' }
+  }
   if (path !== '/bullpen') return null
 
   const params = new URLSearchParams(search)

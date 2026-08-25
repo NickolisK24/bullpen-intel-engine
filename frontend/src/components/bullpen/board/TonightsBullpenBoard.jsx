@@ -15,8 +15,8 @@ import TeamBoardRotationImpact from './TeamBoardRotationImpact'
 import TeamBoardRecentTransactions from './TeamBoardRecentTransactions'
 import TeamBoardWhatChanged from './TeamBoardWhatChanged'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
-import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
-import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
+import { resolveTeamId } from '../../../utils/evidenceLinks'
+import { buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 
 export { resolveTeamId } from '../../../utils/evidenceLinks'
@@ -97,8 +97,6 @@ export default function TonightsBullpenBoard({
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
   const loadTeamCard = createTeamShareCardLoader(selectedTeam)
-  const teamLinkFallbackPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
-  const teamDestinationUrl = teamLinkFallbackPath ? `${EVIDENCE_CARD_ORIGIN}${teamLinkFallbackPath}` : null
   const teamEvidenceTarget = normalizedRequestedSection === 'team-relief-work'
       ? 'team_relief_work'
       : normalizedRequestedSection === 'pitcher-lanes'
@@ -267,7 +265,6 @@ export default function TonightsBullpenBoard({
               <EvidenceShareMenu
                 variant="team-board"
                 loadCardModel={loadTeamCard}
-                destinationUrl={teamDestinationUrl}
                 shareText={teamShareText}
                 context={{
                   surface: 'bullpen_board',

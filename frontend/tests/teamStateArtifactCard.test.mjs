@@ -207,7 +207,7 @@ test('public page renders the v1.2 card first, then historical note and destinat
   // Destinations remain present for the card path.
   assert.match(html, /Methodology/)
   assert.match(html, /Data &amp; Trust/)
-  assert.match(html, /current bullpen surface/)
+  assert.match(html, /Open current Arizona Diamondbacks bullpen board/)
   // The legacy hero/evidence sections are NOT rendered for a card artifact.
   assert.ok(!html.includes('Evidence behind the read'))
   // Exactly one h1 across the whole page.

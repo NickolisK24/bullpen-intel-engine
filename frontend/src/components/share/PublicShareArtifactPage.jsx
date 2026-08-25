@@ -65,8 +65,16 @@ function useDocumentMetadata(state, artifact, publicId) {
     document.title = title
     const description = artifact?.copy?.description || `A published ${SITE} bullpen intelligence snapshot.`
     setMeta('description', indexable ? description : `A ${SITE} shared artifact.`)
-    setLink('canonical', `${location.origin}${publicSharePath(publicId)}`)
+    const canonicalUrl = `${location.origin}${publicSharePath(publicId)}`
+    setLink('canonical', canonicalUrl)
     setMeta('robots', indexable ? 'index,follow' : 'noindex,nofollow')
+    setPropertyMeta('og:title', title)
+    setPropertyMeta('og:description', indexable ? description : `A ${SITE} shared artifact.`)
+    setPropertyMeta('og:url', canonicalUrl)
+    setPropertyMeta('og:type', 'article')
+    setMeta('twitter:card', 'summary')
+    setMeta('twitter:title', title)
+    setMeta('twitter:description', indexable ? description : `A ${SITE} shared artifact.`)
   }, [state, artifact, publicId])
 }
 
@@ -75,6 +83,16 @@ function setMeta(name, content) {
   if (!el) {
     el = document.createElement('meta')
     el.setAttribute('name', name)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', content || '')
+}
+
+function setPropertyMeta(property, content) {
+  let el = document.head.querySelector(`meta[property="${property}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute('property', property)
     document.head.appendChild(el)
   }
   el.setAttribute('content', content || '')
@@ -215,7 +233,7 @@ export function ArtifactView({ artifact, superseded }) {
 
       {card ? <TeamStateArtifactCard card={card} /> : <LegacyArtifactBody artifact={artifact} />}
 
-      <ArtifactDestinations routes={artifact.routes || {}} />
+      <ArtifactDestinations routes={artifact.routes || {}} team={artifact.team || {}} />
     </article>
   )
 }
@@ -339,12 +357,13 @@ function LegacyArtifactBody({ artifact }) {
 // G. Where to go next — historical page vs. live surface, clearly distinct. Shared
 // by every artifact version so the historical/live boundary and the methodology /
 // Data & Trust / current-bullpen destinations are always present.
-function ArtifactDestinations({ routes }) {
+function ArtifactDestinations({ routes, team }) {
+  const teamName = team?.team_name || team?.team_abbreviation || 'team'
   return (
     <nav aria-label="Methodology and destinations" className="card p-5 sm:p-6">
       <h2 className="section-title text-xl">Where to go next</h2>
       <p className="mt-2 text-xs text-chalk500">
-        This artifact is historical. The bullpen surface below is current.
+        This published observation is historical. The Team Board below shows current context.
       </p>
       <ul className="mt-3 flex flex-col gap-2 text-sm">
         {routes.methodology_url ? (
@@ -364,7 +383,7 @@ function ArtifactDestinations({ routes }) {
         {routes.team_url ? (
           <li>
             <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.team_url}>
-              Open the current bullpen surface
+              Open current {teamName} bullpen board
             </a>{' '}
             <span className="text-chalk500">— live, not this historical snapshot</span>
           </li>

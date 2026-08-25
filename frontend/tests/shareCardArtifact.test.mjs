@@ -13,24 +13,33 @@ after(async () => server.close())
 const mod = await server.ssrLoadModule('/src/utils/shareCardArtifact.js')
 const renderer = await server.ssrLoadModule('/src/utils/evidenceCardRenderer.js')
 
-function projection(cardOverrides = {}) {
+function projection(stateOverrides = {}) {
   return {
     available: true,
-    card: {
-      source: 'immutable_share_artifact',
+    artifact: {
       public_id: 'abc123def456',
       artifact_type: 'team_state',
-      render_version: 'team-state-1.0.0',
-      payload_version: 'team-state-1.0.0',
-      team: { team_id: 147, team_name: 'Test Club', team_abbreviation: 'TST' },
-      headline: 'Stretched',
-      public_state: 'stretched',
-      status_code: 'operationally_constrained',
-      summary: 'Two late-inning arms are down.',
-      receipts: [{ category: 'workload', detail: 'Heavy recent relief workload.' }],
+      lifecycle_state: 'published',
       product_date: '2026-07-20',
-      trust: { confidence: 'high', freshness_state: 'current' },
-      ...cardOverrides,
+      copy: {
+        description: 'Two late-inning arms are down.',
+        alt_text: 'Published Team State for Test Club: Stretched.',
+      },
+      evidence: [{ category: 'workload', detail: 'Heavy recent relief workload.' }],
+      routes: { share_url: '/share/abc123def456' },
+      card: {
+        card_version: 'team-state-1.2.0',
+        artifact_context: { data_through: '2026-07-20' },
+        team: { team_id: 147, canonical_name: 'Test Club', abbreviation: 'TST' },
+        state: {
+          public_state: 'stretched',
+          public_label: 'Stretched',
+          headline: 'Test Club bullpen — Stretched',
+          why: 'Two late-inning arms are down.',
+          ...stateOverrides,
+        },
+        limitations: ['Describes observed workload; does not predict usage.'],
+      },
     },
   }
 }
@@ -44,9 +53,9 @@ test('adapter projects the immutable artifact into the team card shape', () => {
   assert.deepEqual(card.receipts, ['Heavy recent relief workload.'])
   assert.equal(card.dataThrough, '2026-07-20')
   assert.equal(card.dataThroughLabel, 'July 20, 2026')
-  assert.match(card.destinationUrl, /baseballos\.app\/bullpen\?view=board&team=TST/)
-  assert.equal(card.fileName, 'baseballos-tst-bullpen-2026-07-20.png')
-  assert.match(card.headline, /TWO LATE-INNING ARMS ARE DOWN/)
+  assert.equal(card.destinationUrl, 'https://baseballos.app/share/abc123def456')
+  assert.equal(card.fileName, 'baseballos-tst-team-state-2026-07-20.png')
+  assert.match(card.headline, /TEST CLUB BULLPEN — STRETCHED/)
   assert.equal(card.source, 'immutable_share_artifact')
   assert.equal(card.artifactPublicId, 'abc123def456')
 })
@@ -62,11 +71,14 @@ test('adapter returns null when no published artifact backs the card', () => {
   assert.equal(mod.buildTeamShareCardFromArtifact(null), null)
   assert.equal(mod.buildTeamShareCardFromArtifact(undefined), null)
   assert.equal(mod.buildTeamShareCardFromArtifact({ available: true }), null)
+  const wrongVersion = projection()
+  wrongVersion.artifact.card.card_version = 'team-state-1.1.0'
+  assert.equal(mod.buildTeamShareCardFromArtifact(wrongVersion), null)
 })
 
-test('adapter refuses a non-artifact source (never fabricates a card)', () => {
+test('adapter refuses a non-published artifact (never fabricates a card)', () => {
   const spoofed = projection()
-  spoofed.card.source = 'legacy_client_composition'
+  spoofed.artifact.lifecycle_state = 'withdrawn'
   assert.equal(mod.buildTeamShareCardFromArtifact(spoofed), null)
 })
 
@@ -104,14 +116,14 @@ test('a non-canonical state label withholds the card instead of stamping it', ()
   // operation. If it ever did, no card is better than an internal word on a
   // shareable image.
   for (const leaked of ['Operationally Stressed', 'operationally_stressed', 'Stable', 'Unknown', '']) {
-    const spoofed = projection({ headline: leaked })
+    const spoofed = projection({ public_label: leaked })
     assert.equal(mod.buildTeamShareCardFromArtifact(spoofed), null, leaked)
   }
 })
 
 test('every canonical public Team State renders a badge', () => {
   for (const label of ['Fresh', 'Stretched', 'Vulnerable']) {
-    const card = mod.buildTeamShareCardFromArtifact(projection({ headline: label }))
+    const card = mod.buildTeamShareCardFromArtifact(projection({ public_label: label }))
     assert.ok(card, label)
     assert.ok(renderer.renderEvidenceCardSvg(card).includes(`BASEBALLOS STATE · ${label.toUpperCase()}`))
   }
