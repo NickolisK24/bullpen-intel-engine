@@ -12,6 +12,7 @@ from api.query_params import (
     parse_positive_int_param,
 )
 from api.recommendations import recommendations_bp
+from api.search import search_bp
 from api.team_operations import team_operations_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
@@ -33,6 +34,7 @@ def client():
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
     app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
     app.register_blueprint(team_operations_bp, url_prefix='/api/team-operations')
+    app.register_blueprint(search_bp, url_prefix='/api/search')
     with app.app_context():
         create_test_schema(app)
         try:
@@ -163,6 +165,7 @@ def test_prospects_clamps_over_max_limit_and_preserves_valid_results(client):
         ('/api/prospects/?level=LOWA', 'level'),
         ('/api/prospects/?position=SP', 'position'),
         ('/api/pitchers/search?q=kim&limit=abc', 'limit'),
+        ('/api/search?q=kim&limit=abc', 'limit'),
         ('/api/recommendations/v2/bullpen-state?limit=-1', 'limit'),
     ],
 )

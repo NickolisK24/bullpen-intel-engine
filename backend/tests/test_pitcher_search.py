@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from flask import Flask
@@ -6,9 +6,13 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 
 import models.prospect  # noqa: F401
 from api.pitchers import pitchers_bp
+from api.search import search_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.slate_game import SlateGame
+from services.availability_reference_date import product_current_date
+from services.discovery_search import SearchOwners, search_discovery
 from services.pitcher_search import (
     TEAM_ASSIGNMENT_ASSIGNED,
     TEAM_ASSIGNMENT_NO_ORGANIZATION,
@@ -26,6 +30,7 @@ def client():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
+    app.register_blueprint(search_bp, url_prefix='/api/search')
     with app.app_context():
         create_test_schema(app)
         try:
@@ -241,3 +246,121 @@ def test_pitcher_search_unresolved_team_assignment_does_not_emit_stale_team(clie
     expected_roster_status = 'UNKNOWN' if assignment_status == TEAM_ASSIGNMENT_UNKNOWN else 'ACTIVE'
     assert result['roster_status'] == expected_roster_status
     assert result['availability'] == 'Unavailable'
+
+
+def test_unified_discovery_groups_team_pitcher_and_product_day_matchup(client):
+    reference_date = product_current_date()
+    with client.application.app_context():
+        seed_pitcher(
+            'Tampa Relief',
+            990001,
+            team_id=139,
+            team_name='Tampa Bay Rays',
+            team_abbreviation='TB',
+        )
+        seed_pitcher(
+            'Minnesota Relief',
+            990002,
+            team_id=142,
+            team_name='Minnesota Twins',
+            team_abbreviation='MIN',
+        )
+        db.session.add(SlateGame(
+            game_pk=880001,
+            game_date_et=reference_date,
+            game_time_utc=datetime.combine(reference_date, time(23, 10)),
+            home_team_id=142,
+            away_team_id=139,
+            status_abstract='Preview',
+            status_detailed='Scheduled',
+            status_code='S',
+            normalized_state=SlateGame.STATE_UPCOMING,
+        ))
+        db.session.commit()
+
+    payload = client.get('/api/search', query_string={'q': 'Tampa'}).get_json()
+    groups = {group['entity_type']: group for group in payload['groups']}
+
+    assert payload['contract'] == 'unified_entity_search_carrier_v1'
+    assert payload['status'] == 'available'
+    assert groups['team']['results'][0]['primary_label'] == 'Tampa Bay Rays'
+    assert groups['pitcher']['results'][0]['primary_label'] == 'Tampa Relief'
+    assert groups['matchup']['results'][0]['id'] == 880001
+    assert groups['matchup']['results'][0]['primary_label'] == 'Tampa Bay Rays at Minnesota Twins'
+
+
+def test_unified_discovery_preserves_duplicate_pitcher_names_with_identity_context(client):
+    with client.application.app_context():
+        first = seed_pitcher(
+            'Alex Same',
+            991001,
+            team_id=139,
+            team_name='Tampa Bay Rays',
+            team_abbreviation='TB',
+        )
+        second = seed_pitcher(
+            'Alex Same',
+            991002,
+            team_id=142,
+            team_name='Minnesota Twins',
+            team_abbreviation='MIN',
+        )
+        expected_ids = [first.id, second.id]
+
+    payload = client.get('/api/search', query_string={'q': 'Alex'}).get_json()
+    pitcher_results = next(
+        group['results'] for group in payload['groups']
+        if group['entity_type'] == 'pitcher'
+    )
+
+    assert [result['id'] for result in pitcher_results] == expected_ids
+    assert [result['secondary_label'] for result in pitcher_results] == [
+        'Tampa Bay Rays',
+        'Minnesota Twins',
+    ]
+
+
+def test_unified_discovery_short_and_unmatched_queries_remain_quiet(client):
+    short = client.get('/api/search', query_string={'q': 'x'}).get_json()
+    unmatched = client.get('/api/search', query_string={'q': 'zzzzzz'}).get_json()
+
+    assert short['status'] == 'quiet'
+    assert short['result_count'] == 0
+    assert unmatched['status'] == 'available'
+    assert unmatched['result_count'] == 0
+
+
+def test_unified_discovery_owner_failure_is_group_local_and_each_owner_runs_once():
+    calls = {'teams': 0, 'pitchers': 0, 'matchups': 0}
+
+    def teams():
+        calls['teams'] += 1
+        return {
+            139: {
+                'team_id': 139,
+                'team_name': 'Tampa Bay Rays',
+                'team_abbreviation': 'TB',
+            },
+        }
+
+    def pitchers(query, limit, reference_date):
+        calls['pitchers'] += 1
+        raise RuntimeError('pitcher owner unavailable')
+
+    def matchups(query, directory, reference_date, limit):
+        calls['matchups'] += 1
+        return []
+
+    payload = search_discovery(
+        'Tampa',
+        reference_date=date(2026, 8, 25),
+        owners=SearchOwners(teams=teams, pitchers=pitchers, matchups=matchups),
+    )
+    groups = {group['entity_type']: group for group in payload['groups']}
+
+    assert calls == {'teams': 1, 'pitchers': 1, 'matchups': 1}
+    assert payload['status'] == 'partial'
+    assert groups['team']['status'] == 'available'
+    assert groups['pitcher']['status'] == 'unavailable'
+    assert groups['pitcher']['results'] == []
+    assert groups['matchup']['status'] == 'available'

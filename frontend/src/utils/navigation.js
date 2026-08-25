@@ -16,7 +16,7 @@ export const PRIMARY_NAV = [
   { key: 'league-board', to: '/dashboard', icon: '⬡', label: 'League Board' },
   { key: 'team-bullpens', to: '/bullpen', icon: '🔥', label: 'Team Bullpens', bullpenView: BULLPEN_VIEWS.BOARD },
   { key: 'compare-bullpens', to: '/bullpen?view=compare', icon: '⚖', label: 'Compare Bullpens', bullpenView: BULLPEN_VIEWS.COMPARE },
-  { key: 'reliever-finder', to: '/bullpen?view=pitchers', icon: '🔎', label: 'Reliever Finder', bullpenView: BULLPEN_VIEWS.PITCHERS },
+  { key: 'search', to: '/search', icon: '⌕', label: 'Search' },
   { key: 'stories', to: '/stories', icon: '📰', label: 'Stories' },
 ]
 

@@ -209,7 +209,7 @@ def test_incompatible_bullpen_context_is_rejected(changes):
 
 
 def test_bounded_entry_source_and_evidence_normalizers():
-    for source in ('today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card', 'since_yesterday'):
+    for source in ('today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'search', 'share', 'share_link', 'share_card', 'since_yesterday'):
         assert normalize_entry_source(source.upper()) == source
     assert normalize_entry_source('private') is None
     assert normalize_evidence_target('TEAM_RELIEF_WORK') == 'team_relief_work'

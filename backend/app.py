@@ -182,6 +182,7 @@ def create_app(config_name=None):
     from api.share_artifact_operations_browser import share_artifact_operations_browser_bp
     from api.share_cards import share_cards_bp
     from api.share_artifacts_public import share_artifacts_public_bp
+    from api.search import search_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -213,6 +214,7 @@ def create_app(config_name=None):
     )
     app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
     app.register_blueprint(share_artifacts_public_bp, url_prefix='/api/share-artifacts')
+    app.register_blueprint(search_bp, url_prefix='/api/search')
 
     # Public claim-bearing bullpen reads are publication-bound in production.
     # Acquisition tables may advance during a sync, but Board/Compare/Tonight do

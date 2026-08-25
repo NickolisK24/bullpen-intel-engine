@@ -14,6 +14,7 @@ export const BULLPEN_SOURCE_VALUES = Object.freeze([
   'comparison',
   'all_pitchers',
   'pitcher_search',
+  'search',
   'share',
   'share_link',
   'share_card',

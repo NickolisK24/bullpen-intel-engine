@@ -32,10 +32,10 @@ const renderAt = (el, path = '/') => renderToStaticMarkup(
 
 // ── Navigation config: destinations, order, labels, routes ─────────────────
 
-test('primary navigation is the six core bullpen surfaces in order', () => {
+test('primary navigation includes the global discovery destination in order', () => {
   assert.deepEqual(
     PRIMARY_NAV.map(item => item.label),
-    ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories'],
+    ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories'],
   )
 })
 
@@ -46,13 +46,13 @@ test('supporting navigation keeps the trust and explainer pages', () => {
   )
 })
 
-test('primary destinations map to the existing bullpen routes and query views', () => {
+test('primary destinations map to canonical product routes', () => {
   const byLabel = Object.fromEntries(PRIMARY_NAV.map(item => [item.label, item.to]))
   assert.equal(byLabel['Today'], '/')
   assert.equal(byLabel['League Board'], '/dashboard')
   assert.equal(byLabel['Team Bullpens'], '/bullpen')
   assert.equal(byLabel['Compare Bullpens'], '/bullpen?view=compare')
-  assert.equal(byLabel['Reliever Finder'], '/bullpen?view=pitchers')
+  assert.equal(byLabel['Search'], '/search')
   assert.equal(byLabel['Stories'], '/stories')
 })
 
@@ -85,7 +85,8 @@ test('exactly one primary destination is active per route, including bullpen vie
   assert.deepEqual(activeLabels('/bullpen'), ['Team Bullpens'])
   assert.deepEqual(activeLabels('/bullpen?view=board'), ['Team Bullpens'])
   assert.deepEqual(activeLabels('/bullpen?view=compare'), ['Compare Bullpens'])
-  assert.deepEqual(activeLabels('/bullpen?view=pitchers'), ['Reliever Finder'])
+  assert.deepEqual(activeLabels('/bullpen?view=pitchers'), [])
+  assert.deepEqual(activeLabels('/search'), ['Search'])
   assert.deepEqual(activeLabels('/stories'), ['Stories'])
 })
 
@@ -112,7 +113,7 @@ test('sidebar renders primary destinations before the supporting group', () => {
   assert.ok(lastPrimary > -1 && firstSupporting > -1)
   assert.ok(lastPrimary < firstSupporting)
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+  assert.ok(htmlIncludes(html, 'href="/search"'))
 })
 
 // Returns the <a> tag that links to `href`, or '' if none.
@@ -130,9 +131,9 @@ test('the current route receives an active state on the matching destination', (
   const todayPage = renderAt(React.createElement(Sidebar), '/')
   assert.ok(anchorFor(todayPage, '/').includes('aria-current="page"'))
 
-  const relieverPage = renderAt(React.createElement(Sidebar), '/bullpen?view=pitchers')
-  assert.ok(anchorFor(relieverPage, '/bullpen?view=pitchers').includes('aria-current="page"'))
-  assert.equal(anchorFor(relieverPage, '/bullpen').includes('aria-current="page"'), false)
+  const searchPage = renderAt(React.createElement(Sidebar), '/search')
+  assert.ok(anchorFor(searchPage, '/search').includes('aria-current="page"'))
+  assert.equal(anchorFor(searchPage, '/bullpen').includes('aria-current="page"'), false)
 })
 
 // ── Menu close behavior wiring (no interactive DOM harness in this suite) ───
