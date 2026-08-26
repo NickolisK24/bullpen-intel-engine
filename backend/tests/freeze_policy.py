@@ -434,6 +434,15 @@ HIST01_TEAM_STATE_TIMELINE_PATHS = (
     'backend/services/team_state_history.py',
 )
 
+# HIST-03, August 26 2026. Team History may project qualified pitcher
+# transactions through the existing public transaction qualification owner.
+# The exception is exact to the History composer and that shared projection;
+# transaction taxonomy, ingestion, Team State, and public routes remain frozen.
+HIST03_QUALIFIED_TRANSACTION_HISTORY_PATHS = (
+    'backend/services/public_recent_transactions.py',
+    'backend/services/team_state_history.py',
+)
+
 # HOTFIX-02, August 26 2026. New Share Artifacts must compute their immutable
 # integrity hash while still draft and flush the complete sealed publication
 # state once. This exact exception permits only the publication primitive repair;

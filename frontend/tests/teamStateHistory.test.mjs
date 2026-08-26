@@ -22,7 +22,7 @@ const { buildTeamHistoryHref } = await server.ssrLoadModule('/src/utils/evidence
 
 const payload = {
   capability: 'team_state_history',
-  contract: 'team_state_history_v2',
+  contract: 'team_state_history_v3',
   status: 'available',
   team: {
     team_id: 147,
@@ -37,6 +37,14 @@ const payload = {
     covered_date_count: 2,
     missing_dates: ['2026-08-01'],
     is_partial: true,
+  },
+  transaction_coverage: {
+    status: 'partial',
+    start: '2026-07-23',
+    end: '2026-08-02',
+    is_partial: true,
+    retained_date_status_counts: { available: 1, partial: 0, unavailable: 1 },
+    limitations: ['Transaction context includes only retained source windows.'],
   },
   rows: [
     {
@@ -63,6 +71,11 @@ const payload = {
         reason_code: 'contract_incompatible',
       },
       events: [],
+      transaction_overlay: {
+        status: 'unavailable',
+        reason_code: 'transaction_source_unavailable',
+      },
+      transactions: [],
     },
     {
       represented_date: '2026-07-23',
@@ -81,6 +94,8 @@ const payload = {
         reason_code: 'prior_publication_missing',
       },
       events: [],
+      transaction_overlay: { status: 'available', reason_code: null },
+      transactions: [],
     },
   ],
 }
@@ -133,6 +148,40 @@ const changedPayload = {
     },
     payload.rows[1],
   ],
+}
+
+const transactionPayload = {
+  ...changedPayload,
+  rows: [{
+    ...changedPayload.rows[0],
+    transaction_overlay: { status: 'available', reason_code: null },
+    transactions: [
+      {
+        event_type: 'qualified_transaction',
+        event_id: 'statsapi:100',
+        event_date: '2026-07-24',
+        transaction_key: 'statsapi:100',
+        transaction_id: '100',
+        normalized_category: 'recall',
+        label: 'Recalled',
+        description: 'History Arm was recalled.',
+        pitcher: { pitcher_id: 10, player_mlb_id: 910001, name: 'History Arm' },
+        team_relationship: { relationship: 'incoming', from_team_id: 555, to_team_id: 147 },
+      },
+      {
+        event_type: 'qualified_transaction',
+        event_id: 'statsapi:101',
+        event_date: '2026-07-24',
+        transaction_key: 'statsapi:101',
+        transaction_id: '101',
+        normalized_category: 'option',
+        label: 'Optioned',
+        description: 'Second Arm was optioned.',
+        pitcher: { pitcher_id: 11, player_mlb_id: 910002, name: 'Second Arm' },
+        team_relationship: { relationship: 'outgoing', from_team_id: 147, to_team_id: 555 },
+      },
+    ],
+  }, changedPayload.rows[1]],
 }
 
 const render = props => renderToStaticMarkup(
@@ -208,6 +257,65 @@ test('History distinguishes comparable unchanged from unavailable comparison', (
   assert.ok(unavailable.includes('Comparison boundary'))
 })
 
+test('History renders backend-supplied qualified transactions beneath the exact state date', () => {
+  const html = render({ payload: transactionPayload })
+  assert.equal((html.match(/data-testid="qualified-transaction-overlay"/g) || []).length, 1)
+  assert.ok(html.includes('Roster moves'))
+  assert.ok(html.includes('Recalled'))
+  assert.ok(html.includes('History Arm was recalled.'))
+  assert.ok(html.includes('Optioned'))
+  assert.ok(html.includes('Second Arm was optioned.'))
+  assert.ok(html.indexOf('The bullpen had strong rested coverage.') < html.indexOf('Roster moves'))
+  assert.ok(html.indexOf('Team State changed') < html.indexOf('Roster moves'))
+})
+
+test('History keeps successful zero-event dates quiet and distinguishes incomplete context', () => {
+  const available = render({
+    payload: {
+      ...payload,
+      rows: [{
+        ...payload.rows[0],
+        transaction_overlay: { status: 'available', reason_code: null },
+        transactions: [],
+      }],
+    },
+  })
+  const partial = render({
+    payload: {
+      ...payload,
+      rows: [{
+        ...payload.rows[0],
+        transaction_overlay: { status: 'partial', reason_code: 'transaction_source_partial' },
+        transactions: [],
+      }],
+    },
+  })
+  const unavailable = render({ payload })
+
+  assert.equal(available.includes('Roster moves'), false)
+  assert.equal(available.includes('No transactions'), false)
+  assert.ok(partial.includes('Transaction context is incomplete for this date.'))
+  assert.ok(unavailable.includes('Transaction context is unavailable for this date.'))
+})
+
+test('History does not infer transaction meaning or historical team attribution in React', () => {
+  const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
+  for (const forbidden of [
+    'TRANSACTION_PUBLIC_LABELS',
+    'normalized_category ===',
+    'from_team_id ===',
+    'to_team_id ===',
+    'caused',
+    'led to',
+    'because of',
+    'resulted in',
+    'improved',
+    'worsened',
+  ]) {
+    assert.equal(source.includes(forbidden), false, forbidden)
+  }
+})
+
 test('History change markers remain linear and do not add scroll-container geometry', () => {
   const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
   assert.ok(source.includes('flex-wrap'))
@@ -216,6 +324,7 @@ test('History change markers remain linear and do not add scroll-container geome
   assert.equal(source.includes('min-w-['), false)
   assert.equal(source.includes('fixed inset'), false)
   assert.equal(source.includes('grid-cols-2'), false)
+  assert.ok(source.includes('space-y-1'))
 })
 
 test('History keeps current Team Board context separate', () => {

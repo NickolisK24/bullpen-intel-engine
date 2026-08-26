@@ -10,16 +10,21 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, timedelta
+import logging
 from typing import Mapping
 
+from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.pitcher import Pitcher
+from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.share_artifact import (
     LIFECYCLE_PUBLISHED,
     ShareArtifact,
     ShareArtifactRelation,
 )
+from services.public_recent_transactions import project_qualified_public_transaction
 from services.share_artifact_public import project_public_share_artifact
 from services.share_artifacts import verify_share_artifact_integrity
 from services.team_board_delta_substrate import (
@@ -31,11 +36,14 @@ from services.team_board_delta_substrate import (
 )
 from services.team_directory import valid_team_directory
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
+from services.transaction_ingestion import WINDOW_STATUS_PARTIAL, WINDOW_STATUS_SUCCESS
 from utils.db import db
 
 
+logger = logging.getLogger(__name__)
+
 CAPABILITY = 'team_state_history'
-CONTRACT = 'team_state_history_v2'
+CONTRACT = 'team_state_history_v3'
 STATUS_AVAILABLE = 'available'
 STATUS_QUIET = 'quiet'
 COMPARISON_UNAVAILABLE = 'comparison_unavailable'
@@ -49,6 +57,12 @@ EVENT_OUTCOME_UNAVAILABLE = 'unavailable'
 EVENT_PRIOR_PUBLICATION_MISSING = 'prior_publication_missing'
 TEAM_STATE_CHANGE_EVENT = 'team_state_change'
 TEAM_STATE_CHANGE_LABEL = 'Team State changed'
+QUALIFIED_TRANSACTION_EVENT = 'qualified_transaction'
+TRANSACTION_OVERLAY_AVAILABLE = 'available'
+TRANSACTION_OVERLAY_PARTIAL = 'partial'
+TRANSACTION_OVERLAY_UNAVAILABLE = 'unavailable'
+TRANSACTION_SOURCE_PARTIAL = 'transaction_source_partial'
+TRANSACTION_SOURCE_UNAVAILABLE = 'transaction_source_unavailable'
 
 
 def _as_mapping(value):
@@ -314,6 +328,221 @@ def _history_row(artifact, view):
         'comparison': None,
         'event_overlay': _withheld_event_overlay(EVENT_PRIOR_PUBLICATION_MISSING),
         'events': [],
+        'transaction_overlay': {
+            'status': TRANSACTION_OVERLAY_UNAVAILABLE,
+            'reason_code': TRANSACTION_SOURCE_UNAVAILABLE,
+        },
+        'transactions': [],
+    }
+
+
+def _transaction_windows(season, session):
+    start, end = _season_bounds(season)
+    return (
+        session.query(PlayerTransactionSyncWindow)
+        .filter(
+            PlayerTransactionSyncWindow.status.in_((
+                WINDOW_STATUS_SUCCESS,
+                WINDOW_STATUS_PARTIAL,
+            )),
+            PlayerTransactionSyncWindow.source_query_end_date >= start,
+            PlayerTransactionSyncWindow.source_query_start_date <= end,
+        )
+        .order_by(
+            PlayerTransactionSyncWindow.source_query_start_date.asc(),
+            PlayerTransactionSyncWindow.source_query_end_date.asc(),
+            PlayerTransactionSyncWindow.attempted_at.asc(),
+            PlayerTransactionSyncWindow.id.asc(),
+        )
+        .all()
+    )
+
+
+def _transaction_date_status(represented_date, windows):
+    covering = [
+        window for window in windows
+        if window.source_query_start_date <= represented_date <= window.source_query_end_date
+    ]
+    if any(window.status == WINDOW_STATUS_SUCCESS for window in covering):
+        return TRANSACTION_OVERLAY_AVAILABLE, None
+    if any(window.status == WINDOW_STATUS_PARTIAL for window in covering):
+        return TRANSACTION_OVERLAY_PARTIAL, TRANSACTION_SOURCE_PARTIAL
+    return TRANSACTION_OVERLAY_UNAVAILABLE, TRANSACTION_SOURCE_UNAVAILABLE
+
+
+def _transaction_coverage(season, windows, represented_dates):
+    supported = [
+        window for window in windows
+        if window.source_query_start_date is not None
+        and window.source_query_end_date is not None
+    ]
+    if not supported:
+        return {
+            'status': TRANSACTION_OVERLAY_UNAVAILABLE,
+            'start': None,
+            'end': None,
+            'is_partial': True,
+            'retained_date_status_counts': {
+                TRANSACTION_OVERLAY_AVAILABLE: 0,
+                TRANSACTION_OVERLAY_PARTIAL: 0,
+                TRANSACTION_OVERLAY_UNAVAILABLE: len(represented_dates),
+            },
+            'limitations': [
+                'Retained transaction source coverage is unavailable for this season.'
+            ],
+        }
+
+    coverage_start = min(window.source_query_start_date for window in supported)
+    coverage_end = max(window.source_query_end_date for window in supported)
+    counts = {
+        TRANSACTION_OVERLAY_AVAILABLE: 0,
+        TRANSACTION_OVERLAY_PARTIAL: 0,
+        TRANSACTION_OVERLAY_UNAVAILABLE: 0,
+    }
+    for represented_date in represented_dates:
+        status, _ = _transaction_date_status(represented_date, supported)
+        counts[status] += 1
+
+    season_start, season_end = _season_bounds(season)
+    has_partial_window = any(
+        window.status == WINDOW_STATUS_PARTIAL for window in supported
+    )
+    is_partial = bool(
+        has_partial_window
+        or coverage_start > season_start
+        or coverage_end < season_end
+        or counts[TRANSACTION_OVERLAY_PARTIAL]
+        or counts[TRANSACTION_OVERLAY_UNAVAILABLE]
+    )
+    limitations = []
+    if coverage_start > season_start or coverage_end < season_end:
+        limitations.append(
+            'Transaction context includes only retained source windows; dates outside that range are unavailable.'
+        )
+    if has_partial_window:
+        limitations.append('Some retained transaction source windows are partial.')
+    return {
+        'status': TRANSACTION_OVERLAY_PARTIAL if is_partial else TRANSACTION_OVERLAY_AVAILABLE,
+        'start': coverage_start.isoformat(),
+        'end': coverage_end.isoformat(),
+        'is_partial': is_partial,
+        'retained_date_status_counts': counts,
+        'limitations': limitations,
+    }
+
+
+def _transaction_relationship(row, team_id):
+    is_from = row.from_team_id == team_id
+    is_to = row.to_team_id == team_id
+    if is_from and is_to:
+        return 'within_team'
+    if is_to:
+        return 'incoming'
+    if is_from:
+        return 'outgoing'
+    return None
+
+
+def _qualified_transactions(team_id, start, end, session):
+    if start is None or end is None:
+        return []
+    return (
+        session.query(PlayerTransaction, Pitcher)
+        .join(Pitcher, Pitcher.id == PlayerTransaction.pitcher_id)
+        .filter(
+            PlayerTransaction.transaction_date >= start,
+            PlayerTransaction.transaction_date <= end,
+            or_(
+                PlayerTransaction.from_team_id == team_id,
+                PlayerTransaction.to_team_id == team_id,
+            ),
+        )
+        .order_by(
+            PlayerTransaction.transaction_date.asc(),
+            PlayerTransaction.transaction_key.asc(),
+            PlayerTransaction.id.asc(),
+        )
+        .all()
+    )
+
+
+def _transaction_event(row, pitcher, team_id):
+    relationship = _transaction_relationship(row, team_id)
+    projected = project_qualified_public_transaction(row, pitcher)
+    if relationship is None or projected is None:
+        return None
+    return {
+        'event_type': QUALIFIED_TRANSACTION_EVENT,
+        'event_id': row.transaction_key,
+        'event_date': projected['transaction_date'],
+        'transaction_key': row.transaction_key,
+        'transaction_id': row.transaction_id,
+        'normalized_category': projected['normalized_category'],
+        'label': projected['label'],
+        'description': projected['description'],
+        'pitcher': projected['pitcher'],
+        'team_relationship': {
+            'relationship': relationship,
+            'from_team_id': row.from_team_id,
+            'to_team_id': row.to_team_id,
+        },
+    }
+
+
+def _apply_transaction_overlay(rows_by_date, ordered_dates, team_id, season, session):
+    windows = _transaction_windows(season, session)
+    coverage = _transaction_coverage(season, windows, ordered_dates)
+    if not ordered_dates:
+        return coverage
+
+    events_by_date = defaultdict(dict)
+    for row, pitcher in _qualified_transactions(
+        team_id, ordered_dates[0], ordered_dates[-1], session,
+    ):
+        event = _transaction_event(row, pitcher, team_id)
+        if event is None:
+            continue
+        event_date = row.transaction_date
+        if event_date not in rows_by_date:
+            continue
+        status, _ = _transaction_date_status(event_date, windows)
+        if status == TRANSACTION_OVERLAY_UNAVAILABLE:
+            continue
+        events_by_date[event_date][event['event_id']] = event
+
+    for represented_date in ordered_dates:
+        status, reason_code = _transaction_date_status(represented_date, windows)
+        rows_by_date[represented_date]['transaction_overlay'] = {
+            'status': status,
+            'reason_code': reason_code,
+        }
+        rows_by_date[represented_date]['transactions'] = [
+            events_by_date[represented_date][event_id]
+            for event_id in sorted(events_by_date[represented_date])
+        ]
+    return coverage
+
+
+def _unavailable_transaction_overlay(rows_by_date, ordered_dates):
+    for represented_date in ordered_dates:
+        rows_by_date[represented_date]['transaction_overlay'] = {
+            'status': TRANSACTION_OVERLAY_UNAVAILABLE,
+            'reason_code': TRANSACTION_SOURCE_UNAVAILABLE,
+        }
+        rows_by_date[represented_date]['transactions'] = []
+    return {
+        'status': TRANSACTION_OVERLAY_UNAVAILABLE,
+        'start': None,
+        'end': None,
+        'is_partial': True,
+        'retained_date_status_counts': {
+            TRANSACTION_OVERLAY_AVAILABLE: 0,
+            TRANSACTION_OVERLAY_PARTIAL: 0,
+            TRANSACTION_OVERLAY_UNAVAILABLE: len(ordered_dates),
+        },
+        'limitations': [
+            'Retained transaction context is temporarily unavailable.'
+        ],
     }
 
 
@@ -360,6 +589,20 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
         rows_by_date[current_date]['event_overlay'] = event_overlay
         rows_by_date[current_date]['events'] = events
 
+    try:
+        transaction_coverage = _apply_transaction_overlay(
+            rows_by_date, ordered_dates, team_id, season, session,
+        )
+    except Exception:  # supporting context must not collapse Team State History
+        logger.exception(
+            'Could not build qualified transaction History overlay team_id=%s season=%s',
+            team_id,
+            season,
+        )
+        transaction_coverage = _unavailable_transaction_overlay(
+            rows_by_date, ordered_dates,
+        )
+
     retained_candidate_dates = sorted({
         artifact.product_date
         for artifact in candidates
@@ -404,6 +647,7 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
                 or coverage_end < season_end
             ),
         },
+        'transaction_coverage': transaction_coverage,
         'rows': [rows_by_date[represented_date] for represented_date in reversed(ordered_dates)],
         'limitations': [
             'History includes only retained, integrity-verified Team State publications. Missing dates are not backfilled.'

@@ -138,6 +138,49 @@ def _unavailable(*, limitation, represented_date=None):
     }
 
 
+def project_qualified_public_transaction(row, pitcher):
+    """Project one already-ingested transaction through the public qualifier.
+
+    This is the shared semantic boundary for Team Board chronology and History.
+    Callers may format or group the returned identity facts, but they must not
+    recreate category qualification, public wording, or participant exclusions.
+    """
+    if is_proven_non_pitcher(row):
+        return None
+    if is_certified_non_material_rehab_assignment(row):
+        return None
+
+    label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)
+    description_template = TRANSACTION_PUBLIC_DESCRIPTIONS.get(
+        row.normalized_category
+    )
+    player_name = str(getattr(pitcher, 'full_name', '') or '').strip()
+    if (
+        row.explanatory_linkage_eligible is not True
+        or pitcher is None
+        or not player_name
+        or not label
+        or not description_template
+    ):
+        return None
+
+    return {
+        'transaction_key': row.transaction_key,
+        'transaction_id': row.transaction_id,
+        'transaction_date': _iso(row.transaction_date),
+        'normalized_category': row.normalized_category,
+        'label': label,
+        'description': description_template.format(name=player_name),
+        'pitcher': {
+            'pitcher_id': row.pitcher_id,
+            'player_mlb_id': row.player_mlb_id,
+            'name': player_name,
+        },
+        'from_team_id': row.from_team_id,
+        'to_team_id': row.to_team_id,
+    }
+
+
 def build_public_recent_transactions(team_id, *, reference_date=None):
     """Return the latest governed transaction window for ``team_id``.
 
@@ -206,35 +249,22 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     events = []
     withheld_count = 0
     for row in rows:
-        if is_proven_non_pitcher(row):
-            continue
-        if is_certified_non_material_rehab_assignment(row):
-            continue
         pitcher = pitchers.get(row.pitcher_id)
-        label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)
-        description_template = TRANSACTION_PUBLIC_DESCRIPTIONS.get(
-            row.normalized_category
-        )
-        if (
-            row.explanatory_linkage_eligible is not True
-            or pitcher is None
-            or not str(pitcher.full_name or '').strip()
-            or not label
-            or not description_template
-        ):
+        projected = project_qualified_public_transaction(row, pitcher)
+        if projected is None:
+            if is_proven_non_pitcher(row) or is_certified_non_material_rehab_assignment(row):
+                continue
             withheld_count += 1
             continue
         events.append({
             'event_id': row.transaction_id or row.transaction_key,
             'player_id': row.pitcher_id,
             'player_mlb_id': row.player_mlb_id,
-            'player_name': pitcher.full_name,
-            'date': _iso(row.transaction_date),
-            'type': row.normalized_category,
-            'label': label,
-            'description': description_template.format(
-                name=str(pitcher.full_name).strip()
-            ),
+            'player_name': projected['pitcher']['name'],
+            'date': projected['transaction_date'],
+            'type': projected['normalized_category'],
+            'label': projected['label'],
+            'description': projected['description'],
         })
 
     limitations = []
@@ -263,4 +293,5 @@ __all__ = [
     'TRANSACTION_PUBLIC_DESCRIPTIONS',
     'VERSION',
     'build_public_recent_transactions',
+    'project_qualified_public_transaction',
 ]
