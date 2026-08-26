@@ -72,6 +72,7 @@ from services.rotation_support_pressure import (
 )
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
 from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
+from services.team_state_payload import TEAM_STATE_V1_2
 from team_operations import TEAM_STATE_METHOD_VERSION
 from utils.db import db
 from utils.time import utc_now_naive
@@ -176,6 +177,12 @@ def _mapping(value) -> Mapping[str, Any]:
 def _artifact_public_state(artifact) -> Mapping[str, Any]:
     payload = _mapping(getattr(artifact, 'payload', None))
     team_state = _mapping(payload.get('team_state'))
+    if getattr(artifact, 'render_version', None) == TEAM_STATE_V1_2:
+        public_state = _mapping(team_state.get('public_state'))
+        return {
+            'public_state': public_state.get('public_code'),
+            'public_label': public_state.get('public_label'),
+        }
     return {
         'public_state': team_state.get('public_state'),
         'public_label': team_state.get('public_label'),
@@ -780,7 +787,10 @@ def build_prospective_envelope(
         raise DeltaStampError('team_state_population_basis_unproven')
 
     state = _artifact_public_state(artifact)
-    if state.get('public_state') in (None, ''):
+    if (
+        state.get('public_state') in (None, '')
+        or state.get('public_label') in (None, '')
+    ):
         raise DeltaStampError('team_state_value_missing')
 
     contract_version = readiness.get('contract_version')
@@ -1164,6 +1174,60 @@ def _domain_metadata(payload, domain) -> Mapping[str, Any]:
     return _mapping(_mapping(payload.get('domains')).get(domain))
 
 
+def _team_state_carrier_value(snapshot) -> Mapping[str, Any] | None:
+    """Return one valid scalar Team State value without mutating its sidecar.
+
+    Team State 1.2 artifacts were briefly frozen into sidecars with the
+    canonical ``public_state`` object nested where the scalar public code
+    belongs.  Only that exact, version-bound shape is projected at read time;
+    every other missing, contradictory, or unknown shape remains unavailable.
+    """
+    payload = _payload(snapshot)
+    value = _mapping(payload.get('values')).get('team_state')
+    if not isinstance(value, Mapping):
+        return None
+    if set(value) not in (
+        {'public_state'},
+        {'public_state', 'public_label'},
+    ):
+        return None
+
+    public_state = value.get('public_state')
+    public_label = value.get('public_label')
+    if (
+        isinstance(public_state, str)
+        and public_state
+        and isinstance(public_label, str)
+        and public_label
+    ):
+        return {
+            'public_state': public_state,
+            'public_label': public_label,
+        }
+
+    source = _mapping(payload.get('source'))
+    if source.get('artifact_payload_version') != TEAM_STATE_V1_2:
+        return None
+    if public_label is not None or not isinstance(public_state, Mapping):
+        return None
+    if set(public_state) != {'public_code', 'public_label'}:
+        return None
+
+    nested_code = public_state.get('public_code')
+    nested_label = public_state.get('public_label')
+    if (
+        not isinstance(nested_code, str)
+        or not nested_code
+        or not isinstance(nested_label, str)
+        or not nested_label
+    ):
+        return None
+    return {
+        'public_state': nested_code,
+        'public_label': nested_label,
+    }
+
+
 def _withheld(domain, reason):
     return {
         'readiness': DOMAIN_READINESS[domain],
@@ -1249,8 +1313,12 @@ def _compatible_domain(previous, current, domain, value_key):
     if previous_metadata.get('trusted') is not True or current_metadata.get('trusted') is not True:
         return _withheld(domain, FRESHNESS_UNTRUSTED)
 
-    previous_value = _mapping(previous_payload.get('values')).get(value_key)
-    current_value = _mapping(current_payload.get('values')).get(value_key)
+    if domain == 'team_state':
+        previous_value = _team_state_carrier_value(previous)
+        current_value = _team_state_carrier_value(current)
+    else:
+        previous_value = _mapping(previous_payload.get('values')).get(value_key)
+        current_value = _mapping(current_payload.get('values')).get(value_key)
     if previous_value is None or current_value is None:
         return _withheld(domain, VALUE_MISSING)
     if domain == 'team_state' and (

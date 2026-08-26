@@ -80,8 +80,10 @@ def _artifact(*, artifact_id=44, state='stretched', label='Stretched'):
         published_at=datetime(2026, 8, 18, 12, 30),
         payload={
             'team_state': {
-                'public_state': state,
-                'public_label': label,
+                'public_state': {
+                    'public_code': state,
+                    'public_label': label,
+                },
             },
         },
     )
@@ -181,6 +183,19 @@ def _snapshot(
         rest_status_capture=rest_status_capture,
     )
     return SimpleNamespace(id=snapshot_id, payload=envelope)
+
+
+def _retained_malformed_team_state_sidecar(snapshot):
+    payload = deepcopy(snapshot.payload)
+    value = payload['values']['team_state']
+    payload['values']['team_state'] = {
+        'public_state': {
+            'public_code': value['public_state'],
+            'public_label': value['public_label'],
+        },
+        'public_label': None,
+    }
+    return SimpleNamespace(id=snapshot.id, payload=payload)
 
 
 def _rest_status_capture(represented_date, rested_arm_count=5):
@@ -527,6 +542,10 @@ def test_prospective_envelope_uses_canonical_team_state_method_owner():
     assert envelope['source']['sync_run_id'] == 12
     assert envelope['source']['artifact_id'] == 44
     assert envelope['domains']['team_state']['trusted'] is True
+    assert envelope['values']['team_state'] == {
+        'public_state': 'stretched',
+        'public_label': 'Stretched',
+    }
 
 
 def test_prospective_envelope_refuses_a_method_stamp_that_drifted_from_owner():
@@ -538,6 +557,18 @@ def test_prospective_envelope_refuses_a_method_stamp_that_drifted_from_owner():
             source=_source(),
             readiness=readiness,
             artifact=_artifact(),
+        )
+
+
+def test_prospective_envelope_refuses_incomplete_team_state_1_2_public_value():
+    artifact = _artifact()
+    artifact.payload['team_state']['public_state']['public_label'] = None
+
+    with pytest.raises(delta.DeltaStampError, match='team_state_value_missing'):
+        delta.build_prospective_envelope(
+            source=_source(),
+            readiness=_readiness(),
+            artifact=artifact,
         )
 
 
@@ -565,6 +596,7 @@ def test_naturally_generated_sidecar_is_append_only_and_inspectable(app):
         'membership_authority': 'resolve_active_bullpen_membership',
     }
     assert stored.payload['values']['team_state']['public_state'] == 'stretched'
+    assert stored.payload['values']['team_state']['public_label'] == 'Stretched'
     assert stored.payload['values']['arm_read']['records'][0]['public_read'] == {
         'kind': 'read',
         'key': 'watch_arm',
@@ -659,6 +691,108 @@ def test_same_version_team_state_transition_is_comparable():
     assert comparison['status'] == delta.COMPARABLE
     assert comparison['previous']['public_state'] == 'stretched'
     assert comparison['current']['public_state'] == 'fresh'
+
+
+def test_retained_team_state_1_2_shape_normalizes_without_mutating_sidecars():
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1, state='stretched')
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+    previous_before = deepcopy(previous.payload)
+    current_before = deepcopy(current.payload)
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['previous'] == {
+        'public_state': 'stretched', 'public_label': 'Stretched',
+    }
+    assert comparison['current'] == {
+        'public_state': 'fresh', 'public_label': 'Fresh',
+    }
+    assert previous.payload == previous_before
+    assert current.payload == current_before
+
+
+def test_retained_team_state_1_2_unchanged_pair_is_comparable():
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1, state='fresh')
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['previous'] == comparison['current']
+
+
+def test_retained_team_state_1_2_missing_sibling_label_normalizes():
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1)
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+    previous.payload['values']['team_state'].pop('public_label')
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['previous']['public_label'] == 'Stretched'
+
+
+@pytest.mark.parametrize(
+    'mutation',
+    (
+        lambda value: value['public_state'].__setitem__('public_code', None),
+        lambda value: value['public_state'].__setitem__('public_label', None),
+        lambda value: value.__setitem__('public_state', None),
+    ),
+)
+def test_retained_team_state_1_2_true_missing_values_stay_withheld(mutation):
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1)
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+    mutation(previous.payload['values']['team_state'])
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.VALUE_MISSING
+
+
+def test_retained_team_state_1_2_contradictory_flat_value_stays_withheld():
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1)
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+    previous.payload['values']['team_state']['public_label'] = 'Fresh'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.VALUE_MISSING
+
+
+def test_unknown_artifact_version_cannot_use_retained_shape_compatibility():
+    previous = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 17), snapshot_id=1)
+    )
+    current = _retained_malformed_team_state_sidecar(
+        _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    )
+    previous.payload['source']['artifact_payload_version'] = 'team-state-unknown'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.VALUE_MISSING
 
 
 def test_method_version_mismatch_is_withheld():

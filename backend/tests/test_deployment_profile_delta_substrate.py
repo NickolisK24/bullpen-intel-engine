@@ -199,8 +199,10 @@ def test_publication_capture_copies_exact_frozen_profile_and_versions():
         published_at=datetime(2026, 8, 20, 12, 30),
         payload={
             'team_state': {
-                'public_state': 'fresh',
-                'public_label': 'Fresh',
+                'public_state': {
+                    'public_code': 'fresh',
+                    'public_label': 'Fresh',
+                },
             },
         },
     )
