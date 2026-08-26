@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 5.13 (HIST-02 closeout and HIST-03 activation). What it guards:
+Re-pinned to Version 5.14 (HIST-03 closeout and HIST-04 activation). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -24,7 +24,7 @@ Re-pinned to Version 5.13 (HIST-02 closeout and HIST-03 activation). What it gua
 
   * Order and package state are contracts. PRE-02B, PRE-02, TODAY-01 through
     TODAY-06, PIT-01 through PIT-07, and CMP-01 through CMP-02 are complete;
-    SD-01, PI-01 through PI-02, and HIST-01 through HIST-02 are complete and HIST-03 is the bounded active objective; blocked, dated, and
+    SD-01, PI-01 through PI-02, and HIST-01 through HIST-03 are complete and HIST-04 is the bounded active objective; blocked, dated, and
     backlogged work may not silently advance.
 
   * Team Board package status is explicit. A completed user-facing package may
@@ -51,9 +51,9 @@ TODAY_SURFACE_PATH = (
 FRONTEND_API_PATH = REPO_ROOT / 'frontend' / 'src' / 'utils' / 'api.js'
 BULLPEN_API_PATH = REPO_ROOT / 'backend' / 'api' / 'bullpen.py'
 
-EXPECTED_VERSION = '5.13'
+EXPECTED_VERSION = '5.14'
 EXPECTED_EFFECTIVE_DATE = 'August 26, 2026'
-EXPECTED_MAIN = 'b842d39934cb6066943bbeab561b1b3e7a6cbc43'
+EXPECTED_MAIN = 'a492dc049710d8a17022925165f6dd992a4dd47b'
 PRE_02B_COMMIT = '399692904e6abbf462b31dd9db92512e726bb045'
 TODAY_01_COMMIT = '77d77c56238844228bb07fcef9d173d3e1993e67'
 TODAY_02_COMMIT = '3adb502f724362bc3612f3bf2a799a1560938a53'
@@ -87,10 +87,10 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# Version 5.13's current execution sequence. State is part of the contract:
+# Version 5.14's current execution sequence. State is part of the contract:
 # blocked, dated, complete, and backlogged work must not silently become active.
 APPROVED_EXECUTION = (
-    (1, 'ACTIVE', 'HIST-03 — Qualified Transaction Overlay'),
+    (1, 'ACTIVE', 'HIST-04 — Team State Comparison Carrier Repair'),
     (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
     (3, 'DATE-BOUND OBLIGATION', 'React Router migration (#645)'),
     (4, 'BACKLOGGED', 'Runtime work reduction'),
@@ -242,14 +242,14 @@ def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
 
     assert EXPECTED_MAIN in text
     assert (
-        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after HIST-02 and the '
-        'ShareArtifact publication-seal repair merged; '
-        'includes the retained Team State timeline, backend-authored change markers, and all prior core-complete product surfaces. |'
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after HIST-03 merged with the '
+        'ShareArtifact publication-seal repair preserved; '
+        'includes the retained Team State timeline, backend-authored change markers, qualified transaction context, and all prior core-complete product surfaces. |'
         in text
     )
     assert (
-        '| Audit branch | `history/qualified-transactions` | '
-        'HIST-02 closeout followed by the separately committed HIST-03 implementation. |'
+        '| Audit branch | `fix/history-team-state-comparison-carrier` | '
+        'HIST-03 closeout followed by the separately committed HIST-04 implementation. |'
         in text
     )
 
@@ -318,12 +318,13 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_hist_03_is_the_single_active_objective():
-    """The reconciliation advances one bounded retained-history event package."""
+def test_hist_04_is_the_single_active_objective():
+    """The reconciliation advances one bounded retained-carrier repair."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | HIST-03 — Qualified Transaction Overlay |' in text
-    assert 'The next bounded package is **HIST-03 — Qualified Transaction Overlay**.' in text
+    assert '| ACTIVE OBJECTIVE | HIST-04 — Team State Comparison Carrier Repair |' in text
+    assert 'The next bounded package is **HIST-04 — Team State Comparison Carrier Repair**.' in text
+    assert '| ACTIVE OBJECTIVE | HIST-03 — Qualified Transaction Overlay |' not in text
     assert '| ACTIVE OBJECTIVE | HIST-02 — Team State Change Markers |' not in text
     assert '| ACTIVE OBJECTIVE | HIST-01 — Team State Timeline Foundation |' not in text
     assert '| ACTIVE OBJECTIVE | PI-01 — Team State Portable Citation |' not in text
@@ -378,15 +379,16 @@ def test_the_new_objective_preserves_every_authority_boundary():
         assert preserved in body, preserved
 
     for boundary in (
-        'HIST-01 and HIST-02 are complete on merged main',
+        'HIST-01 through HIST-03 are complete on merged main',
         'backend-owned HIST-01 comparison and emits a Team State\nchange marker only for',
         'an adjacent canonical pair whose comparison is both\nproven comparable and changed',
         'qualified pitcher transactions attributed through their\nstored historical source/destination teams',
         'exact transaction date',
-        'distinguishes successful zero-event coverage from partial or unavailable transaction authority',
-        'without frontend team-attribution or category inference',
-        'adds no event-only dates, games, short starts, workload, rotation, Since Yesterday annotations',
-        'causal explanation',
+        'canonical Team State 1.2 nested public code and label into scalar comparison-carrier values',
+        'exact known retained malformed nested carrier shape through a side-effect-free compatibility projection',
+        'rejects missing, contradictory, unsupported, or untrusted values',
+        'preserves immutable ShareArtifacts, retained sidecars, publication seals, query bounds',
+        'adds no event type, short start, Since Yesterday annotation, Pitcher History',
         'historical recomputation',
     ):
         assert boundary in body, boundary
@@ -629,7 +631,7 @@ def test_decision_ledger_is_contiguous_through_d057():
     assert 'D-058' not in text
 
     assert 'Decision Ledger through D-057' in text
-    assert 'Version 5.13 adds no durable Decision Ledger ID.' in text
+    assert 'Version 5.14 adds no durable Decision Ledger ID.' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
@@ -712,22 +714,22 @@ def test_completion_log_records_the_closed_packages_with_evidence():
         assert fragment in joined, fragment
 
 
-def test_revision_history_records_the_version_5_13_entry():
+def test_revision_history_records_the_version_5_14_entry():
     """The current edition records its audit basis, objective, and boundaries."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 5.13 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.14 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        '`origin/main` `b842d399`',
-        'Closed HIST-02',
-        'HIST-03 Qualified Transaction Overlay',
-        'exact retained Team State dates',
+        '`origin/main` `a492dc04`',
+        'Closed HIST-03',
+        'HIST-04 Team State Comparison Carrier Repair',
+        'read-only production proof',
         'Portable Intelligence remains core-complete',
     ):
         assert claimed in entry, claimed
