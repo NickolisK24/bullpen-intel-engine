@@ -380,6 +380,31 @@ def test_tb09a_exception_is_exact_and_does_not_unfreeze_artifact_neighbors():
     assert 'No Share Artifact payload or historical row is modified.' in decision
 
 
+def test_publication_seal_exception_is_exact_and_keeps_neighbors_frozen():
+    approved = freeze_policy.SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS
+    assert approved == ('backend/services/share_artifacts.py',)
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifacts.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        [
+            'backend/services/share_artifact_generation.py',
+            'backend/models/share_artifact.py',
+        ],
+        prefixes=(
+            freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,
+            freeze_policy.SHARE_ARTIFACT_MODEL_PREFIX,
+        ),
+        approved=approved,
+    ) == [
+        'backend/models/share_artifact.py',
+        'backend/services/share_artifact_generation.py',
+    ]
+
+
 def test_gap30_exception_is_exact_and_decision_linked():
     approved = freeze_policy.GAP30_TEAM_STATE_DELTA_PATHS
     assert approved == ('backend/services/team_changes.py',)

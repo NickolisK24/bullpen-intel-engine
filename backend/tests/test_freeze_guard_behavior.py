@@ -39,7 +39,7 @@ TB04_FILES = (
     'frontend/src/components/bullpen/board/TeamBoardWorkloadOverview.jsx',
 )
 TB09A_APPROVED_PATH = 'backend/services/share_artifact_generation.py'
-UNAPPROVED_SHARE_ARTIFACT_NEIGHBOR = 'backend/services/share_artifacts.py'
+UNAPPROVED_SHARE_ARTIFACT_NEIGHBOR = 'backend/models/share_artifact.py'
 
 
 def _git(repo, *args):
