@@ -434,6 +434,14 @@ HIST01_TEAM_STATE_TIMELINE_PATHS = (
     'backend/services/team_state_history.py',
 )
 
+# HOTFIX-02, August 26 2026. New Share Artifacts must compute their immutable
+# integrity hash while still draft and flush the complete sealed publication
+# state once. This exact exception permits only the publication primitive repair;
+# the Share Artifact model, schema, and neighboring services remain frozen.
+SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS = (
+    'backend/services/share_artifacts.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

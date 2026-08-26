@@ -34,6 +34,19 @@ logger = logging.getLogger(__name__)
 POST_PUBLICATION_ACTOR = 'publication_hook'
 
 
+def _recover_optional_generation_session(*, source_snapshot_id, lane):
+    """Clear a failed optional-generation transaction after publication commit."""
+    try:
+        from utils.db import db
+        db.session.rollback()
+    except Exception:
+        logger.exception(
+            'Post-publication %s session recovery failed snapshot_id=%s.',
+            lane,
+            source_snapshot_id,
+        )
+
+
 def run_post_publication_generation(snapshot, *, generator=None):
     """Attempt league-wide Team State generation for a just-published snapshot.
 
@@ -92,6 +105,10 @@ def run_post_publication_generation(snapshot, *, generator=None):
             'Post-publication generation failed non-fatally snapshot_id=%s.',
             source_snapshot_id,
         )
+        _recover_optional_generation_session(
+            source_snapshot_id=source_snapshot_id,
+            lane='Team State generation',
+        )
         return None
 
     logger.info(
@@ -128,5 +145,9 @@ def run_post_publication_generation(snapshot, *, generator=None):
             'Post-publication Since Yesterday generation failed non-fatally '
             'snapshot_id=%s.',
             source_snapshot_id,
+        )
+        _recover_optional_generation_session(
+            source_snapshot_id=source_snapshot_id,
+            lane='Since Yesterday generation',
         )
     return result

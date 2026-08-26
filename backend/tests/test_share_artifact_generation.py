@@ -209,6 +209,32 @@ def test_eligible_source_publishes_new_artifact(app, monkeypatch):
     assert verify_share_artifact_integrity(result.artifact) is True
 
 
+def test_generation_orchestration_seals_with_unloaded_evidence(app, monkeypatch):
+    _eligible_env(monkeypatch)
+    real_build = gen_module.build_share_artifact_draft
+
+    def _build_with_unloaded_evidence(**kwargs):
+        draft = real_build(**kwargs)
+        db.session.expire(draft, ['evidence'])
+        return draft
+
+    monkeypatch.setattr(
+        gen_module,
+        'build_share_artifact_draft',
+        _build_with_unloaded_evidence,
+    )
+
+    result = generate_team_state_artifact(
+        TEAM_ID,
+        readiness_resolver=_resolver(_readiness()),
+    )
+
+    assert result.outcome == OUTCOME_PUBLISHED
+    assert result.artifact.lifecycle_state == 'published'
+    assert result.artifact.integrity_hash
+    assert verify_share_artifact_integrity(result.artifact) is True
+
+
 def test_equivalent_source_reuses_existing(app, monkeypatch):
     _eligible_env(monkeypatch)
     first = generate_team_state_artifact(TEAM_ID, readiness_resolver=_resolver(_readiness()))
