@@ -1,5 +1,6 @@
 """HIST-01 retained Team State timeline contract."""
 
+from copy import deepcopy
 from datetime import date, datetime
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.share_artifact import ShareArtifact
+from services import team_board_delta_substrate as delta
 from services import team_state_history as history_module
 from services.share_artifacts import (
     build_share_artifact_draft,
@@ -20,6 +22,7 @@ from services.share_artifacts import (
 )
 from services.team_state_history import build_team_state_history
 from services.transaction_rehab_assignment import AUTHORITY as REHAB_AUTHORITY
+from team_operations import TEAM_STATE_METHOD_VERSION
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -129,6 +132,63 @@ def _sidecar(artifact):
         data_through=artifact.product_date,
         snapshot_generated_at=artifact.published_at,
         source=f'tb_delta:team:{TEAM_ID}',
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+def _retained_malformed_sidecar(artifact):
+    source = SimpleNamespace(
+        team_id=TEAM_ID,
+        snapshot=SimpleNamespace(
+            data_through=artifact.product_date,
+            snapshot_id=artifact.source_snapshot_id,
+            sync_run_id=None,
+            subject_type=None,
+            subject_key=None,
+            is_trusted=True,
+        ),
+    )
+    readiness = {
+        'contract_version': TEAM_STATE_METHOD_VERSION,
+        'contract_state': 'available',
+        'team_state_evidence': {
+            'method_version': TEAM_STATE_METHOD_VERSION,
+            'basis': 'status_only',
+            'active_pitcher_count': 7,
+            'trust_state': 'high',
+            'trust_data_state': 'fresh',
+            'freshness_state': 'current',
+            'evidence_references': {
+                'population_authority': 'resolve_readiness_population',
+                'membership_authority': 'resolve_active_bullpen_membership',
+            },
+        },
+    }
+    payload = delta.build_prospective_envelope(
+        source=source,
+        readiness=readiness,
+        artifact=artifact,
+    )
+    value = payload['values']['team_state']
+    payload['values']['team_state'] = {
+        'public_state': {
+            'public_code': value['public_state'],
+            'public_label': value['public_label'],
+        },
+        'public_label': None,
+    }
+    row = DashboardSnapshot(
+        snapshot_type=delta.SNAPSHOT_TYPE,
+        status='ready',
+        is_published=False,
+        published_at=artifact.published_at,
+        payload=payload,
+        payload_version=delta.SNAPSHOT_PAYLOAD_VERSION,
+        data_through=artifact.product_date,
+        snapshot_generated_at=artifact.published_at,
+        source=f'{delta.SNAPSHOT_SOURCE_PREFIX}{TEAM_ID}',
     )
     db.session.add(row)
     db.session.flush()
@@ -355,6 +415,75 @@ def test_integrity_failure_without_replacement_becomes_explicit_gap(app):
     assert payload['coverage']['start'] == '2026-07-23'
     assert payload['coverage']['end'] == '2026-07-23'
     assert payload['coverage']['missing_dates'] == ['2026-07-23']
+
+
+def test_retained_malformed_sidecars_restore_backend_owned_change_event(app):
+    older = _publish(date(2026, 7, 23), label='Stretched', snapshot_id=5001)
+    newer = _publish(date(2026, 7, 24), label='Fresh', code='fresh', snapshot_id=5002)
+    previous_sidecar = _retained_malformed_sidecar(older)
+    current_sidecar = _retained_malformed_sidecar(newer)
+    artifact_before = {
+        artifact.id: (artifact.integrity_hash, deepcopy(artifact.payload))
+        for artifact in (older, newer)
+    }
+    sidecars_before = {
+        row.id: deepcopy(row.payload) for row in (previous_sidecar, current_sidecar)
+    }
+    writes = []
+
+    def capture_writes(connection, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')):
+            writes.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', capture_writes)
+    try:
+        payload = build_team_state_history('TST', season=2026)
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture_writes)
+
+    row = payload['rows'][0]
+    assert row['comparison']['status'] == 'comparable'
+    assert row['comparison']['transition'] == {
+        'from_code': 'stretched', 'from_state': 'Stretched',
+        'to_code': 'fresh', 'to_state': 'Fresh', 'changed': True,
+    }
+    assert row['event_overlay'] == {
+        'status': 'available', 'outcome': 'changed', 'reason_code': None,
+    }
+    assert row['events'][0]['event_id'] == (
+        f'team_state_change:{TEAM_ID}:{older.public_id}:{newer.public_id}'
+    )
+    assert row['events'][0]['citations'] == {
+        'previous': {
+            'public_id': older.public_id,
+            'citation_url': f'/share/{older.public_id}',
+        },
+        'current': {
+            'public_id': newer.public_id,
+            'citation_url': f'/share/{newer.public_id}',
+        },
+    }
+    for artifact in (older, newer):
+        assert (artifact.integrity_hash, artifact.payload) == artifact_before[artifact.id]
+    for sidecar in (previous_sidecar, current_sidecar):
+        assert sidecar.payload == sidecars_before[sidecar.id]
+    assert writes == []
+
+
+def test_retained_malformed_sidecars_restore_comparable_unchanged_outcome(app):
+    older = _publish(date(2026, 7, 23), label='Stretched', snapshot_id=5001)
+    newer = _publish(date(2026, 7, 24), label='Stretched', snapshot_id=5002)
+    _retained_malformed_sidecar(older)
+    _retained_malformed_sidecar(newer)
+
+    row = build_team_state_history('TST', season=2026)['rows'][0]
+
+    assert row['comparison']['status'] == 'comparable'
+    assert row['comparison']['transition']['changed'] is False
+    assert row['event_overlay'] == {
+        'status': 'available', 'outcome': 'unchanged', 'reason_code': None,
+    }
+    assert row['events'] == []
 
 
 def test_comparable_transition_is_backend_owned(app, monkeypatch):
