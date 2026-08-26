@@ -22,7 +22,7 @@ const { buildTeamHistoryHref } = await server.ssrLoadModule('/src/utils/evidence
 
 const payload = {
   capability: 'team_state_history',
-  contract: 'team_state_history_v1',
+  contract: 'team_state_history_v2',
   status: 'available',
   team: {
     team_id: 147,
@@ -57,6 +57,12 @@ const payload = {
         boundary: true,
         transition: null,
       },
+      event_overlay: {
+        status: 'withheld',
+        outcome: 'unavailable',
+        reason_code: 'contract_incompatible',
+      },
+      events: [],
     },
     {
       represented_date: '2026-07-23',
@@ -69,7 +75,63 @@ const payload = {
         render_version: 'team-state-1.0.0',
       },
       comparison: null,
+      event_overlay: {
+        status: 'withheld',
+        outcome: 'unavailable',
+        reason_code: 'prior_publication_missing',
+      },
+      events: [],
     },
+  ],
+}
+
+const changedPayload = {
+  ...payload,
+  coverage: {
+    ...payload.coverage,
+    start: '2026-07-23',
+    end: '2026-07-24',
+    covered_date_count: 2,
+    missing_dates: [],
+  },
+  rows: [
+    {
+      ...payload.rows[0],
+      represented_date: '2026-07-24',
+      artifact: {
+        ...payload.rows[0].artifact,
+        public_id: 'artifact-new',
+        citation_url: '/share/artifact-new',
+      },
+      comparison: {
+        status: 'comparable',
+        reason_code: null,
+        boundary: false,
+        transition: {
+          from_code: 'stretched',
+          from_state: 'Stretched',
+          to_code: 'fresh',
+          to_state: 'Fresh',
+          changed: true,
+        },
+      },
+      event_overlay: { status: 'available', outcome: 'changed', reason_code: null },
+      events: [{
+        event_type: 'team_state_change',
+        event_id: 'team_state_change:147:artifact-old:artifact-new',
+        event_date: '2026-07-24',
+        from_date: '2026-07-23',
+        to_date: '2026-07-24',
+        label: 'Team State changed',
+        from_state: { code: 'stretched', label: 'Stretched' },
+        to_state: { code: 'fresh', label: 'Fresh' },
+        citations: {
+          previous: { public_id: 'artifact-old', citation_url: '/share/artifact-old' },
+          current: { public_id: 'artifact-new', citation_url: '/share/artifact-new' },
+        },
+      }],
+    },
+    payload.rows[1],
   ],
 }
 
@@ -101,11 +163,59 @@ test('History shows gaps and comparison boundaries without inferring transitions
   assert.ok(html.includes('Comparison boundary'))
   assert.equal(html.includes('Stretched → Fresh'), false)
   const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
-  assert.equal(source.includes('comparison.transition.from_state'), true)
+  assert.equal(source.includes('comparison.transition.from_state'), false)
+  assert.equal(source.includes('comparison.transition.changed'), false)
   assert.equal(source.includes('rows[index - 1]'), false)
   assert.equal(source.includes('overflow-x-auto'), false)
   assert.equal(source.includes('min-w-['), false)
   assert.equal(source.includes('fixed inset'), false)
+})
+
+test('History renders one backend-supplied change marker under the affected state row', () => {
+  const html = render({ payload: changedPayload })
+  assert.equal((html.match(/data-testid="team-state-change-marker"/g) || []).length, 1)
+  assert.ok(html.includes('Team State changed'))
+  assert.ok(html.includes('aria-label="Stretched to Fresh"'))
+  assert.ok(html.includes('Open earlier published observation'))
+  assert.ok(html.includes('Open later published observation'))
+  assert.ok(html.includes('href="/share/artifact-old"'))
+  assert.ok(html.includes('href="/share/artifact-new"'))
+  assert.ok(html.indexOf('The bullpen had strong rested coverage.') < html.indexOf('Team State changed'))
+})
+
+test('History distinguishes comparable unchanged from unavailable comparison', () => {
+  const unchangedPayload = {
+    ...changedPayload,
+    rows: [{
+      ...changedPayload.rows[0],
+      comparison: {
+        ...changedPayload.rows[0].comparison,
+        transition: {
+          from_code: 'fresh', from_state: 'Fresh',
+          to_code: 'fresh', to_state: 'Fresh', changed: false,
+        },
+      },
+      event_overlay: { status: 'available', outcome: 'unchanged', reason_code: null },
+      events: [],
+    }, changedPayload.rows[1]],
+  }
+  const unchanged = render({ payload: unchangedPayload })
+  const unavailable = render({ payload })
+
+  assert.equal(unchanged.includes('Team State changed'), false)
+  assert.ok(unchanged.includes('Published comparison · Team State unchanged'))
+  assert.equal(unavailable.includes('Team State unchanged'), false)
+  assert.ok(unavailable.includes('Comparison boundary'))
+})
+
+test('History change markers remain linear and do not add scroll-container geometry', () => {
+  const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
+  assert.ok(source.includes('flex-wrap'))
+  assert.ok(source.includes('tablet:grid-cols-[8rem_minmax(0,1fr)]'))
+  assert.equal(source.includes('overflow-x-auto'), false)
+  assert.equal(source.includes('min-w-['), false)
+  assert.equal(source.includes('fixed inset'), false)
+  assert.equal(source.includes('grid-cols-2'), false)
 })
 
 test('History keeps current Team Board context separate', () => {

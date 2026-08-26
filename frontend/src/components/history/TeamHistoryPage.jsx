@@ -44,20 +44,91 @@ function groupedEntries(payload) {
   return [...groups.entries()]
 }
 
-function ComparisonContext({ comparison }) {
-  if (!comparison) return null
-  if (comparison.status === 'comparable' && comparison.transition) {
+function ComparisonContext({ comparison, eventOverlay }) {
+  if (eventOverlay?.status === 'available' && eventOverlay?.outcome === 'unchanged') {
     return (
       <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-text-tertiary">
-        Published comparison · {comparison.transition.from_state} → {comparison.transition.to_state}
+        Published comparison · Team State unchanged
       </p>
     )
   }
+  if (!comparison) return null
   if (!comparison.boundary) return null
   return (
     <p className="mt-2 border-l-2 border-warning/60 pl-3 text-xs leading-relaxed text-warning" role="note">
       Comparison boundary — these adjacent publications are not proven comparable.
     </p>
+  )
+}
+
+function EventState({ state }) {
+  const value = readPublicTeamState({
+    available: true,
+    public_state: state?.code,
+    public_label: state?.label,
+  })
+  if (!value.available) return null
+  return (
+    <span
+      className="inline-flex min-h-8 items-center rounded-sm border px-2 py-1 font-board text-sm font-semibold"
+      style={value.tone}
+    >
+      {value.publicLabel}
+    </span>
+  )
+}
+
+function TeamStateChangeEvent({ event }) {
+  if (
+    event?.event_type !== 'team_state_change'
+    || !event?.event_id
+    || !event?.label
+    || !event?.from_state?.code
+    || !event?.from_state?.label
+    || !event?.to_state?.code
+    || !event?.to_state?.label
+  ) return null
+
+  const previousCitation = event.citations?.previous?.citation_url
+  const currentCitation = event.citations?.current?.citation_url
+  return (
+    <div
+      className="mt-3 border-l-2 border-brand-blue/40 pl-3"
+      data-testid="team-state-change-marker"
+    >
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-brand-blue">
+        {event.label}
+      </p>
+      <div
+        className="mt-2 flex min-w-0 flex-wrap items-center gap-2"
+        aria-label={`${event.from_state.label} to ${event.to_state.label}`}
+      >
+        <EventState state={event.from_state} />
+        <span aria-hidden="true" className="font-mono text-sm text-text-tertiary">→</span>
+        <span className="sr-only">to</span>
+        <EventState state={event.to_state} />
+      </div>
+      {(previousCitation || currentCitation) && (
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0 text-xs">
+          {previousCitation && (
+            <Link
+              to={previousCitation}
+              className="inline-flex min-h-11 items-center text-text-secondary underline-offset-4 hover:text-brand-blue hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+            >
+              Open earlier published observation
+            </Link>
+          )}
+          {currentCitation && (
+            <Link
+              to={currentCitation}
+              className="inline-flex min-h-11 items-center text-text-secondary underline-offset-4 hover:text-brand-blue hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+            >
+              Open later published observation
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -87,7 +158,10 @@ function StateRow({ row }) {
           {state.publicLabel || 'Team State unavailable'}
         </div>
         {row.explanation && <p className="mt-3 max-w-reading text-sm leading-relaxed text-text-primary">{row.explanation}</p>}
-        <ComparisonContext comparison={row.comparison} />
+        {(row.events || []).map(event => (
+          <TeamStateChangeEvent key={event.event_id} event={event} />
+        ))}
+        <ComparisonContext comparison={row.comparison} eventOverlay={row.event_overlay} />
         {row.limitations?.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs leading-relaxed text-text-tertiary">
             {row.limitations.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
