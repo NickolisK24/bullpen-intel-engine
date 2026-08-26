@@ -870,6 +870,9 @@ test('Intelligence Surface shell renders before data resolves', () => {
   assert.equal(htmlIncludes(html, 'Reading the latest completed-game context...'), false)
   assert.equal(htmlIncludes(html, 'Loading today'), false)
   assert.equal(htmlIncludes(html, 'min-h-[28rem]'), false)
+  assert.ok(htmlIncludes(html, 'SINCE YESTERDAY'))
+  assert.ok(htmlIncludes(html, 'What changed across MLB bullpens'))
+  assert.ok(htmlIncludes(html, 'since-yesterday-loading-shell'))
   assert.ok(htmlIncludes(html, 'Tonight'))
   assert.ok(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
@@ -2290,6 +2293,82 @@ test('Daily Edition unavailable state is local and preserves healthy page sectio
   assert.ok(htmlIncludes(html, 'The Daily Edition lead is temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
+})
+
+test('Since Yesterday loading preserves hierarchy without publishing baseball meaning', () => {
+  const pending = render(React.createElement(IntelligenceSurfaceView, {
+    intelligenceLoading: true,
+    tonightLoading: true,
+    dashboardLoading: true,
+    landscapeLoading: true,
+    teams: [],
+  }))
+  const pendingSection = sectionSlice(pending, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  const visible = pendingSection.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+  assert.equal(countOccurrences(pendingSection, 'id="since-yesterday-title"'), 1)
+  assert.equal(countOccurrences(pendingSection, 'data-testid="since-yesterday-loading-shell"'), 1)
+  assert.equal(countOccurrences(pendingSection, 'role="status"'), 1)
+  assert.ok(htmlIncludes(pendingSection, 'aria-live="polite"'))
+  assert.ok(htmlIncludes(pendingSection, 'aria-busy="true"'))
+  assert.ok(htmlIncludes(pendingSection, 'aria-hidden="true"'))
+  assert.ok(htmlIncludes(pendingSection, 'min-h-56'))
+  assert.equal(/\d/.test(visible), false)
+  for (const forbidden of [
+    'Team State changed',
+    'Team State unchanged',
+    'No meaningful bullpen movement',
+    'clubs moved',
+    'rested options',
+    'worked yesterday',
+    'Fresh',
+    'Stretched',
+    'Vulnerable',
+    'Available',
+    'On Watch',
+  ]) {
+    assert.equal(htmlIncludes(pendingSection, forbidden), false, forbidden)
+  }
+
+  const dailyIndex = pending.indexOf('id="daily-edition-title"')
+  const sinceIndex = pending.indexOf('id="since-yesterday-title"')
+  const tonightIndex = pending.indexOf('id="tonight-title"')
+  const pictureIndex = pending.indexOf('id="bullpen-picture-title"')
+  assert.ok(dailyIndex < sinceIndex)
+  assert.ok(sinceIndex < tonightIndex)
+  assert.ok(tonightIndex < pictureIndex)
+})
+
+test('Since Yesterday loading shell yields to available and governed unavailable states', () => {
+  const available = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: dashboardWithSinceYesterdayChanges,
+    dashboardLoading: false,
+    teams,
+  }))
+  const unavailable = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: dashboardWithSinceYesterdayInsufficient,
+    dashboardLoading: false,
+    teams,
+  }))
+
+  assert.equal(htmlIncludes(available, 'since-yesterday-loading-shell'), false)
+  assert.equal(countOccurrences(available, 'SINCE YESTERDAY'), 1)
+  assert.equal(htmlIncludes(available, 'Since-yesterday movement is unavailable'), false)
+  assert.equal(htmlIncludes(unavailable, 'since-yesterday-loading-shell'), false)
+  assert.ok(htmlIncludes(unavailable, 'Since-yesterday movement is unavailable'))
+})
+
+test('Today retains one request owner for each existing public read', () => {
+  const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
+  for (const owner of [
+    'getTodayIntelligence',
+    'getTonightIntelligence',
+    'getBullpenLandscape',
+    'getBullpenDashboard',
+    'getTeams',
+  ]) {
+    assert.equal((source.match(new RegExp(`useFetch\\(${owner}\\)`, 'g')) || []).length, 1, owner)
+  }
 })
 
 test('Daily Edition loading is compact and does not block healthy Tonight content', () => {
