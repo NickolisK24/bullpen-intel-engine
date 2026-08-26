@@ -154,13 +154,40 @@ test('Active Arm Row loading state preserves row hierarchy without semantic clai
   assert.equal(visibleText(html).includes('Fresh'), false)
 })
 
-test('Team Board skeleton is hierarchy-preserving and motionless', () => {
+test('Team Board skeleton preserves answer, summary, Active Bullpen, and bounded continuation hierarchy', () => {
   const html = renderToStaticMarkup(React.createElement(TeamBoardSkeleton))
+  const text = visibleText(html)
 
   assert.match(html, /data-testid="team-board-skeleton"/)
+  assert.match(html, /data-testid="team-board-loading-answer"/)
+  assert.match(html, /data-testid="team-board-loading-summary"/)
+  assert.match(html, /data-testid="team-board-loading-active-bullpen"/)
+  assert.match(html, /data-testid="team-board-loading-continuation"/)
   assert.match(html, /role="status"/)
   assert.match(html, /aria-busy="true"/)
+  assert.equal((html.match(/role="status"/g) || []).length, 1)
+  assert.equal((html.match(/aria-live="polite"/g) || []).length, 1)
+  assert.match(html, /aria-hidden="true"/)
   assert.match(html, /active-arm-row/)
+  assert.equal((html.match(/active-arm-row/g) || []).length, 4)
+  assert.match(html, /grid-cols-1/)
+  assert.match(html, /tablet:grid-cols-2/)
+  assert.match(html, /desktop:grid-cols-5/)
+  assert.match(html, /pb-section-lg/)
+  assert.doesNotMatch(html, /overflow-x-auto|fixed inset|h-screen|min-h-screen/)
+  assert.doesNotMatch(html, /<button|<a\s|<input|<select/)
+  assert.equal(text, 'Building current bullpen board...')
+  for (const forbidden of [
+    'Fresh',
+    'Stretched',
+    'Vulnerable',
+    'Available',
+    'On Watch',
+    'rested',
+    'worked yesterday',
+  ]) {
+    assert.equal(text.includes(forbidden), false, forbidden)
+  }
   assert.doesNotMatch(indexCss.match(/\.foundation-skeleton\s*\{[^}]*\}/s)?.[0] || '', /animate|transition/)
   assert.equal(/animate-(ping|pulse)/.test(html), false)
 })

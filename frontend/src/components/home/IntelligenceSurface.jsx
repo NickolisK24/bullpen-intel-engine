@@ -15,6 +15,7 @@ import {
   FreshnessBadge,
   FreshnessStamp,
   isSampleFreshness,
+  SkeletonBlock,
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
@@ -2073,10 +2074,39 @@ function SinceYesterdayQuiet({ view }) {
   )
 }
 
-function SinceYesterdaySection({ dashboard, teams }) {
+function SinceYesterdayLoadingState() {
+  return (
+    <div
+      className="min-h-56 border border-dirt bg-dugout p-4 sm:p-5"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-testid="since-yesterday-loading-shell"
+    >
+      <span className="sr-only">Loading the Since Yesterday bullpen view.</span>
+      <div className="space-y-3" aria-hidden="true">
+        <SkeletonBlock className="h-3 w-36 max-w-full" />
+        {[0, 1, 2].map(index => (
+          <div
+            key={index}
+            className="flex min-w-0 flex-col gap-3 border-t border-dirt/80 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0 flex-1">
+              <SkeletonBlock className="h-4 w-full max-w-56" />
+              <SkeletonBlock className="mt-2 h-3 w-full max-w-80" />
+            </div>
+            <SkeletonBlock className="h-8 w-28 shrink-0" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SinceYesterdaySection({ dashboard, teams, loading = false }) {
   const view = getSinceYesterdayView(dashboard, teams)
 
-  if (!view) return null
+  if (!view && !loading) return null
 
   return (
     <SectionShell
@@ -2085,12 +2115,14 @@ function SinceYesterdaySection({ dashboard, teams }) {
       title="What changed across MLB bullpens"
       subtitle={SINCE_YESTERDAY_EXPLAINER}
     >
-      {(view.previousDate || view.currentDate) && (
+      {view && (view.previousDate || view.currentDate) && (
         <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-chalk500">
           Adjacent views · {view.previousDateLabel} → {view.currentDateLabel}
         </p>
       )}
-      {view.state === 'changes_detected' ? (
+      {!view ? (
+        <SinceYesterdayLoadingState />
+      ) : view.state === 'changes_detected' ? (
         <SinceYesterdayBriefing view={view} />
       ) : view.state === 'no_meaningful_changes' ? (
         <SinceYesterdayQuiet view={view} />
@@ -2516,6 +2548,7 @@ export function IntelligenceSurfaceView({
   landscapeStaleWithError = false,
   onRetryLandscape,
   dashboard = null,
+  dashboardLoading = false,
   dashboardStaleWithError = false,
   onRetryDashboard,
   teams = [],
@@ -2540,7 +2573,7 @@ export function IntelligenceSurfaceView({
         loading={intelligenceLoading}
         error={intelligenceError}
       />
-      <SinceYesterdaySection dashboard={dashboard} teams={teams} />
+      <SinceYesterdaySection dashboard={dashboard} teams={teams} loading={dashboardLoading} />
       <TonightSection
         tonight={tonight}
         teams={teams}
