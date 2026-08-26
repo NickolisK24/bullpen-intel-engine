@@ -132,6 +132,69 @@ function TeamStateChangeEvent({ event }) {
   )
 }
 
+function QualifiedTransactionEvent({ event }) {
+  if (
+    event?.event_type !== 'qualified_transaction'
+    || !event?.event_id
+    || !event?.event_date
+    || !event?.label
+    || !event?.description
+    || !event?.pitcher?.pitcher_id
+    || !event?.pitcher?.name
+    || !event?.team_relationship?.relationship
+  ) return null
+
+  return (
+    <li className="min-w-0 text-sm leading-relaxed text-text-secondary">
+      <span className="font-semibold text-text-primary">{event.label}</span>
+      <span aria-hidden="true"> · </span>
+      <span className="sr-only">: </span>
+      {event.description}
+    </li>
+  )
+}
+
+function TransactionContext({ overlay, events, representedDate }) {
+  const qualified = (events || []).filter(event => (
+    event?.event_type === 'qualified_transaction'
+    && event?.event_date === representedDate
+  ))
+  const isPartial = overlay?.status === 'partial'
+  const isUnavailable = overlay?.status === 'unavailable'
+  if (!qualified.length && !isPartial && !isUnavailable) return null
+
+  return (
+    <div
+      className="mt-3 border-l-2 border-line-default pl-3"
+      data-testid="qualified-transaction-overlay"
+      role={isPartial || isUnavailable ? 'note' : undefined}
+    >
+      {qualified.length > 0 && (
+        <>
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
+            Roster moves
+          </p>
+          <ul className="mt-1 space-y-1">
+            {qualified.map(event => (
+              <QualifiedTransactionEvent key={event.event_id} event={event} />
+            ))}
+          </ul>
+        </>
+      )}
+      {isPartial && (
+        <p className={`${qualified.length ? 'mt-2 ' : ''}text-xs leading-relaxed text-text-withheld`}>
+          Transaction context is incomplete for this date.
+        </p>
+      )}
+      {isUnavailable && (
+        <p className={`${qualified.length ? 'mt-2 ' : ''}text-xs leading-relaxed text-text-withheld`}>
+          Transaction context is unavailable for this date.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function StateRow({ row }) {
   const state = readPublicTeamState({
     available: true,
@@ -161,6 +224,11 @@ function StateRow({ row }) {
         {(row.events || []).map(event => (
           <TeamStateChangeEvent key={event.event_id} event={event} />
         ))}
+        <TransactionContext
+          overlay={row.transaction_overlay}
+          events={row.transactions}
+          representedDate={row.represented_date}
+        />
         <ComparisonContext comparison={row.comparison} eventOverlay={row.event_overlay} />
         {row.limitations?.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs leading-relaxed text-text-tertiary">

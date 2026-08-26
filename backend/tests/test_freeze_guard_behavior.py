@@ -281,6 +281,22 @@ def test_hist01_history_route_exception_is_exact(monkeypatch):
         _run_appearance(monkeypatch, ['backend/services/team_state_history_admin.py'])
 
 
+def test_hist03_transaction_history_exception_is_exact(monkeypatch):
+    approved = list(
+        phase0e_guard.freeze_policy.HIST03_QUALIFIED_TRANSACTION_HISTORY_PATHS
+    )
+    _run_phase0e(monkeypatch, approved)
+    _run_appearance(monkeypatch, approved)
+
+    with pytest.raises(AssertionError):
+        _run_phase0e(
+            monkeypatch,
+            ['backend/services/what_changed_since_yesterday_public.py'],
+        )
+    with pytest.raises(AssertionError):
+        _run_appearance(monkeypatch, ['backend/services/team_state_payload.py'])
+
+
 @pytest.mark.parametrize('label,runner', GUARDS)
 def test_guard_accepts_an_archived_document_name_collision(monkeypatch, label, runner):
     runner(monkeypatch, [ARCHIVED_NAME_COLLISION])
