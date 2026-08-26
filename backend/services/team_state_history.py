@@ -1,9 +1,9 @@
-"""Published Team State history for one bullpen.
+"""Published Team State history and governed change markers for one bullpen.
 
-HIST-01 serves only immutable Team State ShareArtifacts that BaseballOS actually
-published. It never recalculates an old Team State, carries a state across a
-missing date, or derives movement from adjacent labels. Optional transition
-context comes only from the frozen Team Board delta substrate.
+The service serves only immutable Team State ShareArtifacts that BaseballOS
+actually published. It never recalculates an old Team State, carries a state
+across a missing date, or derives movement from adjacent labels. Transition
+context and HIST-02 markers come only from the frozen Team Board delta substrate.
 """
 
 from __future__ import annotations
@@ -35,12 +35,20 @@ from utils.db import db
 
 
 CAPABILITY = 'team_state_history'
-CONTRACT = 'team_state_history_v1'
+CONTRACT = 'team_state_history_v2'
 STATUS_AVAILABLE = 'available'
 STATUS_QUIET = 'quiet'
 COMPARISON_UNAVAILABLE = 'comparison_unavailable'
 COMPARISON_COVERAGE_GAP = 'coverage_gap'
 COMPARISON_AUTHORITY_MISSING = 'comparison_authority_missing'
+EVENT_OVERLAY_AVAILABLE = 'available'
+EVENT_OVERLAY_WITHHELD = 'withheld'
+EVENT_OUTCOME_CHANGED = 'changed'
+EVENT_OUTCOME_UNCHANGED = 'unchanged'
+EVENT_OUTCOME_UNAVAILABLE = 'unavailable'
+EVENT_PRIOR_PUBLICATION_MISSING = 'prior_publication_missing'
+TEAM_STATE_CHANGE_EVENT = 'team_state_change'
+TEAM_STATE_CHANGE_LABEL = 'Team State changed'
 
 
 def _as_mapping(value):
@@ -179,11 +187,101 @@ def _comparison(previous, current, sidecars):
         'status': COMPARABLE,
         'reason_code': None,
         'transition': {
+            'from_code': previous_code,
             'from_state': previous_label,
+            'to_code': current_code,
             'to_state': current_label,
             'changed': previous_code != current_code,
         } if previous_label and current_label else None,
     }
+
+
+def _citation(artifact, view):
+    routes = _as_mapping(view.get('routes'))
+    return {
+        'public_id': artifact.public_id,
+        'citation_url': routes.get('share_url'),
+    }
+
+
+def _event_state(view):
+    team_state = _as_mapping(view.get('team_state'))
+    return {
+        'code': team_state.get('public_state'),
+        'label': team_state.get('public_label'),
+    }
+
+
+def _withheld_event_overlay(reason_code):
+    return {
+        'status': EVENT_OVERLAY_WITHHELD,
+        'outcome': EVENT_OUTCOME_UNAVAILABLE,
+        'reason_code': reason_code or COMPARISON_AUTHORITY_MISSING,
+    }
+
+
+def _event_overlay(comparison, previous, current, team_id):
+    if not comparison or comparison.get('status') != COMPARABLE:
+        return _withheld_event_overlay(
+            _as_mapping(comparison).get('reason_code')
+            or EVENT_PRIOR_PUBLICATION_MISSING
+        ), []
+
+    transition = _as_mapping(comparison.get('transition'))
+    if not transition:
+        return _withheld_event_overlay(COMPARISON_AUTHORITY_MISSING), []
+
+    if transition.get('changed') is not True:
+        return {
+            'status': EVENT_OVERLAY_AVAILABLE,
+            'outcome': EVENT_OUTCOME_UNCHANGED,
+            'reason_code': None,
+        }, []
+
+    previous_date, previous_artifact, previous_view = previous
+    current_date, current_artifact, current_view = current
+    from_state = _event_state(previous_view)
+    to_state = _event_state(current_view)
+    previous_citation = _citation(previous_artifact, previous_view)
+    current_citation = _citation(current_artifact, current_view)
+    required_values = (
+        from_state.get('code'), from_state.get('label'),
+        to_state.get('code'), to_state.get('label'),
+        previous_citation.get('public_id'), previous_citation.get('citation_url'),
+        current_citation.get('public_id'), current_citation.get('citation_url'),
+    )
+    comparison_matches_artifacts = (
+        transition.get('from_code') == from_state.get('code')
+        and transition.get('to_code') == to_state.get('code')
+    )
+    if (
+        any(value in (None, '') for value in required_values)
+        or not comparison_matches_artifacts
+    ):
+        return _withheld_event_overlay(COMPARISON_AUTHORITY_MISSING), []
+
+    overlay = {
+        'status': EVENT_OVERLAY_AVAILABLE,
+        'outcome': EVENT_OUTCOME_CHANGED,
+        'reason_code': None,
+    }
+    return overlay, [{
+        'event_type': TEAM_STATE_CHANGE_EVENT,
+        'event_id': (
+            f'{TEAM_STATE_CHANGE_EVENT}:{int(team_id)}:'
+            f'{previous_artifact.public_id}:{current_artifact.public_id}'
+        ),
+        'event_date': current_date.isoformat(),
+        'from_date': previous_date.isoformat(),
+        'to_date': current_date.isoformat(),
+        'label': TEAM_STATE_CHANGE_LABEL,
+        'from_state': from_state,
+        'to_state': to_state,
+        'citations': {
+            'previous': previous_citation,
+            'current': current_citation,
+        },
+    }]
 
 
 def _history_row(artifact, view):
@@ -214,6 +312,8 @@ def _history_row(artifact, view):
             'corrected_publication': corrected,
         },
         'comparison': None,
+        'event_overlay': _withheld_event_overlay(EVENT_PRIOR_PUBLICATION_MISSING),
+        'events': [],
     }
 
 
@@ -243,11 +343,22 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
     for index in range(1, len(ordered_dates)):
         previous_date = ordered_dates[index - 1]
         current_date = ordered_dates[index]
-        rows_by_date[current_date]['comparison'] = _comparison(
-            (previous_date, *healthy[previous_date]),
-            (current_date, *healthy[current_date]),
+        previous = (previous_date, *healthy[previous_date])
+        current = (current_date, *healthy[current_date])
+        comparison = _comparison(
+            previous,
+            current,
             sidecars,
         )
+        event_overlay, events = _event_overlay(
+            comparison,
+            previous,
+            current,
+            team_id,
+        )
+        rows_by_date[current_date]['comparison'] = comparison
+        rows_by_date[current_date]['event_overlay'] = event_overlay
+        rows_by_date[current_date]['events'] = events
 
     retained_candidate_dates = sorted({
         artifact.product_date
