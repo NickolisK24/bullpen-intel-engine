@@ -119,6 +119,19 @@ def _build_draft(**overrides):
     return build_share_artifact_draft(**_sample_kwargs(**overrides))
 
 
+def test_publication_seals_before_autoflush_from_evidence_load(app):
+    draft = _build_draft()
+    draft_id = draft.id
+    db.session.expire(draft, ['evidence'])
+
+    artifact = publish_share_artifact(draft, dedup=False)
+
+    assert artifact.id == draft_id
+    assert artifact.lifecycle_state == LIFECYCLE_PUBLISHED
+    assert artifact.integrity_hash
+    assert verify_share_artifact_integrity(artifact) is True
+
+
 # ---------------------------------------------------------------------------
 # Integrity + equivalence hash stability (pure)
 # ---------------------------------------------------------------------------
@@ -404,6 +417,14 @@ def test_source_snapshot_id_is_frozen_after_publish(app):
 def test_published_at_is_frozen_after_publish(app):
     art = _publish_sample()
     art.published_at = datetime(2000, 1, 1, 0, 0, 0)
+    with pytest.raises(ShareArtifactImmutableError):
+        db.session.flush()
+    db.session.rollback()
+
+
+def test_integrity_hash_is_frozen_after_publish(app):
+    art = _publish_sample()
+    art.integrity_hash = '0' * 64
     with pytest.raises(ShareArtifactImmutableError):
         db.session.flush()
     db.session.rollback()

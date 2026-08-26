@@ -397,11 +397,19 @@ def publish_share_artifact(
             return existing
 
     published_at = published_at or utc_now_naive()
-    artifact.published_at = published_at
-    artifact.lifecycle_state = LIFECYCLE_PUBLISHED
-    artifact.integrity_hash = _compute_integrity_hash_for(
-        artifact, published_at=published_at,
-    )
+    # Hash construction traverses evidence and may lazy-load the relationship.
+    # Keep the persisted artifact draft until every frozen publication field is
+    # ready, then expose the sealed state in one flush. Without no_autoflush, the
+    # relationship query can persist the lifecycle transition before the hash is
+    # assigned, making the later hash assignment a correctly rejected mutation of
+    # an already-published artifact.
+    with session.no_autoflush:
+        integrity_hash = _compute_integrity_hash_for(
+            artifact, published_at=published_at,
+        )
+        artifact.published_at = published_at
+        artifact.integrity_hash = integrity_hash
+        artifact.lifecycle_state = LIFECYCLE_PUBLISHED
     session.flush()
     return artifact
 

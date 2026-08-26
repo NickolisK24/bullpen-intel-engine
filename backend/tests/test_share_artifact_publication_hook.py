@@ -9,9 +9,11 @@ back or unpublishes the snapshot. No scheduler, renderer, frontend, or public
 endpoint is involved.
 """
 
+import logging
 from datetime import date, datetime
 
 import pytest
+import sqlalchemy as sa
 from flask import Flask
 
 from models.dashboard_snapshot import DashboardSnapshot
@@ -153,6 +155,43 @@ def test_hook_isolates_unexpected_batch_exception(app, monkeypatch):
 
     monkeypatch.setattr(batch_module, 'generate_team_state_artifacts_batch', _boom)
     assert run_post_publication_generation(_fake_published_snapshot()) is None
+
+
+def test_since_yesterday_flush_failure_recovers_session(app, monkeypatch, caplog):
+    class _R:
+        attempted_count = generated_count = reused_count = 0
+        refused_count = failed_count = missing_count = 0
+
+    run = SyncRun(job_name='post_publication_session_recovery')
+    db.session.add(run)
+    db.session.commit()
+    run_id = run.id
+
+    monkeypatch.setattr(
+        batch_module,
+        'generate_team_state_artifacts_batch',
+        lambda **kwargs: _R(),
+    )
+
+    from services import share_artifact_since_yesterday as since_yesterday_module
+
+    def _fail_during_flush(snapshot):
+        db.session.add(ShareArtifact())
+        db.session.flush()
+
+    monkeypatch.setattr(
+        since_yesterday_module,
+        'publish_since_yesterday_changes_for_snapshot',
+        _fail_during_flush,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        result = run_post_publication_generation(_fake_published_snapshot())
+
+    assert result is not None
+    assert 'Since Yesterday generation failed non-fatally' in caplog.text
+    assert db.session.get(SyncRun, run_id) is not None
+    assert db.session.execute(sa.text('SELECT 1')).scalar_one() == 1
 
 
 # A governed batch source-authority refusal is a non-fatal None.
