@@ -424,6 +424,16 @@ PI02_SINCE_YESTERDAY_CITATION_PATHS = (
     'backend/services/share_artifact_since_yesterday.py',
 )
 
+# HIST-01, August 25 2026. Team State History reads only retained, published,
+# integrity-verified Team State ShareArtifacts through one bounded public route.
+# It does not recompute Team State, backfill dates, or read appearance-team
+# authority. Exact dated claims and citation identities remain frozen by the
+# existing ShareArtifact lifecycle and the focused History contract tests.
+HIST01_TEAM_STATE_TIMELINE_PATHS = (
+    'backend/api/team_history.py',
+    'backend/services/team_state_history.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

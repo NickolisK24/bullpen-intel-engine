@@ -15,7 +15,7 @@ import TeamBoardRotationImpact from './TeamBoardRotationImpact'
 import TeamBoardRecentTransactions from './TeamBoardRecentTransactions'
 import TeamBoardWhatChanged from './TeamBoardWhatChanged'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
-import { resolveTeamId } from '../../../utils/evidenceLinks'
+import { buildTeamHistoryHref, resolveTeamId } from '../../../utils/evidenceLinks'
 import { buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 
@@ -151,6 +151,7 @@ export default function TonightsBullpenBoard({
                 error={teamBoardV2State.error}
                 onRetry={teamBoardV2State.refetch}
                 teamSwitcher={teamSwitcher}
+                historyHref={buildTeamHistoryHref(selectedTeamRecord || requestedTeam)}
                 evidenceDisclosure={(
                   <BullpenReadDisclosure
                     readModel={teamOperatingRead}

@@ -86,6 +86,10 @@ test('scheduled Matchup has a first-class standalone route', () => {
   assert.equal(routeByPath('/matchup/:gameId')?.Component?.name, 'MatchupPage')
 })
 
+test('Team State History has a first-class standalone route', () => {
+  assert.equal(routeByPath('/history/team/:abbr')?.Component?.name, 'TeamHistoryPage')
+})
+
 test('standalone Matchup renders game identity around the shared comparison', () => {
   const payload = {
     capability: 'scheduled_game_matchup_v1',

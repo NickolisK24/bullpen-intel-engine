@@ -270,6 +270,17 @@ def test_sd01_public_route_exception_is_exact(monkeypatch):
         _run_appearance(monkeypatch, ['backend/api/search_admin.py'])
 
 
+def test_hist01_history_route_exception_is_exact(monkeypatch):
+    approved = list(phase0e_guard.freeze_policy.HIST01_TEAM_STATE_TIMELINE_PATHS)
+    _run_phase0e(monkeypatch, approved)
+    _run_appearance(monkeypatch, approved)
+
+    with pytest.raises(AssertionError):
+        _run_phase0e(monkeypatch, ['backend/api/team_history_admin.py'])
+    with pytest.raises(AssertionError):
+        _run_appearance(monkeypatch, ['backend/services/team_state_history_admin.py'])
+
+
 @pytest.mark.parametrize('label,runner', GUARDS)
 def test_guard_accepts_an_archived_document_name_collision(monkeypatch, label, runner):
     runner(monkeypatch, [ARCHIVED_NAME_COLLISION])
