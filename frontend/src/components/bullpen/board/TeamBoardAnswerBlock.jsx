@@ -109,7 +109,7 @@ export function getBullpenSummaryView(read) {
   ]
 }
 
-function AnswerHeading({ teamName, teamAbbreviation, teamSwitcher = null }) {
+function AnswerHeading({ teamName, teamAbbreviation, teamSwitcher = null, historyHref = null }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-panel tablet:flex-row tablet:items-end">
       <div className="min-w-0 flex-1">
@@ -123,7 +123,17 @@ function AnswerHeading({ teamName, teamAbbreviation, teamSwitcher = null }) {
           )}
         </div>
       </div>
-      {teamSwitcher}
+      <div className="flex min-w-0 flex-col gap-2 tablet:items-end">
+        {teamSwitcher}
+        {historyHref && (
+          <a
+            href={historyHref}
+            className="inline-flex min-h-11 items-center font-board text-board-metadata font-semibold text-brand-blue underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+          >
+            View History
+          </a>
+        )}
+      </div>
     </div>
   )
 }
@@ -198,6 +208,7 @@ export default function TeamBoardAnswerBlock({
   onRetry,
   teamSwitcher = null,
   evidenceDisclosure = null,
+  historyHref = null,
 }) {
   if (loading) return <TeamBoardAnswerSkeleton team={team} teamSwitcher={teamSwitcher} />
 
@@ -208,7 +219,7 @@ export default function TeamBoardAnswerBlock({
     <>
       <section className={answerSurfaceClass} aria-labelledby="team-board-answer-title" data-testid="team-board-answer-block">
         <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-end tablet:justify-between">
-          <AnswerHeading teamName={view.teamName} teamAbbreviation={view.teamAbbreviation} teamSwitcher={teamSwitcher} />
+          <AnswerHeading teamName={view.teamName} teamAbbreviation={view.teamAbbreviation} teamSwitcher={teamSwitcher} historyHref={historyHref} />
           {view.teamState.available && (
             <div
               className="inline-flex min-h-9 w-fit shrink-0 items-center gap-2 rounded-sm border px-3 py-2 font-board text-board-metadata font-semibold"

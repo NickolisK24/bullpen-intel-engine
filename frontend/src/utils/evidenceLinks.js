@@ -147,6 +147,11 @@ export function buildMatchupHref(gameId) {
   return normalizedGameId == null ? null : `/matchup/${normalizedGameId}`
 }
 
+export function buildTeamHistoryHref(teamRef) {
+  const team = normalizeTeamReference(teamRef)
+  return team ? `/history/team/${encodeURIComponent(team)}` : null
+}
+
 export function buildPitcherHref(pitcherId, options = {}) {
   const normalizedPitcherId = normalizePitcherId(pitcherId)
   if (normalizedPitcherId == null) {

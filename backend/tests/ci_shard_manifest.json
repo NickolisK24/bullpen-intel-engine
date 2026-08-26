@@ -1217,6 +1217,10 @@
           "measured_seconds": 0.793
         },
         {
+          "path": "tests/test_team_state_history.py",
+          "measured_seconds": 0.82
+        },
+        {
           "path": "tests/test_team_state_history_export_workflow.py",
           "measured_seconds": 0.244
         },

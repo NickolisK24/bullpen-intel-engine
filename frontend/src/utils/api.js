@@ -452,6 +452,9 @@ export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/$
 export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`)
 
 export const getTeams          = () => request('/bullpen/teams')
+export const getTeamStateHistory = (teamAbbreviation, season = 2026) => (
+  request(`/bullpen/teams/${encodeURIComponent(teamAbbreviation)}/history${buildQuery({ season })}`)
+)
 export const getTeamReliefWork = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/relief-work`)
 // Tonight's Bullpen Board — existing availability classifications grouped for a
 // coach-facing read. Presentation only (no ranking/selection).
