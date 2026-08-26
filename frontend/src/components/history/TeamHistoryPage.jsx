@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getTeamStateHistory } from '../../utils/api'
@@ -44,6 +45,51 @@ function groupedEntries(payload) {
   return [...groups.entries()]
 }
 
+function isTeamStateChangeEvent(event) {
+  return Boolean(
+    event?.event_type === 'team_state_change'
+    && event?.event_id
+    && event?.label
+    && event?.from_state?.code
+    && event?.from_state?.label
+    && event?.to_state?.code
+    && event?.to_state?.label
+  )
+}
+
+function isQualifiedTransactionEvent(event, representedDate) {
+  return Boolean(
+    event?.event_type === 'qualified_transaction'
+    && event?.event_id
+    && event?.event_date === representedDate
+    && event?.label
+    && event?.description
+    && event?.pitcher?.pitcher_id
+    && event?.pitcher?.name
+    && event?.team_relationship?.relationship
+  )
+}
+
+export function historyRowCategory(row) {
+  if (row?.artifact?.corrected_publication) return 'corrected'
+  if (
+    row?.event_overlay?.status === 'available'
+    && row?.event_overlay?.outcome === 'changed'
+    && (row?.events || []).some(isTeamStateChangeEvent)
+  ) return 'meaningful-change'
+  if ((row?.transactions || []).some(event => isQualifiedTransactionEvent(event, row?.represented_date))) {
+    return 'roster-context'
+  }
+  if (row?.comparison?.status && row.comparison.status !== 'comparable') return 'boundary'
+  if (
+    row?.comparison?.status === 'comparable'
+    && row?.event_overlay?.status === 'available'
+    && row?.event_overlay?.outcome === 'unchanged'
+    && row?.transaction_overlay?.status === 'available'
+  ) return 'ordinary-unchanged'
+  return 'standalone'
+}
+
 function ComparisonContext({ comparison, eventOverlay }) {
   if (eventOverlay?.status === 'available' && eventOverlay?.outcome === 'unchanged') {
     return (
@@ -78,19 +124,14 @@ function EventState({ state }) {
   )
 }
 
-function TeamStateChangeEvent({ event }) {
-  if (
-    event?.event_type !== 'team_state_change'
-    || !event?.event_id
-    || !event?.label
-    || !event?.from_state?.code
-    || !event?.from_state?.label
-    || !event?.to_state?.code
-    || !event?.to_state?.label
-  ) return null
+function TeamStateChangeEvent({ event, primaryCitation }) {
+  if (!isTeamStateChangeEvent(event)) return null
 
   const previousCitation = event.citations?.previous?.citation_url
   const currentCitation = event.citations?.current?.citation_url
+  const secondaryCurrentCitation = currentCitation && currentCitation !== primaryCitation
+    ? currentCitation
+    : null
   return (
     <div
       className="mt-3 border-l-2 border-brand-blue/40 pl-3"
@@ -108,22 +149,22 @@ function TeamStateChangeEvent({ event }) {
         <span className="sr-only">to</span>
         <EventState state={event.to_state} />
       </div>
-      {(previousCitation || currentCitation) && (
+      {(previousCitation || secondaryCurrentCitation) && (
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0 text-xs">
           {previousCitation && (
             <Link
               to={previousCitation}
               className="inline-flex min-h-11 items-center text-text-secondary underline-offset-4 hover:text-brand-blue hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
             >
-              Open earlier published observation
+              View previous observation
             </Link>
           )}
-          {currentCitation && (
+          {secondaryCurrentCitation && (
             <Link
-              to={currentCitation}
+              to={secondaryCurrentCitation}
               className="inline-flex min-h-11 items-center text-text-secondary underline-offset-4 hover:text-brand-blue hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
             >
-              Open later published observation
+              View current observation
             </Link>
           )}
         </div>
@@ -133,16 +174,7 @@ function TeamStateChangeEvent({ event }) {
 }
 
 function QualifiedTransactionEvent({ event }) {
-  if (
-    event?.event_type !== 'qualified_transaction'
-    || !event?.event_id
-    || !event?.event_date
-    || !event?.label
-    || !event?.description
-    || !event?.pitcher?.pitcher_id
-    || !event?.pitcher?.name
-    || !event?.team_relationship?.relationship
-  ) return null
+  if (!isQualifiedTransactionEvent(event, event?.event_date)) return null
 
   return (
     <li className="min-w-0 text-sm leading-relaxed text-text-secondary">
@@ -156,8 +188,7 @@ function QualifiedTransactionEvent({ event }) {
 
 function TransactionContext({ overlay, events, representedDate }) {
   const qualified = (events || []).filter(event => (
-    event?.event_type === 'qualified_transaction'
-    && event?.event_date === representedDate
+    isQualifiedTransactionEvent(event, representedDate)
   ))
   const isPartial = overlay?.status === 'partial'
   const isUnavailable = overlay?.status === 'unavailable'
@@ -195,54 +226,122 @@ function TransactionContext({ overlay, events, representedDate }) {
   )
 }
 
-function StateRow({ row }) {
+function PublishedObservationLink({ row, className = '' }) {
+  if (!row?.artifact?.citation_url) return null
+  return (
+    <Link
+      to={row.artifact.citation_url}
+      className={`${className} inline-flex min-h-11 max-w-full items-center break-words font-board text-sm font-semibold text-brand-blue underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-line-focus`}
+      aria-label={`View the published Team State observation for ${row.represented_date}`}
+    >
+      View published observation
+    </Link>
+  )
+}
+
+function StateBadge({ state }) {
+  return (
+    <div
+      className="inline-flex min-h-8 items-center gap-2 rounded-sm border px-3 py-1 font-board text-sm font-semibold"
+      style={state.tone}
+    >
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: state.tone.dot }} aria-hidden="true" />
+      {state.publicLabel || 'Team State unavailable'}
+    </div>
+  )
+}
+
+function ExpandedRowDetails({ row, showComparison = true }) {
+  return (
+    <>
+      {row.explanation && <p className="mt-3 max-w-reading text-sm leading-relaxed text-text-primary">{row.explanation}</p>}
+      {(row.events || []).map(event => (
+        <TeamStateChangeEvent
+          key={event.event_id}
+          event={event}
+          primaryCitation={row.artifact?.citation_url}
+        />
+      ))}
+      <TransactionContext
+        overlay={row.transaction_overlay}
+        events={row.transactions}
+        representedDate={row.represented_date}
+      />
+      {showComparison && <ComparisonContext comparison={row.comparison} eventOverlay={row.event_overlay} />}
+      {row.limitations?.length > 0 && (
+        <ul className="mt-3 space-y-1 text-xs leading-relaxed text-text-tertiary">
+          {row.limitations.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
+        </ul>
+      )}
+      <PublishedObservationLink row={row} className="mt-3" />
+    </>
+  )
+}
+
+export function HistoryStateRow({ row, defaultDetailsOpen = false }) {
+  const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen)
   const state = readPublicTeamState({
     available: true,
     public_state: row?.team_state?.public_code,
     public_label: row?.team_state?.public_label,
     summary: row?.explanation,
   })
+  const category = historyRowCategory(row)
+  const isOrdinary = category === 'ordinary-unchanged'
+  const dateLabel = formatFreshnessDate(row.represented_date, { includeYear: true }) || row.represented_date
+  const detailId = `history-row-details-${row.artifact?.public_id || row.represented_date}`
   return (
-    <article className="grid min-w-0 gap-3 border-t border-line-subtle py-5 tablet:grid-cols-[8rem_minmax(0,1fr)] tablet:gap-6">
+    <article
+      className={`grid min-w-0 gap-3 border-t ${isOrdinary ? 'border-line-subtle py-3' : 'border-line-default py-5'} tablet:grid-cols-[8rem_minmax(0,1fr)] tablet:gap-6`}
+      data-testid="history-state-row"
+      data-row-category={category}
+    >
       <div>
         <time dateTime={row.represented_date} className="font-mono text-xs font-semibold uppercase tracking-wider text-text-secondary">
-          {formatFreshnessDate(row.represented_date, { includeYear: true }) || row.represented_date}
+          {dateLabel}
         </time>
         {row.artifact?.corrected_publication && (
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-brand-gold">Corrected publication</p>
         )}
       </div>
       <div className="min-w-0">
-        <div
-          className="inline-flex min-h-8 items-center gap-2 rounded-sm border px-3 py-1 font-board text-sm font-semibold"
-          style={state.tone}
-        >
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: state.tone.dot }} aria-hidden="true" />
-          {state.publicLabel || 'Team State unavailable'}
-        </div>
-        {row.explanation && <p className="mt-3 max-w-reading text-sm leading-relaxed text-text-primary">{row.explanation}</p>}
-        {(row.events || []).map(event => (
-          <TeamStateChangeEvent key={event.event_id} event={event} />
-        ))}
-        <TransactionContext
-          overlay={row.transaction_overlay}
-          events={row.transactions}
-          representedDate={row.represented_date}
-        />
-        <ComparisonContext comparison={row.comparison} eventOverlay={row.event_overlay} />
-        {row.limitations?.length > 0 && (
-          <ul className="mt-3 space-y-1 text-xs leading-relaxed text-text-tertiary">
-            {row.limitations.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
-          </ul>
-        )}
-        {row.artifact?.citation_url && (
-          <Link
-            to={row.artifact.citation_url}
-            className="mt-3 inline-flex min-h-11 items-center font-board text-sm font-semibold text-brand-blue underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
-            aria-label={`Open the published Team State citation for ${row.represented_date}`}
-          >
-            Open published citation
-          </Link>
+        {isOrdinary ? (
+          <>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <StateBadge state={state} />
+              <p className="font-mono text-[11px] uppercase tracking-wider text-text-tertiary">
+                <span className="sr-only">Published comparison — Team State </span>
+                Unchanged
+              </p>
+              <button
+                type="button"
+                aria-expanded={detailsOpen ? 'true' : 'false'}
+                aria-controls={detailId}
+                aria-label={`${detailsOpen ? 'Hide' : 'View'} details for ${dateLabel}`}
+                onClick={() => setDetailsOpen(open => !open)}
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center px-2 font-board text-sm font-semibold text-brand-blue underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+              >
+                {detailsOpen ? 'Hide details' : 'View details'}
+              </button>
+            </div>
+            {detailsOpen && (
+              <div id={detailId} data-testid="history-row-details">
+                <ExpandedRowDetails row={row} showComparison={false} />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <StateBadge state={state} />
+              {category === 'boundary' && (
+                <span className="font-mono text-[11px] uppercase tracking-wider text-text-withheld">
+                  {row.comparison?.boundary ? 'Comparison boundary' : 'Comparison unavailable'}
+                </span>
+              )}
+            </div>
+            <ExpandedRowDetails row={row} />
+          </>
         )}
       </div>
     </article>
@@ -274,7 +373,7 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
     : null
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div id="history-top" className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="border-b border-line-default pb-6">
         <p className="type-overline text-brand-blue">History · {payload.season}</p>
         <h1 className="mt-2 break-words font-board text-[2rem] font-semibold leading-tight tracking-[-0.02em] text-text-primary tablet:text-[2.5rem]">
@@ -300,18 +399,42 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
           subtitle={`No retained Team State publications are available for ${teamName} in ${payload.season}.`}
         />
       ) : (
-        <div className="mt-7 space-y-8" data-testid="team-state-history-timeline">
-          {groups.map(([month, entries]) => (
-            <section key={month} aria-labelledby={`history-month-${month}`}>
-              <h2 id={`history-month-${month}`} className="font-board text-xl font-semibold text-text-primary">{monthLabel(month)}</h2>
-              <div className="mt-2">
-                {entries.map(entry => entry.type === 'gap'
-                  ? <GapRow key={`gap-${entry.date}`} date={entry.date} />
-                  : <StateRow key={entry.row.artifact.public_id} row={entry.row} />)}
+        <>
+          {groups.length > 1 && (
+            <nav className="mt-6 border-y border-line-subtle py-3" aria-label="History months">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">Jump to month</p>
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                {groups.map(([month]) => (
+                  <a
+                    key={month}
+                    href={`#history-month-${month}`}
+                    className="inline-flex min-h-11 items-center font-board text-sm font-semibold text-brand-blue underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+                  >
+                    {monthLabel(month)}
+                  </a>
+                ))}
               </div>
-            </section>
-          ))}
-        </div>
+            </nav>
+          )}
+          <div className="mt-7 space-y-8" data-testid="team-state-history-timeline">
+            {groups.map(([month, entries]) => (
+              <section key={month} className="scroll-mt-6" aria-labelledby={`history-month-${month}`}>
+                <h2 id={`history-month-${month}`} className="font-board text-xl font-semibold text-text-primary">{monthLabel(month)}</h2>
+                <div className="mt-2">
+                  {entries.map(entry => entry.type === 'gap'
+                    ? <GapRow key={`gap-${entry.date}`} date={entry.date} />
+                    : <HistoryStateRow key={entry.row.artifact.public_id} row={entry.row} />)}
+                </div>
+              </section>
+            ))}
+          </div>
+          <a
+            href="#history-top"
+            className="mt-6 inline-flex min-h-11 items-center font-board text-sm font-semibold text-text-secondary underline-offset-4 hover:text-brand-blue hover:underline focus-visible:ring-2 focus-visible:ring-line-focus"
+          >
+            Back to History top
+          </a>
+        </>
       )}
     </div>
   )

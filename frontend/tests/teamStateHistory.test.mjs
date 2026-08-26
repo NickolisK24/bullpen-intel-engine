@@ -16,7 +16,11 @@ const server = await createServer({
 
 after(async () => server.close())
 
-const { TeamHistoryPageView } = await server.ssrLoadModule('/src/components/history/TeamHistoryPage.jsx')
+const {
+  HistoryStateRow,
+  TeamHistoryPageView,
+  historyRowCategory,
+} = await server.ssrLoadModule('/src/components/history/TeamHistoryPage.jsx')
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { buildTeamHistoryHref } = await server.ssrLoadModule('/src/utils/evidenceLinks.js')
 
@@ -117,6 +121,7 @@ const changedPayload = {
         ...payload.rows[0].artifact,
         public_id: 'artifact-new',
         citation_url: '/share/artifact-new',
+        corrected_publication: false,
       },
       comparison: {
         status: 'comparable',
@@ -184,8 +189,123 @@ const transactionPayload = {
   }, changedPayload.rows[1]],
 }
 
+const ordinaryRow = {
+  ...changedPayload.rows[0],
+  represented_date: '2026-07-25',
+  explanation: 'Ordinary frozen explanation remains available on demand.',
+  limitations: ['Ordinary retained limitation.'],
+  artifact: {
+    ...changedPayload.rows[0].artifact,
+    public_id: 'artifact-ordinary',
+    citation_url: '/share/artifact-ordinary',
+    corrected_publication: false,
+  },
+  comparison: {
+    status: 'comparable',
+    reason_code: null,
+    boundary: false,
+    transition: {
+      from_code: 'fresh', from_state: 'Fresh',
+      to_code: 'fresh', to_state: 'Fresh', changed: false,
+    },
+  },
+  event_overlay: { status: 'available', outcome: 'unchanged', reason_code: null },
+  events: [],
+  transaction_overlay: { status: 'available', reason_code: null },
+  transactions: [],
+}
+
+const ordinaryPayload = {
+  ...payload,
+  coverage: {
+    ...payload.coverage,
+    start: '2026-07-23',
+    end: '2026-07-25',
+    covered_date_count: 2,
+    missing_dates: [],
+  },
+  rows: [ordinaryRow, payload.rows[1]],
+}
+
+const rosterOnlyRow = {
+  ...ordinaryRow,
+  artifact: {
+    ...ordinaryRow.artifact,
+    public_id: 'artifact-roster',
+    citation_url: '/share/artifact-roster',
+  },
+  transactions: [{
+    event_type: 'qualified_transaction',
+    event_id: 'statsapi:roster-only',
+    event_date: ordinaryRow.represented_date,
+    label: 'Recalled',
+    description: 'History Arm was recalled.',
+    pitcher: { pitcher_id: 10, player_mlb_id: 910001, name: 'History Arm' },
+    team_relationship: { relationship: 'incoming', from_team_id: 555, to_team_id: 147 },
+  }],
+}
+
+const representativeRows = Array.from({ length: 34 }, (_, index) => {
+  const date = new Date(Date.UTC(2026, 7, 25 - index)).toISOString().slice(0, 10)
+  const artifact = {
+    ...ordinaryRow.artifact,
+    public_id: `artifact-representative-${index}`,
+    citation_url: `/share/artifact-representative-${index}`,
+    corrected_publication: index === 16,
+  }
+  if (index === 33) {
+    return {
+      ...payload.rows[1],
+      represented_date: date,
+      artifact,
+      transaction_overlay: { status: 'available', reason_code: null },
+    }
+  }
+  if ([4, 20].includes(index)) {
+    return {
+      ...changedPayload.rows[0],
+      represented_date: date,
+      artifact,
+    }
+  }
+  if ([8, 24].includes(index)) {
+    return {
+      ...rosterOnlyRow,
+      represented_date: date,
+      artifact,
+      transactions: rosterOnlyRow.transactions.map(event => ({ ...event, event_date: date, event_id: `${event.event_id}-${index}` })),
+    }
+  }
+  if (index === 12) {
+    return {
+      ...ordinaryRow,
+      represented_date: date,
+      artifact,
+      comparison: { status: 'comparison_unavailable', reason_code: 'comparison_authority_missing', boundary: true },
+      event_overlay: { status: 'withheld', outcome: 'unavailable', reason_code: 'comparison_authority_missing' },
+    }
+  }
+  return { ...ordinaryRow, represented_date: date, artifact }
+})
+
+const representativePayload = {
+  ...payload,
+  coverage: {
+    ...payload.coverage,
+    start: representativeRows.at(-1).represented_date,
+    end: representativeRows[0].represented_date,
+    covered_date_count: representativeRows.length,
+    missing_dates: [],
+  },
+  rows: representativeRows,
+}
+
 const render = props => renderToStaticMarkup(
   React.createElement(MemoryRouter, null, React.createElement(TeamHistoryPageView, props)),
+)
+
+const renderRow = (row, props = {}) => renderToStaticMarkup(
+  React.createElement(MemoryRouter, null, React.createElement(HistoryStateRow, { row, ...props })),
 )
 
 test('History has a canonical standalone team route and helper', () => {
@@ -204,6 +324,10 @@ test('History renders one h1, coverage, month groups, newest-first rows, and cit
   assert.ok(html.includes('href="/share/artifact-new"'))
   assert.ok(html.includes('href="/share/artifact-old"'))
   assert.ok(html.includes('Corrected publication'))
+  assert.ok(html.includes('aria-label="History months"'))
+  assert.ok(html.includes('href="#history-month-2026-08"'))
+  assert.ok(html.includes('href="#history-month-2026-07"'))
+  assert.ok(html.includes('href="#history-top"'))
 })
 
 test('History shows gaps and comparison boundaries without inferring transitions', () => {
@@ -225,10 +349,12 @@ test('History renders one backend-supplied change marker under the affected stat
   assert.equal((html.match(/data-testid="team-state-change-marker"/g) || []).length, 1)
   assert.ok(html.includes('Team State changed'))
   assert.ok(html.includes('aria-label="Stretched to Fresh"'))
-  assert.ok(html.includes('Open earlier published observation'))
-  assert.ok(html.includes('Open later published observation'))
+  assert.ok(html.includes('View previous observation'))
+  assert.ok(html.includes('View published observation'))
+  assert.equal(html.includes('View current observation'), false)
   assert.ok(html.includes('href="/share/artifact-old"'))
   assert.ok(html.includes('href="/share/artifact-new"'))
+  assert.equal((html.match(/href="\/share\/artifact-new"/g) || []).length, 1)
   assert.ok(html.indexOf('The bullpen had strong rested coverage.') < html.indexOf('Team State changed'))
 })
 
@@ -255,6 +381,108 @@ test('History distinguishes comparable unchanged from unavailable comparison', (
   assert.ok(unchanged.includes('Published comparison · Team State unchanged'))
   assert.equal(unavailable.includes('Team State unchanged'), false)
   assert.ok(unavailable.includes('Comparison boundary'))
+})
+
+test('ordinary comparable unchanged rows default compact without dropping date or Team State', () => {
+  const html = render({ payload: ordinaryPayload })
+
+  assert.ok(html.includes('data-row-category="ordinary-unchanged"'))
+  assert.ok(html.includes('dateTime="2026-07-25"'))
+  assert.ok(html.includes('Fresh'))
+  assert.ok(html.includes('Unchanged'))
+  assert.ok(html.includes('aria-expanded="false"'))
+  assert.ok(html.includes('aria-label="View details for Jul 25, 2026"'))
+  assert.ok(html.includes('min-h-11'))
+  assert.equal(html.includes('Ordinary frozen explanation remains available on demand.'), false)
+  assert.equal(html.includes('href="/share/artifact-ordinary"'), false)
+})
+
+test('ordinary row disclosure exposes the frozen explanation and exact immutable citation', () => {
+  const html = renderRow(ordinaryRow, { defaultDetailsOpen: true })
+
+  assert.ok(html.includes('aria-expanded="true"'))
+  assert.ok(html.includes('aria-label="Hide details for Jul 25, 2026"'))
+  assert.ok(html.includes('data-testid="history-row-details"'))
+  assert.ok(html.includes('Ordinary frozen explanation remains available on demand.'))
+  assert.ok(html.includes('Ordinary retained limitation.'))
+  assert.ok(html.includes('View published observation'))
+  assert.ok(html.includes('href="/share/artifact-ordinary"'))
+})
+
+test('row categories are deterministic projections of existing backend-owned fields', () => {
+  assert.equal(historyRowCategory(ordinaryRow), 'ordinary-unchanged')
+  assert.equal(historyRowCategory(changedPayload.rows[0]), 'meaningful-change')
+  assert.equal(historyRowCategory(rosterOnlyRow), 'roster-context')
+  assert.equal(historyRowCategory(payload.rows[0]), 'corrected')
+  assert.equal(historyRowCategory(payload.rows[1]), 'standalone')
+  assert.equal(historyRowCategory({
+    ...ordinaryRow,
+    comparison: { status: 'comparison_unavailable', boundary: true },
+    event_overlay: { status: 'withheld', outcome: 'unavailable' },
+  }), 'boundary')
+})
+
+test('meaningful, roster, boundary, correction, and standalone rows remain expanded', () => {
+  const changed = renderRow(changedPayload.rows[0])
+  const roster = renderRow(rosterOnlyRow)
+  const boundary = renderRow({
+    ...ordinaryRow,
+    artifact: { ...ordinaryRow.artifact, public_id: 'artifact-boundary' },
+    comparison: { status: 'comparison_unavailable', reason_code: 'comparison_authority_missing', boundary: true },
+    event_overlay: { status: 'withheld', outcome: 'unavailable', reason_code: 'comparison_authority_missing' },
+  })
+  const unavailableComparison = renderRow({
+    ...ordinaryRow,
+    artifact: { ...ordinaryRow.artifact, public_id: 'artifact-comparison-unavailable' },
+    comparison: { status: 'comparison_unavailable', reason_code: 'comparison_authority_missing', boundary: false },
+    event_overlay: { status: 'withheld', outcome: 'unavailable', reason_code: 'comparison_authority_missing' },
+  })
+  const corrected = renderRow(payload.rows[0])
+  const standalone = renderRow(payload.rows[1])
+
+  assert.ok(changed.includes('data-row-category="meaningful-change"'))
+  assert.ok(changed.includes('Team State changed'))
+  assert.ok(changed.includes('The bullpen had strong rested coverage.'))
+  assert.ok(roster.includes('data-row-category="roster-context"'))
+  assert.ok(roster.includes('Roster moves'))
+  assert.ok(roster.includes('History Arm was recalled.'))
+  assert.ok(boundary.includes('data-row-category="boundary"'))
+  assert.ok(boundary.includes('Comparison boundary — these adjacent publications are not proven comparable.'))
+  assert.ok(unavailableComparison.includes('data-row-category="boundary"'))
+  assert.ok(unavailableComparison.includes('Comparison unavailable'))
+  assert.ok(corrected.includes('data-row-category="corrected"'))
+  assert.ok(corrected.includes('Corrected publication'))
+  assert.ok(standalone.includes('data-row-category="standalone"'))
+  assert.ok(standalone.includes('Recent work narrowed the clean options.'))
+  assert.equal(standalone.includes('Unchanged'), false)
+  for (const html of [changed, roster, boundary, corrected, standalone]) {
+    assert.equal(html.includes('aria-expanded="false"'), false)
+    assert.ok(html.includes('View published observation'))
+  }
+})
+
+test('every retained state date and explicit gap remains represented', () => {
+  const html = render({ payload })
+  for (const date of ['2026-08-02', '2026-08-01', '2026-07-23']) {
+    assert.equal((html.match(new RegExp(`dateTime="${date}"`, 'g')) || []).length, 1, date)
+  }
+  assert.equal((html.match(/data-testid="history-state-row"/g) || []).length, payload.rows.length)
+})
+
+test('representative retained range compresses only ordinary rows and preserves all 34 dates', () => {
+  const html = render({ payload: representativePayload })
+
+  assert.equal((html.match(/data-testid="history-state-row"/g) || []).length, 34)
+  assert.equal((html.match(/data-row-category="ordinary-unchanged"/g) || []).length, 27)
+  assert.equal((html.match(/aria-expanded="false"/g) || []).length, 27)
+  assert.equal((html.match(/data-row-category="meaningful-change"/g) || []).length, 2)
+  assert.equal((html.match(/data-row-category="roster-context"/g) || []).length, 2)
+  assert.equal((html.match(/data-row-category="boundary"/g) || []).length, 1)
+  assert.equal((html.match(/data-row-category="corrected"/g) || []).length, 1)
+  assert.equal((html.match(/data-row-category="standalone"/g) || []).length, 1)
+  for (const row of representativeRows) {
+    assert.equal((html.match(new RegExp(`dateTime="${row.represented_date}"`, 'g')) || []).length, 1, row.represented_date)
+  }
 })
 
 test('History renders backend-supplied qualified transactions beneath the exact state date', () => {
@@ -325,6 +553,36 @@ test('History change markers remain linear and do not add scroll-container geome
   assert.equal(source.includes('fixed inset'), false)
   assert.equal(source.includes('grid-cols-2'), false)
   assert.ok(source.includes('space-y-1'))
+})
+
+test('History disclosure remains local, keyboard-native, and request-free', () => {
+  const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
+
+  assert.ok(source.includes("const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen)"))
+  assert.ok(source.includes("aria-expanded={detailsOpen ? 'true' : 'false'}"))
+  assert.ok(source.includes('aria-controls={detailId}'))
+  assert.ok(source.includes('onClick={() => setDetailsOpen(open => !open)}'))
+  assert.ok(source.includes("type=\"button\""))
+  assert.ok(source.includes('detailsOpen &&'))
+  assert.equal((source.match(/getTeamStateHistory\(teamAbbreviation, 2026\)/g) || []).length, 1)
+  for (const forbidden of ['getPublicShareArtifact', 'getTeamBoardV2', 'fetch(', 'axios', 'overflow-x-auto', 'fixed inset']) {
+    assert.equal(source.includes(forbidden), false, forbidden)
+  }
+})
+
+test('History responsive structure keeps compact and meaningful rows aligned without nested scrolling', () => {
+  const source = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
+
+  assert.ok(source.includes('tablet:grid-cols-[8rem_minmax(0,1fr)]'))
+  assert.ok(source.includes("isOrdinary ? 'border-line-subtle py-3' : 'border-line-default py-5'"))
+  assert.ok(source.includes('flex-wrap'))
+  assert.ok(source.includes('break-words'))
+  assert.ok(source.includes('min-h-11'))
+  assert.equal(source.includes('overflow-x-auto'), false)
+  assert.equal(source.includes('overflow-y-auto'), false)
+  assert.equal(source.includes('min-w-['), false)
+  assert.equal(source.includes('grid-cols-2'), false)
+  assert.equal(source.includes('h-screen'), false)
 })
 
 test('History keeps current Team Board context separate', () => {
