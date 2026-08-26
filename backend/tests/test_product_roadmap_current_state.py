@@ -9,7 +9,7 @@ this file is what noticed. This contract pins the statements that go stale —
 what is complete, what is active, what exits the phase, and in what order the
 remaining work runs.
 
-Re-pinned to Version 5.11 (Portable Intelligence closeout and HIST-01 activation). What it guards:
+Re-pinned to Version 5.12 (HIST-01 closeout and HIST-02 activation). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -24,7 +24,7 @@ Re-pinned to Version 5.11 (Portable Intelligence closeout and HIST-01 activation
 
   * Order and package state are contracts. PRE-02B, PRE-02, TODAY-01 through
     TODAY-06, PIT-01 through PIT-07, and CMP-01 through CMP-02 are complete;
-    SD-01 and PI-01 through PI-02 are complete and HIST-01 is the bounded active objective; blocked, dated, and
+    SD-01, PI-01 through PI-02, and HIST-01 are complete and HIST-02 is the bounded active objective; blocked, dated, and
     backlogged work may not silently advance.
 
   * Team Board package status is explicit. A completed user-facing package may
@@ -51,9 +51,9 @@ TODAY_SURFACE_PATH = (
 FRONTEND_API_PATH = REPO_ROOT / 'frontend' / 'src' / 'utils' / 'api.js'
 BULLPEN_API_PATH = REPO_ROOT / 'backend' / 'api' / 'bullpen.py'
 
-EXPECTED_VERSION = '5.11'
-EXPECTED_EFFECTIVE_DATE = 'August 25, 2026'
-EXPECTED_MAIN = 'c1e947b3c26de21a779bd878d43ee2a4d1637fb8'
+EXPECTED_VERSION = '5.12'
+EXPECTED_EFFECTIVE_DATE = 'August 26, 2026'
+EXPECTED_MAIN = '169bed39db4b349483074f5ca87f5dc7b9fe70a7'
 PRE_02B_COMMIT = '399692904e6abbf462b31dd9db92512e726bb045'
 TODAY_01_COMMIT = '77d77c56238844228bb07fcef9d173d3e1993e67'
 TODAY_02_COMMIT = '3adb502f724362bc3612f3bf2a799a1560938a53'
@@ -87,10 +87,10 @@ CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# Version 5.11's current execution sequence. State is part of the contract:
+# Version 5.12's current execution sequence. State is part of the contract:
 # blocked, dated, complete, and backlogged work must not silently become active.
 APPROVED_EXECUTION = (
-    (1, 'ACTIVE', 'HIST-01 — Team State Timeline Foundation'),
+    (1, 'ACTIVE', 'HIST-02 — Team State Change Markers'),
     (2, 'BLOCKED', 'TB-08 source-completeness follow-up'),
     (3, 'DATE-BOUND OBLIGATION', 'React Router migration (#645)'),
     (4, 'BACKLOGGED', 'Runtime work reduction'),
@@ -242,13 +242,14 @@ def test_repository_basis_is_audited_main_with_the_scoped_audit_branch():
 
     assert EXPECTED_MAIN in text
     assert (
-        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after PR #752; '
-        'includes PI-01, PI-02, and the prior core-complete product surfaces. |'
+        f'| Repository main | `{EXPECTED_MAIN}` | Audited `origin/main` after HIST-01 and the '
+        'ShareArtifact publication-seal repair merged; '
+        'includes the retained Team State timeline and all prior core-complete product surfaces. |'
         in text
     )
     assert (
-        '| Audit branch | `history/team-state-timeline` | '
-        'Portable Intelligence closeout followed by the separately committed HIST-01 implementation. |'
+        '| Audit branch | `history/team-state-change-markers` | '
+        'HIST-01 closeout followed by the separately committed HIST-02 implementation. |'
         in text
     )
 
@@ -317,12 +318,13 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_hist_01_is_the_single_active_objective():
-    """The reconciliation advances one bounded retained-history package."""
+def test_hist_02_is_the_single_active_objective():
+    """The reconciliation advances one bounded retained-history event package."""
     text = _roadmap_text()
 
-    assert '| ACTIVE OBJECTIVE | HIST-01 — Team State Timeline Foundation |' in text
-    assert 'The next bounded package is **HIST-01 — Team State Timeline Foundation**.' in text
+    assert '| ACTIVE OBJECTIVE | HIST-02 — Team State Change Markers |' in text
+    assert 'The next bounded package is **HIST-02 — Team State Change Markers**.' in text
+    assert '| ACTIVE OBJECTIVE | HIST-01 — Team State Timeline Foundation |' not in text
     assert '| ACTIVE OBJECTIVE | PI-01 — Team State Portable Citation |' not in text
     assert '| ACTIVE OBJECTIVE | SD-01 — Unified Entity Search |' not in text
     assert '| ACTIVE OBJECTIVE | PIT-02 — Recent Work & Appearance Consolidation |' not in text
@@ -375,13 +377,14 @@ def test_the_new_objective_preserves_every_authority_boundary():
         assert preserved in body, preserved
 
     for boundary in (
-        'newest active, integrity-valid Team State artifact',
-        'reports actual coverage and gaps without backfill or carry-forward inference',
-        'preserves contract boundaries',
-        'never authors historical transitions in the frontend',
-        'links every retained row to its immutable citation',
-        'current Team Board separate',
-        'adds no event overlays, Pitcher history, performance, workload, rotation, deployment',
+        'HIST-01 is complete on merged main',
+        'backend-owned HIST-01 comparison and emits a Team State change marker only for',
+        'an adjacent canonical pair whose comparison is both proven comparable and\nchanged',
+        'keeps comparable-and-unchanged distinct from comparison unavailable or withheld',
+        'exact represented-date pair and both immutable citations',
+        'without frontend transition inference',
+        'adds no transactions, games, short starts, workload, rotation, Since Yesterday annotations',
+        'causal explanation',
         'historical recomputation',
     ):
         assert boundary in body, boundary
@@ -573,7 +576,7 @@ def test_completed_packages_are_not_listed_as_future_work():
         assert completed not in joined, completed
 
 
-def test_blocked_dated_complete_and_backlogged_work_do_not_displace_hist_01():
+def test_blocked_dated_complete_and_backlogged_work_do_not_displace_hist_02():
     execution = _next_approved_execution(_roadmap_text())
 
     assert execution[0] == APPROVED_EXECUTION[0]
@@ -624,7 +627,7 @@ def test_decision_ledger_is_contiguous_through_d057():
     assert 'D-058' not in text
 
     assert 'Decision Ledger through D-057' in text
-    assert 'Version 5.11 adds no durable Decision Ledger ID.' in text
+    assert 'Version 5.12 adds no durable Decision Ledger ID.' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
@@ -707,23 +710,23 @@ def test_completion_log_records_the_closed_packages_with_evidence():
         assert fragment in joined, fragment
 
 
-def test_revision_history_records_the_version_5_11_entry():
+def test_revision_history_records_the_version_5_12_entry():
     """The current edition records its audit basis, objective, and boundaries."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 5.11 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 5.12 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        '`origin/main` `c1e947b3`',
-        'Closed PI-01 and PI-02',
-        'Portable Intelligence core-complete',
-        'HIST-01 Team State Timeline Foundation',
-        'without reconstruction',
+        '`origin/main` `169bed39`',
+        'Closed HIST-01',
+        'HIST-02 Team State Change Markers',
+        'comparable-and-changed Team State pairs',
+        'Portable Intelligence remains core-complete',
     ):
         assert claimed in entry, claimed
 

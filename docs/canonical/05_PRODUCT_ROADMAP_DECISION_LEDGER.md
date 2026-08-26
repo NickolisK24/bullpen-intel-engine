@@ -8,11 +8,11 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 5.11  ·  PORTABLE INTELLIGENCE CLOSEOUT · HISTORY ACTIVATION
+VERSION 5.12  ·  HIST-01 CLOSEOUT · HIST-02 ACTIVATION
 
 Owner: Nickolis Kacludis
 
-Effective August 25, 2026
+Effective August 26, 2026
 
 # Contents
 
@@ -52,17 +52,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 5.11 |
-| Effective date | August 25, 2026 |
+| Version | 5.12 |
+| Effective date | August 26, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Audited `origin/main` at `c1e947b3c26de21a779bd878d43ee2a4d1637fb8`, after PR #752. Includes PI-01 Team State Portable Citation, PI-02 Since Yesterday Portable Change, and all prior core-complete product surfaces; historical Today/Tonight phase closeout basis: `f545eb700408b18f5987b7fab0c868c4b6b65dd1`. |
+| Repository basis | Audited `origin/main` at `169bed39db4b349483074f5ca87f5dc7b9fe70a7`, after HIST-01 and the ShareArtifact publication-seal repair merged. Includes the Team State Timeline Foundation, PI-01 Team State Portable Citation, PI-02 Since Yesterday Portable Change, and all prior core-complete product surfaces; historical Today/Tonight phase closeout basis: `f545eb700408b18f5987b7fab0c868c4b6b65dd1`. |
 | Decision basis | Decision Ledger through D-057. No durable decision is added by this package closeout or ordinary roadmap sequencing. |
-| Audit basis | Repository history and current backend, frontend, workflow, runbook, contract-test, and canonical-document evidence through August 25, 2026. No production workflow, production mutation, or synthetic production evidence was used. |
-| Supersedes | Version 5.10 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
+| Audit basis | Repository history and current backend, frontend, workflow, runbook, contract-test, and canonical-document evidence through August 26, 2026. No production workflow, production mutation, or synthetic production evidence was used. |
+| Supersedes | Version 5.11 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Team Board 2.0, Today/Tonight, Pitcher 2.0, Matchup/Compare, Search/Discovery, and Portable Intelligence are core-complete for their current governed scopes. HIST-01 may serve retained, integrity-valid Team State publications by exact date, but it may not reconstruct, backfill, or infer historical meaning. D-001 through D-057 remain in force according to their recorded status. |
+| INTEGRATION RULE | Team Board 2.0, Today/Tonight, Pitcher 2.0, Matchup/Compare, Search/Discovery, and Portable Intelligence are core-complete for their current governed scopes. HIST-01 is complete. HIST-02 may mark a Team State change only when the existing backend comparison proves an adjacent canonical pair comparable and changed; it may not reconstruct, backfill, infer causation, or author transitions in the frontend. D-001 through D-057 remain in force according to their recorded status. |
 | --- | --- |
 
 # Part I - Executive State
@@ -73,15 +73,15 @@ BaseballOS is a live public MLB bullpen-intelligence platform whose Team Board i
 
 The repository therefore no longer supports treating Team Board 2.0, the current governed Today/Tonight build, Pitcher 2.0, Matchup/Compare, Search/Discovery, or Portable Intelligence as unfinished foundations. PI-01 and PI-02 provide immutable state-shaped and change-shaped citations through one lifecycle without turning mutable current context into historical identity. PRE-01 residual token cleanup remains optional, while TB-05 depth and TB-08 source completeness remain intentionally partial or gated. Those future depth items do not reopen the core builds. The next product-spine need is to let users inspect the exact Team State observations BaseballOS retained and published over time.
 
-| CURRENT VERDICT | PIT-01 through PIT-07, CMP-01 through CMP-02, SD-01, and PI-01 through PI-02 are COMPLETE on audited `main`. Portable Intelligence is core-complete for its current governed scope. The single active objective is HIST-01 — Team State Timeline Foundation. |
+| CURRENT VERDICT | PIT-01 through PIT-07, CMP-01 through CMP-02, SD-01, PI-01 through PI-02, and HIST-01 are COMPLETE on audited `main`. Portable Intelligence remains core-complete for its current governed scope. History/Memory remains active, and the single active objective is HIST-02 — Team State Change Markers. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | `c1e947b3c26de21a779bd878d43ee2a4d1637fb8` | Audited `origin/main` after PR #752; includes PI-01, PI-02, and the prior core-complete product surfaces. |
-| Audit branch | `history/team-state-timeline` | Portable Intelligence closeout followed by the separately committed HIST-01 implementation. |
+| Repository main | `169bed39db4b349483074f5ca87f5dc7b9fe70a7` | Audited `origin/main` after HIST-01 and the ShareArtifact publication-seal repair merged; includes the retained Team State timeline and all prior core-complete product surfaces. |
+| Audit branch | `history/team-state-change-markers` | HIST-01 closeout followed by the separately committed HIST-02 implementation. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -104,27 +104,29 @@ The repository therefore no longer supports treating Team Board 2.0, the current
 
 ## 3. Active Objective
 
-| ACTIVE OBJECTIVE | HIST-01 — Team State Timeline Foundation |
+| ACTIVE OBJECTIVE | HIST-02 — Team State Change Markers |
 | --- | --- |
 
-The next bounded package is **HIST-01 — Team State Timeline Foundation**.
-PI-01 and PI-02 are complete in PRs #751 and #752: Team State and Since Yesterday
-observations use immutable citation URLs, frozen evidence, integrity verification,
-and the shared correction lifecycle. Portable Intelligence is therefore
-core-complete for its governed scope.
+The next bounded package is **HIST-02 — Team State Change Markers**.
+PI-01 and PI-02 remain complete, Portable Intelligence remains core-complete,
+and HIST-01 is complete on merged main. HIST-01 serves the newest active,
+integrity-valid Team State artifact per retained date, reports actual gaps,
+preserves immutable citations, and withholds comparison across unproven
+boundaries without historical recomputation.
 
-HIST-01 establishes one team historical destination from retained published
-Team State artifacts. It serves exact dated claims and citations, reports gaps,
-and withholds cross-date movement whenever contract comparability is not proven.
+HIST-02 adds one descriptive event type to that existing spine. It reuses the
+backend-owned HIST-01 comparison and emits a Team State change marker only for
+an adjacent canonical pair whose comparison is both proven comparable and
+changed.
 
-HIST-01 exits when the public application:
+HIST-02 exits when the public application:
 
-1. serves one bounded season history request for a canonical team;
-2. selects the newest active, integrity-valid Team State artifact per represented date;
-3. reports actual coverage and gaps without backfill or carry-forward inference;
-4. preserves contract boundaries and never authors historical transitions in the frontend;
-5. links every retained row to its immutable citation and keeps the current Team Board separate; and
-6. adds no event overlays, Pitcher history, performance, workload, rotation, deployment, or historical recomputation.
+1. advances the History carrier additively while preserving every HIST-01 field;
+2. emits one deterministic `team_state_change` event only for a backend-proven comparable changed pair;
+3. keeps comparable-and-unchanged distinct from comparison unavailable or withheld;
+4. binds the event to the exact represented-date pair and both immutable citations;
+5. renders the supplied event below the affected state row without frontend transition inference; and
+6. adds no transactions, games, short starts, workload, rotation, Since Yesterday annotations, role movement, causal explanation, Pitcher history, or historical recomputation.
 
 All standing operational boundaries remain intact: D-051 still prohibits an
 authoritative manual daily execution; the legacy sync/postgame writer remains
@@ -224,7 +226,7 @@ The package-by-package and gap-register reconciliation is retained in Appendix D
 
 | Order | State | Work package | Scope |
 | --- | --- | --- | --- |
-| 1 | ACTIVE | HIST-01 — Team State Timeline Foundation | Serve retained, integrity-valid Team State publications by team and date with honest gaps, contract boundaries, immutable citations, and a separate current Team Board handoff. |
+| 1 | ACTIVE | HIST-02 — Team State Change Markers | Mark only backend-proven comparable changed Team State pairs on the retained timeline, with deterministic identity and exact immutable citations. |
 | 2 | BLOCKED | TB-08 source-completeness follow-up | Resume only after unresolved transaction authority is established; continue withholding in the meantime. No guessed event meaning. |
 | 3 | DATE-BOUND OBLIGATION | React Router migration (#645) | Complete or explicitly re-review before the accepted risk expires on 2026-11-13; the standing dependency gate enforces the date. |
 | 4 | BACKLOGGED | Runtime work reduction | No current correctness, currentness, performance, or sustainable-operation blocker requires infrastructure to displace the active product slice. Preserve D-051. |
@@ -232,7 +234,7 @@ The package-by-package and gap-register reconciliation is retained in Appendix D
 | 6 | COMPLETE PHASE | Pitcher 2.0 and Matchup/Compare | PIT-01 through PIT-07 and CMP-01 through CMP-02 are core-complete; deeper performance, leverage, named-arm, and history work remains separately governed expansion. |
 | 7 | COMPLETE PHASE | Search / Discovery | SD-01 provides one globally reachable bounded identity search with canonical destinations and honest ambiguity handling. |
 | 8 | COMPLETE PHASE | Portable Intelligence | PI-01 and PI-02 prove one immutable lifecycle across state-shaped and change-shaped citations. |
-| 9 | CURRENT PHASE | History / Memory | HIST-01 establishes the retained daily Team State spine without reconstruction or event overlays. |
+| 9 | CURRENT PHASE | History / Memory | HIST-01 established the retained daily Team State spine; HIST-02 adds only proven Team State change markers without causal interpretation. |
 
 One dated obligation sits outside this order and does not wait for it: the
 React Router acceptance recorded under #645 expires **2026-11-13**, and the
@@ -369,7 +371,7 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-Version 5.11 adds no durable Decision Ledger ID. Closing PI-01 and PI-02 and activating HIST-01 are implementation and ordinary roadmap-sequencing evidence. D-001 through D-057 remain unchanged and in force according to their recorded status.
+Version 5.12 adds no durable Decision Ledger ID. Closing HIST-01 and activating HIST-02 are implementation and ordinary roadmap-sequencing evidence. D-001 through D-057 remain unchanged and in force according to their recorded status.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
@@ -630,13 +632,13 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 ## Repository basis
 
-Current audited main: `c1e947b3c26de21a779bd878d43ee2a4d1637fb8` after PR #752. Team Board, Today/Tonight, Pitcher, Matchup/Compare, Search/Discovery, and Portable Intelligence are core-complete for their current governed scopes. PRE-01 residual design-system cleanup remains optional; TB-05 governed depth and TB-08 source completeness remain accurately partial as recorded in Appendix D.
+Current audited main: `169bed39db4b349483074f5ca87f5dc7b9fe70a7` after HIST-01 and the ShareArtifact publication-seal repair merged. Team Board, Today/Tonight, Pitcher, Matchup/Compare, Search/Discovery, and Portable Intelligence are core-complete for their current governed scopes; HIST-01 is complete and History/Memory remains active. PRE-01 residual design-system cleanup remains optional; TB-05 governed depth and TB-08 source completeness remain accurately partial as recorded in Appendix D.
 
 SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
 ## Active objective
 
-The active objective is HIST-01 Team State Timeline Foundation. PIT-01 through PIT-07, CMP-01 through CMP-02, SD-01, and PI-01 through PI-02 are complete on merged main. Portable Intelligence has one governed immutable lifecycle for Team State and Since Yesterday citations; History / Memory now begins with retained published Team State only. TODAY-01 through TODAY-06 remain complete.
+The active objective is HIST-02 Team State Change Markers. PIT-01 through PIT-07, CMP-01 through CMP-02, SD-01, PI-01 through PI-02, and HIST-01 are complete on merged main. Portable Intelligence retains one governed immutable lifecycle for Team State and Since Yesterday citations; History/Memory now has its retained published Team State spine. TODAY-01 through TODAY-06 remain complete.
 
 PRE-02B is complete under D-057. Current Team Board rendering uses the teams
 directory plus one `/board-v2` content request. Legacy `/board` remains an
@@ -650,7 +652,7 @@ A closed issue and recorded production proof remain different claims. Here both 
 
 ## Next approved sequence
 
-1) Deliver HIST-01 by serving the newest active, integrity-valid Team State publication per retained team/date with explicit coverage gaps and contract boundaries. 2) Keep transactions, games, workload, rotation, deployment, Pitcher history, performance, role movement, and historical recomputation outside HIST-01. 3) Keep TB-08 blocked until transaction authority resolves; keep runtime work and additional Team Board or intelligence depth backlogged unless their stated gates change.
+1) Deliver HIST-02 by projecting deterministic Team State change events only from the existing comparable-and-changed HIST-01 backend result. 2) Keep transactions, games, short starts, workload, rotation, Since Yesterday annotations, deployment, Pitcher history, performance, role movement, causal explanation, and historical recomputation outside HIST-02. 3) Keep TB-08 blocked until transaction authority resolves; keep runtime work and additional Team Board or intelligence depth backlogged unless their stated gates change.
 
 Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
@@ -758,3 +760,4 @@ not a reason to reopen the completed Team Board packages.
 | 5.9 | August 25, 2026 | Nickolis Kacludis | Reconciled `origin/main` `16f72766` after PR #749. Closed PIT-02 through PIT-07 and declared Pitcher 2.0 core-complete on consolidated recent work, compact availability, governed workload patterns, observed deployment, canonical standalone routing, and coherent responsive hierarchy. Closed CMP-01 and CMP-02 and declared Matchup/Compare core-complete on one trusted comparison carrier shared by manual Compare and scheduled Matchup, exact per-domain comparability, local withholding, canonical Team Board handoffs, and no ranking or prediction. Selected SD-01 Unified Entity Search as the sole active objective, bounded to one globally reachable search destination, one debounced mixed-identity request, deterministic team/pitcher/product-day Matchup groups, and canonical destinations with no baseball summary, persistent index, per-result read, or destination-semantic change. No durable decision was added or changed; D-001 through D-057 and every semantic, writer, publication, and sync-authority boundary remain intact. |
 | 5.10 | August 25, 2026 | Nickolis Kacludis | Reconciled `origin/main` `87bf735b` after PR #750. Closed SD-01 and declared Search/Discovery core-complete on one global destination, one bounded mixed-identity request, deterministic team/pitcher/product-day Matchup results, canonical routes, honest ambiguity, local owner failure, and no per-result reads or baseball ranking. Activated PI-01 Team State Portable Citation as the sole objective, bounded to making the existing immutable `/share/:publicId` observation the canonical Team State share target while retaining Team Board as a separate current-context handoff. No portable subject, artifact-schema generalization, Team State semantic, evidence selection, durable raster storage, distribution automation, history work, or durable decision was added; D-001 through D-057 remain unchanged. |
 | 5.11 | August 25, 2026 | Nickolis Kacludis | Reconciled `origin/main` `c1e947b3` after PR #752. Closed PI-01 and PI-02 and declared Portable Intelligence core-complete on one immutable, integrity-verified lifecycle for Team State and Since Yesterday citations. Activated HIST-01 Team State Timeline Foundation as the sole objective, bounded to retained published observations, explicit gaps, and proven comparison boundaries without reconstruction, backfill, event overlays, Pitcher history, or a new durable decision. D-001 through D-057 remain unchanged. |
+| 5.12 | August 26, 2026 | Nickolis Kacludis | Reconciled `origin/main` `169bed39` after HIST-01 and the ShareArtifact publication-seal repair merged. Closed HIST-01 on exact retained publications, explicit gaps, immutable citations, correction-aware canonical selection, bounded queries, and proven comparison boundaries. Activated HIST-02 Team State Change Markers as the sole objective, bounded to deterministic events from already-computed comparable-and-changed Team State pairs with no causal context, additional event type, frontend transition inference, or new durable decision. Portable Intelligence remains core-complete; D-001 through D-057 remain unchanged. |
