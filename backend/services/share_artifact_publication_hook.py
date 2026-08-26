@@ -101,4 +101,32 @@ def run_post_publication_generation(snapshot, *, generator=None):
         result.generated_count, result.reused_count, result.refused_count,
         result.failed_count, result.missing_count,
     )
+
+    # Since Yesterday artifacts use the same publication-owned lifecycle. Their
+    # semantic source is the exact frozen adjacent-snapshot comparison already
+    # embedded in this published snapshot; a failure remains downstream and
+    # cannot roll back the authoritative publication or Team State generation.
+    try:
+        from services.share_artifact_since_yesterday import (
+            SinceYesterdayArtifactUnavailable,
+            publish_since_yesterday_changes_for_snapshot,
+        )
+        published_changes = publish_since_yesterday_changes_for_snapshot(snapshot)
+        logger.info(
+            'Post-publication Since Yesterday artifacts snapshot_id=%s: published=%s.',
+            source_snapshot_id,
+            len(published_changes),
+        )
+    except SinceYesterdayArtifactUnavailable as exc:
+        logger.info(
+            'Post-publication Since Yesterday generation skipped snapshot_id=%s: %s.',
+            source_snapshot_id,
+            exc,
+        )
+    except Exception:
+        logger.exception(
+            'Post-publication Since Yesterday generation failed non-fatally '
+            'snapshot_id=%s.',
+            source_snapshot_id,
+        )
     return result

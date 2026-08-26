@@ -27,6 +27,8 @@ import {
 import {
   freshnessDataThrough,
 } from '../dashboard/syncStatusView'
+import EvidenceShareMenu from '../share/EvidenceShareMenu'
+import { loadSinceYesterdayCitation } from '../../utils/sinceYesterdayArtifact'
 
 const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
 const DAILY_EDITION_TITLE = 'Daily Edition'
@@ -667,6 +669,7 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     const items = (Array.isArray(block.items) ? block.items : [])
       .map((item, index) => normalizeSinceYesterdayItem(item, teamsById, teams, index))
       .filter(Boolean)
+      .map(item => ({ ...item, previousDate, currentDate }))
     if (items.length === 0) return null
     const itemCount = itemCountValue ?? items.length
     return {
@@ -1699,8 +1702,8 @@ function SinceYesterdayDetail({ item, detailId }) {
         </p>
       )}
       <SinceYesterdayEvidence item={item} />
-      {item.href && (
-        <div className="mt-4">
+      {(item.href || item.teamId) && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Link
             to={item.href}
             className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
@@ -1708,6 +1711,21 @@ function SinceYesterdayDetail({ item, detailId }) {
           >
             Open bullpen board
           </Link>
+          {item.teamId && item.previousDate && item.currentDate && (
+            <EvidenceShareMenu
+              linkOnly
+              loadCardModel={() => loadSinceYesterdayCitation(item)}
+              context={{
+                surface: 'stories',
+                cardType: 'link_only',
+                team_ref: item.teamAbbr,
+                evidence_target: 'team_read',
+                data_through: item.currentDate,
+              }}
+              shareText={item.summary || item.headline}
+              className="min-h-10"
+            />
+          )}
         </div>
       )}
     </div>

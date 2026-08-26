@@ -411,6 +411,19 @@ PI01_TEAM_STATE_CITATION_PATHS = (
     'backend/api/share_cards.py',
 )
 
+# PI-02, August 25 2026. Since Yesterday citations bind the already-authored
+# public adjacent-snapshot comparison to the existing immutable ShareArtifact
+# lifecycle. Generation remains downstream of trusted snapshot publication;
+# the public route only performs an exact, integrity-verified read. No Team
+# State, change selection, evidence, or appearance-team authority moves.
+PI02_SINCE_YESTERDAY_CITATION_PATHS = (
+    'backend/api/share_cards.py',
+    'backend/services/share_artifact_public.py',
+    'backend/services/share_artifact_publication_hook.py',
+    'backend/services/share_artifact_repository.py',
+    'backend/services/share_artifact_since_yesterday.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

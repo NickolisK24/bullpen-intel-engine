@@ -27,8 +27,13 @@ export function buildExactShareUrl(
 ) {
   try {
     const url = new URL(destinationUrl, origin)
-    if (url.origin !== PUBLIC_SHARE_ORIGIN || url.pathname !== '/bullpen') return null
+    if (url.origin !== PUBLIC_SHARE_ORIGIN) return null
     if (!['share_link', 'share_card'].includes(entrySource)) return null
+    if (/^\/share\/[A-Za-z0-9._-]{1,64}$/.test(url.pathname)) {
+      if (url.search || url.hash) return null
+      return `${PUBLIC_SHARE_ORIGIN}${url.pathname}`
+    }
+    if (url.pathname !== '/bullpen') return null
     const state = readBullpenLocation(url.search, url.hash)
     if (state.requestedView !== state.view || state.unsupportedHash) return null
     const allowedKeys = state.view === BULLPEN_VIEWS.COMPARE

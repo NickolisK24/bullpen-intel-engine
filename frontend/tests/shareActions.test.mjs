@@ -64,6 +64,11 @@ test('exact share URLs preserve the destination and add only the bounded source'
   )
   assert.equal(share.buildExactShareUrl('https://example.com/bullpen'), null)
   assert.equal(share.buildExactShareUrl('/stories'), null)
+  assert.equal(
+    share.buildExactShareUrl('/share/abc123def456'),
+    'https://baseballos.app/share/abc123def456',
+  )
+  assert.equal(share.buildExactShareUrl('/share/abc123def456?live=1'), null)
   assert.equal(share.buildExactShareUrl('/bullpen?view=board&team=NYY&campaign=unbounded'), null)
 })
 
