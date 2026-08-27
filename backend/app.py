@@ -125,6 +125,7 @@ def create_app(config_name=None):
     from models.prospect import Prospect
     from models.fatigue_score import FatigueScore
     from models.sync_run import SyncRun
+    from models.sync_schedule_attempt import SyncScheduleAttempt
     from models.sync_job import SyncJob
     from models.sync_failure import SyncFailure
     from models.dashboard_snapshot import DashboardSnapshot

@@ -14,6 +14,11 @@ if str(BACKEND_DIR) not in sys.path:
 os.environ['AUTO_SYNC'] = 'false'
 
 
+PRODUCTION_MORNING_TRIGGER_REFUSAL = (
+    'production_morning_runner_requires_due_sync_coordinator'
+)
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=(
@@ -33,6 +38,13 @@ def main(argv=None):
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
     reference_date = date.fromisoformat(args.reference_date) if args.reference_date else None
+
+    if str(os.environ.get('APP_ENV') or '').strip().lower() == 'production':
+        logging.getLogger(__name__).error(
+            'Production morning refresh refused before application/database '
+            'initialization (reason=%s).', PRODUCTION_MORNING_TRIGGER_REFUSAL,
+        )
+        return 2
 
     from app import app
     from services.schedule_tonight_refresh import refresh_schedule_and_tonight

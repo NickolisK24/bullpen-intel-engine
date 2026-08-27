@@ -5765,6 +5765,8 @@ def run_postgame_refresh(
     schedule_date: date | None = None,
     source: str = sync_metadata.SOURCE_GITHUB_ACTIONS,
     include_internal_enrichment: bool = True,
+    preacquired_writer_guard=None,
+    window_time: datetime | None = None,
 ):
     """
     Lightweight completed-game refresh.
@@ -5796,11 +5798,12 @@ def run_postgame_refresh(
     if schedule_date is not None:
         schedule_dates = [schedule_date]
     else:
-        schedule_dates = postgame_schedule_dates(started_at)
+        schedule_dates = postgame_schedule_dates(window_time or started_at)
         schedule_date = schedule_dates[-1]
     sync_run_id = None
     active_stage = None
-    writer_guard = None
+    writer_guard = preacquired_writer_guard
+    owns_writer_guard = preacquired_writer_guard is None
     status = {
         'last_sync': started_at.isoformat(),
         'status': sync_metadata.STATUS_SUCCESS,
@@ -5842,15 +5845,17 @@ def run_postgame_refresh(
 
     try:
         with app.app_context():
-            writer_guard = sync_metadata.acquire_sync_writer_guard(
-                job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                source=source,
-            )
+            if writer_guard is None:
+                writer_guard = sync_metadata.acquire_sync_writer_guard(
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    source=source,
+                )
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
                 job_name=sync_metadata.JOB_POSTGAME_REFRESH,
             )
+            status['sync_run_id'] = sync_run_id
             mlb_client.metrics.reset()
             stage_timings = {}
             status['stage_timings'] = stage_timings
@@ -6460,7 +6465,7 @@ def run_postgame_refresh(
                     ),
                 )
 
-    if writer_guard is not None:
+    if writer_guard is not None and owns_writer_guard:
         writer_guard.release()
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
@@ -6492,6 +6497,7 @@ def run_daily_sync(
     days_back: int = 7,
     source: str = sync_metadata.SOURCE_SCHEDULED,
     include_internal_enrichment: bool = True,
+    preacquired_writer_guard=None,
 ):
     """
     Full daily refresh — pulls new logs, recalculates fatigue using each
@@ -6525,7 +6531,8 @@ def run_daily_sync(
     product_day = resolve_product_day(started_at)
     sync_run_id = None
     active_stage = None
-    writer_guard = None
+    writer_guard = preacquired_writer_guard
+    owns_writer_guard = preacquired_writer_guard is None
     post_fatigue_phase_timings = []
     post_fatigue_instrumentation_started = False
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
@@ -6544,14 +6551,16 @@ def run_daily_sync(
 
     try:
         with app.app_context():
-            writer_guard = sync_metadata.acquire_sync_writer_guard(
-                job_name=sync_metadata.JOB_DAILY_SYNC,
-                source=source,
-            )
+            if writer_guard is None:
+                writer_guard = sync_metadata.acquire_sync_writer_guard(
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    source=source,
+                )
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
             )
+            status['sync_run_id'] = sync_run_id
             # Fresh API metrics for this run so api_calls_made / retries_used
             # reflect only this sync's activity.
             mlb_client.metrics.reset()
@@ -7051,7 +7060,7 @@ def run_daily_sync(
                     ),
                 )
 
-    if writer_guard is not None:
+    if writer_guard is not None and owns_writer_guard:
         if post_fatigue_instrumentation_started:
             _run_logged_daily_sync_phase(
                 run_logger,
@@ -7061,7 +7070,7 @@ def run_daily_sync(
             )
         else:
             writer_guard.release()
-    elif post_fatigue_instrumentation_started:
+    elif writer_guard is None and post_fatigue_instrumentation_started:
         run_logger.info(
             'Daily sync post-fatigue phase skipped: phase=writer_guard_release '
             'status=no_guard.'

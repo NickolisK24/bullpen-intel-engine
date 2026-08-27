@@ -1,11 +1,10 @@
 name: BaseballOS Bullpen Sync
 
-# Reliable production sync. GitHub Actions runs the daily sync as a direct
-# Python process against the production database. That sync publishes the
-# dashboard snapshot directly, then this workflow verifies the public dashboard
-# is serving the published cache. The protected backend sync and snapshot
-# endpoints remain available for manual emergency use, but scheduled automation
-# does not run large jobs inside Render/Gunicorn web requests.
+# GitHub fallback/reconciliation for production sync. Render Cron is the primary
+# trigger; both authorities invoke the same source-aware due-window coordinator
+# as a direct Python process against production Postgres. BaseballOS holds the
+# cross-process writer lock, decides whether the window is already satisfied,
+# applies publication gates, and records durable attempt evidence.
 #
 # Pipeline order (see docs/current/SYNC_PIPELINE.md):
 #   1. production schedule/finality preflight inside the sync command
@@ -29,9 +28,8 @@ name: BaseballOS Bullpen Sync
 
 on:
   schedule:
-    # Cron is always UTC and does NOT observe DST. 10:17 UTC is ~6:17 AM ET
-    # during daylight time (most of the MLB season) and ~5:17 AM ET during
-    # standard time. Off-hour minutes reduce GitHub scheduler contention.
+    # Render Cron is primary at 10:05 UTC. GitHub reconciles at the existing
+    # PR #763 fallback minute; the database lock makes any overlap safe.
     - cron: '17 10 * * *'
     # Lightweight schedule-only morning correction pass. This uses the same
     # singleton workflow/concurrency lane and performs a full rolling-window
@@ -50,11 +48,11 @@ on:
           reports what would change without writing any baseball data,
           publishing a snapshot, or warming caches.
         required: true
-        default: daily
+        default: recovery_daily
         type: choice
         options:
-          - daily
-          - postgame
+          - recovery_daily
+          - recovery_postgame
           - backfill
           - intraday
       backfill_date:
@@ -62,6 +60,23 @@ on:
           Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
           never automatic — this input is the only way to reprocess a
           historical slate.
+        required: false
+        default: ''
+        type: string
+      scheduled_for:
+        description: >-
+          Required intended UTC window for recovery, for example
+          2026-08-27T10:05:00Z. This is audit evidence, not a fabricated cron.
+        required: false
+        default: ''
+        type: string
+      recovery_reason:
+        description: Incident reason required for recovery modes.
+        required: false
+        default: ''
+        type: string
+      confirm_recovery:
+        description: Type RECOVER to authorize an incident recovery.
         required: false
         default: ''
         type: string
@@ -109,7 +124,7 @@ jobs:
 
       - name: Run direct daily sync
         id: daily-sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -135,6 +150,11 @@ jobs:
           # because a later publication is v3_phase_5 -> v3_phase_5 and is not that
           # boundary.
           TEAM_STATE_VNEXT_BOUNDARY_SNAPSHOT_ID: '437'
+          EXECUTION_SOURCE: ${{ github.event_name == 'schedule' && 'github_schedule' || 'incident_recovery' }}
+          SCHEDULED_FOR: ${{ inputs.scheduled_for }}
+          RECOVERY_REASON: ${{ inputs.recovery_reason }}
+          CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
+          RECOVERY_OPERATOR: ${{ github.actor }}
           # OPS-002 last-resort kill. 40m = 2400s sits 200s above the 2200s
           # internal budget, so the Python process always reaches its own
           # governed shutdown first and this never becomes normal control flow.
@@ -181,10 +201,13 @@ jobs:
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          echo "Direct daily sync starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          if [ "$GITHUB_EVENT_NAME" = 'schedule' ]; then
+            SCHEDULED_FOR="$(date -u +'%Y-%m-%dT10:17:00Z')"
+          fi
+          echo "Daily window reconciliation starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           mkdir -p "$(dirname "$DAILY_SYNC_SUMMARY_PATH")"
           set +e
-          timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only --output "$DAILY_SYNC_SUMMARY_PATH"
+          timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" python backend/scripts/run_due_sync.py --mode daily --execution-source "$EXECUTION_SOURCE" --scheduled-for "$SCHEDULED_FOR" --days-back 7 --public-only --recovery-reason "$RECOVERY_REASON" --confirm-recovery "$CONFIRM_RECOVERY" --operator "$RECOVERY_OPERATOR" --output "$DAILY_SYNC_SUMMARY_PATH"
           exit_code=$?
           set -e
           # Recorded before this step can exit, so the activation validator can
@@ -198,39 +221,7 @@ jobs:
             fi
             exit "$exit_code"
           fi
-          echo "Direct daily sync completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-      - name: Refresh schedule and warm Tonight
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
-        env:
-          APP_ENV: production
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
-          AUTO_SYNC: 'false'
-          TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m
-          TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'
-          TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'
-        run: |
-          set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
-            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
-            exit 1
-          fi
-          echo "Refresh schedule and warm Tonight starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          set +e
-          timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_tonight_refresh.py --source github_actions
-          exit_code=$?
-          set -e
-          if [ "$exit_code" -ne 0 ]; then
-            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
-              echo "::error::Refresh schedule and warm Tonight timed out after $TONIGHT_REFRESH_COMMAND_TIMEOUT."
-            else
-              echo "::error::Refresh schedule and warm Tonight failed with exit code $exit_code."
-            fi
-            exit "$exit_code"
-          fi
-          echo "Refresh schedule and warm Tonight completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Daily window reconciliation completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run morning slate schedule refresh
         if: ${{ github.event_name == 'schedule' && github.event.schedule == '23 14 * * *' }}
@@ -248,12 +239,12 @@ jobs:
             exit 1
           fi
           echo "Morning slate schedule refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          timeout --kill-after=30s "$SLATE_SCHEDULE_COMMAND_TIMEOUT" python backend/scripts/refresh_slate_schedule.py --source github_actions_morning
+          timeout --kill-after=30s "$SLATE_SCHEDULE_COMMAND_TIMEOUT" python backend/scripts/run_due_sync.py --mode morning --execution-source github_schedule --scheduled-for "$(date -u +'%Y-%m-%dT14:23:00Z')" --public-only
           echo "Morning slate schedule refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run direct postgame refresh
         id: postgame-refresh
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -272,16 +263,24 @@ jobs:
           GAME_DRIVEN_INGESTION_MODE: 'shadow'
           POSTGAME_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/postgame-sync-summary.json
           POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m
+          EXECUTION_SOURCE: ${{ github.event_name == 'schedule' && 'github_schedule' || 'incident_recovery' }}
+          SCHEDULED_FOR: ${{ inputs.scheduled_for }}
+          RECOVERY_REASON: ${{ inputs.recovery_reason }}
+          CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
+          RECOVERY_OPERATOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          echo "Direct postgame refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          if [ "$GITHUB_EVENT_NAME" = 'schedule' ]; then
+            SCHEDULED_FOR="$(date -u +'%Y-%m-%dT%H:11:00Z')"
+          fi
+          echo "Postgame window reconciliation starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           mkdir -p "$(dirname "$POSTGAME_SYNC_SUMMARY_PATH")"
           set +e
-          timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_postgame_refresh.py --source github_actions --public-only --output "$POSTGAME_SYNC_SUMMARY_PATH"
+          timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_due_sync.py --mode postgame --execution-source "$EXECUTION_SOURCE" --scheduled-for "$SCHEDULED_FOR" --public-only --recovery-reason "$RECOVERY_REASON" --confirm-recovery "$CONFIRM_RECOVERY" --operator "$RECOVERY_OPERATOR" --output "$POSTGAME_SYNC_SUMMARY_PATH"
           exit_code=$?
           set -e
           # Recorded before this step can exit, so the activation validator can
@@ -295,39 +294,7 @@ jobs:
             fi
             exit "$exit_code"
           fi
-          echo "Direct postgame refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-      - name: Refresh schedule and warm Tonight after postgame
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
-        env:
-          APP_ENV: production
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
-          AUTO_SYNC: 'false'
-          TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m
-          TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'
-          TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'
-        run: |
-          set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
-            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
-            exit 1
-          fi
-          echo "Refresh schedule and warm Tonight after postgame starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          set +e
-          timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_tonight_refresh.py --source github_actions_postgame
-          exit_code=$?
-          set -e
-          if [ "$exit_code" -ne 0 ]; then
-            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
-              echo "::error::Refresh schedule and warm Tonight after postgame timed out after $TONIGHT_REFRESH_COMMAND_TIMEOUT."
-            else
-              echo "::error::Refresh schedule and warm Tonight after postgame failed with exit code $exit_code."
-            fi
-            exit "$exit_code"
-          fi
-          echo "Refresh schedule and warm Tonight after postgame completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Postgame window reconciliation completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       # Explicit historical backfill only. Never runs on a schedule — an
       # operator must dispatch mode=backfill with a concrete slate date.
@@ -558,7 +525,7 @@ jobs:
       # and a category are reported, never the matched content.
       - name: Scan Team State vNext proof for forbidden content
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
         run: |
           set -uo pipefail
           if [ -d artifacts/team-state-vnext-proof ]; then
@@ -574,7 +541,7 @@ jobs:
       # job below reports.
       - name: Upload Team State vNext production proof
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
         uses: actions/upload-artifact@v4
         with:
           name: team-state-vnext-proof-${{ github.run_id }}
@@ -585,7 +552,7 @@ jobs:
       - name: Prepare game-driven shadow handoff
         id: shadow-handoff-prepare
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'recovery_daily' || inputs.mode == 'recovery_postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
           HANDOFF_DIR: artifacts/game-driven-shadow-handoff
@@ -605,7 +572,7 @@ jobs:
 
       - name: Upload game-driven shadow handoff
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'recovery_daily' || inputs.mode == 'recovery_postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
         uses: actions/upload-artifact@v4
         with:
           name: game-driven-shadow-handoff-${{ github.run_id }}
@@ -627,7 +594,7 @@ jobs:
   team-state-vnext-proof:
     runs-on: ubuntu-latest
     needs: public-sync
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -701,7 +668,7 @@ jobs:
   shadow-activation-health:
     runs-on: ubuntu-latest
     needs: public-sync
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'recovery_daily' || inputs.mode == 'recovery_postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -877,7 +844,7 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run internal enrichment after daily public sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -907,7 +874,7 @@ jobs:
           echo "Internal enrichment after daily public sync completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run internal enrichment after postgame public sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '17 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -943,7 +910,7 @@ jobs:
     # implicit needs behaviour, so the actual prerequisite is readable here and
     # a shadow-only failure can never be mistaken for a reason to skip.
     needs: public-sync
-    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
     # CI-003 / #598. The ONLY job in this workflow with repository write
     # authority. The workflow default is contents: read; this grant is the whole
     # reason the default could be narrowed.

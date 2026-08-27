@@ -370,10 +370,12 @@ def _production_daily_env(**overrides):
     return values
 
 
-def test_scheduled_github_daily_is_authorized():
+def test_legacy_daily_runner_defers_scheduled_github_to_due_coordinator():
     from scripts.run_daily_sync import production_daily_trigger_refusal_reason
 
-    assert production_daily_trigger_refusal_reason(_production_daily_env()) is None
+    assert production_daily_trigger_refusal_reason(_production_daily_env()) == (
+        'production_daily_runner_requires_due_sync_coordinator'
+    )
 
 
 def test_workflow_dispatch_daily_is_refused():

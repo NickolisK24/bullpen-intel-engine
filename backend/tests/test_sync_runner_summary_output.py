@@ -237,6 +237,7 @@ def _install_daily_collaborators(monkeypatch, *, status, verified):
 def _run_daily(monkeypatch, capsys, *, status, verified, argv):
     from scripts import run_daily_sync
 
+    monkeypatch.setenv('APP_ENV', 'test')
     _install_daily_collaborators(monkeypatch, status=status, verified=verified)
     exit_code = run_daily_sync.main(argv)
     printed = capsys.readouterr().out.strip().splitlines()

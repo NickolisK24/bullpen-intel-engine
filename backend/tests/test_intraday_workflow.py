@@ -169,8 +169,9 @@ def test_daily_postgame_backfill_behavior_unchanged():
     doc = _yaml_doc()
     public = doc['jobs']['public-sync']['steps']
     blob = '\n'.join(str(s.get('run', '')) for s in public)
-    # The daily/postgame/backfill lanes are untouched by this fix.
-    assert 'run_daily_sync.py' in blob
+    # Scheduled lanes use the due coordinator; governed backfill stays direct.
+    assert 'run_due_sync.py --mode daily' in blob
+    assert 'run_due_sync.py --mode postgame' in blob
     assert 'run_postgame_refresh.py' in blob
     assert "inputs.mode == 'backfill'" in _text()
     # Those production jobs already supplied ADMIN_API_TOKEN and still do.

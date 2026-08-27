@@ -244,6 +244,6 @@ def test_morning_refresh_reuses_singleton_workflow_and_schedule_only_command():
     block = workflow.split('      - name: Run morning slate schedule refresh\n', 1)[1]
     block = block.split('\n      - name:', 1)[0]
     assert "github.event.schedule == '23 14 * * *'" in block
-    assert 'python backend/scripts/refresh_slate_schedule.py' in block
+    assert 'python backend/scripts/run_due_sync.py --mode morning' in block
     assert 'run_daily_sync.py' not in block
     assert 'run_postgame_refresh.py' not in block

@@ -40,7 +40,7 @@ def test_health_report_identifies_the_exact_missing_window():
     report = health.evaluate_schedule_health(
         [
             _run(1, '2026-08-27T02:45:00Z'),
-            _run(2, '2026-08-27T04:40:00Z'),
+            _run(2, '2026-08-27T04:50:00Z'),
         ],
         now=datetime(2026, 8, 27, 10, 0, tzinfo=timezone.utc),
         lookback=timedelta(hours=10),
@@ -59,8 +59,8 @@ def test_health_report_identifies_the_exact_missing_window():
 
 def test_health_report_retains_failed_runs_as_observed_attempts():
     report = health.evaluate_schedule_health(
-        [_run(3, '2026-08-27T10:40:00Z', conclusion='failure')],
-        now=datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc),
+        [_run(3, '2026-08-27T11:10:00Z', conclusion='failure')],
+        now=datetime(2026, 8, 27, 13, 0, tzinfo=timezone.utc),
         lookback=timedelta(hours=3),
         grace=timedelta(minutes=90),
     )
@@ -77,7 +77,24 @@ def test_health_diagnostic_is_manual_read_only_and_outside_writer_concurrency():
     assert sorted(triggers) == ['workflow_dispatch']
     assert workflow['permissions'] == {'contents': 'read', 'actions': 'read'}
     assert 'concurrency:' not in blob
-    assert 'DATABASE_URL' not in blob
+    assert 'DATABASE_URL' in blob
     assert 'run_daily_sync.py' not in blob
     assert 'run_postgame_refresh.py' not in blob
     assert 'check_scheduled_sync_health.py' in blob
+
+
+def test_production_health_separates_external_authority_from_freshness():
+    report = health.evaluate_production_health(
+        [{
+            'id': 7,
+            'source': 'github_schedule',
+            'outcome': 'executed',
+            'intended_window': 'daily:2026-08-27',
+        }],
+        now=datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc),
+        lookback=timedelta(hours=3),
+        grace=timedelta(minutes=90),
+    )
+
+    assert report['external_scheduler']['status'] == 'degraded'
+    assert report['production_freshness']['status'] == 'healthy'
