@@ -15,7 +15,7 @@ os.environ['AUTO_SYNC'] = 'false'
 
 
 PRODUCTION_DAILY_TRIGGER_REFUSAL = (
-    'production_daily_runner_requires_scheduled_github_trigger'
+    'production_daily_runner_requires_due_sync_coordinator'
 )
 
 
@@ -26,26 +26,14 @@ def _truthy(value):
 def production_daily_trigger_refusal_reason(environ=None):
     """Return a reason when the external production daily runner is unauthorized.
 
-    The production full-daily command is intentionally schedule-only and first-
-    attempt-only. A workflow_dispatch, a manually re-run scheduled job, or a
-    local production invocation must refuse before the Flask app is imported,
-    which means before database initialization and before any canonical writer
-    can run. Test/development commands remain usable.
+    Production source authorization and due-window reconciliation belong to
+    run_due_sync.py. This legacy development runner therefore refuses every
+    direct production invocation before Flask/database initialization.
     """
     env = environ or os.environ
     if str(env.get('APP_ENV') or '').strip().lower() != 'production':
         return None
-    if not _truthy(env.get('GITHUB_ACTIONS')):
-        return PRODUCTION_DAILY_TRIGGER_REFUSAL
-    if str(env.get('GITHUB_EVENT_NAME') or '').strip().lower() != 'schedule':
-        return PRODUCTION_DAILY_TRIGGER_REFUSAL
-    try:
-        run_attempt = int(str(env.get('GITHUB_RUN_ATTEMPT') or '1').strip())
-    except (TypeError, ValueError):
-        return PRODUCTION_DAILY_TRIGGER_REFUSAL
-    if run_attempt != 1:
-        return PRODUCTION_DAILY_TRIGGER_REFUSAL
-    return None
+    return PRODUCTION_DAILY_TRIGGER_REFUSAL
 
 
 def _parse_args(argv=None):
@@ -91,7 +79,7 @@ def main(argv=None):
         logging.getLogger(__name__).error(
             'Production daily sync refused before application/database initialization '
             '(reason=%s). Full daily production synchronization is schedule-only '
-            'and cannot be manually re-run.',
+            'and must use the due-sync coordinator.',
             refusal_reason,
         )
         return 2

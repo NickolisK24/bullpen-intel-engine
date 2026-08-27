@@ -15,6 +15,27 @@ if str(BACKEND_DIR) not in sys.path:
 os.environ['AUTO_SYNC'] = 'false'
 
 
+PRODUCTION_POSTGAME_TRIGGER_REFUSAL = (
+    'production_postgame_runner_requires_due_sync_coordinator'
+)
+
+
+def production_postgame_trigger_refusal_reason(*, source, schedule_date, environ=None):
+    env = environ or os.environ
+    if str(env.get('APP_ENV') or '').strip().lower() != 'production':
+        return None
+    governed_backfill = (
+        source == 'github_actions_backfill'
+        and schedule_date is not None
+        and str(env.get('GITHUB_ACTIONS') or '').strip().lower() == 'true'
+        and str(env.get('GITHUB_EVENT_NAME') or '').strip() == 'workflow_dispatch'
+        and str(env.get('GITHUB_REF') or '').strip() == 'refs/heads/main'
+        and str(env.get('GITHUB_REPOSITORY') or '').strip()
+        == 'NickolisK24/bullpen-intel-engine'
+    )
+    return None if governed_backfill else PRODUCTION_POSTGAME_TRIGGER_REFUSAL
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='Run BaseballOS completed-game bullpen workload refresh.'
@@ -75,6 +96,17 @@ def main(argv=None):
         level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
+
+    refusal = production_postgame_trigger_refusal_reason(
+        source=source,
+        schedule_date=schedule_date,
+    )
+    if refusal is not None:
+        logging.getLogger(__name__).error(
+            'Production postgame sync refused before application/database '
+            'initialization (reason=%s).', refusal,
+        )
+        return 2
 
     from app import app
     from services import sync as sync_service

@@ -132,11 +132,11 @@ class TestManualDailyExecutionAgreement:
         assert 'manual daily recovery run' not in requirement
         assert 'controlled manual daily recovery run' in history
 
-    def test_sync_pipeline_daily_trigger_is_schedule_only(self):
+    def test_sync_pipeline_daily_trigger_is_source_authorized(self):
         doc = read(SYNC_PIPELINE_DOC)
 
         assert (
-            '| `daily` | scheduled morning run only (first attempt) |' in doc
+            '| `daily` | Render primary, GitHub fallback, or governed recovery |' in doc
         )
 
     def test_trusted_serving_still_owns_the_current_ops_002_criteria(self):

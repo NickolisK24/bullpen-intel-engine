@@ -21,8 +21,8 @@ The most important facts are:
 - automatic game-driven backfill authority is **off**;
 - automated game-driven write mode is **unapproved**;
 - game-driven publication-authority transfer is **unapproved**;
-- authoritative **manual** daily execution is prohibited under D-051: the
-  production full-daily runner is schedule-only and first-attempt-only;
+- production execution is authorized by an explicit source contract:
+  `github_schedule`, `external_schedule`, or governed `incident_recovery`;
 - scheduled intraday repair is retired for the remainder of 2026; its governed
   implementation remains available only through controlled manual dispatch;
 - the existence of qualification machinery does not grant broader mutation authority.
@@ -30,15 +30,16 @@ The most important facts are:
 Do not describe the game-driven lane as `off`: daily and postgame are actively
 observed in shadow. Do not describe the legacy per-pitcher GameLog lane as
 retired: it remains authoritative until a separate explicit authority-transfer
-decision is made. Do not describe manual daily dispatch as an authoritative
-recovery path: D-051 retired it, and the runner refuses it.
+decision is made. Ordinary manual production execution remains prohibited;
+incident recovery is a distinct, confirmed, permanently recorded authority.
 
 ## 2. Operating Modes
 
 | Mode | Trigger | Current meaning |
 |---|---|---|
-| `daily` | scheduled morning run only (first attempt) | legacy writer authoritative; game-driven lane shadow-observed; trusted snapshot/public cache attempted after gates. Manual dispatch and reruns reach the D-051 runner guard and are refused before application/database initialization |
-| `postgame` | scheduled overnight passes or manual dispatch | completed-game reconciliation; game-driven lane shadow-observed after the legacy path; trusted publication follows existing gates |
+| `daily` | Render primary, GitHub fallback, or governed recovery | legacy writer authoritative; game-driven lane shadow-observed; trusted snapshot/public cache attempted after gates |
+| `postgame` | Render primary, GitHub fallback, or governed recovery | completed-game reconciliation; game-driven lane shadow-observed after the legacy path; trusted publication follows existing gates |
+| `morning` | Render primary or GitHub fallback | rolling schedule correction and Tonight cache coherence |
 | `backfill` | manual only with explicit date | governed historical replay; no automatic broad backfill authority |
 | `intraday` | manual dispatch only; no scheduled repair for the remainder of 2026 | read-only audit or separately governed dormant repair; does not silently gain write authority |
 
@@ -47,29 +48,80 @@ without changing the mode semantics above.
 
 ### Scheduled delivery reliability
 
-The production schedules are deliberately staggered away from minute `00`,
-where GitHub documents elevated scheduled-workflow load and the possibility of
-delayed or dropped events:
+Render Cron is the primary trigger authority. GitHub Actions remains a delayed
+fallback while the independent lane establishes production proof. Both call
+`run_due_sync.py`; BaseballOS, not either scheduler, decides whether the durable
+window is due. All cron expressions are UTC and do not observe DST.
 
-| Mode | UTC cron | EDT behavior | EST behavior |
-|---|---|---|---|
-| `postgame` | `11 2,4,6 * * *` | 10:11 PM, 12:11 AM, 2:11 AM | 9:11 PM, 11:11 PM, 1:11 AM |
-| `daily` | `17 10 * * *` | 6:17 AM | 5:17 AM |
-| morning schedule correction | `23 14 * * *` | 10:23 AM | 9:23 AM |
+| Mode | Render primary | GitHub fallback | EDT primary / fallback | EST primary / fallback |
+|---|---|---|---|---|
+| `postgame` | `5 2,4,6 * * *` | `11 2,4,6 * * *` | 10:05/10:11 PM, 12:05/12:11 AM, 2:05/2:11 AM | 9:05/9:11 PM, 11:05/11:11 PM, 1:05/1:11 AM |
+| `daily` | `5 10 * * *` | `17 10 * * *` | 6:05/6:17 AM | 5:05/5:17 AM |
+| morning correction | `5 14 * * *` | `23 14 * * *` | 10:05/10:23 AM | 9:05/9:23 AM |
+
+The fallback gaps are shorter than the longest lane budgets. If the primary is
+still running, the database advisory lock produces a controlled, non-destructive
+blocked result; it never permits overlapping publication. A wider gap can be
+adopted later from observed production runtimes without changing window identity.
 
 `.github/workflows/baseballos-scheduler-health.yml` provides a manual, read-only
-expected-versus-observed diagnostic. It treats a failed run as an observed
-attempt and fails only when a window produced no run after the grace period, or
-when the workflow is inactive. The diagnostic does not write baseball data,
-publish, or enter the `baseballos-sync` concurrency lane.
+diagnostic with separate `github_scheduler`, `external_scheduler`, and
+`production_freshness` verdicts. A failed GitHub run is still an observed
+GitHub attempt; only an `executed` durable schedule attempt satisfies production
+freshness. The diagnostic does not publish or enter the writer lane.
 
-This repository cannot provide a truly independent automatic watchdog using
-GitHub Actions schedules: that watchdog would share the scheduler failure
-domain it is meant to detect. Automatic alerting therefore requires an external
-scheduler or uptime service to invoke
-`backend/scripts/check_scheduled_sync_health.py` or independently check durable
-production sync freshness. The manual diagnostic is evidence tooling, not a
-claim that independent monitoring is installed.
+This repository still cannot provide a truly independent automatic watchdog
+using GitHub Actions. Render or another external monitor must invoke
+`check_scheduled_sync_health.py` and alert on its nonzero result. The diagnostic
+is evidence tooling; alert routing remains an external configuration task.
+
+### Execution authority and durable reconciliation
+
+`sync_schedule_attempts` records execution source, mode, intended window,
+scheduled/start/finish timestamps, executed/no-op/blocked/failed outcome,
+linked `SyncRun`, snapshots before/after, publication outcome, and governed
+recovery metadata. A successful attempt satisfies its window. A later trigger
+for the same window records `already_satisfied` without entering baseball work.
+
+The existing public PostgreSQL advisory lock remains authoritative across
+GitHub, Render, recovery, and web processes. It is nonblocking and releases on
+normal completion, exceptions, or database disconnect, so it cannot leave a
+stale lock after process death. GitHub's `baseballos-sync` concurrency group is
+retained as useful local protection, not cross-scheduler authority.
+
+Scheduler != publication authority. A scheduler requests work. BaseballOS
+validates the source, locks the public writer lane, reconciles the intended
+window, and then applies every existing publication proof and integrity guard.
+
+### Render Cron primary setup
+
+The existing Render web service is dashboard-managed; this repository has no
+root `render.yaml`. Do not add a Blueprint merely to create these jobs, because
+that could accidentally take ownership of the existing production service.
+Create three Render **Cron Job** services from
+`NickolisK24/bullpen-intel-engine`, branch `main`, with repository root left
+blank. Use `pip install -r backend/requirements.txt` as the build command and
+these UTC schedules/commands:
+
+| Job | Cron | Command |
+|---|---|---|
+| BaseballOS Daily primary | `5 10 * * *` | `python backend/scripts/run_due_sync.py --mode daily --execution-source external_schedule --scheduled-for "$(date -u +'%Y-%m-%dT10:05:00Z')" --days-back 7 --public-only` |
+| BaseballOS postgame primary | `5 2,4,6 * * *` | `python backend/scripts/run_due_sync.py --mode postgame --execution-source external_schedule --scheduled-for "$(date -u +'%Y-%m-%dT%H:05:00Z')" --public-only` |
+| BaseballOS morning primary | `5 14 * * *` | `python backend/scripts/run_due_sync.py --mode morning --execution-source external_schedule --scheduled-for "$(date -u +'%Y-%m-%dT14:05:00Z')" --public-only` |
+
+Reuse the web service's protected environment group for `DATABASE_URL`,
+`SECRET_KEY`, `ADMIN_API_TOKEN`, and any production publication dependencies.
+Set `APP_ENV=production`, `AUTO_SYNC=false`,
+`BASEBALLOS_SCHEDULER_AUTHORITY=render_cron_v1`, and
+`BASEBALLOS_PRODUCTION_BRANCH=main`. Render supplies `RENDER=true`. Preserve
+the daily shadow and proof variables currently set on the GitHub Daily step
+when creating the Daily Cron environment; the shared runner does not weaken
+those proof paths. Expected command ceilings are 40 minutes Daily, 20 minutes
+postgame, and 5 minutes morning. Render cron expressions are UTC.
+
+Apply `flask db upgrade` as a release/pre-deploy migration before enabling the
+Cron Jobs. The Cron commands deliberately do not run migrations concurrently
+with production work.
 
 The 2026 trade-deadline repair window has passed, so
 `.github/workflows/baseballos-intraday-repair.yml` has no `schedule` trigger.

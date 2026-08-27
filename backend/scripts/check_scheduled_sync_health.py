@@ -17,6 +17,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 
 DEFAULT_REPOSITORY = 'NickolisK24/bullpen-intel-engine'
@@ -24,24 +30,30 @@ DEFAULT_WORKFLOW_ID = 287009741
 DEFAULT_LOOKBACK_HOURS = 36
 DEFAULT_GRACE_MINUTES = 90
 
-SCHEDULES = (
+GITHUB_SCHEDULES = (
     {'cron': '11 2,4,6 * * *', 'mode': 'postgame', 'hours': (2, 4, 6), 'minute': 11},
     {'cron': '17 10 * * *', 'mode': 'daily', 'hours': (10,), 'minute': 17},
     {'cron': '23 14 * * *', 'mode': 'morning', 'hours': (14,), 'minute': 23},
 )
+EXTERNAL_SCHEDULES = (
+    {'cron': '5 2,4,6 * * *', 'mode': 'postgame', 'hours': (2, 4, 6), 'minute': 5},
+    {'cron': '5 10 * * *', 'mode': 'daily', 'hours': (10,), 'minute': 5},
+    {'cron': '5 14 * * *', 'mode': 'morning', 'hours': (14,), 'minute': 5},
+)
+SCHEDULES = GITHUB_SCHEDULES
 
 
 def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
 
 
-def _expected_windows(now: datetime, lookback: timedelta) -> list[dict]:
+def _expected_windows(now: datetime, lookback: timedelta, schedules=SCHEDULES) -> list[dict]:
     now = now.astimezone(timezone.utc)
     start = now - lookback
     day = start.date()
     windows = []
     while day <= now.date():
-        for schedule in SCHEDULES:
+        for schedule in schedules:
             for hour in schedule['hours']:
                 expected_at = datetime.combine(
                     day,
@@ -120,6 +132,57 @@ def evaluate_schedule_health(
     }
 
 
+def evaluate_production_health(attempts, *, now, lookback, grace):
+    """Report external authority and final production-window freshness."""
+    eligible = [
+        window for window in _expected_windows(now, lookback, EXTERNAL_SCHEDULES)
+        if window['expected_at'] + grace <= now
+    ]
+    external_rows = []
+    freshness_rows = []
+    for window in eligible:
+        intended = (
+            f'postgame:{window["expected_at"]:%Y-%m-%dT%H:00Z}'
+            if window['mode'] == 'postgame'
+            else f'{window["mode"]}:{window["expected_at"]:%Y-%m-%d}'
+        )
+        matching = [row for row in attempts if row.get('intended_window') == intended]
+        external = next((
+            row for row in matching
+            if row.get('source') == 'external_schedule'
+            and row.get('outcome') == 'executed'
+        ), None)
+        satisfied = next((
+            row for row in matching if row.get('outcome') == 'executed'
+        ), None)
+        base = {
+            'mode': window['mode'],
+            'intended_window': intended,
+            'expected_at': window['expected_at'].isoformat().replace('+00:00', 'Z'),
+        }
+        external_rows.append({**base, 'observed': external is not None})
+        freshness_rows.append({
+            **base,
+            'satisfied': satisfied is not None,
+            'source': satisfied.get('source') if satisfied else None,
+            'attempt_id': satisfied.get('id') if satisfied else None,
+        })
+    external_missing = [row for row in external_rows if not row['observed']]
+    stale = [row for row in freshness_rows if not row['satisfied']]
+    return {
+        'external_scheduler': {
+            'status': 'healthy' if not external_missing else 'degraded',
+            'missing_window_count': len(external_missing),
+            'windows': external_rows,
+        },
+        'production_freshness': {
+            'status': 'healthy' if not stale else 'stale',
+            'stale_window_count': len(stale),
+            'windows': freshness_rows,
+        },
+    }
+
+
 def _request_json(url: str, token: str | None) -> dict:
     headers = {
         'Accept': 'application/vnd.github+json',
@@ -171,8 +234,38 @@ def main(argv: list[str] | None = None) -> int:
     if workflow.get('state') != 'active':
         report['status'] = 'inactive'
 
+    report = {'github_scheduler': report}
+    if os.environ.get('DATABASE_URL'):
+        try:
+            os.environ['AUTO_SYNC'] = 'false'
+            from app import app
+            from models.sync_schedule_attempt import SyncScheduleAttempt
+            with app.app_context():
+                cutoff = (datetime.now(timezone.utc) - timedelta(hours=args.lookback_hours)).replace(tzinfo=None)
+                attempts = [
+                    row.to_dict() for row in SyncScheduleAttempt.query
+                    .filter(SyncScheduleAttempt.started_at >= cutoff)
+                    .order_by(SyncScheduleAttempt.started_at.asc())
+                    .all()
+                ]
+            report.update(evaluate_production_health(
+                attempts,
+                now=datetime.now(timezone.utc),
+                lookback=timedelta(hours=args.lookback_hours),
+                grace=timedelta(minutes=args.grace_minutes),
+            ))
+        except Exception as exc:  # diagnostic must name an unavailable authority
+            report['external_scheduler'] = {'status': 'query_error', 'error': type(exc).__name__}
+            report['production_freshness'] = {'status': 'unknown'}
+    else:
+        report['external_scheduler'] = {'status': 'unknown', 'reason': 'database_not_configured'}
+        report['production_freshness'] = {'status': 'unknown', 'reason': 'database_not_configured'}
+
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0 if report['status'] == 'healthy' else 1
+    freshness = report['production_freshness']['status']
+    github = report['github_scheduler']['status']
+    external = report['external_scheduler']['status']
+    return 0 if freshness == 'healthy' and github == 'healthy' and external == 'healthy' else 1
 
 
 if __name__ == '__main__':

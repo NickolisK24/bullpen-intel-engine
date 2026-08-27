@@ -938,7 +938,7 @@ def test_postgame_sync_workflow_job_timeout_covers_the_worst_case_steps():
     assert "    - cron: '23 14 * * *'" in text
     assert "    - cron: '11 2,4,6 * * *'" in text
     assert '\nconcurrency:\n  group: baseballos-sync\n  cancel-in-progress: false\n' in text
-    assert '          - daily\n          - postgame\n' in text
+    assert '          - recovery_daily\n          - recovery_postgame\n' in text
 
 
 def test_postgame_sync_workflow_warms_tonight_after_postgame_refresh():
@@ -949,36 +949,12 @@ def test_postgame_sync_workflow_warms_tonight_after_postgame_refresh():
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
     text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
 
-    daily_step = '      - name: Refresh schedule and warm Tonight\n'
-    postgame_step = '      - name: Refresh schedule and warm Tonight after postgame\n'
-    assert daily_step in text
-    assert postgame_step in text
-    assert text.index('      - name: Run direct postgame refresh\n') < text.index(postgame_step)
-    assert text.index(postgame_step) < text.index('      - name: Verify dashboard snapshot cache\n')
-
-    daily_block = text.split(daily_step, 1)[1].split('\n      - name:', 1)[0]
-    postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
-    assert 'TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m' in daily_block
-    assert "TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'" in daily_block
-    assert "TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'" in daily_block
-    assert 'Refresh schedule and warm Tonight starting at' in daily_block
-    assert 'Refresh schedule and warm Tonight completed at' in daily_block
-    assert (
-        'timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_tonight_refresh.py --source github_actions'
-    ) in daily_block
-
-    assert "inputs.mode == 'postgame'" in postgame_block
-    assert "github.event.schedule == '11 2,4,6 * * *'" in postgame_block
-    assert 'TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m' in postgame_block
-    assert "TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'" in postgame_block
-    assert "TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'" in postgame_block
-    assert 'Refresh schedule and warm Tonight after postgame starting at' in postgame_block
-    assert 'Refresh schedule and warm Tonight after postgame completed at' in postgame_block
-    assert (
-        'timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_tonight_refresh.py --source github_actions_postgame'
-    ) in postgame_block
+    assert 'run_due_sync.py --mode daily' in text
+    assert 'run_due_sync.py --mode postgame' in text
+    due_service = (
+        Path(__file__).resolve().parents[1] / 'services/sync_due.py'
+    ).read_text(encoding='utf-8')
+    assert due_service.count('refresh_schedule_and_tonight') >= 3
 
 
 def test_sync_workflow_direct_sync_steps_have_command_timeouts():
@@ -1001,20 +977,20 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
     assert "DAILY_SYNC_TOTAL_BUDGET_SECONDS: '2200'" in daily_block
     assert "DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS: '300'" in daily_block
     assert "DAILY_SYNC_INGESTION_BUDGET_SECONDS: '1500'" in daily_block
-    assert 'Direct daily sync starting at' in daily_block
-    assert 'Direct daily sync completed at' in daily_block
+    assert 'Daily window reconciliation starting at' in daily_block
+    assert 'Daily window reconciliation completed at' in daily_block
     assert (
         'timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only'
+        'python backend/scripts/run_due_sync.py --mode daily'
     ) in daily_block
     assert '::error::Direct daily sync timed out after $DAILY_SYNC_COMMAND_TIMEOUT.' in daily_block
 
     assert 'POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m' in postgame_block
-    assert 'Direct postgame refresh starting at' in postgame_block
-    assert 'Direct postgame refresh completed at' in postgame_block
+    assert 'Postgame window reconciliation starting at' in postgame_block
+    assert 'Postgame window reconciliation completed at' in postgame_block
     assert (
         'timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_postgame_refresh.py --source github_actions --public-only'
+        'python backend/scripts/run_due_sync.py --mode postgame'
     ) in postgame_block
     assert (
         '::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT.'
@@ -1055,8 +1031,8 @@ def test_sync_workflow_splits_public_and_internal_enrichment_jobs():
     )[0]
     static_body = jobs_section.split('  static-team-story-preview:\n', 1)[1]
 
-    assert 'backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only' in public_body
-    assert 'backend/scripts/run_postgame_refresh.py --source github_actions --public-only' in public_body
+    assert 'backend/scripts/run_due_sync.py --mode daily' in public_body
+    assert 'backend/scripts/run_due_sync.py --mode postgame' in public_body
     assert 'backend/scripts/run_internal_enrichment.py' not in public_body
     assert 'continue-on-error: true' in internal_body
     assert 'needs: public-sync' in internal_body

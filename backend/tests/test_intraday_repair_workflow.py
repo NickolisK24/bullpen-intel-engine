@@ -54,8 +54,8 @@ def test_daily_and_postgame_automatic_cadence_is_unchanged():
     assert "- cron: '17 10 * * *'" in text
     assert "- cron: '23 14 * * *'" in text
     assert "- cron: '11 2,4,6 * * *'" in text
-    assert 'python backend/scripts/run_daily_sync.py' in text
-    assert 'python backend/scripts/run_postgame_refresh.py' in text
+    assert 'python backend/scripts/run_due_sync.py --mode daily' in text
+    assert 'python backend/scripts/run_due_sync.py --mode postgame' in text
     assert 'run_intraday_repair.py' not in text
 
 

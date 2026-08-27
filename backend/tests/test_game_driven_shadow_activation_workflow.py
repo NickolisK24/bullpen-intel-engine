@@ -117,14 +117,17 @@ def test_no_cron_was_added(workflow):
     assert len(workflow[True]['schedule']) == 3
 
 
-def test_the_existing_manual_modes_are_unchanged(workflow):
+def test_the_manual_modes_include_only_governed_recovery(workflow):
     options = workflow[True]['workflow_dispatch']['inputs']['mode']['options']
-    assert options == ['daily', 'postgame', 'backfill', 'intraday']
+    assert options == ['recovery_daily', 'recovery_postgame', 'backfill', 'intraday']
 
 
-def test_the_manual_inputs_are_unchanged(workflow):
+def test_the_manual_inputs_include_recovery_evidence(workflow):
     inputs = workflow[True]['workflow_dispatch']['inputs']
-    assert sorted(inputs) == ['backfill_date', 'mode']
+    assert sorted(inputs) == [
+        'backfill_date', 'confirm_recovery', 'mode', 'recovery_reason',
+        'scheduled_for',
+    ]
 
 
 def test_permissions_are_not_broadened(workflow):
@@ -186,7 +189,6 @@ def test_the_public_sync_job_timeout_is_the_ops_002_value(public_sync):
 @pytest.mark.parametrize('name', [
     'Appearance ledger audit',
     'Verify dashboard snapshot cache',
-    'Refresh schedule and warm Tonight',
     'Run morning slate schedule refresh',
     'Run explicit backfill',
     'Run direct daily sync',
@@ -197,14 +199,16 @@ def test_an_existing_production_step_is_retained(public_sync, name):
     assert _step(public_sync, name) is not None
 
 
-def test_the_daily_runner_command_is_unchanged_apart_from_output(public_sync):
+def test_the_daily_runner_uses_due_coordinator(public_sync):
     run = _step(public_sync, 'Run direct daily sync')['run']
-    assert 'run_daily_sync.py --days-back 7 --source github_actions --public-only' in run
+    assert 'run_due_sync.py --mode daily' in run
+    assert '--execution-source "$EXECUTION_SOURCE"' in run
 
 
-def test_the_postgame_runner_command_is_unchanged_apart_from_output(public_sync):
+def test_the_postgame_runner_uses_due_coordinator(public_sync):
     run = _step(public_sync, 'Run direct postgame refresh')['run']
-    assert 'run_postgame_refresh.py --source github_actions --public-only' in run
+    assert 'run_due_sync.py --mode postgame' in run
+    assert '--execution-source "$EXECUTION_SOURCE"' in run
 
 
 def test_the_appearance_ledger_command_is_unchanged(public_sync):
@@ -215,7 +219,6 @@ def test_the_appearance_ledger_command_is_unchanged(public_sync):
 @pytest.mark.parametrize('name', [
     'Run direct daily sync',
     'Run direct postgame refresh',
-    'Refresh schedule and warm Tonight',
     'Run morning slate schedule refresh',
     'Run explicit backfill',
     'Appearance ledger audit',
@@ -239,13 +242,13 @@ def test_the_postgame_step_runs_in_shadow(public_sync):
 
 def test_manual_daily_uses_the_same_shadow_enabled_step(public_sync):
     condition = _step(public_sync, 'Run direct daily sync')['if']
-    assert "inputs.mode == 'daily'" in condition
+    assert "inputs.mode == 'recovery_daily'" in condition
     assert f"github.event.schedule == '{DAILY_CRON}'" in condition
 
 
 def test_manual_postgame_uses_the_same_step(public_sync):
     condition = _step(public_sync, 'Run direct postgame refresh')['if']
-    assert "inputs.mode == 'postgame'" in condition
+    assert "inputs.mode == 'recovery_postgame'" in condition
     assert f"github.event.schedule == '{POSTGAME_CRON}'" in condition
 
 
@@ -279,7 +282,6 @@ def test_the_mode_is_never_set_at_job_scope(workflow):
 
 
 @pytest.mark.parametrize('name', [
-    'Refresh schedule and warm Tonight',
     'Run morning slate schedule refresh',
     'Appearance ledger audit',
     'Verify dashboard snapshot cache',
@@ -357,13 +359,12 @@ def _invocations(workflow_text, runner):
 
 
 def test_the_daily_runner_is_invoked_exactly_once(workflow_text):
-    assert _invocations(workflow_text, 'run_daily_sync.py') == 1
+    assert workflow_text.count('python backend/scripts/run_due_sync.py --mode daily') == 1
 
 
-def test_the_postgame_runner_is_invoked_by_postgame_and_backfill_only(workflow_text):
-    # Two: the scheduled/manual postgame cycle, and the explicit backfill that
-    # shares the runner with the mode pinned off.
-    assert _invocations(workflow_text, 'run_postgame_refresh.py') == 2
+def test_postgame_due_and_backfill_runners_are_separate(workflow_text):
+    assert workflow_text.count('python backend/scripts/run_due_sync.py --mode postgame') == 1
+    assert _invocations(workflow_text, 'run_postgame_refresh.py') == 1
 
 
 def test_no_foundation_3c_workflow_was_recreated():
@@ -478,8 +479,8 @@ def test_the_observer_job_does_not_require_public_sync_success(
 
 def test_the_observer_job_covers_both_eligible_cycles(shadow_activation_health):
     condition = shadow_activation_health['if']
-    assert "inputs.mode == 'daily'" in condition
-    assert "inputs.mode == 'postgame'" in condition
+    assert "inputs.mode == 'recovery_daily'" in condition
+    assert "inputs.mode == 'recovery_postgame'" in condition
     assert f"github.event.schedule == '{DAILY_CRON}'" in condition
     assert f"github.event.schedule == '{POSTGAME_CRON}'" in condition
 
@@ -777,7 +778,7 @@ def test_static_preview_requires_public_sync_success(static_team_story_preview):
 
 def test_static_preview_keeps_its_daily_only_condition(static_team_story_preview):
     condition = static_team_story_preview['if']
-    assert "inputs.mode == 'daily'" in condition
+    assert "inputs.mode == 'recovery_daily'" in condition
     assert f"github.event.schedule == '{DAILY_CRON}'" in condition
 
 
@@ -991,7 +992,7 @@ def test_the_mitigation_did_not_add_a_schedule(workflow):
 
 def test_the_mitigation_did_not_add_a_manual_mode(workflow):
     assert workflow[True]['workflow_dispatch']['inputs']['mode']['options'] == [
-        'daily', 'postgame', 'backfill', 'intraday',
+        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday',
     ]
 
 
@@ -1077,8 +1078,8 @@ def test_the_mitigation_did_not_add_a_retry_loop(daily_step):
     same singleton lane and could double the work the incident is about.
     """
     script = daily_step['run']
-    assert 'run_daily_sync.py' in script
-    assert script.count('run_daily_sync.py') == 1
+    assert 'run_due_sync.py --mode daily' in script
+    assert script.count('run_due_sync.py --mode daily') == 1
     for forbidden in ('for attempt', 'while true', 'until python', 'retry'):
         assert forbidden not in script.lower()
 

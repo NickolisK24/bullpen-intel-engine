@@ -1266,6 +1266,10 @@
       "measured_seconds": 504.86,
       "files": [
         {
+          "path": "tests/test_independent_sync_scheduling.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_active_bullpen_artifact_publication.py",
           "measured_seconds": 4.608
         },
