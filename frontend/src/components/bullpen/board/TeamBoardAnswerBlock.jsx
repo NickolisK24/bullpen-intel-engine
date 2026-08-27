@@ -1,4 +1,5 @@
 import { readPublicTeamState } from '../../../adapters/publicTeamState'
+import { RESTED_AVAILABILITY_DISTINCTION } from '../../../utils/bullpenConcepts'
 import { formatFreshnessDate, isSampleFreshness } from '../../UI/Freshness'
 import { SkeletonBlock } from '../../UI/Skeleton'
 import SectionState from '../../UI/SectionState'
@@ -86,7 +87,7 @@ export function getBullpenSummaryView(read) {
       key: 'rested-options',
       label: 'Rested options',
       value: restedOptions,
-      qualifier: restedOptions === null ? 'Not published' : 'Backend rest read',
+      qualifier: restedOptions === null ? 'Not published' : 'Time since last use',
     },
     {
       key: 'recently-used-arms',
@@ -189,13 +190,22 @@ function BullpenSummary({ read }) {
             className={`min-w-0 border-b border-line-subtle py-panel pr-panel desktop:border-b-0 desktop:px-panel desktop:first:pl-0 desktop:last:pr-0 ${index % 2 === 1 ? 'border-l pl-panel tablet:border-l-0 tablet:pl-0' : ''} ${index === figures.length - 1 ? 'col-span-2 tablet:col-span-1' : ''}`}
           >
             <dt className="type-overline break-words text-text-tertiary">{figure.label}</dt>
-            <dd className={`mt-meta font-board text-[1.65rem] font-semibold leading-none tabular-nums ${figure.value === null ? 'text-text-withheld' : 'text-text-primary'}`}>
+            <dd
+              className={`mt-meta font-board text-[1.65rem] font-semibold leading-none tabular-nums ${figure.value === null ? 'text-text-withheld' : 'text-text-primary'}`}
+              aria-describedby={figure.key === 'rested-options' ? 'rested-availability-distinction' : undefined}
+            >
               {figure.value ?? '—'}
             </dd>
             <p className="type-metadata mt-meta break-words text-text-withheld">{figure.qualifier}</p>
           </div>
         ))}
       </dl>
+      <p
+        id="rested-availability-distinction"
+        className="type-compact mt-row max-w-3xl text-text-secondary"
+      >
+        {RESTED_AVAILABILITY_DISTINCTION}
+      </p>
     </section>
   )
 }

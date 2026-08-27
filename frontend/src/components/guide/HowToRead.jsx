@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom'
 import {
   ARM_AVAILABILITY_DEFINITIONS,
+  AVAILABILITY_SCOPE_DESCRIPTION,
   CONCEPT_DEFINITIONS,
+  CURRENT_READ_AVAILABILITY_RELATIONSHIP,
   DATA_STATUS_DEFINITIONS,
   FRESHNESS_LABEL_DEFINITIONS,
   LIMITED_FAMILY_BOUNDARY,
@@ -13,6 +15,7 @@ import {
   WORKLOAD_DATA_FAMILY,
   READ_CONFIDENCE_BOUNDARY,
   READ_CONFIDENCE_DEFINITIONS,
+  RESTED_AVAILABILITY_DISTINCTION,
   SUPPORTING_CONCEPT_DEFINITIONS,
   SUPPORTING_READ_BOUNDARY,
   TEAM_STATE_DEFINITIONS,
@@ -137,7 +140,7 @@ export default function HowToRead() {
       <Section
         id="arm-availability"
         title="Arm Availability"
-        intro="For each reliever, BaseballOS shows one of four states based on recent workload and roster status."
+        intro={AVAILABILITY_SCOPE_DESCRIPTION}
       >
         <DefinitionGrid items={ARM_STATES} columns="sm:grid-cols-2 lg:grid-cols-4" />
       </Section>
@@ -153,7 +156,7 @@ export default function HowToRead() {
       <Section
         id="pitcher-current-read"
         title="Pitcher Current Read"
-        intro="The current read describes tonight's workload and availability context for one arm. It is a different question from role."
+        intro={`${CURRENT_READ_AVAILABILITY_RELATIONSHIP} It is a different question from role.`}
       >
         <DefinitionGrid items={PITCHER_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
         <div className="mt-8 rounded-lg border border-amber/25 bg-amber/5 p-5">
@@ -185,6 +188,9 @@ export default function HowToRead() {
         title="Bullpen Supporting Reads"
         intro={SUPPORTING_READ_BOUNDARY}
       >
+        <p className="mb-5 max-w-3xl text-sm leading-7 text-chalk400">
+          {RESTED_AVAILABILITY_DISTINCTION}
+        </p>
         <DefinitionGrid items={SUPPORTING_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
       </Section>
 

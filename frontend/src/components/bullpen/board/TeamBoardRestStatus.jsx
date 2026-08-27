@@ -33,7 +33,7 @@ export default function TeamBoardRestStatus({ read, loading = false, error = nul
       {error ? (
         <SectionState status="error" title="Rest Status unavailable" message="Rest status could not be loaded." onRetry={onRetry} />
       ) : !read || statusName === 'unavailable' || !view.available ? (
-        <SectionState status="unavailable" title="Rest Status unavailable" message="A current backend-authored Rest Status is not available." onRetry={!read ? onRetry : undefined} />
+        <SectionState status="unavailable" title="Rest Status unavailable" message="Current Rest Status is unavailable." onRetry={!read ? onRetry : undefined} />
       ) : (
         <>
           <div className="rounded-sm border border-line-subtle bg-surface-raised/35 p-panel tablet:p-section">

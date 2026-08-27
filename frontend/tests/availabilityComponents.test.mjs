@@ -20,6 +20,7 @@ after(async () => {
 const { default: AvailabilityBadge } = await server.ssrLoadModule('/src/components/bullpen/AvailabilityBadge.jsx')
 const { default: AvailabilitySummary } = await server.ssrLoadModule('/src/components/bullpen/AvailabilitySummary.jsx')
 const { formatConfidence, getAvailabilityStatusLabel } = await server.ssrLoadModule('/src/components/bullpen/availabilityView.js')
+const { CURRENT_READ_AVAILABILITY_RELATIONSHIP } = await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -57,6 +58,7 @@ test('AvailabilitySummary keeps the canonical answer and metadata compact by def
     )
 
     assert.ok(htmlIncludes(html, 'Availability'))
+    assert.ok(htmlIncludes(html, CURRENT_READ_AVAILABILITY_RELATIONSHIP))
     assert.ok(htmlIncludes(html, label))
     assert.ok(htmlIncludes(html, 'Roster Status'))
     assert.ok(htmlIncludes(html, 'Read Confidence'))
@@ -69,6 +71,7 @@ test('AvailabilitySummary keeps the canonical answer and metadata compact by def
     assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
     assert.equal(htmlIncludes(html, 'Final Availability Reasons'), false)
     assert.equal(htmlIncludes(html, 'Limitations'), false)
+    assert.equal((html.match(/Final availability:/g) || []).length, 1)
 
     for (const reason of row.availability.reasons) {
       assert.equal(htmlIncludes(html, reason), false)

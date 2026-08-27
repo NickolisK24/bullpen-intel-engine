@@ -11,6 +11,7 @@ import {
   dayAwareAppearanceReasons,
   productCurrentDateFromFreshness,
 } from '../../utils/appearanceLanguage'
+import { CURRENT_READ_AVAILABILITY_RELATIONSHIP } from '../../utils/bullpenConcepts'
 
 function FactList({ items, emptyText, variant = 'reason' }) {
   if (!items.length) {
@@ -76,6 +77,9 @@ export default function AvailabilitySummary({
         <h2 id="pitcher-availability-title" className="font-display text-base tracking-wider text-chalk100">
           Availability
         </h2>
+        <p className="mt-2 max-w-xl text-xs font-mono leading-relaxed text-chalk400">
+          {CURRENT_READ_AVAILABILITY_RELATIONSHIP}
+        </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AvailabilityBadge availability={availability} ariaLabelPrefix="Final availability" />
         </div>
