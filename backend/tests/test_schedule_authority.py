@@ -239,11 +239,11 @@ def test_morning_refresh_reuses_singleton_workflow_and_schedule_only_command():
         / 'workflows'
         / 'baseballos-sync.yml'
     ).read_text(encoding='utf-8')
-    assert "- cron: '0 14 * * *'" in workflow
+    assert "- cron: '23 14 * * *'" in workflow
     assert 'concurrency:\n  group: baseballos-sync\n  cancel-in-progress: false' in workflow
     block = workflow.split('      - name: Run morning slate schedule refresh\n', 1)[1]
     block = block.split('\n      - name:', 1)[0]
-    assert "github.event.schedule == '0 14 * * *'" in block
+    assert "github.event.schedule == '23 14 * * *'" in block
     assert 'python backend/scripts/refresh_slate_schedule.py' in block
     assert 'run_daily_sync.py' not in block
     assert 'run_postgame_refresh.py' not in block

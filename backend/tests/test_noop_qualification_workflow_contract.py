@@ -376,7 +376,7 @@ def sync_workflow():
 
 def test_the_scheduled_sync_still_has_its_three_schedules(sync_workflow):
     crons = [entry['cron'] for entry in sync_workflow[True]['schedule']]
-    assert crons == ['0 10 * * *', '0 14 * * *', '0 2,4,6 * * *']
+    assert crons == ['17 10 * * *', '23 14 * * *', '11 2,4,6 * * *']
 
 
 def test_the_scheduled_sync_never_invokes_this_qualification(sync_workflow):

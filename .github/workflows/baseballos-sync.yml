@@ -29,17 +29,18 @@ name: BaseballOS Bullpen Sync
 
 on:
   schedule:
-    # Cron is always UTC and does NOT observe DST. 10:00 UTC is ~6 AM ET during
-    # daylight time (most of the MLB season) and ~5 AM ET during standard time.
-    - cron: '0 10 * * *'
+    # Cron is always UTC and does NOT observe DST. 10:17 UTC is ~6:17 AM ET
+    # during daylight time (most of the MLB season) and ~5:17 AM ET during
+    # standard time. Off-hour minutes reduce GitHub scheduler contention.
+    - cron: '17 10 * * *'
     # Lightweight schedule-only morning correction pass. This uses the same
     # singleton workflow/concurrency lane and performs a full rolling-window
     # upsert so time, date, doubleheader, and status changes all stay current.
-    - cron: '0 14 * * *'
-    # Targeted postgame refreshes after most games are complete. 02:00/04:00/06:00
-    # UTC is ~10 PM/12 AM/2 AM ET during daylight time, covering the overnight
-    # window with a few passes instead of an every-30-minute cadence.
-    - cron: '0 2,4,6 * * *'
+    - cron: '23 14 * * *'
+    # Targeted postgame refreshes after most games are complete. 02:11/04:11/06:11
+    # UTC is ~10:11 PM/12:11 AM/2:11 AM ET during daylight time, covering the
+    # overnight window with a few passes instead of an every-30-minute cadence.
+    - cron: '11 2,4,6 * * *'
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
     inputs:
@@ -108,7 +109,7 @@ jobs:
 
       - name: Run direct daily sync
         id: daily-sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -200,7 +201,7 @@ jobs:
           echo "Direct daily sync completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Refresh schedule and warm Tonight
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -232,7 +233,7 @@ jobs:
           echo "Refresh schedule and warm Tonight completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run morning slate schedule refresh
-        if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 14 * * *' }}
+        if: ${{ github.event_name == 'schedule' && github.event.schedule == '23 14 * * *' }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -252,7 +253,7 @@ jobs:
 
       - name: Run direct postgame refresh
         id: postgame-refresh
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '0 2,4,6 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -297,7 +298,7 @@ jobs:
           echo "Direct postgame refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Refresh schedule and warm Tonight after postgame
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '0 2,4,6 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '11 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -557,7 +558,7 @@ jobs:
       # and a category are reported, never the matched content.
       - name: Scan Team State vNext proof for forbidden content
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
         run: |
           set -uo pipefail
           if [ -d artifacts/team-state-vnext-proof ]; then
@@ -573,7 +574,7 @@ jobs:
       # job below reports.
       - name: Upload Team State vNext production proof
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
         uses: actions/upload-artifact@v4
         with:
           name: team-state-vnext-proof-${{ github.run_id }}
@@ -584,7 +585,7 @@ jobs:
       - name: Prepare game-driven shadow handoff
         id: shadow-handoff-prepare
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
           HANDOFF_DIR: artifacts/game-driven-shadow-handoff
@@ -604,7 +605,7 @@ jobs:
 
       - name: Upload game-driven shadow handoff
         continue-on-error: true
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
         uses: actions/upload-artifact@v4
         with:
           name: game-driven-shadow-handoff-${{ github.run_id }}
@@ -626,7 +627,7 @@ jobs:
   team-state-vnext-proof:
     runs-on: ubuntu-latest
     needs: public-sync
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -700,7 +701,7 @@ jobs:
   shadow-activation-health:
     runs-on: ubuntu-latest
     needs: public-sync
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -876,7 +877,7 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run internal enrichment after daily public sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -906,7 +907,7 @@ jobs:
           echo "Internal enrichment after daily public sync completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run internal enrichment after postgame public sync
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '17 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -942,7 +943,7 @@ jobs:
     # implicit needs behaviour, so the actual prerequisite is readable here and
     # a shadow-only failure can never be mistaken for a reason to skip.
     needs: public-sync
-    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
     # CI-003 / #598. The ONLY job in this workflow with repository write
     # authority. The workflow default is contents: read; this grant is the whole
     # reason the default could be narrowed.

@@ -3,7 +3,7 @@
 **Status:** Current operational runbook  
 **Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current sync and publication authority posture. This document owns execution order and trust-gate detail.  
 **Owner:** Nickolis Kacludis  
-**Last reviewed:** August 24, 2026
+**Last reviewed:** August 27, 2026
 **Workflow authority:** `.github/workflows/baseballos-sync.yml`
 
 This document describes the current production sync/publication workflow and
@@ -44,6 +44,32 @@ recovery path: D-051 retired it, and the runner refuses it.
 
 Exact cron values are runtime configuration in the workflow file and may change
 without changing the mode semantics above.
+
+### Scheduled delivery reliability
+
+The production schedules are deliberately staggered away from minute `00`,
+where GitHub documents elevated scheduled-workflow load and the possibility of
+delayed or dropped events:
+
+| Mode | UTC cron | EDT behavior | EST behavior |
+|---|---|---|---|
+| `postgame` | `11 2,4,6 * * *` | 10:11 PM, 12:11 AM, 2:11 AM | 9:11 PM, 11:11 PM, 1:11 AM |
+| `daily` | `17 10 * * *` | 6:17 AM | 5:17 AM |
+| morning schedule correction | `23 14 * * *` | 10:23 AM | 9:23 AM |
+
+`.github/workflows/baseballos-scheduler-health.yml` provides a manual, read-only
+expected-versus-observed diagnostic. It treats a failed run as an observed
+attempt and fails only when a window produced no run after the grace period, or
+when the workflow is inactive. The diagnostic does not write baseball data,
+publish, or enter the `baseballos-sync` concurrency lane.
+
+This repository cannot provide a truly independent automatic watchdog using
+GitHub Actions schedules: that watchdog would share the scheduler failure
+domain it is meant to detect. Automatic alerting therefore requires an external
+scheduler or uptime service to invoke
+`backend/scripts/check_scheduled_sync_health.py` or independently check durable
+production sync freshness. The manual diagnostic is evidence tooling, not a
+claim that independent monitoring is installed.
 
 The 2026 trade-deadline repair window has passed, so
 `.github/workflows/baseballos-intraday-repair.yml` has no `schedule` trigger.
@@ -364,7 +390,7 @@ automated path by which anything reaches `main` without a pull request. D-053
 governs it.
 
 **Job:** `static-team-story-preview`. Runs only after `public-sync` succeeds, and
-only on the daily lane (`0 10 * * *` or `workflow_dispatch mode=daily`). It holds
+only on the daily lane (`17 10 * * *` or `workflow_dispatch mode=daily`). It holds
 `contents: write`; every other job in this workflow is `contents: read`.
 
 ### Generator
