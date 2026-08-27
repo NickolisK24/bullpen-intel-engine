@@ -556,6 +556,10 @@
           "measured_seconds": 14.866
         },
         {
+          "path": "tests/test_scheduled_sync_health.py",
+          "measured_seconds": 0.02
+        },
+        {
           "path": "tests/test_season_bullpen_aggregation_2026.py",
           "measured_seconds": 34.513
         },

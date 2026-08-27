@@ -51,9 +51,9 @@ def test_no_other_workflow_invokes_intraday_repair():
 def test_daily_and_postgame_automatic_cadence_is_unchanged():
     text = PUBLIC_SYNC_WORKFLOW.read_text(encoding='utf-8')
     assert text.count('- cron:') == 3
-    assert "- cron: '0 10 * * *'" in text
-    assert "- cron: '0 14 * * *'" in text
-    assert "- cron: '0 2,4,6 * * *'" in text
+    assert "- cron: '17 10 * * *'" in text
+    assert "- cron: '23 14 * * *'" in text
+    assert "- cron: '11 2,4,6 * * *'" in text
     assert 'python backend/scripts/run_daily_sync.py' in text
     assert 'python backend/scripts/run_postgame_refresh.py' in text
     assert 'run_intraday_repair.py' not in text

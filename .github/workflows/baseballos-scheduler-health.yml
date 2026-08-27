@@ -1,0 +1,39 @@
+name: BaseballOS Scheduler Health Diagnostic
+
+# This diagnostic is intentionally manual-only. A scheduled watchdog here
+# would depend on the same GitHub scheduler whose delivery it is checking.
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Scheduled-run history to inspect
+        required: true
+        default: '36'
+        type: string
+      grace_minutes:
+        description: Delay allowed before an expected window is missing
+        required: true
+        default: '90'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  scheduled-run-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare expected and observed scheduled runs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours }}
+          GRACE_MINUTES: ${{ inputs.grace_minutes }}
+        run: >-
+          python backend/scripts/check_scheduled_sync_health.py
+          --repository "$GITHUB_REPOSITORY"
+          --workflow-id 287009741
+          --lookback-hours "$LOOKBACK_HOURS"
+          --grace-minutes "$GRACE_MINUTES"

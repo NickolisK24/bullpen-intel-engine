@@ -68,9 +68,9 @@ def test_expected_cron_schedules_and_none_for_intraday():
     text = _text()
     # No cron exists for intraday; WP42 adds only the schedule-authority refresh.
     assert text.count('- cron:') == 3
-    assert "'0 10 * * *'" in text   # daily
-    assert "'0 14 * * *'" in text  # morning schedule refresh
-    assert "'0 2,4,6 * * *'" in text  # postgame
+    assert "'17 10 * * *'" in text   # daily
+    assert "'23 14 * * *'" in text  # morning schedule refresh
+    assert "'11 2,4,6 * * *'" in text  # postgame
 
 
 # ── structural assertions (PyYAML) ───────────────────────────────────────────
@@ -89,7 +89,7 @@ def test_no_intraday_cron_added():
     doc = _yaml_doc()
     on = doc.get(True, doc.get('on'))
     crons = [s['cron'] for s in on['schedule']]
-    assert crons == ['0 10 * * *', '0 14 * * *', '0 2,4,6 * * *']
+    assert crons == ['17 10 * * *', '23 14 * * *', '11 2,4,6 * * *']
 
 
 def test_upload_runs_even_on_failure_and_exit_code_preserved():

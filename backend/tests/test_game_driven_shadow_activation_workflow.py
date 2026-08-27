@@ -31,9 +31,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = REPO_ROOT / '.github/workflows/baseballos-sync.yml'
 MODE_ENV = 'GAME_DRIVEN_INGESTION_MODE'
 
-DAILY_CRON = '0 10 * * *'
-MORNING_CRON = '0 14 * * *'
-POSTGAME_CRON = '0 2,4,6 * * *'
+DAILY_CRON = '17 10 * * *'
+MORNING_CRON = '23 14 * * *'
+POSTGAME_CRON = '11 2,4,6 * * *'
 
 SHADOW_JOB = 'shadow-activation-health'
 PRODUCTION_CREDENTIALS = (
@@ -108,7 +108,7 @@ def _blob(job):
 # ── The established production path is untouched ────────────────────────────
 
 
-def test_the_existing_cron_expressions_are_unchanged(workflow):
+def test_production_crons_are_staggered_off_the_hour(workflow):
     crons = [entry['cron'] for entry in workflow[True]['schedule']]
     assert crons == [DAILY_CRON, MORNING_CRON, POSTGAME_CRON]
 
