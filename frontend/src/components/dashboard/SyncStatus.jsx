@@ -5,7 +5,12 @@ import {
 } from '../../utils/bullpenConcepts'
 import { useFetch } from '../../hooks/useFetch'
 import { getSyncStatus } from '../../utils/api'
-import { DATA_STATUS_LABELS, getFreshnessAuthorityStatusView, getSyncStatusView } from './syncStatusView'
+import {
+  DATA_STATUS_LABELS,
+  freshnessIsCurrent,
+  getFreshnessAuthorityStatusView,
+  getSyncStatusView,
+} from './syncStatusView'
 
 const Metric = ({ label, value, muted = false }) => (
   <div className="min-w-0">
@@ -68,8 +73,9 @@ export function SyncStatusContent({
   freshnessError = null,
 }) {
   const hasFreshnessAuthority = freshnessAuthority !== undefined && freshnessAuthority !== null
+  const authorityIsCurrent = hasFreshnessAuthority && freshnessIsCurrent(freshnessAuthority)
   const authorityView = hasFreshnessAuthority
-    ? getFreshnessAuthorityStatusView(freshnessAuthority)
+    ? getFreshnessAuthorityStatusView(freshnessAuthority, authorityIsCurrent)
     : null
 
   if (freshnessLoading || (loading && !hasFreshnessAuthority)) {

@@ -154,8 +154,8 @@ export function freshnessIsCurrent(freshness) {
   return currentStates.has(state) || successfulStatuses.has(syncStatus)
 }
 
-export function getFreshnessAuthorityStatusView(freshness) {
-  if (freshnessIsCurrent(freshness)) {
+export function getFreshnessAuthorityStatusView(freshness, isCurrent = false) {
+  if (isCurrent) {
     return {
       variant: 'synced',
       healthLabel: DATA_STATUS_LABELS.CURRENT,
@@ -234,7 +234,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     && rawDataThroughSource > dataThroughSource
   const authorityIsCurrent = freshnessIsCurrent(freshnessAuthority)
   const authorityStatusView = hasFreshnessAuthority
-    ? getFreshnessAuthorityStatusView(freshnessAuthority)
+    ? getFreshnessAuthorityStatusView(freshnessAuthority, authorityIsCurrent)
     : null
   const rawAuthorityLabel = freshnessAuthority?.label || freshnessAuthority?.message
   const authorityLabel = authorityIsCurrent
