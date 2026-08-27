@@ -29,6 +29,15 @@ export const CONCEPT_DEFINITIONS = {
   },
 }
 
+export const RESTED_AVAILABILITY_DISTINCTION =
+  'Rested tracks time since last use. Availability also considers recent workload and usage frequency.'
+
+export const AVAILABILITY_SCOPE_DESCRIPTION =
+  'Availability considers recent workload, usage frequency, rest, evidence completeness, and roster status.'
+
+export const CURRENT_READ_AVAILABILITY_RELATIONSHIP =
+  'Availability supports Current Read; evidence and roster limits can also shape the final read.'
+
 // Supporting glossary concepts. These are named on public surfaces (the team
 // state card, How to Read) but are not derived reads — they carry no tiers
 // here, only their one-line public definitions, so the whole product shares a
@@ -55,8 +64,8 @@ export const SUPPORTING_CONCEPT_DEFINITIONS = Object.freeze({
   restedOptions: {
     name: 'Rested Options',
     definition:
-      'How many current bullpen options enter the represented read without '
-      + 'major recent-workload restriction.',
+      'How many current visible active bullpen arms have at least one full '
+      + 'calendar day between their last appearance and the represented date.',
   },
   lateInningPressure: {
     name: 'Late-Inning Pressure',
@@ -154,7 +163,7 @@ export const PITCHER_ROLE_DEFINITIONS = Object.freeze([
 
 // Pitcher CURRENT READ — what tonight looks like for the arm. Distinct from role.
 export const PITCHER_CURRENT_READ_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Clean Option', definition: 'The pitcher is rested enough to be used freely tonight.' }),
+  Object.freeze({ name: 'Clean Option', definition: 'The availability evidence supports normal use tonight.' }),
   Object.freeze({ name: 'Watch Arm', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
   Object.freeze({ name: 'Limited Rest', definition: 'Recent workload leaves materially less rest than a Clean Option.' }),
   Object.freeze({ name: 'Unavailable', definition: 'Recent workload or current roster status takes the pitcher out of tonight’s bullpen options.' }),

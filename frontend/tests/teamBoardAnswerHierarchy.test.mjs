@@ -382,6 +382,42 @@ test('summary, Rest Status, and Workload Overview use governed board reads', () 
   assert.equal(htmlIncludes(html, 'Resource Health'), false)
 })
 
+test('five rested options and three Clean Options remain compatible at point of use', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [1, 2, 3].map(pitcherId => ({
+        pitcher_id: 100 + pitcherId,
+        name: `Clean Arm ${pitcherId}`,
+        availability_status: 'Available',
+        confidence: 'high',
+        data_state: 'fresh',
+      })),
+      Monitor: [1, 2].map(pitcherId => ({
+        pitcher_id: 200 + pitcherId,
+        name: `Watch Arm ${pitcherId}`,
+        availability_status: 'Monitor',
+        confidence: 'high',
+        data_state: 'fresh',
+      })),
+    },
+  })
+  board.rest_status = {
+    available: true,
+    active_arm_count: 5,
+    rested_arm_count: 5,
+    worked_yesterday_count: 0,
+    back_to_back_count: 0,
+    summary: '5 of 5 active bullpen arms have at least one full day of rest; 0 arms worked yesterday and 0 arms worked back-to-back.',
+    reason_code: null,
+  }
+
+  const text = visibleText(renderBoard(board))
+
+  assert.ok(text.includes('Rested options 5 Time since last use'))
+  assert.equal((text.match(/Clean Option/g) || []).length, 3)
+  assert.ok(text.includes('Rested tracks time since last use. Availability also considers recent workload and usage frequency.'))
+})
+
 test('unavailable and malformed Rest Status fail closed without zero counts or reason codes', () => {
   assert.equal(restStatusSource.includes('getBoardGroups'), false)
   assert.equal(restStatusSource.includes('.reduce('), false)
@@ -395,6 +431,8 @@ test('unavailable and malformed Rest Status fail closed without zero counts or r
     const end = html.indexOf('Workload Overview', start)
     const section = html.slice(start, end)
     assert.ok(htmlIncludes(section, 'Rest Status unavailable'))
+    assert.ok(htmlIncludes(section, 'Current Rest Status is unavailable.'))
+    assert.equal(htmlIncludes(section, 'backend-authored'), false)
     assert.equal(htmlIncludes(section, '>0<'), false)
     assert.equal(htmlIncludes(section, 'workload_evidence_incomplete'), false)
   }

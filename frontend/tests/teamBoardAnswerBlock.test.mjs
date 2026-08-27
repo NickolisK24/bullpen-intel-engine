@@ -22,6 +22,7 @@ const {
   getTeamBoardAnswerView,
   TeamBoardAnswerSkeleton,
 } = await server.ssrLoadModule('/src/components/bullpen/board/TeamBoardAnswerBlock.jsx')
+const { RESTED_AVAILABILITY_DISTINCTION } = await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
 
 const team = { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' }
 
@@ -168,14 +169,26 @@ test('Bullpen Summary publishes the backend-owned recent-use count and window', 
       },
     }),
   })
+  const restedZeroHtml = render({
+    read: read({
+      restStatus: {
+        ...read().restStatus,
+        rested_arm_count: 0,
+      },
+    }),
+  })
   assert.equal(text(withheldHtml).includes('Active arms 0'), false)
   assert.equal(text(withheldHtml).includes('Rested options 0'), false)
   assert.ok(text(publishedHtml).includes('Recently used arms 5 Last 3 days'))
   assert.ok(text(authoritativeZeroHtml).includes('Recently used arms 0 Last 3 days'))
+  assert.ok(text(restedZeroHtml).includes('Rested options 0 Time since last use'))
   assert.ok(text(publishedHtml).includes('Off-active count 2 Current roster context'))
   assert.ok(text(publishedHtml).includes('7-day workload 0 Pitches'))
   assert.ok(text(withheldHtml).includes('Recently used arms — Not published'))
   assert.ok(text(withheldHtml).includes('Off-active count — Not published'))
+  assert.ok(text(publishedHtml).includes(RESTED_AVAILABILITY_DISTINCTION))
+  assert.ok(publishedHtml.includes('aria-describedby="rested-availability-distinction"'))
+  assert.equal(text(publishedHtml).includes('Backend rest read'), false)
 })
 
 test('header keeps one governed state, one currentness line, and the answer intact', () => {

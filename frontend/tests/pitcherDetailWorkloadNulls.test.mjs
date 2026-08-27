@@ -119,6 +119,35 @@ test('current-state answer passes through canonical role read roster workload an
   assert.equal(html.includes('Close selected pitcher detail'), false)
 })
 
+test('Current Read stays primary while Availability explains its supporting relationship', () => {
+  const data = detailData(41)
+  data.availability = {
+    availability_status: 'Monitor',
+    confidence: 'high',
+    data_state: 'fresh',
+    reasons: ['Recent workload needs a check.'],
+    limitations: [],
+  }
+  const html = renderData(data)
+  const currentReadIndex = html.indexOf('Current Read')
+  const relationshipIndex = html.indexOf(
+    'Availability supports Current Read; evidence and roster limits can also shape the final read.',
+  )
+
+  assert.ok(currentReadIndex > -1)
+  assert.ok(relationshipIndex > currentReadIndex)
+  assert.ok(html.includes('Final availability: On Watch'))
+  assert.ok(html.includes('Read Confidence'))
+  assert.equal((html.match(/Final availability: On Watch/g) || []).length, 1)
+})
+
+test('missing Availability keeps the existing honest unavailable state', () => {
+  const html = renderDetail(41)
+
+  assert.ok(html.includes('Current availability is not available for this pitcher yet.'))
+  assert.ok(html.indexOf('Current Read') < html.indexOf('Current availability is not available'))
+})
+
 test('missing workload counts and composed ledger pitch facts stay missing rather than becoming zero', () => {
   const data = detailData(null)
   data.current_fatigue.appearances_last_7 = null

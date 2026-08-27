@@ -155,7 +155,9 @@ test('the glossary module computes no bullpen read', () => {
   // competing with the backend-owned ones. The module is a dictionary now.
   assert.deepEqual(Object.keys(conceptsModule).sort(), [
     'ARM_AVAILABILITY_DEFINITIONS',
+    'AVAILABILITY_SCOPE_DESCRIPTION',
     'CONCEPT_DEFINITIONS',
+    'CURRENT_READ_AVAILABILITY_RELATIONSHIP',
     'DATA_STATUS_DEFINITIONS',
     'DATA_THROUGH_LABEL',
     'FRESHNESS_LABEL_DEFINITIONS',
@@ -172,6 +174,7 @@ test('the glossary module computes no bullpen read', () => {
     'READ_CONFIDENCE_BOUNDARY',
     'READ_CONFIDENCE_DEFINITIONS',
     'READ_CONFIDENCE_FAMILY',
+    'RESTED_AVAILABILITY_DISTINCTION',
     'SUPPORTING_CONCEPT_DEFINITIONS',
     'SUPPORTING_READ_BOUNDARY',
     'TEAM_STATE_DEFINITIONS',

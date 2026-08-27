@@ -20,6 +20,12 @@ after(async () => {
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: HowToRead } = await server.ssrLoadModule('/src/components/guide/HowToRead.jsx')
 const { default: Footer } = await server.ssrLoadModule('/src/components/layout/Footer.jsx')
+const {
+  AVAILABILITY_SCOPE_DESCRIPTION,
+  CURRENT_READ_AVAILABILITY_RELATIONSHIP,
+  RESTED_AVAILABILITY_DISTINCTION,
+  SUPPORTING_CONCEPT_DEFINITIONS,
+} = await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -131,6 +137,22 @@ test('supporting reads and read confidence are marked as not-Team-State', () => 
   const html = decodeHtml(render(React.createElement(HowToRead)))
   assert.ok(html.includes('They are not Team State'))
   assert.ok(html.includes('It is not Team State'))
+})
+
+test('rest, Availability, and Current Read definitions express one consistent hierarchy', () => {
+  const html = decodeHtml(render(React.createElement(HowToRead)))
+  const restedDefinition = SUPPORTING_CONCEPT_DEFINITIONS.restedOptions.definition
+
+  assert.ok(restedDefinition.includes('current visible active bullpen arms'))
+  assert.ok(restedDefinition.includes('at least one full calendar day between'))
+  assert.equal(restedDefinition.includes('workload restriction'), false)
+  assert.ok(html.includes(RESTED_AVAILABILITY_DISTINCTION))
+  assert.ok(html.includes(AVAILABILITY_SCOPE_DESCRIPTION))
+  assert.ok(html.includes(CURRENT_READ_AVAILABILITY_RELATIONSHIP))
+  assert.ok(html.includes('The availability evidence supports normal use tonight.'))
+  for (const predictive of ['will be available', 'should pitch', 'recommended arm']) {
+    assert.equal(html.toLowerCase().includes(predictive), false)
+  }
 })
 
 test('retired vocabulary does not appear on the glossary', () => {
