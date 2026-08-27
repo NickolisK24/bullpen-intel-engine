@@ -1017,7 +1017,7 @@ def get_sync_status():
     is cache-only and is not consulted for public freshness reporting.
     """
     try:
-        return jsonify(sync_metadata.build_sync_status_payload())
+        return jsonify(sync_metadata.build_public_sync_status_payload())
     except Exception:
         # A DB hiccup must never turn the status pill into a hard error.
         return jsonify({

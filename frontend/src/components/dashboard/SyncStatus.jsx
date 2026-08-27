@@ -5,7 +5,7 @@ import {
 } from '../../utils/bullpenConcepts'
 import { useFetch } from '../../hooks/useFetch'
 import { getSyncStatus } from '../../utils/api'
-import { DATA_STATUS_LABELS, getSyncStatusView } from './syncStatusView'
+import { DATA_STATUS_LABELS, getFreshnessAuthorityStatusView, getSyncStatusView } from './syncStatusView'
 
 const Metric = ({ label, value, muted = false }) => (
   <div className="min-w-0">
@@ -16,7 +16,7 @@ const Metric = ({ label, value, muted = false }) => (
   </div>
 )
 
-const TrustStrip = ({ dot, style = {}, title, status, metrics, helper }) => {
+const TrustStrip = ({ dot, style = {}, title, status, metrics, helper, governed = true }) => {
   const stripStyle = {
     borderColor: style.borderColor || '#242b35',
     backgroundColor: style.backgroundColor || 'rgba(26,31,38,0.44)',
@@ -34,8 +34,12 @@ const TrustStrip = ({ dot, style = {}, title, status, metrics, helper }) => {
         <div className="flex min-w-0 items-center gap-2">
           <span className="h-2 w-2 rounded-full flex-none" style={{ backgroundColor: dot }} />
           <div className="min-w-0 text-xs uppercase tracking-widest">
-            <span className="text-chalk600">Data Status:</span>{' '}
-            <span className="font-semibold">{status}</span>
+            {governed ? (
+              <>
+                <span className="text-chalk600">Data Status:</span>{' '}
+                <span className="font-semibold">{status}</span>
+              </>
+            ) : status}
           </div>
         </div>
 
@@ -54,15 +58,26 @@ const TrustStrip = ({ dot, style = {}, title, status, metrics, helper }) => {
   )
 }
 
-export function SyncStatusContent({ data, loading, error, now, freshnessAuthority }) {
-  if (loading) {
+export function SyncStatusContent({
+  data,
+  loading,
+  error,
+  now,
+  freshnessAuthority,
+  freshnessLoading = false,
+  freshnessError = null,
+}) {
+  const hasFreshnessAuthority = freshnessAuthority !== undefined && freshnessAuthority !== null
+  const authorityView = hasFreshnessAuthority
+    ? getFreshnessAuthorityStatusView(freshnessAuthority)
+    : null
+
+  if (freshnessLoading || (loading && !hasFreshnessAuthority)) {
     return (
       <TrustStrip
         dot="#8899aa"
-        // Honest while evidence is still arriving: the platform read is not
-        // claimed Current before it is known. 'Checking' was an ungoverned
-        // fifth value under a governed field label.
-        status={DATA_STATUS_LABELS.UNAVAILABLE}
+        status="Checking data status"
+        governed={false}
         metrics={[
           { label: LAST_CHECKED_LABEL, value: 'Checking sync status', muted: true },
           { label: LAST_DATA_UPDATE_LABEL, value: 'Checking data update', muted: true },
@@ -74,12 +89,43 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
   if (error) {
     return (
       <TrustStrip
+        dot={authorityView?.dot || '#4a5568'}
+        style={authorityView?.style}
+        status={authorityView?.healthLabel || DATA_STATUS_LABELS.UNAVAILABLE}
+        helper={authorityView?.healthLabel === DATA_STATUS_LABELS.CURRENT
+          ? 'The published view remains current. Refresh status is unavailable.'
+          : 'Refresh status unavailable.'}
+        metrics={[
+          { label: LAST_CHECKED_LABEL, value: 'Unavailable', muted: true },
+          { label: LAST_DATA_UPDATE_LABEL, value: 'Unavailable', muted: true },
+          { label: DATA_THROUGH_LABEL, value: 'Unavailable', muted: true },
+        ]}
+      />
+    )
+  }
+
+  if (loading) {
+    return (
+      <TrustStrip
+        dot={authorityView.dot}
+        style={authorityView.style}
+        status={authorityView.healthLabel}
+        helper="Published data status is available while refresh details are checked."
+        metrics={[
+          { label: LAST_CHECKED_LABEL, value: 'Checking sync status', muted: true },
+          { label: LAST_DATA_UPDATE_LABEL, value: 'Checking data update', muted: true },
+          { label: DATA_THROUGH_LABEL, value: 'Checking data coverage', muted: true },
+        ]}
+      />
+    )
+  }
+
+  if (freshnessError && !hasFreshnessAuthority) {
+    return (
+      <TrustStrip
         dot="#4a5568"
-        // 'Limited' is arm-availability vocabulary. Under the Data Status field
-        // label a reader could not tell whether the bullpen was limited or the
-        // data was — the exact ambiguity this family was renamed to remove.
         status={DATA_STATUS_LABELS.UNAVAILABLE}
-        helper="Sync status unavailable."
+        helper="The published data status could not be confirmed."
         metrics={[
           { label: LAST_CHECKED_LABEL, value: 'Unavailable', muted: true },
           { label: LAST_DATA_UPDATE_LABEL, value: 'Unavailable', muted: true },

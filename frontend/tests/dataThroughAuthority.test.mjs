@@ -284,3 +284,27 @@ test('Data & Trust limited state still explains incomplete unpublished coverage'
   assert.ok(html.includes('Partial Data'))
   assert.ok(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'))
 })
+
+test('Data & Trust does not render sync failure details before publication authority resolves', () => {
+  const rawException = 'PendingRollbackError: INSERT INTO public_dashboard_artifacts integrity_hash'
+  const html = render(React.createElement(DataTrustView, {
+    backtest: fetchState(null),
+    dashboard: {
+      data: null,
+      loading: true,
+      error: null,
+      staleWithError: false,
+      refetch: () => {},
+    },
+    sync: fetchState({
+      status: 'failed',
+      message: rawException,
+      sync: { error_message: rawException, error_summary: rawException },
+    }),
+  }))
+
+  assert.ok(html.includes('Checking data status'))
+  assert.equal(html.includes('DATA STATUS: DATA UNAVAILABLE'), false)
+  assert.equal(html.includes('Data Status:</span> Data Unavailable'), false)
+  assert.equal(html.includes(rawException), false)
+})

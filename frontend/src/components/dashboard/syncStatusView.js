@@ -154,6 +154,45 @@ export function freshnessIsCurrent(freshness) {
   return currentStates.has(state) || successfulStatuses.has(syncStatus)
 }
 
+export function getFreshnessAuthorityStatusView(freshness) {
+  if (freshnessIsCurrent(freshness)) {
+    return {
+      variant: 'synced',
+      healthLabel: DATA_STATUS_LABELS.CURRENT,
+      dot: '#10b981',
+      style: { color: '#d1dce8' },
+    }
+  }
+
+  const state = freshnessState(freshness)
+  const stale = freshnessFlag(freshness, 'is_stale', 'isStale', 'stale') === true
+    || staleStates.has(state)
+  if (stale) {
+    return {
+      variant: 'stale',
+      healthLabel: DATA_STATUS_LABELS.STALE,
+      dot: '#f5a623',
+      style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
+    }
+  }
+
+  if (limitedStates.has(state)) {
+    return {
+      variant: 'limited',
+      healthLabel: DATA_STATUS_LABELS.PARTIAL,
+      dot: '#f5a623',
+      style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
+    }
+  }
+
+  return {
+    variant: 'empty',
+    healthLabel: DATA_STATUS_LABELS.UNAVAILABLE,
+    dot: '#4a5568',
+    style: {},
+  }
+}
+
 export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
   const status = data?.status
   const latestAttempt = data?.last_checked || data?.last_sync
@@ -174,14 +213,14 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   const reasonCodes = Array.isArray(freshness.reason_codes)
     ? freshness.reason_codes
     : (Array.isArray(freshness.reasonCodes) ? freshness.reasonCodes : [])
-  const freshnessState = firstPresent(
+  const resolvedFreshnessState = firstPresent(
     freshness.freshness_state,
     freshness.freshnessState,
     freshness.state,
     freshness.status,
   )
     || (freshness.is_current === true ? 'current' : null)
-  const normalizedFreshnessState = normalizedKey(freshnessState)
+  const normalizedFreshnessState = normalizedKey(resolvedFreshnessState)
   const stale = freshnessFlag(freshness, 'is_stale', 'isStale', 'stale') === true
     || staleStates.has(normalizedFreshnessState)
     || reasonCodes.includes('workload_data_outside_active_window')
@@ -194,6 +233,9 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     && rawDataThroughSource
     && rawDataThroughSource > dataThroughSource
   const authorityIsCurrent = freshnessIsCurrent(freshnessAuthority)
+  const authorityStatusView = hasFreshnessAuthority
+    ? getFreshnessAuthorityStatusView(freshnessAuthority)
+    : null
   const rawAuthorityLabel = freshnessAuthority?.label || freshnessAuthority?.message
   const authorityLabel = authorityIsCurrent
     ? (
@@ -202,6 +244,19 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
           : (dataThrough ? `Public bullpen data is current through ${dataThrough}.` : null)
       )
     : rawAuthorityLabel
+  const displayLimitations = hasFreshnessAuthority
+    ? (authorityIsCurrent
+        ? []
+        : (Array.isArray(freshnessAuthority?.limitations) ? freshnessAuthority.limitations : []))
+    : limitations
+  const displayReasonCodes = hasFreshnessAuthority
+    ? (authorityIsCurrent
+        ? []
+        : (Array.isArray(freshnessAuthority?.reason_codes) ? freshnessAuthority.reason_codes : []))
+    : reasonCodes
+  const displayFreshnessState = authorityIsCurrent
+    ? 'current'
+    : (hasFreshnessAuthority ? freshnessState(freshnessAuthority) : resolvedFreshnessState)
   const freshnessHelper = (baseHelper, { limited = false } = {}) => {
     if (authorityIsCurrent) {
       return authorityLabel
@@ -225,13 +280,16 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   }
 
   if (failedStatuses.has(status)) {
-    return {
+    const statusView = authorityStatusView || {
       variant: stale ? 'stale' : 'failed',
       healthLabel: stale ? DATA_STATUS_LABELS.STALE : DATA_STATUS_LABELS.UNAVAILABLE,
       dot: stale ? '#f5a623' : '#ef4444',
       style: stale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
+    }
+    return {
+      ...statusView,
       syncLabel: 'Last sync failed',
       syncValue: fmtSyncDate(latestAttempt) || 'Latest attempt failed',
       lastCheckedLabel: LAST_CHECKED_LABEL,
@@ -242,33 +300,35 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       dataValue: dataThrough,
       dataCoverageLine,
       coverageValue,
-      helper: freshnessHelper(
-        stale
-          ? (freshness.label || data?.message || 'Latest sync attempt failed.')
-          : (data?.message || 'Latest sync attempt failed.'),
-        { limited: true },
-      ),
-      limitations,
-      reasonCodes,
-      freshnessState,
+      helper: authorityIsCurrent
+        ? [authorityLabel, 'Latest refresh did not complete; the published view remains available.'].filter(Boolean).join(' ')
+        : freshnessHelper('Latest refresh did not complete.', { limited: true }),
+      limitations: displayLimitations,
+      reasonCodes: displayReasonCodes,
+      freshnessState: displayFreshnessState,
     }
   }
 
   if (successfulSync) {
     const rawLimited = stale || missing || freshnessFlag(freshness, 'is_current', 'isCurrent', 'current') === false || limitations.length > 0
-    const limited = authorityIsCurrent ? false : rawLimited
-    const displayStale = authorityIsCurrent ? false : stale
-    return {
+    const limited = authorityStatusView
+      ? authorityStatusView.healthLabel === DATA_STATUS_LABELS.PARTIAL
+      : rawLimited
+    const displayStale = authorityStatusView
+      ? authorityStatusView.healthLabel === DATA_STATUS_LABELS.STALE
+      : stale
+    const statusView = authorityStatusView || {
       variant: displayStale ? 'stale' : (limited ? 'limited' : 'synced'),
       healthLabel: displayStale
         ? DATA_STATUS_LABELS.STALE
         : (limited ? DATA_STATUS_LABELS.PARTIAL : DATA_STATUS_LABELS.CURRENT),
       dot: displayStale || limited ? '#f5a623' : '#10b981',
-      style: displayStale
+      style: displayStale || limited
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
-        : limited
-          ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : { color: '#d1dce8' },
+    }
+    return {
+      ...statusView,
       syncLabel: LAST_DATA_UPDATE_LABEL,
       syncValue: fmtSyncDate(successfulSync),
       lastCheckedLabel: LAST_CHECKED_LABEL,
@@ -286,18 +346,21 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
           : freshness.label,
         { limited },
       ),
-      limitations: authorityIsCurrent ? [] : limitations,
-      reasonCodes: authorityIsCurrent ? [] : reasonCodes,
-      freshnessState: authorityIsCurrent ? 'current' : freshnessState,
+      limitations: displayLimitations,
+      reasonCodes: displayReasonCodes,
+      freshnessState: displayFreshnessState,
     }
   }
 
   if (logCount > 0 && dataThrough) {
-    return {
+    const statusView = authorityStatusView || {
       variant: 'metadata_unavailable',
       healthLabel: DATA_STATUS_LABELS.PARTIAL,
       dot: '#f5a623',
       style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
+    }
+    return {
+      ...statusView,
       syncLabel: 'Sync metadata',
       syncValue: 'Unavailable',
       lastCheckedLabel: LAST_CHECKED_LABEL,
@@ -308,18 +371,21 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       dataValue: dataThrough,
       dataCoverageLine,
       coverageValue,
-      helper: 'Sync metadata unavailable; data coverage is based on game logs.',
-      limitations,
-      reasonCodes,
-      freshnessState,
+      helper: authorityLabel || 'Refresh metadata unavailable; data coverage is based on game logs.',
+      limitations: displayLimitations,
+      reasonCodes: displayReasonCodes,
+      freshnessState: displayFreshnessState,
     }
   }
 
-  return {
+  const statusView = authorityStatusView || {
     variant: 'empty',
     healthLabel: DATA_STATUS_LABELS.UNAVAILABLE,
     dot: '#4a5568',
     style: {},
+  }
+  return {
+    ...statusView,
     syncLabel: 'No data loaded',
     syncValue: null,
     lastCheckedLabel: LAST_CHECKED_LABEL,
@@ -330,9 +396,9 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     dataValue: null,
     dataCoverageLine,
     coverageValue,
-    helper: 'No sync metadata or game logs are available.',
-    limitations,
-    reasonCodes,
-    freshnessState,
+    helper: authorityLabel || 'No refresh metadata or game logs are available.',
+    limitations: displayLimitations,
+    reasonCodes: displayReasonCodes,
+    freshnessState: displayFreshnessState,
   }
 }
