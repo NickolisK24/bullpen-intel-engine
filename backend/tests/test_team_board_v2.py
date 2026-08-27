@@ -1,10 +1,13 @@
 from copy import deepcopy
+from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
 
 import api.team_board_v2 as team_board_v2_api
+from services.public_team_relief_work import _date_group
 from services.team_board_v2 import (
     ACTIVE_BULLPEN_POPULATION_BASIS,
     CAPABILITY,
@@ -237,7 +240,6 @@ def _relief_work():
         'scope_sentence': 'Covers appearances made for EX per official MLB game records.',
         'relief_by_date': [{
             'game_date': '2026-08-15',
-            'available': True,
             'appearances': [{
                 'pitcher_id': 7,
                 'pitcher_full_name': 'Example Arm',
@@ -711,7 +713,6 @@ def test_recently_used_arms_counts_distinct_current_arms_in_inclusive_three_day_
     relief['relief_by_date'] = [
         {
             'game_date': '2026-08-16',
-            'available': True,
             'appearances': [
                 {'pitcher_id': 7},
                 {'pitcher_id': 7},
@@ -720,12 +721,10 @@ def test_recently_used_arms_counts_distinct_current_arms_in_inclusive_three_day_
         },
         {
             'game_date': '2026-08-14',
-            'available': True,
             'appearances': [{'pitcher_id': 8}],
         },
         {
             'game_date': '2026-08-13',
-            'available': True,
             'appearances': [{'pitcher_id': 9}],
         },
     ]
@@ -750,6 +749,85 @@ def test_recently_used_arms_counts_distinct_current_arms_in_inclusive_three_day_
         ),
     }
     assert payload['section_status']['recently_used_arms']['status'] == 'available'
+
+
+def test_recently_used_arms_accepts_the_actual_successful_producer_group_shape():
+    log = SimpleNamespace(
+        game_date=date(2026, 8, 15),
+        mlb_game_pk=123,
+        appearance_team_id=1,
+        opponent='Opponent Club',
+        opponent_abbreviation='OPP',
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        pitches_thrown=18,
+        strikeouts=1,
+        walks=0,
+        hits_allowed=0,
+        runs_allowed=0,
+        save=False,
+        hold=False,
+        blown_save=False,
+        win=False,
+        loss=False,
+        save_situation=False,
+    )
+    pitcher = SimpleNamespace(
+        id=7,
+        mlb_id=700007,
+        full_name='Example Arm',
+        roster_status='active',
+        active=True,
+    )
+    group = _date_group(log.game_date, [(log, pitcher)])
+    relief = _relief_work()
+    relief['relief_by_date'] = [group]
+
+    assert 'available' not in group
+    assert 'unavailable' not in group
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+    assert payload['recently_used_arms']['status'] == 'available'
+    assert payload['recently_used_arms']['value'] == 1
+
+
+def test_recently_used_arms_keeps_explicit_available_true_compatibility():
+    relief = _relief_work()
+    relief['relief_by_date'][0]['available'] = True
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert payload['recently_used_arms']['status'] == 'available'
+    assert payload['recently_used_arms']['value'] == 1
+
+
+@pytest.mark.parametrize(
+    ('status_fields', 'reason_code'),
+    [
+        ({'available': False}, 'recent_relief_work_incomplete'),
+        ({'unavailable': True}, 'recent_relief_work_incomplete'),
+        (
+            {'available': True, 'unavailable': True},
+            'recent_relief_work_invalid',
+        ),
+        ({'available': 'true'}, 'recent_relief_work_invalid'),
+        ({'available': 1}, 'recent_relief_work_invalid'),
+        ({'unavailable': 'false'}, 'recent_relief_work_invalid'),
+    ],
+)
+def test_recently_used_arms_fails_closed_for_negative_or_invalid_group_status(
+    status_fields,
+    reason_code,
+):
+    relief = _relief_work()
+    relief['relief_by_date'][0].update(status_fields)
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert payload['recently_used_arms']['status'] == 'unavailable'
+    assert payload['recently_used_arms']['value'] is None
+    assert payload['recently_used_arms']['reason_code'] == reason_code
+    assert payload['rest_status']['available'] is True
+    assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
 
 
 def test_recently_used_arms_empty_authoritative_window_is_zero():

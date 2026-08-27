@@ -423,7 +423,19 @@ def _recently_used_arms(arms, relief_work, active_status, error, represented_dat
             return read
         if game_date < window_start:
             continue
-        if group.get('unavailable') is True or group.get('available') is not True:
+
+        available_present = 'available' in group
+        unavailable_present = 'unavailable' in group
+        available = group.get('available')
+        unavailable = group.get('unavailable')
+        if (
+            (available_present and type(available) is not bool)
+            or (unavailable_present and type(unavailable) is not bool)
+            or (available is True and unavailable is True)
+        ):
+            read['reason_code'] = 'recent_relief_work_invalid'
+            return read
+        if available is False or unavailable is True:
             read['reason_code'] = 'recent_relief_work_incomplete'
             return read
         appearances = group.get('appearances')

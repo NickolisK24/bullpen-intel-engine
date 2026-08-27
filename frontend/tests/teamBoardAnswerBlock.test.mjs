@@ -160,9 +160,18 @@ test('Bullpen Summary publishes the backend-owned recent-use count and window', 
   })
   assert.deepEqual(getBullpenSummaryView(missingRead).map(figure => figure.value), [null, null, null, null, null])
   const withheldHtml = render({ read: missingRead })
+  const authoritativeZeroHtml = render({
+    read: read({
+      recentlyUsedArms: {
+        ...read().recentlyUsedArms,
+        value: 0,
+      },
+    }),
+  })
   assert.equal(text(withheldHtml).includes('Active arms 0'), false)
   assert.equal(text(withheldHtml).includes('Rested options 0'), false)
   assert.ok(text(publishedHtml).includes('Recently used arms 5 Last 3 days'))
+  assert.ok(text(authoritativeZeroHtml).includes('Recently used arms 0 Last 3 days'))
   assert.ok(text(publishedHtml).includes('Off-active count 2 Current roster context'))
   assert.ok(text(publishedHtml).includes('7-day workload 0 Pitches'))
   assert.ok(text(withheldHtml).includes('Recently used arms — Not published'))
