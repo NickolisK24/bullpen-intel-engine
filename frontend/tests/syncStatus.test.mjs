@@ -276,6 +276,84 @@ test('renders failed sync while preserving data-through date', () => {
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
 })
 
+test('published-current authority remains global when the latest refresh failed', () => {
+  const rawException = 'PendingRollbackError: INSERT INTO public_dashboard_artifacts integrity_hash sqlalchemy.me/e/20/7s2a'
+  const data = {
+    status: 'failed',
+    last_checked: '2026-06-02T10:00:00Z',
+    last_successful_sync: '2026-06-01T21:39:56Z',
+    message: rawException,
+    data: { game_logs: 35768, latest_game_date: '2026-05-31' },
+    freshness: {
+      is_current: false,
+      is_stale: false,
+      freshness_state: 'limited',
+      label: rawException,
+      limitations: [rawException],
+    },
+  }
+  const freshnessAuthority = {
+    data_through: '2026-05-31',
+    is_current: true,
+    is_stale: false,
+    freshness_state: 'current',
+    label: 'Current baseball data through 2026-05-31.',
+    limitations: [],
+  }
+
+  const view = getSyncStatusView(data, { now, freshnessAuthority })
+  const html = renderToStaticMarkup(React.createElement(SyncStatusContent, {
+    data,
+    loading: false,
+    error: null,
+    now,
+    freshnessAuthority,
+  }))
+
+  assert.equal(view.healthLabel, 'Current')
+  assert.ok(view.helper.includes('Latest refresh did not complete'))
+  assert.ok(htmlIncludes(html, 'Data Status:'))
+  assert.ok(htmlIncludes(html, 'Current'))
+  assert.equal(htmlIncludes(html, 'Data Unavailable'), false)
+  assert.equal(htmlIncludes(html, rawException), false)
+})
+
+test('loading publication authority stays neutral even when sync resolves first', () => {
+  const rawException = 'PendingRollbackError: INSERT INTO public_dashboard_artifacts'
+  const html = renderToStaticMarkup(React.createElement(SyncStatusContent, {
+    data: { status: 'failed', message: rawException },
+    loading: false,
+    error: null,
+    now,
+    freshnessAuthority: null,
+    freshnessLoading: true,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Checking data status'))
+  assert.equal(htmlIncludes(html, 'Data Status:'), false)
+  assert.equal(htmlIncludes(html, 'Data Unavailable'), false)
+  assert.equal(htmlIncludes(html, rawException), false)
+})
+
+test('resolved publication authority remains visible while sync details load', () => {
+  const freshnessAuthority = {
+    data_through: '2026-05-31',
+    is_current: true,
+    freshness_state: 'current',
+  }
+  const html = renderToStaticMarkup(React.createElement(SyncStatusContent, {
+    data: null,
+    loading: true,
+    error: null,
+    now,
+    freshnessAuthority,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Data Status:'))
+  assert.ok(htmlIncludes(html, 'Current'))
+  assert.equal(htmlIncludes(html, 'Data Unavailable'), false)
+})
+
 test('served freshness authority wins when sync data is ahead of publish', () => {
   const data = {
     status: 'success',

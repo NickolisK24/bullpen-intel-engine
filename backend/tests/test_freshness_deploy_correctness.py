@@ -25,6 +25,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
+from services import sync_metadata
 from services.availability_reference_date import (
     product_availability_reference_date,
     product_current_date,
@@ -221,7 +222,8 @@ class TestScenarioD_FailedSync:
 
         body = client.get('/api/bullpen/sync/status').get_json()
         assert body['status'] == 'failed'                  # honest, not 'success'/'snapshot'
-        assert body['message'] == 'MLB API unavailable'
+        assert body['message'] == sync_metadata.PUBLIC_SYNC_FAILURE_MESSAGE
+        assert 'MLB API unavailable' not in str(body)
         # The earlier successful sync is preserved, not erased.
         assert body['last_successful_sync'] is not None
         assert any('latest sync attempt failed' in lim.lower()

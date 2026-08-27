@@ -10,6 +10,7 @@ file is pointed at an empty temp path so durable metadata is the authority.
 """
 
 from datetime import date, datetime
+import json
 
 import pytest
 from flask import Flask
@@ -321,6 +322,14 @@ class TestSyncStatusSnapshot:
         assert body['slate_coverage']['complete_enough_to_publish'] is False
 
     def test_reports_failed_sync_without_hiding_last_successful_sync(self, client):
+        raw_error = (
+            "(sqlalchemy.exc.PendingRollbackError) This Session's transaction "
+            "has been rolled back due to a previous "
+            "exception during flush. Original exception was: (sqlite3.IntegrityError) "
+            "UNIQUE constraint failed: public_dashboard_artifacts.integrity_hash "
+            "[SQL: INSERT INTO public_dashboard_artifacts (integrity_hash) VALUES (?)] "
+            "(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        )
         with client.application.app_context():
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
@@ -338,6 +347,7 @@ class TestSyncStatusSnapshot:
                 completed_at=datetime(2026, 6, 1, 21, 39, 56),
                 status='success',
                 source='github_actions',
+                error_message=raw_error,
                 created_at=datetime(2026, 6, 1, 21, 39, 12),
             ))
             db.session.add(SyncRun(
@@ -346,10 +356,15 @@ class TestSyncStatusSnapshot:
                 status='failed',
                 source='github_actions',
                 errors=1,
-                error_message='MLB API unavailable',
+                error_message=raw_error,
                 created_at=datetime(2026, 6, 2, 10, 0, 0),
             ))
             db.session.commit()
+
+            internal_payload = sync_metadata.build_sync_status_payload()
+            assert internal_payload['message'] == raw_error
+            assert internal_payload['sync']['error_message'] == raw_error
+            assert internal_payload['last_successful_sync_run']['error_message'] == raw_error
 
         res = client.get('/api/bullpen/sync/status')
         assert res.status_code == 200
@@ -361,7 +376,23 @@ class TestSyncStatusSnapshot:
         # (here the later failed run) — distinct from last_successful_sync.
         assert body['last_checked'] == body['last_sync']
         assert body['last_successful_sync'] == '2026-06-01T21:39:56Z'
-        assert body['message'] == 'MLB API unavailable'
+        assert body['message'] == sync_metadata.PUBLIC_SYNC_FAILURE_MESSAGE
+        assert body['sync']['error_message'] == sync_metadata.PUBLIC_SYNC_FAILURE_MESSAGE
+        assert body['sync']['error_summary'] == sync_metadata.PUBLIC_SYNC_FAILURE_MESSAGE
+        assert body['last_successful_sync_run']['error_message'] is None
+        assert body['last_successful_sync_run']['error_summary'] is None
+        serialized = json.dumps(body)
+        for private_fragment in (
+            'Session',
+            'transaction',
+            'PendingRollbackError',
+            'IntegrityError',
+            'public_dashboard_artifacts',
+            'integrity_hash',
+            'INSERT INTO',
+            'sqlalche.me',
+        ):
+            assert private_fragment not in serialized
         assert body['freshness']['reason_codes'] == ['latest_sync_failed']
         assert 'The latest sync attempt failed; data may reflect an earlier successful sync.' in body['freshness']['limitations']
 

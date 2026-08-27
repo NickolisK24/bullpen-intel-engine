@@ -181,6 +181,8 @@ export function DataTrustView({
             loading={sync.loading}
             error={sync.staleWithError ? null : sync.error}
             freshnessAuthority={servedFreshness}
+            freshnessLoading={dashboard.loading && !dashboard.data}
+            freshnessError={dashboard.staleWithError ? null : dashboard.error}
           />
         </section>
 

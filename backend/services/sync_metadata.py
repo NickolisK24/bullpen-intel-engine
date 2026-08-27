@@ -26,6 +26,16 @@ STATUS_FAILED = 'failed'
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
+PUBLIC_SYNC_FAILURE_MESSAGE = 'Latest refresh did not complete.'
+PUBLIC_SYNC_PARTIAL_MESSAGE = 'Latest refresh completed with partial data.'
+PUBLIC_SYNC_RUNNING_MESSAGE = 'Refresh is in progress.'
+PUBLIC_SYNC_RUN_FIELDS = (
+    'sync',
+    'last_successful_sync_run',
+    'last_completed_game_refresh_run',
+    'last_morning_full_sync_run',
+)
+
 # A TRANSIENT runtime limitation reflects a momentary process state (a sync in
 # progress) that recovers on the next completed sync. It is valid on the LIVE surface
 # but MUST NOT be frozen into an immutable public artifact (which would assert the
@@ -1114,3 +1124,42 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         'active_writer': _sync_run_summary(active_writer),
         'last_successful_sync_run': last_successful_sync_run,
     }
+
+
+def _public_sync_message(status):
+    if status == STATUS_FAILED:
+        return PUBLIC_SYNC_FAILURE_MESSAGE
+    if status == STATUS_PARTIAL:
+        return PUBLIC_SYNC_PARTIAL_MESSAGE
+    if status == STATUS_RUNNING:
+        return PUBLIC_SYNC_RUNNING_MESSAGE
+    if status == STATUS_NEVER:
+        return 'No sync has run yet.'
+    if status == STATUS_METADATA_UNAVAILABLE:
+        return 'Refresh metadata unavailable.'
+    return ''
+
+
+def _public_sync_run_projection(run):
+    """Copy a run for public transport without persisted diagnostic text."""
+    if not isinstance(run, dict):
+        return run
+
+    projected = dict(run)
+    public_message = _public_sync_message(projected.get('status'))
+    projected['error_message'] = public_message or None
+    projected['error_summary'] = public_message or None
+    return projected
+
+
+def build_public_sync_status_payload(legacy_status=None, reference_date=None):
+    """Return the stable public status shape with raw run errors removed."""
+    payload = build_sync_status_payload(
+        legacy_status=legacy_status,
+        reference_date=reference_date,
+    )
+    public_payload = dict(payload)
+    public_payload['message'] = _public_sync_message(payload.get('status'))
+    for field in PUBLIC_SYNC_RUN_FIELDS:
+        public_payload[field] = _public_sync_run_projection(payload.get(field))
+    return public_payload
