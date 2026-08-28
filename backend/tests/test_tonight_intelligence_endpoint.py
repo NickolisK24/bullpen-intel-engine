@@ -113,6 +113,7 @@ def client(tmp_path, monkeypatch):
             {'teams': [_team_state(116), _team_state(142)]},
             {'teams': [_recent_volume(116), _recent_volume(142)]},
             {'teams': [_rotation_context(116), _rotation_context(142)]},
+            {'teams': []},
         ),
     )
     app = Flask(__name__)

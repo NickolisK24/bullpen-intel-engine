@@ -941,9 +941,9 @@ function resolveTonightSide(side, teams = []) {
     teamState: resolveTonightTeamState(side?.team_state),
     recentVolume: resolveTonightRecentVolume(side?.recent_bullpen_volume),
     rotationContext: resolveTonightRotationContext(side?.rotation_context),
-    cleanOptionsCount: context?.clean_options_count == null
+    restedOptionsCount: side?.rest_status?.available !== true
       ? null
-      : numberValue(context.clean_options_count),
+      : numberValue(side.rest_status.rested_arm_count),
     namedOptions: cleanTonightList(context?.clean_workload_option_names),
     optionality: backendTokenLabel(context?.optionality_band),
     concentration: backendTokenLabel(context?.concentration_band),
@@ -1475,9 +1475,9 @@ function TonightSlateCompactSide({ side, designation }) {
           {side.teamState.available ? side.teamState.label : 'Team State unavailable'}
         </span>
       </span>
-      {side.cleanOptionsCount != null && (
+      {side.restedOptionsCount != null && (
         <span className="mt-1 block text-xs text-chalk500">
-          {side.cleanOptionsCount} rested {side.cleanOptionsCount === 1 ? 'option' : 'options'}
+          {side.restedOptionsCount} rested {side.restedOptionsCount === 1 ? 'option' : 'options'}
         </span>
       )}
     </span>

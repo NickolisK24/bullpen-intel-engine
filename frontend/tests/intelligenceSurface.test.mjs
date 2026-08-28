@@ -52,6 +52,12 @@ const {
   getTonightIntelligence,
   signupAudience,
 } = await server.ssrLoadModule('/src/utils/api.js')
+const { getBullpenSummaryView } = await server.ssrLoadModule(
+  '/src/components/bullpen/board/TeamBoardAnswerBlock.jsx',
+)
+const { getActiveBullpenRows } = await server.ssrLoadModule(
+  '/src/components/bullpen/board/TeamBoardActiveBullpen.jsx',
+)
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -465,6 +471,15 @@ const tonightSlate = {
           short_start_count: 2,
           bullpen_innings_required: 14.0,
         },
+        rest_status: {
+          available: true,
+          active_arm_count: 8,
+          rested_arm_count: 6,
+          worked_yesterday_count: 2,
+          back_to_back_count: 0,
+          summary: '6 of 8 active bullpen arms have at least one full day of rest.',
+          reason_code: null,
+        },
         bullpen_context: {
           context_available: true,
           clean_options_count: 2,
@@ -514,6 +529,15 @@ const tonightSlate = {
           window_days: 7,
           short_start_count: 1,
           bullpen_innings_required: null,
+        },
+        rest_status: {
+          available: true,
+          active_arm_count: 8,
+          rested_arm_count: 8,
+          worked_yesterday_count: 0,
+          back_to_back_count: 0,
+          summary: '8 of 8 active bullpen arms have at least one full day of rest.',
+          reason_code: null,
         },
         bullpen_context: {
           context_available: true,
@@ -568,6 +592,15 @@ const tonightSlate = {
           short_start_count: null,
           bullpen_innings_required: null,
         },
+        rest_status: {
+          available: true,
+          active_arm_count: 8,
+          rested_arm_count: 4,
+          worked_yesterday_count: 3,
+          back_to_back_count: 1,
+          summary: '4 of 8 active bullpen arms have at least one full day of rest.',
+          reason_code: null,
+        },
         bullpen_context: {
           context_available: true,
           clean_options_count: 1,
@@ -617,6 +650,15 @@ const tonightSlate = {
           window_days: 7,
           short_start_count: 0,
           bullpen_innings_required: 0.0,
+        },
+        rest_status: {
+          available: false,
+          active_arm_count: null,
+          rested_arm_count: null,
+          worked_yesterday_count: null,
+          back_to_back_count: null,
+          summary: null,
+          reason_code: 'tonight_rest_status_listing_unavailable',
         },
         bullpen_context: { context_available: false, clean_workload_option_names: [] },
         watch: null,
@@ -1535,9 +1577,9 @@ test('Tonight slate keeps every game compact by default from the one owner respo
   assert.equal(games[0].gamePk, 900001)
   assert.equal(games[0].gameTime, '7:10 PM ET')
   assert.equal(games[0].status, 'Scheduled')
-  assert.equal(games[0].away.cleanOptionsCount, 2)
-  assert.equal(games[0].home.cleanOptionsCount, 1)
-  assert.equal(games[1].home.cleanOptionsCount, null)
+  assert.equal(games[0].away.restedOptionsCount, 6)
+  assert.equal(games[0].home.restedOptionsCount, 8)
+  assert.equal(games[1].home.restedOptionsCount, null)
   assert.deepEqual(games[0].away.namedOptions, ['Porter Hodge', 'Daniel Palencia'])
   assert.equal(games[0].away.workloadShare, 52.4)
   assert.deepEqual(games[0].away.teamState, {
@@ -1588,8 +1630,8 @@ test('Tonight slate keeps every game compact by default from the one owner respo
   assert.ok(htmlIncludes(html, 'San Francisco Giants at Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, '7:10 PM ET · Scheduled'))
   assert.ok(htmlIncludes(html, '10:10 PM ET · In Progress'))
-  assert.ok(htmlIncludes(html, '2 rested options'))
-  assert.ok(htmlIncludes(html, '1 rested option'))
+  assert.ok(htmlIncludes(html, '6 rested options'))
+  assert.ok(htmlIncludes(html, '8 rested options'))
   assert.ok(htmlIncludes(html, 'Fresh'))
   assert.ok(htmlIncludes(html, 'Team State unavailable'))
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
@@ -1642,6 +1684,66 @@ test('Tonight slate expansion is one game at a time and can collapse', () => {
   assert.equal(htmlIncludes(secondHtml, 'Porter Hodge · Daniel Palencia'), false)
   assert.ok(htmlIncludes(secondHtml, 'Ryan Walker'))
   assert.equal(countOccurrences(secondHtml, 'aria-expanded="true"'), 1)
+})
+
+test('Today and Team Board share canonical Rested Options while five Clean Options remain distinct', () => {
+  const activeArms = Array.from({ length: 8 }, (_, index) => ({
+    pitcher_id: index + 1,
+    name: `Arm ${index + 1}`,
+    public_labels: {
+      read: index < 5
+        ? { key: 'clean_option', label: 'Clean Option' }
+        : { key: 'watch_arm', label: 'Watch Arm' },
+    },
+    availability: { label: index < 5 ? 'Available' : 'On Watch' },
+    workload: {},
+  }))
+  const restStatus = {
+    available: true,
+    active_arm_count: 8,
+    rested_arm_count: 6,
+    worked_yesterday_count: 2,
+    back_to_back_count: 0,
+    summary: '6 of 8 active bullpen arms have at least one full day of rest.',
+    reason_code: null,
+  }
+  const today = getTonightGames({
+    games: [{
+      game_pk: 1,
+      away: {
+        team_id: 112,
+        rest_status: restStatus,
+        bullpen_context: { context_available: true, clean_options_count: 5 },
+      },
+      home: {
+        team_id: 158,
+        rest_status: { ...restStatus, rested_arm_count: 8 },
+        bullpen_context: { context_available: true, clean_options_count: 5 },
+      },
+    }],
+  }, teams)[0]
+  const boardRead = {
+    sectionStatus: {
+      active_bullpen: { status: 'available' },
+      rest_status: { status: 'available' },
+    },
+    activeBullpen: { arm_count: 8, arms: activeArms },
+    restStatus,
+  }
+
+  assert.equal(today.away.restedOptionsCount, 6)
+  assert.equal(
+    getBullpenSummaryView(boardRead).find(row => row.key === 'rested-options').value,
+    6,
+  )
+  assert.equal(
+    getActiveBullpenRows(boardRead.activeBullpen).filter(row => row.readLabel === 'Clean Option').length,
+    5,
+  )
+  assert.equal(JSON.stringify(today).includes('cleanOptionsCount'), false)
+  const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
+  assert.ok(source.includes('side.rest_status.rested_arm_count'))
+  assert.equal(source.includes('restedOptionsCount: context?.clean_options_count'), false)
 })
 
 test('Tonight slate keeps healthy games and sides when one bullpen context is unavailable', () => {

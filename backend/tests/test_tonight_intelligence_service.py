@@ -15,6 +15,7 @@ REF = '2026-06-26'
 _REAL_DEFAULT_TEAM_STATE_LISTING_BUILDER = svc._default_team_state_listing_builder
 _REAL_DEFAULT_WORKLOAD_LISTING_BUILDER = svc._default_workload_listing_builder
 _REAL_DEFAULT_ROTATION_LISTING_BUILDER = svc._default_rotation_listing_builder
+_REAL_DEFAULT_REST_STATUS_LISTING_BUILDER = svc._default_rest_status_listing_builder
 _REAL_DEFAULT_PUBLICATION_SIDECAR_BUILDER = svc._default_publication_sidecar_builder
 
 _BANNED = (
@@ -44,8 +45,13 @@ def _empty_published_team_state_listing(monkeypatch):
     )
     monkeypatch.setattr(
         svc,
+        '_default_rest_status_listing_builder',
+        lambda: {'teams': []},
+    )
+    monkeypatch.setattr(
+        svc,
         '_default_publication_sidecar_builder',
-        lambda: ({'teams': []}, {'teams': []}, {'teams': []}),
+        lambda: ({'teams': []}, {'teams': []}, {'teams': []}, {'teams': []}),
     )
 
 
@@ -178,6 +184,28 @@ def _rotation_listing(contexts):
         'teams': [
             {'team_id': team_id, 'rotation_context': context}
             for team_id, context in contexts.items()
+        ],
+    }
+
+
+def _rest_status(*, active=8, rested=6, worked_yesterday=2, back_to_back=0):
+    return {
+        'available': True,
+        'active_arm_count': active,
+        'rested_arm_count': rested,
+        'worked_yesterday_count': worked_yesterday,
+        'back_to_back_count': back_to_back,
+        'summary': f'{rested} of {active} active bullpen arms have at least one full day of rest.',
+        'reason_code': None,
+    }
+
+
+def _rest_status_listing(statuses):
+    return {
+        'capability': 'published_team_rest_status_listing_v1',
+        'teams': [
+            {'team_id': team_id, 'rest_status': rest_status}
+            for team_id, rest_status in statuses.items()
         ],
     }
 
@@ -393,6 +421,35 @@ def test_rotation_failure_is_local_to_rotation_context_only():
     assert game['away']['rotation_context']['short_start_count'] is None
 
 
+def test_rest_status_passes_through_canonical_count_not_clean_option_count():
+    away_rest = _rest_status(rested=6)
+    home_rest = _rest_status(rested=8, worked_yesterday=0)
+    out = serve_tonight(
+        REF,
+        schedule_contexts=[
+            _sc(116),
+            {**_sc(142), 'opponent_team_id_today': 116, 'home_away_today': 'away'},
+        ],
+        bullpen_context_builder=_builder({
+            116: _pen(clean=5),
+            142: _pen(clean=5),
+        }),
+        slate_games=[_game()],
+        rest_status_listing_builder=lambda: _rest_status_listing({
+            116: away_rest,
+            142: home_rest,
+        }),
+    )
+
+    game = out['games'][0]
+    assert game['away']['rest_status'] == away_rest
+    assert game['home']['rest_status'] == home_rest
+    assert game['away']['rest_status']['rested_arm_count'] == 6
+    assert game['away']['bullpen_context']['clean_options_count'] == 5
+    assert game['home']['rest_status']['rested_arm_count'] == 8
+    assert game['home']['bullpen_context']['clean_options_count'] == 5
+
+
 def test_team_state_passes_through_withheld_and_missing_without_cross_team_leakage():
     withheld = {
         'contract': 'team_state_public_v1',
@@ -504,10 +561,31 @@ def test_default_rotation_builder_delegates_to_frozen_canonical_listing(monkeypa
     assert calls == ['called']
 
 
+def test_default_rest_status_builder_delegates_to_frozen_canonical_listing(monkeypatch):
+    import services.published_team_rest_status_listing as listing
+
+    expected = _rest_status_listing({116: _rest_status()})
+    calls = []
+
+    def build_listing():
+        calls.append('called')
+        return expected
+
+    monkeypatch.setattr(
+        listing,
+        'build_published_team_rest_status_listing',
+        build_listing,
+    )
+
+    assert _REAL_DEFAULT_REST_STATUS_LISTING_BUILDER() is expected
+    assert calls == ['called']
+
+
 def test_default_publication_sidecars_share_one_trusted_snapshot_resolution(monkeypatch):
     import services.league_team_state_listing as state_listing
     import services.published_team_workload_listing as workload_listing
     import services.published_team_rotation_listing as rotation_listing
+    import services.published_team_rest_status_listing as rest_listing
 
     resolved = (object(), None)
     resolver_calls = []
@@ -529,6 +607,10 @@ def test_default_publication_sidecars_share_one_trusted_snapshot_resolution(monk
         received.append(snapshot_resolver())
         return _rotation_listing({116: _rotation_context()})
 
+    def build_rest(*, snapshot_resolver):
+        received.append(snapshot_resolver())
+        return _rest_status_listing({116: _rest_status()})
+
     monkeypatch.setattr(
         state_listing,
         'resolve_current_trusted_dashboard_snapshot',
@@ -545,14 +627,20 @@ def test_default_publication_sidecars_share_one_trusted_snapshot_resolution(monk
         'build_published_team_rotation_listing',
         build_rotation,
     )
+    monkeypatch.setattr(
+        rest_listing,
+        'build_published_team_rest_status_listing',
+        build_rest,
+    )
 
-    states, workload, rotation = _REAL_DEFAULT_PUBLICATION_SIDECAR_BUILDER()
+    states, workload, rotation, rest_status = _REAL_DEFAULT_PUBLICATION_SIDECAR_BUILDER()
 
     assert resolver_calls == ['called']
-    assert received == [resolved, resolved, resolved]
+    assert received == [resolved, resolved, resolved, resolved]
     assert states['teams'][0]['team_state']['public_label'] == 'Fresh'
     assert workload['teams'][0]['recent_bullpen_volume']['status'] == 'complete'
     assert rotation['teams'][0]['rotation_context']['status'] == 'available'
+    assert rest_status['teams'][0]['rest_status']['rested_arm_count'] == 6
 
 
 def test_one_team_context_failure_is_local_to_that_game_side():
