@@ -130,6 +130,21 @@ class TestTransientRetries:
         assert '/people/545121/stats' in str(raised.value)
 
 
+def test_live_feed_uses_configured_host_and_official_v1_1_sibling(app, monkeypatch):
+    client = MLBApiClient()
+    captured = {}
+
+    def fake_get(url, params=None, timeout=None):
+        captured['url'] = url
+        return FakeResponse(200, {'gamePk': 823826})
+
+    monkeypatch.setattr(client.session, 'get', fake_get)
+    with app.app_context():
+        assert client.get_game_live_feed(823826) == {'gamePk': 823826}
+    assert captured['url'] == 'https://example.test/api/v1.1/game/823826/feed/live'
+    assert '/v1.1/game/{id}/feed/live' in client.metrics.snapshot()['by_endpoint']
+
+
 class TestNonTransient:
     def test_404_is_not_retried(self, app, monkeypatch, sleeps):
         client = _client_with_responses(monkeypatch, [FakeResponse(404)])

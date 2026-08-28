@@ -173,7 +173,14 @@ class MLBApiClient:
         them for "no rows."
         """
         settings = self._request_settings()
-        url = f"{settings['base_url']}{endpoint}"
+        base_url = settings['base_url']
+        # A small number of official Stats API resources (notably feed/live)
+        # are versioned at v1.1 while the shared client base is /api/v1.
+        # ``/../`` selects that sibling without bypassing configured hosts.
+        if endpoint.startswith('/../'):
+            base_url = base_url.rsplit('/', 1)[0]
+            endpoint = endpoint[3:]
+        url = f"{base_url}{endpoint}"
         max_retries = settings['max_retries']
         last_exc = None
 
@@ -656,6 +663,15 @@ class MLBApiClient:
         response is consumed transiently and never persisted.
         """
         return self._get(f'/game/{game_pk}/playByPlay')
+
+    def get_game_live_feed(self, game_pk):
+        """Get MLB's full live feed, including its upstream update marker.
+
+        The v1.1 feed path is relative to the configured ``/api/v1`` base.
+        Raw feed data remains transient; CU-02 persists only a canonicalized
+        material observation and its upstream ``metaData.timeStamp`` evidence.
+        """
+        return self._get(f'/../v1.1/game/{game_pk}/feed/live')
 
     def get_game_pitching_lines(self, game_pk):
         """Extract pitcher lines from a game boxscore."""
