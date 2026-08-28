@@ -1,6 +1,7 @@
 """CU-03 change-to-impact orchestration contracts."""
 
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
+from models.game_observation_state import GameObservationState
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import GamePitchEvent
 from services import change_impact_orchestration as orchestration
@@ -406,6 +408,67 @@ def test_real_cu02_finality_handoff_to_reviewed_cu01_and_replay_stop(app, monkey
         assert third.affected_team_ids == ()
         assert GameLog.query.filter_by(mlb_game_pk=GAME_PK).count() == 4
         assert GamePitchEvent.query.filter_by(mlb_game_pk=GAME_PK).count() == 4
+
+
+def test_stale_reviewed_plan_is_rejected_by_cu01_before_canonical_mutation(
+    app, monkeypatch,
+):
+    class Client:
+        def __init__(self):
+            self.boxscore = _boxscore()
+
+        def get_game_boxscore(self, game_pk):
+            assert game_pk == GAME_PK
+            return self.boxscore
+
+        def get_game_play_by_play(self, game_pk):
+            pytest.fail('PBP must not be fetched before plan authorization')
+
+    with app.app_context():
+        _seed_pitchers()
+        schedule_final_game(GAME_PK, game_date=GAME_DATE)
+        db.session.add(GameObservationState(
+            mlb_game_pk=GAME_PK,
+            observation_fingerprint='accepted-final-observation',
+            observation={'identity': {'official_date': GAME_DATE.isoformat()}},
+            source_authority=detection.SOURCE_AUTHORITY,
+            source_endpoint=detection.SOURCE_ENDPOINT.format(game_pk=GAME_PK),
+            source_observed_at=datetime(2026, 8, 27, 23, 0),
+            finality_state=game_finality.FINAL_PENDING_DATA,
+            last_classification=detection.FINALIZED,
+        ))
+        db.session.commit()
+        client = Client()
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+
+        reviewed = game_driven_ingestion.run_game_driven_ingestion(
+            GAME_DATE,
+            mode=game_driven_ingestion.MODE_SHADOW,
+            only_game_pks=[GAME_PK],
+        )
+        client.boxscore['teams']['home']['players']['ID1002']['stats']['pitching'][
+            'numberOfPitches'
+        ] = 18
+
+        result = orchestration.orchestrate_game_change(
+            _change(
+                detection.FINALIZED,
+                finality=game_finality.FINAL_PENDING_DATA,
+            ),
+            allow_canonical_write=True,
+            expected_plan_fingerprint=(
+                reviewed['complete_reconciliation_fingerprint']
+            ),
+        )
+
+        assert result.cu01_invocations == 1
+        assert result.orchestration_status == orchestration.STATUS_CANONICAL_FAILED
+        assert result.source_failure_state == 'plan_fingerprint_mismatch'
+        assert result.canonical_mutation_performed is False
+        assert result.affected_pitcher_ids == ()
+        assert result.affected_team_ids == ()
+        assert GameLog.query.count() == 0
+        assert GamePitchEvent.query.count() == 0
 
 
 def test_script_is_non_scheduled_and_disables_auto_sync_before_app_import():
