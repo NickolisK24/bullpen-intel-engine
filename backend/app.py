@@ -163,6 +163,7 @@ def create_app(config_name=None):
         OfficialPitchingLineRepairExecution,
     )
     from models.game_ingestion_work_item import GameIngestionWorkItem
+    from models.game_observation_state import GameObservationState
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
