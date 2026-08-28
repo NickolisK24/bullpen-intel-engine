@@ -70,6 +70,19 @@ FINGERPRINT_FIELDS = (
     'home_runs_allowed',
     'batters_faced',
     'pitches_thrown',
+    'strikes',
+    'balls',
+    'games_finished',
+    'hit_batters',
+    'wild_pitches',
+    'inherited_runners',
+    'inherited_runners_scored',
+    'save_situation',
+    'hold',
+    'blown_save',
+    'win',
+    'loss',
+    'save',
 )
 
 
@@ -181,6 +194,21 @@ def extract_game_appearances(
             'home_runs_allowed': _int_or_none(stats.get('homeRuns')),
             'batters_faced': _int_or_none(stats.get('battersFaced')),
             'pitches_thrown': _int_or_none(stats.get('numberOfPitches')),
+            'strikes': _int_or_none(stats.get('strikes')),
+            'balls': _int_or_none(stats.get('balls')),
+            'games_finished': _int_or_none(stats.get('gamesFinished')),
+            'hit_batters': _first_int(stats, 'hitBatsmen', 'hitByPitch'),
+            'wild_pitches': _int_or_none(stats.get('wildPitches')),
+            'inherited_runners': _int_or_none(stats.get('inheritedRunners')),
+            'inherited_runners_scored': _int_or_none(
+                stats.get('inheritedRunnersScored')
+            ),
+            'save_situation': _positive_or_none(stats, 'saveOpportunities'),
+            'hold': _positive_or_none(stats, 'holds'),
+            'blown_save': _positive_or_none(stats, 'blownSaves'),
+            'win': _positive_or_none(stats, 'wins'),
+            'loss': _positive_or_none(stats, 'losses'),
+            'save': _positive_or_none(stats, 'saves'),
             'source_authority': SOURCE_AUTHORITY,
         })
 
@@ -236,6 +264,20 @@ def _int_or_none(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _first_int(stats, *keys):
+    for key in keys:
+        if key in (stats or {}):
+            return _int_or_none(stats.get(key))
+    return None
+
+
+def _positive_or_none(stats, key):
+    if key not in (stats or {}) or stats.get(key) in (None, ''):
+        return None
+    value = _int_or_none(stats.get(key))
+    return None if value is None else value > 0
 
 
 def _positive_int(value):

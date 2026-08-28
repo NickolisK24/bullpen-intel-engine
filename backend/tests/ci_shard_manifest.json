@@ -345,8 +345,12 @@
       ]
     },
     "2": {
-      "measured_seconds": 504.14,
+      "measured_seconds": 504.84,
       "files": [
+        {
+          "path": "tests/test_continuous_reliever_ingestion.py",
+          "measured_seconds": 0.7
+        },
         {
           "path": "tests/test_appearance_ledger.py",
           "measured_seconds": 5.277

@@ -13,6 +13,7 @@ from datetime import date, datetime
 
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import (
+    GamePitchEvent,
     GamePlayByPlayEvent,
     PlayByPlayProcessedGame,
 )
@@ -206,18 +207,49 @@ def process_final_play_by_play_foundation(
             job_name=job_name,
         )
 
+    pitch_normalized = _normalize_pitch_events(
+        all_plays,
+        game_pk=game_pk,
+        game_date=resolved_game_date,
+        game_type=(game or {}).get('gameType'),
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        sync_run_id=sync_run_id,
+    )
+    if pitch_normalized['status'] != 'ok':
+        return _failure_marker(
+            game_pk=game_pk,
+            game=game,
+            game_date=resolved_game_date,
+            finality_state=finality.state,
+            status=PlayByPlayProcessedGame.STATUS_AMBIGUOUS,
+            reason=pitch_normalized['reason'],
+            entity_type=FINAL_PBP_SHAPE_ENTITY_TYPE,
+            payload={
+                'reason': pitch_normalized['reason'],
+                'at_bat_index': pitch_normalized.get('at_bat_index'),
+                'play_event_index': pitch_normalized.get('play_event_index'),
+            },
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+    pitches = pitch_normalized['pitches']
     reconciliation = _reconcile_pitchers(boxscore, events)
     event_fingerprint = _event_fingerprint(events)
+    pitch_fingerprint = _pitch_fingerprint(pitches)
     marker_status = PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
     reason = None
     failure_entity_type = None
     failure_payload = None
-    if reconciliation['unresolved_pitcher_count']:
+    if reconciliation['unresolved_pitcher_count'] or pitch_normalized['unresolved_pitcher_count']:
         marker_status = PlayByPlayProcessedGame.STATUS_INCOMPLETE
         reason = 'unknown_pitcher_identity'
         failure_entity_type = FINAL_PBP_IDENTITY_ENTITY_TYPE
         failure_payload = {
-            'unresolved_pitcher_count': reconciliation['unresolved_pitcher_count'],
+            'unresolved_pitcher_count': (
+                reconciliation['unresolved_pitcher_count']
+                + pitch_normalized['unresolved_pitcher_count']
+            ),
         }
     elif reconciliation['reconciliation_mismatch_count']:
         marker_status = PlayByPlayProcessedGame.STATUS_INCOMPLETE
@@ -235,7 +267,13 @@ def process_final_play_by_play_foundation(
     corrected = bool(
         marker is not None
         and marker.event_fingerprint
-        and marker.event_fingerprint != event_fingerprint
+        and (
+            marker.event_fingerprint != event_fingerprint
+            or (
+                marker.pitch_fingerprint is not None
+                and marker.pitch_fingerprint != pitch_fingerprint
+            )
+        )
     )
     rows_rebuilt = _replace_event_rows_if_needed(
         game_pk=game_pk,
@@ -243,6 +281,12 @@ def process_final_play_by_play_foundation(
         event_fingerprint=event_fingerprint,
         corrected=corrected,
         correction_count=((marker.correction_count or 0) + 1 if marker and corrected else 0),
+        sync_run_id=sync_run_id,
+    )
+    pitch_rows = _reconcile_pitch_rows(
+        game_pk=game_pk,
+        pitches=pitches,
+        source_revision=pitch_fingerprint,
         sync_run_id=sync_run_id,
     )
 
@@ -256,11 +300,18 @@ def process_final_play_by_play_foundation(
         events_seen=len(all_plays),
         events_stored=len(events),
         pitcher_events_seen=reconciliation['pitcher_events_seen'],
-        unresolved_pitcher_count=reconciliation['unresolved_pitcher_count'],
+        unresolved_pitcher_count=(
+            reconciliation['unresolved_pitcher_count']
+            + pitch_normalized['unresolved_pitcher_count']
+        ),
         reconciliation_mismatch_count=reconciliation['reconciliation_mismatch_count'],
         event_fingerprint=event_fingerprint,
         sync_run_id=sync_run_id,
         corrected=corrected,
+        pitches_seen=len(pitches),
+        pitches_stored=len(pitches),
+        current_pitch_count=pitch_rows['current'],
+        pitch_fingerprint=pitch_fingerprint,
     )
     if failure_entity_type:
         _record_failure(
@@ -277,6 +328,7 @@ def process_final_play_by_play_foundation(
 
     result = _result_from_marker(marker)
     result['rows_rebuilt'] = rows_rebuilt
+    result['pitch_rows'] = pitch_rows
     result['corrected'] = corrected
     return result
 
@@ -466,6 +518,247 @@ def _replace_event_rows_if_needed(
     return True
 
 
+def _normalize_pitch_events(
+    all_plays,
+    *,
+    game_pk,
+    game_date,
+    game_type,
+    home_team_id,
+    away_team_id,
+    sync_run_id,
+):
+    pitcher_ids = _pitcher_ids_for_events(all_plays)
+    local_pitcher_ids = _local_pitcher_ids(pitcher_ids)
+    pitches = []
+    unresolved_pitchers = 0
+
+    for play in all_plays:
+        if not isinstance(play, dict):
+            return {'status': 'ambiguous', 'reason': 'non_object_play'}
+        about = play.get('about') or {}
+        matchup = play.get('matchup') or {}
+        result = play.get('result') or {}
+        if about.get('isComplete') is False:
+            continue
+
+        at_bat_index = _int_or_none(about.get('atBatIndex'))
+        inning = _positive_int(about.get('inning'))
+        half_inning = _half_inning(about.get('halfInning'))
+        pitcher_mlb_id = _positive_int(((matchup.get('pitcher') or {}).get('id')))
+        batter_mlb_id = _positive_int(((matchup.get('batter') or {}).get('id')))
+        if at_bat_index is None or inning is None or half_inning is None:
+            return {
+                'status': 'ambiguous',
+                'reason': 'missing_required_pitch_context',
+                'at_bat_index': at_bat_index,
+            }
+
+        is_top = half_inning == 'top'
+        batting_team_id = away_team_id if is_top else home_team_id
+        fielding_team_id = home_team_id if is_top else away_team_id
+        pitcher_id = local_pitcher_ids.get(pitcher_mlb_id)
+        play_events = play.get('playEvents') or []
+        if not isinstance(play_events, list):
+            return {
+                'status': 'ambiguous',
+                'reason': 'non_list_play_events',
+                'at_bat_index': at_bat_index,
+            }
+
+        for fallback_index, event in enumerate(play_events):
+            if not isinstance(event, dict) or event.get('isPitch') is not True:
+                continue
+            play_event_index = _int_or_none(event.get('index'))
+            if play_event_index is None:
+                return {
+                    'status': 'ambiguous',
+                    'reason': 'missing_pitch_event_index',
+                    'at_bat_index': at_bat_index,
+                    'play_event_index': fallback_index,
+                }
+            if pitcher_mlb_id is None or pitcher_id is None:
+                unresolved_pitchers += 1
+                continue
+
+            details = event.get('details') or {}
+            pitch_data = event.get('pitchData') or {}
+            coordinates = pitch_data.get('coordinates') or {}
+            breaks = pitch_data.get('breaks') or {}
+            count = event.get('count') or {}
+            hit_data = event.get('hitData') or {}
+            pitch_type = details.get('type') or {}
+            call = details.get('call') or {}
+            values = {
+                'mlb_game_pk': game_pk,
+                'at_bat_index': at_bat_index,
+                'play_event_index': play_event_index,
+                'source_play_id': _string_or_none(event.get('playId')),
+                'pitch_number': _int_or_none(event.get('pitchNumber')),
+                'game_date': game_date,
+                'game_type': game_type,
+                'inning': inning,
+                'half_inning': half_inning,
+                'outs_after_pitch': _int_or_none(count.get('outs')),
+                'balls_after_pitch': _int_or_none(count.get('balls')),
+                'strikes_after_pitch': _int_or_none(count.get('strikes')),
+                'pitcher_mlb_id': pitcher_mlb_id,
+                'pitcher_id': pitcher_id,
+                'batter_mlb_id': batter_mlb_id,
+                'batting_team_id': batting_team_id,
+                'fielding_team_id': fielding_team_id,
+                'pitch_type_code': _string_or_none(pitch_type.get('code')),
+                'pitch_type_description': _string_or_none(pitch_type.get('description')),
+                'call_code': _string_or_none(call.get('code') or details.get('code')),
+                'call_description': _string_or_none(
+                    call.get('description') or details.get('description')
+                ),
+                'is_ball': _bool_or_none(details, 'isBall'),
+                'is_strike': _bool_or_none(details, 'isStrike'),
+                'is_in_play': _bool_or_none(details, 'isInPlay'),
+                'is_out': _bool_or_none(details, 'isOut'),
+                'start_speed': _float_or_none(pitch_data.get('startSpeed')),
+                'end_speed': _float_or_none(pitch_data.get('endSpeed')),
+                'spin_rate': _float_or_none(breaks.get('spinRate')),
+                'spin_direction': _float_or_none(breaks.get('spinDirection')),
+                'extension': _float_or_none(pitch_data.get('extension')),
+                'plate_time': _float_or_none(pitch_data.get('plateTime')),
+                'zone': _int_or_none(pitch_data.get('zone')),
+                'plate_x': _float_or_none(coordinates.get('pX')),
+                'plate_z': _float_or_none(coordinates.get('pZ')),
+                'strike_zone_top': _float_or_none(pitch_data.get('strikeZoneTop')),
+                'strike_zone_bottom': _float_or_none(pitch_data.get('strikeZoneBottom')),
+                'release_position_x': _float_or_none(coordinates.get('x0')),
+                'release_position_y': _float_or_none(coordinates.get('y0')),
+                'release_position_z': _float_or_none(coordinates.get('z0')),
+                'initial_velocity_x': _float_or_none(coordinates.get('vX0')),
+                'initial_velocity_y': _float_or_none(coordinates.get('vY0')),
+                'initial_velocity_z': _float_or_none(coordinates.get('vZ0')),
+                'acceleration_x': _float_or_none(coordinates.get('aX')),
+                'acceleration_y': _float_or_none(coordinates.get('aY')),
+                'acceleration_z': _float_or_none(coordinates.get('aZ')),
+                'pfx_x': _float_or_none(coordinates.get('pfxX')),
+                'pfx_z': _float_or_none(coordinates.get('pfxZ')),
+                'break_angle': _float_or_none(breaks.get('breakAngle')),
+                'break_horizontal': _float_or_none(breaks.get('breakHorizontal')),
+                'break_length': _float_or_none(breaks.get('breakLength')),
+                'break_vertical': _float_or_none(breaks.get('breakVertical')),
+                'break_vertical_induced': _float_or_none(
+                    breaks.get('breakVerticalInduced')
+                ),
+                'batted_ball_event_type': _string_or_none(result.get('eventType')),
+                'batted_ball_trajectory': _string_or_none(hit_data.get('trajectory')),
+                'batted_ball_hardness': _string_or_none(hit_data.get('hardness')),
+                'launch_speed': _float_or_none(hit_data.get('launchSpeed')),
+                'launch_angle': _float_or_none(hit_data.get('launchAngle')),
+                'total_distance': _float_or_none(hit_data.get('totalDistance')),
+                'hit_location': _string_or_none(hit_data.get('location')),
+                'source': SOURCE,
+                'source_endpoint': SOURCE_ENDPOINT.format(gamePk=game_pk),
+                'sync_run_id': sync_run_id,
+            }
+            values['event_fingerprint'] = _pitch_event_fingerprint(values)
+            pitches.append(values)
+
+    keys = [
+        (pitch['at_bat_index'], pitch['play_event_index']) for pitch in pitches
+    ]
+    if len(keys) != len(set(keys)):
+        return {'status': 'ambiguous', 'reason': 'duplicate_pitch_natural_key'}
+    pitches.sort(key=lambda row: (row['at_bat_index'], row['play_event_index']))
+    return {
+        'status': 'ok',
+        'pitches': pitches,
+        'unresolved_pitcher_count': unresolved_pitchers,
+    }
+
+
+def _pitch_event_fingerprint(values):
+    excluded = {'event_fingerprint', 'source_revision', 'sync_run_id'}
+    payload = sorted(
+        (key, _fingerprint_value(value))
+        for key, value in values.items() if key not in excluded
+    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def _pitch_fingerprint(pitches):
+    payload = [row['event_fingerprint'] for row in pitches]
+    encoded = json.dumps(payload, separators=(',', ':'))
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def _reconcile_pitch_rows(*, game_pk, pitches, source_revision, sync_run_id):
+    existing_rows = GamePitchEvent.query.filter_by(mlb_game_pk=game_pk).all()
+    existing = {
+        (row.at_bat_index, row.play_event_index): row for row in existing_rows
+    }
+    incoming_keys = set()
+    now = utc_now_naive()
+    counts = {'inserted': 0, 'updated': 0, 'unchanged': 0, 'superseded': 0}
+
+    for values in pitches:
+        key = (values['at_bat_index'], values['play_event_index'])
+        incoming_keys.add(key)
+        row = existing.get(key)
+        row_revision = values['event_fingerprint']
+        if row is None:
+            row_values = dict(values)
+            row_values.update({
+                'source_revision': row_revision,
+                'sync_run_id': sync_run_id,
+                'first_seen_at': now,
+                'created_at': now,
+                'updated_at': now,
+                'is_current': True,
+                'superseded_at': None,
+            })
+            db.session.add(GamePitchEvent(**row_values))
+            counts['inserted'] += 1
+            continue
+
+        unchanged = (
+            row.is_current
+            and row.event_fingerprint == values['event_fingerprint']
+            and row.source_revision == row_revision
+        )
+        if unchanged:
+            counts['unchanged'] += 1
+            continue
+
+        for field, value in values.items():
+            if field != 'sync_run_id':
+                setattr(row, field, value)
+        row.source_revision = row_revision
+        row.sync_run_id = sync_run_id
+        row.is_current = True
+        row.superseded_at = None
+        row.last_corrected_at = now
+        row.correction_count = (row.correction_count or 0) + 1
+        row.correction_source = CORRECTION_SOURCE
+        row.updated_at = now
+        db.session.add(row)
+        counts['updated'] += 1
+
+    for key, row in existing.items():
+        if key in incoming_keys or not row.is_current:
+            continue
+        row.is_current = False
+        row.superseded_at = now
+        row.last_corrected_at = now
+        row.correction_count = (row.correction_count or 0) + 1
+        row.correction_source = CORRECTION_SOURCE
+        row.source_revision = source_revision
+        row.sync_run_id = sync_run_id
+        row.updated_at = now
+        db.session.add(row)
+        counts['superseded'] += 1
+
+    counts['current'] = len(pitches)
+    return counts
+
+
 def _upsert_marker(
     *,
     game_pk,
@@ -482,6 +775,10 @@ def _upsert_marker(
     event_fingerprint,
     sync_run_id,
     corrected=False,
+    pitches_seen=0,
+    pitches_stored=0,
+    current_pitch_count=0,
+    pitch_fingerprint=None,
 ):
     marker = _existing_marker(game_pk) or PlayByPlayProcessedGame(mlb_game_pk=game_pk)
     previous_status = _marker_processing_status(marker)
@@ -504,6 +801,10 @@ def _upsert_marker(
     marker.unresolved_pitcher_count = unresolved_pitcher_count
     marker.reconciliation_mismatch_count = reconciliation_mismatch_count
     marker.event_fingerprint = event_fingerprint
+    marker.pitches_seen = pitches_seen
+    marker.pitches_stored = pitches_stored
+    marker.current_pitch_count = current_pitch_count
+    marker.pitch_fingerprint = pitch_fingerprint
     marker.source = SOURCE
     marker.source_endpoint = SOURCE_ENDPOINT.format(gamePk=game_pk)
     marker.sync_run_id = sync_run_id
@@ -716,6 +1017,29 @@ def _int_or_none(value):
         return None
 
 
+def _float_or_none(value):
+    if isinstance(value, bool) or value in (None, ''):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _string_or_none(value):
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _bool_or_none(payload, key):
+    if key not in (payload or {}) or payload.get(key) is None:
+        return None
+    value = payload.get(key)
+    return value if isinstance(value, bool) else None
+
+
 def _result(game_pk, status, *, reason=None, finality_state=None):
     return {
         'game_pk': game_pk,
@@ -728,6 +1052,10 @@ def _result(game_pk, status, *, reason=None, finality_state=None):
         'unresolved_pitcher_count': 0,
         'reconciliation_mismatch_count': 0,
         'attempt_count': 0,
+        'pitches_seen': 0,
+        'pitches_stored': 0,
+        'current_pitch_count': 0,
+        'pitch_fingerprint': None,
         'skipped': status == 'skipped',
     }
 
@@ -744,5 +1072,9 @@ def _result_from_marker(marker, *, skipped=False, reason=None):
         'unresolved_pitcher_count': marker.unresolved_pitcher_count or 0,
         'reconciliation_mismatch_count': marker.reconciliation_mismatch_count or 0,
         'attempt_count': marker.attempt_count or 0,
+        'pitches_seen': marker.pitches_seen or 0,
+        'pitches_stored': marker.pitches_stored or 0,
+        'current_pitch_count': marker.current_pitch_count or 0,
+        'pitch_fingerprint': marker.pitch_fingerprint,
         'skipped': skipped,
     }

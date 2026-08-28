@@ -224,15 +224,13 @@ def test_phase0c_models_do_not_persist_raw_or_free_text_source_payloads():
         assert column_names.isdisjoint(forbidden_column_names), model.__name__
 
 
-def test_phase0c_modules_do_not_add_live_pitch_level_or_statcast_ingestion():
+def test_phase0c_modules_do_not_add_raw_payload_or_statcast_ingestion():
     forbidden_text = (
         'feed/live',
         'raw_play_by_play_json',
         'raw_pbp_json',
         'raw_transaction_json',
         'statcast',
-        'pitchdata',
-        'pitch_data',
     )
 
     for path in PHASE0C_MODULES:

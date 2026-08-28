@@ -50,6 +50,7 @@ from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import dead_letter
+from services import continuous_reliever_ingestion as continuous_impact
 from services import game_appearance_extraction as extraction
 from services import game_ingestion_planner as planner
 from services import game_log_reconciliation as reconciliation
@@ -366,6 +367,10 @@ def run_game_driven_ingestion(
         report[mapping] = dict(sorted((report.get(mapping) or {}).items()))
     # Working set, not report content.
     report.pop('_identity_pitcher_ids', None)
+    report['affected_pitcher_mlb_ids'] = sorted(
+        report.pop('_affected_pitcher_mlb_ids', set())
+    )
+    report['affected_team_ids'] = sorted(report.pop('_affected_team_ids', set()))
     report['reconciliation_plan_fingerprint'] = reconciliation.plan_fingerprint(
         [row for entry in report['games'] for row in (entry.get('rows') or ())]
     )
@@ -430,6 +435,13 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         'reconciliation_plan_fingerprint': None,
         'complete_reconciliation_fingerprint': None,
         'rows': [],
+        'impact': None,
+        'optional_source_domains': {
+            'final_play_by_play': {
+                'status': 'not_requested',
+                'publication_affected': False,
+            },
+        },
         'elapsed_seconds': 0.0,
         'error_class': None,
     }
@@ -465,6 +477,13 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         outcome['appearances_extracted'] = len(appearances)
         outcome['relief_appearances'] = extraction.relief_appearance_count(appearances)
         report['rows_expected'] += len(appearances)
+        outcome['impact'] = continuous_impact.build_game_impact(appearances)
+        report.setdefault('_affected_pitcher_mlb_ids', set()).update(
+            outcome['impact']['affected_pitcher_mlb_ids']
+        )
+        report.setdefault('_affected_team_ids', set()).update(
+            outcome['impact']['affected_team_ids']
+        )
 
         if not writes_enabled(mode):
             # Shadow asks the canonical planner, through the canonical writer's
@@ -504,7 +523,21 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
             + int(persisted_summary.get('statistical_corrections') or 0),
         )
 
+        if handlers.get('process_optional') is not None:
+            optional_payload = handlers['fetch_optional'](item)
+            outcome['optional_source_domains']['final_play_by_play'] = (
+                handlers['process_optional'](
+                    item,
+                    game_payload,
+                    boxscore,
+                    optional_payload,
+                    sync_run_id=sync_run_id,
+                    job_name=job_name,
+                )
+            )
+
         reconciled = _verify_game_completeness(item, appearances)
+        outcome['impact'] = continuous_impact.build_game_impact(appearances)
         _apply_plan_outcome(outcome, report, persisted)
         if reconciled['reconciled'] != len(appearances):
             raise _IngestionFailure(
@@ -1014,6 +1047,17 @@ def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
         boxscore = sync_service.mlb_client.get_game_boxscore(item.game_pk)
         return game_payload, boxscore
 
+    def _fetch_optional(item):
+        try:
+            return {
+                'play_by_play': sync_service.mlb_client.get_game_play_by_play(
+                    item.game_pk
+                ),
+                'error': None,
+            }
+        except Exception as exc:  # noqa: BLE001 - optional domain is reported
+            return {'play_by_play': None, 'error': exc}
+
     handlers_map = {}
 
     def _reconcile(item, game_payload, boxscore, *, sync_run_id=None,
@@ -1052,8 +1096,36 @@ def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
         return _reconcile(item, game_payload, boxscore, plan_only=True)
 
     handlers_map['fetch'] = _fetch
+    handlers_map['fetch_optional'] = _fetch_optional
     handlers_map['persist'] = _persist
     handlers_map['plan'] = _plan
+
+    def _process_optional(
+        item,
+        game_payload,
+        boxscore,
+        optional_payload,
+        *,
+        sync_run_id=None,
+        job_name=None,
+    ):
+        from services.play_by_play_foundation import (
+            process_final_play_by_play_foundation,
+        )
+
+        result = process_final_play_by_play_foundation(
+            game_payload,
+            boxscore=boxscore,
+            play_by_play=optional_payload.get('play_by_play'),
+            play_by_play_error=optional_payload.get('error'),
+            game_date=item.game_date or item.represented_date,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        result['publication_affected'] = False
+        return result
+
+    handlers_map['process_optional'] = _process_optional
 
     handlers_map['extract'] = _default_extract
     return handlers_map

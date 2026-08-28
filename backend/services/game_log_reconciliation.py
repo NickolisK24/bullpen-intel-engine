@@ -103,6 +103,8 @@ STATISTICAL_FIELDS = (
     'walks',
     'strikeouts',
     'home_runs_allowed',
+    'hit_batters',
+    'wild_pitches',
     'batters_faced',
     'balls',
     'games_finished',
@@ -138,6 +140,11 @@ PROVENANCE_FIELDS = (
     'last_stat_correction_at',
     'last_stat_correction_source',
     'last_stat_correction_sync_run_id',
+    'source_authority',
+    'source_endpoint',
+    'source_revision',
+    'source_acquired_at',
+    'source_sync_run_id',
 )
 
 # ── Semantic authority vs derived companion (D-008) ─────────────────────────
@@ -211,6 +218,8 @@ OPTIONAL_INT_STAT_FIELDS = (
     ('inherited_runners', ('inheritedRunners', 'inherited_runners')),
     ('inherited_runners_scored',
      ('inheritedRunnersScored', 'inherited_runners_scored')),
+    ('hit_batters', ('hitBatsmen', 'hitByPitch', 'hit_batters')),
+    ('wild_pitches', ('wildPitches', 'wild_pitches')),
 )
 
 BLOCKED_EMPTY_SOURCE_LINE = 'empty_source_line'

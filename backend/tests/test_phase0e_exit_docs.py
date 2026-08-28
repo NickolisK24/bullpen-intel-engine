@@ -8,11 +8,11 @@ from services.evidence_classification import validate_evidence_classifications
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Moved from f3c8a1d7e5b2 by the independent scheduling reliability package.
-# The new revision adds durable sync schedule-attempt evidence. The pin exists
+# Moved from a6d4e8c1f2b7 by the continuous reliever ingestion foundation.
+# The new revision adds canonical reliever and pitch-event evidence. The pin exists
 # so a migration cannot enter the tree unnoticed; moving it is the deliberate
 # acknowledgement that one was reviewed and the head remains single.
-EXPECTED_ALEMBIC_HEAD = 'a6d4e8c1f2b7'
+EXPECTED_ALEMBIC_HEAD = 'f1c2d3e4a5b6'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',

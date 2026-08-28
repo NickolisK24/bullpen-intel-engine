@@ -136,6 +136,112 @@ class GamePlayByPlayEvent(db.Model):
         }
 
 
+class GamePitchEvent(db.Model):
+    """One normalized authoritative pitch from final MLB play-by-play."""
+
+    __tablename__ = 'game_pitch_events'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'mlb_game_pk', 'at_bat_index', 'play_event_index',
+            name='uq_game_pitch_events_game_at_bat_event',
+        ),
+        db.Index('ix_game_pitch_events_game_order', 'mlb_game_pk', 'at_bat_index', 'play_event_index'),
+        db.Index('ix_game_pitch_events_pitcher_date', 'pitcher_id', 'game_date'),
+        db.Index('ix_game_pitch_events_team_date', 'fielding_team_id', 'game_date'),
+        db.CheckConstraint(
+            "half_inning IS NULL OR half_inning IN ('top', 'bottom')",
+            name='ck_game_pitch_events_half_inning',
+        ),
+        db.CheckConstraint(
+            '(is_current = true AND superseded_at IS NULL) OR '
+            '(is_current = false AND superseded_at IS NOT NULL)',
+            name='ck_game_pitch_events_current_state',
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    mlb_game_pk = db.Column(db.Integer, nullable=False)
+    at_bat_index = db.Column(db.Integer, nullable=False)
+    play_event_index = db.Column(db.Integer, nullable=False)
+    source_play_id = db.Column(db.String(80))
+    pitch_number = db.Column(db.Integer)
+
+    game_date = db.Column(db.Date, nullable=False)
+    game_type = db.Column(db.String(2))
+    inning = db.Column(db.Integer)
+    half_inning = db.Column(db.String(10))
+    outs_after_pitch = db.Column(db.Integer)
+    balls_after_pitch = db.Column(db.Integer)
+    strikes_after_pitch = db.Column(db.Integer)
+
+    pitcher_mlb_id = db.Column(db.Integer, nullable=False)
+    pitcher_id = db.Column(db.Integer, db.ForeignKey('pitchers.id'), nullable=False)
+    batter_mlb_id = db.Column(db.Integer)
+    batting_team_id = db.Column(db.Integer)
+    fielding_team_id = db.Column(db.Integer, nullable=False)
+
+    pitch_type_code = db.Column(db.String(12))
+    pitch_type_description = db.Column(db.String(60))
+    call_code = db.Column(db.String(12))
+    call_description = db.Column(db.String(80))
+    is_ball = db.Column(db.Boolean)
+    is_strike = db.Column(db.Boolean)
+    is_in_play = db.Column(db.Boolean)
+    is_out = db.Column(db.Boolean)
+
+    start_speed = db.Column(db.Float)
+    end_speed = db.Column(db.Float)
+    spin_rate = db.Column(db.Float)
+    spin_direction = db.Column(db.Float)
+    extension = db.Column(db.Float)
+    plate_time = db.Column(db.Float)
+    zone = db.Column(db.Integer)
+    plate_x = db.Column(db.Float)
+    plate_z = db.Column(db.Float)
+    strike_zone_top = db.Column(db.Float)
+    strike_zone_bottom = db.Column(db.Float)
+    release_position_x = db.Column(db.Float)
+    release_position_y = db.Column(db.Float)
+    release_position_z = db.Column(db.Float)
+    initial_velocity_x = db.Column(db.Float)
+    initial_velocity_y = db.Column(db.Float)
+    initial_velocity_z = db.Column(db.Float)
+    acceleration_x = db.Column(db.Float)
+    acceleration_y = db.Column(db.Float)
+    acceleration_z = db.Column(db.Float)
+    pfx_x = db.Column(db.Float)
+    pfx_z = db.Column(db.Float)
+    break_angle = db.Column(db.Float)
+    break_horizontal = db.Column(db.Float)
+    break_length = db.Column(db.Float)
+    break_vertical = db.Column(db.Float)
+    break_vertical_induced = db.Column(db.Float)
+
+    batted_ball_event_type = db.Column(db.String(60))
+    batted_ball_trajectory = db.Column(db.String(40))
+    batted_ball_hardness = db.Column(db.String(20))
+    launch_speed = db.Column(db.Float)
+    launch_angle = db.Column(db.Float)
+    total_distance = db.Column(db.Float)
+    hit_location = db.Column(db.String(12))
+
+    source = db.Column(db.String(100), nullable=False)
+    source_endpoint = db.Column(db.String(100), nullable=False)
+    source_revision = db.Column(db.String(64), nullable=False)
+    event_fingerprint = db.Column(db.String(64), nullable=False)
+    sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
+    first_seen_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
+    last_corrected_at = db.Column(db.DateTime)
+    correction_count = db.Column(db.Integer, nullable=False, default=0)
+    correction_source = db.Column(db.String(100))
+    is_current = db.Column(db.Boolean, nullable=False, default=True)
+    superseded_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
+    updated_at = db.Column(
+        db.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive,
+    )
+
+
 class PlayByPlayProcessedGame(db.Model):
     __tablename__ = 'play_by_play_processed_games'
     __correction_policy_name__ = 'play_by_play_processed_game_corrections'
@@ -156,6 +262,10 @@ class PlayByPlayProcessedGame(db.Model):
         'unresolved_pitcher_count',
         'reconciliation_mismatch_count',
         'event_fingerprint',
+        'pitches_seen',
+        'pitches_stored',
+        'current_pitch_count',
+        'pitch_fingerprint',
         'source',
         'source_endpoint',
     )
@@ -193,6 +303,10 @@ class PlayByPlayProcessedGame(db.Model):
     unresolved_pitcher_count = db.Column(db.Integer, nullable=False, default=0)
     reconciliation_mismatch_count = db.Column(db.Integer, nullable=False, default=0)
     event_fingerprint = db.Column(db.String(64))
+    pitches_seen = db.Column(db.Integer, nullable=False, default=0)
+    pitches_stored = db.Column(db.Integer, nullable=False, default=0)
+    current_pitch_count = db.Column(db.Integer, nullable=False, default=0)
+    pitch_fingerprint = db.Column(db.String(64))
     source = db.Column(db.String(100), nullable=False)
     source_endpoint = db.Column(db.String(100), nullable=False)
     sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
@@ -229,6 +343,10 @@ class PlayByPlayProcessedGame(db.Model):
             'unresolved_pitcher_count': self.unresolved_pitcher_count or 0,
             'reconciliation_mismatch_count': self.reconciliation_mismatch_count or 0,
             'event_fingerprint': self.event_fingerprint,
+            'pitches_seen': self.pitches_seen or 0,
+            'pitches_stored': self.pitches_stored or 0,
+            'current_pitch_count': self.current_pitch_count or 0,
+            'pitch_fingerprint': self.pitch_fingerprint,
             'source': self.source,
             'source_endpoint': self.source_endpoint,
             'sync_run_id': self.sync_run_id,
