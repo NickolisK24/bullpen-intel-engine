@@ -379,6 +379,15 @@ TODAY05_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
     'backend/services/tonight_intelligence_snapshot.py',
 )
 
+# Cross-surface Rested Options consistency, August 28 2026. The Tonight
+# snapshot reader advances to ``tonight_v5`` so cached payloads predating the
+# exact frozen D-055 Rest Status carrier cannot keep serving an availability-
+# derived clean-option count under the Rested Options label. No rest threshold,
+# availability rule, publication gate, or snapshot writer authority changes.
+RESTED_OPTIONS_TONIGHT_SNAPSHOT_CONTRACT_PATHS = (
+    'backend/services/tonight_intelligence_snapshot.py',
+)
+
 # PIT-01, August 24 2026. The existing Pitcher detail route composes canonical
 # role/read labels and the unchanged public recent-work carrier into one bounded
 # current-state response. The recent-work service accepts already-resolved

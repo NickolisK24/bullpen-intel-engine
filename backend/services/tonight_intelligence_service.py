@@ -48,6 +48,7 @@ EMPTY_NO_SIGNALS = 'no_tonight_signals'
 TEAM_STATE_LISTING_UNAVAILABLE = 'tonight_team_state_listing_unavailable'
 RECENT_VOLUME_LISTING_UNAVAILABLE = 'tonight_recent_volume_listing_unavailable'
 ROTATION_CONTEXT_LISTING_UNAVAILABLE = 'tonight_rotation_context_listing_unavailable'
+REST_STATUS_LISTING_UNAVAILABLE = 'tonight_rest_status_listing_unavailable'
 
 # Fields carried on internal candidates that the public card must not expose.
 _INTERNAL_CARD_FIELDS = ('strength', 'reference_date')
@@ -58,6 +59,7 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
                   slate_games=None, team_state_listing_builder=None,
                   workload_listing_builder=None,
                   rotation_listing_builder=None,
+                  rest_status_listing_builder=None,
                   publication_sidecar_builder=None):
     """Build the public Tonight response for a reference date.
 
@@ -85,6 +87,7 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
         team_state_listing_builder,
         workload_listing_builder,
         rotation_listing_builder,
+        rest_status_listing_builder,
         publication_sidecar_builder,
     )
 
@@ -92,6 +95,7 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
 def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
                     slate_games, team_state_listing_builder,
                     workload_listing_builder, rotation_listing_builder,
+                    rest_status_listing_builder,
                     publication_sidecar_builder):
     schedule_contexts = [s for s in (schedule_contexts or []) if s]
 
@@ -110,22 +114,33 @@ def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
         team_state_listing_builder is None
         and workload_listing_builder is None
         and rotation_listing_builder is None
+        and rest_status_listing_builder is None
     ):
         sidecar_builder = (
             publication_sidecar_builder or _default_publication_sidecar_builder
         )
         try:
-            team_state_listing, workload_listing, rotation_listing = sidecar_builder()
+            (
+                team_state_listing,
+                workload_listing,
+                rotation_listing,
+                rest_listing,
+            ) = sidecar_builder()
         except Exception:  # noqa: BLE001 - sidecars remain optional
             logger.warning('Tonight slate: publication sidecars failed', exc_info=True)
-            team_state_listing, workload_listing, rotation_listing = {}, {}, {}
+            team_state_listing = {}
+            workload_listing = {}
+            rotation_listing = {}
+            rest_listing = {}
         team_states = _build_team_states(lambda: team_state_listing)
         recent_volumes = _build_recent_volumes(lambda: workload_listing)
         rotation_contexts = _build_rotation_contexts(lambda: rotation_listing)
+        rest_statuses = _build_rest_statuses(lambda: rest_listing)
     else:
         team_states = _build_team_states(team_state_listing_builder)
         recent_volumes = _build_recent_volumes(workload_listing_builder)
         rotation_contexts = _build_rotation_contexts(rotation_listing_builder)
+        rest_statuses = _build_rest_statuses(rest_status_listing_builder)
     candidates = build_tonight_candidates(
         ref, limit=limit, schedule_contexts=schedule_contexts,
         bullpen_context_builder=lambda team_id, _reference_date: team_contexts.get(team_id))
@@ -138,6 +153,7 @@ def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
         team_states,
         recent_volumes,
         rotation_contexts,
+        rest_statuses,
     )
     if not candidates:
         return _empty(ref, EMPTY_NO_SIGNALS, games=games)
@@ -247,8 +263,36 @@ def _build_rotation_contexts(rotation_listing_builder):
     return contexts
 
 
+def _build_rest_statuses(rest_status_listing_builder):
+    """Read frozen D-055 Rest Status carriers once for the whole slate."""
+    builder = rest_status_listing_builder or _default_rest_status_listing_builder
+    try:
+        listing = builder()
+    except Exception:  # noqa: BLE001 - Rest Status is optional per game side
+        logger.warning(
+            'Tonight slate: published Rest Status listing failed',
+            exc_info=True,
+        )
+        return {}
+
+    rows = listing.get('teams') if isinstance(listing, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    statuses = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = row.get('team_id')
+        rest_status = row.get('rest_status')
+        if team_id is None or not isinstance(rest_status, dict):
+            continue
+        statuses[team_id] = deepcopy(rest_status)
+    return statuses
+
+
 def _public_slate_games(slate_games, team_contexts, cards, team_states=None,
-                        recent_volumes=None, rotation_contexts=None):
+                        recent_volumes=None, rotation_contexts=None,
+                        rest_statuses=None):
     cards_by_team = {
         card.get('team_id'): card
         for card in cards
@@ -276,6 +320,7 @@ def _public_slate_games(slate_games, team_contexts, cards, team_states=None,
                 (team_states or {}).get(away_team_id),
                 (recent_volumes or {}).get(away_team_id),
                 (rotation_contexts or {}).get(away_team_id),
+                (rest_statuses or {}).get(away_team_id),
             ),
             'home': _public_team_side(
                 home_team_id,
@@ -284,13 +329,14 @@ def _public_slate_games(slate_games, team_contexts, cards, team_states=None,
                 (team_states or {}).get(home_team_id),
                 (recent_volumes or {}).get(home_team_id),
                 (rotation_contexts or {}).get(home_team_id),
+                (rest_statuses or {}).get(home_team_id),
             ),
         })
     return games
 
 
 def _public_team_side(team_id, bullpen_context, card, team_state=None,
-                      recent_volume=None, rotation_context=None):
+                      recent_volume=None, rotation_context=None, rest_status=None):
     identity = (bullpen_context or {}).get('team') or {}
     public_context = public_tonight_bullpen_context(bullpen_context)
     available = public_context.get('context_available') is True
@@ -302,6 +348,7 @@ def _public_team_side(team_id, bullpen_context, card, team_state=None,
         'team_state': _public_team_state(team_state),
         'recent_bullpen_volume': _public_recent_volume(recent_volume),
         'rotation_context': _public_rotation_context(rotation_context),
+        'rest_status': _public_rest_status(rest_status),
         'bullpen_context': public_context,
         'watch': _public_watch(card),
         'limitations': [] if available else ['bullpen_context_unavailable'],
@@ -329,6 +376,13 @@ def _public_rotation_context(rotation_context):
         return deepcopy(rotation_context)
     from services.published_team_rotation_listing import withheld_rotation_context
     return withheld_rotation_context(ROTATION_CONTEXT_LISTING_UNAVAILABLE)
+
+
+def _public_rest_status(rest_status):
+    if isinstance(rest_status, dict):
+        return deepcopy(rest_status)
+    from services.published_team_rest_status_listing import unavailable_rest_status
+    return unavailable_rest_status(REST_STATUS_LISTING_UNAVAILABLE)
 
 
 def _public_watch(card):
@@ -382,6 +436,13 @@ def _default_rotation_listing_builder():
     return build_published_team_rotation_listing()
 
 
+def _default_rest_status_listing_builder():
+    from services.published_team_rest_status_listing import (
+        build_published_team_rest_status_listing,
+    )
+    return build_published_team_rest_status_listing()
+
+
 def _default_publication_sidecar_builder():
     """Build all frozen sidecars from one trusted snapshot resolution."""
     from services.league_team_state_listing import (
@@ -393,6 +454,9 @@ def _default_publication_sidecar_builder():
     )
     from services.published_team_rotation_listing import (
         build_published_team_rotation_listing,
+    )
+    from services.published_team_rest_status_listing import (
+        build_published_team_rest_status_listing,
     )
 
     resolved = resolve_current_trusted_dashboard_snapshot()
@@ -415,7 +479,14 @@ def _default_publication_sidecar_builder():
     except Exception:  # noqa: BLE001 - independent optional sidecar
         logger.warning('Tonight slate: published rotation listing failed', exc_info=True)
         rotation = {}
-    return team_states, workload, rotation
+    try:
+        rest_status = build_published_team_rest_status_listing(
+            snapshot_resolver=resolver,
+        )
+    except Exception:  # noqa: BLE001 - independent optional sidecar
+        logger.warning('Tonight slate: published Rest Status listing failed', exc_info=True)
+        rest_status = {}
+    return team_states, workload, rotation, rest_status
 
 
 def _public_card(candidate):
