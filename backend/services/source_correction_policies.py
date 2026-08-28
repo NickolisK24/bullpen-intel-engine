@@ -152,6 +152,8 @@ GAME_LOG_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
         CorrectionFieldPolicy('walks', update_after_final=True),
         CorrectionFieldPolicy('strikeouts', update_after_final=True),
         CorrectionFieldPolicy('home_runs_allowed', update_after_final=True),
+        CorrectionFieldPolicy('hit_batters', update_after_final=True),
+        CorrectionFieldPolicy('wild_pitches', update_after_final=True),
         CorrectionFieldPolicy('batters_faced', update_after_final=True),
         CorrectionFieldPolicy('balls', update_after_final=True),
         CorrectionFieldPolicy('games_finished', update_after_final=True),
@@ -172,6 +174,11 @@ GAME_LOG_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
         CorrectionFieldPolicy('loss', update_after_final=True),
         CorrectionFieldPolicy('save', update_after_final=True),
         CorrectionFieldPolicy('leverage_index', update_after_final=True),
+        CorrectionFieldPolicy('source_authority', update_after_final=True),
+        CorrectionFieldPolicy('source_endpoint', update_after_final=True),
+        CorrectionFieldPolicy('source_revision', update_after_final=True),
+        CorrectionFieldPolicy('source_acquired_at', update_after_final=True),
+        CorrectionFieldPolicy('source_sync_run_id', update_after_final=True),
     ),
 ))
 
@@ -323,6 +330,16 @@ PLAY_BY_PLAY_PROCESSED_GAME_CORRECTION_POLICY = register_correction_policy(Sourc
         CorrectionFieldPolicy('unresolved_pitcher_count', update_after_final=True),
         CorrectionFieldPolicy('reconciliation_mismatch_count', update_after_final=True),
         CorrectionFieldPolicy('event_fingerprint', update_after_final=True),
+        CorrectionFieldPolicy('pitches_seen', update_after_final=True),
+        CorrectionFieldPolicy('pitches_stored', update_after_final=True),
+        CorrectionFieldPolicy('current_pitch_count', update_after_final=True),
+        CorrectionFieldPolicy('pitch_fingerprint', update_after_final=True),
+        CorrectionFieldPolicy(
+            'accepted_pitch_observation_sequence', update_after_final=True,
+        ),
+        CorrectionFieldPolicy(
+            'accepted_pitch_source_authority', update_after_final=True,
+        ),
         CorrectionFieldPolicy('source', update_after_final=True),
         CorrectionFieldPolicy('source_endpoint', update_after_final=True),
     ),

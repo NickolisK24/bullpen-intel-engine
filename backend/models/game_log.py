@@ -23,6 +23,8 @@ class GameLog(db.Model):
         'walks',
         'strikeouts',
         'home_runs_allowed',
+        'hit_batters',
+        'wild_pitches',
         'batters_faced',
         'balls',
         'games_finished',
@@ -35,6 +37,11 @@ class GameLog(db.Model):
         'loss',
         'save',
         'leverage_index',
+        'source_authority',
+        'source_endpoint',
+        'source_revision',
+        'source_acquired_at',
+        'source_sync_run_id',
     )
 
     # ── Indexes + constraints ─────────────────────────────────────────────────
@@ -102,15 +109,17 @@ class GameLog(db.Model):
     innings_pitched = db.Column(db.Float, default=0.0)
     innings_pitched_outs = db.Column(db.Integer, nullable=False)
     pitches_thrown = db.Column(db.Integer, nullable=True)
-    strikes = db.Column(db.Integer, default=0)
+    strikes = db.Column(db.Integer, nullable=True, default=0)
     # Required rate inputs stay nullable at storage so an omitted official
     # value cannot acquire false zero authority before metric validation.
     hits_allowed = db.Column(db.Integer, nullable=True)
-    runs_allowed = db.Column(db.Integer, default=0)
-    earned_runs = db.Column(db.Integer, default=0)
+    runs_allowed = db.Column(db.Integer, nullable=True, default=0)
+    earned_runs = db.Column(db.Integer, nullable=True, default=0)
     walks = db.Column(db.Integer, nullable=True)
-    strikeouts = db.Column(db.Integer, default=0)
-    home_runs_allowed = db.Column(db.Integer, default=0)
+    strikeouts = db.Column(db.Integer, nullable=True, default=0)
+    home_runs_allowed = db.Column(db.Integer, nullable=True, default=0)
+    hit_batters = db.Column(db.Integer, nullable=True)
+    wild_pitches = db.Column(db.Integer, nullable=True)
     batters_faced = db.Column(db.Integer, nullable=True)
     balls = db.Column(db.Integer, nullable=True)
     games_finished = db.Column(db.Integer, nullable=True)
@@ -119,12 +128,12 @@ class GameLog(db.Model):
     leverage_index = db.Column(db.Float)
     inherited_runners = db.Column(db.Integer, nullable=True)
     inherited_runners_scored = db.Column(db.Integer, nullable=True)
-    save_situation = db.Column(db.Boolean, default=False)
-    hold = db.Column(db.Boolean, default=False)
-    blown_save = db.Column(db.Boolean, default=False)
-    win = db.Column(db.Boolean, default=False)
-    loss = db.Column(db.Boolean, default=False)
-    save = db.Column(db.Boolean, default=False)
+    save_situation = db.Column(db.Boolean, nullable=True, default=False)
+    hold = db.Column(db.Boolean, nullable=True, default=False)
+    blown_save = db.Column(db.Boolean, nullable=True, default=False)
+    win = db.Column(db.Boolean, nullable=True, default=False)
+    loss = db.Column(db.Boolean, nullable=True, default=False)
+    save = db.Column(db.Boolean, nullable=True, default=False)
 
     created_at = db.Column(db.DateTime, default=utc_now_naive)
     stat_correction_count = db.Column(db.Integer, nullable=False, default=0)
@@ -147,6 +156,15 @@ class GameLog(db.Model):
     appearance_team_source = db.Column(db.String(60), nullable=True)
     appearance_team_status = db.Column(db.String(20), nullable=True)
     appearance_team_reason = db.Column(db.String(80), nullable=True)
+
+    # First-write acquisition provenance. MLB does not expose a box-score
+    # revision number, so source_revision is an observed-content fingerprint,
+    # not an invented source semantic. Correction provenance remains separate.
+    source_authority = db.Column(db.String(100), nullable=True)
+    source_endpoint = db.Column(db.String(100), nullable=True)
+    source_revision = db.Column(db.String(64), nullable=True)
+    source_acquired_at = db.Column(db.DateTime, nullable=True)
+    source_sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
 
     def to_dict(self):
         return {

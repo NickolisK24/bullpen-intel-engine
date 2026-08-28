@@ -8,6 +8,7 @@ no jsonify — so it can run from any context that has an app_context().
 """
 
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from sqlalchemy import desc
+from sqlalchemy import desc, null
 
 from utils.db import db
 from models.pitcher import Pitcher
@@ -82,6 +83,23 @@ from utils.time import utc_now_naive
 
 
 logger = logging.getLogger(__name__)
+
+# These legacy model defaults preserve compatibility for callers that omit
+# historical fields entirely. Authoritative ingestion is presence-aware: an
+# explicitly missing source value must bypass those defaults and persist NULL.
+_EXPLICIT_NULL_GAME_LOG_FIELDS = frozenset({
+    'strikes',
+    'runs_allowed',
+    'earned_runs',
+    'strikeouts',
+    'home_runs_allowed',
+    'save_situation',
+    'hold',
+    'blown_save',
+    'win',
+    'loss',
+    'save',
+})
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 GAME_LOG_UNRESOLVED_FINALITY_ENTITY_TYPE = 'game_log_unresolved_finality'
 DAILY_GAME_LOG_LANE_FAILURE_ENTITY_TYPE = 'daily_game_log_lane'
@@ -483,8 +501,9 @@ def _stat_key_present(stats: dict, keys: tuple[str, ...]) -> bool:
     return any(key in stats for key in keys)
 
 
-def _positive_stat(stats: dict, key: str) -> bool:
-    return _int_stat(stats, key) > 0
+def _positive_stat_or_none(stats: dict, key: str) -> bool | None:
+    value = _int_stat_or_none(stats, key)
+    return None if value is None else value > 0
 
 
 def _correction_source_state(stats: dict) -> tuple[bool, str | None, list[str]]:
@@ -515,6 +534,9 @@ def _game_log_values_from_stats(
     games_started,
     include_leverage_index: bool = False,
     appearance_team: appearance_team_authority.AppearanceTeamResolution | None = None,
+    source_authority: str | None = None,
+    source_endpoint: str | None = None,
+    source_sync_run_id=None,
 ) -> dict:
     innings_pitched_outs = validate_innings_outs(
         parse_mlb_innings_to_outs(stats.get('inningsPitched', '0.0'))
@@ -530,16 +552,22 @@ def _game_log_values_from_stats(
         'innings_pitched': outs_to_decimal_innings(innings_pitched_outs),
         'innings_pitched_outs': innings_pitched_outs,
         'pitches_thrown': _int_stat_or_none(stats, 'numberOfPitches'),
-        'strikes': _int_stat(stats, 'strikes'),
+        'strikes': _int_stat_or_none(stats, 'strikes'),
         # Hits and walks are publication-critical WHIP inputs. Preserve an
         # omitted or malformed source value as unknown; zero is authoritative
         # only when the official source explicitly supplies zero.
         'hits_allowed': _int_stat_or_none(stats, 'hits'),
-        'runs_allowed': _int_stat(stats, 'runs'),
-        'earned_runs': _int_stat(stats, 'earnedRuns'),
+        'runs_allowed': _int_stat_or_none(stats, 'runs'),
+        'earned_runs': _int_stat_or_none(stats, 'earnedRuns'),
         'walks': _int_stat_or_none(stats, 'baseOnBalls'),
-        'strikeouts': _int_stat(stats, 'strikeOuts'),
-        'home_runs_allowed': _int_stat(stats, 'homeRuns'),
+        'strikeouts': _int_stat_or_none(stats, 'strikeOuts'),
+        'home_runs_allowed': _int_stat_or_none(stats, 'homeRuns'),
+        'hit_batters': _int_stat_or_none_any(
+            stats, ('hitBatsmen', 'hitByPitch', 'hit_batters')
+        ),
+        'wild_pitches': _int_stat_or_none_any(
+            stats, ('wildPitches', 'wild_pitches')
+        ),
         'batters_faced': _int_stat_or_none_any(stats, ('battersFaced', 'batters_faced')),
         'balls': _int_stat_or_none_any(stats, ('balls',)),
         'games_finished': _int_stat_or_none_any(stats, ('gamesFinished', 'games_finished')),
@@ -548,12 +576,12 @@ def _game_log_values_from_stats(
             stats,
             ('inheritedRunnersScored', 'inherited_runners_scored'),
         ),
-        'save_situation': _positive_stat(stats, 'saveOpportunities'),
-        'hold': _positive_stat(stats, 'holds'),
-        'blown_save': _positive_stat(stats, 'blownSaves'),
-        'win': _positive_stat(stats, 'wins'),
-        'loss': _positive_stat(stats, 'losses'),
-        'save': _positive_stat(stats, 'saves'),
+        'save_situation': _positive_stat_or_none(stats, 'saveOpportunities'),
+        'hold': _positive_stat_or_none(stats, 'holds'),
+        'blown_save': _positive_stat_or_none(stats, 'blownSaves'),
+        'win': _positive_stat_or_none(stats, 'wins'),
+        'loss': _positive_stat_or_none(stats, 'losses'),
+        'save': _positive_stat_or_none(stats, 'saves'),
     }
     if include_leverage_index:
         values['leverage_index'] = _extract_leverage_index(stats)
@@ -563,7 +591,26 @@ def _game_log_values_from_stats(
         # pitcher's mutable current team. An unresolved/conflict appearance is still
         # stored, carrying a fail-closed status and no attributed team.
         values = appearance_team_authority.apply_to_new_log(values, appearance_team)
+    if source_authority is not None:
+        values['source_authority'] = source_authority
+        values['source_endpoint'] = source_endpoint
+        values['source_acquired_at'] = utc_now_naive()
+        values['source_sync_run_id'] = source_sync_run_id
+        values['source_revision'] = _appearance_source_revision(values)
     return values
+
+
+def _appearance_source_revision(values: dict) -> str:
+    excluded = {
+        'pitcher_id', 'innings_pitched', 'source_revision',
+        'source_acquired_at', 'source_sync_run_id',
+    }
+    payload = sorted(
+        (key, value.isoformat() if hasattr(value, 'isoformat') else value)
+        for key, value in values.items() if key not in excluded
+    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
 
 
 def _authoritative_correction_fields(values: dict, stats: dict, *, include_leverage_index: bool) -> list[str]:
@@ -1156,7 +1203,11 @@ def _upsert_game_log_from_authoritative_values(
     )
 
     if plan['action'] == game_log_reconciliation.ACTION_INSERT:
-        log = GameLog(**values)
+        insert_values = {
+            key: (null() if key in _EXPLICIT_NULL_GAME_LOG_FIELDS and value is None else value)
+            for key, value in values.items()
+        }
+        log = GameLog(**insert_values)
         db.session.add(log)
         return {
             'status': 'inserted',
@@ -1245,6 +1296,12 @@ def _upsert_game_log_from_authoritative_values(
     existing.last_stat_correction_at = utc_now_naive()
     existing.last_stat_correction_source = recorded_source
     existing.last_stat_correction_sync_run_id = sync_run_id
+    if values.get('source_authority') is not None:
+        existing.source_authority = values['source_authority']
+        existing.source_endpoint = values.get('source_endpoint')
+        existing.source_revision = values.get('source_revision')
+        existing.source_acquired_at = values.get('source_acquired_at')
+        existing.source_sync_run_id = values.get('source_sync_run_id')
     db.session.add(existing)
     _notify_workload_evidence_game_log_correction(
         existing,
@@ -1783,6 +1840,9 @@ def _ingest_boxscore_pitching_line(
         games_started=_line_games_started(line, pitcher_order),
         include_leverage_index=True,
         appearance_team=appearance_team,
+        source_authority=POSTGAME_PITCHING_LINE_AUTHORITY,
+        source_endpoint=f'/game/{game_pk}/boxscore',
+        source_sync_run_id=sync_run_id,
     )
     if plan_only:
         # The identical decision, taken by the identical planner, with nothing

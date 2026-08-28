@@ -142,7 +142,11 @@ def create_app(config_name=None):
     from models.traffic_internal_visitor import TrafficInternalVisitor
     from models.traffic_page_view import TrafficPageView
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
-    from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
+    from models.play_by_play_foundation import (
+        GamePitchEvent,
+        GamePlayByPlayEvent,
+        PlayByPlayProcessedGame,
+    )
     from models.pitcher_season_ledger_coverage import PitcherSeasonLedgerCoverage
     from models.team_game_pitching_split import TeamGamePitchingSplit
     from models.evidence_contract import EvidenceCitation, EvidenceObject
