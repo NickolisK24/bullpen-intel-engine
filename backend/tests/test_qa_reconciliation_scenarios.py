@@ -310,7 +310,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         + freeze_policy.GAP51_REST_STATUS_FROZEN_READER_PATHS
         + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
         + freeze_policy.D056_TEAM_STATE_REFERENCE_DATE_PATHS
-        + freeze_policy.TODAY05_TONIGHT_SNAPSHOT_CONTRACT_PATHS
+        + freeze_policy.RESTED_OPTIONS_TONIGHT_SNAPSHOT_CONTRACT_PATHS
         + freeze_policy.SD01_UNIFIED_SEARCH_PATHS
         + freeze_policy.PI01_TEAM_STATE_CITATION_PATHS
         + freeze_policy.PI02_SINCE_YESTERDAY_CITATION_PATHS

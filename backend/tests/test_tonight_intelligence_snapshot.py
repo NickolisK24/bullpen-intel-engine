@@ -41,11 +41,11 @@ _CARD_KEYS = {'team_id', 'team_name', 'headline', 'summary', 'signal_type',
               'bullpen_context', 'limitations'}
 
 
-def test_snapshot_version_invalidates_pre_rotation_context_payloads():
-    assert TONIGHT_SNAPSHOT_VERSION == 'tonight_v4'
+def test_snapshot_version_invalidates_pre_rest_status_payloads():
+    assert TONIGHT_SNAPSHOT_VERSION == 'tonight_v5'
 
 
-def test_default_reader_does_not_accept_an_older_v3_payload(app):
+def test_default_reader_does_not_accept_an_older_v4_payload(app):
     with app.app_context():
         write_snapshot(
             {
@@ -59,11 +59,11 @@ def test_default_reader_does_not_accept_an_older_v3_payload(app):
                 'limitations': [],
             },
             source='pregame_warm',
-            version='tonight_v3',
+            version='tonight_v4',
         )
 
         assert read_snapshot(REF) is None
-        assert read_snapshot(REF, version='tonight_v3')['status'] == 'empty'
+        assert read_snapshot(REF, version='tonight_v4')['status'] == 'empty'
 
 
 def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0, name='Detroit Tigers'):

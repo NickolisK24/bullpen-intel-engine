@@ -345,7 +345,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 504.14,
+      "measured_seconds": 504.24,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -466,6 +466,10 @@
         {
           "path": "tests/test_pitcher_identity_authority.py",
           "measured_seconds": 12.474
+        },
+        {
+          "path": "tests/test_published_team_rest_status_listing.py",
+          "measured_seconds": 0.1
         },
         {
           "path": "tests/test_player_detail_availability_consistency.py",
