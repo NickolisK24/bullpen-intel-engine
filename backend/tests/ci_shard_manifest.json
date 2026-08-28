@@ -1279,7 +1279,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 504.86,
+      "measured_seconds": 505.48,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1332,6 +1332,10 @@
         {
           "path": "tests/test_bullpen_role_change_detection.py",
           "measured_seconds": 0.009
+        },
+        {
+          "path": "tests/test_change_impact_orchestration.py",
+          "measured_seconds": 0.62
         },
         {
           "path": "tests/test_ci_shard_contract.py",
