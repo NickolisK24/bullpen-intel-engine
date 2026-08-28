@@ -20,6 +20,7 @@ from services import bullpen_eligibility
 from services import performance_intelligence as pi
 from services import performance_metrics
 from services import role_authority
+from services import sync_metadata
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -37,8 +38,19 @@ TEAM_ID = 113
 OTHER_TEAM_ID = 158
 SEASON = 2026
 REFERENCE_DATE = date(2026, 7, 30)
+FROZEN_PRODUCT_DATE = date(2026, 8, 1)
 M001 = performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA
 M002 = performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP
+
+
+@pytest.fixture(autouse=True)
+def freeze_freshness_product_date(monkeypatch):
+    """Keep canonical freshness deterministic for historical metric fixtures."""
+    monkeypatch.setattr(
+        sync_metadata,
+        'product_current_date',
+        lambda: FROZEN_PRODUCT_DATE,
+    )
 
 
 @pytest.fixture()
@@ -1528,8 +1540,7 @@ def test_freshness_does_not_use_the_request_clock_as_a_data_authority(app):
     db.session.commit()
 
     freshness = _read()['freshness']
-    today = date.today().isoformat()
-    assert freshness['data_through_date'] != today
+    assert freshness['data_through_date'] != FROZEN_PRODUCT_DATE.isoformat()
     assert freshness['represented_date'] == REFERENCE_DATE.isoformat()
     # Two reads separated in wall-clock time produce identical freshness.
     assert _read()['freshness'] == freshness

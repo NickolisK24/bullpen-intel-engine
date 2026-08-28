@@ -15,6 +15,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
 from services import performance_metrics
+from services import sync_metadata
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.auth import ADMIN_TOKEN_HEADER
 from utils.db import db
@@ -24,8 +25,19 @@ TEAM_ID = 113
 OTHER_TEAM_ID = 158
 SEASON = 2026
 REPRESENTED_DATE = '2026-07-30'
+FROZEN_PRODUCT_DATE = date(2026, 8, 1)
 TOKEN = 'test-admin-token'
 ENDPOINT = '/api/internal/performance/active-bullpen-era'
+
+
+@pytest.fixture(autouse=True)
+def freeze_freshness_product_date(monkeypatch):
+    """Keep canonical freshness deterministic for historical route fixtures."""
+    monkeypatch.setattr(
+        sync_metadata,
+        'product_current_date',
+        lambda: FROZEN_PRODUCT_DATE,
+    )
 
 
 @pytest.fixture()
