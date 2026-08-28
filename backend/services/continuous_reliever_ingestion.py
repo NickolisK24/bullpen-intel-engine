@@ -40,16 +40,47 @@ OPTIONAL_SUPPORTED_APPEARANCE_FIELDS = (
 )
 
 
-def build_game_impact(appearances) -> dict:
+def build_game_impact(
+    appearances,
+    *,
+    appearance_mutations=None,
+    pitch_mutations=None,
+) -> dict:
     relief = [row for row in appearances or () if row.get('is_reliever')]
-    pitcher_mlb_ids = sorted({
+    observed_pitcher_mlb_ids = sorted({
         row.get('pitcher_mlb_id') for row in relief
         if row.get('pitcher_mlb_id') is not None
     })
-    team_ids = sorted({
+    observed_team_ids = sorted({
         row.get('team_id') for row in relief if row.get('team_id') is not None
     })
-    local_ids = _local_pitcher_ids(pitcher_mlb_ids)
+    relief_by_pitcher = {
+        row.get('pitcher_mlb_id'): row for row in relief
+        if row.get('pitcher_mlb_id') is not None
+    }
+    if appearance_mutations is None and pitch_mutations is None:
+        affected_pitcher_mlb_ids = observed_pitcher_mlb_ids
+    else:
+        affected_pitcher_mlb_ids = {
+            row.get('pitcher_mlb_id')
+            for row in appearance_mutations or ()
+            if row.get('action') in {'insert', 'update'}
+            and row.get('pitcher_mlb_id') in relief_by_pitcher
+        }
+        affected_pitcher_mlb_ids.update(
+            pitcher_mlb_id
+            for pitcher_mlb_id in (
+                (pitch_mutations or {}).get('affected_pitcher_mlb_ids') or ()
+            )
+            if pitcher_mlb_id in relief_by_pitcher
+        )
+        affected_pitcher_mlb_ids = sorted(affected_pitcher_mlb_ids)
+    affected_team_ids = sorted({
+        relief_by_pitcher[pitcher_mlb_id].get('team_id')
+        for pitcher_mlb_id in affected_pitcher_mlb_ids
+        if relief_by_pitcher[pitcher_mlb_id].get('team_id') is not None
+    })
+    local_ids = _local_pitcher_ids(observed_pitcher_mlb_ids)
     game_pks = sorted({
         row.get('game_pk') for row in relief if row.get('game_pk') is not None
     })
@@ -100,9 +131,14 @@ def build_game_impact(appearances) -> dict:
 
     return {
         'publication_affected': False,
-        'affected_pitcher_mlb_ids': pitcher_mlb_ids,
-        'affected_pitcher_ids': sorted(local_ids.values()),
-        'affected_team_ids': team_ids,
+        'affected_pitcher_mlb_ids': affected_pitcher_mlb_ids,
+        'affected_pitcher_ids': sorted(
+            local_ids[mlb_id] for mlb_id in affected_pitcher_mlb_ids
+            if mlb_id in local_ids
+        ),
+        'affected_team_ids': affected_team_ids,
+        'observed_pitcher_mlb_ids': observed_pitcher_mlb_ids,
+        'observed_team_ids': observed_team_ids,
         'relief_appearance_count': len(relief),
         'workload_comparison': {
             'coverage_complete': unresolved == 0,

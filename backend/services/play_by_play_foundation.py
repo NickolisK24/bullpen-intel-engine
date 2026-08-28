@@ -30,6 +30,13 @@ SOURCE_ENDPOINT = '/game/{gamePk}/playByPlay'
 CORRECTION_SOURCE = 'final_play_by_play_rebuild'
 RETRY_LIMIT = 3
 
+OBSERVATION_INITIAL = 'initial_accepted'
+OBSERVATION_IDENTICAL = 'identical'
+OBSERVATION_NEWER = 'newer_accepted'
+OBSERVATION_STALE = 'stale_rejected'
+OBSERVATION_AMBIGUOUS = 'ambiguous_rejected'
+OBSERVATION_WEAKER_AUTHORITY = 'weaker_authority_rejected'
+
 FINAL_PBP_FETCH_ENTITY_TYPE = 'final_pbp_fetch'
 FINAL_PBP_SHAPE_ENTITY_TYPE = 'final_pbp_shape'
 FINAL_PBP_RECONCILIATION_ENTITY_TYPE = 'final_pbp_reconciliation'
@@ -67,6 +74,8 @@ def process_final_play_by_play_foundation(
     game_date: date | None = None,
     sync_run_id=None,
     job_name: str = sync_metadata.JOB_POSTGAME_REFRESH,
+    observation_sequence: int | None = None,
+    source_authority: str = SOURCE,
 ) -> dict:
     """Store normalized PBP events for one finality-certified game.
 
@@ -264,6 +273,28 @@ def process_final_play_by_play_foundation(
         if (marker.attempt_count or 0) >= RETRY_LIMIT:
             return _result_from_marker(marker, skipped=True, reason='retry_limit_reached')
 
+    observation = _classify_pitch_observation(
+        marker=marker,
+        pitch_fingerprint=pitch_fingerprint,
+        observation_sequence=observation_sequence,
+        source_authority=source_authority,
+    )
+    if observation['accepted'] is False:
+        result = _result_from_marker(marker, skipped=True)
+        result['observation_order_status'] = observation['status']
+        result['observation_rejected'] = True
+        result['pitch_rows'] = {
+            'inserted': 0,
+            'updated': 0,
+            'unchanged': 0,
+            'superseded': 0,
+            'current': marker.current_pitch_count or 0,
+            'affected_pitcher_mlb_ids': [],
+            'affected_team_ids': [],
+        }
+        result['corrected'] = False
+        return result
+
     corrected = bool(
         marker is not None
         and marker.event_fingerprint
@@ -312,6 +343,8 @@ def process_final_play_by_play_foundation(
         pitches_stored=len(pitches),
         current_pitch_count=pitch_rows['current'],
         pitch_fingerprint=pitch_fingerprint,
+        accepted_pitch_observation_sequence=observation['accepted_sequence'],
+        accepted_pitch_source_authority=source_authority,
     )
     if failure_entity_type:
         _record_failure(
@@ -330,7 +363,72 @@ def process_final_play_by_play_foundation(
     result['rows_rebuilt'] = rows_rebuilt
     result['pitch_rows'] = pitch_rows
     result['corrected'] = corrected
+    result['observation_order_status'] = observation['status']
+    result['observation_rejected'] = False
     return result
+
+
+def _classify_pitch_observation(
+    *, marker, pitch_fingerprint, observation_sequence, source_authority,
+):
+    """Apply the persisted source-order partial order for PBP corrections.
+
+    MLB exposes no monotonic revision on this endpoint.  Consequently a
+    changed payload is never promoted merely because BaseballOS fetched it
+    later.  A caller may provide a durable, independently governed integer
+    sequence; otherwise changed content is incomparable and fails closed.
+    """
+    if marker is None or marker.pitch_fingerprint is None:
+        return {
+            'accepted': True,
+            'status': OBSERVATION_INITIAL,
+            'accepted_sequence': observation_sequence,
+        }
+
+    accepted_authority = marker.accepted_pitch_source_authority or marker.source
+    if source_authority != accepted_authority:
+        return {
+            'accepted': False,
+            'status': OBSERVATION_WEAKER_AUTHORITY,
+            'accepted_sequence': marker.accepted_pitch_observation_sequence,
+        }
+
+    accepted_sequence = marker.accepted_pitch_observation_sequence
+    if marker.pitch_fingerprint == pitch_fingerprint:
+        if (
+            observation_sequence is not None
+            and (accepted_sequence is None or observation_sequence > accepted_sequence)
+        ):
+            accepted_sequence = observation_sequence
+        return {
+            'accepted': True,
+            'status': OBSERVATION_IDENTICAL,
+            'accepted_sequence': accepted_sequence,
+        }
+
+    if observation_sequence is None or accepted_sequence is None:
+        return {
+            'accepted': False,
+            'status': OBSERVATION_AMBIGUOUS,
+            'accepted_sequence': accepted_sequence,
+        }
+    if observation_sequence < accepted_sequence:
+        return {
+            'accepted': False,
+            'status': OBSERVATION_STALE,
+            'accepted_sequence': accepted_sequence,
+        }
+    if observation_sequence == accepted_sequence:
+        return {
+            'accepted': False,
+            'status': OBSERVATION_AMBIGUOUS,
+            'accepted_sequence': accepted_sequence,
+        }
+    return {
+        'accepted': True,
+        'status': OBSERVATION_NEWER,
+        'accepted_sequence': observation_sequence,
+    }
 
 
 def _failure_marker(
@@ -589,6 +687,7 @@ def _normalize_pitch_events(
             hit_data = event.get('hitData') or {}
             pitch_type = details.get('type') or {}
             call = details.get('call') or {}
+            owns_plate_appearance_result = details.get('isInPlay') is True
             values = {
                 'mlb_game_pk': game_pk,
                 'at_bat_index': at_bat_index,
@@ -646,7 +745,10 @@ def _normalize_pitch_events(
                 'break_vertical_induced': _float_or_none(
                     breaks.get('breakVerticalInduced')
                 ),
-                'batted_ball_event_type': _string_or_none(result.get('eventType')),
+                'batted_ball_event_type': (
+                    _string_or_none(result.get('eventType'))
+                    if owns_plate_appearance_result else None
+                ),
                 'batted_ball_trajectory': _string_or_none(hit_data.get('trajectory')),
                 'batted_ball_hardness': _string_or_none(hit_data.get('hardness')),
                 'launch_speed': _float_or_none(hit_data.get('launchSpeed')),
@@ -697,6 +799,8 @@ def _reconcile_pitch_rows(*, game_pk, pitches, source_revision, sync_run_id):
     incoming_keys = set()
     now = utc_now_naive()
     counts = {'inserted': 0, 'updated': 0, 'unchanged': 0, 'superseded': 0}
+    affected_pitchers = set()
+    affected_teams = set()
 
     for values in pitches:
         key = (values['at_bat_index'], values['play_event_index'])
@@ -716,6 +820,8 @@ def _reconcile_pitch_rows(*, game_pk, pitches, source_revision, sync_run_id):
             })
             db.session.add(GamePitchEvent(**row_values))
             counts['inserted'] += 1
+            affected_pitchers.add(values['pitcher_mlb_id'])
+            affected_teams.add(values['fielding_team_id'])
             continue
 
         unchanged = (
@@ -740,6 +846,8 @@ def _reconcile_pitch_rows(*, game_pk, pitches, source_revision, sync_run_id):
         row.updated_at = now
         db.session.add(row)
         counts['updated'] += 1
+        affected_pitchers.add(values['pitcher_mlb_id'])
+        affected_teams.add(values['fielding_team_id'])
 
     for key, row in existing.items():
         if key in incoming_keys or not row.is_current:
@@ -754,8 +862,12 @@ def _reconcile_pitch_rows(*, game_pk, pitches, source_revision, sync_run_id):
         row.updated_at = now
         db.session.add(row)
         counts['superseded'] += 1
+        affected_pitchers.add(row.pitcher_mlb_id)
+        affected_teams.add(row.fielding_team_id)
 
     counts['current'] = len(pitches)
+    counts['affected_pitcher_mlb_ids'] = sorted(affected_pitchers)
+    counts['affected_team_ids'] = sorted(affected_teams)
     return counts
 
 
@@ -779,6 +891,8 @@ def _upsert_marker(
     pitches_stored=0,
     current_pitch_count=0,
     pitch_fingerprint=None,
+    accepted_pitch_observation_sequence=None,
+    accepted_pitch_source_authority=None,
 ):
     marker = _existing_marker(game_pk) or PlayByPlayProcessedGame(mlb_game_pk=game_pk)
     previous_status = _marker_processing_status(marker)
@@ -805,6 +919,12 @@ def _upsert_marker(
     marker.pitches_stored = pitches_stored
     marker.current_pitch_count = current_pitch_count
     marker.pitch_fingerprint = pitch_fingerprint
+    if accepted_pitch_observation_sequence is not None:
+        marker.accepted_pitch_observation_sequence = (
+            accepted_pitch_observation_sequence
+        )
+    if accepted_pitch_source_authority is not None:
+        marker.accepted_pitch_source_authority = accepted_pitch_source_authority
     marker.source = SOURCE
     marker.source_endpoint = SOURCE_ENDPOINT.format(gamePk=game_pk)
     marker.sync_run_id = sync_run_id
@@ -1076,5 +1196,9 @@ def _result_from_marker(marker, *, skipped=False, reason=None):
         'pitches_stored': marker.pitches_stored or 0,
         'current_pitch_count': marker.current_pitch_count or 0,
         'pitch_fingerprint': marker.pitch_fingerprint,
+        'accepted_pitch_observation_sequence': (
+            marker.accepted_pitch_observation_sequence
+        ),
+        'accepted_pitch_source_authority': marker.accepted_pitch_source_authority,
         'skipped': skipped,
     }

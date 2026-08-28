@@ -477,14 +477,6 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         outcome['appearances_extracted'] = len(appearances)
         outcome['relief_appearances'] = extraction.relief_appearance_count(appearances)
         report['rows_expected'] += len(appearances)
-        outcome['impact'] = continuous_impact.build_game_impact(appearances)
-        report.setdefault('_affected_pitcher_mlb_ids', set()).update(
-            outcome['impact']['affected_pitcher_mlb_ids']
-        )
-        report.setdefault('_affected_team_ids', set()).update(
-            outcome['impact']['affected_team_ids']
-        )
-
         if not writes_enabled(mode):
             # Shadow asks the canonical planner, through the canonical writer's
             # planning mode, what the writer would do. It is the same code
@@ -493,6 +485,11 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
             projected = handlers['plan'](item, game_payload, boxscore)
             report['persistence_seconds'] += time.monotonic() - plan_started
             _apply_plan_outcome(outcome, report, projected)
+            outcome['impact'] = continuous_impact.build_game_impact(
+                appearances,
+                appearance_mutations=outcome['rows'],
+            )
+            _record_affected_entities(report, outcome['impact'])
             outcome['status'] = 'projected'
             report['games_completed'] += 1
             return outcome
@@ -536,9 +533,18 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
                 )
             )
 
-        reconciled = _verify_game_completeness(item, appearances)
-        outcome['impact'] = continuous_impact.build_game_impact(appearances)
         _apply_plan_outcome(outcome, report, persisted)
+        pitch_mutations = (
+            outcome['optional_source_domains']['final_play_by_play'].get('pitch_rows')
+            or {}
+        )
+        outcome['impact'] = continuous_impact.build_game_impact(
+            appearances,
+            appearance_mutations=outcome['rows'],
+            pitch_mutations=pitch_mutations,
+        )
+        _record_affected_entities(report, outcome['impact'])
+        reconciled = _verify_game_completeness(item, appearances)
         if reconciled['reconciled'] != len(appearances):
             raise _IngestionFailure(
                 ERROR_RECONCILIATION_FAILED,
@@ -861,6 +867,15 @@ def _authorize_reviewed_plan(items, *, handlers, report, expected_plan_fingerpri
         'authorized': observed == expected_plan_fingerprint,
         'observed': observed,
     }
+
+
+def _record_affected_entities(report, impact) -> None:
+    report.setdefault('_affected_pitcher_mlb_ids', set()).update(
+        impact.get('affected_pitcher_mlb_ids') or ()
+    )
+    report.setdefault('_affected_team_ids', set()).update(
+        impact.get('affected_team_ids') or ()
+    )
 
 
 def _apply_plan_outcome(outcome, report, result) -> None:

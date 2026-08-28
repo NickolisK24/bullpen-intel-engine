@@ -33,8 +33,14 @@ MIGRATION_PATH = (
     BACKEND_ROOT
     / 'migrations/versions/f1c2d3e4a5b6_add_continuous_reliever_ingestion.py'
 )
+REMEDIATION_MIGRATION_PATH = (
+    BACKEND_ROOT
+    / 'migrations/versions/b4e7c9d2a1f6_add_pbp_observation_order.py'
+)
 CU01_REVISION = 'f1c2d3e4a5b6'
+CU01R_REVISION = 'b4e7c9d2a1f6'
 CU01_COMMIT = '1bf3978663d2ef0fb562cc49e2b1dea411d03214'
+CU01P_COMMIT = '8be2d6afe47906b4be2155238cc07142fdfaa15e'
 
 SELECTED_GAMES = (
     (823826, '2026-08-25', '11 innings; 12 relievers; blown save; inherited runners; wild pitch'),
@@ -183,8 +189,8 @@ def _new_app(database_path: Path):
     return app_module.create_app('test')
 
 
-def _load_migration():
-    spec = importlib.util.spec_from_file_location('cu01p_migration', MIGRATION_PATH)
+def _load_migration(path=MIGRATION_PATH, module_name='cu01p_migration'):
+    spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -198,6 +204,9 @@ def _prepare_database(database_path: Path) -> dict:
         with flask_app.app_context():
             db.create_all()
             migration = _load_migration()
+            remediation_migration = _load_migration(
+                REMEDIATION_MIGRATION_PATH, 'cu01r_migration',
+            )
             connection = db.engine.connect()
             transaction = connection.begin()
             try:
@@ -205,6 +214,11 @@ def _prepare_database(database_path: Path) -> dict:
                 # ``create_all`` builds the complete current model and gives
                 # SQLite an unnamed FK. Prepare an explicit parent-shaped test
                 # fixture first; only then exercise the real migration cycle.
+                with operations.batch_alter_table(
+                    'play_by_play_processed_games', recreate='always',
+                ) as batch_op:
+                    batch_op.drop_column('accepted_pitch_source_authority')
+                    batch_op.drop_column('accepted_pitch_observation_sequence')
                 operations.drop_table('game_pitch_events')
                 with operations.batch_alter_table(
                     'play_by_play_processed_games', recreate='always',
@@ -224,6 +238,7 @@ def _prepare_database(database_path: Path) -> dict:
                     batch_op.drop_column('wild_pitches')
                     batch_op.drop_column('hit_batters')
                 migration.op = operations
+                remediation_migration.op = operations
                 inspector = sa.inspect(connection)
                 parent_fixture = {
                     'pitch_table_absent': not inspector.has_table('game_pitch_events'),
@@ -235,6 +250,7 @@ def _prepare_database(database_path: Path) -> dict:
                     ),
                 }
                 migration.upgrade()
+                remediation_migration.upgrade()
                 inspector = sa.inspect(connection)
                 upgraded = {
                     'pitch_table_present': inspector.has_table('game_pitch_events'),
@@ -249,9 +265,14 @@ def _prepare_database(database_path: Path) -> dict:
                             column['name']
                             for column in inspector.get_columns('play_by_play_processed_games')
                         }
-                        for name in ('pitches_seen', 'current_pitch_count', 'pitch_fingerprint')
+                        for name in (
+                            'pitches_seen', 'current_pitch_count', 'pitch_fingerprint',
+                            'accepted_pitch_observation_sequence',
+                            'accepted_pitch_source_authority',
+                        )
                     ),
                 }
+                remediation_migration.downgrade()
                 migration.downgrade()
                 inspector = sa.inspect(connection)
                 downgraded = {
@@ -264,6 +285,7 @@ def _prepare_database(database_path: Path) -> dict:
                     ),
                 }
                 migration.upgrade()
+                remediation_migration.upgrade()
                 inspector = sa.inspect(connection)
                 reupgraded = {
                     'pitch_table_present': inspector.has_table('game_pitch_events'),
@@ -281,7 +303,7 @@ def _prepare_database(database_path: Path) -> dict:
                 connection.execute(sa.text('DELETE FROM alembic_version'))
                 connection.execute(
                     sa.text('INSERT INTO alembic_version(version_num) VALUES (:revision)'),
-                    {'revision': CU01_REVISION},
+                    {'revision': CU01R_REVISION},
                 )
                 heads = [
                     row[0]
@@ -312,7 +334,7 @@ def _prepare_database(database_path: Path) -> dict:
             and all(downgraded.values())
             and all(upgraded.values())
             and all(reupgraded.values())
-            and heads == [CU01_REVISION]
+            and heads == [CU01R_REVISION]
         ),
     }
 
@@ -676,12 +698,35 @@ def _coverage():
         row for row in pitches
         if row.is_in_play is not True and row.batted_ball_event_type is not None
     ]
+    sample_pa = None
+    pitch_groups = {}
+    for row in pitches:
+        pitch_groups.setdefault((row.mlb_game_pk, row.at_bat_index), []).append(row)
+    for (game_pk, at_bat_index), rows in sorted(pitch_groups.items()):
+        ordered = sorted(rows, key=lambda row: row.play_event_index)
+        if len(ordered) > 1 and any(
+            row.batted_ball_event_type is not None for row in ordered
+        ):
+            sample_pa = {
+                'game_pk': game_pk,
+                'at_bat_index': at_bat_index,
+                'pitches': [{
+                    'play_event_index': row.play_event_index,
+                    'call': row.call_description,
+                    'is_in_play': row.is_in_play,
+                    'batted_ball_event_type': row.batted_ball_event_type,
+                    'launch_speed': row.launch_speed,
+                    'launch_angle': row.launch_angle,
+                } for row in ordered],
+            }
+            break
     return {
         'pitch_events': len(pitches),
         'reliever_pitch_events': len(reliever_pitches),
         'in_play_pitch_events': len(in_play),
         'batted_ball_event_type_on_non_in_play_pitches': len(over_scoped_batted_ball),
         'batted_ball_scope_passed': not over_scoped_batted_ball,
+        'batted_ball_sample_plate_appearance': sample_pa,
         'pitch_fields': {
             field: {
                 'present': sum(getattr(row, field) is not None for row in pitches),
@@ -794,9 +839,16 @@ def _controlled_correction(source, game_pk):
             ]
     game = source['schedule'][str(game_pk)]
     boxscore = source['boxscores'][str(game_pk)]
+    established = process_final_play_by_play_foundation(
+        game, boxscore=boxscore, play_by_play=original,
+        game_date=date.fromisoformat(game['officialDate']),
+        observation_sequence=1,
+    )
+    db.session.commit()
     changed = process_final_play_by_play_foundation(
         game, boxscore=boxscore, play_by_play=controlled,
         game_date=date.fromisoformat(game['officialDate']),
+        observation_sequence=2,
     )
     db.session.commit()
     neighbor_after = {
@@ -804,32 +856,66 @@ def _controlled_correction(source, game_pk):
         for row in GamePitchEvent.query.filter_by(mlb_game_pk=game_pk, is_current=True).all()
         if row.id not in {changed_row.id, removed_row.id}
     }
-    restored = process_final_play_by_play_foundation(
+    stale = process_final_play_by_play_foundation(
         game, boxscore=boxscore, play_by_play=original,
         game_date=date.fromisoformat(game['officialDate']),
+        observation_sequence=1,
     )
     db.session.commit()
     identical = process_final_play_by_play_foundation(
-        game, boxscore=boxscore, play_by_play=original,
+        game, boxscore=boxscore, play_by_play=controlled,
         game_date=date.fromisoformat(game['officialDate']),
+        observation_sequence=2,
     )
     db.session.commit()
+    canonical_fingerprint = _state_fingerprint([game_pk])['fact_fingerprint']
     return {
         'classification': 'CONTROLLED_REAL_PAYLOAD_REPLAY',
         'game_pk': game_pk,
         'changed_key': [changed_row.at_bat_index, changed_row.play_event_index],
         'removed_key': [removed_row.at_bat_index, removed_row.play_event_index],
+        'establish_result': established.get('pitch_rows'),
         'controlled_result': changed.get('pitch_rows'),
-        'restore_result': restored.get('pitch_rows'),
+        'newer_observation_status': changed.get('observation_order_status'),
+        'stale_result': stale.get('pitch_rows'),
+        'stale_observation_status': stale.get('observation_order_status'),
         'identical_result': identical.get('pitch_rows'),
         'neighbor_fingerprints_unchanged': neighbor_before == neighbor_after,
+        'canonical_fingerprint_after_newer': canonical_fingerprint,
         'natural_revision_order_available': False,
-        'stale_revision_rejection_proven': False,
+        'stale_revision_rejection_proven': (
+            changed.get('observation_order_status') == 'newer_accepted'
+            and stale.get('observation_order_status') == 'stale_rejected'
+            and not any(
+                stale.get('pitch_rows', {}).get(key, 0)
+                for key in ('inserted', 'updated', 'superseded')
+            )
+        ),
         'note': (
             'MLB supplies observed content but no monotonic PBP revision. '
-            'The current reconciler is correction-aware but last-observation-wins; '
-            'it cannot prove that an older captured payload would be rejected.'
+            'This controlled replay uses an explicit governed capture sequence; '
+            'ordinary differently fingerprinted observations remain incomparable.'
         ),
+    }
+
+
+def _stale_correction_after_restart(source, game_pk):
+    from services.play_by_play_foundation import process_final_play_by_play_foundation
+    from utils.db import db
+
+    game = source['schedule'][str(game_pk)]
+    result = process_final_play_by_play_foundation(
+        game,
+        boxscore=source['boxscores'][str(game_pk)],
+        play_by_play=source['play_by_play'][str(game_pk)],
+        game_date=date.fromisoformat(game['officialDate']),
+        observation_sequence=1,
+    )
+    db.session.commit()
+    return {
+        'status': result.get('observation_order_status'),
+        'pitch_rows': result.get('pitch_rows'),
+        'canonical_fingerprint': _state_fingerprint([game_pk])['fact_fingerprint'],
     }
 
 
@@ -938,6 +1024,17 @@ def _run_cu_database(database_path, source, baseline_rows):
         restarted_app = _new_app(database_path)
         with restarted_app.app_context():
             sync_service.mlb_client = CapturedMlbClient(source)
+            stale_after_restart = _stale_correction_after_restart(source, 823826)
+            correction['stale_after_restart'] = stale_after_restart
+            correction['stale_after_restart_proven'] = (
+                stale_after_restart['status'] == 'stale_rejected'
+                and stale_after_restart['canonical_fingerprint']
+                == correction['canonical_fingerprint_after_newer']
+            )
+            correction['stale_revision_rejection_proven'] = (
+                correction['stale_revision_rejection_proven']
+                and correction['stale_after_restart_proven']
+            )
             restart_before = _state_fingerprint(REPLAY_GAME_PKS)
             third = _run_reviewed_write(reference_date, REPLAY_GAME_PKS)
             restart_after = _state_fingerprint(REPLAY_GAME_PKS)
@@ -953,6 +1050,16 @@ def _run_cu_database(database_path, source, baseline_rows):
                     for game in third_games
                 )
             )
+            third_emitted_pitchers = sorted({
+                pitcher_id
+                for game in third_games
+                for pitcher_id in game['impact']['affected_pitcher_mlb_ids']
+            })
+            third_emitted_teams = sorted({
+                team_id
+                for game in third_games
+                for team_id in game['impact']['affected_team_ids']
+            })
             final_state = _state_fingerprint()
             db.session.remove()
             db.engine.dispose()
@@ -985,6 +1092,8 @@ def _run_cu_database(database_path, source, baseline_rows):
             'after_third': restart_after,
             'third_game_log_mutations': third_mutations,
             'third_pitch_mutations': third_pitch_mutations,
+            'third_emitted_pitchers': third_emitted_pitchers,
+            'third_emitted_teams': third_emitted_teams,
             'canonical_facts_unchanged': (
                 restart_before['fact_fingerprint'] == restart_after['fact_fingerprint']
             ),
@@ -992,6 +1101,8 @@ def _run_cu_database(database_path, source, baseline_rows):
                 restart_before['fact_fingerprint'] == restart_after['fact_fingerprint']
                 and third_mutations == 0
                 and third_pitch_mutations == 0
+                and not third_emitted_pitchers
+                and not third_emitted_teams
             ),
         },
         'coverage': coverage,
@@ -1076,9 +1187,10 @@ def run():
         cu = _run_cu_database(cu_db, source, baseline['rows'])
         optional = _optional_failure_proof(optional_db, source)
         proof = {
-            'proof_version': 'CU-01P-v1',
+            'proof_version': 'CU-01R-v1',
             'generated_at': datetime.now(timezone.utc).isoformat(),
             'cu01_commit': CU01_COMMIT,
+            'cu01p_commit': CU01P_COMMIT,
             'environment': {
                 'database': 'three disposable local SQLite files',
                 'raw_payload_retention': 'OS temporary directory only; removed after run',

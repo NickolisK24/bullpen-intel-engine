@@ -334,6 +334,12 @@ PLAY_BY_PLAY_PROCESSED_GAME_CORRECTION_POLICY = register_correction_policy(Sourc
         CorrectionFieldPolicy('pitches_stored', update_after_final=True),
         CorrectionFieldPolicy('current_pitch_count', update_after_final=True),
         CorrectionFieldPolicy('pitch_fingerprint', update_after_final=True),
+        CorrectionFieldPolicy(
+            'accepted_pitch_observation_sequence', update_after_final=True,
+        ),
+        CorrectionFieldPolicy(
+            'accepted_pitch_source_authority', update_after_final=True,
+        ),
         CorrectionFieldPolicy('source', update_after_final=True),
         CorrectionFieldPolicy('source_endpoint', update_after_final=True),
     ),

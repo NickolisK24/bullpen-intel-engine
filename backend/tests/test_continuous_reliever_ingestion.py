@@ -306,10 +306,12 @@ def test_pitch_events_are_complete_idempotent_and_correction_aware(app):
 
         first = play_by_play_foundation.process_final_play_by_play_foundation(
             _game(), boxscore=box, play_by_play=_play_by_play(), game_date=GAME_DATE,
+            observation_sequence=1,
         )
         db.session.commit()
         second = play_by_play_foundation.process_final_play_by_play_foundation(
             _game(), boxscore=box, play_by_play=_play_by_play(), game_date=GAME_DATE,
+            observation_sequence=1,
         )
         db.session.commit()
 
@@ -341,7 +343,7 @@ def test_pitch_events_are_complete_idempotent_and_correction_aware(app):
 
         corrected = play_by_play_foundation.process_final_play_by_play_foundation(
             _game(), boxscore=box, play_by_play=_play_by_play(corrected=True),
-            game_date=GAME_DATE,
+            game_date=GAME_DATE, observation_sequence=2,
         )
         db.session.commit()
         assert corrected['corrected'] is True
@@ -356,6 +358,7 @@ def test_pitch_events_are_complete_idempotent_and_correction_aware(app):
 
         removed = play_by_play_foundation.process_final_play_by_play_foundation(
             _game(), boxscore=box, play_by_play=_play_by_play(), game_date=GAME_DATE,
+            observation_sequence=3,
         )
         db.session.commit()
         assert removed['pitch_rows']['superseded'] == 1
@@ -496,3 +499,201 @@ def test_optional_pitch_failure_is_observable_without_blocking_canonical_lines(
         assert optional['reason'] == 'play_by_play_fetch_failed'
         assert optional['publication_affected'] is False
         assert GamePitchEvent.query.filter_by(mlb_game_pk=GAME_PK).count() == 0
+
+
+def _reviewed_game_driven_run():
+    shadow = game_driven_ingestion.run_game_driven_ingestion(
+        GAME_DATE, mode=game_driven_ingestion.MODE_SHADOW,
+    )
+    return game_driven_ingestion.run_game_driven_ingestion(
+        GAME_DATE,
+        mode=game_driven_ingestion.MODE_WRITE,
+        expected_plan_fingerprint=shadow['complete_reconciliation_fingerprint'],
+    )
+
+
+def test_affected_entities_are_mutation_scoped_across_replay_and_restart(
+    app, monkeypatch,
+):
+    class Client:
+        def __init__(self):
+            self.boxscore = _boxscore()
+            self.pbp_fails = False
+
+        def get_game_boxscore(self, game_pk):
+            return self.boxscore
+
+        def get_game_play_by_play(self, game_pk):
+            if self.pbp_fails:
+                raise TimeoutError('controlled optional failure')
+            return _play_by_play()
+
+    with app.app_context():
+        _seed_pitchers()
+        schedule_final_game(GAME_PK, game_date=GAME_DATE)
+        db.session.commit()
+        client = Client()
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+
+        first = _reviewed_game_driven_run()
+        assert first['affected_pitcher_mlb_ids'] == [1002, 2002]
+        assert first['affected_team_ids'] == [AWAY_TEAM, HOME_TEAM]
+
+        second = _reviewed_game_driven_run()
+        assert second['rows_inserted'] == 0
+        assert second['rows_updated'] == 0
+        assert second['affected_pitcher_mlb_ids'] == []
+        assert second['affected_team_ids'] == []
+
+        db.session.remove()
+        third = _reviewed_game_driven_run()
+        assert third['rows_inserted'] == 0
+        assert third['rows_updated'] == 0
+        assert third['affected_pitcher_mlb_ids'] == []
+        assert third['affected_team_ids'] == []
+
+        home_reliever = Pitcher.query.filter_by(mlb_id=1002).one()
+        home_reliever.team_id = AWAY_TEAM
+        client.boxscore = _boxscore()
+        client.boxscore['teams']['home']['players']['ID1002']['stats']['pitching'][
+            'numberOfPitches'
+        ] = 18
+        db.session.commit()
+        correction = _reviewed_game_driven_run()
+        assert correction['affected_pitcher_mlb_ids'] == [1002]
+        assert correction['affected_team_ids'] == [HOME_TEAM]
+        assert GameLog.query.filter_by(
+            pitcher_id=home_reliever.id, mlb_game_pk=GAME_PK,
+        ).one().appearance_team_id == HOME_TEAM
+
+        client.pbp_fails = True
+        failure_replay = _reviewed_game_driven_run()
+        assert failure_replay['affected_pitcher_mlb_ids'] == []
+        assert failure_replay['affected_team_ids'] == []
+        assert failure_replay['games'][0]['optional_source_domains'][
+            'final_play_by_play'
+        ]['reason'] == 'play_by_play_fetch_failed'
+
+
+def test_persisted_observation_order_rejects_stale_ambiguous_and_weaker_inputs(app):
+    with app.app_context():
+        _seed_pitchers()
+        box = _boxscore()
+        _ingest(box)
+        appearances = _appearances(box)
+        first = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=_play_by_play(),
+            game_date=GAME_DATE, observation_sequence=1,
+        )
+        db.session.commit()
+        identical = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=_play_by_play(),
+            game_date=GAME_DATE, observation_sequence=1,
+        )
+        corrected_payload = _play_by_play(corrected=True)
+        newer = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=corrected_payload,
+            game_date=GAME_DATE, observation_sequence=2,
+        )
+        db.session.commit()
+        canonical = GamePitchEvent.query.filter_by(
+            mlb_game_pk=GAME_PK, at_bat_index=1, play_event_index=0,
+        ).one()
+        canonical_fingerprint = canonical.event_fingerprint
+        stale = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=_play_by_play(),
+            game_date=GAME_DATE, observation_sequence=1,
+        )
+        ambiguous = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=_play_by_play(), game_date=GAME_DATE,
+        )
+        weaker = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=corrected_payload,
+            game_date=GAME_DATE, observation_sequence=3,
+            source_authority='captured_fixture:unreviewed',
+        )
+        db.session.commit()
+
+        assert first['observation_order_status'] == 'initial_accepted'
+        assert identical['observation_order_status'] == 'identical'
+        assert newer['observation_order_status'] == 'newer_accepted'
+        assert stale['observation_order_status'] == 'stale_rejected'
+        assert ambiguous['observation_order_status'] == 'ambiguous_rejected'
+        assert weaker['observation_order_status'] == 'weaker_authority_rejected'
+        assert canonical.start_speed == 98.1
+        assert canonical.event_fingerprint == canonical_fingerprint
+        assert cu01.build_game_impact(
+            appearances, appearance_mutations=[],
+            pitch_mutations=newer['pitch_rows'],
+        )['affected_pitcher_mlb_ids'] == [1002]
+        assert cu01.build_game_impact(
+            appearances, appearance_mutations=[],
+            pitch_mutations=stale['pitch_rows'],
+        )['affected_pitcher_mlb_ids'] == []
+
+        db.session.remove()
+        stale_after_restart = (
+            play_by_play_foundation.process_final_play_by_play_foundation(
+                _game(), boxscore=box, play_by_play=_play_by_play(),
+                game_date=GAME_DATE, observation_sequence=1,
+            )
+        )
+        assert stale_after_restart['observation_order_status'] == 'stale_rejected'
+        assert GamePitchEvent.query.filter_by(
+            mlb_game_pk=GAME_PK, at_bat_index=1, play_event_index=0,
+        ).one().event_fingerprint == canonical_fingerprint
+
+
+def test_batted_ball_facts_belong_only_to_the_owning_pitch(app):
+    with app.app_context():
+        _seed_pitchers()
+        box = _boxscore()
+        _ingest(box)
+        payload = _play_by_play()
+        plate_appearance = payload['allPlays'][1]
+        ball = _pitch_play(1, 1002, 'top', event_index=0)['playEvents'][0]
+        ball['details'].update({
+            'code': 'B', 'description': 'Ball', 'isBall': True,
+            'isStrike': False,
+        })
+        foul = _pitch_play(1, 1002, 'top', event_index=1)['playEvents'][0]
+        foul['details'].update({'code': 'F', 'description': 'Foul'})
+        owner = _pitch_play(
+            1, 1002, 'top', rich=True, event_index=2,
+        )['playEvents'][0]
+        plate_appearance['playEvents'] = [ball, foul, owner]
+        payload['allPlays'][0]['result']['eventType'] = 'strikeout'
+        payload['allPlays'][2]['result']['eventType'] = 'walk'
+        payload['allPlays'][3]['result']['eventType'] = 'hit_by_pitch'
+        home_run = _pitch_play(4, 1002, 'top', rich=True)
+        home_run['result']['eventType'] = 'home_run'
+        payload['allPlays'].append(home_run)
+
+        result = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=payload,
+            game_date=GAME_DATE, observation_sequence=1,
+        )
+        db.session.commit()
+        rows = GamePitchEvent.query.filter_by(
+            mlb_game_pk=GAME_PK, at_bat_index=1,
+        ).order_by(GamePitchEvent.play_event_index).all()
+        assert result['pitch_rows']['inserted'] == 7
+        assert [row.batted_ball_event_type for row in rows] == [None, None, 'field_out']
+        assert [row.launch_speed for row in rows] == [None, None, 88.4]
+        assert all(
+            row.batted_ball_event_type is None
+            for row in GamePitchEvent.query.filter(
+                GamePitchEvent.mlb_game_pk == GAME_PK,
+                GamePitchEvent.at_bat_index.in_([0, 2, 3]),
+            ).all()
+        )
+        assert GamePitchEvent.query.filter_by(
+            mlb_game_pk=GAME_PK, at_bat_index=4,
+        ).one().batted_ball_event_type == 'home_run'
+
+        replay = play_by_play_foundation.process_final_play_by_play_foundation(
+            _game(), boxscore=box, play_by_play=payload,
+            game_date=GAME_DATE, observation_sequence=1,
+        )
+        assert replay['pitch_rows']['updated'] == 0
+        assert replay['pitch_rows']['unchanged'] == 7

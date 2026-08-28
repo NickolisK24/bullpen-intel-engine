@@ -266,6 +266,8 @@ class PlayByPlayProcessedGame(db.Model):
         'pitches_stored',
         'current_pitch_count',
         'pitch_fingerprint',
+        'accepted_pitch_observation_sequence',
+        'accepted_pitch_source_authority',
         'source',
         'source_endpoint',
     )
@@ -307,6 +309,12 @@ class PlayByPlayProcessedGame(db.Model):
     pitches_stored = db.Column(db.Integer, nullable=False, default=0)
     current_pitch_count = db.Column(db.Integer, nullable=False, default=0)
     pitch_fingerprint = db.Column(db.String(64))
+    # MLB's PBP endpoint exposes no monotonic correction revision.  A sequence
+    # is persisted only when the caller has independently established a
+    # trustworthy observation order (for example, a governed capture
+    # manifest).  Local acquisition time is deliberately not used.
+    accepted_pitch_observation_sequence = db.Column(db.Integer)
+    accepted_pitch_source_authority = db.Column(db.String(100))
     source = db.Column(db.String(100), nullable=False)
     source_endpoint = db.Column(db.String(100), nullable=False)
     sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
@@ -347,6 +355,10 @@ class PlayByPlayProcessedGame(db.Model):
             'pitches_stored': self.pitches_stored or 0,
             'current_pitch_count': self.current_pitch_count or 0,
             'pitch_fingerprint': self.pitch_fingerprint,
+            'accepted_pitch_observation_sequence': (
+                self.accepted_pitch_observation_sequence
+            ),
+            'accepted_pitch_source_authority': self.accepted_pitch_source_authority,
             'source': self.source,
             'source_endpoint': self.source_endpoint,
             'sync_run_id': self.sync_run_id,
