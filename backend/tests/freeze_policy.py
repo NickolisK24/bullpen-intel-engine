@@ -460,6 +460,19 @@ SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS = (
     'backend/services/share_artifacts.py',
 )
 
+# CU-06, August 28 2026. The existing bullpen-context composer accepts an
+# optional, already-classified availability-record override so the bounded
+# shadow read-model rebuild can reuse the authoritative composer without
+# persisting or publishing CU-05 state. Default production callers are
+# unchanged. The change does not read appearance-team authority or alter the
+# file's existing roster/team lookup semantics; focused CU-06 tests pin the
+# override merge, represented-date behavior, parity, and no-publication stop.
+# This exact-path approval becomes inert after merge because the path no longer
+# differs from origin/main.
+CU06_INCREMENTAL_READ_MODEL_PATHS = (
+    'backend/services/bullpen_context.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

@@ -112,6 +112,14 @@ frontend, dependency, and preview checks are required to pass on PR #773 before
 merge. Their final state is recorded by the protected PR check suite; no timeout,
 missing required check, or failure may be treated as success.
 
+The first final-head shard 4 run exposed one historical branch-diff freeze: the
+appearance-team guard had no reviewed exception for CU-06's intentional edit to
+`bullpen_context.py`. Product tests were green (1,765 passed in that shard), and
+the failure named only the changed path. The bounded repair adds the repository's
+established exact-path, branch-inert CU-06 approval; it changes no runtime code.
+The guard and all 13 CU-06 focused tests then passed together, and the 90 / 90
+parity proof remained exact. A clean hosted rerun is still mandatory.
+
 ## Merge record
 
 - Strategy required: normal merge commit
