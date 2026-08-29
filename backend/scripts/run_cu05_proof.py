@@ -145,7 +145,7 @@ def _controlled_provider(team_by_pitcher, excluded_pitcher_ids=()):
     return provider
 
 
-def run():
+def run(*, proof_hook=None):
     from models.game_log import GameLog
     from models.pitcher import Pitcher
     from services import incremental_arm_read_team_state as cu05
@@ -180,6 +180,7 @@ def run():
                 arm_ms = 0.0
                 team_ms = 0.0
                 state_counts = Counter()
+                extension_results = []
 
                 for game in write.get('games') or []:
                     impact = game.get('impact') or {}
@@ -257,6 +258,18 @@ def run():
                         'parity_mismatches': len(result.parity_mismatches),
                         'status': result.status,
                     })
+                    if proof_hook is not None:
+                        extension_results.append(proof_hook(
+                            app=flask_app,
+                            source=source,
+                            game=game,
+                            game_date=game_dates[game['game_pk']],
+                            canonical_mutations=mutations,
+                            workload_result=workload,
+                            cu05_result=result,
+                            affected_pitcher_ids=pitcher_ids,
+                            affected_team_ids=team_ids,
+                        ))
 
                 replay = cu01p._run_reviewed_write(
                     date(2026, 8, 27), list(cu01p.REPLAY_GAME_PKS),
@@ -301,6 +314,7 @@ def run():
                         'reason': 'historical capture has no reproducible current roster snapshots',
                     },
                     'per_game': per_game,
+                    'extension_results': extension_results,
                     'totals': {
                         'games': len(per_game),
                         'arm_reads_recomputed': sum(

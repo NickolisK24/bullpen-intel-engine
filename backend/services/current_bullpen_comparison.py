@@ -118,8 +118,10 @@ def _safe_project(domain, projector, *args, fallback, **kwargs):
         return fallback
 
 
-def _team_state(snapshot, team_id):
-    value = authority._published_team_state(snapshot, team_id)
+def _team_state(snapshot, team_id, overrides=None):
+    value = (overrides or {}).get(team_id)
+    if value is None:
+        value = authority._published_team_state(snapshot, team_id)
     if not isinstance(value, Mapping) or value.get('available') is not True:
         return None, ()
     return deepcopy(dict(value)), (
@@ -246,7 +248,9 @@ def _availability(team_package, *, package_date, reference_date):
     )
 
 
-def build_current_bullpen_comparison(snapshot, team_a_id, team_b_id):
+def build_current_bullpen_comparison(
+    snapshot, team_a_id, team_b_id, *, team_state_overrides=None,
+):
     """Project one compact aligned comparison from one selected snapshot."""
     package = _mapping(_mapping(getattr(snapshot, 'payload', None)).get(
         authority.TEAM_BOARD_PACKAGE_KEY
@@ -268,10 +272,12 @@ def build_current_bullpen_comparison(snapshot, team_a_id, team_b_id):
         return None, REASON_TEAM_MISSING
 
     state_a, state_stamp_a = _safe_project(
-        'team_state', _team_state, snapshot, team_a_id, fallback=(None, ())
+        'team_state', _team_state, snapshot, team_a_id,
+        overrides=team_state_overrides, fallback=(None, ())
     )
     state_b, state_stamp_b = _safe_project(
-        'team_state', _team_state, snapshot, team_b_id, fallback=(None, ())
+        'team_state', _team_state, snapshot, team_b_id,
+        overrides=team_state_overrides, fallback=(None, ())
     )
     rest_a, rest_stamp_a = _safe_project(
         'rest', _rest, package_a, fallback=(None, ())

@@ -62,6 +62,9 @@ class IncrementalArmReadTeamStateResult:
     skipped_arm_read_pitcher_ids: tuple = ()
     arm_read_results: dict = field(default_factory=dict)
     team_state_results: dict = field(default_factory=dict)
+    availability_results: dict = field(default_factory=dict)
+    workload_rest_pitcher_results: dict = field(default_factory=dict)
+    workload_rest_team_results: dict = field(default_factory=dict)
     parity_status: str = PARITY_NOT_COMPARABLE
     parity_entries: tuple = ()
     parity_mismatches: tuple = ()
@@ -248,6 +251,16 @@ def recompute_arm_reads_team_state(
         skipped_arm_read_pitcher_ids=skipped,
         arm_read_results=arm_results,
         team_state_results=team_results,
+        availability_results={
+            pitcher_id: dict(record.get('availability') or {})
+            for pitcher_id, record in overrides.items()
+        },
+        workload_rest_pitcher_results=dict(
+            _get(cu04_result, 'pitcher_results') or {}
+        ),
+        workload_rest_team_results=dict(
+            _get(cu04_result, 'team_results') or {}
+        ),
         parity_status=parity_status,
         parity_entries=tuple(asdict(entry) for entry in parity_entries),
         parity_mismatches=mismatches,

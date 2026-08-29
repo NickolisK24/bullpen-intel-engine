@@ -436,16 +436,26 @@ def _empty_bullpen_concentration_context():
     return empty_bullpen_concentration_context()
 
 
-def _optionality_records(team_id, reference_date):
+def _optionality_records(team_id, reference_date, classified_record_overrides=None):
     rows = latest_fatigue_rows(team_id=team_id)
-    return current_availability_records(rows, reference_date=reference_date)
+    records = current_availability_records(rows, reference_date=reference_date)
+    overrides = classified_record_overrides or {}
+    return [_merge_classified_override(record, overrides) for record in records]
 
 
-def _league_clean_options_baseline(reference_date):
+def _merge_classified_override(record, overrides):
+    pitcher = record.get('pitcher')
+    override = overrides.get(pitcher.id) if pitcher is not None else None
+    return {**record, **override} if isinstance(override, dict) else record
+
+
+def _league_clean_options_baseline(reference_date, classified_record_overrides=None):
     records = current_availability_records(
         latest_fatigue_rows(),
         reference_date=reference_date,
     )
+    overrides = classified_record_overrides or {}
+    records = [_merge_classified_override(record, overrides) for record in records]
     records_by_team = defaultdict(list)
     pitcher_ids = []
     for record in records:
@@ -467,8 +477,12 @@ def _league_clean_options_baseline(reference_date):
     )
 
 
-def _bullpen_optionality_context(team_id, reference_date):
-    records = _optionality_records(team_id, reference_date)
+def _bullpen_optionality_context(
+    team_id, reference_date, classified_record_overrides=None,
+):
+    records = _optionality_records(
+        team_id, reference_date, classified_record_overrides,
+    )
     pitcher_ids = [
         record['pitcher'].id
         for record in records
@@ -480,7 +494,9 @@ def _bullpen_optionality_context(team_id, reference_date):
         include_stale=False,
         reference_date=reference_date,
     )
-    league_baseline = _league_clean_options_baseline(reference_date)
+    league_baseline = _league_clean_options_baseline(
+        reference_date, classified_record_overrides,
+    )
     return build_bullpen_optionality_context(
         records,
         logs_by_pitcher=logs_by_pitcher,
@@ -545,7 +561,9 @@ def _context_limitations(last_logs, prev_logs):
     return limitations
 
 
-def build_team_bullpen_context(team_id, reference_date=None):
+def build_team_bullpen_context(
+    team_id, reference_date=None, *, classified_record_overrides=None,
+):
     """
     Evidence contract for one team.
 
@@ -582,7 +600,9 @@ def build_team_bullpen_context(team_id, reference_date=None):
         'rotation_context': _rotation_context(last_logs, prev_logs, windows),
         'usage_demand_context': _usage_demand_context(last_logs, prev_logs, windows),
         'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
-        'bullpen_optionality_context': _bullpen_optionality_context(team_id, ref),
+        'bullpen_optionality_context': _bullpen_optionality_context(
+            team_id, ref, classified_record_overrides,
+        ),
         'role_stability_context': _role_stability_context(team_id, ref),
         'injury_context': _injury_context(team_id, ref),
         'availability_context': _availability_context(),

@@ -1279,7 +1279,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 505.48,
+      "measured_seconds": 507.48,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1343,6 +1343,10 @@
         },
         {
           "path": "tests/test_incremental_arm_read_team_state.py",
+          "measured_seconds": 2.0
+        },
+        {
+          "path": "tests/test_incremental_read_model_rebuild.py",
           "measured_seconds": 2.0
         },
         {
