@@ -108,7 +108,9 @@ def _scheduled_game_context(game, comparison, directory):
     }
 
 
-def build_scheduled_game_matchup_payload(game, snapshot, *, directory=None):
+def build_scheduled_game_matchup_payload(
+    game, snapshot, *, directory=None, team_state_overrides=None,
+):
     """Compose game identity around the unchanged CMP-01 carrier."""
     source = game.to_dict() if hasattr(game, 'to_dict') else dict(game or {})
     away_team_id = source.get('away_team_id')
@@ -117,9 +119,15 @@ def build_scheduled_game_matchup_payload(game, snapshot, *, directory=None):
     reason = GAME_COMPARISON_UNAVAILABLE
     if snapshot is not None and away_team_id is not None and home_team_id is not None:
         try:
-            comparison, reason = build_current_bullpen_comparison(
-                snapshot, away_team_id, home_team_id,
-            )
+            if team_state_overrides is None:
+                comparison, reason = build_current_bullpen_comparison(
+                    snapshot, away_team_id, home_team_id,
+                )
+            else:
+                comparison, reason = build_current_bullpen_comparison(
+                    snapshot, away_team_id, home_team_id,
+                    team_state_overrides=team_state_overrides,
+                )
         except Exception:  # noqa: BLE001 - comparison is optional to game identity
             logger.warning(
                 'Scheduled game matchup comparison failed for game_pk=%s.',

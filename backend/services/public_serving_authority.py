@@ -674,10 +674,12 @@ def _records_for_view(team_package, include_stale):
     return selected
 
 
-def _trusted_board_freshness(snapshot):
-    freshness = board_freshness.published_snapshot_freshness_block()
-    if isinstance(freshness, Mapping):
-        return dict(freshness)
+def _trusted_board_freshness(snapshot, *, prefer_snapshot=False):
+    freshness = None
+    if not prefer_snapshot:
+        freshness = board_freshness.published_snapshot_freshness_block()
+        if isinstance(freshness, Mapping):
+            return dict(freshness)
     payload = snapshot.payload if snapshot is not None and isinstance(snapshot.payload, Mapping) else {}
     raw = payload.get('freshness')
     return dict(raw) if isinstance(raw, Mapping) else {}
@@ -712,15 +714,24 @@ def _frozen_rest_status_for_view(snapshot, team_package):
     return deepcopy(team_package.get('rest_status'))
 
 
-def build_published_team_board(team_id, *, include_stale=False):
-    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+def build_published_team_board(
+    team_id, *, include_stale=False, snapshot_override=None,
+    team_state_override=None,
+):
+    snapshot = (
+        snapshot_override
+        if snapshot_override is not None
+        else dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    )
     if snapshot is None:
         return _unavailable_board(team_id, TEAM_BOARD_UNAVAILABLE, snapshot=None)
     team_package, reason = _team_package(snapshot, team_id)
     if team_package is None:
         return _unavailable_board(team_id, reason, snapshot=snapshot)
 
-    freshness = _trusted_board_freshness(snapshot)
+    freshness = _trusted_board_freshness(
+        snapshot, prefer_snapshot=snapshot_override is not None,
+    )
     records = _records_for_view(team_package, include_stale)
     payload = build_board_payload(
         team=deepcopy(team_package.get('team') or {'team_id': team_id}),
@@ -736,7 +747,11 @@ def build_published_team_board(team_id, *, include_stale=False):
         bullpen_environment=deepcopy(team_package.get('bullpen_environment') or {}),
         frozen_rest_status=_frozen_rest_status_for_view(snapshot, team_package),
     )
-    payload['team_state'] = _published_team_state(snapshot, team_id)
+    payload['team_state'] = (
+        deepcopy(team_state_override)
+        if team_state_override is not None
+        else _published_team_state(snapshot, team_id)
+    )
     payload['publication_authority'] = publication_authority(snapshot)
     payload['served_from'] = 'trusted_dashboard_snapshot'
     return payload

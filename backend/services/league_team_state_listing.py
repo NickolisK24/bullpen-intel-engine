@@ -74,6 +74,22 @@ def _identity_rows(clubs, directory):
     return rows
 
 
+def build_league_team_state_row(identity, team_state):
+    """Project one League row through the same neutral row contract.
+
+    CU-06 uses this entity-level seam to replace an affected row without
+    rebuilding or reclassifying the other 29 clubs.  It owns no Team State
+    semantics; ``team_state`` must already be the governed public projection.
+    """
+    source = identity if isinstance(identity, Mapping) else {}
+    return {
+        'team_id': source.get('team_id'),
+        'team_abbreviation': source.get('team_abbreviation'),
+        'team_name': source.get('team_name'),
+        'team_state': dict(team_state or {}),
+    }
+
+
 def _artifact_sort_key(artifact):
     return (
         _iso(getattr(artifact, 'published_at', None)) or '',
@@ -232,10 +248,10 @@ def build_league_team_state_listing(
     )
     selected = _artifact_by_team(artifacts, expected_team_ids)
     rows = [
-        {
-            **identity,
-            'team_state': _row_state(selected.get(identity['team_id']), snapshot),
-        }
+        build_league_team_state_row(
+            identity,
+            _row_state(selected.get(identity['team_id']), snapshot),
+        )
         for identity in identities
     ]
     rows.sort(key=lambda row: (row['team_name'].casefold(), row['team_id']))
