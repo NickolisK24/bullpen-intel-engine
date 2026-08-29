@@ -2,7 +2,7 @@
 
 ## Verdict
 
-**PRE-MERGE VALIDATION IN PROGRESS**
+**MERGED SAFELY**
 
 This report records the bounded repository integration of CU-06. The feature
 remains shadow-only and cannot publish, invalidate production caches, or change
@@ -107,10 +107,15 @@ dormant unless invoked explicitly through proof/developer code.
 
 ## Hosted validation
 
-Hosted PostgreSQL migrations, PostgreSQL backend shards, collection accounting,
-frontend, dependency, and preview checks are required to pass on PR #773 before
-merge. Their final state is recorded by the protected PR check suite; no timeout,
-missing required check, or failure may be treated as success.
+Hosted validation on the final feature head passed:
+
+- PostgreSQL migrations: PASS in both push and pull-request workflow runs
+- PostgreSQL backend shards: PASS for all four shards in both runs
+- collection/shard accounting: PASS in both runs
+- frontend tests and production build: PASS in both runs
+- dependency audit: PASS in both runs
+- Vercel preview and preview comments: PASS
+- Supabase Preview: skipped by its integration, not treated as PostgreSQL proof
 
 The first final-head shard 4 run exposed one historical branch-diff freeze: the
 appearance-team guard had no reviewed exception for CU-06's intentional edit to
@@ -118,18 +123,27 @@ appearance-team guard had no reviewed exception for CU-06's intentional edit to
 the failure named only the changed path. The bounded repair adds the repository's
 established exact-path, branch-inert CU-06 approval; it changes no runtime code.
 The guard and all 13 CU-06 focused tests then passed together, and the 90 / 90
-parity proof remained exact. A clean hosted rerun is still mandatory.
+parity proof remained exact. Both complete hosted reruns then passed shard 4.
 
 ## Merge record
 
 - Strategy required: normal merge commit
 - Accepted commit ancestry: must remain preserved
-- PR merge commit: recorded by PR #773 after the protected merge completes
-- Resulting `main` head: recorded by PR #773 after the protected merge completes
+- PR merge commit: `4ce99cd508eed68742662834dbbc7056b13777a2`
+- Resulting CU-06 `main` head: `4ce99cd508eed68742662834dbbc7056b13777a2`
+- Accepted CU-06 ancestry: PASS
+- Final feature-head ancestry: PASS
+- Remote feature branch retained at:
+  `39c9c28d3a79b2102770cc0e758a85df2f0188f4`
 
-These two commit identities cannot be embedded in the commit that precedes and
-causes their creation. They are additionally recorded in the merge-task closeout
-and remain durably discoverable from the linked PR and Git history.
+PR #773 used a normal two-parent merge commit. No rebase, squash, cherry-pick,
+force push, or authorship rewrite occurred.
+
+Post-merge `main` CI run
+[33233151548](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/33233151548)
+passed PostgreSQL migrations, all four PostgreSQL shards, collection accounting,
+frontend tests/build, and dependency audit. Existing Vercel automation deployed
+the merge successfully; no manual deployment or configuration change occurred.
 
 ## Evidence boundary and remaining risks
 
@@ -139,8 +153,8 @@ captures cannot reproduce current roster state. Natural production propagation,
 atomic serving replacement, cache handoff, Team Board v2 What Changed generation,
 and public Pitcher detail rebuilding remain unproven and outside CU-06.
 
-## Final action
+## Final verdict and action
 
-Merge only after every required hosted PostgreSQL/CI check passes and the final
-PR diff remains bounded. After a safe normal merge, leave CU-06 dormant. The next
-engineering slice may be CU-07, but it is not part of this task.
+**MERGED SAFELY.** Leave CU-06 dormant and retain existing scheduled publication
+as production authority. The next engineering slice may be CU-07, but it is not
+part of this task.
