@@ -906,6 +906,10 @@ def _settle_replay(result, impact):
 
 
 def _fail_replay(result, error):
+    # A PostgreSQL statement failure aborts the current transaction. Clear that
+    # failed unit of work before writing the durable bounded-attempt checkpoint;
+    # no canonical success reaches this failure path.
+    db.session.rollback()
     job = db.session.get(sync_jobs.SyncJob, result['checkpoint']['id'])
     sync_jobs.fail_job(job, error, result={
         'status': 'failed', 'game_pk': result['game_pk'],
