@@ -132,13 +132,17 @@ scheduling activation.
 
 ## Hosted validation and pull request
 
-- Remote feature HEAD after initial push:
-  `2cead07f201462a6cf343ed291c40bed091b7ddb`
+- Remote feature HEAD:
+  `71f4fa67a1f72dd485b3c726d7af4eb1074a9bc9`
 - Pull request: [#776](https://github.com/NickolisK24/bullpen-intel-engine/pull/776)
-- Hosted PostgreSQL migrations/shards: pending, required
-- Hosted cycle-lock/concurrency tests: pending, required
-- Hosted backend, scheduling/governance, frontend, dependency, and preview checks:
-  pending
+- Hosted PostgreSQL migrations: **PASS**
+- Hosted PostgreSQL shards 1 through 4: **PASS**
+- Hosted collection/shard accounting: **PASS**
+- Hosted frontend tests and production build: **PASS**
+- Hosted dependency audit: **PASS**
+- Vercel preview and preview comments: **PASS**
+- Supabase preview: skipped by the existing integration and not a required CU-08
+  validation path
 
 A failed, skipped, timed-out, or unavailable required check is not a pass and blocks
 merge.
@@ -146,10 +150,13 @@ merge.
 ## Merge and post-merge verification
 
 - Merge strategy: normal merge commit only
-- PR merge commit SHA: pending
-- Resulting `main` HEAD: pending
-- Accepted CU-08 ancestry: must be verified after merge
-- Remote feature branch: must be retained
+- PR merge commit SHA: `3f00e58bfc2f709fb69b8bfedeff9fda7b1ea41b`
+- Resulting `main` HEAD after CU-08 merge:
+  `3f00e58bfc2f709fb69b8bfedeff9fda7b1ea41b`
+- Accepted CU-08 ancestry: **PASS**
+- Final feature-head ancestry: **PASS**
+- Remote feature branch: retained at
+  `71f4fa67a1f72dd485b3c726d7af4eb1074a9bc9`
 
 Post-merge verification must confirm mode still defaults to `OFF`, no Render or
 GitHub schedule invokes CU-08, no production publisher is wired by default,
@@ -168,6 +175,10 @@ manually deploy, run a production migration, modify Render or environment variab
 invoke the continuous command against production, invalidate caches, enable
 `SHADOW_DETECT`, or begin CU-09.
 
+The existing Vercel preview integration ran successfully for PR #776. The existing
+post-merge GitHub CI run started automatically on `main`; no manual deployment or
+production activation was requested or performed.
+
 ## Remaining risks
 
 - Natural recurring live/finality evidence has not been collected.
@@ -178,9 +189,8 @@ invoke the continuous command against production, invalidate caches, enable
 
 ## Verdict and exact next action
 
-Current verdict: **BLOCKED pending hosted validation and normal PR merge**.
+Final verdict: **MERGED SAFELY**.
 
-The exact next action is to push this history without force, open the CU-08 PR, wait
-for every required hosted PostgreSQL/CI check, audit the final diff, and merge only
-with a normal merge commit. After safe merge, stop. Any production rollout,
-including `SHADOW_DETECT`, requires separate explicit authorization.
+The exact next action is to let existing post-merge CI/preview automation finish
+without intervention and stop. Any production rollout, including `SHADOW_DETECT`,
+requires separate explicit authorization.
