@@ -285,3 +285,26 @@ def test_bounded_cycle_selects_today_and_recent_final_without_polling(app):
     assert client.feed_calls == [823800, GAME_PK]
     assert cycle['requests_expected'] == 3
     assert cycle['downstream_work_triggered'] is False
+
+
+def test_bounded_cap_prioritizes_current_live_game_over_recent_finals(app):
+    today = date(2026, 8, 25)
+    games = [
+        {'gamePk': 700001, 'officialDate': '2026-08-24', 'status': {'statusCode': 'F', 'detailedState': 'Final'}},
+        {'gamePk': GAME_PK, 'officialDate': '2026-08-25', 'status': {'statusCode': 'I', 'detailedState': 'In Progress'}},
+        {'gamePk': 700002, 'officialDate': '2026-08-25', 'status': {'statusCode': 'S', 'detailedState': 'Scheduled'}},
+    ]
+
+    class Client:
+        def get_schedule(self, **kwargs):
+            return games
+
+        def get_game_live_feed(self, game_pk):
+            payload = _feed()
+            payload['gamePk'] = game_pk
+            return payload
+
+    cycle = detection.detect_active_slate_changes(
+        reference_date=today, correction_days=2, client=Client(), max_games=1,
+    )
+    assert cycle['candidate_game_pks'] == [GAME_PK]

@@ -349,7 +349,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 505.14,
+      "measured_seconds": 506.55,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -358,6 +358,10 @@
         {
           "path": "tests/test_continuous_reliever_ingestion.py",
           "measured_seconds": 0.7
+        },
+        {
+          "path": "tests/test_continuous_execution.py",
+          "measured_seconds": 1.41
         },
         {
           "path": "tests/test_appearance_ledger.py",
