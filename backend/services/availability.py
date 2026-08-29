@@ -310,7 +310,25 @@ def classify_availability(
         latest_game_date=latest_game_date,
         active_window_days=active_window_days,
     )
-    data_state = inputs['freshness_state']
+    return classify_availability_inputs(
+        inputs,
+        thresholds=thresholds,
+        active_window_days=active_window_days,
+    )
+
+
+def classify_availability_inputs(
+    inputs, thresholds=THRESHOLDS, active_window_days=ACTIVE_WINDOW_DAYS,
+):
+    """Classify an arm from already-derived authoritative workload/rest inputs.
+
+    The scheduled/full path still derives these inputs from canonical GameLogs
+    through :func:`derive_workload_rest_inputs`.  CU-05 reuses the exact same
+    classifier after CU-04 has already derived that identical input contract,
+    avoiding a second workload implementation or a wall-clock re-evaluation.
+    """
+    inputs = dict(inputs or {})
+    data_state = inputs.get('freshness_state')
     limitations = list(BASE_LIMITATIONS)
 
     if data_state == 'missing':
