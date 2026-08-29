@@ -1338,6 +1338,10 @@
           "measured_seconds": 0.62
         },
         {
+          "path": "tests/test_incremental_workload_rest.py",
+          "measured_seconds": 2.0
+        },
+        {
           "path": "tests/test_ci_shard_contract.py",
           "measured_seconds": 20.0
         },

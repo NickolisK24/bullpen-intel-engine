@@ -149,6 +149,38 @@ def _derive_inputs(score, game_logs, reference_date, latest_game_date, freshness
     }
 
 
+def derive_workload_rest_inputs(
+    score,
+    game_logs=None,
+    reference_date=None,
+    latest_game_date=None,
+    active_window_days=ACTIVE_WINDOW_DAYS,
+):
+    """Return the authoritative workload/rest inputs without classifying an arm.
+
+    This is the pure lower-level seam shared by availability classification and
+    CU-04 shadow recomputation.  Callers doing incremental work pass an explicit
+    represented reference date; the default remains solely for compatibility
+    with existing read paths.
+    """
+    ref = reference_date or product_current_date()
+    raw_logs = list(game_logs or [])
+    logs = workload_appearance_logs(raw_logs)
+    if latest_game_date is None and logs:
+        latest_game_date = max(
+            (
+                log.game_date
+                for log in logs
+                if getattr(log, 'game_date', None) is not None
+            ),
+            default=None,
+        )
+    data_state = _data_state(
+        ref, latest_game_date, score, raw_logs, active_window_days,
+    )
+    return _derive_inputs(score, logs, ref, latest_game_date, data_state)
+
+
 def _data_state(reference_date, latest_game_date, score, game_logs, active_window_days):
     logs = list(game_logs or [])
     incomplete = any(
@@ -271,16 +303,14 @@ def classify_availability(
         Dict safe to embed in API responses.
     """
     ref = reference_date or product_current_date()
-    raw_logs = list(game_logs or [])
-    logs = workload_appearance_logs(raw_logs)
-    if latest_game_date is None and logs:
-        latest_game_date = max(
-            (log.game_date for log in logs if getattr(log, 'game_date', None) is not None),
-            default=None,
-        )
-
-    data_state = _data_state(ref, latest_game_date, score, raw_logs, active_window_days)
-    inputs = _derive_inputs(score, logs, ref, latest_game_date, data_state)
+    inputs = derive_workload_rest_inputs(
+        score=score,
+        game_logs=game_logs,
+        reference_date=ref,
+        latest_game_date=latest_game_date,
+        active_window_days=active_window_days,
+    )
+    data_state = inputs['freshness_state']
     limitations = list(BASE_LIMITATIONS)
 
     if data_state == 'missing':
