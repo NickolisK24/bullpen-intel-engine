@@ -207,6 +207,8 @@ def resolve_team_readiness_payload(
     source_snapshot=None,
     reference_dates_out: Optional[dict] = None,
     arm_reads_out: Optional[dict] = None,
+    classified_record_overrides: Optional[Mapping[int, Mapping[str, Any]]] = None,
+    represented_date_override: Optional[date] = None,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -236,6 +238,13 @@ def resolve_team_readiness_payload(
     them afterwards. ``arm_reads_out`` receives the exact canonical public Arm
     Reads projected from the already-classified active-bullpen records in this
     same invocation; it never triggers another availability calculation.
+    ``classified_record_overrides`` is the bounded CU-05 seam: it replaces only
+    same-team records whose workload/rest inputs were recomputed from newer
+    canonical facts. Population, trust, Arm Read projection, and Team State
+    assembly remain owned by this production resolver.
+    ``represented_date_override`` is an explicit shadow-only date anchor. It is
+    converted by the same ``trusted_slate_reference_dates`` authority used for
+    trusted snapshots; it never reads the wall clock.
     """
     from api.team_operations import (
         TEAM_OPERATIONS_DEFAULT_LIMIT,
@@ -264,12 +273,19 @@ def resolve_team_readiness_payload(
     # Resolved once and shared: the reference-date split and the freshness anchor
     # below both need this verdict, and it is not free to compute per team.
     snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
-    membership_reference_date, availability_reference_date = (
-        resolve_readiness_reference_dates(
-            source_snapshot, sync_status=sync_status,
-            snapshot_freshness=snapshot_freshness,
+    if represented_date_override is not None:
+        membership_reference_date, availability_reference_date = (
+            trusted_slate_reference_dates(represented_date_override)
         )
-    )
+        if membership_reference_date is None or availability_reference_date is None:
+            raise ValueError('represented_date_override must be a baseball date')
+    else:
+        membership_reference_date, availability_reference_date = (
+            resolve_readiness_reference_dates(
+                source_snapshot, sync_status=sync_status,
+                snapshot_freshness=snapshot_freshness,
+            )
+        )
     if isinstance(reference_dates_out, dict):
         # Record the dates this read actually used, at the moment it used them, so
         # the production-proof artifact observes them instead of re-deriving them.
@@ -290,6 +306,9 @@ def resolve_team_readiness_payload(
                 mode=CURRENT_AVAILABILITY_MODE,
             ),
         )
+    )
+    records = _merge_classified_record_overrides(
+        records, classified_record_overrides, team_id=team_id,
     )
     if not records:
         return None
@@ -333,6 +352,33 @@ def resolve_team_readiness_payload(
         ),
         generated_at=generated_at,
     )
+
+
+def _merge_classified_record_overrides(records, overrides, *, team_id):
+    """Replace bounded current-team records without changing population rules."""
+    by_pitcher_id = {
+        int(getattr(record.get('pitcher'), 'id')): record
+        for record in records or ()
+        if getattr(record.get('pitcher'), 'id', None) is not None
+    }
+    for raw_pitcher_id, record in (overrides or {}).items():
+        if not isinstance(record, Mapping):
+            continue
+        pitcher = record.get('pitcher')
+        pitcher_id = getattr(pitcher, 'id', None)
+        pitcher_team_id = getattr(pitcher, 'team_id', None)
+        try:
+            normalized_id = int(raw_pitcher_id)
+        except (TypeError, ValueError):
+            continue
+        if pitcher_id is None or int(pitcher_id) != normalized_id:
+            continue
+        if team_id is not None and (
+            pitcher_team_id is None or int(pitcher_team_id) != int(team_id)
+        ):
+            continue
+        by_pitcher_id[normalized_id] = record
+    return tuple(by_pitcher_id[key] for key in sorted(by_pitcher_id))
 
 
 # ---------------------------------------------------------------------------

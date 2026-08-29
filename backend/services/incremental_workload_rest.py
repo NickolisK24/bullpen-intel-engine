@@ -37,6 +37,8 @@ PITCHER_FATIGUE_WORKLOAD_FIELDS = (
     'innings_last_7_days',
 )
 PITCHER_REST_INPUT_FIELDS = (
+    'fatigue_score',
+    'fatigue_risk_level',
     'pitches_yesterday',
     'pitches_last_3_days',
     'pitches_last_5_days',

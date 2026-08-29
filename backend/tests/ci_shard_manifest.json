@@ -1342,6 +1342,10 @@
           "measured_seconds": 2.0
         },
         {
+          "path": "tests/test_incremental_arm_read_team_state.py",
+          "measured_seconds": 2.0
+        },
+        {
           "path": "tests/test_ci_shard_contract.py",
           "measured_seconds": 20.0
         },
