@@ -132,8 +132,9 @@ scheduling activation.
 
 ## Hosted validation and pull request
 
-- Remote feature HEAD: pending push
-- Pull request: pending
+- Remote feature HEAD after initial push:
+  `2cead07f201462a6cf343ed291c40bed091b7ddb`
+- Pull request: [#776](https://github.com/NickolisK24/bullpen-intel-engine/pull/776)
 - Hosted PostgreSQL migrations/shards: pending, required
 - Hosted cycle-lock/concurrency tests: pending, required
 - Hosted backend, scheduling/governance, frontend, dependency, and preview checks:
