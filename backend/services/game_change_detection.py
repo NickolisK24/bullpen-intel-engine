@@ -178,6 +178,7 @@ def observe_game_change(
 
 def detect_active_slate_changes(
     *, reference_date=None, correction_days=2, client=None, commit=True,
+    max_games=None, only_game_pks=None,
 ):
     """Observe a bounded active slate with one schedule request plus one feed/game.
 
@@ -203,6 +204,15 @@ def detect_active_slate_changes(
         return _cycle([], [failure], started, schedule_requests=1)
 
     candidates = _candidate_game_pks(games, ref, start)
+    if only_game_pks is not None:
+        allowed = {
+            value for value in (_positive_int(item) for item in only_game_pks)
+            if value is not None
+        }
+        candidates = [game_pk for game_pk in candidates if game_pk in allowed]
+    if max_games is not None:
+        candidates = _prioritize_bounded_candidates(games, candidates, ref)
+        candidates = candidates[:max(0, int(max_games))]
     results = [
         observe_game_change(pk, client=client, commit=False) for pk in candidates
     ]
@@ -377,6 +387,38 @@ def _candidate_game_pks(games, reference_date, correction_start):
         elif decision.state == game_finality.SUSPENDED:
             candidates.add(pk)
     return sorted(pk for pk in candidates if pk is not None)
+
+
+def _prioritize_bounded_candidates(games, candidate_game_pks, reference_date):
+    """Keep active/current games ahead of correction-window finals when capped."""
+    allowed = set(candidate_game_pks)
+    ranked = []
+    for game in games or []:
+        pk = _positive_int((game or {}).get('gamePk'))
+        if pk not in allowed:
+            continue
+        raw_date = (game or {}).get('officialDate') or str(
+            (game or {}).get('gameDate') or ''
+        )[:10]
+        try:
+            game_date = date.fromisoformat(raw_date)
+        except (TypeError, ValueError):
+            game_date = date.min
+        decision = game_finality.classify_game_finality(game)
+        status = (game or {}).get('status') or {}
+        status_code = str(status.get('statusCode') or status.get('codedGameState') or '')
+        if game_date == reference_date and status_code in game_finality.IN_PROGRESS_STATUS_CODES:
+            tier = 0
+        elif decision.state == game_finality.SUSPENDED:
+            tier = 1
+        elif game_date == reference_date and not decision.has_safe_final_status:
+            tier = 2
+        elif game_date == reference_date:
+            tier = 3
+        else:
+            tier = 4
+        ranked.append((tier, -game_date.toordinal(), pk))
+    return [pk for _tier, _ordinal, pk in sorted(ranked)]
 
 
 def _cycle(candidates, results, started, *, schedule_requests):
