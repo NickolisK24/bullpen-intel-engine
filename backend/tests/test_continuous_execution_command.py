@@ -2,6 +2,8 @@ import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import run_continuous_cycle as command
 
 
@@ -150,6 +152,108 @@ def test_failure_summary_preserves_failure_and_safety_state():
     assert summary['live_publications'] == 0
     assert summary['cache_handoffs'] == 0
     assert summary['production_authority_affected'] is False
+
+
+def test_cycle_summary_preserves_true_boolean_safety_values():
+    payload = cycle_payload(
+        production_authority_affected=True,
+        timeout_reached=True,
+        source_budget_exhausted=True,
+        circuit_breaker_open=True,
+    )
+
+    summary = json.loads(command.render_output(payload)[0])
+
+    assert summary['production_authority_affected'] is True
+    assert summary['timeout_reached'] is True
+    assert summary['source_budget_exhausted'] is True
+    assert summary['circuit_breaker_open'] is True
+
+
+@pytest.mark.parametrize('field', [
+    'production_authority_affected',
+    'timeout_reached',
+    'source_budget_exhausted',
+    'circuit_breaker_open',
+])
+def test_cycle_summary_rejects_non_boolean_safety_values(field):
+    payload = cycle_payload(**{field: 'false'})
+
+    with pytest.raises(TypeError, match=field):
+        command.render_output(payload)
+
+
+def test_rejected_observation_emits_existing_detector_fields():
+    payload = cycle_payload(
+        rejected_observations=1,
+        detection_results=[{
+            'game_pk': 823665,
+            'classification': 'stale_observation',
+            'changed': False,
+            'reason': 'older_source_observation',
+            'finality_state': 'final_pending_data',
+            'source_authority': 'mlb_statsapi_live_feed_v1_1',
+            'previous_observation_identity': 'accepted-fingerprint',
+            'current_observation_identity': 'incoming-fingerprint',
+            'differences': {},
+        }],
+    )
+
+    lines = command.render_output(payload)
+
+    assert len(lines) == 2
+    assert json.loads(lines[1]) == {
+        'event': 'game_rejected',
+        'game_pk': 823665,
+        'classification': 'stale_observation',
+        'reason': 'older_source_observation',
+        'finality': 'final_pending_data',
+        'source_authority': 'mlb_statsapi_live_feed_v1_1',
+        'previous_observation_identity': 'accepted-fingerprint',
+        'current_observation_identity': 'incoming-fingerprint',
+    }
+
+
+def test_two_rejected_observations_emit_exactly_two_lines():
+    payload = cycle_payload(
+        rejected_observations=2,
+        unchanged_games=1,
+        detection_results=[
+            {
+                'game_pk': 823665,
+                'classification': 'stale_observation',
+                'changed': False,
+                'reason': 'weaker_source_authority',
+            },
+            {
+                'game_pk': 823666,
+                'classification': 'ambiguous_observation',
+                'changed': False,
+                'reason': 'missing_source_observation_order',
+            },
+            {
+                'game_pk': 823667,
+                'classification': 'unchanged',
+                'changed': False,
+                'reason': 'material_fingerprint_match',
+            },
+        ],
+    )
+
+    lines = command.render_output(payload)
+    rejected = [
+        json.loads(line) for line in lines
+        if json.loads(line)['event'] == 'game_rejected'
+    ]
+
+    assert len(lines) == 3
+    assert [item['game_pk'] for item in rejected] == [823665, 823666]
+    assert [item['classification'] for item in rejected] == [
+        'stale_observation', 'ambiguous_observation',
+    ]
+    assert [item['reason'] for item in rejected] == [
+        'weaker_source_authority', 'missing_source_observation_order',
+    ]
 
 
 def test_full_json_preserves_complete_existing_payload():

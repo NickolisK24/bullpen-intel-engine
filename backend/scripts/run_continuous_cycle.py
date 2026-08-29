@@ -18,9 +18,24 @@ from services.continuous_execution import (  # noqa: E402
     ActivationMode,
     run_continuous_cycle,
 )
+from services.game_change_detection import (  # noqa: E402
+    AMBIGUOUS_OBSERVATION,
+    STALE_OBSERVATION,
+)
 
 
 SUCCESS_STATUSES = frozenset({'off', 'complete', 'skipped'})
+REJECTED_CLASSIFICATIONS = frozenset({
+    STALE_OBSERVATION,
+    AMBIGUOUS_OBSERVATION,
+})
+
+
+def _boolean_safety_value(payload, key):
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise TypeError(f'{key} must be a boolean')
+    return value
 
 
 def _compact_cycle_payload(payload):
@@ -43,12 +58,16 @@ def _compact_cycle_payload(payload):
         'canonical_mutation_games': payload.get('canonical_mutation_games'),
         'live_publications': payload.get('live_publications'),
         'cache_handoffs': payload.get('cache_handoffs'),
-        'production_authority_affected': payload.get(
-            'production_authority_affected'
+        'production_authority_affected': _boolean_safety_value(
+            payload, 'production_authority_affected'
         ),
-        'timeout_reached': payload.get('timeout_reached'),
-        'source_budget_exhausted': payload.get('source_budget_exhausted'),
-        'circuit_breaker_open': payload.get('circuit_breaker_open'),
+        'timeout_reached': _boolean_safety_value(payload, 'timeout_reached'),
+        'source_budget_exhausted': _boolean_safety_value(
+            payload, 'source_budget_exhausted'
+        ),
+        'circuit_breaker_open': _boolean_safety_value(
+            payload, 'circuit_breaker_open'
+        ),
     }
 
 
@@ -63,16 +82,39 @@ def _changed_game_payload(observation):
     }
 
 
+def _rejected_game_payload(observation):
+    return {
+        'event': 'game_rejected',
+        'game_pk': observation.get('game_pk'),
+        'classification': observation.get('classification'),
+        'reason': observation.get('reason'),
+        'finality': observation.get('finality_state'),
+        'source_authority': observation.get('source_authority'),
+        'previous_observation_identity': observation.get(
+            'previous_observation_identity'
+        ),
+        'current_observation_identity': observation.get(
+            'current_observation_identity'
+        ),
+    }
+
+
 def render_output(payload, *, full_json=False):
     if full_json:
         return (json.dumps(payload, indent=2, sort_keys=True),)
     lines = [json.dumps(_compact_cycle_payload(payload), separators=(',', ':'))]
+    observations = payload.get('detection_results') or ()
     if payload.get('changed_games', 0) > 0:
         lines.extend(
             json.dumps(_changed_game_payload(observation), separators=(',', ':'))
-            for observation in payload.get('detection_results') or ()
+            for observation in observations
             if observation.get('changed') is True
         )
+    lines.extend(
+        json.dumps(_rejected_game_payload(observation), separators=(',', ':'))
+        for observation in observations
+        if observation.get('classification') in REJECTED_CLASSIFICATIONS
+    )
     return tuple(lines)
 
 
