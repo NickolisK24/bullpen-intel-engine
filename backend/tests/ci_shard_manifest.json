@@ -364,6 +364,10 @@
           "measured_seconds": 1.41
         },
         {
+          "path": "tests/test_continuous_execution_command.py",
+          "measured_seconds": 0.1
+        },
+        {
           "path": "tests/test_appearance_ledger.py",
           "measured_seconds": 5.277
         },
