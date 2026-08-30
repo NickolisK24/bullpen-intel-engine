@@ -256,6 +256,65 @@ def test_two_rejected_observations_emit_exactly_two_lines():
     ]
 
 
+def test_governed_replay_lifecycle_is_visible_in_compact_output():
+    fingerprint = 'a' * 64
+    payload = cycle_payload(replay_results=[{
+        'game_pk': 823665,
+        'status': 'consumed',
+        'reason_code': 'game_replay_completed',
+        'outcome': 'authorized_no_op',
+        'checkpoint': {'id': 99, 'scope_key': 'must-not-leak'},
+        'events': [
+            {'event': 'game_replay_requested', 'game_pk': 823665},
+            {
+                'event': 'game_replay_authorized', 'game_pk': 823665,
+                'plan_fingerprint': fingerprint,
+            },
+            {
+                'event': 'game_replay_completed', 'game_pk': 823665,
+                'outcome': 'authorized_no_op',
+            },
+        ],
+    }])
+
+    lines = command.render_output(payload)
+    events = [json.loads(line) for line in lines[1:]]
+
+    assert [event['event'] for event in events] == [
+        'game_replay_requested',
+        'game_replay_authorized',
+        'game_replay_completed',
+    ]
+    assert events[1]['plan_fingerprint'] == fingerprint
+    assert events[2]['outcome'] == 'authorized_no_op'
+    assert all('checkpoint' not in event for event in events)
+
+
+def test_governed_replay_refusal_reason_is_visible_in_compact_output():
+    payload = cycle_payload(replay_results=[{
+        'game_pk': 823665,
+        'status': 'refused',
+        'reason_code': 'game_not_allowlisted',
+        'events': [
+            {'event': 'game_replay_requested', 'game_pk': 823665},
+            {
+                'event': 'game_replay_refused', 'game_pk': 823665,
+                'reason_code': 'game_not_allowlisted',
+            },
+        ],
+    }])
+
+    lines = command.render_output(payload)
+
+    assert [json.loads(line) for line in lines[1:]] == [
+        {'event': 'game_replay_requested', 'game_pk': 823665},
+        {
+            'event': 'game_replay_refused', 'game_pk': 823665,
+            'reason_code': 'game_not_allowlisted',
+        },
+    ]
+
+
 def test_full_json_preserves_complete_existing_payload():
     payload = cycle_payload(extra_debug_field={'nested': [1, 2, 3]})
 

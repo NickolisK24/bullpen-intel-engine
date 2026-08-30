@@ -99,6 +99,14 @@ def _rejected_game_payload(observation):
     }
 
 
+def _replay_event_payload(event):
+    allowed = {
+        'event', 'game_pk', 'reason_code', 'plan_fingerprint', 'outcome',
+        'error',
+    }
+    return {key: value for key, value in event.items() if key in allowed}
+
+
 def render_output(payload, *, full_json=False):
     if full_json:
         return (json.dumps(payload, indent=2, sort_keys=True),)
@@ -114,6 +122,11 @@ def render_output(payload, *, full_json=False):
         json.dumps(_rejected_game_payload(observation), separators=(',', ':'))
         for observation in observations
         if observation.get('classification') in REJECTED_CLASSIFICATIONS
+    )
+    lines.extend(
+        json.dumps(_replay_event_payload(event), separators=(',', ':'))
+        for result in (payload.get('replay_results') or ())
+        for event in (result.get('events') or ())
     )
     return tuple(lines)
 

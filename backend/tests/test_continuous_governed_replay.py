@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
+import json
 import multiprocessing
 
 import pytest
@@ -375,6 +376,72 @@ def test_malformed_replay_environment_fails_closed():
     })
     assert cfg.replay_game_pks == ()
     assert 'invalid_replay_game_allowlist' in errors
+
+
+def test_render_shaped_environment_and_cli_mode_discover_stored_final_replay(
+    app, monkeypatch,
+):
+    game_pk = 823665
+    fingerprint = (
+        '53c269913f3ccaaabca551e8a5d16f0ace42cb11b3ac72ff8532c0ddc424a043'
+    )
+    monkeypatch.setenv('BASEBALLOS_CONTINUOUS_MODE', 'off')
+    monkeypatch.setenv('BASEBALLOS_CONTINUOUS_ENABLED', 'true')
+    monkeypatch.setenv('BASEBALLOS_CONTINUOUS_ALLOWLIST_GAME_PKS', str(game_pk))
+    monkeypatch.setenv(
+        'BASEBALLOS_CONTINUOUS_PLAN_FINGERPRINTS',
+        json.dumps({str(game_pk): fingerprint}, separators=(',', ':')),
+    )
+    monkeypatch.setenv('BASEBALLOS_CONTINUOUS_REPLAY_GAME_PKS', str(game_pk))
+    monkeypatch.setenv('BASEBALLOS_CONTINUOUS_PUBLICATION_ENABLED', 'false')
+    _patch_metadata(monkeypatch)
+    with app.app_context():
+        _stored_observation(game_pk=game_pk)
+
+        calls = []
+
+        def orchestrator(change, **kwargs):
+            calls.append((change['game_pk'], kwargs))
+            return {
+                **_impact(mutated=False),
+                'game_pk': game_pk,
+            }
+
+        first = continuous.run_continuous_cycle(
+            mode='shadow_full_chain', represented_time=NOW,
+            client=Client(), detector=_detector(), orchestrator=orchestrator,
+            workload_service=lambda *_args, **_kwargs: None,
+            team_state_service=lambda *_args, **_kwargs: None,
+            read_model_service=lambda *_args, **_kwargs: None,
+            cycle_lock_factory=Lock,
+        )
+        second = continuous.run_continuous_cycle(
+            mode='shadow_full_chain', represented_time=NOW,
+            client=Client(), detector=_detector(), orchestrator=orchestrator,
+            workload_service=lambda *_args, **_kwargs: None,
+            team_state_service=lambda *_args, **_kwargs: None,
+            read_model_service=lambda *_args, **_kwargs: None,
+            cycle_lock_factory=Lock,
+        )
+
+    assert calls == [(
+        game_pk,
+        {
+            'allow_canonical_write': True,
+            'expected_plan_fingerprint': fingerprint,
+        },
+    )]
+    assert first.replay_results[0]['outcome'] == 'authorized_no_op'
+    assert [event['event'] for event in first.replay_results[0]['events']] == [
+        'game_replay_requested',
+        'game_replay_authorized',
+        'game_replay_completed',
+    ]
+    assert second.replay_results[0]['reason_code'] == 'replay_already_consumed'
+    assert [event['event'] for event in second.replay_results[0]['events']] == [
+        'game_replay_requested',
+        'game_replay_refused',
+    ]
 
 
 def test_crash_like_stale_claim_recovers_once_then_consumes(app, monkeypatch):
