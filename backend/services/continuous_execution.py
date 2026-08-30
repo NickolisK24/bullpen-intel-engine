@@ -747,13 +747,16 @@ def _prepare_governed_replays(config, detection_results, *, sync_run_id):
             'status': 'requested',
             'reason_code': 'game_replay_requested',
             'outcome': None,
+            'events': [],
         }
         results.append(result)
-        _replay_log('game_replay_requested', game_pk)
+        _record_replay_event(result, 'game_replay_requested')
         refusal = _replay_refusal(config, game_pk, current_changed)
         if refusal:
             result.update(status='refused', reason_code=refusal)
-            _replay_log('game_replay_refused', game_pk, reason_code=refusal)
+            _record_replay_event(
+                result, 'game_replay_refused', reason_code=refusal,
+            )
             continue
 
         row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one()
@@ -782,15 +785,17 @@ def _prepare_governed_replays(config, detection_results, *, sync_run_id):
                 else 'replay_claimed_elsewhere'
             )
             result.update(status='inert', reason_code=reason, checkpoint=job.to_dict())
-            _replay_log('game_replay_refused', game_pk, reason_code=reason)
+            _record_replay_event(
+                result, 'game_replay_refused', reason_code=reason,
+            )
             continue
 
         result.update(
             status='authorized', reason_code='game_replay_authorized',
             plan_fingerprint=fingerprint, checkpoint=claimed.to_dict(),
         )
-        _replay_log(
-            'game_replay_authorized', game_pk, plan_fingerprint=fingerprint,
+        _record_replay_event(
+            result, 'game_replay_authorized', plan_fingerprint=fingerprint,
         )
         changes.append({
             'game_pk': game_pk,
@@ -902,7 +907,7 @@ def _settle_replay(result, impact):
         status='consumed', reason_code='game_replay_completed', outcome=outcome,
         checkpoint=job.to_dict(),
     )
-    _replay_log('game_replay_completed', result['game_pk'], outcome=outcome)
+    _record_replay_event(result, 'game_replay_completed', outcome=outcome)
 
 
 def _fail_replay(result, error):
@@ -919,9 +924,15 @@ def _fail_replay(result, error):
         status='failed', reason_code='replay_execution_failed',
         outcome=None, checkpoint=job.to_dict(),
     )
-    _replay_log(
-        'game_replay_failed', result['game_pk'], error=type(error).__name__,
+    _record_replay_event(
+        result, 'game_replay_failed', error=type(error).__name__,
     )
+
+
+def _record_replay_event(result, event, **fields):
+    value = {'event': event, 'game_pk': result['game_pk'], **fields}
+    result.setdefault('events', []).append(value)
+    _replay_log(event, result['game_pk'], **fields)
 
 
 def _replay_log(event, game_pk, **fields):
