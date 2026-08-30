@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import Enum
 import json
+import logging
 import os
 import threading
 from time import monotonic
@@ -26,6 +27,7 @@ from services import incremental_publication as cu07
 from services import incremental_read_model_rebuild as cu06
 from services import incremental_workload_rest as cu04
 from services import sync_metadata
+from services import sync_jobs
 from services.mlb_api import mlb_client
 from utils.db import db
 from utils.time import utc_now_naive
@@ -57,6 +59,9 @@ DEFAULT_MAX_CANONICAL_ACTIONS = 4
 DEFAULT_MAX_COHORTS = 2
 DEFAULT_MAX_RUNTIME_SECONDS = 120
 DEFAULT_CORE_FAILURE_BREAKER = 3
+REPLAY_JOB_NAME = 'continuous_game_replay'
+REPLAY_JOB_FAMILY = 'continuous_replay'
+REPLAY_MAX_ATTEMPTS = 2
 
 RESULT_OFF = 'off'
 RESULT_COMPLETE = 'complete'
@@ -65,6 +70,7 @@ RESULT_SKIPPED = 'skipped'
 RESULT_BLOCKED = 'blocked'
 
 _process_cycle_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,7 @@ class ContinuousExecutionConfig:
     allowlist_game_pks: tuple[int, ...] = ()
     allowlist_team_ids: tuple[int, ...] = ()
     expected_plan_fingerprints: dict[int, str] = field(default_factory=dict)
+    replay_game_pks: tuple[int, ...] = ()
     correction_days: int = 2
     source_request_budget: int = DEFAULT_SOURCE_BUDGET
     max_games: int = DEFAULT_MAX_GAMES
@@ -120,6 +127,10 @@ class ContinuousExecutionConfig:
                 'invalid_team_allowlist',
             ),
             expected_plan_fingerprints=fingerprints,
+            replay_game_pks=_csv_ints(
+                env.get('BASEBALLOS_CONTINUOUS_REPLAY_GAME_PKS'), errors,
+                'invalid_replay_game_allowlist',
+            ),
             correction_days=_integer(
                 env, 'BASEBALLOS_CONTINUOUS_CORRECTION_DAYS', 2, errors, minimum=0,
             ),
@@ -211,6 +222,7 @@ class ContinuousCycleResult:
     publication_target: str = 'none'
     detection_results: tuple = ()
     downstream_results: tuple = ()
+    replay_results: tuple = ()
     runtime_ms: float = 0.0
 
     def to_dict(self):
@@ -218,6 +230,7 @@ class ContinuousCycleResult:
         for key in (
             'affected_pitcher_ids', 'affected_team_ids', 'failures',
             'detection_results', 'downstream_results',
+            'replay_results',
         ):
             value[key] = list(value[key])
         return value
@@ -427,6 +440,9 @@ def _execute_cycle(**kwargs):
         max_games=max_feed_games,
     )
     detection_results = list(detection_cycle.get('results') or ())
+    replay_changes, replay_results = _prepare_governed_replays(
+        config, detection_results, sync_run_id=kwargs['sync_run_id'],
+    )
     failures = []
     source_failures = int(detection_cycle.get('source_failures') or 0)
     checked = int(detection_cycle.get('games_checked') or 0)
@@ -454,7 +470,8 @@ def _execute_cycle(**kwargs):
     timeout_reached = False
     publication_target = _publication_target(config.mode)
 
-    for change in detection_results:
+    for change in [*detection_results, *replay_changes]:
+        replay_result = change.get('_replay_result')
         if config.mode == ActivationMode.SHADOW_DETECT:
             counters['skipped_by_mode'] += int(bool(change.get('changed')))
             continue
@@ -493,12 +510,16 @@ def _execute_cycle(**kwargs):
                 expected_plan_fingerprint=fingerprint,
             )
         except Exception as exc:  # one game must not poison independent cohorts
+            if replay_result is not None:
+                _fail_replay(replay_result, exc)
             failures.append({
                 'scope': 'orchestration', 'game_pk': change.get('game_pk'),
                 'error': type(exc).__name__,
             })
             continue
         impact_dict = _dict(impact)
+        if replay_result is not None:
+            _settle_replay(replay_result, impact_dict)
         counters['canonical_actions'] += int(impact_dict.get('cu01_invocations') or 0)
         game_result = {
             'game_pk': change.get('game_pk'), 'cu03': impact_dict,
@@ -677,6 +698,7 @@ def _execute_cycle(**kwargs):
         publication_target=publication_target,
         detection_results=tuple(detection_results),
         downstream_results=tuple(downstream),
+        replay_results=tuple(replay_results),
         runtime_ms=round((monotonic() - started_clock) * 1000, 3),
         **counters,
     )
@@ -708,6 +730,204 @@ def _publish(publisher, read_models, change, kwargs, game_result, counters, *, p
         counters['proof_publications' if proof else 'live_publications'] += 1
     if value.get('cache_handoff_status') == 'complete':
         counters['cache_handoffs'] += 1
+
+
+def _prepare_governed_replays(config, detection_results, *, sync_run_id):
+    """Claim explicitly requested stored final observations for one-shot replay."""
+    changes = []
+    results = []
+    current_changed = {
+        int(item.get('game_pk') or 0)
+        for item in detection_results
+        if item.get('changed') and item.get('accepted')
+    }
+    for game_pk in config.replay_game_pks:
+        result = {
+            'game_pk': game_pk,
+            'status': 'requested',
+            'reason_code': 'game_replay_requested',
+            'outcome': None,
+        }
+        results.append(result)
+        _replay_log('game_replay_requested', game_pk)
+        refusal = _replay_refusal(config, game_pk, current_changed)
+        if refusal:
+            result.update(status='refused', reason_code=refusal)
+            _replay_log('game_replay_refused', game_pk, reason_code=refusal)
+            continue
+
+        row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one()
+        fingerprint = config.expected_plan_fingerprints[game_pk]
+        official_date = date.fromisoformat(
+            ((row.observation or {}).get('identity') or {})['official_date']
+        )
+        scope_key = (
+            f'game:{game_pk}:obs:{row.observation_fingerprint}:'
+            f'plan:{fingerprint}'
+        )
+        job = _ensure_replay_job(
+            scope_key=scope_key, product_date=official_date,
+            sync_run_id=sync_run_id,
+        )
+        claimed = sync_jobs.claim_job(job, sync_run_id=sync_run_id)
+        if claimed is None:
+            reason = (
+                'replay_already_consumed'
+                if job.status == sync_jobs.STATUS_SUCCEEDED
+                else 'replay_attempts_exhausted'
+                if (
+                    job.status == sync_jobs.STATUS_FAILED
+                    and (job.attempts or 0) >= (job.max_attempts or 0)
+                )
+                else 'replay_claimed_elsewhere'
+            )
+            result.update(status='inert', reason_code=reason, checkpoint=job.to_dict())
+            _replay_log('game_replay_refused', game_pk, reason_code=reason)
+            continue
+
+        result.update(
+            status='authorized', reason_code='game_replay_authorized',
+            plan_fingerprint=fingerprint, checkpoint=claimed.to_dict(),
+        )
+        _replay_log(
+            'game_replay_authorized', game_pk, plan_fingerprint=fingerprint,
+        )
+        changes.append({
+            'game_pk': game_pk,
+            'classification': row.last_classification,
+            'changed': True,
+            'accepted': True,
+            'previous_observation_identity': row.previous_observation_fingerprint,
+            'current_observation_identity': row.observation_fingerprint,
+            'finality_state': row.finality_state,
+            'source_authority': row.source_authority,
+            'source_observed_at': (
+                row.source_observed_at.isoformat() if row.source_observed_at else None
+            ),
+            'detected_at': row.accepted_at.isoformat(),
+            'differences': dict(row.last_change_summary or {}),
+            'reason': 'governed_stored_observation_replay',
+            '_replay_result': result,
+            '_replay_job_id': claimed.id,
+        })
+    return changes, results
+
+
+def _ensure_replay_job(*, scope_key, product_date, sync_run_id):
+    job = sync_jobs.SyncJob.query.filter_by(
+        job_name=REPLAY_JOB_NAME,
+        scope_key=scope_key,
+        product_date=product_date,
+    ).one_or_none()
+    if job is not None:
+        return job
+    now = utc_now_naive()
+    job = sync_jobs.SyncJob(
+        job_name=REPLAY_JOB_NAME,
+        job_family=REPLAY_JOB_FAMILY,
+        lane=sync_jobs.LANE_INTERNAL,
+        scope_key=scope_key,
+        product_date=product_date,
+        status=sync_jobs.STATUS_PENDING,
+        attempts=0,
+        max_attempts=REPLAY_MAX_ATTEMPTS,
+        sync_run_id=sync_run_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.session.add(job)
+    db.session.commit()
+    return job
+
+
+def _replay_refusal(config, game_pk, current_changed):
+    if config.mode != ActivationMode.SHADOW_FULL_CHAIN:
+        return 'replay_requires_shadow_full_chain'
+    if config.production_publication_enabled:
+        return 'publication_gate_invalid'
+    if game_pk not in set(config.allowlist_game_pks):
+        return 'game_not_allowlisted'
+    fingerprint = config.expected_plan_fingerprints.get(game_pk)
+    if not fingerprint:
+        return 'missing_fingerprint'
+    if len(fingerprint) != 64 or any(char not in '0123456789abcdef' for char in fingerprint.lower()):
+        return 'malformed_fingerprint'
+    if game_pk in current_changed:
+        return 'current_cycle_change_present'
+    row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
+    if row is None or not row.observation or not row.observation_fingerprint:
+        return 'observation_not_accepted'
+    if row.last_classification in {
+        cu02.STALE_OBSERVATION, cu02.AMBIGUOUS_OBSERVATION,
+    }:
+        return row.last_classification
+    if row.last_classification not in {cu02.FINALIZED, cu02.CORRECTED}:
+        return 'observation_not_accepted_final_event'
+    if row.finality_state not in {
+        cu03.game_finality.FINAL_PENDING_DATA,
+        cu03.game_finality.FINAL_AND_USABLE,
+    }:
+        return 'observation_not_final'
+    if row.source_authority != cu02.SOURCE_AUTHORITY:
+        return 'weaker_authority'
+    identity = (row.observation or {}).get('identity') or {}
+    if not identity.get('official_date'):
+        return 'observation_official_date_missing'
+    return None
+
+
+def _settle_replay(result, impact):
+    job = db.session.get(sync_jobs.SyncJob, result['checkpoint']['id'])
+    if impact.get('orchestration_status') == cu03.STATUS_CANONICAL_FAILED:
+        _fail_replay(result, impact.get('source_failure_state') or 'canonical_failed')
+        return
+    if not impact.get('canonical_action_attempted'):
+        _fail_replay(result, 'canonical_action_not_attempted')
+        return
+    outcome = (
+        'mutated' if impact.get('canonical_mutation_performed')
+        else 'authorized_no_op'
+    )
+    sync_jobs.complete_job(job, result={
+        'status': 'completed', 'outcome': outcome,
+        'game_pk': result['game_pk'],
+        'plan_fingerprint': result.get('plan_fingerprint'),
+        'canonical_mutation_performed': bool(
+            impact.get('canonical_mutation_performed')
+        ),
+        'affected_pitcher_ids': impact.get('affected_pitcher_ids') or [],
+        'affected_team_ids': impact.get('affected_team_ids') or [],
+    })
+    result.update(
+        status='consumed', reason_code='game_replay_completed', outcome=outcome,
+        checkpoint=job.to_dict(),
+    )
+    _replay_log('game_replay_completed', result['game_pk'], outcome=outcome)
+
+
+def _fail_replay(result, error):
+    # A PostgreSQL statement failure aborts the current transaction. Clear that
+    # failed unit of work before writing the durable bounded-attempt checkpoint;
+    # no canonical success reaches this failure path.
+    db.session.rollback()
+    job = db.session.get(sync_jobs.SyncJob, result['checkpoint']['id'])
+    sync_jobs.fail_job(job, error, result={
+        'status': 'failed', 'game_pk': result['game_pk'],
+        'reason_code': 'replay_execution_failed',
+    })
+    result.update(
+        status='failed', reason_code='replay_execution_failed',
+        outcome=None, checkpoint=job.to_dict(),
+    )
+    _replay_log(
+        'game_replay_failed', result['game_pk'], error=type(error).__name__,
+    )
+
+
+def _replay_log(event, game_pk, **fields):
+    logger.info(json.dumps({
+        'event': event, 'game_pk': game_pk, **fields,
+    }, sort_keys=True))
 
 
 def _finish_run(result):
