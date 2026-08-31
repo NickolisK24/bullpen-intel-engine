@@ -332,7 +332,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '2ee8064d79384859fa3e6deee883f2ed76b0fdd84ac911a5fe2f1ac5060c8f4d',
+            '132c85f039040a4216fdec3db34aea1dabdcc1f2fd0e7cc9372099cc22d2a760',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -343,15 +343,17 @@ PACKAGE_MODIFIED_MODULES = {
             'added an env-gated branch in the post-commit publication hook that '
             'runs the SAME single Team State generation under observation and '
             'writes a side-channel proof file; with TEAM_STATE_VNEXT_PROOF_PATH '
-            'unset the branch is not taken at all'
+            'unset the branch is not taken at all. The Production Accuracy Proof '
+            'package subsequently made durable Team State proof mandatory before '
+            'a newly trusted/current publication can advance, while retaining the '
+            'prior trusted publication on proof failure'
         ),
-        # Neither package moved a publication outcome. D-054 adds
-        # infrastructure-error distinction for its new reader. D-056 observes a
-        # publication that has ALREADY committed, is off unless a workflow step
-        # asks for evidence, and cannot roll back, unpublish, or re-gate
-        # anything. The serving selectors and the publication gate this audit
-        # exists to reason about keep their exact behavior.
-        'behaviour_changed': False,
+        # D-054 and D-056 did not move a publication outcome. The Production
+        # Accuracy Proof package deliberately does: proof construction and
+        # persistence are now prerequisites for advancing the trusted/current
+        # pointer. Report that governed gate change instead of misclassifying it
+        # as unexplained drift or unchanged behavior.
+        'behaviour_changed': True,
     },
 }
 
