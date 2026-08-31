@@ -211,6 +211,49 @@ def test_finality_transition_invokes_cu01_once_and_uses_mutation_scoped_impact()
     assert result.downstream_recomputation_triggered is False
 
 
+def test_continuous_plan_fingerprint_is_derived_from_current_final_observation(
+    app, monkeypatch,
+):
+    with app.app_context():
+        db.session.add(GameObservationState(
+            mlb_game_pk=GAME_PK,
+            observation_fingerprint='a' * 64,
+            observation={'identity': {'official_date': GAME_DATE.isoformat()}},
+            source_authority=detection.SOURCE_AUTHORITY,
+            source_endpoint='schedule-feed',
+            finality_state=game_finality.FINAL_AND_USABLE,
+            last_classification=detection.FINALIZED,
+        ))
+        db.session.commit()
+        calls = []
+
+        def plan(reference_date, **kwargs):
+            calls.append((reference_date, kwargs))
+            return {
+                'status': 'complete',
+                'complete_reconciliation_fingerprint': 'current-plan',
+            }
+
+        monkeypatch.setattr(
+            orchestration.cu01, 'run_game_driven_ingestion', plan,
+        )
+        fingerprint = orchestration.derive_current_plan_fingerprint(
+            _change(
+                detection.FINALIZED,
+                finality=game_finality.FINAL_AND_USABLE,
+            )
+        )
+
+    assert fingerprint == 'current-plan'
+    assert calls == [(
+        GAME_DATE,
+        {
+            'mode': game_driven_ingestion.MODE_SHADOW,
+            'only_game_pks': [GAME_PK],
+        },
+    )]
+
+
 def test_idempotent_canonical_replay_returns_zero_impact():
     result = orchestration.orchestrate_game_change(
         _change(detection.CORRECTED, finality=game_finality.FINAL_AND_USABLE),

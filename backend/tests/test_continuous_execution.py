@@ -338,6 +338,73 @@ def test_limited_live_simulation_uses_explicit_production_publisher(app, monkeyp
     assert result.production_authority_affected is True
 
 
+def test_full_live_derives_current_plan_when_no_manual_fingerprint(
+    app, monkeypatch,
+):
+    cfg = config(
+        continuous.ActivationMode.FULL_LIVE,
+        production_publication_enabled=True,
+        full_live_acknowledged=True,
+        expected_plan_fingerprints={},
+    )
+    monkeypatch.setattr(
+        continuous.cu03,
+        'derive_current_plan_fingerprint',
+        lambda value: f"automatic-{value['game_pk']}",
+    )
+    publications = []
+
+    def publisher(read_models, **kwargs):
+        publications.append(kwargs)
+        return {'committed': True, 'cache_handoff_status': 'complete'}
+
+    result, calls = run(
+        app, monkeypatch, cfg,
+        production_publisher=publisher,
+        production_current_id_provider=lambda: 44,
+    )
+
+    assert calls[0][0] == 'cu03'
+    assert calls[0][2]['expected_plan_fingerprint'] == f'automatic-{GAME_PK}'
+    assert len(publications) == 1
+    assert result.live_publications == 1
+
+
+def test_full_live_publishes_one_complete_cycle_after_multiple_games(
+    app, monkeypatch,
+):
+    second = GAME_PK + 1
+    cfg = config(
+        continuous.ActivationMode.FULL_LIVE,
+        production_publication_enabled=True,
+        full_live_acknowledged=True,
+        expected_plan_fingerprints={GAME_PK: 'a', second: 'b'},
+    )
+    publications = []
+
+    def publisher(read_models, **kwargs):
+        publications.append((read_models, kwargs))
+        return {'committed': True, 'cache_handoff_status': 'complete'}
+
+    result, _calls = run(
+        app, monkeypatch, cfg,
+        results=[change(), change(game_pk=second)],
+        production_publisher=publisher,
+        production_current_id_provider=lambda: 44,
+    )
+
+    assert len(publications) == 1
+    assert result.canonical_mutation_games == 2
+    assert result.publication_candidates == 1
+    assert result.live_publications == 1
+    assert result.downstream_results[0]['publication'] == {
+        'status': 'included',
+        'reason_code': 'included_in_cycle_publication',
+        'published_with_game_pk': second,
+    }
+    assert result.downstream_results[1]['publication']['committed'] is True
+
+
 def test_limited_live_without_publisher_fails_closed(app, monkeypatch):
     cfg = config(
         continuous.ActivationMode.LIMITED_LIVE,
@@ -348,6 +415,33 @@ def test_limited_live_without_publisher_fails_closed(app, monkeypatch):
     assert result.status == continuous.RESULT_PARTIAL
     assert result.live_publications == 0
     assert result.failures[0]['error'] == 'production_publisher_unavailable'
+
+
+def test_live_dashboard_commit_with_tonight_retry_is_visible_as_partial(
+    app, monkeypatch,
+):
+    cfg = config(
+        continuous.ActivationMode.LIMITED_LIVE,
+        production_publication_enabled=True,
+        allowlist_game_pks=(GAME_PK,),
+    )
+
+    result, _calls = run(
+        app, monkeypatch, cfg,
+        production_publisher=lambda *_args, **_kwargs: {
+            'committed': True,
+            'cache_handoff_status': 'retry_required',
+        },
+        production_current_id_provider=lambda: 44,
+    )
+
+    assert result.live_publications == 1
+    assert result.status == continuous.RESULT_PARTIAL
+    assert result.failures[-1] == {
+        'scope': 'tonight_refresh',
+        'game_pk': GAME_PK,
+        'error': 'tonight_refresh_retry_required',
+    }
 
 
 def test_full_live_requires_explicit_acknowledgement():
