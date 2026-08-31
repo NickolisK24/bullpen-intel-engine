@@ -467,6 +467,7 @@ def _execute_cycle(**kwargs):
     affected_pitchers = set()
     affected_teams = set()
     downstream = []
+    production_publication_queue = []
     timeout_reached = False
     publication_target = _publication_target(config.mode)
 
@@ -502,6 +503,16 @@ def _execute_cycle(**kwargs):
             continue
 
         fingerprint = config.expected_plan_fingerprints.get(int(change.get('game_pk') or 0))
+        if not fingerprint and config.mode in PRODUCTION_MODES:
+            try:
+                fingerprint = cu03.derive_current_plan_fingerprint(change)
+            except Exception as exc:
+                failures.append({
+                    'scope': 'plan_authorization',
+                    'game_pk': change.get('game_pk'),
+                    'error': type(exc).__name__,
+                })
+                continue
         stage_started = monotonic()
         try:
             impact = kwargs['orchestrator'](
@@ -624,39 +635,93 @@ def _execute_cycle(**kwargs):
                         'error': type(exc).__name__,
                     })
         elif config.mode in PRODUCTION_MODES:
-            if counters['publication_candidates'] >= config.max_publication_cohorts:
-                game_result['publication'] = {
-                    'status': 'skipped', 'reason_code': 'max_publication_cohorts_reached',
-                }
-            elif not _cohort_is_allowlisted(impact_dict, config):
+            if not _cohort_is_allowlisted(impact_dict, config):
                 counters['skipped_by_allowlist'] += 1
                 game_result['publication'] = {
                     'status': 'skipped', 'reason_code': 'cohort_not_allowlisted',
                 }
-            elif kwargs['production_publisher'] is None:
-                failures.append({
-                    'scope': 'publication', 'game_pk': change.get('game_pk'),
-                    'error': 'production_publisher_unavailable',
-                })
-                game_result['publication'] = {
-                    'status': 'blocked', 'reason_code': 'production_publisher_unavailable',
-                }
             else:
-                try:
-                    _publish(
-                        kwargs['production_publisher'], read_models, change, kwargs,
-                        game_result, counters, proof=False,
-                    )
-                except Exception as exc:
-                    failures.append({
-                        'scope': 'live_publication', 'game_pk': change.get('game_pk'),
-                        'error': type(exc).__name__,
-                    })
+                production_publication_queue.append(
+                    (read_models, change, game_result)
+                )
+                game_result['publication'] = {
+                    'status': 'queued',
+                    'reason_code': 'cycle_publication_pending',
+                }
         if 'publication' in game_result:
             game_result['latency']['publication_stage_completed_at'] = (
                 utc_now_naive().isoformat()
             )
         downstream.append(game_result)
+
+    if production_publication_queue:
+        read_models, change, game_result = production_publication_queue[-1]
+        blocking_scopes = {'represented_date', 'cu04', 'cu05', 'cu06'}
+        blocked = any(item.get('scope') in blocking_scopes for item in failures)
+        cycle_publication_committed = False
+        if config.max_publication_cohorts < 1:
+            failures.append({
+                'scope': 'publication',
+                'error': 'production_publication_disabled_by_cohort_limit',
+            })
+            game_result['publication'] = {
+                'status': 'skipped',
+                'reason_code': 'max_publication_cohorts_reached',
+            }
+        elif blocked:
+            failures.append({
+                'scope': 'publication',
+                'error': 'downstream_recomputation_incomplete',
+            })
+            game_result['publication'] = {
+                'status': 'blocked',
+                'reason_code': 'downstream_recomputation_incomplete',
+            }
+        elif kwargs['production_publisher'] is None:
+            failures.append({
+                'scope': 'publication',
+                'error': 'production_publisher_unavailable',
+            })
+            game_result['publication'] = {
+                'status': 'blocked',
+                'reason_code': 'production_publisher_unavailable',
+            }
+        else:
+            try:
+                publication = _publish(
+                    kwargs['production_publisher'], read_models, change, kwargs,
+                    game_result, counters, proof=False,
+                )
+                cycle_publication_committed = bool(publication.get('committed'))
+                if not cycle_publication_committed:
+                    failures.append({
+                        'scope': 'live_publication',
+                        'game_pk': change.get('game_pk'),
+                        'error': (
+                            publication.get('reason_code')
+                            or 'publication_not_committed'
+                        ),
+                    })
+                elif publication.get('cache_handoff_status') == 'retry_required':
+                    failures.append({
+                        'scope': 'tonight_refresh',
+                        'game_pk': change.get('game_pk'),
+                        'error': 'tonight_refresh_retry_required',
+                    })
+            except Exception as exc:
+                failures.append({
+                    'scope': 'live_publication', 'game_pk': change.get('game_pk'),
+                    'error': type(exc).__name__,
+                })
+        for _models, _queued_change, queued_result in production_publication_queue[:-1]:
+            if cycle_publication_committed:
+                queued_result['publication'] = {
+                    'status': 'included',
+                    'reason_code': 'included_in_cycle_publication',
+                    'published_with_game_pk': change.get('game_pk'),
+                }
+            else:
+                queued_result['publication'] = dict(game_result['publication'])
 
     after_metrics = _metrics(client)
     source_requests = max(
@@ -730,6 +795,7 @@ def _publish(publisher, read_models, change, kwargs, game_result, counters, *, p
         counters['proof_publications' if proof else 'live_publications'] += 1
     if value.get('cache_handoff_status') == 'complete':
         counters['cache_handoffs'] += 1
+    return value
 
 
 def _prepare_governed_replays(config, detection_results, *, sync_run_id):

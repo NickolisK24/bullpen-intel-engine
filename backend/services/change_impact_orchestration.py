@@ -153,6 +153,35 @@ def orchestrate_game_change(
     return _from_cu01_report(base, report)
 
 
+def derive_current_plan_fingerprint(change):
+    """Build the exact current CU-01 plan identity for an unattended final.
+
+    The write path still recomputes and compares this fingerprint before its
+    first mutation.  This removes the manual copy/paste authorization step for
+    an explicitly activated continuous-production cycle without weakening the
+    plan mismatch guard itself.
+    """
+    game_pk = _get(change, 'game_pk')
+    state = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
+    official_date = (
+        ((state.observation or {}).get('identity') or {}).get('official_date')
+        if state is not None else None
+    )
+    if not official_date:
+        raise ValueError('accepted final observation is missing official_date')
+    report = cu01.run_game_driven_ingestion(
+        date.fromisoformat(official_date),
+        mode=cu01.MODE_SHADOW,
+        only_game_pks=[game_pk],
+    )
+    fingerprint = report.get('complete_reconciliation_fingerprint')
+    if report.get('status') != 'complete' or not fingerprint:
+        raise RuntimeError(
+            f"current reconciliation plan unavailable: {report.get('status')}"
+        )
+    return fingerprint
+
+
 def detect_and_orchestrate_game(
     game_pk,
     *,

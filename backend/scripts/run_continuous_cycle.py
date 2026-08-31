@@ -22,6 +22,10 @@ from services.game_change_detection import (  # noqa: E402
     AMBIGUOUS_OBSERVATION,
     STALE_OBSERVATION,
 )
+from services.continuous_production_publication import (  # noqa: E402
+    current_publication_id,
+    publish_continuous_update,
+)
 
 
 SUCCESS_STATUSES = frozenset({'off', 'complete', 'skipped'})
@@ -156,6 +160,8 @@ def main():
         result = run_continuous_cycle(
             mode=args.mode,
             represented_time=args.represented_time,
+            production_publisher=publish_continuous_update,
+            production_current_id_provider=current_publication_id,
         )
     payload = result.to_dict()
     for line in render_output(payload, full_json=args.full_json):
