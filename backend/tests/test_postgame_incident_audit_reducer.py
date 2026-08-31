@@ -346,7 +346,8 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     The completeness service gained a read-only membership helper so the audit
     could classify the canonical unresolved set instead of inventing a second
     definition. D-054 later extracted the existing Dashboard snapshot selectors
-    and added guarded read entry points without moving their serving semantics.
+    and added guarded read entry points. Later governed work made durable Team
+    State proof a prerequisite for advancing a trusted/current publication.
     Every other authority stays byte-identical to the incident tree, and both
     exceptions must match their recorded digest — an unrecorded edit to any
     canonical module still fails here."""
@@ -364,11 +365,12 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     }
     dashboard = audit.PACKAGE_MODIFIED_MODULES['services/dashboard_snapshot.py']
     assert dashboard['digest_after'] == (
-        '2ee8064d79384859fa3e6deee883f2ed76b0fdd84ac911a5fe2f1ac5060c8f4d'
+        '132c85f039040a4216fdec3db34aea1dabdcc1f2fd0e7cc9372099cc22d2a760'
     )
-    assert dashboard['behaviour_changed'] is False
+    assert dashboard['behaviour_changed'] is True
     assert 'D-054' in dashboard['change']
     assert 'D-056' in dashboard['change']
+    assert 'Production Accuracy Proof' in dashboard['change']
 
 
 def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
@@ -387,7 +389,7 @@ def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
     assert drift['any_upstream_change_since_incident'] is False
     assert drift['modules']['services/dashboard_snapshot.py'][
         'behaviour_changed'
-    ] is False
+    ] is True
 
 
 def test_126b_no_migration_was_added():

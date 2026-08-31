@@ -14,8 +14,10 @@ from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
+from models.team_state_publication_proof import TeamStatePublicationProof
 import models.prospect  # noqa: F401
 from services import dashboard_snapshot, schedule_ingestion, sync_metadata
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from utils.time import utc_now_naive
@@ -85,6 +87,50 @@ def _complete_slate_coverage(slate_date):
             'incomplete': 0,
             'failed': 0,
             'missing': 0,
+        },
+    }
+
+
+def _team_state_proof_readiness(reference_dates_out, snapshot):
+    reference_dates_out.update({
+        'membership_reference_date': snapshot.data_through,
+        'availability_reference_date': snapshot.availability_reference_date,
+    })
+    return {
+        'contract_version': 'v3_phase_5',
+        'readiness': {'status_code': 'operationally_stable'},
+        'team_state_evidence': {
+            'method_version': 'v3_phase_5',
+            'contract': 'team_state_contract_a',
+            'basis': 'status_only',
+            'readiness_status_code': 'operationally_stable',
+            'active_pitcher_count': 8,
+            'clean_count': 6,
+            'moderate_count': 2,
+            'severe_count': 0,
+            'unknown_count': 0,
+            'clean_share': 0.75,
+            'moderate_share': 0.25,
+            'severe_share': 0.0,
+            'unknown_share': 0.0,
+            'decisive_rule': 'fresh_coverage',
+            'decisive_inputs': {'clean_count': 6},
+            'thresholds_applied': {
+                'clean_share_fresh_min': [3, 5],
+                'clean_share_fresh_min_value': 0.6,
+                'clean_count_fresh_min': 5,
+                'severe_count_fresh_max': 1,
+                'clean_count_vulnerable_max': 2,
+                'severe_share_vulnerable_min': [1, 3],
+                'severe_share_vulnerable_min_value': 1 / 3,
+            },
+            'trust_state': 'high',
+            'trust_data_state': 'fresh',
+            'freshness_state': 'current',
+            'material_limitations': [],
+            'evidence_references': {
+                'population_authority': 'resolve_readiness_population',
+            },
         },
     }
 
@@ -511,6 +557,184 @@ class TestDashboardSnapshotService:
             )
             assert [row.id for row in active_snapshots] == [second.id]
             assert dashboard_snapshot.get_latest_dashboard_snapshot().id == second.id
+
+    def test_required_proof_failure_preserves_previous_publication(
+        self, app, monkeypatch,
+    ):
+        with app.app_context():
+            run = _create_sync_run()
+            previous = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
+                payload={**_minimal_dashboard_payload(), 'name': 'previous'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='test',
+            )
+            candidate = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={**_minimal_dashboard_payload(), 'name': 'candidate'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive(),
+                source='external_schedule',
+            )
+            db.session.add_all([previous, candidate])
+            db.session.commit()
+            app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+            monkeypatch.setattr(
+                'services.team_state_vnext_production_proof.require_transactional_publication_proof',
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError('proof persistence failed')
+                ),
+            )
+
+            with pytest.raises(RuntimeError, match='proof persistence failed'):
+                dashboard_snapshot.publish_dashboard_snapshot(candidate)
+            db.session.refresh(previous)
+            db.session.refresh(candidate)
+
+            assert previous.is_published is True
+            assert candidate.is_published is False
+            assert TeamStatePublicationProof.query.count() == 0
+            assert dashboard_snapshot.get_latest_dashboard_snapshot().id == previous.id
+
+    def test_required_proof_and_publication_commit_together(self, app, monkeypatch):
+        from services import team_state_vnext_production_proof as proof_service
+
+        with app.app_context():
+            prior_run = _create_sync_run()
+            candidate_run = _create_sync_run(stage='started')
+            previous = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=prior_run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
+                payload={**_minimal_dashboard_payload(), 'name': 'previous'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=date(2026, 8, 30),
+                availability_reference_date=date(2026, 8, 31),
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='external_schedule',
+            )
+            candidate = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=candidate_run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={
+                    **_minimal_dashboard_payload(),
+                    'name': 'candidate',
+                    'what_changed_since_yesterday': {
+                        'state': 'changes_detected',
+                        'change_count': 1,
+                        'changes': [{'change_type': 'rested_options_changed'}],
+                    },
+                },
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=date(2026, 8, 31),
+                availability_reference_date=date(2026, 9, 1),
+                snapshot_generated_at=utc_now_naive(),
+                source='external_schedule',
+            )
+            db.session.add_all([previous, candidate])
+            db.session.commit()
+            app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+
+            real_requirement = proof_service.require_transactional_publication_proof
+
+            def persist_proof(snapshot):
+                return real_requirement(
+                    snapshot,
+                    team_ids=MLB_TEAM_IDS,
+                    readiness_resolver=lambda _team_id, **kwargs: (
+                        _team_state_proof_readiness(
+                            kwargs['reference_dates_out'], snapshot,
+                        )
+                    ),
+                )
+
+            monkeypatch.setattr(
+                proof_service, 'require_transactional_publication_proof',
+                persist_proof,
+            )
+
+            dashboard_snapshot.publish_dashboard_snapshot(candidate)
+
+            proof_row = TeamStatePublicationProof.query.one()
+            db.session.refresh(previous)
+            db.session.refresh(candidate)
+            db.session.refresh(candidate_run)
+            assert proof_row.snapshot_id == candidate.id
+            assert proof_row.sync_run_id == candidate_run.id
+            assert proof_row.captured_team_count == 30
+            assert proof_row.overall_verdict == 'PASS_WITH_INCONCLUSIVE'
+            assert len(proof_row.proof['teams']) == 30
+            assert previous.is_published is False
+            assert candidate.is_published is True
+            assert candidate_run.published_dashboard_snapshot_id == candidate.id
+
+    def test_required_proof_constraint_failure_rolls_back_publication(
+        self, app, monkeypatch,
+    ):
+        with app.app_context():
+            run = _create_sync_run()
+            previous = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
+                payload={**_minimal_dashboard_payload(), 'name': 'previous'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='test',
+            )
+            candidate = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={**_minimal_dashboard_payload(), 'name': 'candidate'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=date(2026, 8, 31),
+                snapshot_generated_at=utc_now_naive(),
+                source='external_schedule',
+            )
+            db.session.add_all([previous, candidate])
+            db.session.commit()
+            app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+
+            def persist_invalid_proof(snapshot):
+                db.session.add(TeamStatePublicationProof(
+                    snapshot_id=snapshot.id,
+                    sync_run_id=snapshot.sync_run_id,
+                    data_through=snapshot.data_through,
+                    proof={'teams': []},
+                    overall_verdict='INVALID',
+                    captured_team_count=30,
+                ))
+                db.session.flush()
+
+            monkeypatch.setattr(
+                'services.team_state_vnext_production_proof.require_transactional_publication_proof',
+                persist_invalid_proof,
+            )
+
+            with pytest.raises(IntegrityError):
+                dashboard_snapshot.publish_dashboard_snapshot(candidate)
+
+            db.session.refresh(previous)
+            db.session.refresh(candidate)
+            assert previous.is_published is True
+            assert candidate.is_published is False
+            assert TeamStatePublicationProof.query.count() == 0
 
     def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
         with app.app_context():

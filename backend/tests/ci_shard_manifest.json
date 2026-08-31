@@ -1634,6 +1634,10 @@
           "measured_seconds": 9.915
         },
         {
+          "path": "tests/test_production_accuracy_reconciliation.py",
+          "measured_seconds": 0.2
+        },
+        {
           "path": "tests/test_zero_out_game_log_ingestion_guard.py",
           "measured_seconds": 5.197
         }

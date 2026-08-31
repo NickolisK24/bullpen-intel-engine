@@ -3,7 +3,7 @@
 **Status:** Current operational runbook  
 **Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current sync and publication authority posture. This document owns execution order and trust-gate detail.  
 **Owner:** Nickolis Kacludis  
-**Last reviewed:** August 27, 2026
+**Last reviewed:** August 31, 2026
 **Workflow authority:** `.github/workflows/baseballos-sync.yml`
 
 This document describes the current production sync/publication workflow and
@@ -93,6 +93,14 @@ Scheduler != publication authority. A scheduler requests work. BaseballOS
 validates the source, locks the public writer lane, reconciles the intended
 window, and then applies every existing publication proof and integrity guard.
 
+For production snapshot publication, the Team State proof is mandatory database
+state, not runner-local output. The publisher resolves the all-30-team decisive
+evidence, validates the partition and Contract A result, and flushes the
+snapshot-linked proof row in the same transaction that advances the trusted
+snapshot pointer. If proof generation or persistence fails, that transaction
+does not commit and the previous trusted snapshot remains current. The optional
+`TEAM_STATE_VNEXT_PROOF_PATH` export is downstream convenience only.
+
 ### Render Cron primary setup
 
 The existing Render web service is dashboard-managed; this repository has no
@@ -154,6 +162,7 @@ schedule/finality preflight
 -> source acquisition and canonical writes
 -> derived workload/current state
 -> trusted snapshot build
+-> mandatory Team State proof flush (same transaction)
 -> publish or withhold
 -> team-progressive publication where eligible
 -> Tonight/slate refresh

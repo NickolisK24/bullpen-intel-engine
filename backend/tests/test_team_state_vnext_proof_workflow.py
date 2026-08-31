@@ -41,11 +41,12 @@ def _step(workflow, job, needle):
 # ---------------------------------------------------------------------------
 
 
-def test_the_publication_step_asks_for_the_proof_by_path(workflow):
-    """Step scope, never job scope: every other step keeps the deployed default."""
-    step = _step(workflow, 'public-sync', 'Run direct daily sync')
-    assert step['env']['TEAM_STATE_VNEXT_PROOF_PATH'] == PROOF_PATH
-    assert str(step['env']['TEAM_STATE_VNEXT_BOUNDARY_SNAPSHOT_ID']) == '437'
+def test_the_observer_exports_the_durable_proof_for_the_actual_publication(workflow):
+    step = _step(workflow, 'public-sync', 'Export durable Team State production proof')
+    assert 'export_team_state_publication_proof.py' in step['run']
+    assert '--current' in step['run']
+    assert PROOF_PATH in step['run']
+    assert step['continue-on-error'] is True
 
 
 def test_no_other_job_or_step_enables_proof_capture(workflow):
@@ -55,6 +56,14 @@ def test_no_other_job_or_step_enables_proof_capture(workflow):
             if step.get('name') == 'Run direct daily sync':
                 continue
             assert 'TEAM_STATE_VNEXT_PROOF_PATH' not in (step.get('env') or {}), step.get('name')
+
+
+def test_missing_upload_is_an_error_and_no_publication_is_distinguished(workflow):
+    upload = _step(workflow, 'public-sync', 'Upload Team State vNext production proof')
+    assert upload['with']['if-no-files-found'] == 'error'
+    validate = _step(workflow, PROOF_JOB, 'Validate the Team State vNext production proof')
+    assert 'publication_observed' in validate['run']
+    assert 'verdict=not_applicable' in validate['run']
 
 
 def test_the_proof_is_not_written_into_the_shadow_handoff_source_directory(workflow):

@@ -15,8 +15,11 @@ def _value(log, name, default=None):
 
 def workload_pitch_count(log):
     """Return a trusted positive pitch count for workload use, or None."""
+    raw = _value(log, 'pitches_thrown')
+    if raw is None:
+        return None
     try:
-        pitches = int(_value(log, 'pitches_thrown', 0) or 0)
+        pitches = int(raw)
     except (TypeError, ValueError):
         return None
     return pitches if pitches > 0 else None

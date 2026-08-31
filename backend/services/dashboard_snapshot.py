@@ -417,16 +417,43 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
             synchronize_session=False,
         )
     )
+    try:
+        if _team_state_publication_proof_required():
+            # Mandatory proof is flushed before the transaction may advance the
+            # trusted/current pointer. Any failure raises and prevents commit.
+            from services.team_state_vnext_production_proof import (
+                require_transactional_publication_proof,
+            )
+            require_transactional_publication_proof(snapshot)
+        if commit:
+            db.session.commit()
+        else:
+            # The caller owns the commit (e.g. the daily-sync path). It must invoke
+            # run_post_commit_snapshot_publication after its own commit so generation
+            # still runs — the SC-03B-04 repair for the commit=False publication path.
+            db.session.flush()
+    except Exception:
+        # When this function owns the transaction it also owns failure recovery.
+        # Leaving the prior pointer changes pending in a usable session would let a
+        # later unrelated commit publish a candidate whose proof failed.
+        if commit:
+            db.session.rollback()
+        raise
     if commit:
-        db.session.commit()
         # This function owns the commit, so complete the publication here.
         run_post_commit_snapshot_publication(snapshot)
-    else:
-        # The caller owns the commit (e.g. the daily-sync path). It must invoke
-        # run_post_commit_snapshot_publication after its own commit so generation
-        # still runs — the SC-03B-04 repair for the commit=False publication path.
-        db.session.flush()
     return snapshot
+
+
+def _team_state_publication_proof_required():
+    try:
+        from flask import current_app
+        return bool(
+            current_app
+            and current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED', False)
+        )
+    except Exception:
+        return False
 
 
 def run_post_commit_snapshot_publication(snapshot):
@@ -485,28 +512,11 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
         snapshot_id, product_date, enabled,
     )
     try:
-        # Team State vNext production proof (D-056). Env-gated and side-channel: with
-        # TEAM_STATE_VNEXT_PROOF_PATH unset the branch is not taken and the unchanged
-        # generation call below runs exactly as before. When it is set, the same
-        # generation runs under observation and what the classifier produced per team
-        # is written to a JSON file for the workflow to upload. This reads no internal
-        # module and builds nothing here; it watches an already-committed publication
-        # and never raises, so it cannot roll back, unpublish, or alter anything.
-        from services.team_state_vnext_production_proof import (
-            capture_publication_proof,
-            proof_capture_enabled,
-        )
-        if proof_capture_enabled():
-            # Capture OWNS the one generation call in this branch. Branching on the
-            # environment rather than on whether a proof came back is what keeps a
-            # failed write from looking like a skipped run and generating twice.
-            capture_publication_proof(snapshot)
-            return
-
-        from services.share_artifact_publication_hook import (
-            run_post_publication_generation,
-        )
-        run_post_publication_generation(snapshot)
+        # Observe the one real generation call for every authorized publisher and
+        # persist proof by snapshot identity. A configured path is only an optional
+        # workflow export; the database row is the durable observer authority.
+        from services.team_state_vnext_production_proof import capture_publication_proof
+        capture_publication_proof(snapshot)
     except Exception:
         logger.exception(
             'Post-publication Team State generation hook failed non-fatally '

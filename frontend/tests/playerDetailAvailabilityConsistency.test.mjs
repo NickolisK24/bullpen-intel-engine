@@ -169,9 +169,9 @@ test('PitcherDetail passes final availability workload signal and roster status 
   assert.ok(source.includes('workload_signal: workloadSignal'))
   assert.ok(source.includes('roster_status: rosterStatus'))
   assert.ok(source.includes('freshness'))
-  assert.ok(source.includes('last_appearance: lastAppearance'))
   assert.ok(source.includes('last_workload_appearance: lastWorkloadAppearance'))
-  assert.ok(source.includes('latestWorkloadAppearanceFromLogs(recent_logs)'))
+  assert.equal(source.includes('last_appearance: lastAppearance'), false)
+  assert.equal(source.includes('latestWorkloadAppearanceFromLogs'), false)
   assert.equal(source.includes('Most Recent Workload Appearance'), false)
   assert.equal(source.includes('recent_logs.slice(0, 8).map(log =>'), false)
   assert.ok(source.includes('workloadSignal={workloadSignal}'))
@@ -180,6 +180,64 @@ test('PitcherDetail passes final availability workload signal and roster status 
   assert.ok(source.includes('lastAppearance={mostRecentAppearance}'))
   assert.ok(source.includes('fetchExplanation={pitcherId ? () => getAvailabilityExplanation(pitcherId) : null}'))
   assert.equal(source.includes('<ExplanationDisclosure'), false)
+})
+
+test('PitcherDetail does not reconstruct a withheld workload appearance from recent logs', () => {
+  const html = renderDetail({
+    pitcher: { full_name: 'Withheld Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    freshness: {
+      data_through: '2026-08-30',
+      availability_reference_date: '2026-08-31',
+      product_current_date: '2026-08-31',
+    },
+    last_workload_appearance: null,
+    recent_logs: [{
+      game_date: '2026-08-30',
+      pitches_thrown: 31,
+      innings_pitched_outs: 3,
+    }],
+  })
+
+  assert.equal(htmlIncludes(html, 'Last Used'), false)
+  assert.equal(htmlIncludes(html, 'Aug 30'), false)
+  assert.equal(htmlIncludes(html, '31 pitches'), false)
+})
+
+test('PitcherDetail preserves a backend-authored unknown pitch count', () => {
+  const html = renderDetail({
+    pitcher: { full_name: 'Known Date Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    current_fatigue: {},
+    freshness: {
+      data_through: '2026-08-30',
+      availability_reference_date: '2026-08-31',
+      product_current_date: '2026-08-31',
+    },
+    last_workload_appearance: {
+      game_date: '2026-08-30',
+      pitches: null,
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'Aug 30 (Yesterday) • Pitch count unavailable'))
+  assert.equal(htmlIncludes(html, '0 pitches'), false)
+})
+
+test('PitcherDetail preserves an explicit backend-authored zero', () => {
+  const html = renderDetail({
+    pitcher: { full_name: 'Zero Pitch Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    current_fatigue: {},
+    freshness: {
+      data_through: '2026-08-30',
+      availability_reference_date: '2026-08-31',
+      product_current_date: '2026-08-31',
+    },
+    last_workload_appearance: {
+      game_date: '2026-08-30',
+      pitches: 0,
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'Aug 30 (Yesterday) • 0 pitches'))
 })
 
 test('PitcherDetail leads with availability and workload facts instead of a black-box score', () => {

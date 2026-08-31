@@ -99,6 +99,11 @@ def create_app(config_name=None):
         os.environ.get('SHARE_ARTIFACT_AUTOGENERATION', 'true').lower()
         in ('1', 'true', 'yes')
     )
+    # A production snapshot is not trusted/current until its publication-linked
+    # Team State proof has been flushed in the same database transaction. This
+    # is not an operational toggle: every authorized production publisher
+    # (Render primary or GitHub fallback) crosses the same boundary.
+    app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = config_name == 'production'
     # Per-environment validation (production fails fast on unsafe config).
     cfg.init_app(app)
 
@@ -159,6 +164,7 @@ def create_app(config_name=None):
     )
     from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
     from models.team_progressive_publication import TeamProgressivePublication
+    from models.team_state_publication_proof import TeamStatePublicationProof
     from models.official_pitching_line_repair_execution import (
         OfficialPitchingLineRepairExecution,
     )

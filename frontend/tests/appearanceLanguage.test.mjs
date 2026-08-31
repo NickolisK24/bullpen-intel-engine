@@ -8,7 +8,6 @@ import {
   compactAppearanceLabel,
   compactWorkloadAppearanceLabel,
   dayAwareAppearanceReason,
-  latestWorkloadAppearanceFromLogs,
   platformDateFromFreshness,
   productCurrentDateFromFreshness,
   relativeAppearanceLabel,
@@ -95,28 +94,6 @@ test('workload labels use compact workload language for valid appearances', () =
     workloadAppearanceDetailLabel({ game_date: '2026-06-17', pitches: 14 }, platformDate),
     'Jun 17 • 14 pitches',
   )
-})
-
-test('latest workload appearance skips newer zero-pitch raw rows', () => {
-  const logs = [
-    {
-      game_date: '2026-06-19',
-      innings_pitched: 0.0,
-      innings_pitched_outs: 0,
-      pitches_thrown: 0,
-    },
-    {
-      game_date: '2026-06-17',
-      innings_pitched: 1.0,
-      innings_pitched_outs: 3,
-      pitches_thrown: 14,
-    },
-  ]
-
-  assert.deepEqual(latestWorkloadAppearanceFromLogs(logs), {
-    gameDate: '2026-06-17',
-    pitches: 14,
-  })
 })
 
 test('product current date is accepted only from the backend freshness carrier', () => {

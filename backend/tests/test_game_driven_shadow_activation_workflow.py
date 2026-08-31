@@ -20,7 +20,6 @@ verdict remains inside it.
 import json
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -830,13 +829,11 @@ def test_every_shell_block_parses(workflow):
             run = step.get('run')
             if not run:
                 continue
-            with tempfile.NamedTemporaryFile('w', suffix='.sh') as handle:
-                handle.write(run)
-                handle.flush()
-                result = subprocess.run(
-                    ['bash', '-n', handle.name],
-                    capture_output=True, text=True,
-                )
+            result = subprocess.run(
+                ['bash', '-n', '-c', run],
+                capture_output=True,
+                text=True,
+            )
             assert result.returncode == 0, (
                 f"{step.get('name')}: {result.stderr}"
             )
@@ -1048,6 +1045,7 @@ def test_the_mitigation_values_do_not_leak_into_any_other_job(workflow):
 ADVISORY_PUBLIC_SYNC_STEPS = {
     'Prepare game-driven shadow handoff',
     'Upload game-driven shadow handoff',
+    'Export durable Team State production proof',
     'Scan Team State vNext proof for forbidden content',
     'Upload Team State vNext production proof',
 }

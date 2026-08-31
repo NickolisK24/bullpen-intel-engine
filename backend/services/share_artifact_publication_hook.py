@@ -4,7 +4,7 @@ Generation belongs to publication. When a Trusted Snapshot successfully becomes
 the canonical published snapshot, immutable Team State Share Artifacts are
 generated for the league as the next step of the same lifecycle:
 
-    publish_dashboard_snapshot()  (publication committed)
+    publish_dashboard_snapshot()  (mandatory proof + publication committed)
       -> run_post_publication_generation(snapshot)
       -> generate_team_state_artifacts_batch()   (SC-03B-01, unchanged)
 
@@ -13,9 +13,10 @@ only from the publication path, only after the publication has already committed
 It passes the authoritative publication context (the snapshot's id and product
 date) straight into the existing batch service — it rediscovers nothing.
 
-Failure semantics: publication is authoritative and already committed;
-generation is strictly downstream. A generation failure therefore NEVER rolls
-back or unpublishes the snapshot. This function fails closed and never raises —
+Failure semantics: the mandatory classifier proof already committed atomically
+with publication. Immutable Share Artifact generation is strictly downstream. A
+generation failure therefore NEVER rolls back or unpublishes the snapshot. This
+function fails closed and never raises —
 an invalid/untrusted source or an unexpected error is logged and returned as
 ``None`` (each per-team attempt remains independently transactional exactly as
 SC-03A guarantees, so no partial artifact is left behind). Reruns are idempotent

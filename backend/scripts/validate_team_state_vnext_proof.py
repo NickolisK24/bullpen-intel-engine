@@ -59,6 +59,8 @@ def validate_proof(payload):
         return False, 'wrong_contract'
     if payload.get('reconstructed') is not False:
         return False, 'not_a_direct_observation'
+    if payload.get('proof_generated_at') in (None, ''):
+        return False, 'proof_generation_timestamp_missing'
     if payload.get('overall_verdict') not in RECOGNIZED_VERDICTS:
         return False, 'unrecognized_verdict'
 

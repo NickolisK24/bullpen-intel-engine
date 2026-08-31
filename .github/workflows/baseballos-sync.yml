@@ -138,13 +138,6 @@ jobs:
           # step in this job must keep the deployed default of off.
           GAME_DRIVEN_INGESTION_MODE: 'shadow'
           DAILY_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/daily-sync-summary.json
-          # Team State vNext production proof (D-056). Side-channel evidence only:
-          # the post-publication hook writes this file after the publication has
-          # already committed, and does nothing at all when the variable is unset —
-          # which is every other process, including the deployed web service. It
-          # deliberately does NOT live in artifacts/game-driven-shadow/, which the
-          # shadow handoff step below sweeps wholesale into its own evidence lane.
-          TEAM_STATE_VNEXT_PROOF_PATH: artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
           # The already-passed v3_phase_4 -> v3_phase_5 boundary publication. Its
           # frozen What Changed block is carried as historical boundary evidence,
           # because a later publication is v3_phase_5 -> v3_phase_5 and is not that
@@ -268,6 +261,7 @@ jobs:
           RECOVERY_REASON: ${{ inputs.recovery_reason }}
           CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
           RECOVERY_OPERATOR: ${{ github.actor }}
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -275,7 +269,7 @@ jobs:
             exit 1
           fi
           if [ "$GITHUB_EVENT_NAME" = 'schedule' ]; then
-            SCHEDULED_FOR="$(date -u +'%Y-%m-%dT%H:11:00Z')"
+            SCHEDULED_FOR="$(python backend/scripts/resolve_github_scheduled_for.py --mode postgame --event-schedule "$GITHUB_EVENT_SCHEDULE" --launched-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')")"
           fi
           echo "Postgame window reconciliation starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           mkdir -p "$(dirname "$POSTGAME_SYNC_SUMMARY_PATH")"
@@ -520,6 +514,20 @@ jobs:
       # empty staging directory only if it passes, so a scanner bug produces an
       # empty handoff rather than a leak.
 
+      - name: Export durable Team State production proof
+        continue-on-error: true
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+        run: >-
+          python backend/scripts/export_team_state_publication_proof.py
+          --current
+          --output artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
+          --observation-output artifacts/team-state-vnext-proof/observation.json
+
       # The same shared scanner the shadow and generated-preview evidence use. An
       # unsafe file is quarantined on the runner and never uploaded; only its name
       # and a category are reported, never the matched content.
@@ -547,7 +555,7 @@ jobs:
           name: team-state-vnext-proof-${{ github.run_id }}
           path: artifacts/team-state-vnext-proof
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Prepare game-driven shadow handoff
         id: shadow-handoff-prepare
@@ -623,6 +631,21 @@ jobs:
           set -uo pipefail
           proof=artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
           if [ ! -f "$proof" ]; then
+            if python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('artifacts/team-state-vnext-proof/observation.json')
+          no_publication = (
+              path.exists()
+              and json.loads(path.read_text()).get('publication_observed') is False
+          )
+          raise SystemExit(0 if no_publication else 1)
+          PY
+            then
+              echo "No publication was observed; no Team State proof is required for this invocation."
+              echo "verdict=not_applicable" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::No Team State vNext proof artifact was produced by this publication."
             echo "verdict=missing" >> "$GITHUB_OUTPUT"
             exit 3

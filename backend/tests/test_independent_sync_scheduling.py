@@ -14,6 +14,7 @@ from services.sync_execution_context import (
     SyncExecutionAuthorizationError,
     validate_execution_context,
 )
+from services.github_schedule_slot import resolve_github_schedule_slot
 from scripts.refresh_slate_schedule import PRODUCTION_MORNING_TRIGGER_REFUSAL
 from scripts.run_postgame_refresh import (
     PRODUCTION_POSTGAME_TRIGGER_REFUSAL,
@@ -75,6 +76,49 @@ def test_github_scheduled_daily_is_authorized():
         scheduled_for='2026-08-27T10:17:00Z', environ=BASE_GITHUB_ENV,
     )
     assert context.intended_window == 'daily:2026-08-27'
+
+
+@pytest.mark.parametrize(
+    ('launched_at', 'expected'),
+    [
+        ('2026-08-31T02:11:00Z', '2026-08-31T02:11:00+00:00'),
+        ('2026-08-31T04:11:00Z', '2026-08-31T04:11:00+00:00'),
+        ('2026-08-31T06:11:00Z', '2026-08-31T06:11:00+00:00'),
+        ('2026-08-31T06:59:00Z', '2026-08-31T06:11:00+00:00'),
+        ('2026-08-31T08:36:00Z', '2026-08-31T06:11:00+00:00'),
+        ('2026-09-01T00:05:00Z', '2026-08-31T06:11:00+00:00'),
+    ],
+)
+def test_delayed_github_postgame_delivery_resolves_authorized_slot(launched_at, expected):
+    slot = resolve_github_schedule_slot(
+        mode='postgame',
+        event_schedule='11 2,4,6 * * *',
+        launched_at=launched_at,
+    )
+    assert slot.isoformat() == expected
+    context = validate_execution_context(
+        mode='postgame',
+        source=SOURCE_GITHUB_SCHEDULE,
+        scheduled_for=slot.isoformat(),
+        environ=BASE_GITHUB_ENV,
+    )
+    assert context.scheduled_for == slot
+
+
+def test_slot_resolution_does_not_widen_execution_authority():
+    with pytest.raises(ValueError, match='event_schedule_mismatch'):
+        resolve_github_schedule_slot(
+            mode='postgame',
+            event_schedule='11 8 * * *',
+            launched_at='2026-08-31T08:36:00Z',
+        )
+    with pytest.raises(SyncExecutionAuthorizationError, match='scheduled_for_window_invalid'):
+        validate_execution_context(
+            mode='postgame',
+            source=SOURCE_GITHUB_SCHEDULE,
+            scheduled_for='2026-08-31T08:11:00Z',
+            environ=BASE_GITHUB_ENV,
+        )
 
 
 def test_external_scheduled_daily_is_authorized():
@@ -272,6 +316,9 @@ def test_workflow_pins_fallback_recovery_and_due_coordinator_contract():
     assert 'run_due_sync.py --mode daily' in text
     assert 'run_due_sync.py --mode postgame' in text
     assert 'run_due_sync.py --mode morning' in text
+    assert text.count('resolve_github_scheduled_for.py') == 1
+    assert 'GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}' in text
+    assert "date -u +'%Y-%m-%dT%H:11:00Z'" not in text
     assert '--confirm-recovery "$CONFIRM_RECOVERY"' in text
     assert 'run_postgame_refresh.py --date "$BACKFILL_DATE"' in text
     assert 'run_intraday_reconcile.py' in text

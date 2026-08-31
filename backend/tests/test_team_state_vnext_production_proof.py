@@ -14,7 +14,10 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
+from flask import Flask
 
+from models.dashboard_snapshot import DashboardSnapshot
+from models.sync_run import SyncRun
 from services import team_state_vnext_production_proof as proof_module
 from services.team_state_vnext_production_proof import (
     CAPABILITY,
@@ -30,6 +33,8 @@ from services.team_state_vnext_production_proof import (
     build_team_entry,
     write_proof,
 )
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from utils.db import db
 
 
 SLATE = date(2026, 8, 17)
@@ -130,6 +135,34 @@ def _inventory(entries):
     }
 
 
+def _persist_publication_identity():
+    run = SyncRun(
+        id=SYNC_RUN_ID,
+        status='success',
+        stage='published',
+        source='external_schedule',
+    )
+    snapshot = DashboardSnapshot(
+        id=SNAPSHOT_ID,
+        snapshot_type='bullpen_dashboard',
+        sync_run_id=SYNC_RUN_ID,
+        status='ready',
+        is_published=True,
+        published_at=datetime(2026, 8, 19, 10, 30, 7),
+        payload={},
+        payload_version=1,
+        data_through=SLATE,
+        availability_reference_date=AVAILABILITY,
+        snapshot_generated_at=datetime(2026, 8, 19, 10, 29, 7),
+        source='external_schedule',
+    )
+    db.session.add(run)
+    db.session.flush()
+    db.session.add(snapshot)
+    db.session.commit()
+    return snapshot
+
+
 def _teams(count=30, **overrides):
     return [
         build_team_entry(
@@ -168,7 +201,7 @@ def test_proof_ties_itself_to_one_publication_and_is_not_a_reconstruction():
     assert proof['capability'] == CAPABILITY
     assert proof['contract'] == CONTRACT
     assert proof['reconstructed'] is False
-    assert proof['observation_mode'] == 'in_process_publication_hook'
+    assert proof['observation_mode'] == 'publisher_transaction_v1'
     assert proof['publication']['dashboard_snapshot_id'] == SNAPSHOT_ID
     assert proof['publication']['sync_run_id'] == SYNC_RUN_ID
     assert proof['publication']['data_through'] == SLATE.isoformat()
@@ -178,9 +211,63 @@ def test_proof_ties_itself_to_one_publication_and_is_not_a_reconstruction():
 def test_thirty_teams_pass_and_are_sorted_and_unique():
     proof = _build()
     assert proof['invariants']['all_teams_published']['result'] == RESULT_PASS
+
+
+@pytest.fixture
+def database_app():
+    flask_app = Flask(__name__)
+    configure_test_database(flask_app)
+    db.init_app(flask_app)
+    with flask_app.app_context():
+        create_test_schema(flask_app)
+        try:
+            yield flask_app
+        finally:
+            db.session.remove()
+            drop_test_schema(flask_app)
+
+
+def test_durable_proof_round_trips_by_publication_id(database_app):
+    snapshot = _persist_publication_identity()
+    proof = _build()
+    stored = proof_module._store_durable_proof(snapshot, proof)
+    loaded = proof_module.load_durable_proof(SNAPSHOT_ID)
+    assert loaded.id == stored.id
+    assert loaded.snapshot_id == SNAPSHOT_ID
+    assert loaded.sync_run_id == SYNC_RUN_ID
+    assert loaded.data_through == SLATE
+    assert loaded.proof == proof
     team_ids = [team['team_id'] for team in proof['teams']]
     assert team_ids == sorted(team_ids)
     assert len(set(team_ids)) == 30
+
+    replay = proof_module._store_durable_proof(snapshot, proof)
+    assert replay.id == stored.id
+    assert proof_module.load_durable_proof(SNAPSHOT_ID).proof == proof
+
+    retried = json.loads(json.dumps(proof))
+    retried['proof_generated_at'] = '2026-08-19T10:31:07'
+    retried['publication']['workflow']['run_id'] = 'retry-run'
+    retried['publication']['workflow']['run_attempt'] = '2'
+    replay = proof_module._store_durable_proof(snapshot, retried)
+    assert replay.id == stored.id
+    assert proof_module.load_durable_proof(SNAPSHOT_ID).proof == proof
+
+    contradictory = json.loads(json.dumps(proof))
+    contradictory['teams'][0]['partition']['clean_count'] = 5
+    with pytest.raises(ValueError, match='team_state_proof_snapshot_conflict'):
+        proof_module._store_durable_proof(snapshot, contradictory)
+    assert proof_module.load_durable_proof(SNAPSHOT_ID).proof == proof
+
+
+def test_durable_proof_can_be_flushed_and_rolled_back_with_publication(database_app):
+    snapshot = _persist_publication_identity()
+    proof_module._store_durable_proof(snapshot, _build(), commit=False)
+    assert proof_module.load_durable_proof(SNAPSHOT_ID) is not None
+
+    db.session.rollback()
+
+    assert proof_module.load_durable_proof(SNAPSHOT_ID) is None
 
 
 def test_a_missing_team_fails_rather_than_being_silently_omitted():
@@ -195,6 +282,12 @@ def test_a_duplicate_team_is_rejected():
     proof = _build(teams=teams)
     assert proof['invariants']['all_teams_published']['result'] == RESULT_FAIL
     assert proof['invariants']['all_teams_published']['duplicate_team_ids'] == [100]
+
+
+def test_a_31st_unexpected_team_is_rejected():
+    proof = _build(teams=_teams(31))
+    assert proof['invariants']['all_teams_published']['result'] == RESULT_FAIL
+    assert proof['overall_verdict'] == VERDICT_FAIL
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +314,38 @@ def test_classification_is_reproduced_from_the_recorded_partition():
     assert all(
         team['contract_a_reproduction']['reproduced'] is True for team in proof['teams']
     )
+
+
+@pytest.mark.parametrize(
+    ('clean', 'moderate', 'severe', 'unknown', 'status_code', 'rule', 'public_code'),
+    [
+        (5, 2, 1, 0, 'operationally_stable', 'fresh_coverage', 'fresh'),
+        (4, 3, 1, 0, 'operationally_constrained', 'residual_stretched', 'stretched'),
+        (2, 6, 0, 0, 'operationally_stressed', 'margin_floor', 'vulnerable'),
+        (3, 3, 3, 0, 'operationally_stressed', 'severity_share', 'vulnerable'),
+        (5, 1, 0, 2, 'operationally_stable', 'fresh_coverage', 'fresh'),
+    ],
+)
+def test_contract_a_boundary_shapes_reproduce_exactly(
+    clean, moderate, severe, unknown, status_code, rule, public_code,
+):
+    entry = build_team_entry(
+        100,
+        _result(
+            100, clean=clean, moderate=moderate, severe=severe, unknown=unknown,
+            status_code=status_code, decisive_rule=rule, public_code=public_code,
+        ),
+        expected_availability_reference_date=AVAILABILITY,
+        data_through=SLATE,
+    )
+    assert entry['partition_sum'] == entry['active_pitcher_count']
+    assert entry['contract_a_reproduction'] == {
+        'reproduced': True,
+        'status_code': status_code,
+        'decisive_rule': rule,
+        'reason': None,
+    }
+    assert entry['final_team_state']['published_public_state'] == public_code
 
 
 def test_a_state_that_contradicts_its_own_partition_fails_the_method_invariant():
@@ -270,6 +395,32 @@ def test_a_refused_team_is_not_applicable_and_is_never_counted_as_a_pass():
     assert entry['partition_invariant_state'] == 'not_applicable'
     assert entry['partition_invariant_holds'] is None
     assert entry['partition_invariant_holds'] is not False
+
+
+def test_governed_data_limited_withholding_is_explicit_and_valid():
+    withheld = _evidence(
+        0, 0, 0, 0, status_code='data_limited', decisive_rule='data_limited',
+    )
+    withheld.update({
+        'active_pitcher_count': None,
+        'clean_count': None,
+        'moderate_count': None,
+        'severe_count': None,
+        'unknown_count': None,
+    })
+    teams = _teams(29) + [build_team_entry(
+        999,
+        _result(
+            999, status_code='data_limited', decisive_rule='data_limited',
+            public_code=None, evidence=withheld,
+        ),
+        expected_availability_reference_date=AVAILABILITY,
+        data_through=SLATE,
+    )]
+    proof = _build(teams=teams)
+    assert proof['teams'][-1]['final_team_state']['published_public_state'] is None
+    assert proof['invariants']['method_version_observed']['result'] == RESULT_PASS
+    assert proof['distribution']['withheld'] == 1
 
 
 def test_complete_evidence_vector_is_captured_verbatim():
@@ -625,6 +776,113 @@ def test_generation_runs_exactly_once_even_when_the_proof_cannot_be_written(
     assert len(generations) == 1
 
 
+def test_transactional_publication_proof_flushes_30_teams_without_committing(
+    monkeypatch,
+):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    monkeypatch.delenv(proof_module.PROOF_PATH_ENV, raising=False)
+    snapshot = SimpleNamespace(
+        id=SNAPSHOT_ID,
+        sync_run_id=SYNC_RUN_ID,
+        data_through=SLATE,
+        availability_reference_date=AVAILABILITY,
+        published_at=datetime(2026, 8, 19, 10, 30, 7),
+        status='ready',
+        is_published=True,
+        source='sync_completion',
+        payload={'what_changed_since_yesterday': {'state': 'unavailable'}},
+    )
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        return _result(team_id).readiness
+
+    stored = []
+    monkeypatch.setattr(
+        proof_module,
+        'historical_team_state_inventory',
+        lambda *_args, **_kwargs: _inventory([]),
+    )
+    monkeypatch.setattr(
+        proof_module,
+        '_store_durable_proof',
+        lambda snap, proof, *, commit=True: stored.append((snap, proof, commit)),
+    )
+
+    proof = proof_module.require_transactional_publication_proof(
+        snapshot,
+        readiness_resolver=resolver,
+        team_ids=MLB_TEAM_IDS,
+    )
+
+    assert len(proof['teams']) == 30
+    assert {team['team_id'] for team in proof['teams']} == set(MLB_TEAM_IDS)
+    assert proof['publication']['workflow']['proof_persistence_phase'] == 'pre_trust_commit'
+    assert stored == [(snapshot, proof, False)]
+    assert all(
+        proof['invariants'][name]['result'] == RESULT_PASS
+        for name in (
+            'all_teams_published',
+            'method_version_observed',
+            'partition_integrity',
+            'team_state_evidence_complete',
+            'reference_date_alignment',
+            'distribution_consistent',
+        )
+    )
+
+
+def test_transactional_publication_proof_rejects_corrupt_team_state(
+    monkeypatch,
+):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    snapshot = SimpleNamespace(
+        id=SNAPSHOT_ID,
+        sync_run_id=SYNC_RUN_ID,
+        data_through=SLATE,
+        availability_reference_date=AVAILABILITY,
+        published_at=datetime(2026, 8, 19, 10, 30, 7),
+        status='ready',
+        is_published=True,
+        source='sync_completion',
+        payload={},
+    )
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        readiness = _result(team_id).readiness
+        if team_id == MLB_TEAM_IDS[-1]:
+            readiness = json.loads(json.dumps(readiness))
+            readiness['team_state_evidence']['active_pitcher_count'] = 9
+        return readiness
+
+    monkeypatch.setattr(
+        proof_module,
+        'historical_team_state_inventory',
+        lambda *_args, **_kwargs: _inventory([]),
+    )
+    monkeypatch.setattr(
+        proof_module,
+        '_store_durable_proof',
+        lambda *_args, **_kwargs: pytest.fail('invalid proof must not be stored'),
+    )
+
+    with pytest.raises(ValueError, match='partition_integrity'):
+        proof_module.require_transactional_publication_proof(
+            snapshot,
+            readiness_resolver=resolver,
+            team_ids=MLB_TEAM_IDS,
+        )
+
+
 def test_an_unwritable_destination_returns_none_rather_than_raising(monkeypatch):
     def _fake_generation(snapshot, *, generator=None):
         generator(100, requested_date=SLATE)
@@ -636,6 +894,10 @@ def test_an_unwritable_destination_returns_none_rather_than_raising(monkeypatch)
     )
     monkeypatch.setattr(
         proof_module, 'historical_team_state_inventory', lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        proof_module, 'write_proof',
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError('unwritable')),
     )
     assert proof_module.capture_publication_proof(
         _snapshot(), generator=lambda team_id, **kwargs: _result(team_id),
@@ -759,9 +1021,11 @@ def test_hook_runs_plain_generation_when_proof_capture_is_off(
         'services.share_artifact_publication_hook.run_post_publication_generation',
         lambda snapshot, **kwargs: calls.append(kwargs) or None,
     )
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
     dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
-    # Exactly one unobserved generation, with no collector installed.
-    assert calls == [{}]
+    # Every publisher runs exactly once under durable observation.
+    assert len(calls) == 1
+    assert callable(calls[0]['generator'])
 
 
 def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
@@ -779,6 +1043,7 @@ def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
         'services.share_artifact_generation.generate_team_state_artifact',
         lambda team_id, **kwargs: _result(team_id),
     )
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
 
     def _generation(snapshot, *, generator=None):
         assert generator is not None, 'capture must observe the real generation'
