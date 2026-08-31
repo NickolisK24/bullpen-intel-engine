@@ -20,6 +20,8 @@ from services.availability import (
     ACTIVE_WINDOW_DAYS, STATUS_AVAILABLE, STATUS_AVOID, STATUS_LIMITED,
     STATUS_MONITOR, STATUS_UNAVAILABLE, THRESHOLDS,
 )
+from services.workload_appearance import is_workload_appearance_log
+from utils.db import db
 
 
 VERIFIED = 'VERIFIED'
@@ -28,6 +30,11 @@ NOT_VERIFIED = 'NOT_VERIFIED'
 PASS = 'PASS'
 FAIL = 'FAIL'
 UNPROVEN = 'UNPROVEN'
+HISTORICAL_METHOD_DIFFERENCE = 'HISTORICAL_METHOD_DIFFERENCE'
+FROZEN_WORKLOAD_METHOD_VERSION = 'fatigue_score_workload_windows_v1'
+FROZEN_WORKLOAD_REFERENCE_POLICY = (
+    'canonical_latest_workload_at_score_calculation_plus_one_v1'
+)
 REQUIRED_INTERNAL_DOMAINS = (
     'publication_coherence',
     'games',
@@ -229,6 +236,67 @@ def _recomputed_workload(rows, workload_through, rest_reference_date):
     }
 
 
+def _score_reference_date(score):
+    """Recover the canonical workload anchor in force when a score was stored.
+
+    Legacy ``FatigueScore`` rows did not persist their reference date. Their
+    production authority was nevertheless deterministic: the greatest workload
+    date present when the row was calculated, plus one day. Reconstructing that
+    date prevents an immutable stale score from being judged against a later
+    publication's availability date.
+    """
+    calculated_at = getattr(score, 'calculated_at', None)
+    if calculated_at is None:
+        return None
+    latest_available = (
+        db.session.query(db.func.max(GameLog.game_date))
+        .filter(GameLog.created_at <= calculated_at)
+        .scalar()
+    )
+    return latest_available + timedelta(days=1) if latest_available else None
+
+
+def _rows_available_at_score_calculation(rows, score):
+    calculated_at = getattr(score, 'calculated_at', None)
+    if calculated_at is None:
+        return []
+    return [
+        row for row in rows
+        if getattr(row, 'created_at', None) is None
+        or row.created_at <= calculated_at
+    ]
+
+
+def _recomputed_frozen_score_workload(rows, reference_date):
+    """Independently reproduce the legacy FatigueScore workload carrier.
+
+    ``calculate_fatigue`` historically named its inclusive ``ref - 7`` and
+    ``ref - 14`` windows seven and fourteen days. The auditor reproduces that
+    frozen method literally here instead of calling the production calculator.
+    """
+    workload_rows = [row for row in rows if is_workload_appearance_log(row)]
+    latest = max((row.game_date for row in workload_rows), default=None)
+    rows_7 = [
+        row for row in workload_rows
+        if reference_date - timedelta(days=7) <= row.game_date <= reference_date
+    ]
+    rows_14 = [
+        row for row in workload_rows
+        if reference_date - timedelta(days=14) <= row.game_date <= reference_date
+    ]
+    return {
+        'days_since_last_appearance': (
+            None if latest is None else (reference_date - latest).days
+        ),
+        'appearances_last_7': len(rows_7),
+        'appearances_last_14': len(rows_14),
+        'pitches_last_7_days': _sum_known_pitches(rows_7),
+        'innings_last_7_days': (
+            sum(row.innings_pitched_outs for row in rows_7) / 3.0
+        ),
+    }
+
+
 def _availability_inputs(rows, reference_date, score):
     latest = max((row.game_date for row in rows), default=None)
     rows_5 = [row for row in rows if reference_date - timedelta(days=4) <= row.game_date <= reference_date]
@@ -336,7 +404,10 @@ def _current_pitchers(pitcher_ids):
     }
 
 
-def _membership_workload(snapshot, mismatches):
+def _membership_workload(snapshot, mismatches, governed_differences=None):
+    governed_differences = (
+        governed_differences if governed_differences is not None else []
+    )
     teams = _team_packages(snapshot)
     membership_checked = membership_bad = 0
     records = []
@@ -392,9 +463,28 @@ def _membership_workload(snapshot, mismatches):
                 rows=[row.id for row in logs[pitcher_id]], likely_layer='workload_derivation',
             ))
         facts = record.get('workload_facts') if isinstance(record.get('workload_facts'), Mapping) else {}
+        availability = record.get('availability') if isinstance(record.get('availability'), Mapping) else {}
+        published_inputs = availability.get('inputs') if isinstance(availability.get('inputs'), Mapping) else {}
+        score = _score_for_record(pitcher_id, record)
+        frozen_reference_date = _score_reference_date(score) if score is not None else None
+        frozen_recomputed = None
+        if (
+            frozen_reference_date is not None
+            and published_inputs.get('freshness_state') == 'stale'
+            and frozen_reference_date != snapshot.availability_reference_date
+        ):
+            frozen_recomputed = _recomputed_frozen_score_workload(
+                _rows_available_at_score_calculation(logs[pitcher_id], score),
+                frozen_reference_date,
+            )
         for key in ('appearances_last_7', 'appearances_last_14', 'pitches_last_7_days', 'innings_last_7_days'):
             workload_checked += 1
-            left, right = facts.get(key), recomputed[key]
+            left = facts.get(key)
+            right = (
+                frozen_recomputed[key]
+                if frozen_recomputed is not None
+                else recomputed[key]
+            )
             if isinstance(left, float) and isinstance(right, float):
                 equal = abs(left-right) < 1e-6
             else:
@@ -407,17 +497,68 @@ def _membership_workload(snapshot, mismatches):
                     likely_layer='workload_derivation',
                 ))
         rest_checked += 1
-        if facts.get('days_since_last_appearance') != recomputed['days_since_last_appearance']:
+        recomputed_rest = (
+            frozen_recomputed['days_since_last_appearance']
+            if frozen_recomputed is not None
+            else recomputed['days_since_last_appearance']
+        )
+        if facts.get('days_since_last_appearance') != recomputed_rest:
             rest_bad += 1
             mismatches.append(_mismatch(
                 'rest.days_since_last_appearance', snapshot.id,
-                facts.get('days_since_last_appearance'), recomputed['days_since_last_appearance'],
+                facts.get('days_since_last_appearance'), recomputed_rest,
                 team=team_id, pitcher=pitcher_id,
                 rows=[row.id for row in logs[pitcher_id]], likely_layer='rest_derivation',
             ))
-        availability = record.get('availability') if isinstance(record.get('availability'), Mapping) else {}
-        published_inputs = availability.get('inputs') if isinstance(availability.get('inputs'), Mapping) else {}
-        score = _score_for_record(pitcher_id, record)
+        if frozen_recomputed is not None and (
+            facts.get('appearances_last_14') != recomputed['appearances_last_14']
+            or facts.get('days_since_last_appearance')
+            != recomputed['days_since_last_appearance']
+        ):
+            governed_differences.append({
+                'classification': HISTORICAL_METHOD_DIFFERENCE,
+                'domain': 'workload.frozen_score_reference',
+                'team': team_id,
+                'pitcher': pitcher_id,
+                'snapshot_id': snapshot.id,
+                'source_score_id': getattr(score, 'id', None),
+                'score_calculated_at': (
+                    score.calculated_at.isoformat()
+                    if getattr(score, 'calculated_at', None) else None
+                ),
+                'frozen_reference_date': frozen_reference_date.isoformat(),
+                'publication_availability_reference_date': (
+                    snapshot.availability_reference_date.isoformat()
+                ),
+                'published_value': {
+                    'appearances_last_14': facts.get('appearances_last_14'),
+                    'days_since_last_appearance': facts.get(
+                        'days_since_last_appearance'
+                    ),
+                },
+                'recomputed_frozen_value': {
+                    'appearances_last_14': frozen_recomputed[
+                        'appearances_last_14'
+                    ],
+                    'days_since_last_appearance': frozen_recomputed[
+                        'days_since_last_appearance'
+                    ],
+                },
+                'current_publication_value': {
+                    'appearances_last_14': recomputed['appearances_last_14'],
+                    'days_since_last_appearance': recomputed[
+                        'days_since_last_appearance'
+                    ],
+                },
+                'canonical_rows': [row.id for row in logs[pitcher_id]],
+                'method_version': FROZEN_WORKLOAD_METHOD_VERSION,
+                'reference_date_policy': FROZEN_WORKLOAD_REFERENCE_POLICY,
+                'reason': (
+                    'The immutable stale FatigueScore carrier is reproduced at '
+                    'its calculation-time anchor; current availability evidence '
+                    'is checked separately at the publication reference date.'
+                ),
+            })
         audit_inputs = _availability_inputs(
             logs[pitcher_id], snapshot.availability_reference_date, score,
         )
@@ -830,12 +971,16 @@ def reconcile_publication(snapshot, *, external_domains=None, external_required=
             'domains': {'publication_coherence': _domain(checked=1, incorrect=1)},
             'external_mlb': _external_unproven('publication not found'),
             'mismatches': [_mismatch('publication.not_found', None, 'snapshot', None)],
+            'governed_differences': [],
         }
+    governed_differences = []
     domains = {'publication_coherence': _publication_coherence(snapshot, mismatches)}
     games, appearances = _game_ledger(snapshot, mismatches)
     domains['games'] = games
     domains['pitching_appearances'] = appearances
-    domains.update(_membership_workload(snapshot, mismatches))
+    domains.update(_membership_workload(
+        snapshot, mismatches, governed_differences,
+    ))
     domains['team_states'] = _team_states(snapshot, mismatches)
     domains['team_aggregates'] = _team_aggregates(snapshot, mismatches)
     domains['served_read_models'] = _served_models(snapshot, mismatches)
@@ -863,4 +1008,5 @@ def reconcile_publication(snapshot, *, external_domains=None, external_required=
         'domains': domains,
         'external_mlb': external,
         'mismatches': mismatches,
+        'governed_differences': governed_differences,
     }

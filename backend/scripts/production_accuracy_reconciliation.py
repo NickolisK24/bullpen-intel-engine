@@ -54,6 +54,7 @@ def render_console(report):
     lines.extend([
         f"Incorrect: {sum(item['incorrect'] for item in report.get('domains', {}).values())}",
         f"Unproven: {sum(item['unproven'] for item in report.get('external_mlb', {}).values())}",
+        f"Governed historical comparisons: {len(report.get('governed_differences', []))}",
         f"VERDICT: {report.get('verdict')}",
     ])
     return '\n'.join(lines)

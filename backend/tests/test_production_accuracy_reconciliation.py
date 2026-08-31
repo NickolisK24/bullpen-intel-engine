@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 from services import production_accuracy_reconciliation as audit
@@ -140,6 +140,147 @@ def test_workload_reconciliation_detects_corrupted_fixture(monkeypatch):
         'workload.pitches_last_7_days',
         'rest.days_since_last_appearance',
     }
+
+
+def test_stale_frozen_scores_use_their_own_canonical_reference_dates(monkeypatch):
+    """Snapshot 1696's two exact discrepancy shapes remain independently provable."""
+    snapshot = _snapshot()
+    snapshot.id = 1696
+    snapshot.data_through = date(2026, 8, 30)
+    snapshot.availability_reference_date = date(2026, 8, 31)
+
+    cases = {
+        677: {
+            'team_id': 145,
+            'frozen_reference_date': date(2026, 7, 24),
+            'score_id': 120842,
+            'calculated_at': datetime(2026, 7, 24, 22, 34, 16),
+            'published_appearances_14': 1,
+            'published_days_rest': 14,
+            'current_days_rest': 52,
+            'logs': [
+                (42893, date(2026, 7, 10), 30, 6),
+                (42784, date(2026, 7, 9), 13, 3),
+            ],
+        },
+        680: {
+            'team_id': 146,
+            'frozen_reference_date': date(2025, 9, 29),
+            'score_id': 407,
+            'calculated_at': datetime(2026, 6, 15, 20, 29, 49),
+            'published_appearances_14': 2,
+            'published_days_rest': 9,
+            'current_days_rest': 345,
+            'logs': [
+                (30380, date(2025, 9, 20), 17, 3),
+                (30379, date(2025, 9, 16), 27, 3),
+                (30378, date(2025, 9, 14), 19, 3),
+            ],
+        },
+    }
+    packages = {}
+    records = {}
+    logs_by_pitcher = {}
+    scores = {}
+    for pitcher_id, case in cases.items():
+        facts = {
+            'calculated_at': case['calculated_at'].isoformat(),
+            'appearances_last_7': 0,
+            'appearances_last_14': case['published_appearances_14'],
+            'pitches_last_7_days': 0,
+            'innings_last_7_days': 0.0,
+            'days_since_last_appearance': case['published_days_rest'],
+        }
+        latest_date = case['logs'][0][1]
+        latest_pitches = case['logs'][0][2]
+        record = {
+            'pitcher_id': pitcher_id,
+            'last_workload_appearance': {
+                'game_date': latest_date.isoformat(),
+                'pitches': latest_pitches,
+            },
+            'workload_facts': facts,
+            'availability': {
+                'availability_status': 'Monitor',
+                'inputs': {
+                    'days_rest': case['current_days_rest'],
+                    'freshness_state': 'stale',
+                    'latest_game_date': latest_date.isoformat(),
+                    'reference_date': '2026-08-31',
+                },
+            },
+        }
+        records[pitcher_id] = record
+        packages[str(case['team_id'])] = {
+            'default_pitcher_ids': [pitcher_id],
+            'records': [record],
+        }
+        logs_by_pitcher[pitcher_id] = [
+            SimpleNamespace(
+                id=row_id,
+                pitcher_id=pitcher_id,
+                game_date=game_date,
+                mlb_game_pk=row_id + 700000,
+                pitches_thrown=pitches,
+                innings_pitched_outs=outs,
+                innings_pitched=outs / 3.0,
+                created_at=case['calculated_at'] - timedelta(minutes=1),
+            )
+            for row_id, game_date, pitches, outs in case['logs']
+        ]
+        scores[pitcher_id] = SimpleNamespace(
+            id=case['score_id'],
+            pitcher_id=pitcher_id,
+            calculated_at=case['calculated_at'],
+            raw_score=1.0,
+        )
+
+    monkeypatch.setattr(audit, '_team_packages', lambda snap: packages)
+    monkeypatch.setattr(audit, '_record_logs', lambda pitcher_ids, through: logs_by_pitcher)
+    monkeypatch.setattr(audit, '_current_pitchers', lambda pitcher_ids: {
+        pitcher_id: SimpleNamespace(
+            id=pitcher_id, team_id=case['team_id'], active=True,
+        )
+        for pitcher_id, case in cases.items()
+    })
+    monkeypatch.setattr(
+        audit, '_score_for_record', lambda pitcher_id, row: scores[pitcher_id],
+    )
+    monkeypatch.setattr(
+        audit,
+        '_score_reference_date',
+        lambda score: cases[score.pitcher_id]['frozen_reference_date'],
+    )
+
+    mismatches = []
+    governed = []
+    domains = audit._membership_workload(snapshot, mismatches, governed)
+
+    assert domains['workload_values']['status'] == audit.PASS
+    assert domains['rest_patterns']['status'] == audit.PASS
+    assert mismatches == []
+    assert [item['classification'] for item in governed] == [
+        audit.HISTORICAL_METHOD_DIFFERENCE,
+        audit.HISTORICAL_METHOD_DIFFERENCE,
+    ]
+    assert {
+        (item['pitcher'], item['frozen_reference_date'])
+        for item in governed
+    } == {(677, '2026-07-24'), (680, '2025-09-29')}
+
+    records[677]['workload_facts']['appearances_last_14'] = 2
+    records[677]['workload_facts']['days_since_last_appearance'] = 15
+    mismatches = []
+    governed = []
+    domains = audit._membership_workload(snapshot, mismatches, governed)
+
+    assert domains['workload_values']['status'] == audit.FAIL
+    assert domains['rest_patterns']['status'] == audit.FAIL
+    mismatches_by_domain = {item['domain']: item for item in mismatches}
+    assert mismatches_by_domain['workload.appearances_last_14']['published_value'] == 2
+    assert mismatches_by_domain['workload.appearances_last_14']['recomputed_value'] == 1
+    assert mismatches_by_domain['rest.days_since_last_appearance']['published_value'] == 15
+    assert mismatches_by_domain['rest.days_since_last_appearance']['recomputed_value'] == 14
 
 
 def test_served_read_model_detects_publication_generation_mixing(monkeypatch):
