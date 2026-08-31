@@ -1,4 +1,4 @@
-"""Team State vNext production proof — an env-gated side-channel evidence artifact.
+"""Durable Team State proof captured from the actual publication process.
 
 The immutable Team State Share Artifact deliberately carries no
 ``team_state_evidence``, no ``contract_version``, and no partition (see
@@ -8,12 +8,12 @@ runtime actually did: the evidence vector exists for the length of one generatio
 call and is then gone. Diagnosing snapshot 437 required reading a committed HTML
 preview page, because nothing else survived.
 
-This module observes the exact runtime objects of one natural publication, from
-inside the post-publication hook, and writes them to a JSON file for a workflow to
-upload. It changes no artifact, no schema, and no publication behavior:
+This module observes the exact runtime objects of one natural publication from
+inside the post-publication hook. It stores one database proof row under the
+immutable snapshot identity; a workflow may also export that row as an artifact.
 
-* it runs only when ``TEAM_STATE_VNEXT_PROOF_PATH`` is set, so the deployed web
-  process and every test are unaffected by default;
+* every authorized publisher runs the observer, so proof does not depend on which
+  scheduler launched the publication;
 * it runs after the publication transaction has already committed, so it cannot
   roll back, unpublish, or alter anything;
 * it never raises — a proof problem must never become a publication problem;
@@ -32,7 +32,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from fractions import Fraction
 from typing import Any, Mapping, Optional
 
@@ -624,7 +624,7 @@ def _distribution(teams) -> dict:
 
 def build_proof(*, snapshot, teams, expected_team_count, historical_before=None,
                 historical_after=None, boundary_snapshot_id=None, workflow=None,
-                boundary_loader=None) -> dict:
+                boundary_loader=None, proof_generated_at=None) -> dict:
     """Assemble the complete proof document for one publication."""
     from services.availability_reference_date import trusted_slate_reference_dates
 
@@ -662,6 +662,9 @@ def build_proof(*, snapshot, teams, expected_team_count, historical_before=None,
         'schema_version': SCHEMA_VERSION,
         'observation_mode': OBSERVATION_MODE,
         'reconstructed': False,
+        'proof_generated_at': _iso(
+            proof_generated_at or getattr(snapshot, 'published_at', None)
+        ),
         'publication': {
             'dashboard_snapshot_id': getattr(snapshot, 'id', None),
             'sync_run_id': getattr(snapshot, 'sync_run_id', None),
@@ -751,8 +754,55 @@ def _safe_inventory(snapshot_id, *, when: str):
         return None
 
 
+def _store_durable_proof(snapshot, proof):
+    """Persist one proof document per immutable publication identity."""
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from utils.db import db
+
+    snapshot_id = getattr(snapshot, 'id', None)
+    if snapshot_id is None:
+        raise ValueError('team_state_proof_snapshot_id_required')
+    safe_proof = _json_safe(proof)
+    existing = TeamStatePublicationProof.query.filter_by(snapshot_id=snapshot_id).first()
+    if existing is not None:
+        if existing.proof != safe_proof:
+            raise ValueError('team_state_proof_snapshot_conflict')
+        return existing
+    row = TeamStatePublicationProof(
+        snapshot_id=snapshot_id,
+        sync_run_id=getattr(snapshot, 'sync_run_id', None),
+        data_through=getattr(snapshot, 'data_through', None),
+        proof=safe_proof,
+        overall_verdict=proof.get('overall_verdict'),
+        captured_team_count=int(_mapping(proof.get('batch')).get('captured_team_count') or 0),
+        method_version=_mapping(proof.get('publication')).get('expected_method_version'),
+        publication_source=getattr(snapshot, 'source', None),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def load_durable_proof(snapshot_id):
+    """Load the exact durable proof row for a publication identity."""
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from sqlalchemy.exc import SQLAlchemyError
+    from utils.db import db
+
+    try:
+        return TeamStatePublicationProof.query.filter_by(
+            snapshot_id=int(snapshot_id)
+        ).one_or_none()
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception(
+            'Team State durable proof lookup failed snapshot_id=%s.', snapshot_id,
+        )
+        return None
+
+
 def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optional[dict]:
-    """Run the one post-publication generation under observation, then write the proof.
+    """Run generation under observation and durably store the resulting proof.
 
     Returns the proof document, or ``None`` when the proof could not be built or
     written. The generation itself happens exactly once either way — this function
@@ -774,11 +824,6 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
     batch = run_post_publication_generation(snapshot, generator=collector.wrap(base_generator))
 
     after = _safe_inventory(snapshot_id, when='post')
-    if not destination:
-        # Generation is done and correct; there is simply nowhere to put evidence.
-        logger.info('Team State proof: no destination configured, nothing written.')
-        return None
-
     try:
         from services.availability_reference_date import trusted_slate_reference_dates
         data_through = getattr(snapshot, 'data_through', None)
@@ -800,8 +845,22 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
             snapshot=snapshot, teams=teams, expected_team_count=expected_team_count,
             historical_before=before, historical_after=after,
             boundary_snapshot_id=boundary_snapshot_id(),
+            proof_generated_at=datetime.now(timezone.utc),
         )
-        write_proof(proof, destination)
+        try:
+            _store_durable_proof(snapshot, proof)
+        except Exception:
+            try:
+                from utils.db import db
+                db.session.rollback()
+            except Exception:
+                logger.exception('Team State proof session recovery failed.')
+            logger.exception(
+                'Team State durable proof storage failed non-fatally snapshot_id=%s.',
+                snapshot_id,
+            )
+        if destination:
+            write_proof(proof, destination)
     except Exception:
         logger.exception('Team State proof capture failed non-fatally.')
         return None

@@ -3,7 +3,6 @@ import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import {
   isWorkloadAppearance,
-  latestWorkloadAppearanceFromLogs,
   normalizeAppearance,
   productCurrentDateFromFreshness,
   workloadAppearanceDetailLabel,
@@ -45,20 +44,17 @@ export function PitcherDetailContent({ data, pitcherId }) {
     workload_signal: workloadSignal,
     roster_status: rosterStatus,
     freshness,
-    last_appearance: lastAppearance,
     last_workload_appearance: lastWorkloadAppearance,
     pitcher_labels: pitcherLabels,
     recent_work: recentWork,
     recent_work_status: recentWorkStatus,
     deployment_context: deploymentContext,
-    recent_logs,
   } = data || {}
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
   const workloadAppearance = isWorkloadAppearance(lastWorkloadAppearance)
     ? normalizeAppearance(lastWorkloadAppearance)
     : null
-  const legacyAppearance = isWorkloadAppearance(lastAppearance) ? normalizeAppearance(lastAppearance) : null
-  const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
+  const mostRecentAppearance = workloadAppearance
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, productCurrentDate)
   const hasCurrentRead = Boolean(cf || availability || pitcherLabels)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name

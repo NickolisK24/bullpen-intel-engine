@@ -35,7 +35,7 @@ from services.public_bullpen_copy import (
 )
 from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
-from services.workload_appearance import pitch_count_workload_logs
+from services.workload_appearance import workload_appearance_logs
 
 
 # Canonical group order: least-restricted to most-restricted. This is a fixed
@@ -116,16 +116,17 @@ CAPABILITY = 'tonights_bullpen_board'
 
 
 def last_workload_appearance_from_logs(logs):
-    """Return the latest positive-pitch workload appearance from raw logs."""
-    rows = pitch_count_workload_logs(logs)
+    """Return the latest workload appearance without inventing unknown pitches."""
+    rows = workload_appearance_logs(logs)
     if not rows:
         return None
 
     latest_date = max(log.game_date for log in rows)
-    pitches = sum(
-        int(getattr(log, 'pitches_thrown', 0) or 0)
-        for log in rows
-        if log.game_date == latest_date
+    same_day = [log for log in rows if log.game_date == latest_date]
+    pitches = (
+        None
+        if any(getattr(log, 'pitches_thrown', None) is None for log in same_day)
+        else sum(int(log.pitches_thrown) for log in same_day)
     )
     return {
         'game_date': latest_date.isoformat(),

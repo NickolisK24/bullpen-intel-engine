@@ -177,6 +177,26 @@ class TestCard:
             'pitches': 14,
         }
 
+    def test_last_workload_appearance_keeps_outs_only_outing_and_unknown_pitches(self):
+        latest = date(2026, 6, 20)
+        logs = [
+            SimpleNamespace(
+                game_date=latest,
+                pitches_thrown=None,
+                innings_pitched_outs=3,
+            ),
+            SimpleNamespace(
+                game_date=latest-timedelta(days=3),
+                pitches_thrown=14,
+                innings_pitched_outs=3,
+            ),
+        ]
+
+        assert last_workload_appearance_from_logs(logs) == {
+            'game_date': '2026-06-20',
+            'pitches': None,
+        }
+
     def test_card_preserves_trust_metadata(self):
         last_appearance = {'game_date': '2026-06-20', 'pitches': 15}
         card = build_card('A', 7, 63.4, availability(

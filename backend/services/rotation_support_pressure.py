@@ -250,24 +250,6 @@ def _window(reference_date=None, window_days=DEFAULT_WINDOW_DAYS):
     return ref - timedelta(days=int(window_days or DEFAULT_WINDOW_DAYS) - 1), ref
 
 
-def recent_team_game_logs(team_id, *, reference_date=None, window_days=DEFAULT_WINDOW_DAYS):
-    """Fetch recent current-team pitching logs for Rotation Support Pressure."""
-    if team_id is None:
-        return []
-
-    window_start, ref = _window(reference_date, window_days)
-    return (
-        GameLog.query
-        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
-        .filter(Pitcher.team_id == team_id)
-        .filter(Pitcher.active == True)
-        .filter(GameLog.game_type == 'R')
-        .filter(GameLog.game_date >= window_start)
-        .filter(GameLog.game_date <= ref)
-        .all()
-    )
-
-
 def recent_team_game_splits(team_id, *, reference_date=None, window_days=DEFAULT_WINDOW_DAYS):
     """Fetch the split-backed public source window for starter exposure.
 
@@ -389,10 +371,10 @@ def _verified_team_game_logs_for_split(split):
 
     logs = (
         GameLog.query
-        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
         .filter(GameLog.mlb_game_pk == game_pk)
         .filter(GameLog.game_type == 'R')
-        .filter(Pitcher.team_id == team_id)
+        .filter(GameLog.appearance_team_status == GameLog.APPEARANCE_TEAM_RESOLVED)
+        .filter(GameLog.appearance_team_id == team_id)
         .all()
     )
     if not logs:
@@ -1089,6 +1071,5 @@ __all__ = [
     'build_league_rotation_support_payload',
     'build_team_rotation_support_pressure',
     'build_team_rotation_support_pressure_from_splits',
-    'recent_team_game_logs',
     'recent_team_game_splits',
 ]

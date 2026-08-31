@@ -138,6 +138,9 @@ def _game_log(pitcher, game_pk, days_ago, *, outs, games_started):
         innings_pitched=outs_to_decimal_innings(outs),
         innings_pitched_outs=outs,
         pitches_thrown=12,
+        appearance_team_id=pitcher.team_id,
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        appearance_team_source='test:game_log',
     ))
     db.session.flush()
 

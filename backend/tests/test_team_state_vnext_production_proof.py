@@ -14,6 +14,7 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
+from flask import Flask
 
 from services import team_state_vnext_production_proof as proof_module
 from services.team_state_vnext_production_proof import (
@@ -30,6 +31,8 @@ from services.team_state_vnext_production_proof import (
     build_team_entry,
     write_proof,
 )
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from utils.db import db
 
 
 SLATE = date(2026, 8, 17)
@@ -178,6 +181,31 @@ def test_proof_ties_itself_to_one_publication_and_is_not_a_reconstruction():
 def test_thirty_teams_pass_and_are_sorted_and_unique():
     proof = _build()
     assert proof['invariants']['all_teams_published']['result'] == RESULT_PASS
+
+
+@pytest.fixture
+def database_app():
+    flask_app = Flask(__name__)
+    configure_test_database(flask_app)
+    db.init_app(flask_app)
+    with flask_app.app_context():
+        create_test_schema(flask_app)
+        try:
+            yield flask_app
+        finally:
+            db.session.remove()
+            drop_test_schema(flask_app)
+
+
+def test_durable_proof_round_trips_by_publication_id(database_app):
+    proof = _build()
+    stored = proof_module._store_durable_proof(_snapshot(), proof)
+    loaded = proof_module.load_durable_proof(SNAPSHOT_ID)
+    assert loaded.id == stored.id
+    assert loaded.snapshot_id == SNAPSHOT_ID
+    assert loaded.sync_run_id == SYNC_RUN_ID
+    assert loaded.data_through == SLATE
+    assert loaded.proof == proof
     team_ids = [team['team_id'] for team in proof['teams']]
     assert team_ids == sorted(team_ids)
     assert len(set(team_ids)) == 30
@@ -637,6 +665,10 @@ def test_an_unwritable_destination_returns_none_rather_than_raising(monkeypatch)
     monkeypatch.setattr(
         proof_module, 'historical_team_state_inventory', lambda *a, **k: None,
     )
+    monkeypatch.setattr(
+        proof_module, 'write_proof',
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError('unwritable')),
+    )
     assert proof_module.capture_publication_proof(
         _snapshot(), generator=lambda team_id, **kwargs: _result(team_id),
         path='/proc/definitely/not/writable/proof.json',
@@ -759,9 +791,11 @@ def test_hook_runs_plain_generation_when_proof_capture_is_off(
         'services.share_artifact_publication_hook.run_post_publication_generation',
         lambda snapshot, **kwargs: calls.append(kwargs) or None,
     )
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
     dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
-    # Exactly one unobserved generation, with no collector installed.
-    assert calls == [{}]
+    # Every publisher runs exactly once under durable observation.
+    assert len(calls) == 1
+    assert callable(calls[0]['generator'])
 
 
 def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
@@ -779,6 +813,7 @@ def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
         'services.share_artifact_generation.generate_team_state_artifact',
         lambda team_id, **kwargs: _result(team_id),
     )
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
 
     def _generation(snapshot, *, generator=None):
         assert generator is not None, 'capture must observe the real generation'

@@ -99,46 +99,6 @@ export function isWorkloadAppearance(input) {
   return Boolean(normalized && normalized.pitches > 0)
 }
 
-export function latestAppearanceFromLogs(logs) {
-  const appearances = (Array.isArray(logs) ? logs : [])
-    .map(normalizeAppearance)
-    .filter(Boolean)
-
-  if (!appearances.length) return null
-
-  const latest = appearances.reduce((winner, item) => (
-    baseballDay(item.gameDate).time > baseballDay(winner.gameDate).time ? item : winner
-  ))
-  const pitches = appearances
-    .filter(item => baseballDay(item.gameDate).time === baseballDay(latest.gameDate).time)
-    .reduce((sum, item) => sum + (item.pitches || 0), 0)
-
-  return {
-    gameDate: latest.gameDate,
-    pitches,
-  }
-}
-
-export function latestWorkloadAppearanceFromLogs(logs) {
-  const appearances = (Array.isArray(logs) ? logs : [])
-    .map(normalizeAppearance)
-    .filter(item => item && item.pitches > 0)
-
-  if (!appearances.length) return null
-
-  const latest = appearances.reduce((winner, item) => (
-    baseballDay(item.gameDate).time > baseballDay(winner.gameDate).time ? item : winner
-  ))
-  const pitches = appearances
-    .filter(item => baseballDay(item.gameDate).time === baseballDay(latest.gameDate).time)
-    .reduce((sum, item) => sum + (item.pitches || 0), 0)
-
-  return {
-    gameDate: latest.gameDate,
-    pitches,
-  }
-}
-
 export function baseballDayDiff(appearanceDate, platformDate) {
   const appearance = baseballDay(appearanceDate)
   const current = baseballDay(platformDate)

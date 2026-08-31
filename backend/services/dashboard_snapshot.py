@@ -485,28 +485,11 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
         snapshot_id, product_date, enabled,
     )
     try:
-        # Team State vNext production proof (D-056). Env-gated and side-channel: with
-        # TEAM_STATE_VNEXT_PROOF_PATH unset the branch is not taken and the unchanged
-        # generation call below runs exactly as before. When it is set, the same
-        # generation runs under observation and what the classifier produced per team
-        # is written to a JSON file for the workflow to upload. This reads no internal
-        # module and builds nothing here; it watches an already-committed publication
-        # and never raises, so it cannot roll back, unpublish, or alter anything.
-        from services.team_state_vnext_production_proof import (
-            capture_publication_proof,
-            proof_capture_enabled,
-        )
-        if proof_capture_enabled():
-            # Capture OWNS the one generation call in this branch. Branching on the
-            # environment rather than on whether a proof came back is what keeps a
-            # failed write from looking like a skipped run and generating twice.
-            capture_publication_proof(snapshot)
-            return
-
-        from services.share_artifact_publication_hook import (
-            run_post_publication_generation,
-        )
-        run_post_publication_generation(snapshot)
+        # Observe the one real generation call for every authorized publisher and
+        # persist proof by snapshot identity. A configured path is only an optional
+        # workflow export; the database row is the durable observer authority.
+        from services.team_state_vnext_production_proof import capture_publication_proof
+        capture_publication_proof(snapshot)
     except Exception:
         logger.exception(
             'Post-publication Team State generation hook failed non-fatally '
