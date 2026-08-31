@@ -779,7 +779,7 @@ def _store_durable_proof(snapshot, proof, *, commit=True):
     safe_proof = _json_safe(proof)
     existing = TeamStatePublicationProof.query.filter_by(snapshot_id=snapshot_id).first()
     if existing is not None:
-        if existing.proof != safe_proof:
+        if _proof_replay_projection(existing.proof) != _proof_replay_projection(safe_proof):
             raise ValueError('team_state_proof_snapshot_conflict')
         return existing
     row = TeamStatePublicationProof(
@@ -798,6 +798,28 @@ def _store_durable_proof(snapshot, proof, *, commit=True):
     else:
         db.session.flush()
     return row
+
+
+def _proof_replay_projection(proof):
+    """Return the immutable baseball evidence used to compare proof replays.
+
+    Generation time and runner attempt identifiers describe the observation,
+    not the frozen publication. They may legitimately differ when an identical
+    proof is retried and therefore cannot make an otherwise identical replay
+    contradictory.
+    """
+    projected = _json_safe(proof)
+    projected.pop('proof_generated_at', None)
+    publication = _mapping(projected.get('publication'))
+    workflow = _mapping(publication.get('workflow'))
+    for key in ('run_id', 'run_attempt'):
+        workflow.pop(key, None)
+    if workflow:
+        publication['workflow'] = workflow
+    else:
+        publication.pop('workflow', None)
+    projected['publication'] = publication
+    return projected
 
 
 def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
@@ -850,13 +872,19 @@ def require_transactional_publication_proof(
     candidate from becoming the current publication.
     """
     from services.share_artifact_generation import resolve_team_readiness_payload
+    from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_directory import valid_team_ids
 
     resolver = readiness_resolver or resolve_team_readiness_payload
     expected_ids = tuple(sorted(int(value) for value in (
         team_ids if team_ids is not None else valid_team_ids()
     )))
-    if len(expected_ids) != 30 or len(set(expected_ids)) != 30:
+    canonical_ids = tuple(sorted(int(value) for value in MLB_TEAM_IDS))
+    if (
+        len(expected_ids) != 30
+        or len(set(expected_ids)) != 30
+        or expected_ids != canonical_ids
+    ):
         raise ValueError('team_state_publication_proof_requires_exactly_30_teams')
 
     historical = historical_team_state_inventory(getattr(snapshot, 'id', None))

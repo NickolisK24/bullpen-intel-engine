@@ -166,8 +166,11 @@ export function appearanceDetailLabel(appearance, platformDate) {
 
 export function workloadAppearanceDetailLabel(appearance, platformDate) {
   const normalized = normalizeAppearance(appearance)
-  if (!normalized || normalized.pitches == null || normalized.pitches <= 0) return null
-  return appearanceDetailLabel(normalized, platformDate)
+  if (!normalized) return null
+  const dateLabel = appearanceDisplayDate(normalized.gameDate, platformDate)
+  if (!dateLabel) return null
+  if (normalized.pitches == null) return `${dateLabel} • Pitch count unavailable`
+  return `${dateLabel} • ${normalized.pitches} ${pitchNoun(normalized.pitches)}`
 }
 
 export function appearancePitchReason(count, appearanceDate, platformDate) {

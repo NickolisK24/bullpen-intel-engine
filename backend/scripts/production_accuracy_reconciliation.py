@@ -19,8 +19,9 @@ def _args(argv=None):
     target.add_argument('--snapshot-id', type=int)
     target.add_argument('--current', action='store_true')
     parser.add_argument('--json', dest='json_path')
-    parser.add_argument('--require-mlb', action='store_true')
-    parser.add_argument('--skip-mlb', action='store_true')
+    external = parser.add_mutually_exclusive_group()
+    external.add_argument('--require-mlb', action='store_true')
+    external.add_argument('--skip-mlb', action='store_true')
     return parser.parse_args(argv)
 
 
@@ -45,6 +46,9 @@ def render_console(report):
     for key, item in report.get('domains', {}).items():
         lines.append(f"{labels.get(key, key):24} {item['correct']}/{item['checked']} {item['status']}")
     lines.append('MLB reconciliation:')
+    external_mode = report.get('external_evidence_mode')
+    if external_mode == 'skipped':
+        lines.append('External truth was not checked (--skip-mlb).')
     for key, item in report.get('external_mlb', {}).items():
         if item['checked']:
             measure = f"{item['correct']}/{item['checked']}"
@@ -75,6 +79,10 @@ def main(argv=None):
             snapshot,
             external_domains=external,
             external_required=args.require_mlb,
+        )
+        report['external_evidence_mode'] = (
+            'skipped' if args.skip_mlb
+            else ('required' if args.require_mlb else 'attempted')
         )
     print(render_console(report))
     if args.json_path:

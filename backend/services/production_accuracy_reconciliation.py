@@ -35,6 +35,7 @@ FROZEN_WORKLOAD_METHOD_VERSION = 'fatigue_score_workload_windows_v1'
 FROZEN_WORKLOAD_REFERENCE_POLICY = (
     'canonical_latest_workload_at_score_calculation_plus_one_v1'
 )
+HISTORICAL_REFERENCE_UNPROVEN = 'HISTORICAL_REFERENCE_UNPROVEN'
 REQUIRED_INTERNAL_DOMAINS = (
     'publication_coherence',
     'games',
@@ -435,7 +436,9 @@ def _membership_workload(snapshot, mismatches, governed_differences=None):
     current_pitchers = _current_pitchers([
         pitcher_id for _team, pitcher_id, _row in records
     ])
-    workload_checked = workload_bad = rest_checked = rest_bad = arm_checked = arm_bad = 0
+    workload_checked = workload_bad = workload_unproven = 0
+    rest_checked = rest_bad = rest_unproven = 0
+    arm_checked = arm_bad = 0
     for team_id, pitcher_id, record in records:
         pitcher = current_pitchers.get(pitcher_id)
         if pitcher is None or pitcher.team_id != team_id or pitcher.active is not True:
@@ -468,17 +471,42 @@ def _membership_workload(snapshot, mismatches, governed_differences=None):
         score = _score_for_record(pitcher_id, record)
         frozen_reference_date = _score_reference_date(score) if score is not None else None
         frozen_recomputed = None
-        if (
-            frozen_reference_date is not None
+        frozen_method = facts.get('method_version')
+        stale_score = (
+            score is not None
             and published_inputs.get('freshness_state') == 'stale'
+        )
+        historical_unproven_reason = None
+        if stale_score and frozen_method not in (None, FROZEN_WORKLOAD_METHOD_VERSION):
+            historical_unproven_reason = 'historical_workload_method_incompatible'
+        elif stale_score and frozen_reference_date is None:
+            historical_unproven_reason = 'historical_reference_anchor_unavailable'
+        elif (
+            stale_score
             and frozen_reference_date != snapshot.availability_reference_date
         ):
             frozen_recomputed = _recomputed_frozen_score_workload(
                 _rows_available_at_score_calculation(logs[pitcher_id], score),
                 frozen_reference_date,
             )
+        if historical_unproven_reason is not None:
+            mismatches.append(_mismatch(
+                'workload.historical_reference_unproven', snapshot.id,
+                {
+                    'workload_facts': facts,
+                    'method_version': frozen_method,
+                },
+                HISTORICAL_REFERENCE_UNPROVEN,
+                team=team_id, pitcher=pitcher_id,
+                rows=[row.id for row in logs[pitcher_id]],
+                method_version=frozen_method,
+                likely_layer=historical_unproven_reason,
+            ))
         for key in ('appearances_last_7', 'appearances_last_14', 'pitches_last_7_days', 'innings_last_7_days'):
             workload_checked += 1
+            if historical_unproven_reason is not None:
+                workload_unproven += 1
+                continue
             left = facts.get(key)
             right = (
                 frozen_recomputed[key]
@@ -497,19 +525,22 @@ def _membership_workload(snapshot, mismatches, governed_differences=None):
                     likely_layer='workload_derivation',
                 ))
         rest_checked += 1
-        recomputed_rest = (
-            frozen_recomputed['days_since_last_appearance']
-            if frozen_recomputed is not None
-            else recomputed['days_since_last_appearance']
-        )
-        if facts.get('days_since_last_appearance') != recomputed_rest:
-            rest_bad += 1
-            mismatches.append(_mismatch(
-                'rest.days_since_last_appearance', snapshot.id,
-                facts.get('days_since_last_appearance'), recomputed_rest,
-                team=team_id, pitcher=pitcher_id,
-                rows=[row.id for row in logs[pitcher_id]], likely_layer='rest_derivation',
-            ))
+        if historical_unproven_reason is not None:
+            rest_unproven += 1
+        else:
+            recomputed_rest = (
+                frozen_recomputed['days_since_last_appearance']
+                if frozen_recomputed is not None
+                else recomputed['days_since_last_appearance']
+            )
+            if facts.get('days_since_last_appearance') != recomputed_rest:
+                rest_bad += 1
+                mismatches.append(_mismatch(
+                    'rest.days_since_last_appearance', snapshot.id,
+                    facts.get('days_since_last_appearance'), recomputed_rest,
+                    team=team_id, pitcher=pitcher_id,
+                    rows=[row.id for row in logs[pitcher_id]], likely_layer='rest_derivation',
+                ))
         if frozen_recomputed is not None and (
             facts.get('appearances_last_14') != recomputed['appearances_last_14']
             or facts.get('days_since_last_appearance')
@@ -593,8 +624,18 @@ def _membership_workload(snapshot, mismatches, governed_differences=None):
             ))
     return {
         'bullpen_membership': _domain(checked=membership_checked, correct=membership_checked-membership_bad, incorrect=membership_bad),
-        'workload_values': _domain(checked=workload_checked, correct=workload_checked-workload_bad, incorrect=workload_bad),
-        'rest_patterns': _domain(checked=rest_checked, correct=rest_checked-rest_bad, incorrect=rest_bad),
+        'workload_values': _domain(
+            checked=workload_checked,
+            correct=workload_checked-workload_bad-workload_unproven,
+            incorrect=workload_bad,
+            unproven=workload_unproven,
+        ),
+        'rest_patterns': _domain(
+            checked=rest_checked,
+            correct=rest_checked-rest_bad-rest_unproven,
+            incorrect=rest_bad,
+            unproven=rest_unproven,
+        ),
         'arm_reads': _domain(checked=arm_checked, correct=arm_checked-arm_bad, incorrect=arm_bad),
     }
 
@@ -623,6 +664,8 @@ def _reproduce_team_state(team):
 
 
 def _team_states(snapshot, mismatches):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
     row = load_durable_proof(snapshot.id)
     if row is None:
         mismatches.append(_mismatch(
@@ -637,9 +680,16 @@ def _team_states(snapshot, mismatches):
     identity_valid = (
         getattr(row, 'snapshot_id', snapshot.id) == snapshot.id
         and getattr(row, 'data_through', snapshot.data_through) == snapshot.data_through
+        and getattr(row, 'captured_team_count', 30) == 30
+        and getattr(row, 'method_version', 'v3_phase_5') == 'v3_phase_5'
+        and getattr(row, 'overall_verdict', proof.get('overall_verdict'))
+        == proof.get('overall_verdict')
+        and proof.get('overall_verdict') in ('PASS', 'PASS_WITH_INCONCLUSIVE')
         and publication.get('dashboard_snapshot_id') == snapshot.id
         and publication.get('sync_run_id') == snapshot.sync_run_id
         and publication.get('data_through') == snapshot.data_through.isoformat()
+        and publication.get('expected_method_version', 'v3_phase_5')
+        == 'v3_phase_5'
         and proof.get('proof_generated_at') not in (None, '')
     )
     if not identity_valid:
@@ -669,9 +719,10 @@ def _team_states(snapshot, mismatches):
         withheld = (
             total is None
             and all(value is None for value in values)
-            and final.get('readiness_status_code') is None
+            and final.get('readiness_status_code') in (None, 'data_limited')
             and final.get('published_public_state') is None
             and team.get('partition_invariant_state') == 'not_applicable'
+            and team.get('decisive_rule') in (None, 'data_limited')
         )
         if withheld:
             partition_sum, status, rule, valid = None, None, None, True
@@ -694,12 +745,23 @@ def _team_states(snapshot, mismatches):
                 team=team_id, method_version=team.get('method_version'),
                 likely_layer='team_state_classification_or_proof',
             ))
-    duplicate_or_missing = len(teams) != 30 or len(seen) != 30
+    expected_team_ids = set(MLB_TEAM_IDS)
+    duplicate_or_missing = (
+        len(teams) != 30
+        or len(seen) != 30
+        or seen != expected_team_ids
+    )
     if duplicate_or_missing:
         bad += max(1, 30-len(seen))
         mismatches.append(_mismatch(
             'team_states.team_set', snapshot.id, '30 unique teams',
-            {'rows': len(teams), 'unique': len(seen)}, likely_layer='team_state_generation',
+            {
+                'rows': len(teams),
+                'unique': len(seen),
+                'missing_team_ids': sorted(expected_team_ids-seen),
+                'unexpected_team_ids': sorted(seen-expected_team_ids),
+            },
+            likely_layer='team_state_generation',
         ))
     return _domain(checked=30, correct=max(0, 30-bad), incorrect=bad)
 

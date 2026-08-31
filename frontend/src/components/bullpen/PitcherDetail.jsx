@@ -2,7 +2,6 @@ import { useFetch } from '../../hooks/useFetch'
 import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import {
-  isWorkloadAppearance,
   normalizeAppearance,
   productCurrentDateFromFreshness,
   workloadAppearanceDetailLabel,
@@ -51,9 +50,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
     deployment_context: deploymentContext,
   } = data || {}
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
-  const workloadAppearance = isWorkloadAppearance(lastWorkloadAppearance)
-    ? normalizeAppearance(lastWorkloadAppearance)
-    : null
+  const workloadAppearance = normalizeAppearance(lastWorkloadAppearance)
   const mostRecentAppearance = workloadAppearance
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, productCurrentDate)
   const hasCurrentRead = Boolean(cf || availability || pitcherLabels)

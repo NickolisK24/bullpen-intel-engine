@@ -203,6 +203,43 @@ test('PitcherDetail does not reconstruct a withheld workload appearance from rec
   assert.equal(htmlIncludes(html, '31 pitches'), false)
 })
 
+test('PitcherDetail preserves a backend-authored unknown pitch count', () => {
+  const html = renderDetail({
+    pitcher: { full_name: 'Known Date Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    current_fatigue: {},
+    freshness: {
+      data_through: '2026-08-30',
+      availability_reference_date: '2026-08-31',
+      product_current_date: '2026-08-31',
+    },
+    last_workload_appearance: {
+      game_date: '2026-08-30',
+      pitches: null,
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'Aug 30 (Yesterday) • Pitch count unavailable'))
+  assert.equal(htmlIncludes(html, '0 pitches'), false)
+})
+
+test('PitcherDetail preserves an explicit backend-authored zero', () => {
+  const html = renderDetail({
+    pitcher: { full_name: 'Zero Pitch Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    current_fatigue: {},
+    freshness: {
+      data_through: '2026-08-30',
+      availability_reference_date: '2026-08-31',
+      product_current_date: '2026-08-31',
+    },
+    last_workload_appearance: {
+      game_date: '2026-08-30',
+      pitches: 0,
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'Aug 30 (Yesterday) • 0 pitches'))
+})
+
 test('PitcherDetail leads with availability and workload facts instead of a black-box score', () => {
   const html = renderDetail({
     pitcher: {
