@@ -512,6 +512,52 @@ class TestDashboardSnapshotService:
             assert [row.id for row in active_snapshots] == [second.id]
             assert dashboard_snapshot.get_latest_dashboard_snapshot().id == second.id
 
+    def test_required_proof_failure_preserves_previous_publication(
+        self, app, monkeypatch,
+    ):
+        with app.app_context():
+            run = _create_sync_run()
+            previous = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
+                payload={**_minimal_dashboard_payload(), 'name': 'previous'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='test',
+            )
+            candidate = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={**_minimal_dashboard_payload(), 'name': 'candidate'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive(),
+                source='external_schedule',
+            )
+            db.session.add_all([previous, candidate])
+            db.session.commit()
+            app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+            monkeypatch.setattr(
+                'services.team_state_vnext_production_proof.require_transactional_publication_proof',
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError('proof persistence failed')
+                ),
+            )
+
+            with pytest.raises(RuntimeError, match='proof persistence failed'):
+                dashboard_snapshot.publish_dashboard_snapshot(candidate)
+            db.session.rollback()
+            db.session.refresh(previous)
+            db.session.refresh(candidate)
+
+            assert previous.is_published is True
+            assert candidate.is_published is False
+            assert dashboard_snapshot.get_latest_dashboard_snapshot().id == previous.id
+
     def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
         with app.app_context():
             _seed_dashboard_data()

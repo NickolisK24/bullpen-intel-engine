@@ -8,15 +8,16 @@ runtime actually did: the evidence vector exists for the length of one generatio
 call and is then gone. Diagnosing snapshot 437 required reading a committed HTML
 preview page, because nothing else survived.
 
-This module observes the exact runtime objects of one natural publication from
-inside the post-publication hook. It stores one database proof row under the
-immutable snapshot identity; a workflow may also export that row as an artifact.
+This module stores one database proof row under the immutable snapshot identity;
+a workflow may also export that row as an artifact. Production publication now
+builds the decisive Team State evidence and flushes the row inside the snapshot
+publication transaction. The post-commit hook still observes immutable Share
+Artifact generation and checks that observation against the durable row.
 
 * every authorized publisher runs the observer, so proof does not depend on which
   scheduler launched the publication;
-* it runs after the publication transaction has already committed, so it cannot
-  roll back, unpublish, or alter anything;
-* it never raises — a proof problem must never become a publication problem;
+* mandatory proof persistence happens before the trusted/current commit;
+* post-commit artifact observation remains non-fatal and cannot alter publication;
 * it observes; it does not recompute. Team State is never re-derived from later
   pitcher rows, and the reference dates are the ones the resolver recorded as it
   used them, not a re-derivation of what they should have been.
@@ -34,6 +35,7 @@ import logging
 import os
 from datetime import date, datetime, timezone
 from fractions import Fraction
+from types import SimpleNamespace
 from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 CAPABILITY = 'team_state_vnext_production_proof'
 CONTRACT = 'team_state_vnext_production_proof_v1'
 SCHEMA_VERSION = '1.0.0'
-OBSERVATION_MODE = 'in_process_publication_hook'
+OBSERVATION_MODE = 'publisher_transaction_v1'
 
 # Set by the workflow step that runs the publication. Unset -> this module does
 # nothing at all.
@@ -526,6 +528,7 @@ def _evaluate_invariants(teams, *, expected_team_count, distribution, historical
 
     version_ok = [team for team in teams if team['method_version_matches_expected']]
     reproduced = [team for team in teams if team['contract_a_reproduction']['reproduced'] is True]
+    governed_withholding = [team for team in teams if _governed_withholding(team)]
     evaluated = [team for team in teams if team['partition_invariant_state'] == 'evaluated']
     violations = [team for team in teams if team['partition_invariant_holds'] is False]
     not_applicable = [team for team in teams if team['partition_invariant_state'] == 'not_applicable']
@@ -551,9 +554,10 @@ def _evaluate_invariants(teams, *, expected_team_count, distribution, historical
         ),
         'method_version_observed': _invariant(
             RESULT_PASS if teams and len(version_ok) == len(teams)
-            and len(reproduced) == len(teams) else RESULT_FAIL,
+            and len(reproduced) + len(governed_withholding) == len(teams) else RESULT_FAIL,
             f'{len(version_ok)}/{len(teams)} stamped {EXPECTED_METHOD_VERSION}, '
-            f'{len(reproduced)}/{len(teams)} reproduced from the recorded partition',
+            f'{len(reproduced)}/{len(teams)} reproduced from the recorded partition, '
+            f'{len(governed_withholding)} governed withholding(s)',
         ),
         'partition_integrity': _invariant(
             RESULT_FAIL if violations else (RESULT_PASS if evaluated else RESULT_INCONCLUSIVE),
@@ -592,6 +596,16 @@ def _evaluate_invariants(teams, *, expected_team_count, distribution, historical
                                   'published change payload, or the block was unreadable',
         ),
     }
+
+
+def _governed_withholding(team) -> bool:
+    final = _mapping(team.get('final_team_state'))
+    evidence = _mapping(team.get('team_state_evidence'))
+    return (
+        final.get('readiness_status_code') == 'data_limited'
+        and final.get('published_public_state') is None
+        and evidence.get('decisive_rule') == 'data_limited'
+    )
 
 
 def _distribution(teams) -> dict:
@@ -754,7 +768,7 @@ def _safe_inventory(snapshot_id, *, when: str):
         return None
 
 
-def _store_durable_proof(snapshot, proof):
+def _store_durable_proof(snapshot, proof, *, commit=True):
     """Persist one proof document per immutable publication identity."""
     from models.team_state_publication_proof import TeamStatePublicationProof
     from utils.db import db
@@ -779,22 +793,141 @@ def _store_durable_proof(snapshot, proof):
         publication_source=getattr(snapshot, 'source', None),
     )
     db.session.add(row)
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return row
+
+
+def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
+    """Adapt the classifier's in-process result to the durable proof contract."""
+    from services.team_state_public_vocabulary import (
+        is_publishable_state,
+        public_state_for,
+    )
+
+    readiness = _mapping(readiness)
+    status_code = _mapping(readiness.get('readiness')).get('status_code')
+    public_state = (
+        public_state_for(status_code).get('public_code')
+        if is_publishable_state(status_code)
+        else None
+    )
+    artifact = SimpleNamespace(payload={
+        'public_copy': {'state': {'public_code': public_state}}
+    }) if public_state is not None else None
+    result = SimpleNamespace(
+        outcome='publication_candidate' if public_state is not None else 'governed_withholding',
+        public_id=None,
+        payload_version=None,
+        source_snapshot_id=getattr(snapshot, 'id', None),
+        source_sync_run_id=getattr(snapshot, 'sync_run_id', None),
+        product_date=getattr(snapshot, 'data_through', None),
+        readiness=readiness,
+        artifact=artifact,
+        membership_reference_date=reference_dates.get('membership_reference_date'),
+        availability_reference_date=reference_dates.get('availability_reference_date'),
+    )
+    return build_team_entry(
+        team_id,
+        result,
+        expected_availability_reference_date=getattr(
+            snapshot, 'availability_reference_date', None
+        ),
+        data_through=getattr(snapshot, 'data_through', None),
+    )
+
+
+def require_transactional_publication_proof(
+    snapshot, *, readiness_resolver=None, team_ids=None,
+):
+    """Build and flush mandatory proof before a snapshot can become trusted.
+
+    The caller owns the surrounding publication transaction. This function never
+    commits. Missing teams, contradictory evidence, an invalid Contract A
+    reproduction, or a persistence failure raises and therefore prevents the
+    candidate from becoming the current publication.
+    """
+    from services.share_artifact_generation import resolve_team_readiness_payload
+    from services.team_directory import valid_team_ids
+
+    resolver = readiness_resolver or resolve_team_readiness_payload
+    expected_ids = tuple(sorted(int(value) for value in (
+        team_ids if team_ids is not None else valid_team_ids()
+    )))
+    if len(expected_ids) != 30 or len(set(expected_ids)) != 30:
+        raise ValueError('team_state_publication_proof_requires_exactly_30_teams')
+
+    historical = historical_team_state_inventory(getattr(snapshot, 'id', None))
+    teams = []
+    for team_id in expected_ids:
+        reference_dates = {}
+        readiness = resolver(
+            team_id,
+            requested_date=getattr(snapshot, 'data_through', None),
+            source_snapshot=snapshot,
+            reference_dates_out=reference_dates,
+        )
+        if not isinstance(readiness, Mapping):
+            raise ValueError(f'team_state_publication_proof_missing_team:{team_id}')
+        teams.append(_candidate_team_entry(
+            snapshot, team_id, readiness, reference_dates,
+        ))
+
+    proof = build_proof(
+        snapshot=snapshot,
+        teams=teams,
+        expected_team_count=30,
+        historical_before=historical,
+        historical_after=historical,
+        boundary_snapshot_id=boundary_snapshot_id(),
+        workflow={
+            **_workflow_context(),
+            'publication_source': getattr(snapshot, 'source', None),
+            'proof_persistence_phase': 'pre_trust_commit',
+        },
+        proof_generated_at=getattr(snapshot, 'published_at', None),
+    )
+    mandatory = (
+        'all_teams_published',
+        'method_version_observed',
+        'partition_integrity',
+        'team_state_evidence_complete',
+        'reference_date_alignment',
+        'distribution_consistent',
+    )
+    failed = [
+        name for name in mandatory
+        if _mapping(proof.get('invariants')).get(name, {}).get('result') != RESULT_PASS
+    ]
+    if failed:
+        raise ValueError(
+            'team_state_publication_proof_invariant_failed:' + ','.join(failed)
+        )
+    _store_durable_proof(snapshot, proof, commit=False)
+    logger.info(
+        'Mandatory Team State publication proof flushed snapshot_id=%s teams=30 '
+        'phase=pre_trust_commit.',
+        getattr(snapshot, 'id', None),
+    )
+    return proof
 
 
 def load_durable_proof(snapshot_id):
     """Load the exact durable proof row for a publication identity."""
     from models.team_state_publication_proof import TeamStatePublicationProof
-    from sqlalchemy.exc import SQLAlchemyError
     from utils.db import db
 
     try:
         return TeamStatePublicationProof.query.filter_by(
             snapshot_id=int(snapshot_id)
         ).one_or_none()
-    except SQLAlchemyError:
-        db.session.rollback()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         logger.exception(
             'Team State durable proof lookup failed snapshot_id=%s.', snapshot_id,
         )
@@ -813,6 +946,11 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
     from services.share_artifact_publication_hook import run_post_publication_generation
 
     destination = path or proof_path()
+    durable_row = load_durable_proof(getattr(snapshot, 'id', None))
+    durable_proof = (
+        _json_safe(getattr(durable_row, 'proof', None))
+        if durable_row is not None else None
+    )
     collector = ProofCollector()
     snapshot_id = getattr(snapshot, 'id', None)
     before = _safe_inventory(snapshot_id, when='pre')
@@ -847,20 +985,28 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
             boundary_snapshot_id=boundary_snapshot_id(),
             proof_generated_at=datetime.now(timezone.utc),
         )
-        try:
-            _store_durable_proof(snapshot, proof)
-        except Exception:
+        if durable_proof is None:
             try:
-                from utils.db import db
-                db.session.rollback()
+                _store_durable_proof(snapshot, proof)
+                durable_proof = proof
             except Exception:
-                logger.exception('Team State proof session recovery failed.')
-            logger.exception(
-                'Team State durable proof storage failed non-fatally snapshot_id=%s.',
+                try:
+                    from utils.db import db
+                    db.session.rollback()
+                except Exception:
+                    logger.exception('Team State proof session recovery failed.')
+                logger.exception(
+                    'Team State durable proof storage failed non-fatally snapshot_id=%s.',
+                    snapshot_id,
+                )
+        elif _decisive_team_projection(durable_proof) != _decisive_team_projection(proof):
+            logger.error(
+                'Post-commit Team State artifact observation disagrees with mandatory '
+                'publication proof snapshot_id=%s.',
                 snapshot_id,
             )
         if destination:
-            write_proof(proof, destination)
+            write_proof(durable_proof or proof, destination)
     except Exception:
         logger.exception('Team State proof capture failed non-fatally.')
         return None
@@ -869,7 +1015,30 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
         'Team State vNext production proof written snapshot_id=%s teams=%s verdict=%s.',
         snapshot_id, len(proof['teams']), proof['overall_verdict'],
     )
-    return proof
+    return durable_proof or proof
+
+
+def _decisive_team_projection(proof):
+    """Comparable classifier/publication facts; excludes lifecycle-only metadata."""
+    projected = []
+    for team in _mapping(proof).get('teams') or ():
+        team = _mapping(team)
+        projected.append({
+            'team_id': team.get('team_id'),
+            'source_snapshot_id': team.get('source_snapshot_id'),
+            'source_sync_run_id': team.get('source_sync_run_id'),
+            'product_date': team.get('product_date'),
+            'final_team_state': team.get('final_team_state'),
+            'method_version': team.get('method_version'),
+            'active_pitcher_count': team.get('active_pitcher_count'),
+            'partition': team.get('partition'),
+            'decisive_rule': team.get('decisive_rule'),
+            'decisive_inputs': team.get('decisive_inputs'),
+            'thresholds_applied': team.get('thresholds_applied'),
+            'membership_reference_date': team.get('membership_reference_date'),
+            'availability_reference_date': team.get('availability_reference_date'),
+        })
+    return sorted(projected, key=_team_sort_key)
 
 
 def write_proof(proof, path) -> None:

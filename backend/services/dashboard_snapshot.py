@@ -417,6 +417,14 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
             synchronize_session=False,
         )
     )
+    if _team_state_publication_proof_required():
+        # Mandatory proof is flushed before the transaction may advance the
+        # trusted/current pointer. Any failure raises and the caller rolls the
+        # whole candidate publication back, preserving the previous snapshot.
+        from services.team_state_vnext_production_proof import (
+            require_transactional_publication_proof,
+        )
+        require_transactional_publication_proof(snapshot)
     if commit:
         db.session.commit()
         # This function owns the commit, so complete the publication here.
@@ -427,6 +435,17 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
         # still runs — the SC-03B-04 repair for the commit=False publication path.
         db.session.flush()
     return snapshot
+
+
+def _team_state_publication_proof_required():
+    try:
+        from flask import current_app
+        return bool(
+            current_app
+            and current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED', False)
+        )
+    except Exception:
+        return False
 
 
 def run_post_commit_snapshot_publication(snapshot):

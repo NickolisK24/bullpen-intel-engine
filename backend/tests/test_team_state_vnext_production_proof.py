@@ -171,7 +171,7 @@ def test_proof_ties_itself_to_one_publication_and_is_not_a_reconstruction():
     assert proof['capability'] == CAPABILITY
     assert proof['contract'] == CONTRACT
     assert proof['reconstructed'] is False
-    assert proof['observation_mode'] == 'in_process_publication_hook'
+    assert proof['observation_mode'] == 'publisher_transaction_v1'
     assert proof['publication']['dashboard_snapshot_id'] == SNAPSHOT_ID
     assert proof['publication']['sync_run_id'] == SYNC_RUN_ID
     assert proof['publication']['data_through'] == SLATE.isoformat()
@@ -209,6 +209,15 @@ def test_durable_proof_round_trips_by_publication_id(database_app):
     team_ids = [team['team_id'] for team in proof['teams']]
     assert team_ids == sorted(team_ids)
     assert len(set(team_ids)) == 30
+
+
+def test_durable_proof_can_be_flushed_and_rolled_back_with_publication(database_app):
+    proof_module._store_durable_proof(_snapshot(), _build(), commit=False)
+    assert proof_module.load_durable_proof(SNAPSHOT_ID) is not None
+
+    db.session.rollback()
+
+    assert proof_module.load_durable_proof(SNAPSHOT_ID) is None
 
 
 def test_a_missing_team_fails_rather_than_being_silently_omitted():
@@ -651,6 +660,107 @@ def test_generation_runs_exactly_once_even_when_the_proof_cannot_be_written(
     )
     dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
     assert len(generations) == 1
+
+
+def test_transactional_publication_proof_flushes_30_teams_without_committing(
+    monkeypatch,
+):
+    snapshot = SimpleNamespace(
+        id=SNAPSHOT_ID,
+        sync_run_id=SYNC_RUN_ID,
+        data_through=SLATE,
+        availability_reference_date=AVAILABILITY,
+        published_at=datetime(2026, 8, 19, 10, 30, 7),
+        status='ready',
+        is_published=True,
+        source='sync_completion',
+        payload={'what_changed_since_yesterday': {'state': 'unavailable'}},
+    )
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        return _result(team_id).readiness
+
+    stored = []
+    monkeypatch.setattr(
+        proof_module,
+        'historical_team_state_inventory',
+        lambda *_args, **_kwargs: _inventory([]),
+    )
+    monkeypatch.setattr(
+        proof_module,
+        '_store_durable_proof',
+        lambda snap, proof, *, commit=True: stored.append((snap, proof, commit)),
+    )
+
+    proof = proof_module.require_transactional_publication_proof(
+        snapshot,
+        readiness_resolver=resolver,
+        team_ids=range(100, 130),
+    )
+
+    assert len(proof['teams']) == 30
+    assert proof['publication']['workflow']['proof_persistence_phase'] == 'pre_trust_commit'
+    assert stored == [(snapshot, proof, False)]
+    assert all(
+        proof['invariants'][name]['result'] == RESULT_PASS
+        for name in (
+            'all_teams_published',
+            'method_version_observed',
+            'partition_integrity',
+            'team_state_evidence_complete',
+            'reference_date_alignment',
+            'distribution_consistent',
+        )
+    )
+
+
+def test_transactional_publication_proof_rejects_corrupt_team_state(
+    monkeypatch,
+):
+    snapshot = SimpleNamespace(
+        id=SNAPSHOT_ID,
+        sync_run_id=SYNC_RUN_ID,
+        data_through=SLATE,
+        availability_reference_date=AVAILABILITY,
+        published_at=datetime(2026, 8, 19, 10, 30, 7),
+        status='ready',
+        is_published=True,
+        source='sync_completion',
+        payload={},
+    )
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        readiness = _result(team_id).readiness
+        if team_id == 129:
+            readiness = json.loads(json.dumps(readiness))
+            readiness['team_state_evidence']['active_pitcher_count'] = 9
+        return readiness
+
+    monkeypatch.setattr(
+        proof_module,
+        'historical_team_state_inventory',
+        lambda *_args, **_kwargs: _inventory([]),
+    )
+    monkeypatch.setattr(
+        proof_module,
+        '_store_durable_proof',
+        lambda *_args, **_kwargs: pytest.fail('invalid proof must not be stored'),
+    )
+
+    with pytest.raises(ValueError, match='partition_integrity'):
+        proof_module.require_transactional_publication_proof(
+            snapshot,
+            readiness_resolver=resolver,
+            team_ids=range(100, 130),
+        )
 
 
 def test_an_unwritable_destination_returns_none_rather_than_raising(monkeypatch):
