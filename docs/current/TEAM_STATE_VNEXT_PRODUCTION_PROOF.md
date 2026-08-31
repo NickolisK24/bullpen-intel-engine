@@ -12,39 +12,48 @@ did. The evidence vector exists for the length of one generation call and is the
 gone. Diagnosing the first natural publication (snapshot 437) required reading a
 committed HTML preview page, because nothing else survived.
 
-This mechanism observes the exact runtime objects of one publication and writes
-them to a JSON file. It changes no artifact, no schema, and no publication
-behavior.
+This mechanism observes the exact runtime objects of one publication and persists
+one immutable proof row keyed to that dashboard snapshot. A newly trusted
+production snapshot cannot advance unless its mandatory all-team proof is flushed
+inside the same transaction. An optional JSON export remains available for
+workflow inspection.
 
 ## What it is not
 
 - Not a second Team State computation. Nothing is re-derived from later pitcher
   rows, and no state is recalculated after publication.
-- Not publication-critical. A proof assertion cannot fail the publication.
-- Not on by default. With `TEAM_STATE_VNEXT_PROOF_PATH` unset — every process
-  except one workflow step — the capture returns immediately and the unchanged
-  generation call runs exactly as before.
+- Not a GitHub-only proof. Render and every other production publisher use the
+  same database-backed transaction gate.
+- Not dependent on `TEAM_STATE_VNEXT_PROOF_PATH`. That variable controls only an
+  optional post-commit export and is not publication authority.
 
 ## Capture seam
 
-`services.dashboard_snapshot._maybe_generate_team_state_artifacts_after_publication`
-→ `services.team_state_vnext_production_proof.capture_publication_proof`.
+`services.dashboard_snapshot.publish_dashboard_snapshot`
+→ `services.team_state_vnext_production_proof.require_transactional_publication_proof`.
 
-This is the one place holding both the already-committed published snapshot (its
-id, sync-run id, `data_through`, `published_at`, and frozen
-`what_changed_since_yesterday`) and the call into batch generation. The collector
-installs through the `generator` seam
-`share_artifact_publication_hook.run_post_publication_generation` already exposes,
-so the batch service, the single-team service, and the classifier are unchanged
-and unaware.
+This seam holds the candidate snapshot identity, sync-run id, `data_through`,
+availability reference date, and frozen `what_changed_since_yesterday`. It resolves
+the canonical readiness evidence for all 30 MLB clubs, constructs the proof, and
+flushes `team_state_publication_proofs` before the trusted/current pointer can
+commit.
 
-Because it runs after the publication transaction has committed, it structurally
-cannot roll back, unpublish, or alter a publication. It never raises.
+Proof construction, proof persistence, and publication trust commit together. If
+construction or persistence fails, the publication transaction fails and the
+previous trusted snapshot remains current. Existing snapshots created before this
+schema remain readable historical records and correctly have no durable proof.
 
 ## Artifact
 
-`artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json`, written
-by `utils.summary_output.write_summary` (atomic, sorted keys, deterministic).
+The source of truth is `team_state_publication_proofs`, with one row per immutable
+`dashboard_snapshots.id`, optional `sync_run_id`, `data_through`, method and source
+metadata, and the full JSON proof document. The snapshot foreign key and unique
+constraint prevent orphaned or duplicate publication proof.
+
+`artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json` may also
+be written by `utils.summary_output.write_summary` (atomic, sorted keys,
+deterministic) when `TEAM_STATE_VNEXT_PROOF_PATH` is configured. That file is an
+export, not durable publication authority.
 
 Per team: team id, outcome, public id, snapshot/sync-run identity, published public
 Team State, internal status code, `contract_version`,
@@ -106,11 +115,16 @@ schedule and is outside this window by design.
 
 ## Workflow
 
-`baseballos-sync.yml`:
+Every production publisher creates the durable row. `baseballos-sync.yml` may then
+export or validate it:
 
-- **Emission** — `TEAM_STATE_VNEXT_PROOF_PATH` is set on the “Run direct daily
-  sync” step only, never at job scope. It deliberately does not live under
-  `artifacts/game-driven-shadow/`, which the shadow handoff step sweeps wholesale.
+- **Publication** — the publisher flushes the database proof before it can advance
+  the trusted snapshot. Render requires only its normal database and execution
+  context; no runner-local path is required.
+- **Optional export** — when `TEAM_STATE_VNEXT_PROOF_PATH` is set, the post-commit
+  hook writes a runner-local copy for inspection. It deliberately does not live
+  under `artifacts/game-driven-shadow/`, which the shadow handoff step sweeps
+  wholesale.
 - **Preservation** — scanned by the shared forbidden-content scanner, then uploaded
   on `always()` with 30-day retention. Evidence when an assertion fails is the
   entire point.
@@ -120,17 +134,16 @@ schedule and is outside this window by design.
   `backend/scripts/validate_team_state_vnext_proof.py` (exit 0 valid and not FAIL,
   1 valid and FAIL, 3 the artifact itself is invalid).
 
-The observer fails only itself. `internal-enrichment` and
-`static-team-story-preview` gate on `public-sync` succeeding, so failing the
-publication job on a proof assertion would suppress the static delivery for a run
-whose sync, snapshot publication, appearance-ledger proof, and dashboard
-verification all succeeded — and the publication has already committed by the time
-the proof is written, so failing it protects nothing.
+The observer fails only itself when an optional export or independent validation
+fails after publication. That separation does not weaken the mandatory transaction
+gate: a newly trusted production publication cannot exist without its durable
+proof row.
 
 ## Reading a run
 
-1. Open the `team-state-vnext-proof-<run_id>` artifact and the observer job's step
-   summary.
+1. Resolve the exact trusted snapshot id, then load its
+   `team_state_publication_proofs` row. An optional
+   `team-state-vnext-proof-<run_id>` artifact is only a transport copy.
 2. Check `overall_verdict`, then `failed_assertions` and `inconclusive_assertions`.
 3. Check `distribution.distribution_degenerate`. If true, a human decides whether
    the league is genuinely that constrained before anything is called proven.
