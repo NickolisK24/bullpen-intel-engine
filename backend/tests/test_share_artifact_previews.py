@@ -167,6 +167,7 @@ def test_delivery_gate_proves_exact_generated_set_and_detects_corruption(app, mo
     output = write_share_artifact_pages([preview], output_root)
     result = {
         'status': 'ok',
+        'publication_snapshot_id': 1753,
         'artifacts': 1,
         'previews': 1,
         'output': output,

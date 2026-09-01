@@ -801,8 +801,10 @@ def test_the_exporter_takes_the_trusted_published_board_and_never_the_live_build
     # Fail closed with no trusted publication: distinct exit code, nothing written.
     assert 'EXIT_NO_TRUSTED_PUBLICATION' in source
     assert 'expected_snapshot_id=snapshot_id' in source
-    # The generated-at stamp is one value for the whole run, taken once.
-    assert 'generated_at = datetime.now(timezone.utc)' in source
+    # The rendered generated-at stamp is frozen to the publication, so retrying
+    # one snapshot is byte-stable instead of manufacturing a content diff.
+    assert 'generated_at = _snapshot_generated_at(snapshot)' in source
+    assert 'exported_at = datetime.now(timezone.utc)' in source
 
 
 def test_invalid_team_page_makes_no_team_claim():

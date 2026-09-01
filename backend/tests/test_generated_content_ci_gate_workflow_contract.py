@@ -939,7 +939,7 @@ def test_the_trusted_publication_refusal_keeps_its_own_exit_code():
         and isinstance(node.func, ast.Name)
         and node.func.id == 'emit_result'
     ]
-    assert len(emits) == 2, 'both result outcomes go through the one result channel'
+    assert len(emits) == 3, 'every result outcome goes through the one result channel'
 
     returned = {
         node.value.id for node in ast.walk(main_fn)

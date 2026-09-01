@@ -710,7 +710,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 505.86,
+      "measured_seconds": 508.41,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1291,6 +1291,14 @@
         {
           "path": "tests/test_tonight_snapshot_source_contract.py",
           "measured_seconds": 0.004
+        },
+        {
+          "path": "tests/test_distribution_delivery.py",
+          "measured_seconds": 2.5
+        },
+        {
+          "path": "tests/test_distribution_delivery_workflow.py",
+          "measured_seconds": 0.05
         },
         {
           "path": "tests/test_v4_availability_explanation_integration.py",
