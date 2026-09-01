@@ -1482,13 +1482,18 @@ def test_routed_team_preview_delivery_changes_routing_only():
         if line.startswith('-') and not line.startswith('---')
     ]
     assert added, 'the routing file is in the diff but adds nothing'
-    # Everything added belongs to the one canonical rewrite object.
+    # Everything added belongs to the canonical team rewrite or the bounded
+    # immutable-share preview + invalid-id fallback rewrites.
     permitted_added = {
         '{',
         '},',
         '}',
         f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
         '"destination": "/team/$1/index.html"',
+        '"source": "^/share/([A-Za-z0-9._-]{1,64})$",',
+        '"destination": "/share/$1/index.html"',
+        '"source": "^/share/([^/]+)$",',
+        '"destination": "/share/index.html"',
     }
     assert not [line for line in added if line not in permitted_added], added
     # Nothing is removed but the brace the inserted object displaces.

@@ -50,6 +50,7 @@ CI_WORKFLOW_PATH = REPO_ROOT / '.github/workflows/ci.yml'
 
 PUBLICATION_JOB = 'static-team-story-preview'
 GENERATED_PATH_PREFIX = 'frontend/public/team'
+GENERATED_PATH_PREFIXES = ('frontend/public/team', 'frontend/public/share')
 EXPORT_RESULT_FILE = '$GENERATED_EVIDENCE_DIR/export-result.json'
 
 EXPORTER_PATH = REPO_ROOT / 'backend/scripts/export_team_story_pages.py'
@@ -350,7 +351,7 @@ def test_commit_provenance_reads_the_structured_result_not_the_rendered_html(ste
 def test_only_the_generated_delivery_paths_are_staged(steps):
     stage = steps[_script_index(steps, 'git add')]
     commands = _commands(stage)
-    assert f'git add -- {GENERATED_PATH_PREFIX}' in commands
+    assert f'git add -- {" ".join(GENERATED_PATH_PREFIXES)}' in commands
     assert 'git add .' not in commands
     assert 'git add -A' not in commands
 
@@ -359,7 +360,27 @@ def test_staging_refuses_paths_outside_the_generated_scope(steps):
     stage = steps[_script_index(steps, 'git add')]
     script = _script(stage)
     assert 'git diff --cached --name-only' in script
-    assert f"grep -v '^{GENERATED_PATH_PREFIX}/'" in script
+    assert "grep -Ev '^frontend/public/(team|share)/'" in script
+
+
+def test_share_preview_export_and_delivery_gate_precede_frontend_validation(steps):
+    export = _script_index(steps, 'export_share_artifact_pages.py')
+    verify = _script_index(steps, 'verify_generated_share_previews.py')
+    frontend = next(
+        index for index, step in enumerate(steps)
+        if step.get('name') == 'Run frontend tests'
+    )
+    assert export < verify < frontend
+    assert '--result-out "$GENERATED_EVIDENCE_DIR/share-export-result.json"' in _commands(steps[export])
+    assert '--export-result "$GENERATED_EVIDENCE_DIR/share-export-result.json"' in _commands(steps[verify])
+
+
+def test_share_preview_bytes_are_reverified_before_staging(steps):
+    stage = steps[_script_index(steps, 'git add')]
+    script = _script(stage)
+    assert 'verify_generated_share_previews.py' in script
+    assert 'share-generated-digest-postbuild.json' in script
+    assert 'diff -u' in script
 
 
 def test_the_static_og_asset_is_no_longer_swept_into_the_generated_commit(steps):
