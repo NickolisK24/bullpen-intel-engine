@@ -108,6 +108,14 @@ def parse_args():
             'machine-readable channel the delivery gate reads; stdout is not.'
         ),
     )
+    parser.add_argument(
+        '--snapshot-id',
+        type=int,
+        help=(
+            'Exact current trusted publication to export. Refuses if this id is '
+            'not the serving publication when the export begins.'
+        ),
+    )
     return parser.parse_args()
 
 
@@ -134,7 +142,7 @@ def active_teams():
     ]
 
 
-def load_trusted_publication():
+def load_trusted_publication(snapshot_id=None):
     """The one trusted dashboard snapshot this run publishes from, or ``None``.
 
     There is deliberately no live-build fallback. A run with no valid published
@@ -143,7 +151,20 @@ def load_trusted_publication():
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None or not isinstance(snapshot.payload, dict):
         return None
+    if snapshot_id is not None and snapshot.id != snapshot_id:
+        return None
     return snapshot
+
+
+def _snapshot_generated_at(snapshot):
+    value = snapshot.snapshot_generated_at
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.replace(microsecond=0).isoformat()
 
 
 def build_team_boards(teams):
@@ -203,10 +224,10 @@ def main():
         level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
-    generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    exported_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
     with app.app_context():
-        snapshot = load_trusted_publication()
+        snapshot = load_trusted_publication(args.snapshot_id)
         if snapshot is None:
             export_logger.error(
                 'No valid published dashboard snapshot is available; refusing to '
@@ -220,13 +241,28 @@ def main():
             # authorize publication — the gate requires status 'ok'.
             emit_result({
                 'status': 'no_trusted_publication',
-                'generated_at': generated_at,
+                'exported_at': exported_at,
+                'requested_snapshot_id': args.snapshot_id,
                 'pages_written': 0,
             }, args.result_out)
             return EXIT_NO_TRUSTED_PUBLICATION
 
         payload = snapshot.payload
         snapshot_id = snapshot.id
+        generated_at = _snapshot_generated_at(snapshot)
+        if generated_at is None:
+            export_logger.error(
+                'Trusted publication snapshot_id=%s has no generation timestamp; '
+                'refusing a non-deterministic export.',
+                snapshot_id,
+            )
+            emit_result({
+                'status': 'no_trusted_publication',
+                'exported_at': exported_at,
+                'requested_snapshot_id': args.snapshot_id,
+                'pages_written': 0,
+            }, args.result_out)
+            return EXIT_NO_TRUSTED_PUBLICATION
         teams = active_teams()
         boards = build_team_boards(teams)
         previews = build_team_story_previews(
@@ -276,6 +312,7 @@ def main():
         'publication_snapshot_id': snapshot_id,
         'publication_data_through': snapshot_data_through,
         'generated_at': generated_at,
+        'exported_at': exported_at,
         'output': output,
     }
     emitted = emit_result(result, args.result_out)

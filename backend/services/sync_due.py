@@ -7,14 +7,20 @@ from datetime import datetime, timezone
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_schedule_attempt import SyncScheduleAttempt
 from services import sync as sync_service
+from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync_metadata
 from services import schedule_authority
+from services.distribution_delivery import (
+    DistributionDeliveryRequest,
+    request_distribution_delivery,
+)
 from services.postgame_recovery import (
     reset_fully_processed_markers_without_appearance_rows,
 )
 from services.schedule_tonight_refresh import refresh_schedule_and_tonight
 from services.sync_execution_context import (
-    MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SyncExecutionContext,
+    MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SOURCE_EXTERNAL_SCHEDULE,
+    SyncExecutionContext,
 )
 from services.sync_publication_proof import (
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
@@ -43,6 +49,58 @@ def _now():
 def _latest_snapshot_id():
     row = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
     return row.id if row is not None else None
+
+
+def _current_published_snapshot():
+    return (
+        DashboardSnapshot.query
+        .filter_by(
+            snapshot_type=dashboard_snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+            is_published=True,
+            status='ready',
+        )
+        .order_by(DashboardSnapshot.id.desc())
+        .first()
+    )
+
+
+def _distribution_delivery_after_execution(
+    context,
+    *,
+    published_before_id,
+    published_after,
+):
+    """Request distribution only when an external schedule advanced publication.
+
+    This runs after the sync attempt and publication transactions have committed
+    and after the public writer lock has been released. Its result is evidence,
+    never part of the authoritative sync verdict.
+    """
+    if context.source != SOURCE_EXTERNAL_SCHEDULE:
+        return {
+            'status': 'skipped',
+            'reason': 'publisher_not_render_external_schedule',
+        }
+    current = published_after
+    if current is None or current.id == published_before_id:
+        return {
+            'status': 'skipped',
+            'reason': 'publication_not_advanced',
+            'snapshot_id': current.id if current is not None else None,
+        }
+    if current.sync_run_id is None or current.data_through is None:
+        return {
+            'status': 'failed_to_request',
+            'reason': 'publication_identity_incomplete',
+            'snapshot_id': current.id,
+        }
+    return request_distribution_delivery(DistributionDeliveryRequest(
+        snapshot_id=current.id,
+        sync_run_id=current.sync_run_id,
+        data_through=current.data_through.isoformat(),
+        publication_source=context.source,
+        publication_type=context.mode,
+    ))
 
 
 def _satisfied_attempt(context):
@@ -168,6 +226,7 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
     }[context.mode]
     guard = None
     attempt = None
+    published_before_id = None
     with app.app_context():
         try:
             guard = sync_metadata.acquire_sync_writer_guard(
@@ -204,6 +263,8 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
                 }
 
             attempt = _new_attempt(context)
+            current_before = _current_published_snapshot()
+            published_before_id = current_before.id if current_before is not None else None
             if context.mode == MODE_DAILY:
                 status, proof, successful = _run_daily(
                     app, context, guard, days_back=days_back, public_only=public_only,
@@ -229,13 +290,32 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
             if not successful:
                 attempt.failure_reason = str(status.get('message') or status.get('error') or 'sync_not_verified')
             db.session.commit()
-            return {
+            current_after = _current_published_snapshot()
+            result = {
                 'status': attempt.outcome,
                 'executed': True,
                 'execution': attempt.to_dict(),
                 'publication_proof': proof,
                 'sync': status,
             }
+            # The distribution handoff is deliberately outside both the
+            # publication transaction and the public writer lock. Correct
+            # baseball truth stays committed even when GitHub is unavailable.
+            if guard is not None:
+                guard.release()
+                guard = None
+            if successful:
+                result['distribution_delivery'] = _distribution_delivery_after_execution(
+                    context,
+                    published_before_id=published_before_id,
+                    published_after=current_after,
+                )
+            else:
+                result['distribution_delivery'] = {
+                    'status': 'skipped',
+                    'reason': 'sync_not_successful',
+                }
+            return result
         except Exception as exc:
             db.session.rollback()
             if attempt is not None:

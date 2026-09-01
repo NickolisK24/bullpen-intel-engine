@@ -67,7 +67,16 @@ def verify(result, output_root):
     artifacts = result.get('artifacts')
     previews = result.get('previews')
     count = output.get('count')
-    facts.update(artifacts=artifacts, previews=previews, generated_file_count=count)
+    snapshot_id = result.get('publication_snapshot_id')
+    facts.update(
+        artifacts=artifacts,
+        previews=previews,
+        generated_file_count=count,
+        snapshot_id=snapshot_id,
+        data_through=result.get('publication_data_through'),
+    )
+    if snapshot_id in (None, ''):
+        violations.append('share export names no authorizing publication snapshot')
     if not isinstance(count, int) or count < 1:
         violations.append(f'generated share page count is not positive ({count!r})')
     if artifacts != previews or previews != count:

@@ -3,8 +3,9 @@
 **Status:** Current operational runbook  
 **Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current sync and publication authority posture. This document owns execution order and trust-gate detail.  
 **Owner:** Nickolis Kacludis  
-**Last reviewed:** August 31, 2026
-**Workflow authority:** `.github/workflows/baseballos-sync.yml`
+**Last reviewed:** September 1, 2026
+**Workflow authority:** `.github/workflows/baseballos-sync.yml` and
+`.github/workflows/baseballos-generated-distribution.yml`
 
 This document describes the current production sync/publication workflow and
 its operational boundaries. The canonical Architecture & Operations Manual owns
@@ -126,6 +127,14 @@ the daily shadow and proof variables currently set on the GitHub Daily step
 when creating the Daily Cron environment; the shared runner does not weaken
 those proof paths. Expected command ceilings are 40 minutes Daily, 20 minutes
 postgame, and 5 minutes morning. Render cron expressions are UTC.
+
+Daily and postgame Cron Jobs also require
+`BASEBALLOS_DISTRIBUTION_GITHUB_TOKEN`, a fine-grained GitHub credential scoped
+to this repository with Actions write permission. It dispatches only
+`baseballos-generated-distribution.yml`; it does not carry repository
+contents-write authority and is never written to output, artifacts, or generated
+pages. Morning does not publish a trusted league snapshot and does not need this
+credential.
 
 Apply `flask db upgrade` as a release/pre-deploy migration before enabling the
 Cron Jobs. The Cron commands deliberately do not run migrations concurrently
@@ -446,41 +455,65 @@ At minimum:
 
 ## 18. Generated-Content Publication (`static-team-story-preview`)
 
-This is the only job in the workflow that writes to the repository, and the only
-automated path by which anything reaches `main` without a pull request. D-053
-governs it.
+Generated-content jobs are the only automated path by which anything reaches
+`main` without a pull request. D-053 governs their tree-exact gate and machine
+identity.
 
-**Job:** `static-team-story-preview`. Runs only after `public-sync` succeeds, and
-only on the daily lane (`17 10 * * *` or `workflow_dispatch mode=daily`). It holds
-`contents: write`; every other job in this workflow is `contents: read`.
+**Jobs:** `static-team-story-preview` remains the post-success fallback job in
+`baseballos-sync.yml`. `deliver-generated-content` in
+`baseballos-generated-distribution.yml` is the distribution-only entry point for
+an exact snapshot requested after a Render publication. The latter workflow has
+no sync job at all: no ingest, reconciliation, derived calculation, snapshot
+publication, or cache mutation can run. Each workflow grants `contents: write`
+only to its generated-content job and is otherwise read-only. Both share the
+`baseballos-sync` concurrency group, so they cannot race generated commits.
+
+Render remains baseball publication authority. After `run_due_sync.py` commits a
+new trusted daily/postgame snapshot and records its successful schedule attempt,
+it releases the public writer lock and requests the distribution workflow with
+the exact snapshot ID, SyncRun ID, data-through date, scheduler source, and lane.
+A no-change cycle sends no request. A dispatch failure is explicit in the runner
+summary but cannot roll back or invalidate the already-committed publication.
 
 ### Generator
 
+`backend/scripts/resolve_distribution_publication.py` first verifies that the
+requested snapshot is still the current trusted publication and that its
+SyncRun/data-through/source identity matches the handoff. The job repeats that
+check after its frontend gates and before staging, so an older delayed delivery
+cannot overwrite current team previews after a newer publication advances.
+
 `backend/scripts/export_team_story_pages.py`, via
 `services/team_story_previews.write_team_story_pages`. It resolves ONE trusted
-published dashboard snapshot, takes every board from the trusted public-serving
-path, and stamps each page with the snapshot it came from. With no valid
+published dashboard snapshot by that explicit ID, takes every board from the
+trusted public-serving path, and stamps each page with the snapshot it came from. With no valid
 published snapshot it writes nothing and exits non-zero — there is no
 live-builder fallback and no fabricated present-tense claim.
 
 ### Generated paths
 
 ```text
-frontend/public/team/{ABBR}/index.html   one per MLB club
-frontend/public/team/index.html          invalid-team fallback
+frontend/public/team/{ABBR}/index.html       one per MLB club
+frontend/public/team/index.html              invalid-team fallback
+frontend/public/share/{public_id}/index.html immutable published/superseded citation
+frontend/public/share/index.html             invalid-share fallback
 ```
 
-Nothing else. `frontend/public/og/baseballos-card.svg` is a static committed
-asset that the generator never writes, and it is not part of this commit.
+Nothing else may be staged. Team previews and immutable Share Artifact previews
+are exported and gated together. Withdrawn artifacts remain excluded by the
+Share Artifact exporter contract. Static social assets are not part of the
+generated commit.
 
 ### Gates, in order
 
 ```text
-export (--result-out writes the exporter's structured result)
--> delivery gate      backend/scripts/verify_generated_team_previews.py
+freeze requested publication identity
+-> export team + share pages (each writes a structured result)
+-> delivery gates     verify_generated_team_previews.py + verify_generated_share_previews.py
 -> npm ci             frontend/
 -> npm test           frontend/
 -> npm run build      frontend/
+-> recheck requested publication is still current
 -> stage + tree identity
 -> commit + tree equality proof
 -> fast-forward push
@@ -538,25 +571,38 @@ describe — which is honest, and is the designed outcome rather than a
 degradation. There is no fallback commit and no forced publication.
 
 A run that generates no change stages nothing, creates no empty commit, and
-exits successfully. Change detection compares the index after staging, not the
-working tree, so a newly generated page cannot be mistaken for "no changes".
+exits successfully. Team-page generation uses the frozen snapshot timestamp,
+not the retry wall clock, so repeating the same publication is byte-stable.
+Change detection compares the index after staging, not the working tree, so a
+newly generated page cannot be mistaken for "no changes".
 
 ### Non-fast-forward behaviour
 
 The push is fast-forward only — no `--force`, no `--force-with-lease`, no reset,
 no automatic rebase or merge. If `main` advanced while the run was generating,
 the push is refused and the job fails loudly. Human work is never overwritten to
-publish a preview. The correct response is to let the next authorized scheduled
-run publish; do not re-run the daily workflow to force it, which D-051 forbids
-in any case.
+publish a preview. The distribution-only workflow can be retried for the current
+trusted snapshot without rerunning baseball work.
+
+### Distribution-only retry
+
+From the Actions tab, run `BaseballOS Generated Distribution Delivery` with an
+explicit `snapshot_id`. Optional SyncRun, data-through, source, and lane inputs
+strengthen the identity check. The workflow reads already-published
+production records, regenerates only team/share static pages, runs the delivery
+and frontend gates, and publishes a generated-content commit if bytes changed.
+It cannot enter any sync or publication job. A stale snapshot ID is refused;
+operators must retry the current trusted publication rather than regress current
+team previews.
 
 ### What does not follow
 
-The generated push is made with the default `GITHUB_TOKEN`, so it still does not
-trigger a follow-up CI run — and it is not supposed to. The whole point of the
-gate is that validation happens before the commit becomes public repository
-state, so no PAT, GitHub App, `repository_dispatch`, or recursive workflow
-mechanism is needed or used.
+The generated push is made with the workflow's default `GITHUB_TOKEN`, so it
+does not trigger a follow-up CI run — and it is not supposed to. The tree is
+validated before the commit becomes repository state. The separate fine-grained
+Render credential can request the distribution workflow only; it never writes
+repository content. Vercel remains responsible for deploying the resulting
+generated-content commit through the normal Git integration.
 
 ## 19. Related Current Authorities
 

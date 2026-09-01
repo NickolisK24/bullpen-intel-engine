@@ -97,11 +97,18 @@ Automatic generation is enabled by default in the real application
 **not** a scheduler. The flag is intentionally absent from bare-Flask unit apps,
 so existing publication tests are unaffected.
 
+## Downstream distribution
+
+Share Artifact generation remains part of the post-commit publication lifecycle
+described above. Static route delivery is separate: after a Render daily/postgame
+publication advances, the due-window coordinator requests the GitHub generated-
+content job for that exact snapshot. That job reads the immutable artifacts,
+exports `/team/**` and `/share/**`, validates/builds the tree, and fast-forward
+publishes only those generated paths. Its distribution-only manual retry never
+reruns generation, synchronization, or snapshot publication.
+
 ## Deferred to later branches
 
-- Scheduling / cron / GitHub Actions / queues / async workers / retry framework
-  (explicitly out of scope here — this branch wires generation into the existing
-  publication lifecycle only).
 - Operator dashboard / monitoring surfaces over the batch coverage summary and
   generation audit.
 - The public Share API, `/share/{public_id}`, renderer replacement, PNG/Open

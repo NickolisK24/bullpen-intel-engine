@@ -1,0 +1,320 @@
+name: BaseballOS Generated Distribution Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Distribution-only operation.
+        required: true
+        default: distribution
+        type: choice
+        options:
+          - distribution
+      snapshot_id:
+        description: Exact current trusted snapshot to export.
+        required: true
+        type: string
+      sync_run_id:
+        description: Expected SyncRun identity from the publisher.
+        required: false
+        default: ''
+        type: string
+      data_through:
+        description: Expected baseball data-through date from the publisher.
+        required: false
+        default: ''
+        type: string
+      publication_source:
+        description: Expected publication source from the publisher.
+        required: false
+        default: ''
+        type: string
+      publication_type:
+        description: Publication lane requesting distribution.
+        required: false
+        default: manual_retry
+        type: string
+
+# Shared with the fallback sync workflow so its existing generated-content job
+# and a Render-requested delivery cannot race commits or current team previews.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deliver-generated-content:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.mode == 'distribution' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GENERATED_EVIDENCE_DIR: artifacts/generated-distribution
+      BASEBALLOS_SITE_URL: https://baseballos.app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Freeze requested publication
+        id: publication
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          REQUESTED_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          REQUESTED_SYNC_RUN_ID: ${{ inputs.sync_run_id }}
+          REQUESTED_DATA_THROUGH: ${{ inputs.data_through }}
+          REQUESTED_PUBLICATION_SOURCE: ${{ inputs.publication_source }}
+          REQUESTED_PUBLICATION_TYPE: ${{ inputs.publication_type }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GENERATED_EVIDENCE_DIR"
+          if [ -z "${REQUESTED_SNAPSHOT_ID:-}" ]; then
+            echo "::error title=Generated Distribution::An explicit snapshot_id is required."
+            exit 1
+          fi
+          args=(
+            --snapshot-id "$REQUESTED_SNAPSHOT_ID"
+            --output "$GENERATED_EVIDENCE_DIR/publication.json"
+          )
+          [ -n "${REQUESTED_SYNC_RUN_ID:-}" ] && args+=(--sync-run-id "$REQUESTED_SYNC_RUN_ID")
+          [ -n "${REQUESTED_DATA_THROUGH:-}" ] && args+=(--data-through "$REQUESTED_DATA_THROUGH")
+          [ -n "${REQUESTED_PUBLICATION_SOURCE:-}" ] && args+=(--publication-source "$REQUESTED_PUBLICATION_SOURCE")
+          [ -n "${REQUESTED_PUBLICATION_TYPE:-}" ] && args+=(--publication-type "$REQUESTED_PUBLICATION_TYPE")
+          python backend/scripts/resolve_distribution_publication.py "${args[@]}"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(
+              Path(os.environ['GENERATED_EVIDENCE_DIR'], 'publication.json')
+              .read_text(encoding='utf-8')
+          )
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as handle:
+              handle.write(f"snapshot_id={result['publication_snapshot_id']}\n")
+              handle.write(f"sync_run_id={result['sync_run_id']}\n")
+              handle.write(f"data_through={result['data_through']}\n")
+          PY
+
+      - name: Export team preview pages
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
+        run: |
+          set -euo pipefail
+          python backend/scripts/export_team_story_pages.py \
+            --output frontend/public \
+            --site-url "$BASEBALLOS_SITE_URL" \
+            --snapshot-id "$SNAPSHOT_ID" \
+            --result-out "$GENERATED_EVIDENCE_DIR/team-export.json"
+
+      - name: Export share preview pages
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
+        run: |
+          set -euo pipefail
+          python backend/scripts/export_share_artifact_pages.py \
+            --output frontend/public \
+            --site-url "$BASEBALLOS_SITE_URL" \
+            --snapshot-id "$SNAPSHOT_ID" \
+            --result-out "$GENERATED_EVIDENCE_DIR/share-export.json"
+
+      - name: Verify generated delivery
+        id: delivery-gate
+        run: |
+          set -euo pipefail
+          python backend/scripts/verify_generated_team_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/team-export.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/team-digest.json" \
+            --summary-out "$GENERATED_EVIDENCE_DIR/team-verification.json"
+          python backend/scripts/verify_generated_share_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/share-export.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/share-digest.json" \
+            --summary-out "$GENERATED_EVIDENCE_DIR/share-verification.json"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Run frontend tests
+        id: frontend-tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build production frontend
+        id: frontend-build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Recheck publication and stage generated paths
+        id: stage
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
+          SYNC_RUN_ID: ${{ steps.publication.outputs.sync_run_id }}
+          DATA_THROUGH: ${{ steps.publication.outputs.data_through }}
+        run: |
+          set -euo pipefail
+          python backend/scripts/resolve_distribution_publication.py \
+            --snapshot-id "$SNAPSHOT_ID" \
+            --sync-run-id "$SYNC_RUN_ID" \
+            --data-through "$DATA_THROUGH" \
+            --output "$GENERATED_EVIDENCE_DIR/publication-prestage.json"
+
+          python backend/scripts/verify_generated_team_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/team-export.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/team-digest-postbuild.json"
+          python backend/scripts/verify_generated_share_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/share-export.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/share-digest-postbuild.json"
+          diff -u "$GENERATED_EVIDENCE_DIR/team-digest.json" "$GENERATED_EVIDENCE_DIR/team-digest-postbuild.json"
+          diff -u "$GENERATED_EVIDENCE_DIR/share-digest.json" "$GENERATED_EVIDENCE_DIR/share-digest-postbuild.json"
+
+          git add -- frontend/public/team frontend/public/share
+          if git diff --cached --quiet; then
+            echo "No generated distribution changes to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "staged_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error title=Generated Distribution::Refusing paths outside frontend/public/team/** and frontend/public/share/**."
+            echo "$unexpected"
+            exit 1
+          fi
+          tree="$(git write-tree)"
+          count="$(git diff --cached --name-only | wc -l | tr -d ' ')"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "validated_tree_sha=$tree" >> "$GITHUB_OUTPUT"
+          echo "staged_count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Commit generated distribution
+        id: commit
+        if: ${{ steps.stage.outputs.publish == 'true' }}
+        env:
+          VALIDATED_TREE_SHA: ${{ steps.stage.outputs.validated_tree_sha }}
+          SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
+          DATA_THROUGH: ${{ steps.publication.outputs.data_through }}
+        run: |
+          set -euo pipefail
+          git config user.name "BaseballOS Automation"
+          git config user.email "baseballoshq@gmail.com"
+          git commit -m "docs: publish generated route preview pages" \
+            -m "Workflow-Run: $GITHUB_RUN_ID
+          Workflow-Run-Attempt: $GITHUB_RUN_ATTEMPT
+          Source-SHA: $GITHUB_SHA
+          Validated-Tree: $VALIDATED_TREE_SHA
+          Snapshot-ID: $SNAPSHOT_ID
+          Data-Through: $DATA_THROUGH"
+          commit_sha="$(git rev-parse HEAD)"
+          commit_tree="$(git rev-parse 'HEAD^{tree}')"
+          if [ "$commit_tree" != "$VALIDATED_TREE_SHA" ]; then
+            echo "::error title=Generated Distribution::Committed tree does not match validated tree."
+            exit 1
+          fi
+          echo "generated_commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "generated_commit_tree_sha=$commit_tree" >> "$GITHUB_OUTPUT"
+
+      - name: Publish generated distribution to main
+        id: publish
+        if: ${{ steps.stage.outputs.publish == 'true' }}
+        run: git push origin HEAD:refs/heads/main
+
+      - name: Record delivery result
+        if: ${{ always() }}
+        env:
+          REQUESTED_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          RESOLVED_SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
+          STAGED_COUNT: ${{ steps.stage.outputs.staged_count }}
+          GENERATED_COMMIT_SHA: ${{ steps.commit.outputs.generated_commit_sha }}
+          PUSH_RESULT: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GENERATED_EVIDENCE_DIR"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['GENERATED_EVIDENCE_DIR'])
+          def load(name):
+              try:
+                  return json.loads((root / name).read_text(encoding='utf-8'))
+              except (OSError, ValueError):
+                  return {}
+          team = load('team-verification.json')
+          share = load('share-verification.json')
+          record = {
+              'requested_snapshot_id': os.environ.get('REQUESTED_SNAPSHOT_ID') or None,
+              'resolved_snapshot_id': os.environ.get('RESOLVED_SNAPSHOT_ID') or None,
+              'team_pages_exported': team.get('generated_file_count'),
+              'share_pages_exported': share.get('generated_file_count'),
+              'files_changed': int(os.environ.get('STAGED_COUNT') or 0),
+              'generated_commit_sha': os.environ.get('GENERATED_COMMIT_SHA') or None,
+              'repository_handoff': os.environ.get('PUSH_RESULT') or None,
+          }
+          (root / 'delivery-result.json').write_text(
+              json.dumps(record, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(record, indent=2, sort_keys=True))
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as handle:
+              handle.write('\n### Generated distribution delivery\n\n')
+              for key, value in record.items():
+                  handle.write(f'- {key.replace("_", " ")}: `{value}`\n')
+          PY
+
+      - name: Scan delivery evidence for secrets
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory "$GENERATED_EVIDENCE_DIR" --quarantine \
+            --label "Generated Distribution Evidence"
+
+      - name: Upload delivery evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-distribution-${{ github.run_id }}
+          path: artifacts/generated-distribution
+          retention-days: 30
+          if-no-files-found: warn

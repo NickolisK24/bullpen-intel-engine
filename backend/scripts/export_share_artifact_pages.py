@@ -27,6 +27,7 @@ from models.share_artifact import (
     LIFECYCLE_SUPERSEDED,
     ShareArtifact,
 )
+from services import dashboard_snapshot as dashboard_snapshot_service
 from services.share_artifact_previews import (
     DEFAULT_OG_IMAGE_PATH,
     DEFAULT_SITE_URL,
@@ -63,6 +64,12 @@ def parse_args(argv=None):
         help='BaseballOS raster social image path or absolute URL.',
     )
     parser.add_argument('--result-out', help='Write the structured export result JSON here.')
+    parser.add_argument(
+        '--snapshot-id',
+        type=int,
+        required=True,
+        help='Exact current trusted publication authorizing this export.',
+    )
     return parser.parse_args(argv)
 
 
@@ -110,6 +117,9 @@ def main(argv=None):
 
     try:
         with app.app_context():
+            snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+            if snapshot is None or snapshot.id != args.snapshot_id:
+                raise ValueError('requested_snapshot_not_current')
             artifacts = public_artifacts()
             previews = [
                 build_share_artifact_preview(
@@ -141,6 +151,11 @@ def main(argv=None):
     result = {
         'status': 'ok',
         'exported_at': exported_at,
+        'publication_snapshot_id': snapshot.id,
+        'publication_sync_run_id': snapshot.sync_run_id,
+        'publication_data_through': (
+            snapshot.data_through.isoformat() if snapshot.data_through else None
+        ),
         'artifacts': len(artifacts),
         'previews': len(previews),
         'lifecycle_counts': dict(sorted(lifecycle_counts.items())),
