@@ -48,10 +48,13 @@ from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_LABEL_SET
 
 
 DEFAULT_SITE_URL = 'https://baseballos.app'
-DEFAULT_OG_IMAGE_PATH = '/og/baseballos-card.svg'
+DEFAULT_OG_IMAGE_PATH = '/og/baseballos-card.png'
 TEAM_PAGE_ROOT = '/team'
 TEAM_SHARE_SOURCE = 'share'
-TWITTER_CARD = 'summary'
+TWITTER_CARD = 'summary_large_image'
+OG_IMAGE_WIDTH = '1200'
+OG_IMAGE_HEIGHT = '630'
+OG_IMAGE_TYPE = 'image/png'
 
 # Canonical story tones that warrant a tension framing on the share card.
 TENSION_TONES = {'stress', 'watch'}
@@ -793,6 +796,9 @@ def render_team_story_html(preview):
         _meta_property('og:description', preview['og_description']),
         _meta_property('og:url', preview['og_url']),
         _meta_property('og:image', preview['og_image']),
+        _meta_property('og:image:width', OG_IMAGE_WIDTH),
+        _meta_property('og:image:height', OG_IMAGE_HEIGHT),
+        _meta_property('og:image:type', OG_IMAGE_TYPE),
         _meta_name('twitter:card', preview['twitter_card']),
         _meta_name('twitter:title', preview['og_title']),
         _meta_name('twitter:description', preview['og_description']),
@@ -839,6 +845,9 @@ def render_invalid_team_html(site_url=DEFAULT_SITE_URL, og_image_path=DEFAULT_OG
         _meta_property('og:description', preview['og_description']),
         _meta_property('og:url', preview['og_url']),
         _meta_property('og:image', preview['og_image']),
+        _meta_property('og:image:width', OG_IMAGE_WIDTH),
+        _meta_property('og:image:height', OG_IMAGE_HEIGHT),
+        _meta_property('og:image:type', OG_IMAGE_TYPE),
         _meta_name('twitter:card', preview['twitter_card']),
         _meta_name('twitter:title', preview['og_title']),
         _meta_name('twitter:description', preview['og_description']),

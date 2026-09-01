@@ -589,6 +589,19 @@ def test_static_html_keeps_the_og_contract_and_the_human_redirect():
         f'and rested tonight. Data through {DATA_THROUGH}." />'
     ) in page
     assert '<meta property="og:url" content="https://baseballos.app/team/TOR" />' in page
+    assert (
+        '<meta property="og:image" '
+        'content="https://baseballos.app/og/baseballos-card.png" />'
+    ) in page
+    assert '<meta property="og:image:width" content="1200" />' in page
+    assert '<meta property="og:image:height" content="630" />' in page
+    assert '<meta property="og:image:type" content="image/png" />' in page
+    assert '<meta name="twitter:card" content="summary_large_image" />' in page
+    assert (
+        '<meta name="twitter:image" '
+        'content="https://baseballos.app/og/baseballos-card.png" />'
+    ) in page
+    assert 'baseballos-card.svg' not in page
     assert '<link rel="canonical" href="https://baseballos.app/team/TOR" />' in page
     assert 'window.location.replace("/bullpen?view=board&amp;team=TOR&amp;source=share")' not in page
     assert 'window.location.replace("/bullpen?view=board&team=TOR&source=share")' in page
