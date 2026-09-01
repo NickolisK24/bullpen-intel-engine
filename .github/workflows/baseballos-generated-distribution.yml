@@ -75,6 +75,7 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           REQUESTED_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
           REQUESTED_SYNC_RUN_ID: ${{ inputs.sync_run_id }}
@@ -133,6 +134,7 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
         run: |
@@ -185,6 +187,7 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
           SYNC_RUN_ID: ${{ steps.publication.outputs.sync_run_id }}
