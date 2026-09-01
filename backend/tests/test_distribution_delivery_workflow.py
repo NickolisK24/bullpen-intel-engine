@@ -87,3 +87,17 @@ def test_failure_gates_precede_commit_and_noop_avoids_empty_commit():
         assert commands.index(gate) < commands.index('git commit')
     assert 'git diff --cached --quiet' in commands
     assert 'publish=false' in commands
+
+
+def test_every_production_app_step_supplies_the_governed_admin_token():
+    production_app_steps = [
+        step
+        for step in _job()['steps']
+        if step.get('env', {}).get('APP_ENV') == 'production'
+    ]
+
+    assert production_app_steps
+    for step in production_app_steps:
+        assert step['env'].get('ADMIN_API_TOKEN') == (
+            '${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}'
+        ), step['name']
