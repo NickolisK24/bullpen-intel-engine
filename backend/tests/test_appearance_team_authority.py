@@ -967,6 +967,14 @@ STATIC_TEAM_PREVIEW_FILES = (
 ) + GENERATED_TEAM_PAGE_FILES + ROUTED_TEAM_PREVIEW_DELIVERY_FILES
 
 
+# EO-02 / #785 projects an immutable Share Artifact's existing public view into
+# route-specific social metadata. It is deliberately separate from the Team
+# State and appearance-team authorities.
+SHARE_LINK_PREVIEW_AUTHORITY_FILES = (
+    'backend/services/share_artifact_previews.py',
+)
+
+
 # VOC-001 / #638: reader-facing wording gets one owner. The backend emits the
 # final pitcher role/read strings and the frontend renders them verbatim; the
 # role and read families stop sharing a fallback word; read confidence stops
@@ -1065,6 +1073,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
                   + freeze_policy.HIST01_TEAM_STATE_TIMELINE_PATHS
                   + freeze_policy.HIST03_QUALIFIED_TRANSACTION_HISTORY_PATHS
                   + freeze_policy.SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS
+                  + freeze_policy.EO02_SHARE_LINK_PREVIEW_PATHS
                   + freeze_policy.CU06_INCREMENTAL_READ_MODEL_PATHS,
     )
     assert offenders == [], (
@@ -1184,6 +1193,25 @@ def test_static_team_preview_files_read_no_appearance_team_authority():
                 offenders.append(f'{relative}: {token}')
     assert offenders == [], (
         'routed team preview files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_share_link_preview_files_read_no_appearance_team_authority():
+    """EO-02 metadata projection stays outside historical team attribution."""
+    offenders = []
+    for relative in SHARE_LINK_PREVIEW_AUTHORITY_FILES:
+        source = (REPO_ROOT_FOR_DIFF / relative).read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'share-link preview files must not read appearance-team authority: '
         f'{offenders}'
     )
 
