@@ -933,7 +933,7 @@ jobs:
     # implicit needs behaviour, so the actual prerequisite is readable here and
     # a shadow-only failure can never be mistaken for a reason to skip.
     needs: public-sync
-    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}
+    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && (github.event.schedule == '17 10 * * *' || github.event.schedule == '11 2,4,6 * * *'))) }}
     # CI-003 / #598. The ONLY job in this workflow with repository write
     # authority. The workflow default is contents: read; this grant is the whole
     # reason the default could be narrowed.
@@ -1005,6 +1005,20 @@ jobs:
             --site-url "$BASEBALLOS_SITE_URL" \
             --result-out "$GENERATED_EVIDENCE_DIR/export-result.json"
 
+      - name: Export immutable share artifact preview pages
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          BASEBALLOS_SITE_URL: https://baseballos.app
+        run: |
+          set -euo pipefail
+          python backend/scripts/export_share_artifact_pages.py \
+            --output frontend/public \
+            --site-url "$BASEBALLOS_SITE_URL" \
+            --result-out "$GENERATED_EVIDENCE_DIR/share-export-result.json"
+
       # ── 2. DELIVERY GATE ────────────────────────────────────────────────────
       # Fail closed on delivery integrity only. It proves the filesystem agrees
       # with what the exporter declared it published: every declared page
@@ -1020,6 +1034,11 @@ jobs:
             --output-root frontend/public \
             --digest-out "$GENERATED_EVIDENCE_DIR/generated-digest.json" \
             --summary-out "$GENERATED_EVIDENCE_DIR/delivery-verification.json"
+          python backend/scripts/verify_generated_share_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/share-export-result.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/share-generated-digest.json" \
+            --summary-out "$GENERATED_EVIDENCE_DIR/share-delivery-verification.json"
 
       # ── 3. FRONTEND GATE ────────────────────────────────────────────────────
       # The same three commands canonical CI runs, in the same order, mirrored
@@ -1066,10 +1085,20 @@ jobs:
             --export-result "$GENERATED_EVIDENCE_DIR/export-result.json" \
             --output-root frontend/public \
             --digest-out "$GENERATED_EVIDENCE_DIR/generated-digest-postbuild.json"
+          python backend/scripts/verify_generated_share_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/share-export-result.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/share-generated-digest-postbuild.json"
           if ! diff -u \
             "$GENERATED_EVIDENCE_DIR/generated-digest.json" \
             "$GENERATED_EVIDENCE_DIR/generated-digest-postbuild.json"; then
             echo "::error title=Generated Preview Publication::The generated files changed between validation and staging. The validated tree is not the tree that would be committed. Nothing is published."
+            exit 1
+          fi
+          if ! diff -u \
+            "$GENERATED_EVIDENCE_DIR/share-generated-digest.json" \
+            "$GENERATED_EVIDENCE_DIR/share-generated-digest-postbuild.json"; then
+            echo "::error title=Generated Preview Publication::The generated share preview files changed between validation and staging. Nothing is published."
             exit 1
           fi
 
@@ -1079,7 +1108,7 @@ jobs:
           # it is a static committed asset that this generator never writes
           # (write_team_story_pages only emits team/**), so including it only
           # widened the commit's blast radius.
-          git add -- frontend/public/team
+          git add -- frontend/public/team frontend/public/share
 
           # Staged-diff detection, not worktree-diff detection. `git diff` is
           # blind to untracked files, so a newly generated page — a relocated
@@ -1092,7 +1121,7 @@ jobs:
             exit 0
           fi
 
-          unexpected="$(git diff --cached --name-only | grep -v '^frontend/public/team/' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/' || true)"
           if [ -n "$unexpected" ]; then
             echo "::error title=Generated Preview Publication::Refusing to publish: paths outside the generated delivery scope are staged:"
             echo "$unexpected"
@@ -1146,9 +1175,9 @@ jobs:
               summary = json.load(handle)
 
           lines = [
-              'docs: publish generated team preview pages',
+              'docs: publish generated route preview pages',
               '',
-              'Generated by the BaseballOS Bullpen Sync scheduled daily publication',
+              'Generated by the BaseballOS Bullpen Sync scheduled publication',
               'from one trusted published dashboard snapshot. The staged tree passed',
               'the generated-delivery gate, the frontend test suite, and the',
               'production frontend build before this commit was created.',
@@ -1287,8 +1316,11 @@ jobs:
           name: generated-team-preview-validation-${{ github.run_id }}
           path: |
             artifacts/generated-team-preview/export-result.json
+            artifacts/generated-team-preview/share-export-result.json
             artifacts/generated-team-preview/delivery-verification.json
+            artifacts/generated-team-preview/share-delivery-verification.json
             artifacts/generated-team-preview/generated-digest.json
+            artifacts/generated-team-preview/share-generated-digest.json
             artifacts/generated-team-preview/publication-provenance.json
           retention-days: 30
           if-no-files-found: warn
@@ -1299,6 +1331,15 @@ jobs:
         with:
           name: team-story-preview-pages-${{ github.run_id }}
           path: frontend/public/team
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload share artifact preview pages
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: share-artifact-preview-pages-${{ github.run_id }}
+          path: frontend/public/share
           retention-days: 30
           if-no-files-found: warn
 

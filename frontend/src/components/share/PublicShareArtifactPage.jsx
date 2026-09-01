@@ -110,9 +110,28 @@ function setLink(rel, href) {
   el.setAttribute('href', href || '')
 }
 
+export function restoreCanonicalShareUrl(publicId, {
+  locationObject = typeof window !== 'undefined' ? window.location : null,
+  historyObject = typeof window !== 'undefined' ? window.history : null,
+} = {}) {
+  if (!locationObject || !historyObject || !publicId) return false
+  const canonicalPath = publicSharePath(publicId)
+  if (locationObject.pathname !== `${canonicalPath}/`) return false
+  historyObject.replaceState(
+    historyObject.state,
+    '',
+    `${canonicalPath}${locationObject.search || ''}${locationObject.hash || ''}`,
+  )
+  return true
+}
+
 export default function PublicShareArtifactPage() {
   const { publicId } = useParams()
   const [result, setResult] = useState({ state: SHARE_STATE.LOADING })
+
+  useEffect(() => {
+    restoreCanonicalShareUrl(publicId)
+  }, [publicId])
 
   useEffect(() => {
     let active = true

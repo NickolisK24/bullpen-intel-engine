@@ -104,14 +104,17 @@ hero from immutable projected data; it does not begin the canonical renderer
 replacement and deletes nothing (compatibility layer, `EvidenceShareMenu`,
 `evidenceCardModel.js`, `evidenceCardStory.js` all remain).
 
-## Basic metadata / SEO
+## Static social metadata / SEO
 
-Published/superseded pages set an artifact-specific `<title>`, canonical URL, a
-description from frozen copy, and `index,follow`. Withdrawn/not-found/error pages
-are `noindex,nofollow`. No Open Graph/X-Card images, no server-side PNG (SC-07
-owns those). **Limitation:** the app is client-rendered (no SSR), so this metadata
-is set at runtime and is not reliably crawler-visible without server rendering; no
-new SSR framework was introduced this sprint.
+Published and superseded artifacts receive a generated crawler-visible page at
+`frontend/public/share/{public_id}/index.html`. Its title, description, team,
+Team State, data-through date, publication identity, and timestamps are projected
+from the same integrity-verified frozen public artifact view the citation page
+uses. It carries the shared 1200×630 raster Open Graph image and hands human
+readers to the existing SPA route; no SSR framework or second semantic authority
+is involved. Unknown identifiers receive generic `noindex,nofollow` metadata and
+no meaning-bearing claim. Withdrawn artifacts are removed from generated output
+and continue to fail closed through the governed public read lifecycle.
 
 ## Security
 

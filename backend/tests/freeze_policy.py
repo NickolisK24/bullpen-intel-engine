@@ -460,6 +460,14 @@ SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS = (
     'backend/services/share_artifacts.py',
 )
 
+# EO-02, September 1 2026. Permanent Share Artifact citations may project their
+# already-frozen public view into crawler-visible metadata. The projection is
+# read-only and does not recompute Team State, workload, roster membership, or
+# appearance-team authority. This exact exception becomes inert after merge.
+EO02_SHARE_LINK_PREVIEW_PATHS = (
+    'backend/services/share_artifact_previews.py',
+)
+
 # CU-06, August 28 2026. The existing bullpen-context composer accepts an
 # optional, already-classified availability-record override so the bounded
 # shadow read-model rebuild can reuse the authoritative composer without
