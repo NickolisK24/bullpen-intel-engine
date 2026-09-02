@@ -63,19 +63,20 @@ def _verify_routing_config(path):
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [f'cannot read share routing config: {exc}']
 
-    redirects = config.get('redirects') or []
     routes = config.get('routes') or []
     required_redirect = {
-        'source': '/share/:publicId/',
-        'destination': '/share/:publicId',
-        'permanent': True,
+        'src': r'^/share/([A-Za-z0-9._-]{1,64})/$',
+        'headers': {'Location': '/share/$1'},
+        'status': 308,
     }
-    if required_redirect not in redirects:
+    if required_redirect not in routes:
         violations.append('trailing-slash share URL does not redirect to the canonical no-slash URL')
 
     filesystem = next((row for row in routes if row.get('handle') == 'filesystem'), None)
     if filesystem != {'handle': 'filesystem'}:
         violations.append('generated share pages are not served by the filesystem authority')
+    elif required_redirect in routes and routes.index(required_redirect) >= routes.index(filesystem):
+        violations.append('trailing-slash redirect does not precede filesystem share serving')
 
     share_source = r'^/share/([A-Za-z0-9._-]{1,64})$'
     invalid_share = next((row for row in routes if row.get('src') == share_source), None)

@@ -341,16 +341,13 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
         # A static route/header table and nothing else. The one redirect family
         # canonicalizes immutable share URLs on the same origin; no function,
         # cron, environment, or backend hop can be introduced silently.
-        assert sorted(config) == ['headers', 'redirects', 'routes'], relative
-
-        assert config['redirects'] == [{
-            'source': '/share/:publicId/',
-            'destination': '/share/:publicId',
-            'permanent': True,
-        }]
+        assert sorted(config) == ['headers', 'routes'], relative
 
         for route in config['routes']:
             if route.get('handle') == 'filesystem':
+                continue
+            if route.get('status') == 308:
+                assert route['headers']['Location'].startswith('/share/')
                 continue
             destination = route['dest']
             # Static, same-origin, in-bundle. Never an API path and never an
