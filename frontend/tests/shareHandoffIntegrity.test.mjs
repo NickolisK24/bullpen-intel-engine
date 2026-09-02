@@ -4,12 +4,12 @@ import test from 'node:test'
 
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
-test('share routing resolves share files before the ordinary SPA fallback', () => {
+test('share routing resolves share files before the scoped and site-wide 404s', () => {
   const routes = config.routes || []
   const slashRedirect = routes.find(rule => rule.src === '^/share/([A-Za-z0-9._-]{1,64})/$')
   const filesystem = routes.find(rule => rule.handle === 'filesystem')
   const invalidShare = routes.find(rule => rule.src === '^/share/([A-Za-z0-9._-]{1,64})$')
-  const spa = routes.find(rule => rule.dest === '/index.html')
+  const unknown = routes.at(-1)
 
   assert.deepEqual(slashRedirect, {
     src: '^/share/([A-Za-z0-9._-]{1,64})/$',
@@ -20,18 +20,16 @@ test('share routing resolves share files before the ordinary SPA fallback', () =
   assert.deepEqual(filesystem, { handle: 'filesystem' })
   assert.deepEqual(invalidShare, {
     src: '^/share/([A-Za-z0-9._-]{1,64})$',
-    dest: '/404.html',
+    dest: '/share-404.html',
     status: 404,
   })
   assert.equal(routes.indexOf(filesystem) < routes.indexOf(invalidShare), true)
-  assert.equal(routes.indexOf(invalidShare) < routes.indexOf(spa), true)
+  assert.equal(routes.indexOf(invalidShare) < routes.indexOf(unknown), true)
   assert.equal(new RegExp(invalidShare.src).test('/share/missing-id'), true)
-  assert.equal(new RegExp(spa.src).test('/bullpen'), true)
-  assert.equal(new RegExp(spa.src).test('/dashboard'), true)
 })
 
 test('invalid share routes have a static 404 document with no artifact metadata', () => {
-  const notFoundUrl = new URL('../public/404.html', import.meta.url)
+  const notFoundUrl = new URL('../public/share-404.html', import.meta.url)
   assert.equal(existsSync(notFoundUrl), true)
   const page = readFileSync(notFoundUrl, 'utf8')
   assert.match(page, /Shared artifact not found/i)

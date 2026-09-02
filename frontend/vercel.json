@@ -8,6 +8,53 @@
           "value": "noindex, nofollow, noarchive"
         }
       ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        { "key": "Content-Type", "value": "application/xml; charset=utf-8" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/favicon.ico",
+      "headers": [
+        { "key": "Content-Type", "value": "image/svg+xml" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/favicon.svg",
+      "headers": [
+        { "key": "Content-Type", "value": "image/svg+xml" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/admin/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
+      ]
+    },
+    {
+      "source": "/internal/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
+      ]
     }
   ],
   "routes": [
@@ -19,24 +66,68 @@
       "status": 308
     },
     {
+      "src": "^/(dashboard|bullpen|search|stories|about|how-to-read|methodology|trust|signin|auth/verify)/$",
+      "headers": {
+        "Location": "/$1"
+      },
+      "status": 308
+    },
+    {
+      "src": "^/(pitcher/[1-9][0-9]*|matchup/[1-9][0-9]*|history/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)|team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH))/$",
+      "headers": {
+        "Location": "/$1"
+      },
+      "status": 308
+    },
+    {
+      "src": "^/today/?$",
+      "headers": {
+        "Location": "/"
+      },
+      "status": 308
+    },
+    {
       "src": "^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
       "dest": "/team/$1/index.html"
     },
+    { "src": "^/dashboard$", "dest": "/route-entry/dashboard.html" },
+    { "src": "^/bullpen$", "dest": "/route-entry/bullpen.html" },
+    { "src": "^/search$", "dest": "/route-entry/search.html" },
+    { "src": "^/stories$", "dest": "/route-entry/stories.html" },
+    { "src": "^/about$", "dest": "/route-entry/about.html" },
+    { "src": "^/how-to-read$", "dest": "/route-entry/how-to-read.html" },
+    { "src": "^/methodology$", "dest": "/route-entry/methodology.html" },
+    { "src": "^/trust$", "dest": "/route-entry/trust.html" },
+    { "src": "^/signin$", "dest": "/route-entry/signin.html" },
+    { "src": "^/auth/verify$", "dest": "/route-entry/auth-verify.html" },
+    { "src": "^/pitcher/[1-9][0-9]*$", "dest": "/route-entry/pitcher.html" },
+    { "src": "^/matchup/[1-9][0-9]*$", "dest": "/route-entry/matchup.html" },
+    {
+      "src": "^/history/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
+      "dest": "/route-entry/team-history.html"
+    },
+    { "src": "^/admin/product-intelligence$", "dest": "/route-entry/internal.html" },
+    { "src": "^/internal/share-artifacts/operations$", "dest": "/route-entry/internal.html" },
+    { "src": "^/posts-bpen-7f3d9c$", "dest": "/route-entry/internal.html" },
+    { "src": "^/favicon.ico$", "dest": "/favicon.svg" },
+    { "src": "^/route-entry/(.*)$", "dest": "/404.html", "status": 404 },
     {
       "handle": "filesystem"
     },
     {
       "src": "^/share/([A-Za-z0-9._-]{1,64})$",
-      "dest": "/404.html",
+      "dest": "/share-404.html",
       "status": 404
     },
     {
       "src": "^/team/(.*)$",
-      "dest": "/team/index.html"
+      "dest": "/404.html",
+      "status": 404
     },
     {
       "src": "^/(.*)$",
-      "dest": "/index.html"
+      "dest": "/404.html",
+      "status": 404
     }
   ]
 }
