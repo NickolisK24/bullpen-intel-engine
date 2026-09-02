@@ -2022,7 +2022,9 @@ def _project_frozen_rest_status(sidecars, *, team_id, session):
     return projected
 
 
-def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
+def resolve_latest_team_state_comparison(
+    *, team_id, session=None, current_source_snapshot_id=None,
+) -> dict:
     """Compare the latest publication with its nearest compatible predecessor.
 
     Candidate rows are visited newest first. An incompatible publication is
@@ -2060,10 +2062,6 @@ def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
                 .all()
             )
         }
-    latest_represented_date = (
-        _as_date(getattr(snapshots[0], 'data_through', None))
-        if snapshots else None
-    )
     active_snapshots = [
         snapshot
         for snapshot in snapshots
@@ -2075,12 +2073,27 @@ def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
         team_id=int(team_id),
         session=session,
     )
-    current = next((
-        snapshot
-        for snapshot in active_snapshots
-        if _as_date(getattr(snapshot, 'data_through', None))
-        == latest_represented_date
-    ), None)
+    if current_source_snapshot_id is not None:
+        current = next((
+            snapshot for snapshot in active_snapshots
+            if _mapping(_payload(snapshot).get('source')).get('snapshot_id')
+            == int(current_source_snapshot_id)
+        ), None)
+        latest_represented_date = (
+            _as_date(getattr(current, 'data_through', None))
+            if current is not None else None
+        )
+    else:
+        latest_represented_date = (
+            _as_date(getattr(snapshots[0], 'data_through', None))
+            if snapshots else None
+        )
+        current = next((
+            snapshot
+            for snapshot in active_snapshots
+            if _as_date(getattr(snapshot, 'data_through', None))
+            == latest_represented_date
+        ), None)
     if current is None:
         return compare_snapshots(None, None)
 

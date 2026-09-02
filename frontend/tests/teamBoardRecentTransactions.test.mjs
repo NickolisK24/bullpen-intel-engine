@@ -173,7 +173,7 @@ test('production reuses one v2 request, preserves placement, and does not start 
     'utf8',
   )
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.ok(boardSource.indexOf('<TeamBoardRotationImpact') < boardSource.indexOf('<TeamBoardRecentTransactions'))
   assert.ok(boardSource.includes('<SectionPair label="Rotation and transactions">'))
   assert.ok(boardSource.indexOf('<TeamBoardRecentTransactions') < boardSource.indexOf('<TeamBoardWhatChanged'))

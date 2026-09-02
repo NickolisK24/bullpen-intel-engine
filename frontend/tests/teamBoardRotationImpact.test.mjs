@@ -171,7 +171,7 @@ test('production keeps one v2 request, correct placement, and later-package boun
   const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRotationImpact.jsx', import.meta.url), 'utf8')
   const gameContextSource = await readFile(new URL('../src/components/bullpen/board/TeamGameContextCard.jsx', import.meta.url), 'utf8')
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardCore\(/g) || []).length, 1)
   assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
   assert.ok(boardSource.indexOf('<TeamBoardRolesDeployment') < boardSource.indexOf('<TeamBoardRotationImpact'))
   assert.ok(boardSource.indexOf('<TeamBoardPerformance') < boardSource.indexOf('<TeamBoardRotationImpact'))

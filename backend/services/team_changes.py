@@ -183,12 +183,16 @@ def _freshness_blocker(freshness):
     return None, [], []
 
 
-def _team_game_dates(team_id):
-    rows = (
+def _team_game_dates(team_id, *, through_date=None):
+    query = (
         db.session.query(GameLog.game_date)
         .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
         .filter(Pitcher.team_id == team_id)
-        .distinct()
+    )
+    if through_date is not None:
+        query = query.filter(GameLog.game_date <= through_date)
+    rows = (
+        query.distinct()
         .order_by(desc(GameLog.game_date))
         .limit(2)
         .all()
@@ -477,7 +481,11 @@ def _apply_terminal_state(payload, state, reason_codes, limitations):
     return payload
 
 
-def build_team_changes_payload(team_id, freshness=None, generated_at=None):
+def build_team_changes_payload(
+    team_id, freshness=None, generated_at=None, *,
+    comparison_source_snapshot_id=None, through_date=None,
+    comparison_identity=None,
+):
     """
     Build the team-scoped "What Changed Since Last Game" payload.
 
@@ -488,7 +496,10 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
-    frozen = resolve_latest_team_state_comparison(team_id=team_id)
+    frozen = resolve_latest_team_state_comparison(
+        team_id=team_id,
+        current_source_snapshot_id=comparison_source_snapshot_id,
+    )
     team_state_comparison, team_state_change = _team_state_lane(
         team_id, frozen=frozen,
     )
@@ -512,7 +523,9 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     # current game date is known. Governed Arm Read movement above remains
     # bound to the frozen publication comparison and never uses these live
     # game-date availability inputs.
-    dates = _team_game_dates(team_id)
+    dates = _team_game_dates(team_id, through_date=through_date)
+    if comparison_identity is not None:
+        payload['comparison']['identity'] = comparison_identity
     current_date = dates[0] if dates else None
     global_latest_date, team_reason_codes, team_limitations = _team_freshness_notes(
         team,

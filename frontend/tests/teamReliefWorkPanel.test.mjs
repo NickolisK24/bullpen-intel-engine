@@ -301,7 +301,7 @@ test('production consumes one shared v2 request and retires the relief-work requ
     'utf8',
   )
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.equal(boardSource.includes('useTeamReliefWork'), false)
   assert.equal(boardSource.includes('getTeamReliefWork'), false)
   assert.equal(boardSource.includes('teamReliefWorkPayload'), false)

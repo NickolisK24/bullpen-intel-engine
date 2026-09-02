@@ -124,7 +124,7 @@ test('Team Board has no internal Performance fetch or browser-authored metric ca
   const adapterSource = await readFile(new URL('../src/adapters/teamBoardV2.js', import.meta.url), 'utf8')
   const apiSource = await readFile(new URL('../src/utils/api.js', import.meta.url), 'utf8')
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.ok(boardSource.includes('<TeamBoardPerformance'))
   assert.ok(boardSource.includes('ratio="7:5"'))
   assert.ok(adapterSource.includes('performance: payload.performance'))

@@ -7,6 +7,7 @@ import pytest
 from flask import Flask
 
 import api.team_board_v2 as team_board_v2_api
+import services.public_serving_authority as public_authority
 from services.public_team_relief_work import _date_group
 from services.team_board_v2 import (
     ACTIVE_BULLPEN_POPULATION_BASIS,
@@ -25,8 +26,17 @@ from services.team_board_v2 import (
     ROLES_DEPLOYMENT_POPULATION_BASIS,
     ROTATION_IMPACT_POPULATION_BASIS,
     WORKLOAD_OVERVIEW_POPULATION_BASIS,
+    build_team_board_core_payload,
+    build_team_board_details_payload,
     build_team_board_v2_payload,
     unavailable_section,
+)
+from services.team_board_delivery import (
+    TeamBoardIdentityMismatch,
+    build_team_board_identity,
+    normalize_team_board_identity,
+    require_matching_team_board_identity,
+    resolve_team_board_snapshot,
 )
 from services.public_recent_transactions import POPULATION_BASIS as RECENT_TRANSACTIONS_POPULATION_BASIS
 
@@ -42,6 +52,11 @@ TEAM = {
 def client(monkeypatch):
     app = Flask(__name__)
     app.register_blueprint(team_board_v2_api.team_board_v2_bp, url_prefix='/api/bullpen')
+    monkeypatch.setattr(
+        team_board_v2_api.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot',
+        lambda: _snapshot(),
+    )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_performance_payload',
@@ -196,6 +211,13 @@ def _board(*, rotation=None, roster_authority=None):
         'generated_at': '2026-08-17T12:00:00+00:00',
         'freshness': {'data_through': '2026-08-16'},
         'team_state': deepcopy(TEAM_STATE),
+        'publication_method_versions': {
+            'bullpen_membership': 'team_board_default_bullpen_membership_v1',
+            'rest_status': 'rest_status_v1',
+            'workload_windows': 'workload_windows_v1',
+            'deployment_profile': 'deployment_profile_v1',
+            'rotation_impact': 'rotation_support_pressure_v1',
+        },
         'groups': [
             {'status': 'Available', 'count': 0, 'pitchers': []},
             {'status': 'Monitor', 'count': 1, 'pitchers': [deepcopy(ARM)]},
@@ -230,6 +252,23 @@ def _board(*, rotation=None, roster_authority=None):
         ),
         'limitations': ['Manager intent is not known.'],
     }
+
+
+def _snapshot(snapshot_id=10):
+    from datetime import datetime
+
+    return SimpleNamespace(
+        id=snapshot_id,
+        sync_run_id=20,
+        data_through=date(2026, 8, 16),
+        availability_reference_date=date(2026, 8, 17),
+        snapshot_generated_at=datetime(2026, 8, 17, 12, 0, 0),
+        published_at=datetime(2026, 8, 17, 12, 1, 0),
+        payload_version=1,
+        payload={},
+        status='ready',
+        snapshot_type='bullpen_dashboard',
+    )
 
 
 def _relief_work():
@@ -1238,12 +1277,12 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
     calls = {'board': 0, 'relief': 0, 'game': 0, 'transactions': 0, 'changes': 0}
 
-    def board(team_id):
+    def board(team_id, **_kwargs):
         calls['board'] += 1
         assert team_id == 1
         return _board()
 
-    def relief(team_id):
+    def relief(team_id, **_kwargs):
         calls['relief'] += 1
         assert team_id == 1
         return _relief_work()
@@ -1260,7 +1299,7 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
         assert reference_date.isoformat() == '2026-08-16'
         return _recent_transactions()
 
-    def changes(team_id, freshness=None, generated_at=None):
+    def changes(team_id, freshness=None, generated_at=None, **_kwargs):
         calls['changes'] += 1
         assert team_id == 1
         assert freshness == {'data_through': '2026-08-16'}
@@ -1285,11 +1324,11 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
 
 
 def test_route_scopes_what_changed_failure_without_destroying_core(client, monkeypatch):
-    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id: _board())
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id, **_kwargs: _board())
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
-        lambda _team_id: _relief_work(),
+        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1304,7 +1343,7 @@ def test_route_scopes_what_changed_failure_without_destroying_core(client, monke
     monkeypatch.setattr(
         team_board_v2_api,
         'build_team_changes_payload',
-        lambda _team_id, freshness=None, generated_at=None: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+        lambda _team_id, freshness=None, generated_at=None, **_kwargs: (_ for _ in ()).throw(RuntimeError('fixture failure')),
     )
 
     payload = client.get('/api/bullpen/teams/1/board-v2').get_json()
@@ -1321,12 +1360,12 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id: _board(),
+        lambda _team_id, **_kwargs: _board(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
-        lambda _team_id: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+        lambda _team_id, **_kwargs: (_ for _ in ()).throw(RuntimeError('fixture failure')),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1354,12 +1393,12 @@ def test_route_scopes_performance_failure_without_changing_other_sections(client
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id: _board(),
+        lambda _team_id, **_kwargs: _board(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
-        lambda _team_id: _relief_work(),
+        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1390,7 +1429,7 @@ def test_route_scopes_performance_failure_without_changing_other_sections(client
 def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypatch):
     calls = {'board': 0}
 
-    def board(_team_id):
+    def board(_team_id, **_kwargs):
         calls['board'] += 1
         return _board()
 
@@ -1398,7 +1437,7 @@ def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypat
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
-        lambda _team_id: _relief_work(),
+        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1428,12 +1467,12 @@ def test_route_scopes_transaction_failure_without_destroying_other_sections(clie
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id: _board(),
+        lambda _team_id, **_kwargs: _board(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
-        lambda _team_id: _relief_work(),
+        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1464,12 +1503,268 @@ def test_endpoint_is_get_only_and_composition_has_no_write_path():
     app_source = (root / 'backend/app.py').read_text(encoding='utf-8')
 
     assert "@team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])" in api_source
-    assert 'build_published_team_board(team_id)' in api_source
+    assert 'snapshot_override=snapshot' in api_source
+    assert 'include_delivery_identity=True' in api_source
+    assert "'/teams/<int:team_id>/board-v2/core'" in api_source
+    assert "'/teams/<int:team_id>/board-v2/details'" in api_source
     assert '_build_team_board' not in api_source
     assert '_rotation_support_for_team' not in api_source
     assert 'from api.team_board_v2 import team_board_v2_bp' in app_source
     assert "app.register_blueprint(team_board_v2_bp, url_prefix='/api/bullpen')" in app_source
-    for forbidden in ('db.session', '.commit(', '.add(', '.delete(', 'requests.', 'mlb_client'):
+    assert 'session=db.session' in api_source
+    for forbidden in ('.commit(', '.add(', '.delete(', 'requests.', 'mlb_client'):
         assert forbidden not in api_source
         assert forbidden not in service_source
         assert forbidden not in transactions_source
+
+
+def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
+    client, monkeypatch,
+):
+    selected = _snapshot(1900)
+    calls = {'latest': 0, 'board': 0}
+
+    def latest():
+        calls['latest'] += 1
+        return selected if calls['latest'] == 1 else _snapshot(1901)
+
+    def board(team_id, *, snapshot_override, include_delivery_identity):
+        calls['board'] += 1
+        assert team_id == 1
+        assert snapshot_override is selected
+        assert include_delivery_identity is True
+        return _board()
+
+    monkeypatch.setattr(
+        team_board_v2_api.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot', latest,
+    )
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
+    for name in (
+        'build_public_team_relief_work_payload', 'build_team_game_context',
+        'build_public_recent_transactions', 'build_public_team_performance_payload',
+        'build_team_changes_payload',
+    ):
+        monkeypatch.setattr(
+            team_board_v2_api, name,
+            lambda *_args, _name=name, **_kwargs: pytest.fail(
+                f'core called optional owner {_name}'
+            ),
+        )
+
+    response = client.get('/api/bullpen/teams/1/board-v2/core')
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert calls == {'latest': 1, 'board': 1}
+    assert payload['publication_identity']['snapshot_id'] == 1900
+    assert payload['freshness']['data_through'] == '2026-08-16'
+    assert payload['team_state'] == TEAM_STATE
+    assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert 'performance' not in payload
+    assert 'recent_relief_work' not in payload
+
+
+def test_selected_snapshot_freshness_never_reselects_latest(monkeypatch):
+    snapshot = _snapshot(1900)
+    snapshot.payload = {
+        'freshness': {
+            'data_through': '2026-08-16',
+            'availability_reference_date': '2026-08-17',
+        },
+    }
+    monkeypatch.setattr(
+        public_authority.board_freshness,
+        'published_snapshot_freshness_block',
+        lambda: pytest.fail('selected Board freshness reselected latest'),
+    )
+    assert public_authority._trusted_board_freshness(
+        snapshot, prefer_snapshot=True,
+    ) == snapshot.payload['freshness']
+
+
+def test_core_is_semantically_equal_to_compatibility_board_for_same_publication():
+    snapshot = _snapshot()
+    board = _board()
+    identity = build_team_board_identity(snapshot, board)
+    core = build_team_board_core_payload(board, publication_identity=identity)
+    full = build_team_board_v2_payload(board, publication_identity=identity)
+
+    for field in (
+        'team', 'represented_date', 'freshness', 'team_state', 'summary',
+        'active_bullpen', 'rest_status', 'off_active_count',
+        'rotation_impact', 'roster_context', 'operating_state',
+    ):
+        assert core[field] == full[field]
+
+
+def test_team_board_identity_rejects_date_method_and_team_mismatch():
+    snapshot = _snapshot()
+    board = _board()
+    identity = build_team_board_identity(snapshot, board)
+    assert normalize_team_board_identity(identity) == identity
+    assert require_matching_team_board_identity(identity, snapshot, board) == identity
+
+    for field, value in (
+        ('represented_date', '2026-08-15'),
+        ('team_board_contract_version', 'team-board-incompatible'),
+        ('team_id', 2),
+    ):
+        mismatched = deepcopy(identity)
+        mismatched[field] = value
+        with pytest.raises(TeamBoardIdentityMismatch):
+            require_matching_team_board_identity(mismatched, snapshot, board)
+
+
+def test_deferred_identity_resolver_requires_trusted_publication_and_team():
+    snapshot = _snapshot()
+    snapshot.payload = {'trusted_team_boards': {}}
+    identity = build_team_board_identity(snapshot, _board())
+
+    class Query:
+        def __init__(self, value):
+            self.value = value
+
+        def filter(self, *_args):
+            return self
+
+        def one_or_none(self):
+            return self.value
+
+    class Session:
+        def __init__(self, value):
+            self.value = value
+
+        def query(self, *_args):
+            return Query(self.value)
+
+    selected, normalized = resolve_team_board_snapshot(
+        identity, team_id=1, session=Session(snapshot),
+    )
+    assert selected is snapshot
+    assert normalized == identity
+
+    with pytest.raises(TeamBoardIdentityMismatch, match='team_board_team_mismatch'):
+        resolve_team_board_snapshot(identity, team_id=2, session=Session(snapshot))
+
+    snapshot.published_at = None
+    with pytest.raises(TeamBoardIdentityMismatch, match='team_board_publication_untrusted'):
+        resolve_team_board_snapshot(identity, team_id=1, session=Session(snapshot))
+
+
+def test_deferred_endpoint_attaches_only_the_exact_requested_identity(
+    client, monkeypatch,
+):
+    snapshot = _snapshot()
+    board = _board()
+    identity = build_team_board_identity(snapshot, board)
+    monkeypatch.setattr(
+        team_board_v2_api, 'resolve_team_board_snapshot',
+        lambda requested, team_id, session: (snapshot, identity),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_published_team_board',
+        lambda team_id, snapshot_override, **_kwargs: board,
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'require_matching_team_board_identity',
+        lambda requested, selected, rendered: identity,
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, '_build_deferred_sections',
+        lambda team_id, rendered, selected: {
+            'recent_relief_work': _relief_work(),
+            'recent_transactions': _recent_transactions(),
+            'game_context': _game_context(),
+            'performance': _performance(),
+            'what_changed': _what_changed(),
+            'section_errors': {},
+        },
+    )
+    response = client.get(
+        '/api/bullpen/teams/1/board-v2/details',
+        query_string=identity,
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['publication_identity'] == identity
+    assert payload['performance'] == _performance()
+    assert payload['what_changed'] == _what_changed()
+
+
+def test_deferred_endpoint_fails_closed_on_identity_mismatch(client, monkeypatch):
+    monkeypatch.setattr(
+        team_board_v2_api, 'resolve_team_board_snapshot',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            TeamBoardIdentityMismatch('team_board_identity_mismatch')
+        ),
+    )
+    response = client.get('/api/bullpen/teams/1/board-v2/details')
+    assert response.status_code == 409
+    assert response.get_json() == {
+        'capability': 'team_board_deferred_details',
+        'status': 'identity_mismatch',
+        'reason_code': 'team_board_identity_mismatch',
+        'publication_identity': None,
+    }
+
+
+def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
+    monkeypatch,
+):
+    snapshot = _snapshot(1900)
+    board = _board()
+    captured = {}
+
+    def relief(team_id, *, data_through, freshness):
+        captured['relief'] = (team_id, data_through, freshness)
+        return _relief_work()
+
+    def changes(team_id, **kwargs):
+        captured['changes'] = (team_id, kwargs)
+        return _what_changed()
+
+    monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
+    monkeypatch.setattr(team_board_v2_api, 'build_team_changes_payload', changes)
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_team_game_context',
+        lambda team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_public_recent_transactions',
+        lambda team_id, reference_date=None: _recent_transactions(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_public_team_performance_payload',
+        lambda team_id, board: _performance(),
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        sections = team_board_v2_api._build_deferred_sections(1, board, snapshot)
+
+    assert captured['relief'] == (1, date(2026, 8, 16), board['freshness'])
+    assert captured['changes'][0] == 1
+    assert captured['changes'][1]['comparison_source_snapshot_id'] == 1900
+    assert captured['changes'][1]['through_date'] == date(2026, 8, 16)
+    assert sections['performance'] == _performance()
+
+
+def test_core_and_deferred_envelopes_keep_semantics_separate():
+    board = _board()
+    identity = build_team_board_identity(_snapshot(), board)
+    core = build_team_board_core_payload(board, publication_identity=identity)
+    details = build_team_board_details_payload(
+        board,
+        publication_identity=identity,
+        recent_relief_work=_relief_work(),
+        performance=_performance(),
+        what_changed=_what_changed(),
+    )
+
+    assert core['publication_identity'] == details['publication_identity']
+    assert core['team_state'] == TEAM_STATE
+    assert core['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert 'performance' not in core
+    assert 'what_changed' not in core
+    assert details['performance'] == _performance()
+    assert details['what_changed'] == _what_changed()

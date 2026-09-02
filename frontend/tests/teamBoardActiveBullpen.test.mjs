@@ -292,7 +292,7 @@ test('production reuses one v2 request and retires only the grouped Team Board r
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
   )
-  assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((source.match(/getTeamBoardCore\(/g) || []).length, 1)
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))
   assert.equal(source.includes('<BullpenBoardView'), false)

@@ -102,6 +102,7 @@ TEAM_BOARD_UNAVAILABLE = 'trusted_team_board_unavailable'
 TEAM_BOARD_PACKAGE_MISSING = 'trusted_team_board_package_missing'
 TEAM_BOARD_TEAM_MISSING = 'trusted_team_board_team_missing'
 TONIGHT_SNAPSHOT_UNAVAILABLE = 'trusted_tonight_snapshot_unavailable'
+_SNAPSHOT_NOT_PROVIDED = object()
 
 REST_STATUS_CARRIER_QUALIFIED = 'qualified'
 REST_STATUS_CARRIER_SNAPSHOT_MISSING = 'snapshot_missing'
@@ -171,6 +172,10 @@ def _support_for_team(payload, key, team_id):
     if value is None:
         value = by_team.get(team_id)
     return deepcopy(value) if isinstance(value, Mapping) else {}
+
+
+def _mapping_value(value, key):
+    return value.get(key) if isinstance(value, Mapping) else None
 
 
 def _plain_board_record(record, role_logs, reference_date):
@@ -715,12 +720,12 @@ def _frozen_rest_status_for_view(snapshot, team_package):
 
 
 def build_published_team_board(
-    team_id, *, include_stale=False, snapshot_override=None,
-    team_state_override=None,
+    team_id, *, include_stale=False, snapshot_override=_SNAPSHOT_NOT_PROVIDED,
+    team_state_override=None, include_delivery_identity=False,
 ):
     snapshot = (
         snapshot_override
-        if snapshot_override is not None
+        if snapshot_override is not _SNAPSHOT_NOT_PROVIDED
         else dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     )
     if snapshot is None:
@@ -730,7 +735,7 @@ def build_published_team_board(
         return _unavailable_board(team_id, reason, snapshot=snapshot)
 
     freshness = _trusted_board_freshness(
-        snapshot, prefer_snapshot=snapshot_override is not None,
+        snapshot, prefer_snapshot=snapshot_override is not _SNAPSHOT_NOT_PROVIDED,
     )
     records = _records_for_view(team_package, include_stale)
     payload = build_board_payload(
@@ -753,6 +758,24 @@ def build_published_team_board(
         else _published_team_state(snapshot, team_id)
     )
     payload['publication_authority'] = publication_authority(snapshot)
+    if include_delivery_identity:
+        payload['publication_method_versions'] = {
+            'bullpen_membership': _mapping_value(
+                team_package.get('bullpen_membership_authority'), 'method_version'
+            ),
+            'rest_status': _mapping_value(
+                team_package.get('rest_status_authority'), 'method_version'
+            ),
+            'workload_windows': _mapping_value(
+                team_package.get('workload_windows_authority'), 'method_version'
+            ),
+            'deployment_profile': _mapping_value(
+                team_package.get('deployment_profile_authority'), 'method_version'
+            ),
+            'rotation_impact': _mapping_value(
+                team_package.get('rotation_support_pressure_authority'), 'method_version'
+            ),
+        }
     payload['served_from'] = 'trusted_dashboard_snapshot'
     return payload
 

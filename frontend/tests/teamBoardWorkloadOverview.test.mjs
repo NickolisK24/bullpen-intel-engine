@@ -196,7 +196,8 @@ test('production reuses one v2 request, retires the legacy mount, and leaves lat
   const boardSource = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
   const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardWorkloadOverview.jsx', import.meta.url), 'utf8')
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardCore\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.ok(boardSource.includes('aria-label="Current workload picture"'))
   assert.ok(boardSource.includes('<TeamBoardWorkloadOverview'))
   assert.ok(boardSource.includes('<SectionPair label="Rest and workload"'))
