@@ -31,7 +31,7 @@
       "destination": "/share/$1/index.html"
     },
     {
-      "source": "^/((?!share(?:/|$)).*)$",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
