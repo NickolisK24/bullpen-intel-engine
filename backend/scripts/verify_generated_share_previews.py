@@ -22,7 +22,7 @@ OG_PATTERN = re.compile(
     r'<meta\s+property="og:(?P<key>[a-z:]+)"\s+content="(?P<value>[^"]*)"\s*/>'
 )
 CANONICAL_PATTERN = re.compile(r'<link\s+rel="canonical"\s+href="(?P<value>[^"]*)"\s*/>')
-HREF_PATTERN = re.compile(r'<a\s+href="(?P<value>[^"]+)"')
+HREF_PATTERN = re.compile(r'<a\b[^>]*\shref="(?P<value>[^"]+)"')
 
 
 def parse_args(argv=None):
@@ -186,6 +186,14 @@ def verify(result, output_root, routing_config=None):
             violations.append(f'{path}: live-app destination targets the share page itself')
         if 'window.location' in text:
             violations.append(f'{path}: generated page contains automatic navigation')
+        if '<script' in text.casefold():
+            violations.append(f'{path}: generated page depends on script content')
+        if '<link rel="stylesheet" href="/share-preview.css" />' not in text:
+            violations.append(f'{path}: generated page is missing the static share stylesheet')
+        if 'Published BaseballOS observation' not in text:
+            violations.append(f'{path}: static body is missing BaseballOS artifact identity')
+        if 'Frozen historical observation' not in text:
+            violations.append(f'{path}: static body is missing frozen historical context')
         if metadata.get('team') and metadata['team'] not in text:
             violations.append(f'{path}: static body does not preserve team identity')
         if metadata.get('team-state') and metadata['team-state'] not in text:
@@ -196,7 +204,7 @@ def verify(result, output_root, routing_config=None):
             evidence_count = -1
         if evidence_count < 0:
             violations.append(f'{path}: invalid frozen evidence count')
-        elif evidence_count and 'Evidence behind the read' not in text:
+        elif evidence_count and 'class="share-evidence"' not in text:
             violations.append(f'{path}: frozen evidence is absent from static content')
         if open_graph.get('image') != 'https://baseballos.app/og/baseballos-card.png':
             violations.append(f'{path}: social image is not the governed raster card')

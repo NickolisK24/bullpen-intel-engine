@@ -1,0 +1,348 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #07111f;
+  color: #f4f0e7;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #07111f;
+}
+
+body.share-artifact-page {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(53, 103, 164, 0.2), transparent 34rem),
+    linear-gradient(180deg, #091625 0%, #07111f 54%, #050d18 100%);
+  color: #f4f0e7;
+  line-height: 1.55;
+}
+
+a {
+  color: inherit;
+}
+
+.share-artifact-shell {
+  width: min(100% - 2rem, 48rem);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) 0 3rem;
+}
+
+.share-artifact-header {
+  padding: 0 0 clamp(1.25rem, 4vw, 2rem);
+}
+
+.share-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-decoration: none;
+}
+
+.share-brand:focus-visible,
+.share-live-cta:focus-visible {
+  outline: 3px solid #8ec5ff;
+  outline-offset: 4px;
+}
+
+.share-brand-mark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid #c7a85c;
+  color: #e2c77c;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.share-brand strong,
+.share-brand small {
+  display: block;
+}
+
+.share-brand strong {
+  color: #f8f4eb;
+  font-size: 0.94rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.share-brand small {
+  margin-top: 0.08rem;
+  color: #9eb0c3;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+
+.share-kicker,
+.share-section-label,
+.share-team-abbreviation {
+  margin: 0;
+  color: #9eb0c3;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.share-artifact-header > .share-kicker {
+  margin-top: clamp(1.75rem, 6vw, 3.2rem);
+}
+
+.share-team-identity {
+  margin-top: 0.55rem;
+}
+
+.share-team-abbreviation {
+  color: #e2c77c;
+}
+
+.share-team-identity h1,
+.share-not-found h1 {
+  max-width: 20ch;
+  margin: 0.2rem 0 0;
+  color: #fffaf0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 8vw, 3.3rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+
+.share-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 1rem 0 0;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid #33475e;
+  border-radius: 999px;
+  background: #0e2033;
+  color: #dce7f1;
+  font-size: 0.82rem;
+}
+
+.share-state-dot {
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 50%;
+  background: #8ec5ff;
+}
+
+.share-state--fresh .share-state-dot {
+  background: #74c7a6;
+}
+
+.share-state--stretched .share-state-dot {
+  background: #e2c77c;
+}
+
+.share-state--vulnerable .share-state-dot {
+  background: #ef8b7f;
+}
+
+.share-artifact-card {
+  overflow: hidden;
+  border: 1px solid #2a3d53;
+  border-radius: 0.65rem;
+  background: rgba(10, 25, 42, 0.94);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.24);
+}
+
+.share-claim,
+.share-evidence,
+.share-artifact-context {
+  padding: clamp(1.15rem, 4vw, 1.75rem);
+}
+
+.share-claim h2 {
+  max-width: 30ch;
+  margin: 0.45rem 0 0;
+  color: #fffaf0;
+  font-size: clamp(1.35rem, 5vw, 1.9rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.share-claim p:not(.share-section-label) {
+  max-width: 60ch;
+  margin: 0.8rem 0 0;
+  color: #c2cfdb;
+  font-size: 0.98rem;
+}
+
+.share-evidence {
+  border-top: 1px solid #2a3d53;
+  background: #0b1a2b;
+}
+
+.share-evidence h2 {
+  margin: 0 0 0.85rem;
+  color: #f4f0e7;
+  font-size: 0.83rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.share-evidence dl {
+  margin: 0;
+}
+
+.share-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.75rem 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid #22364b;
+}
+
+.share-evidence-row:first-child {
+  border-top: 0;
+}
+
+.share-evidence dt {
+  color: #9eb0c3;
+  font-size: 0.82rem;
+}
+
+.share-evidence dd {
+  min-width: 0;
+  margin: 0;
+  color: #f4f0e7;
+  font-size: 0.9rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.share-artifact-context {
+  display: grid;
+  gap: 0.7rem;
+  border-top: 1px solid #2a3d53;
+}
+
+.share-artifact-context p {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+}
+
+.share-artifact-context span {
+  color: #8296aa;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.share-artifact-context strong {
+  color: #dbe5ee;
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.share-artifact-context .share-historical-note {
+  display: block;
+  color: #9eb0c3;
+  font-size: 0.82rem;
+}
+
+.share-live-cta {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 clamp(1.15rem, 4vw, 1.75rem) clamp(1.15rem, 4vw, 1.75rem);
+  padding: 0.82rem 1rem;
+  border: 1px solid #4c78a8;
+  border-radius: 0.35rem;
+  background: #173a60;
+  color: #f8fbff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.share-live-cta:hover {
+  border-color: #74a9df;
+  background: #1d4774;
+}
+
+.share-live-cta span {
+  color: #e2c77c;
+  font-size: 1.2rem;
+}
+
+.share-live-note {
+  max-width: 62ch;
+  margin: 0.9rem auto 0;
+  color: #8296aa;
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.share-not-found {
+  padding-top: clamp(4rem, 15vh, 8rem);
+}
+
+.share-not-found > p:not(.share-kicker) {
+  max-width: 45ch;
+  color: #b9c7d4;
+}
+
+.share-not-found .share-live-cta {
+  max-width: 22rem;
+  margin: 1.5rem 0 0;
+}
+
+@media (max-width: 30rem) {
+  .share-artifact-shell {
+    width: min(100% - 1.25rem, 48rem);
+  }
+
+  .share-evidence-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .share-artifact-context p {
+    display: block;
+  }
+
+  .share-artifact-context strong {
+    display: block;
+    margin-top: 0.18rem;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .share-live-cta {
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+}
+
+@media print {
+  :root,
+  html,
+  body.share-artifact-page {
+    background: #fff;
+    color: #111;
+  }
+
+  .share-artifact-card {
+    box-shadow: none;
+  }
+}

@@ -247,6 +247,10 @@
           "measured_seconds": 6.5
         },
         {
+          "path": "tests/test_share_preview_presentation_refresh.py",
+          "measured_seconds": 0.1
+        },
+        {
           "path": "tests/test_share_artifact_publication_hook.py",
           "measured_seconds": 5.613
         },

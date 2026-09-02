@@ -47,6 +47,14 @@ test('every checked-in immutable share page uses an ordinary non-self live hando
   for (const pageUrl of pages) {
     const page = readFileSync(pageUrl, 'utf8')
     assert.equal(page.includes('window.location'), false, pageUrl.pathname)
-    assert.match(page, /<a href="\/bullpen\?view=board&amp;team=[A-Z0-9-]+&amp;source=share">Open the live BaseballOS bullpen view<\/a>/)
+    assert.doesNotMatch(page, /<script\b/i, pageUrl.pathname)
+    assert.match(page, /<link rel="stylesheet" href="\/share-preview\.css" \/>/)
+    assert.match(page, /Published BaseballOS observation/)
+    assert.match(page, /<h1>[^<]+<\/h1>/)
+    assert.match(page, /Frozen historical observation/)
+    assert.match(
+      page,
+      /<a class="share-live-cta" href="\/bullpen\?view=board&amp;team=[A-Z0-9-]+&amp;source=share">Open current [^<]+ bullpen<span aria-hidden="true">→<\/span><\/a>/,
+    )
   }
 })

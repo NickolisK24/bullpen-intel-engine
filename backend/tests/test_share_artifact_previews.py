@@ -70,6 +70,8 @@ def test_valid_artifact_metadata_comes_from_frozen_public_projection(app, monkey
     assert '<meta property="og:image:type" content="image/png" />' in page
     assert f'<meta name="baseballos:public-id" content="{artifact.public_id}" />' in page
     assert '<meta name="baseballos:data-through" content="2026-07-20" />' in page
+    assert '<link rel="stylesheet" href="/share-preview.css" />' in page
+    assert '<title>Test Club bullpen — Stretched | BaseballOS</title>' in page
 
 
 def test_static_share_handoff_is_meaningful_and_never_targets_itself(app, monkeypatch):
@@ -83,12 +85,22 @@ def test_static_share_handoff_is_meaningful_and_never_targets_itself(app, monkey
     assert preview['canonical_url'] == f'https://baseballos.app/share/{artifact.public_id}'
     assert preview['live_destination_path'] == '/bullpen?view=board&team=TST&source=share'
     assert 'window.location' not in page
+    assert '<script' not in page.casefold()
     assert f'/share/{artifact.public_id}/' not in page
+    assert 'Published BaseballOS observation' in page
     assert 'Test Club' in page
     assert 'Stretched' in page
     assert '2026-07-20' in page
     assert 'Evidence behind the read' in page
+    assert 'Historical snapshot' in page
+    assert 'Frozen historical observation' in page
+    assert 'Open current Test Club bullpen' in page
+    assert '<h1>Test Club</h1>' in page
+    assert '<h2 id="share-claim-title">' in page
     assert 'href="/bullpen?view=board&amp;team=TST&amp;source=share"' in page
+    body = page.split('<body', 1)[1]
+    assert body.count(preview['primary_claim'].replace("'", '&#x27;')) == 1
+    assert body.count('Data through</span>') == 1
     assert artifact.payload == frozen_payload
     assert artifact.integrity_hash == frozen_integrity_hash
 
@@ -112,7 +124,7 @@ def test_static_projection_preserves_named_governed_evidence_without_team_state(
         },
         'copy': {
             'headline': 'Test Club bullpen changed since yesterday',
-            'description': 'The published bullpen read changed after the latest completed game.',
+            'description': 'The published bullpen read changed after the latest completed game. Data through 2026-07-21.',
         },
         'evidence': [{
             'label': 'Named arm',
@@ -129,9 +141,14 @@ def test_static_projection_preserves_named_governed_evidence_without_team_state(
 
     assert preview['canonical_url'] == 'https://baseballos.app/share/change-abc123'
     assert 'Test Club bullpen changed since yesterday' in page
+    assert 'The published bullpen read changed after the latest completed game.' in page
     assert '2026-07-21' in page
     assert 'Jordan Example moved from Watch Arm to Limited Rest.' in page
+    assert 'What changed' in page
+    assert 'Comparison</span><strong>Jul 20 → Jul 21, 2026</strong>' in page
+    assert 'Open current Test Club bullpen' in page
     assert 'window.location' not in page
+    assert '<script' not in page.casefold()
 
 
 def test_older_preview_does_not_change_when_a_new_team_state_is_published(app, monkeypatch):
@@ -172,6 +189,20 @@ def test_invalid_share_fallback_has_no_claim_identity():
     assert 'window.location' not in page
     assert 'rel="canonical"' not in page
     assert 'property="og:url"' not in page
+    assert '<link rel="stylesheet" href="/share-preview.css" />' in page
+
+
+def test_static_styles_preserve_mobile_layout_focus_and_text_state():
+    stylesheet = (
+        Path(__file__).resolve().parents[2]
+        / 'frontend' / 'public' / 'share-preview.css'
+    ).read_text(encoding='utf-8')
+
+    assert 'width: min(100% - 2rem, 48rem)' in stylesheet
+    assert '@media (max-width: 30rem)' in stylesheet
+    assert '.share-live-cta:focus-visible' in stylesheet
+    assert '.share-state--fresh .share-state-dot' in stylesheet
+    assert 'overflow-wrap: anywhere' in stylesheet
 
 
 def test_writer_is_deterministic_and_confined_to_share_root(app, monkeypatch, tmp_path):
@@ -187,9 +218,10 @@ def test_writer_is_deterministic_and_confined_to_share_root(app, monkeypatch, tm
     assert expected.is_file()
     assert second['changed'] == []
     assert {path.relative_to(output_root).parts[0] for path in output_root.rglob('*')} == {
-        '404.html', 'share',
+        'share-404.html', 'share',
     }
-    assert first['fallback'] == str(output_root / '404.html')
+    assert first['fallback'] == str(output_root / 'share-404.html')
+    assert not (output_root / '404.html').exists()
 
 
 @pytest.mark.parametrize('public_id', ['.', '..', '../escape', 'bad/id'])
