@@ -46,17 +46,24 @@ function teamStateComparisonView(comparison) {
   }
 }
 
-function statusRows(changes) {
+function armReadRows(changes) {
   return changes.flatMap((change, index) => {
-    if (change?.type !== 'status_change') return []
+    if (change?.type !== 'arm_read_change' || change?.semantic_family !== 'public_arm_read') return []
+    const fromRead = change.from_read && typeof change.from_read === 'object' ? change.from_read : {}
+    const toRead = change.to_read && typeof change.to_read === 'object' ? change.to_read : {}
+    const fromLabel = textValue(fromRead.label)
+    const toLabel = textValue(toRead.label)
+    if (!fromLabel || !toLabel) return []
     return [{
       key: changeKey(change, index),
       pitcherId: change.pitcher_id ?? null,
       subject: textValue(change.pitcher_name) || 'Arm unavailable',
-      transition: textValue(change.from_status) && textValue(change.to_status)
-        ? `${change.from_status.trim()} → ${change.to_status.trim()}`
-        : null,
+      transition: `${fromLabel} → ${toLabel}`,
       summary: textValue(change.summary),
+      fromDate: textValue(change.from_date),
+      fromDateLabel: formatDateOnly(change.from_date, { month: 'short' }),
+      toDate: textValue(change.to_date),
+      toDateLabel: formatDateOnly(change.to_date, { month: 'short' }),
     }]
   })
 }
@@ -86,7 +93,7 @@ export function getWhatChangedView(payload) {
   const groups = [
     { key: 'team-state', label: 'Team State', rows: teamStateRows(source.team_state_change) },
     { key: 'rest-status', label: 'Rested Options', rows: restStatusRows(source.rest_status_change) },
-    { key: 'arm-read', label: 'Arm Read movement', rows: statusRows(changes) },
+    { key: 'arm-read', label: 'Arm Read movement', rows: armReadRows(changes) },
     { key: 'appearance', label: 'New appearance / workload', rows: appearanceRows(changes) },
   ].filter(group => group.rows.length > 0)
 
@@ -101,6 +108,7 @@ export function getWhatChangedView(payload) {
     },
     teamStateComparison: teamStateComparisonView(source.team_state_comparison),
     restStatusComparison: teamStateComparisonView(source.rest_status_comparison),
+    armReadComparison: teamStateComparisonView(source.arm_read_comparison),
     groups,
     limitations: Array.isArray(source.limitations)
       ? source.limitations.map(textValue).filter(Boolean)

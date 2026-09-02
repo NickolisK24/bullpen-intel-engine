@@ -1349,10 +1349,13 @@ def _arm_records(value):
         record = _mapping(record)
         pitcher_id = record.get('pitcher_id')
         public_read = _mapping(record.get('public_read'))
+        public_key = public_read.get('key')
+        governed_read = _mapping(READ_PUBLIC_LABELS.get(public_key))
         if (
             pitcher_id is None
-            or public_read.get('key') in (None, '')
-            or public_read.get('label') in (None, '')
+            or not governed_read
+            or public_read.get('kind') != governed_read.get('kind')
+            or public_read.get('label') != governed_read.get('label')
             or int(pitcher_id) in result
         ):
             return None
@@ -1375,6 +1378,26 @@ def _compatible_arm_read_domain(previous, current):
     base = _compatible_domain(previous, current, 'arm_read', 'arm_read')
     if base.get('status') != COMPARABLE:
         return base
+
+    previous_metadata = _domain_metadata(_payload(previous), 'arm_read')
+    current_metadata = _domain_metadata(_payload(current), 'arm_read')
+    for snapshot, metadata in (
+        (previous, previous_metadata),
+        (current, current_metadata),
+    ):
+        represented_date = _as_date(_payload(snapshot).get('represented_date'))
+        membership_reference_date = _as_date(
+            metadata.get('membership_reference_date')
+        )
+        availability_reference_date = _as_date(
+            metadata.get('availability_reference_date')
+        )
+        if (
+            represented_date is None
+            or membership_reference_date != represented_date
+            or availability_reference_date != represented_date + timedelta(days=1)
+        ):
+            return _withheld('arm_read', REPRESENTED_DATE_INVALID)
 
     previous_value = _mapping(base.get('previous'))
     current_value = _mapping(base.get('current'))
@@ -1447,7 +1470,21 @@ def _compatible_arm_read_domain(previous, current):
             current_read = _mapping(current_record.get('public_read'))
             previous_mlb_id = previous_record.get('mlb_id')
             current_mlb_id = current_record.get('mlb_id')
-            if (
+            previous_name = previous_record.get('pitcher_name')
+            current_name = current_record.get('pitcher_name')
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (previous_name, current_name)
+            ):
+                comparison = {
+                    'pitcher_id': pitcher_id,
+                    'comparable': False,
+                    'reason_code': VALUE_MISSING,
+                    'population_change': None,
+                    'previous': deepcopy(previous_record),
+                    'current': deepcopy(current_record),
+                }
+            elif (
                 previous_mlb_id is not None
                 and current_mlb_id is not None
                 and previous_mlb_id != current_mlb_id
@@ -1481,6 +1518,10 @@ def _compatible_arm_read_domain(previous, current):
         'reason_code': None,
         'previous': deepcopy(previous_value),
         'current': deepcopy(current_value),
+        'method_version': current_metadata.get('method_version'),
+        'public_contract_version': current_metadata.get(
+            'public_contract_version'
+        ),
         'arm_comparisons': comparisons,
         'movement_candidates': movements,
     }

@@ -188,6 +188,7 @@ def _team_state_sidecar(
     population_basis=None,
     trusted=True,
     rested_arm_count=None,
+    arm_read_capture=None,
 ):
     population_basis = population_basis or {
         'basis': 'status_only',
@@ -249,6 +250,24 @@ def _team_state_sidecar(
             'summary': f'{rested_arm_count} rested options.',
             'reason_code': None,
         }
+    if arm_read_capture is not None:
+        domains['arm_read'] = {
+            'method_version': arm_read_capture.get('method_version'),
+            'public_contract_version': arm_read_capture.get('public_contract_version'),
+            'population_basis': deepcopy(arm_read_capture.get('population_basis')),
+            'membership_reference_date': arm_read_capture.get('membership_reference_date'),
+            'availability_reference_date': arm_read_capture.get('availability_reference_date'),
+            'trusted': arm_read_capture.get('trusted', trusted),
+        }
+        values['arm_read'] = {
+            'member_pitcher_ids': deepcopy(
+                arm_read_capture.get('member_pitcher_ids') or []
+            ),
+            'missing_record_pitcher_ids': deepcopy(
+                arm_read_capture.get('missing_record_pitcher_ids') or []
+            ),
+            'records': deepcopy(arm_read_capture.get('records') or []),
+        }
     row = DashboardSnapshot(
         snapshot_type=delta_substrate.SNAPSHOT_TYPE,
         status='ready',
@@ -281,6 +300,66 @@ def _team_state_sidecar(
     return row
 
 
+def _governed_arm_read_capture(
+    represented_date,
+    pitcher_reads,
+    *,
+    member_pitchers=None,
+    missing_pitchers=(),
+    method_version=delta_substrate.ARM_READ_METHOD_VERSION,
+    public_contract_version=delta_substrate.ARM_READ_PUBLIC_CONTRACT_VERSION,
+    trusted=True,
+):
+    pitcher_reads = list(pitcher_reads)
+    member_pitchers = list(member_pitchers or [pitcher for pitcher, _ in pitcher_reads])
+    missing_pitchers = list(missing_pitchers)
+    member_ids = sorted({
+        pitcher.id for pitcher in [*member_pitchers, *missing_pitchers]
+    })
+    records = []
+    for pitcher, read_key in pitcher_reads:
+        records.append({
+            'pitcher_id': pitcher.id,
+            'mlb_id': pitcher.mlb_id,
+            'pitcher_name': pitcher.full_name,
+            'team_id': pitcher.team_id,
+            'public_read': deepcopy(delta_substrate.READ_PUBLIC_LABELS[read_key]),
+            'evidence_state': {
+                'data_state': 'current',
+                'confidence': 'high',
+            },
+            'roster_authority': {
+                'version': delta_substrate.ROSTER_AUTHORITY_VERSION,
+                'status': STATUS_ACTIVE,
+                'is_authoritative': True,
+                'is_active_mlb': True,
+            },
+        })
+    return {
+        'team_id': 1,
+        'membership_reference_date': represented_date.isoformat(),
+        'availability_reference_date': (
+            represented_date + timedelta(days=1)
+        ).isoformat(),
+        'method_version': method_version,
+        'public_contract_version': public_contract_version,
+        'population_basis': {
+            'basis': 'canonical_current_active_bullpen',
+            'population_authority': 'resolve_readiness_population',
+            'membership_authority': 'resolve_active_bullpen_membership',
+            'roster_authority_version': delta_substrate.ROSTER_AUTHORITY_VERSION,
+            'availability_mode': delta_substrate.CURRENT_AVAILABILITY_MODE,
+            'reference_date_policy': 'membership_slate_availability_next_day_v1',
+        },
+        'member_pitcher_ids': member_ids,
+        'missing_record_pitcher_ids': sorted(
+            pitcher.id for pitcher in missing_pitchers
+        ),
+        'records': records,
+        'trusted': trusted,
+    }
+
+
 def _seed_quiet_game_lane(anchor, current):
     reliever = _pitcher('Stable Delta Arm', mlb_id=301)
     starter = _pitcher('Date Marker Starter', mlb_id=302, position='SP')
@@ -289,6 +368,7 @@ def _seed_quiet_game_lane(anchor, current):
     _score(reliever, 35.0, current)
     _log(starter, current, 3020, pitches=88, innings=6.0)
     _successful_sync(current)
+    return reliever
 
 
 def _change_ids(body, change_type=None):
@@ -299,6 +379,266 @@ def _change_ids(body, change_type=None):
 
 
 class TestTeamChangesEndpoint:
+    def test_raw_availability_change_does_not_publish_when_governed_read_is_unchanged(
+        self, client,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _pitcher('Governed Stable Arm', mlb_id=91)
+            marker = _pitcher('Current Date Starter', mlb_id=92, position='SP')
+            _log(pitcher, anchor, 910, pitches=6)
+            _log(marker, current, 920, pitches=88, innings=6.0)
+            _score(pitcher, 43.0, anchor)
+            _score(pitcher, 65.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=471,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'watch_arm'),),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=472,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, 'watch_arm'),),
+                ),
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['arm_read_comparison']['status'] == 'unchanged'
+        assert not [
+            change for change in body['pitcher_changes']
+            if change['type'] in {'arm_read_change', 'status_change'}
+        ]
+
+    def test_governed_arm_read_change_publishes_explicit_read_fields(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _pitcher('Governed Shift Arm', mlb_id=93)
+            marker = _pitcher('Current Date Starter', mlb_id=94, position='SP')
+            _log(pitcher, anchor, 930, pitches=6)
+            _log(marker, current, 940, pitches=88, innings=6.0)
+            _score(pitcher, 43.0, anchor)
+            _score(pitcher, 65.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=473,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'watch_arm'),),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=474,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, 'rest_restricted'),),
+                ),
+            )
+            pitcher_id = pitcher.id
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['arm_read_comparison']['status'] == 'changed'
+        assert [
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        ] == [{
+            'type': 'arm_read_change',
+            'semantic_family': 'public_arm_read',
+            'pitcher_id': pitcher_id,
+            'pitcher_name': 'Governed Shift Arm',
+            'from_read': {'key': 'watch_arm', 'label': 'Watch Arm'},
+            'to_read': {'key': 'rest_restricted', 'label': 'Limited Rest'},
+            'from_date': anchor.isoformat(),
+            'to_date': current.isoformat(),
+            'summary': 'Governed Shift Arm moved from Watch Arm to Limited Rest.',
+        }]
+
+    def test_raw_and_governed_read_changes_publish_only_the_governed_transition(
+        self, client,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _pitcher('Different Semantic Arm', mlb_id=95)
+            marker = _pitcher('Current Date Starter', mlb_id=96, position='SP')
+            _log(pitcher, anchor, 950, pitches=6)
+            _log(marker, current, 960, pitches=88, innings=6.0)
+            # This is the same raw-score shape that the legacy path exposed as
+            # Monitor -> Limited. The frozen governed reads intentionally move
+            # on a different public path.
+            _score(pitcher, 43.0, anchor)
+            _score(pitcher, 65.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=475,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'clean_option'),),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=476,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, 'watch_arm'),),
+                ),
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+        arm_changes = [
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        ]
+
+        assert [(change['from_read'], change['to_read']) for change in arm_changes] == [(
+            {'key': 'clean_option', 'label': 'Clean Option'},
+            {'key': 'watch_arm', 'label': 'Watch Arm'},
+        )]
+        assert all('from_status' not in change and 'to_status' not in change
+                   for change in arm_changes)
+        assert 'Monitor' not in str(arm_changes)
+        assert 'Limited' not in str(arm_changes)
+
+    @pytest.mark.parametrize('missing_side', ('previous', 'current'))
+    def test_missing_governed_read_withholds_only_that_arm_transition(
+        self, client, missing_side,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _seed_quiet_game_lane(anchor, current)
+            previous_capture = _governed_arm_read_capture(
+                anchor,
+                () if missing_side == 'previous' else ((pitcher, 'watch_arm'),),
+                member_pitchers=(pitcher,),
+                missing_pitchers=(pitcher,) if missing_side == 'previous' else (),
+            )
+            current_capture = _governed_arm_read_capture(
+                current,
+                () if missing_side == 'current' else ((pitcher, 'rest_restricted'),),
+                member_pitchers=(pitcher,),
+                missing_pitchers=(pitcher,) if missing_side == 'current' else (),
+            )
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=477,
+                arm_read_capture=previous_capture,
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=478,
+                arm_read_capture=current_capture,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['arm_read_comparison']['status'] == 'partial'
+        assert body['arm_read_comparison']['withheld_pitcher_count'] == 1
+        assert not [
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        ]
+
+    @pytest.mark.parametrize(
+        ('to_key', 'to_label'),
+        (
+            ('limited_read', 'Limited Read'),
+            ('unavailable', 'Unavailable'),
+        ),
+    )
+    def test_explicit_special_public_reads_are_preserved_as_governed_endpoints(
+        self, client, to_key, to_label,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=479,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'watch_arm'),),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=480,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, to_key),),
+                ),
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+        arm_change = next(
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        )
+
+        assert arm_change['to_read'] == {
+            'key': to_key,
+            'label': to_label,
+        }
+
+    def test_incompatible_arm_read_method_withholds_the_dependent_lane(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=487,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'watch_arm'),),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=488,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, 'rest_restricted'),),
+                    method_version='future_arm_read_method',
+                ),
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['arm_read_comparison']['status'] == 'unavailable'
+        assert body['arm_read_comparison']['reason_code'] == 'method_version_mismatch'
+        assert not [
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        ]
+
+    def test_governed_arm_read_changes_preserve_backend_identity_order(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            first = _pitcher('First Governed Arm', mlb_id=97)
+            second = _pitcher('Second Governed Arm', mlb_id=98)
+            marker = _pitcher('Current Date Starter', mlb_id=99, position='SP')
+            for index, pitcher in enumerate((first, second), start=1):
+                _log(pitcher, anchor, 970 + index, pitches=6)
+                _score(pitcher, 35.0, anchor)
+                _score(pitcher, 35.0, current)
+            _log(marker, current, 990, pitches=88, innings=6.0)
+            _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=489,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor,
+                    ((second, 'watch_arm'), (first, 'clean_option')),
+                ),
+            )
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=490,
+                arm_read_capture=_governed_arm_read_capture(
+                    current,
+                    ((second, 'limited_read'), (first, 'watch_arm')),
+                ),
+            )
+            expected = [
+                (first.id, 'First Governed Arm'),
+                (second.id, 'Second Governed Arm'),
+            ]
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+        arm_changes = [
+            change for change in body['pitcher_changes']
+            if change['type'] == 'arm_read_change'
+        ]
+
+        assert [(change['pitcher_id'], change['pitcher_name'])
+                for change in arm_changes] == expected
+
+
     @pytest.mark.parametrize(('previous_count', 'current_count'), ((5, 7), (7, 5)))
     def test_frozen_rested_options_change_is_a_meaningful_public_lane(
         self, client, previous_count, current_count,
@@ -527,7 +867,9 @@ class TestTeamChangesEndpoint:
         assert body['team_state_change']['to_date'] == current.isoformat()
         assert 'previous_team_game_missing' in body['state_reason_codes']
 
-    def test_team_state_change_preserves_status_change_and_new_appearance(self, client):
+    def test_team_state_change_preserves_governed_arm_read_rest_and_appearance(
+        self, client,
+    ):
         anchor, current = _recent_dates()
         with client.application.app_context():
             pitcher = _pitcher('Shift Arm', mlb_id=101)
@@ -538,9 +880,17 @@ class TestTeamChangesEndpoint:
             _successful_sync(current)
             _team_state_sidecar(
                 anchor, 'stretched', 'Stretched', artifact_id=551,
+                rested_arm_count=5,
+                arm_read_capture=_governed_arm_read_capture(
+                    anchor, ((pitcher, 'watch_arm'),),
+                ),
             )
             _team_state_sidecar(
                 current, 'vulnerable', 'Vulnerable', artifact_id=552,
+                rested_arm_count=7,
+                arm_read_capture=_governed_arm_read_capture(
+                    current, ((pitcher, 'rest_restricted'),),
+                ),
             )
 
         body = client.get('/api/bullpen/teams/1/changes').get_json()
@@ -558,28 +908,25 @@ class TestTeamChangesEndpoint:
             f'Compared with TST: {anchor:%b} {anchor.day} -> {current:%b} {current.day}'
         )
 
-        status_changes = [
+        arm_read_changes = [
             change for change in body['pitcher_changes']
-            if change['type'] == 'status_change'
+            if change['type'] == 'arm_read_change'
         ]
         appearances = [
             change for change in body['pitcher_changes']
             if change['type'] == 'appearance'
         ]
-        assert status_changes == [{
-            'type': 'status_change',
-            'pitcher_id': status_changes[0]['pitcher_id'],
-            'pitcher_name': 'Shift Arm',
-            'from_status': 'Monitor',
-            'to_status': 'Limited',
-            'summary': 'Shift Arm moved from Monitor to Limited.',
-        }]
+        assert arm_read_changes[0]['from_read']['label'] == 'Watch Arm'
+        assert arm_read_changes[0]['to_read']['label'] == 'Limited Rest'
+        assert body['rest_status_change']['transition'] == '5 → 7'
         assert appearances[0]['pitcher_name'] == 'Shift Arm'
         assert appearances[0]['pitches'] == 24
         assert 'Pitched' in appearances[0]['summary']
         assert '24 pitches' in appearances[0]['summary']
 
-    def test_unavailable_team_state_preserves_status_movement(self, client):
+    def test_missing_publication_comparison_does_not_fall_back_to_raw_status(
+        self, client,
+    ):
         anchor, current = _recent_dates()
         with client.application.app_context():
             pitcher = _pitcher('Status Only Arm', mlb_id=111)
@@ -595,14 +942,16 @@ class TestTeamChangesEndpoint:
 
         body = client.get('/api/bullpen/teams/1/changes').get_json()
 
-        assert body['state'] == 'changes'
+        assert body['state'] == 'no_changes'
         assert body['team_state_change'] is None
         assert body['team_state_comparison']['status'] == 'unavailable'
         assert body['team_state_comparison']['reason_code'] == 'previous_missing'
         assert body['team_state_comparison']['limitation'] == (
             'Team State comparison is unavailable for this publication window.'
         )
-        assert [change['type'] for change in body['pitcher_changes']] == ['status_change']
+        assert body['arm_read_comparison']['status'] == 'unavailable'
+        assert body['arm_read_comparison']['reason_code'] == 'previous_missing'
+        assert body['pitcher_changes'] == []
 
     def test_unavailable_team_state_preserves_appearance_movement(self, client):
         anchor, current = _recent_dates()

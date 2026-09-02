@@ -14,6 +14,10 @@ import re
 from typing import Any
 
 from services.coin_story_inspection import inspect_team_story
+from services.daily_edition_publication_gate import (
+    STATUS_PASS as PUBLICATION_GATE_PASS,
+    evaluate_daily_edition_publication,
+)
 from services.editorial_voice_contract_v1 import find_editorial_violations
 from services.intelligence_surface_service import (
     build_today_lead_story,
@@ -83,7 +87,8 @@ SOURCE_PATH_HOMEPAGE = (
     '(on-demand, no snapshot write)'
 )
 SOURCE_PATH_ROW = (
-    'CompletedGameContext row -> inspect_team_story -> existing story writers'
+    'CompletedGameContext row -> authoritative Today receipts -> '
+    'inspect_team_story -> Daily Edition publication gate -> existing story writers'
 )
 
 
@@ -108,6 +113,11 @@ def build_todays_story_editorial_review(
         )
         ref_iso = _isoformat(ref_date)
         contexts = [_context_dict(ctx) for ctx in contexts]
+        if candidate_contexts is None:
+            from services.today_relief_appearance_evidence import (
+                enrich_today_contexts_with_relief_appearances,
+            )
+            contexts = enrich_today_contexts_with_relief_appearances(contexts)
 
         inspect = inspect_fn or inspect_team_story
         lead_response = build_today_lead_story(
@@ -330,11 +340,19 @@ def _inspect_context(ctx: dict[str, Any], reference_date, inspect_fn) -> dict[st
         return base
 
     package = result.get('package') or {}
+    gate = (
+        evaluate_daily_edition_publication(result)
+        if result.get('publishable') is True
+        else None
+    )
+    gate_passed = gate is None or gate.get('status') == PUBLICATION_GATE_PASS
     completed = package.get('completed_game_context') or ctx
     base.update({
         'team_id': result.get('team_id', team_id),
         'game_pk': result.get('game_pk', ctx.get('game_pk')),
-        'publishable': result.get('publishable'),
+        'publishable': bool(result.get('publishable') is True and gate_passed),
+        'coin_publishable': result.get('publishable'),
+        'daily_edition_publication_gate': gate,
         'publish_reason': result.get('publish_reason'),
         'confidence': result.get('confidence'),
         'story_priority': result.get('story_priority'),
@@ -344,7 +362,7 @@ def _inspect_context(ctx: dict[str, Any], reference_date, inspect_fn) -> dict[st
         'primary_story': package.get('primary_story'),
         'writer_targets': result.get('writer_targets') or [],
         'package': package,
-        'drafts': result.get('drafts') or [],
+        'drafts': (result.get('drafts') or []) if gate_passed else [],
         'team_label': completed.get('team_name') or f"Team {result.get('team_id', team_id)}",
         'opponent_name': completed.get('opponent_name'),
     })

@@ -17,6 +17,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.intelligence_surface_service as surface_service
+from services import bullpen_context as bullpen_context_service
 from services import intelligence_surface_snapshot as snap
 from services.intelligence_surface_snapshot import (
     EMPTY_LEAD_STORY_UNAVAILABLE,
@@ -28,7 +29,13 @@ from services.intelligence_surface_snapshot import (
 )
 from utils.db import db
 from models.completed_game_context import CompletedGameContext
+from models.game_log import GameLog
 from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
+from models.pitcher import Pitcher
+from models.play_by_play_foundation import (
+    GamePlayByPlayEvent,
+    PlayByPlayProcessedGame,
+)
 import models.prospect  # noqa: F401  (full model registry for create_all)
 from api.bullpen import bullpen_bp
 
@@ -72,8 +79,10 @@ def client(app):
 def _seed_lost_game_shape(team_id, game_pk, game_date=_REF, **over):
     base = dict(
         starter_name='Sample Starter', starter_ip=6.0, starter_exit_inning=6,
+        home_away='home',
         bullpen_entry_inning=7, bullpen_entry_score_for=6, bullpen_entry_score_against=2,
         lead_when_bullpen_entered=4, largest_lead=4, largest_deficit=3,
+        final_score_for=6, final_score_against=9,
         late_runs_allowed=7, runs_allowed_innings_7_to_9=7,
         lead_protected=False, lead_lost=True, turning_inning=8,
         game_shape_created='normal_start',
@@ -84,7 +93,107 @@ def _seed_lost_game_shape(team_id, game_pk, game_date=_REF, **over):
         bullpen_story_tag='lost_game_shape', confidence='HIGH', **base)
     db.session.add(row)
     db.session.commit()
+    pitcher = _seed_relief_appearance(row, runs_allowed=row.late_runs_allowed or 1)
+    _seed_lost_lead_pbp(row, pitcher)
     return row
+
+
+def _seed_relief_appearance(context, *, runs_allowed, index=0):
+    pitcher = Pitcher(
+        mlb_id=context.team_id * 1_000_000 + context.game_pk + index,
+        full_name=f'Claim Reliever {context.team_id}-{index + 1}',
+        team_id=context.team_id,
+        team_abbreviation='TST',
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=context.game_pk,
+        game_date=context.game_date,
+        game_type='R',
+        games_started=0,
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        pitches_thrown=15,
+        runs_allowed=runs_allowed,
+        appearance_team_id=context.team_id,
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        appearance_team_source='test_official_game_side',
+    ))
+    db.session.commit()
+    return pitcher
+
+
+def _seed_lost_lead_pbp(context, pitcher):
+    opponent_id = context.team_id + 1
+    endpoint = f'/api/v1.1/game/{context.game_pk}/feed/live'
+    db.session.add(PlayByPlayProcessedGame(
+        mlb_game_pk=context.game_pk,
+        game_date=context.game_date,
+        game_type='R',
+        home_team_id=context.team_id,
+        away_team_id=opponent_id,
+        final_state='Final',
+        processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED,
+        attempt_count=1,
+        events_seen=2,
+        events_stored=2,
+        pitcher_events_seen=1,
+        unresolved_pitcher_count=0,
+        reconciliation_mismatch_count=0,
+        event_fingerprint=f'pbp-{context.game_pk}',
+        source='test_final_play_by_play',
+        source_endpoint=endpoint,
+    ))
+    common = {
+        'mlb_game_pk': context.game_pk,
+        'game_date': context.game_date,
+        'game_type': 'R',
+        'home_team_id': context.team_id,
+        'away_team_id': opponent_id,
+        'outs_at_event': 1,
+        'batter_mlb_id': 800001,
+        'is_pitching_change': False,
+        'is_mound_visit': False,
+        'source': 'test_final_play_by_play',
+        'source_endpoint': endpoint,
+    }
+    db.session.add(GamePlayByPlayEvent(
+        **common,
+        event_index=0,
+        source_play_id=f'play-{context.game_pk}-0',
+        at_bat_index=0,
+        event_type='scoring_play',
+        event_type_code='home_run',
+        inning=6,
+        half_inning='bottom',
+        is_top_inning=False,
+        home_score_at_event=context.bullpen_entry_score_for,
+        away_score_at_event=context.bullpen_entry_score_against,
+        batting_team_id=context.team_id,
+        fielding_team_id=opponent_id,
+        is_scoring_play=True,
+    ))
+    db.session.add(GamePlayByPlayEvent(
+        **common,
+        event_index=1,
+        source_play_id=f'play-{context.game_pk}-1',
+        at_bat_index=1,
+        event_type='scoring_play',
+        event_type_code='double',
+        inning=context.turning_inning,
+        half_inning='top',
+        is_top_inning=True,
+        home_score_at_event=context.final_score_for,
+        away_score_at_event=context.final_score_against,
+        pitcher_mlb_id=pitcher.mlb_id,
+        pitcher_id=pitcher.id,
+        batting_team_id=opponent_id,
+        fielding_team_id=context.team_id,
+        is_scoring_play=True,
+    ))
+    db.session.commit()
 
 
 def _seed_low_confidence(team_id, game_pk, game_date=_REF):
@@ -127,7 +236,33 @@ def _seed_burke_tied_handoff(game_date=_REF):
     )
     db.session.add(row)
     db.session.commit()
+    # Six evenly-used relievers keep the unrelated concentration snapshot from
+    # adding a negative consequence to this positive-story regression fixture.
+    for index in range(6):
+        _seed_relief_appearance(row, runs_allowed=0, index=index)
     return row
+
+
+def _team_context_with_optionality(team_id, optionality_band):
+    return {
+        'team_id': team_id,
+        'reference_date': _REF.isoformat(),
+        'data_through_date': _REF.isoformat(),
+        'bullpen_optionality_context': {
+            'context_available': True,
+            'optionality_band': optionality_band,
+            'available_arms_count': 6,
+            'clean_workload_options': [],
+            'secondary_options': [],
+        },
+        'bullpen_concentration_context': {
+            'context_available': True,
+            'concentration_band': 'normal',
+        },
+        'rotation_context': {},
+        'role_stability_context': {},
+        'injury_context': {},
+    }
 
 
 def _stale_burke_response(reference_date):
@@ -211,6 +346,15 @@ def _lead_blob(response):
     )
 
 
+def test_snapshot_fingerprint_covers_today_gate_and_live_evidence_sources():
+    covered = set(snap._FINGERPRINTED_SOURCE_FILES)
+    assert {
+        'services/daily_edition_publication_gate.py',
+        'services/intelligence_surface_service.py',
+        'services/today_relief_appearance_evidence.py',
+    } <= covered
+
+
 # ── 1. Snapshot is returned when present ──────────────────────────────────────
 
 def test_present_snapshot_is_served_verbatim(app):
@@ -269,6 +413,160 @@ def test_missing_snapshot_falls_back_then_persists(app):
         assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
         assert row.response_json['_snapshot_metadata']['story_writer_fingerprint']
         assert '_snapshot_metadata' not in stored
+
+
+def test_claim_evidence_gap_is_not_cached_and_recovers_after_receipt_arrives(app):
+    with app.app_context():
+        context = _seed_lost_game_shape(137, 137000)
+        pitcher = Pitcher.query.filter_by(full_name='Claim Reliever 137-1').one()
+        GameLog.query.delete(synchronize_session=False)
+        db.session.commit()
+
+        withheld = serve_today_lead_story(reference_date=_REF)
+        assert withheld['status'] == 'empty'
+        assert withheld['empty_reason'] == 'lead_story_withheld_claim_evidence'
+        assert IntelligenceSurfaceSnapshot.query.count() == 0
+
+        db.session.add(GameLog(
+            pitcher_id=pitcher.id,
+            mlb_game_pk=context.game_pk,
+            game_date=context.game_date,
+            game_type='R',
+            games_started=0,
+            innings_pitched=1.0,
+            innings_pitched_outs=3,
+            pitches_thrown=15,
+            runs_allowed=context.late_runs_allowed,
+            appearance_team_id=context.team_id,
+            appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+            appearance_team_source='test_official_game_side',
+        ))
+        db.session.commit()
+
+        recovered = serve_today_lead_story(reference_date=_REF)
+
+    assert recovered['status'] == 'ok'
+    assert recovered['lead_story']['team_id'] == 137
+
+
+def test_cached_receipts_invalidate_when_authoritative_name_changes(app):
+    with app.app_context():
+        _seed_lost_game_shape(137, 137000)
+        first = serve_today_lead_story(reference_date=_REF)
+        first_id = first['lead_story']['publication_identity']['publication_id']
+        pitcher = Pitcher.query.filter_by(full_name='Claim Reliever 137-1').one()
+        pitcher.full_name = 'Corrected Claim Reliever'
+        db.session.commit()
+
+        assert read_snapshot(_REF) is None
+        corrected = serve_today_lead_story(reference_date=_REF)
+
+    assert [
+        item['name']
+        for item in corrected['lead_story']['claim_evidence']['relief_appearances']
+    ] == ['Corrected Claim Reliever']
+    assert corrected['lead_story']['publication_identity']['publication_id'] != first_id
+
+
+def test_cached_receipt_digest_treats_unknown_optional_fields_as_omitted(app):
+    with app.app_context():
+        _seed_lost_game_shape(137, 137000)
+        log = GameLog.query.filter_by(mlb_game_pk=137000).one()
+        log.pitches_thrown = None
+        log.runs_allowed = None
+        db.session.commit()
+
+        published = serve_today_lead_story(reference_date=_REF)
+        evidence = published['lead_story']['claim_evidence']['relief_appearances']
+        assert published['status'] == 'ok'
+        assert 'pitches_thrown' not in evidence[0]
+        assert 'runs_allowed' not in evidence[0]
+
+        cached = read_snapshot(_REF)
+
+    assert cached == published
+
+
+def test_cached_positive_consequence_is_withheld_after_current_state_turns_negative(
+    app,
+    monkeypatch,
+):
+    current = {'optionality_band': 'flexible'}
+
+    def _build_current_context(team_id, reference_date=None, **_kwargs):
+        assert str(reference_date) == _REF.isoformat()
+        return _team_context_with_optionality(
+            team_id,
+            current['optionality_band'],
+        )
+
+    monkeypatch.setattr(
+        bullpen_context_service,
+        'build_team_bullpen_context',
+        _build_current_context,
+    )
+
+    with app.app_context():
+        _seed_burke_tied_handoff()
+        published = serve_today_lead_story(reference_date=_REF)
+        assert published['status'] == 'ok', published
+        assert (
+            published['lead_story']['selection']['semantic_gate']['consequence_key']
+            == 'late_inning_margin'
+        )
+
+        current['optionality_band'] = 'thin'
+        assert read_snapshot(_REF) is None
+        withheld = serve_today_lead_story(reference_date=_REF)
+
+    assert withheld['status'] == 'empty'
+    assert withheld['lead_story'] is None
+    assert withheld['empty_reason'] == 'lead_story_withheld_claim_evidence'
+
+
+def test_current_context_error_does_not_replace_recoverable_cached_lead(
+    app,
+    monkeypatch,
+):
+    current = {'unavailable': False}
+
+    def _build_current_context(team_id, reference_date=None, **_kwargs):
+        if current['unavailable']:
+            raise RuntimeError('current bullpen context unavailable')
+        return _team_context_with_optionality(team_id, 'flexible')
+
+    monkeypatch.setattr(
+        bullpen_context_service,
+        'build_team_bullpen_context',
+        _build_current_context,
+    )
+
+    with app.app_context():
+        _seed_burke_tied_handoff()
+        published = serve_today_lead_story(reference_date=_REF)
+        assert published['status'] == 'ok'
+        publication_id = published['lead_story']['publication_identity']['publication_id']
+
+        current['unavailable'] = True
+        failed = serve_today_lead_story(reference_date=_REF)
+        stored = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+
+        current['unavailable'] = False
+        recovered = serve_today_lead_story(reference_date=_REF)
+
+    assert failed['status'] == 'empty'
+    assert failed['empty_reason'] == 'no_publishable_coin_story'
+    assert failed['errors'] == 1
+    assert stored.status == 'ok'
+    assert (
+        stored.response_json['lead_story']['publication_identity']['publication_id']
+        == publication_id
+    )
+    assert recovered['status'] == 'ok'
+    assert recovered['lead_story']['publication_identity']['publication_id'] == publication_id
 
 
 def test_snapshot_miss_uses_bounded_regeneration_and_persists(app, monkeypatch):

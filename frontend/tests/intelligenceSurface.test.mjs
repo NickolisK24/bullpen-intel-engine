@@ -89,6 +89,21 @@ const intelligenceOk = {
   lead_story: {
     team_id: 137,
     game_pk: 137000,
+    claim_evidence: {
+      relief_appearances: [
+        { name: 'Ryan Walker', innings: 1, runs_allowed: 3 },
+        { name: 'Camilo Doval', innings: 0.2, runs_allowed: 2 },
+      ],
+    },
+    publication_identity: {
+      publication_id: 'today-2026-06-25-137000-v1',
+      data_through: '2026-06-25',
+      generated_at: '2026-06-26T03:30:00',
+      reference_date: '2026-06-25',
+      game_pk: 137000,
+      team_id: 137,
+      semantic_gate_version: 'daily_edition_claim_evidence_v1',
+    },
     package: {
       team_id: 137,
       primary_story: 'lost_game_shape',
@@ -115,11 +130,10 @@ const intelligenceOk = {
       },
       evidence_blocks: {
         key_relief_appearances: [
-          { name: 'Ryan Walker', innings: 1, runs_allowed: 3 },
-          { name: 'Camilo Doval', innings: 0.2, runs_allowed: 2 },
+          { name: 'Package-only Reliever', innings: 1, runs_allowed: 3 },
         ],
         available_relievers: [
-          { name: 'Erik Miller', status: 'Available' },
+          { name: 'Package-only Available Arm', status: 'Available' },
         ],
       },
     },
@@ -2260,6 +2274,38 @@ test('Bullpen Picture failure does not prevent Today page rendering', () => {
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
 })
 
+test('explicit publication-backed Landscape refusal stays scoped and never renders fake league counts', () => {
+  const unavailableLandscape = {
+    capability: 'tonights_bullpen_landscape',
+    status: 'snapshot_unavailable',
+    reason: 'dashboard_snapshot_missing',
+    teams_evaluated: null,
+    constrained_bullpens: null,
+    available_bullpens: null,
+    monitoring_concentration: null,
+    teams: null,
+    publication_authority: null,
+  }
+  const picture = getBullpenPictureView(unavailableLandscape)
+  assert.equal(picture.hasLandscape, false)
+  assert.equal(picture.unavailableReason, 'dashboard_snapshot_missing')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape: unavailableLandscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Published bullpen picture unavailable.'))
+  assert.ok(htmlIncludes(html, 'No trusted published league view is available. Other Today sections remain available.'))
+  assert.equal(htmlIncludes(html, '0 clubs in this published view'), false)
+  assert.equal(htmlIncludes(html, 'Rested &amp; Available'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
+})
+
 test('Bullpen Picture renders existing landscape lanes and handles missing data', () => {
   const picture = getBullpenPictureView(landscape)
   assert.equal(picture.hasLandscape, true)
@@ -2334,7 +2380,18 @@ test('Daily Edition renders the backend lead, named evidence, date, and Team Boa
   assert.equal(view.headline, intelligenceOk.lead_story.drafts.team_story.headline)
   assert.equal(view.body, intelligenceOk.lead_story.drafts.team_story.body)
   assert.deepEqual(view.reliefAppearances, ['Ryan Walker', 'Camilo Doval'])
-  assert.deepEqual(view.availableRelievers, [{ name: 'Erik Miller', status: 'Available' }])
+  assert.deepEqual(view.publicationIdentity, {
+    publicationId: 'today-2026-06-25-137000-v1',
+    dataThrough: '2026-06-25',
+    dataThroughLabel: 'Jun 25, 2026',
+    generatedAt: '2026-06-26T03:30:00',
+    generatedAtDateTime: '2026-06-26T03:30:00Z',
+    generatedAtLabel: 'Jun 25, 2026, 11:30 PM ET',
+    referenceDate: '2026-06-25',
+    gamePk: '137000',
+    teamId: '137',
+    semanticGateVersion: 'daily_edition_claim_evidence_v1',
+  })
   assert.equal(view.href, '/bullpen?view=board&team=SF&source=today')
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
@@ -2351,7 +2408,15 @@ test('Daily Edition renders the backend lead, named evidence, date, and Team Boa
   assert.ok(htmlIncludes(html, intelligenceOk.lead_story.drafts.team_story.body))
   assert.ok(htmlIncludes(html, 'Ryan Walker'))
   assert.ok(htmlIncludes(html, 'Camilo Doval'))
-  assert.ok(htmlIncludes(html, 'Erik Miller · Available'))
+  assert.equal(htmlIncludes(html, 'Package-only Reliever'), false)
+  assert.equal(htmlIncludes(html, 'Package-only Available Arm'), false)
+  assert.ok(htmlIncludes(html, 'Daily Edition publication identity'))
+  assert.ok(htmlIncludes(html, 'Data through'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-25">Jun 25, 2026'))
+  assert.ok(htmlIncludes(html, 'Generated'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-26T03:30:00Z">Jun 25, 2026, 11:30 PM ET'))
+  assert.ok(htmlIncludes(html, 'Publication'))
+  assert.ok(htmlIncludes(html, 'today-2026-06-25-137000-v1'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=today"'))
   assert.ok(html.indexOf('Daily Edition') < html.indexOf('Tonight&#x27;s Bullpen Watch'))
 })
@@ -2393,6 +2458,57 @@ test('Daily Edition unavailable state is local and preserves healthy page sectio
   }))
 
   assert.ok(htmlIncludes(html, 'The Daily Edition lead is temporarily unavailable.'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
+})
+
+test('Daily Edition claim-evidence withholding never renders unsupported lead prose or names', () => {
+  const unsupportedLead = {
+    ...intelligenceOk.lead_story,
+    claim_evidence: {
+      relief_appearances: [{ name: 'Stale unsupported reliever' }],
+    },
+    drafts: {
+      team_story: {
+        ...intelligenceOk.lead_story.drafts.team_story,
+        headline: 'Unsupported lead headline must not render',
+        body: 'Unsupported generic causal prose must not render.',
+      },
+    },
+  }
+  const response = {
+    ...intelligenceOk,
+    status: 'empty',
+    lead_story: unsupportedLead,
+    publishable_candidates: 0,
+    empty_reason: 'lead_story_withheld_claim_evidence',
+  }
+  const view = getDailyEditionView(response, teams)
+  assert.equal(view.state, 'unavailable')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: response,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+  const dailyHtml = sectionSlice(html, 'id="daily-edition-title"', 'id="since-yesterday-title"')
+
+  assert.ok(htmlIncludes(
+    dailyHtml,
+    'The Daily Edition lead was withheld because its claim and named evidence could not be published together. The rest of Today is still available.',
+  ))
+  assert.equal(htmlIncludes(dailyHtml, 'temporarily unavailable'), false)
+  for (const unsupported of [
+    'Unsupported lead headline must not render',
+    'Unsupported generic causal prose must not render.',
+    'Stale unsupported reliever',
+    'Package-only Reliever',
+    'today-2026-06-25-137000-v1',
+  ]) {
+    assert.equal(htmlIncludes(dailyHtml, unsupported), false, unsupported)
+  }
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
 })
@@ -2460,17 +2576,18 @@ test('Since Yesterday loading shell yields to available and governed unavailable
   assert.ok(htmlIncludes(unavailable, 'Since-yesterday movement is unavailable'))
 })
 
-test('Today retains one request owner for each existing public read', () => {
+test('Today uses one Dashboard request as the owner of its Landscape publication', () => {
   const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
   for (const owner of [
     'getTodayIntelligence',
     'getTonightIntelligence',
-    'getBullpenLandscape',
     'getBullpenDashboard',
     'getTeams',
   ]) {
     assert.equal((source.match(new RegExp(`useFetch\\(${owner}\\)`, 'g')) || []).length, 1, owner)
   }
+  assert.equal(source.includes('getBullpenLandscape'), false)
+  assert.ok(source.includes('const landscape = dashboard.data?.landscape || null'))
 })
 
 test('Daily Edition loading is compact and does not block healthy Tonight content', () => {

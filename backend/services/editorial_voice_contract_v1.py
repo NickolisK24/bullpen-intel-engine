@@ -77,6 +77,39 @@ BASEBALL_CONSEQUENCE_LINES = {
     ),
 }
 
+BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY = {
+    'thin': 'availability_narrowed',
+    'narrow': 'availability_narrowed',
+    'flexible': 'late_inning_margin',
+    'deep': 'late_inning_margin',
+}
+BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION = {
+    'concentrated': 'workload_concentration',
+    'narrow': 'workload_concentration',
+}
+
+
+def resolve_bullpen_consequence_key(
+    availability_snapshot,
+    workload_snapshot,
+    fallback_key=None,
+):
+    """Resolve the existing structured consequence key without rendering prose.
+
+    This is the single owner used by both story translation and the Today
+    publication gate.  Optionality retains its existing precedence over
+    concentration; no state definition or threshold is changed here.
+    """
+    availability = availability_snapshot if isinstance(availability_snapshot, dict) else {}
+    workload = workload_snapshot if isinstance(workload_snapshot, dict) else {}
+    optionality = availability.get('optionality_band')
+    if optionality in BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY:
+        return BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY[optionality]
+    concentration = workload.get('concentration_band')
+    if concentration in BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION:
+        return BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION[concentration]
+    return fallback_key
+
 # SURFACE-SCOPED, not a global public-language ban. These terms are denied on
 # the surfaces that run ``find_editorial_violations`` — Today's Story editorial
 # review and context explanation editorial review — where engine shorthand

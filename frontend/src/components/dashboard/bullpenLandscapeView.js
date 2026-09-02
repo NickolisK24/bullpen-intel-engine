@@ -76,7 +76,12 @@ function mapEntries(list) {
 }
 
 export function getLandscapeView(landscape) {
-  if (!landscape) return { hasLandscape: false }
+  if (!landscape || landscape.status === 'snapshot_unavailable') {
+    return {
+      hasLandscape: false,
+      unavailableReason: landscape?.reason || null,
+    }
+  }
   const games = landscape.games || {}
   const dataState = games.data_state || 'unavailable'
   const asOfDate = fmtDataDate(games.as_of_date)

@@ -55,6 +55,8 @@ function ChangeRow({ row, groupKey, onSelectPitcher }) {
     : row.gameDate && row.dateLabel
       ? <><time dateTime={row.gameDate}>{row.dateLabel}</time>{row.pitches != null ? ` · ${row.pitches} pitches` : ''}</>
       : row.pitches != null ? `${row.pitches} pitches` : null
+  const armReadWindow = groupKey === 'arm-read'
+    && row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
 
   return (
     <li className="grid min-w-0 gap-meta py-panel first:pt-row last:pb-row tablet:grid-cols-[minmax(10rem,0.8fr)_minmax(0,1.7fr)] tablet:gap-panel">
@@ -62,6 +64,13 @@ function ChangeRow({ row, groupKey, onSelectPitcher }) {
       <div className="min-w-0">
         {detail && <p className="type-data break-words font-medium text-text-primary">{detail}</p>}
         {row.summary && <p className="type-compact mt-meta max-w-3xl break-words text-text-secondary">{row.summary}</p>}
+        {armReadWindow && (
+          <p className="type-metadata mt-meta text-text-tertiary">
+            Since <time dateTime={row.fromDate}>{row.fromDateLabel}</time>
+            {' · through '}
+            <time dateTime={row.toDate}>{row.toDateLabel}</time>
+          </p>
+        )}
       </div>
     </li>
   )
@@ -113,6 +122,9 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
   const teamStateLimitation = view.teamStateComparison.limitation
   const restStatusUnavailable = view.restStatusComparison.status === 'unavailable'
   const restStatusLimitation = view.restStatusComparison.limitation
+  const armReadLimited = !['changed', 'unchanged'].includes(view.armReadComparison.status)
+  const armReadLimitation = view.armReadComparison.limitation
+    || 'A governed Arm Read comparison is not available.'
   const hasGroups = view.groups.length > 0
 
   return (
@@ -137,10 +149,11 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
           <SectionState status="unavailable" title="No comparison baseline" message={limitation || 'No earlier completed game is available for comparison.'} className="mt-section" />
         ) : view.state === 'stale' ? (
           <SectionState status="unavailable" title="Comparison freshness blocked" message={limitation || 'Current workload data is not fresh enough to compare safely.'} className="mt-section" />
-        ) : view.state === 'no_changes' && (teamStateUnavailable || restStatusUnavailable) ? (
+        ) : view.state === 'no_changes' && (teamStateUnavailable || restStatusUnavailable || armReadLimited) ? (
           <>
             {teamStateUnavailable && <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-section" />}
             {restStatusUnavailable && <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />}
+            {armReadLimited && <SectionState status="partial" title="Arm Read comparison limited" message={armReadLimitation} className="mt-section" />}
           </>
         ) : view.state === 'no_changes' ? (
           <div className="section-state mt-section rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
@@ -154,6 +167,9 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
             )}
             {restStatusUnavailable && restStatusLimitation && (
               <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />
+            )}
+            {armReadLimited && armReadLimitation && (
+              <SectionState status="partial" title="Arm Read comparison limited" message={armReadLimitation} className="mt-section" />
             )}
             {limitation && <SectionState status="partial" title="Some change context is limited" message={limitation} className="mt-section" />}
           </>

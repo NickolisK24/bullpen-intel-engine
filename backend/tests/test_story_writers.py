@@ -40,7 +40,10 @@ _DISCOURAGED_PUBLIC_LANGUAGE = (
     '0 trusted',
 )
 _ALLOWED_WRITER_SERVICE_IMPORT = (
-    'from services.editorial_voice_contract_v1 import render_baseball_consequence'
+    'from services.editorial_voice_contract_v1 import (\n'
+    '    render_baseball_consequence,\n'
+    '    resolve_bullpen_consequence_key,\n'
+    ')'
 )
 
 

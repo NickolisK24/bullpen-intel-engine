@@ -108,7 +108,7 @@ def test_high_story_has_consequence_no_opening():
     assert draft.story_priority == 'HIGH'
     # No CRITICAL "to protect" opening; the relievers close it out as the consequence.
     assert 'and a four-run lead to protect' not in draft.body
-    assert 'slammed the door' in draft.body
+    assert 'appeared in relief as the bullpen carried the lead home' in draft.body
     assert draft.observations and draft.evidence
 
 
@@ -133,7 +133,10 @@ def test_low_story_stays_neutral():
 def test_body_blends_evidence_into_one_paragraph():
     body = _team_story().body
     assert 'Landen Roupp' in body and 'four-run lead' in body
-    assert 'Ryan Walker and Tyler Rogers surrendering the decisive blows' in body
+    assert (
+        'Ryan Walker and Tyler Rogers on the mound for the scoring sequence '
+        'that erased the lead'
+    ) in body
     # Not the old one-clause "inherited a lead" seam.
     assert 'the bullpen inherited a four-run lead' not in body
 

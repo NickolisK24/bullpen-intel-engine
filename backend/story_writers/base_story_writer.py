@@ -20,7 +20,10 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.editorial_voice_contract_v1 import render_baseball_consequence
+from services.editorial_voice_contract_v1 import (
+    render_baseball_consequence,
+    resolve_bullpen_consequence_key,
+)
 from utils.baseball_innings import format_baseball_innings
 
 
@@ -116,17 +119,6 @@ _WRITER_HEADLINE_OFFSET = {
     'team_story': 0,
     'dashboard': 1,
     'morning_brief': 2,
-}
-
-_BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY = {
-    'thin': 'availability_narrowed',
-    'narrow': 'availability_narrowed',
-    'flexible': 'late_inning_margin',
-    'deep': 'late_inning_margin',
-}
-_BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION = {
-    'concentrated': 'workload_concentration',
-    'narrow': 'workload_concentration',
 }
 
 # Plain-language reads of the narrative's observation identifiers. Only the
@@ -741,9 +733,15 @@ class BaseStoryWriter:
         if late:
             closing = f'{_num(late)} late runs turned the game'
             if names:
-                closing += f', with {_join_names(names)} surrendering the decisive blows'
+                closing += (
+                    f', with {_join_names(names)} on the mound for the scoring '
+                    'sequence that erased the lead'
+                )
         elif names:
-            closing = f'{_join_names(names)} surrendered the decisive blows'
+            closing = (
+                f'{_join_names(names)} were on the mound for the scoring '
+                'sequence that erased the lead'
+            )
         if closing:
             sentences.append(_sentence(closing))
         return ' '.join(sentences)
@@ -826,9 +824,10 @@ class BaseStoryWriter:
             sentences.append(self._start_in_game(line))
 
         if include_consequence and names:
-            tail = f'{_join_names(names)} slammed the door'
-            if late == 0:
-                tail += ' without a run crossing'
+            tail = (
+                f'{_join_names(names)} appeared in relief as the bullpen '
+                'carried the lead home'
+            )
             sentences.append(_sentence(tail))
         return ' '.join(sentences)
 
@@ -882,7 +881,7 @@ class BaseStoryWriter:
         if include_consequence:
             if names:
                 sentences.append(_sentence(
-                    f'{_join_names(names)} held the line, and the offense finished the rally'))
+                    f'{_join_names(names)} appeared in relief before the offense finished the rally'))
             else:
                 sentences.append('The offense finished the rally.')
         return ' '.join(sentences)
@@ -955,13 +954,11 @@ class BaseStoryWriter:
         return ' '.join(sentences)
 
     def _bullpen_consequence_key(self, fallback_key: str | None = None) -> str | None:
-        optionality = self.availability_snapshot().get('optionality_band')
-        concentration = self.workload_snapshot().get('concentration_band')
-        if optionality in _BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY:
-            return _BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY[optionality]
-        if concentration in _BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION:
-            return _BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION[concentration]
-        return fallback_key
+        return resolve_bullpen_consequence_key(
+            self.availability_snapshot(),
+            self.workload_snapshot(),
+            fallback_key,
+        )
 
     def _bullpen_consequence_line(
         self,

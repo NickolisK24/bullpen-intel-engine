@@ -1948,6 +1948,77 @@ def test_arm_read_method_version_mismatch_is_not_comparable():
     ] == delta.COMPARABLE
 
 
+def test_arm_read_noncanonical_public_label_is_withheld():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['values']['arm_read']['records'][0]['public_read'][
+        'label'
+    ] = 'Monitor'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.VALUE_MISSING
+    assert 'movement_candidates' not in comparison
+
+
+def test_arm_read_reference_dates_must_match_the_published_representation():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['domains']['arm_read'][
+        'availability_reference_date'
+    ] = '2026-08-18'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.REPRESENTED_DATE_INVALID
+
+
+def test_arm_read_missing_public_pitcher_name_withholds_only_that_arm():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['values']['arm_read']['records'][0]['pitcher_name'] = None
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement_candidates'] == []
+    assert comparison['arm_comparisons'][0]['comparable'] is False
+    assert comparison['arm_comparisons'][0]['reason_code'] == delta.VALUE_MISSING
+
+
+def test_arm_read_nonincreasing_snapshot_dates_are_not_comparable():
+    previous = _snapshot(
+        date(2026, 8, 18), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.REPRESENTED_DATE_INVALID
+
+
 def test_arm_read_untrusted_publication_is_not_comparable():
     previous = _snapshot(
         date(2026, 8, 17), snapshot_id=1,

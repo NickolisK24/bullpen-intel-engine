@@ -15,6 +15,7 @@ from services import intelligence_surface_service as surface
 from services.coin_seeded_fixtures import SEEDED_FIXTURES, fixture_for
 from services.coin_story_inspection import inspect_team_story
 from services.intelligence_surface_service import (
+    EMPTY_CLAIM_EVIDENCE_WITHHELD,
     EMPTY_NO_CANDIDATES,
     EMPTY_NO_PUBLISHABLE,
     build_today_lead_story,
@@ -29,6 +30,12 @@ def _fake_inspected(team_id, *, publishable=True, priority='HIGH', importance='M
                     confidence='HIGH', primary='protected_game_shape', game_pk=None,
                     late_runs=0, largest_lead=0, largest_deficit=0):
     game_pk = game_pk if game_pk is not None else team_id * 1000
+    negative = primary in {
+        'lost_game_shape',
+        'late_pressure_accumulated',
+        'bullpen_overexposed',
+    }
+    runs_allowed = 1 if negative else 0
     return {
         'team_id': team_id,
         'game_pk': game_pk,
@@ -45,6 +52,33 @@ def _fake_inspected(team_id, *, publishable=True, priority='HIGH', importance='M
             'story_priority': priority,
             'game_importance': importance,
             'confidence': confidence,
+            'package_version': 'story_package_v1',
+            'generated_at': '2026-06-26T03:30:00',
+            'availability_snapshot': {
+                'optionality_band': 'thin' if negative else 'flexible',
+            },
+            'workload_snapshot': {'concentration_band': 'normal'},
+            'evidence_blocks': {
+                'key_relief_appearances': [{
+                    'pitcher_mlb_id': 700000 + team_id,
+                    'name': f'Reliever {team_id}',
+                    'game_pk': game_pk,
+                    'appearance_team_id': team_id,
+                    'innings': 1.0,
+                    'innings_pitched_outs': 3,
+                    'runs_allowed': runs_allowed,
+                    'claim_evidence_role': (
+                        'claim_scoring_event_pitcher'
+                        if primary in {'lost_game_shape', 'late_pressure_accumulated'}
+                        else 'claim_supporting_relief_participant'
+                    ),
+                    **(
+                        {'claim_event_indexes': [71]}
+                        if primary in {'lost_game_shape', 'late_pressure_accumulated'}
+                        else {}
+                    ),
+                }],
+            },
             'completed_game_context': {
                 'team_id': team_id,
                 'game_pk': game_pk,
@@ -287,7 +321,7 @@ def test_bounded_regeneration_renders_top_ranked_candidate_first():
     assert result['lead_story']['team_id'] == 137
     assert seen == [137]
     assert result['candidates_considered'] == 2
-    assert result['publishable_candidates'] == 2
+    assert result['publishable_candidates'] == 1
     assert result['errors'] == 0
 
 
@@ -328,7 +362,7 @@ def test_bounded_regeneration_continues_after_top_candidate_error():
     assert result['lead_story']['team_id'] == 147
     assert seen == [137, 147]
     assert result['candidates_considered'] == 2
-    assert result['publishable_candidates'] == 2
+    assert result['publishable_candidates'] == 1
     assert result['errors'] == 1
 
 
@@ -364,6 +398,19 @@ def _seeded_inspect_fn():
 
 def _seeded_candidate_contexts():
     return [copy.deepcopy(f['completed_game_context']) for f in SEEDED_FIXTURES]
+
+
+def _fixture_inspector(fixtures_by_team):
+    def inspect(team_id, *, app=None, reference_date=None, completed_game_context=None):
+        fixture = fixtures_by_team[team_id]
+        return inspect_team_story(
+            team_id,
+            app=None,
+            reference_date=reference_date,
+            completed_game_context=completed_game_context,
+            team_context=fixture['team_context'],
+        )
+    return inspect
 
 
 def test_seeded_pipeline_selects_giants_critical_lead():
@@ -412,6 +459,135 @@ def test_seeded_pipeline_introduces_no_future_language():
     blob += ' ' + str(lead['selection']).lower()
     for term in _FORBIDDEN_FUTURE:
         assert term not in blob, term
+
+
+# ── F-001 Today semantic publication gate ────────────────────────────────────
+
+def test_lost_lead_positive_consequence_without_receipts_is_explicitly_withheld():
+    fixture = copy.deepcopy(fixture_for(137))
+    context = fixture['completed_game_context']
+    context.pop('key_relief_appearances', None)
+    fixture['team_context']['bullpen_optionality_context']['optionality_band'] = 'flexible'
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=[context],
+        inspect_fn=_fixture_inspector({137: fixture}),
+    )
+
+    assert result['status'] == 'empty'
+    assert result['lead_story'] is None
+    assert result['empty_reason'] == EMPTY_CLAIM_EVIDENCE_WITHHELD
+    assert result['publishable_candidates'] == 0
+
+
+def test_compatible_lost_lead_without_responsible_receipts_is_withheld():
+    fixture = copy.deepcopy(fixture_for(137))
+    context = fixture['completed_game_context']
+    context.pop('key_relief_appearances', None)
+
+    result = build_today_lead_story(
+        candidate_contexts=[context],
+        inspect_fn=_fixture_inspector({137: fixture}),
+    )
+
+    assert result['status'] == 'empty'
+    assert result['lead_story'] is None
+    assert result['empty_reason'] == EMPTY_CLAIM_EVIDENCE_WITHHELD
+
+
+def test_compatible_positive_story_publishes_exact_receipts_and_identity():
+    fixture = copy.deepcopy(fixture_for(133))
+    context = fixture['completed_game_context']
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=[context],
+        inspect_fn=_fixture_inspector({133: fixture}),
+    )
+
+    assert result['status'] == 'ok'
+    lead = result['lead_story']
+    package_names = [
+        item['name']
+        for item in lead['package']['evidence_blocks']['key_relief_appearances']
+    ]
+    claim_names = [
+        item['name']
+        for item in lead['claim_evidence']['relief_appearances']
+    ]
+    assert claim_names == package_names == ['Mason Miller', 'Lucas Erceg']
+    assert lead['selection']['semantic_gate'] == {
+        'status': 'pass',
+        'version': 'daily_edition_claim_evidence_v1',
+        'consequence_key': 'late_inning_margin',
+    }
+    identity = lead['publication_identity']
+    assert identity['data_through'] == result['reference_date']
+    assert identity['reference_date'] == result['reference_date']
+    assert identity['game_pk'] == lead['game_pk']
+    assert identity['team_id'] == lead['team_id']
+    assert identity['generated_at'] == lead['package']['generated_at']
+    assert identity['semantic_gate_version'] == 'daily_edition_claim_evidence_v1'
+    assert identity['publication_id'].startswith(
+        'daily-edition-2026-06-25-133-133000-'
+    )
+
+
+def test_withheld_top_candidate_does_not_replace_it_with_generic_prose():
+    giants = copy.deepcopy(fixture_for(137))
+    giants['completed_game_context'].pop('key_relief_appearances', None)
+    giants['team_context']['bullpen_optionality_context']['optionality_band'] = 'flexible'
+    athletics = copy.deepcopy(fixture_for(133))
+    fixtures = {137: giants, 133: athletics}
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=[
+            giants['completed_game_context'],
+            athletics['completed_game_context'],
+        ],
+        inspect_fn=_fixture_inspector(fixtures),
+    )
+
+    # The incompatible candidate contributes no draft at all.  The next lead is
+    # independently valid and carries its own exact receipts.
+    assert result['status'] == 'ok'
+    assert result['lead_story']['team_id'] == 133
+    assert 'more than one route' not in str(result['lead_story']['drafts']).lower()
+    assert [
+        item['name']
+        for item in result['lead_story']['claim_evidence']['relief_appearances']
+    ] == ['Mason Miller', 'Lucas Erceg']
+
+
+def test_bounded_selector_continues_after_semantically_withheld_top_candidate():
+    giants = copy.deepcopy(fixture_for(137))
+    giants['completed_game_context'].pop('key_relief_appearances', None)
+    giants['team_context']['bullpen_optionality_context']['optionality_band'] = 'flexible'
+    athletics = copy.deepcopy(fixture_for(133))
+    fixtures = {137: giants, 133: athletics}
+    seen = []
+    base_inspect = _fixture_inspector(fixtures)
+
+    def inspect(team_id, **kwargs):
+        seen.append(team_id)
+        return base_inspect(team_id, **kwargs)
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=[
+            athletics['completed_game_context'],
+            giants['completed_game_context'],
+        ],
+        inspect_fn=inspect,
+        bounded=True,
+    )
+
+    assert result['status'] == 'ok'
+    assert result['lead_story']['team_id'] == 133
+    assert seen == [137, 133]
+    assert result['publishable_candidates'] == 1
 
 
 # ── Determinism / no mutation of the candidate input ──────────────────────────

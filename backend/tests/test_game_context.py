@@ -2,8 +2,9 @@
 Tests for the schedule / game-context adapter (services/game_context.py) and its
 endpoints: Today's Game Context and Tonight's Bullpen Landscape.
 
-Everything is derived from stored game logs / availability — no live network.
-In-memory SQLite, no Postgres / MLB.
+The builders are derived from stored game logs / availability — no live
+network. The public Landscape endpoint is snapshot-only and must never invoke
+those mutable builders as a serving fallback. In-memory SQLite, no Postgres / MLB.
 """
 
 from datetime import date, datetime, timedelta
@@ -14,6 +15,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
+import api.bullpen as bullpen_api
 from services.game_context import build_landscape, build_team_game_context
 from utils.db import db
 from models.pitcher import Pitcher
@@ -131,6 +133,46 @@ class TestTeamGameContext:
 # ── Landscape ──────────────────────────────────────────────────────────────
 
 class TestLandscape:
+    def test_public_endpoint_does_not_rebuild_from_mutable_records_without_publication(
+        self,
+        client,
+        monkeypatch,
+    ):
+        mutable_records = [_fake_record(1, 'Available')]
+        builder_calls = []
+
+        monkeypatch.setattr(
+            bullpen_api.dashboard_snapshot_service,
+            'get_latest_valid_dashboard_snapshot',
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            bullpen_api,
+            'current_availability_records',
+            lambda *_args, **_kwargs: mutable_records,
+        )
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_landscape',
+            lambda **kwargs: builder_calls.append(kwargs) or {
+                'capability': 'tonights_bullpen_landscape',
+                'teams_evaluated': 30,
+                'constrained_bullpens': [],
+                'available_bullpens': [],
+                'monitoring_concentration': [],
+            },
+        )
+
+        response = client.get('/api/bullpen/landscape')
+        payload = response.get_json()
+
+        assert response.status_code == 200
+        assert payload['status'] == 'snapshot_unavailable'
+        assert payload['reason'] == 'dashboard_snapshot_missing'
+        assert payload['teams_evaluated'] is None
+        assert payload['snapshot']['snapshot_id'] is None
+        assert builder_calls == []
+
     def test_response_shape_and_governance(self, client):
         with client.application.app_context():
             payload = build_landscape(reference_date=date.today())

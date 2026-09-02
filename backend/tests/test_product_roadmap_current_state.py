@@ -388,14 +388,17 @@ def test_today_01_completion_integrates_the_existing_lead_owner_once():
     assert 'getTeamBullpen' not in today_surface
 
     # TODAY-01 composes the lead into a functioning Daily Edition; it is not a
-    # replacement for the already-adopted Tonight and league sections.
+    # replacement for the already-adopted Tonight and league sections. F-007
+    # makes Dashboard the one Home request owner for the nested Landscape so a
+    # publication turnover cannot mix two snapshot identities on one render.
     for existing_owner in (
         'getTonightIntelligence',
-        'getBullpenLandscape',
         'getBullpenDashboard',
         'getTeams',
     ):
         assert existing_owner in today_surface, existing_owner
+    assert 'getBullpenLandscape' not in today_surface
+    assert 'const landscape = dashboard.data?.landscape || null' in today_surface
 
 
 def test_core_loop_closeout_preserves_every_authority_boundary():

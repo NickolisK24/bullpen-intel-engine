@@ -110,8 +110,14 @@ _GIANTS = {
         bullpen_story_tag='lost_game_shape', confidence='HIGH',
         # 4 + 3 = the 7 late runs; both arms pitched, so neither is a clean option.
         key_relief_appearances=[
-            {'name': 'Ryan Walker', 'innings': 0.2, 'runs_allowed': 4},
-            {'name': 'Tyler Rogers', 'innings': 1.0, 'runs_allowed': 3},
+            {'pitcher_mlb_id': 592254, 'name': 'Ryan Walker', 'game_pk': 137000,
+             'appearance_team_id': 137, 'innings': 0.2, 'runs_allowed': 4,
+             'claim_evidence_role': 'claim_scoring_event_pitcher',
+             'claim_event_indexes': [80]},
+            {'pitcher_mlb_id': 643511, 'name': 'Tyler Rogers', 'game_pk': 137000,
+             'appearance_team_id': 137, 'innings': 1.0, 'runs_allowed': 3,
+             'claim_evidence_role': 'claim_scoring_event_pitcher',
+             'claim_event_indexes': [81]},
         ],
     ),
     'team_context': _team_context(137, optionality_band='thin',
@@ -137,8 +143,12 @@ _ATHLETICS = {
         bullpen_story_tag='bullpen_kept_team_alive', confidence='HIGH',
         # Bullpen held the opponent at 4 (0 late runs) while the offense rallied.
         key_relief_appearances=[
-            {'name': 'Mason Miller', 'innings': 2.0, 'runs_allowed': 0},
-            {'name': 'Lucas Erceg', 'innings': 1.0, 'runs_allowed': 0},
+            {'pitcher_mlb_id': 695243, 'name': 'Mason Miller', 'game_pk': 133000,
+             'appearance_team_id': 133, 'innings': 2.0, 'runs_allowed': 0,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
+            {'pitcher_mlb_id': 668674, 'name': 'Lucas Erceg', 'game_pk': 133000,
+             'appearance_team_id': 133, 'innings': 1.0, 'runs_allowed': 0,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
         ],
     ),
     'team_context': _team_context(133, optionality_band='flexible',
@@ -165,8 +175,12 @@ _RAYS = {
         bullpen_story_tag='protected_game_shape', confidence='HIGH',
         # The only opponent run was off the starter; the pen gave nothing back.
         key_relief_appearances=[
-            {'name': 'Pete Fairbanks', 'innings': 1.0, 'runs_allowed': 0},
-            {'name': 'Jason Adam', 'innings': 1.0, 'runs_allowed': 0},
+            {'pitcher_mlb_id': 664126, 'name': 'Pete Fairbanks', 'game_pk': 139000,
+             'appearance_team_id': 139, 'innings': 1.0, 'runs_allowed': 0,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
+            {'pitcher_mlb_id': 592094, 'name': 'Jason Adam', 'game_pk': 139000,
+             'appearance_team_id': 139, 'innings': 1.0, 'runs_allowed': 0,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
         ],
     ),
     'team_context': _team_context(139, optionality_band='deep',
@@ -192,8 +206,12 @@ _YANKEES = {
         bullpen_story_tag='bullpen_overexposed', confidence='MEDIUM',
         # The pen covered six innings; Hamilton's run is the lone late one.
         key_relief_appearances=[
-            {'name': 'Ian Hamilton', 'innings': 2.1, 'runs_allowed': 1},
-            {'name': 'Tim Hill', 'innings': 1.2, 'runs_allowed': 0},
+            {'pitcher_mlb_id': 641656, 'name': 'Ian Hamilton', 'game_pk': 147000,
+             'appearance_team_id': 147, 'innings': 2.1, 'runs_allowed': 1,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
+            {'pitcher_mlb_id': 657612, 'name': 'Tim Hill', 'game_pk': 147000,
+             'appearance_team_id': 147, 'innings': 1.2, 'runs_allowed': 0,
+             'claim_evidence_role': 'claim_supporting_relief_participant'},
         ],
     ),
     'team_context': _team_context(147, optionality_band='narrow',

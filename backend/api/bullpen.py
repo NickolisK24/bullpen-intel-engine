@@ -89,6 +89,7 @@ from services.league_team_state_listing import (
     build_league_team_state_listing,
     build_snapshot_unavailable_listing,
 )
+from services.public_landscape import build_public_landscape, unavailable_landscape
 from services.snapshot_read_guard import SnapshotReadUnavailable
 from services.tonight_intelligence_snapshot import serve_tonight_cached
 from services.narrative_memory import (
@@ -1976,10 +1977,10 @@ def get_team_changes(team_id):
     """
     What Changed Since Last Game — small followed-team change surface.
 
-    Compares current team bullpen state to the previous completed game date
-    using stored game logs, fatigue-score history, existing availability
-    classification, and durable sync freshness. Presentation only: no ranking,
-    no selection, no recommendation, and no prediction.
+    Compares governed values from comparable trusted publications and appends
+    new-appearance facts from stored game logs under durable sync freshness.
+    Raw availability status is not an Arm Read comparison source. Presentation
+    only: no ranking, no selection, no recommendation, and no prediction.
     """
     freshness = _board_freshness_block()
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))
@@ -3066,6 +3067,14 @@ def _dashboard_live_fallback_enabled():
     return _truthy(os.environ.get('DASHBOARD_LIVE_FALLBACK_ENABLED'))
 
 
+def _mutable_landscape_allowed_for_nonproduction_validation():
+    """Keep builder validation reachable without authorizing public fallback."""
+    return (
+        current_app.config.get('TESTING')
+        or current_app.config.get('APP_ENV', 'development') != 'production'
+    )
+
+
 def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
     generated_at = datetime.now(timezone.utc).isoformat()
     diagnostics = dashboard_snapshot_service.snapshot_diagnostics(snapshot)
@@ -3299,11 +3308,22 @@ def get_league_team_states():
 def bullpen_dashboard_response_payload():
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is not None:
-        return _dashboard_payload_with_snapshot_metadata(
+        result = _dashboard_payload_with_snapshot_metadata(
             snapshot.payload,
             'cache',
             snapshot=snapshot,
         )
+        try:
+            result['landscape'] = build_public_landscape(snapshot)
+        except SnapshotReadUnavailable:
+            current_app.logger.warning('Dashboard Landscape publication read unavailable')
+            result['landscape'] = unavailable_landscape(SNAPSHOT_READ_UNAVAILABLE)
+        except Exception:
+            current_app.logger.exception('Dashboard Landscape projection unavailable')
+            result['landscape'] = unavailable_landscape(
+                'trusted_publication_landscape_projection_unavailable',
+            )
+        return result
 
     if not _dashboard_live_fallback_enabled():
         latest_record = dashboard_snapshot_service.get_latest_dashboard_snapshot_record()
@@ -3314,10 +3334,16 @@ def bullpen_dashboard_response_payload():
         )
 
     payload = build_bullpen_dashboard_payload()
-    return _dashboard_payload_with_snapshot_metadata(
+    result = _dashboard_payload_with_snapshot_metadata(
         payload,
         'live_fallback',
     )
+    if _mutable_landscape_allowed_for_nonproduction_validation():
+        return result
+    latest_record = dashboard_snapshot_service.get_latest_dashboard_snapshot_record()
+    reason = dashboard_snapshot_service.snapshot_unavailable_reason(latest_record)
+    result['landscape'] = unavailable_landscape(reason)
+    return result
 
 
 @bullpen_bp.route('/landscape', methods=['GET'])
@@ -3329,31 +3355,21 @@ def get_bullpen_landscape():
     selection, recommendation, or prediction.
     """
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
-    if snapshot is not None and isinstance(snapshot.payload, dict):
-        landscape = (snapshot.payload or {}).get('landscape')
-        if isinstance(landscape, dict):
-            if _landscape_carries_team_state(landscape):
-                return jsonify(landscape)
-            # Pre-contract snapshot: fail closed rather than leave the field absent.
-            return jsonify(_with_landscape_team_states(
-                landscape,
-                lambda _team_id: team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE),
-            ))
+    if snapshot is None:
+        latest_record = dashboard_snapshot_service.get_latest_dashboard_snapshot_record()
+        reason = dashboard_snapshot_service.snapshot_unavailable_reason(latest_record)
+        return jsonify(unavailable_landscape(reason))
 
-    freshness = _board_freshness_block()
-    reference_date = _public_availability_reference_date(freshness)
-    records = current_availability_records(
-        availability_latest_fatigue_rows(),
-        reference_date=reference_date,
-    )
-    return jsonify(_with_landscape_team_states(
-        build_landscape(
-            records=records,
-            reference_date=reference_date,
-            freshness=freshness,
-        ),
-        canonical_team_state,
-    ))
+    try:
+        return jsonify(build_public_landscape(snapshot))
+    except SnapshotReadUnavailable:
+        current_app.logger.warning('Landscape publication read unavailable')
+        return jsonify(unavailable_landscape(SNAPSHOT_READ_UNAVAILABLE)), 503
+    except Exception:
+        current_app.logger.exception('Landscape publication projection unavailable')
+        return jsonify(unavailable_landscape(
+            'trusted_publication_landscape_projection_unavailable',
+        )), 503
 
 
 @bullpen_bp.route('/teams/<int:team_id>/game-context', methods=['GET'])

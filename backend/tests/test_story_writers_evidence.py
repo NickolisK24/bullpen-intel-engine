@@ -14,7 +14,10 @@ from story_writers import DashboardStoryWriter, MorningBriefWriter, TeamStoryWri
 _FORBIDDEN_FUTURE = ('tomorrow', 'tonight', 'next game', 'next week', 'upcoming', 'series')
 _IMPOSSIBLE_INNINGS = re.compile(r'\b\d+\.[367]\b')
 _ALLOWED_WRITER_SERVICE_IMPORT = (
-    'from services.editorial_voice_contract_v1 import render_baseball_consequence'
+    'from services.editorial_voice_contract_v1 import (\n'
+    '    render_baseball_consequence,\n'
+    '    resolve_bullpen_consequence_key,\n'
+    ')'
 )
 
 

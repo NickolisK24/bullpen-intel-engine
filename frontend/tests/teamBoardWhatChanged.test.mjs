@@ -57,14 +57,21 @@ const changes = {
     status: 'changed',
     limitation: null,
   },
+  arm_read_comparison: {
+    status: 'changed',
+    limitation: null,
+  },
   pitcher_changes: [
     {
-      type: 'status_change',
+      type: 'arm_read_change',
+      semantic_family: 'public_arm_read',
       pitcher_id: 9,
       pitcher_name: 'Shift Arm',
-      from_status: 'Monitor',
-      to_status: 'Limited',
-      summary: 'Shift Arm moved from Monitor to Limited.',
+      from_read: { key: 'watch_arm', label: 'Watch Arm' },
+      to_read: { key: 'rest_restricted', label: 'Limited Rest' },
+      from_date: '2026-08-17',
+      to_date: '2026-08-18',
+      summary: 'Shift Arm moved from Watch Arm to Limited Rest.',
     },
     {
       type: 'appearance',
@@ -90,7 +97,7 @@ test('supported change groups render in materiality order with governed endpoint
   assert.ok(html.indexOf('Arm Read movement') < html.indexOf('New appearance / workload'))
   assert.match(html, /date(?:T|t)ime="2026-08-17"/)
   assert.match(html, /date(?:T|t)ime="2026-08-18"/)
-  assert.ok(html.includes('Monitor → Limited'))
+  assert.ok(html.includes('Watch Arm → Limited Rest'))
   assert.ok(html.includes('Stretched → Vulnerable'))
   assert.ok(html.includes(changes.team_state_change.summary))
   assert.ok(html.includes(changes.rest_status_change.transition))
@@ -115,12 +122,46 @@ test('unknown categories are omitted rather than converted into no-change rows',
   assert.equal(html.includes('No material changes were detected'), false)
 })
 
+test('legacy availability status changes cannot render as Arm Read movement', () => {
+  const rawAvailabilityOnly = {
+    ...changes,
+    team_state_change: null,
+    rest_status_change: null,
+    arm_read_comparison: {
+      status: 'unchanged',
+      limitation: null,
+    },
+    pitcher_changes: [
+      {
+        type: 'status_change',
+        pitcher_id: 9,
+        pitcher_name: 'Raw Status Arm',
+        from_status: 'Available',
+        to_status: 'Monitor',
+        summary: 'Raw Status Arm moved from Available to Monitor.',
+      },
+      changes.pitcher_changes[1],
+    ],
+  }
+  const view = getWhatChangedView(rawAvailabilityOnly)
+  const html = render({ changes: rawAvailabilityOnly })
+
+  assert.deepEqual(view.groups.map(group => group.key), ['appearance'])
+  assert.equal(html.includes('Arm Read movement'), false)
+  assert.equal(html.includes('Available → Monitor'), false)
+  assert.equal(html.includes('Raw Status Arm'), false)
+  assert.ok(html.includes('New appearance / workload'))
+})
+
 test('quiet, no-baseline, freshness-blocked, unavailable, and error states remain distinct', () => {
   const quiet = render({ changes: {
     ...changes,
     state: 'no_changes',
     team_state_change: null,
     team_state_comparison: { status: 'unchanged', limitation: null },
+    rest_status_change: null,
+    rest_status_comparison: { status: 'unchanged', limitation: null },
+    arm_read_comparison: { status: 'unchanged', limitation: null },
     pitcher_changes: [],
   } })
   const baseline = render({ changes: {
@@ -171,7 +212,7 @@ test('an unavailable Team State lane prevents a definitive quiet-day claim', () 
   assert.equal(html.includes('contract_incompatible'), false)
 })
 
-test('an unavailable Team State lane remains disclosed beside proven status movement', () => {
+test('an unavailable Team State lane remains disclosed beside governed Arm Read movement', () => {
   const limitation = 'Backend-authored Team State comparison limitation.'
   const statusOnly = {
     ...changes,
@@ -181,7 +222,7 @@ test('an unavailable Team State lane remains disclosed beside proven status move
   }
   const html = render({ changes: statusOnly })
 
-  assert.ok(html.includes('Monitor → Limited'))
+  assert.ok(html.includes('Watch Arm → Limited Rest'))
   assert.ok(html.includes(changes.pitcher_changes[0].summary))
   assert.ok(html.includes(limitation))
   assert.equal(html.includes('No material changes were detected'), false)
@@ -221,6 +262,73 @@ test('an unavailable Rest Status lane prevents a false quiet claim and stays sco
   assert.ok(html.includes(limitation))
 })
 
+test('a withheld Arm Read lane creates no placeholder transition and preserves other domains', () => {
+  const limitation = 'Backend-authored governed Arm Read comparison limitation.'
+  const partial = {
+    ...changes,
+    team_state_change: null,
+    team_state_comparison: { status: 'unchanged', limitation: null },
+    rest_status_change: null,
+    rest_status_comparison: { status: 'unchanged', limitation: null },
+    arm_read_comparison: { status: 'partial', limitation },
+    pitcher_changes: [changes.pitcher_changes[1]],
+  }
+  const html = render({ changes: partial })
+
+  assert.equal(html.includes('Arm Read movement'), false)
+  assert.equal(html.includes('Arm unavailable'), false)
+  assert.ok(html.includes('New appearance / workload'))
+  assert.ok(html.includes('Arm Read comparison limited'))
+  assert.ok(html.includes(limitation))
+})
+
+test('a missing Arm Read comparison cannot become a definitive quiet claim', () => {
+  const missing = {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: { status: 'unchanged', limitation: null },
+    rest_status_change: null,
+    rest_status_comparison: { status: 'unchanged', limitation: null },
+    arm_read_comparison: undefined,
+    pitcher_changes: [],
+  }
+  const html = render({ changes: missing })
+
+  assert.equal(html.includes('No material changes were detected'), false)
+  assert.ok(html.includes('Arm Read comparison limited'))
+  assert.ok(html.includes('A governed Arm Read comparison is not available.'))
+  assert.equal(html.includes('Arm unavailable'), false)
+})
+
+test('governed Arm Read rows preserve backend order and pitcher identity', () => {
+  const ordered = {
+    ...changes,
+    team_state_change: null,
+    rest_status_change: null,
+    pitcher_changes: [
+      {
+        ...changes.pitcher_changes[0],
+        pitcher_id: 22,
+        pitcher_name: 'First Backend Arm',
+      },
+      {
+        ...changes.pitcher_changes[0],
+        pitcher_id: 11,
+        pitcher_name: 'Second Backend Arm',
+        from_read: { key: 'limited_read', label: 'Limited Read' },
+        to_read: { key: 'watch_arm', label: 'Watch Arm' },
+      },
+    ],
+  }
+  const rows = getWhatChangedView(ordered).groups[0].rows
+  const html = render({ changes: ordered })
+
+  assert.deepEqual(rows.map(row => row.pitcherId), [22, 11])
+  assert.ok(html.indexOf('First Backend Arm') < html.indexOf('Second Backend Arm'))
+  assert.ok(html.includes('Limited Read → Watch Arm'))
+})
+
 test('arm subjects reuse the existing pitcher handoff without making whole rows interactive', () => {
   const html = render({ changes, onSelectPitcher: () => {} })
 
@@ -237,7 +345,9 @@ test('the view model presents the public contract without client snapshot or cat
     'workload_7d', 'workload_14d', 'rotation_impact', 'role_movement',
     "'Fresh'", "'Stretched'", "'Vulnerable'", 'from_state ===', 'to_state ===',
     'contract_incompatible', 'method_version_mismatch', 'previous_missing',
-    'from_value -', 'to_value -',
+    'from_value -', 'to_value -', 'from_status', 'to_status',
+    'Available -> Clean Option', 'Monitor -> Watch Arm',
+    'Avoid -> Limited Rest',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }

@@ -18,6 +18,12 @@ import services.intelligence_surface_snapshot as surface_snapshot
 import services.sync as sync_service
 from utils.db import db
 from models.completed_game_context import CompletedGameContext
+from models.game_log import GameLog
+from models.pitcher import Pitcher
+from models.play_by_play_foundation import (
+    GamePlayByPlayEvent,
+    PlayByPlayProcessedGame,
+)
 import models.prospect  # noqa: F401  (ensure model registry is fully loaded)
 from api.bullpen import bullpen_bp
 
@@ -61,18 +67,133 @@ def _seed_context(team_id, game_pk, *, tag, confidence, game_date=_REF, **over):
     return row
 
 
-def _seed_lost_game_shape(team_id, game_pk, **over):
+def _seed_relief_appearance(context, *, runs_allowed):
+    pitcher = Pitcher(
+        mlb_id=context.team_id * 1_000_000 + context.game_pk,
+        full_name=f'Claim Reliever {context.team_id}',
+        team_id=context.team_id,
+        team_abbreviation='TST',
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=context.game_pk,
+        game_date=context.game_date,
+        game_type='R',
+        games_started=0,
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        pitches_thrown=15,
+        runs_allowed=runs_allowed,
+        appearance_team_id=context.team_id,
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        appearance_team_source='test_official_game_side',
+    ))
+    db.session.commit()
+    return pitcher
+
+
+def _seed_lost_lead_pbp(context, pitcher=None):
+    if pitcher is None:
+        pitcher = Pitcher(
+            mlb_id=context.team_id * 1_000_000 + context.game_pk,
+            full_name=f'Claim Reliever {context.team_id}',
+            team_id=context.team_id,
+            team_abbreviation='TST',
+        )
+        db.session.add(pitcher)
+        db.session.flush()
+    opponent_id = context.team_id + 1
+    db.session.add(PlayByPlayProcessedGame(
+        mlb_game_pk=context.game_pk,
+        game_date=context.game_date,
+        game_type='R',
+        home_team_id=context.team_id,
+        away_team_id=opponent_id,
+        final_state='Final',
+        processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED,
+        attempt_count=1,
+        events_seen=2,
+        events_stored=2,
+        pitcher_events_seen=1,
+        unresolved_pitcher_count=0,
+        reconciliation_mismatch_count=0,
+        event_fingerprint=f'pbp-{context.game_pk}',
+        source='test_final_play_by_play',
+        source_endpoint=f'/api/v1.1/game/{context.game_pk}/feed/live',
+    ))
+    common = {
+        'mlb_game_pk': context.game_pk,
+        'game_date': context.game_date,
+        'game_type': 'R',
+        'home_team_id': context.team_id,
+        'away_team_id': opponent_id,
+        'outs_at_event': 1,
+        'batter_mlb_id': 800001,
+        'is_pitching_change': False,
+        'is_mound_visit': False,
+        'source': 'test_final_play_by_play',
+        'source_endpoint': f'/api/v1.1/game/{context.game_pk}/feed/live',
+    }
+    db.session.add(GamePlayByPlayEvent(
+        **common,
+        event_index=0,
+        source_play_id=f'play-{context.game_pk}-0',
+        at_bat_index=0,
+        event_type='scoring_play',
+        event_type_code='home_run',
+        inning=6,
+        half_inning='bottom',
+        is_top_inning=False,
+        home_score_at_event=context.bullpen_entry_score_for,
+        away_score_at_event=context.bullpen_entry_score_against,
+        batting_team_id=context.team_id,
+        fielding_team_id=opponent_id,
+        is_scoring_play=True,
+    ))
+    db.session.add(GamePlayByPlayEvent(
+        **common,
+        event_index=1,
+        source_play_id=f'play-{context.game_pk}-1',
+        at_bat_index=1,
+        event_type='scoring_play',
+        event_type_code='double',
+        inning=context.turning_inning,
+        half_inning='top',
+        is_top_inning=True,
+        home_score_at_event=context.final_score_for,
+        away_score_at_event=context.final_score_against,
+        pitcher_mlb_id=pitcher.mlb_id,
+        pitcher_id=pitcher.id,
+        batting_team_id=opponent_id,
+        fielding_team_id=context.team_id,
+        is_scoring_play=True,
+    ))
+    db.session.commit()
+
+
+def _seed_lost_game_shape(team_id, game_pk, *, with_receipt=True, **over):
     base = dict(
         starter_name='Sample Starter', starter_ip=6.0, starter_exit_inning=6,
+        home_away='home',
         bullpen_entry_inning=7, bullpen_entry_score_for=6, bullpen_entry_score_against=2,
         lead_when_bullpen_entered=4, largest_lead=4, largest_deficit=3,
+        final_score_for=6, final_score_against=9,
         late_runs_allowed=7, runs_allowed_innings_7_to_9=7,
         lead_protected=False, lead_lost=True, turning_inning=8,
         game_shape_created='normal_start',
     )
     base.update(over)
-    return _seed_context(team_id, game_pk, tag='lost_game_shape',
-                         confidence='HIGH', **base)
+    row = _seed_context(team_id, game_pk, tag='lost_game_shape',
+                        confidence='HIGH', **base)
+    pitcher = (
+        _seed_relief_appearance(row, runs_allowed=row.late_runs_allowed or 1)
+        if with_receipt
+        else None
+    )
+    _seed_lost_lead_pbp(row, pitcher)
+    return row
 
 
 def _seed_overexposed(team_id, game_pk, **over):
@@ -82,8 +203,10 @@ def _seed_overexposed(team_id, game_pk, **over):
         runs_allowed_innings_7_to_9=1, game_shape_created='short_start',
     )
     base.update(over)
-    return _seed_context(team_id, game_pk, tag='bullpen_overexposed',
-                         confidence='MEDIUM', **base)
+    row = _seed_context(team_id, game_pk, tag='bullpen_overexposed',
+                        confidence='MEDIUM', **base)
+    _seed_relief_appearance(row, runs_allowed=row.late_runs_allowed or 0)
+    return row
 
 
 # ── Empty state ───────────────────────────────────────────────────────────────
@@ -113,8 +236,29 @@ def test_returns_critical_lead_over_medium(client):
     assert lead['package']['primary_story'] == 'lost_game_shape'
     assert 'team_story' in lead['drafts']
     assert lead['drafts']['team_story']['headline']
+    receipts = lead['claim_evidence']['relief_appearances']
+    assert [item['name'] for item in receipts] == ['Claim Reliever 137']
+    assert receipts[0]['game_pk'] == lead['game_pk']
+    assert receipts[0]['appearance_team_id'] == lead['team_id']
+    assert receipts == lead['package']['evidence_blocks']['key_relief_appearances']
+    assert lead['publication_identity']['data_through'] == body['reference_date']
+    assert lead['publication_identity']['game_pk'] == lead['game_pk']
+    assert lead['publication_identity']['team_id'] == lead['team_id']
     assert body['candidates_considered'] == 2
-    assert body['publishable_candidates'] == 2
+    assert body['publishable_candidates'] == 1
+
+
+def test_missing_responsible_relief_receipt_withholds_only_the_api_lead(client):
+    with client.application.app_context():
+        _seed_lost_game_shape(137, 137000, with_receipt=False)
+
+    body = client.get('/api/bullpen/intelligence/today').get_json()
+
+    assert body['status'] == 'empty'
+    assert body['lead_story'] is None
+    assert body['empty_reason'] == 'lead_story_withheld_claim_evidence'
+    assert body['candidates_considered'] == 1
+    assert body['publishable_candidates'] == 0
 
 
 def test_reference_date_scopes_candidates(client):
