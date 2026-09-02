@@ -46,7 +46,9 @@ def test_delivery_freezes_then_rechecks_exact_publication_before_staging():
     team_export = commands.index('export_team_story_pages.py')
     share_export = commands.index('export_share_artifact_pages.py')
     second_resolve = commands.rindex('resolve_distribution_publication.py')
-    stage = commands.index('git add -- frontend/public/team frontend/public/share')
+    stage = commands.index(
+        'git add -- frontend/public/team frontend/public/share frontend/public/404.html'
+    )
     assert first_resolve < team_export < second_resolve < stage
     assert first_resolve < share_export < second_resolve
     assert commands.count('--snapshot-id "$SNAPSHOT_ID"') == 3
@@ -54,8 +56,12 @@ def test_delivery_freezes_then_rechecks_exact_publication_before_staging():
 
 def test_generated_content_guard_and_fast_forward_push_remain_narrow():
     commands = _commands()
-    assert 'git add -- frontend/public/team frontend/public/share' in commands
-    assert "grep -Ev '^frontend/public/(team|share)/'" in commands
+    assert (
+        'git add -- frontend/public/team frontend/public/share frontend/public/404.html'
+        in commands
+    )
+    assert "^frontend/public/404\\.html$" in commands
+    assert commands.count('--routing-config frontend/vercel.json') == 2
     assert 'git add .' not in commands
     assert 'git add -A' not in commands
     assert 'git push origin HEAD:refs/heads/main' in commands

@@ -50,7 +50,9 @@ CI_WORKFLOW_PATH = REPO_ROOT / '.github/workflows/ci.yml'
 
 PUBLICATION_JOB = 'static-team-story-preview'
 GENERATED_PATH_PREFIX = 'frontend/public/team'
-GENERATED_PATH_PREFIXES = ('frontend/public/team', 'frontend/public/share')
+GENERATED_PATH_PREFIXES = (
+    'frontend/public/team', 'frontend/public/share', 'frontend/public/404.html',
+)
 EXPORT_RESULT_FILE = '$GENERATED_EVIDENCE_DIR/export-result.json'
 
 EXPORTER_PATH = REPO_ROOT / 'backend/scripts/export_team_story_pages.py'
@@ -360,7 +362,7 @@ def test_staging_refuses_paths_outside_the_generated_scope(steps):
     stage = steps[_script_index(steps, 'git add')]
     script = _script(stage)
     assert 'git diff --cached --name-only' in script
-    assert "grep -Ev '^frontend/public/(team|share)/'" in script
+    assert "^frontend/public/404\\.html$" in script
 
 
 def test_share_preview_export_and_delivery_gate_precede_frontend_validation(steps):

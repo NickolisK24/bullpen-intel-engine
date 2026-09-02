@@ -9,6 +9,7 @@ from flask import Flask
 from services.share_artifact_generation import generate_team_state_artifact
 from services.share_artifact_previews import (
     build_share_artifact_preview,
+    build_share_artifact_preview_from_public_view,
     render_invalid_share_html,
     render_share_artifact_html,
     write_share_artifact_pages,
@@ -71,6 +72,68 @@ def test_valid_artifact_metadata_comes_from_frozen_public_projection(app, monkey
     assert '<meta name="baseballos:data-through" content="2026-07-20" />' in page
 
 
+def test_static_share_handoff_is_meaningful_and_never_targets_itself(app, monkeypatch):
+    artifact = _published(monkeypatch)
+    frozen_payload = artifact.payload.copy()
+    frozen_integrity_hash = artifact.integrity_hash
+
+    preview = build_share_artifact_preview(artifact)
+    page = render_share_artifact_html(preview)
+
+    assert preview['canonical_url'] == f'https://baseballos.app/share/{artifact.public_id}'
+    assert preview['live_destination_path'] == '/bullpen?view=board&team=TST&source=share'
+    assert 'window.location' not in page
+    assert f'/share/{artifact.public_id}/' not in page
+    assert 'Test Club' in page
+    assert 'Stretched' in page
+    assert '2026-07-20' in page
+    assert 'Evidence behind the read' in page
+    assert 'href="/bullpen?view=board&amp;team=TST&amp;source=share"' in page
+    assert artifact.payload == frozen_payload
+    assert artifact.integrity_hash == frozen_integrity_hash
+
+
+def test_static_projection_preserves_named_governed_evidence_without_team_state():
+    view = {
+        'public_id': 'change-abc123',
+        'artifact_type': 'since_yesterday_change',
+        'schema_version': '1.0.0',
+        'render_version': 'since-yesterday-1.0.0',
+        'payload_version': 'since-yesterday-1.0.0',
+        'lifecycle_state': 'published',
+        'product_date': '2026-07-21',
+        'team': {
+            'team_name': 'Test Club',
+            'team_abbreviation': 'TST',
+        },
+        'freshness': {
+            'previous_data_through': '2026-07-20',
+            'current_data_through': '2026-07-21',
+        },
+        'copy': {
+            'headline': 'Test Club bullpen changed since yesterday',
+            'description': 'The published bullpen read changed after the latest completed game.',
+        },
+        'evidence': [{
+            'label': 'Named arm',
+            'detail': 'Jordan Example moved from Watch Arm to Limited Rest.',
+        }],
+        'routes': {
+            'share_url': '/share/change-abc123',
+            'team_url': '/bullpen?view=board&team=TST&source=share',
+        },
+    }
+
+    preview = build_share_artifact_preview_from_public_view(view)
+    page = render_share_artifact_html(preview)
+
+    assert preview['canonical_url'] == 'https://baseballos.app/share/change-abc123'
+    assert 'Test Club bullpen changed since yesterday' in page
+    assert '2026-07-21' in page
+    assert 'Jordan Example moved from Watch Arm to Limited Rest.' in page
+    assert 'window.location' not in page
+
+
 def test_older_preview_does_not_change_when_a_new_team_state_is_published(app, monkeypatch):
     original = _published(monkeypatch, status_code='operationally_constrained')
     original_preview = build_share_artifact_preview(original)
@@ -106,6 +169,9 @@ def test_invalid_share_fallback_has_no_claim_identity():
     assert 'Fresh' not in page
     assert 'Stretched' not in page
     assert 'Vulnerable' not in page
+    assert 'window.location' not in page
+    assert 'rel="canonical"' not in page
+    assert 'property="og:url"' not in page
 
 
 def test_writer_is_deterministic_and_confined_to_share_root(app, monkeypatch, tmp_path):
@@ -120,7 +186,10 @@ def test_writer_is_deterministic_and_confined_to_share_root(app, monkeypatch, tm
     assert first['files'] == [str(expected)]
     assert expected.is_file()
     assert second['changed'] == []
-    assert {path.relative_to(output_root).parts[0] for path in output_root.rglob('*')} == {'share'}
+    assert {path.relative_to(output_root).parts[0] for path in output_root.rglob('*')} == {
+        '404.html', 'share',
+    }
+    assert first['fallback'] == str(output_root / '404.html')
 
 
 @pytest.mark.parametrize('public_id', ['.', '..', '../escape', 'bad/id'])
@@ -133,7 +202,8 @@ def test_writer_rejects_paths_outside_generated_share_directory(tmp_path, public
         'og_image': 'https://baseballos.app/og/baseballos-card.png',
         'twitter_card': 'summary_large_image',
         'representation': 'immutable_share_artifact',
-        'handoff_path': f'/share/{public_id}/',
+        'live_destination_path': '/bullpen',
+        'evidence': [],
     }
     with pytest.raises(ValueError):
         write_share_artifact_pages([preview], tmp_path / 'public')
@@ -173,7 +243,8 @@ def test_delivery_gate_proves_exact_generated_set_and_detects_corruption(app, mo
         'output': output,
     }
 
-    violations, facts = verify_delivery(result, output_root)
+    routing_config = Path(__file__).resolve().parents[2] / 'frontend' / 'vercel.json'
+    violations, facts = verify_delivery(result, output_root, routing_config)
     assert violations == []
     assert facts['generated_file_count'] == 1
 
@@ -182,5 +253,5 @@ def test_delivery_gate_proves_exact_generated_set_and_detects_corruption(app, mo
         'baseballos-card.png', 'wrong-card.png', 1,
     )
     page.write_text(corrupted, encoding='utf-8')
-    violations, _ = verify_delivery(result, output_root)
+    violations, _ = verify_delivery(result, output_root, routing_config)
     assert any('governed raster card' in violation for violation in violations)

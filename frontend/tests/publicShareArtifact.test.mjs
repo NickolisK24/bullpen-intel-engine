@@ -20,7 +20,6 @@ const {
   WithdrawnState,
   NotFoundState,
   IntegrityErrorState,
-  restoreCanonicalShareUrl,
 } = await server.ssrLoadModule('/src/components/share/PublicShareArtifactPage.jsx')
 const { fetchPublicShareArtifact, SHARE_STATE, publicSharePath } =
   await server.ssrLoadModule('/src/utils/publicShareArtifact.js')
@@ -79,30 +78,10 @@ test('/share/:publicId route is registered', () => {
   assert.equal(publicSharePath('abc123'), '/share/abc123')
 })
 
-test('static share preview handoff restores the permanent canonical URL', () => {
-  const calls = []
-  const changed = restoreCanonicalShareUrl('abc123', {
-    locationObject: {
-      pathname: '/share/abc123/',
-      search: '?source=preview',
-      hash: '#evidence',
-    },
-    historyObject: {
-      state: { preserved: true },
-      replaceState: (...args) => calls.push(args),
-    },
-  })
-  assert.equal(changed, true)
-  assert.deepEqual(calls, [[
-    { preserved: true },
-    '',
-    '/share/abc123?source=preview#evidence',
-  ]])
-
-  assert.equal(restoreCanonicalShareUrl('abc123', {
-    locationObject: { pathname: '/share/abc123', search: '', hash: '' },
-    historyObject: { replaceState: () => assert.fail('clean URL must be unchanged') },
-  }), false)
+test('frontend share route contains no client redirect or canonical translation table', () => {
+  assert.equal(PAGE_SRC.includes('window.location'), false)
+  assert.equal(PAGE_SRC.includes('replaceState'), false)
+  assert.equal(publicSharePath('abc123'), '/share/abc123')
 })
 
 // -- published render -----------------------------------------------------------
