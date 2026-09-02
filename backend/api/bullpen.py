@@ -1976,10 +1976,10 @@ def get_team_changes(team_id):
     """
     What Changed Since Last Game — small followed-team change surface.
 
-    Compares current team bullpen state to the previous completed game date
-    using stored game logs, fatigue-score history, existing availability
-    classification, and durable sync freshness. Presentation only: no ranking,
-    no selection, no recommendation, and no prediction.
+    Compares governed values from comparable trusted publications and appends
+    new-appearance facts from stored game logs under durable sync freshness.
+    Raw availability status is not an Arm Read comparison source. Presentation
+    only: no ranking, no selection, no recommendation, and no prediction.
     """
     freshness = _board_freshness_block()
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))

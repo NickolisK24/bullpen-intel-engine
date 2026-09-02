@@ -1,14 +1,12 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import desc
 
-from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
-from services.bullpen_board import BOARD_GROUP_ORDER
 from services.bullpen_population import eligible_bullpen_pitchers
 from services.team_board_delta_substrate import (
+    CAPABILITY as DELTA_COMPARISON_AUTHORITY,
     COMPARABLE as DELTA_COMPARABLE,
     resolve_latest_team_state_comparison,
 )
@@ -32,8 +30,14 @@ TEAM_STATE_UNAVAILABLE_LIMITATION = (
 REST_STATUS_UNAVAILABLE_LIMITATION = (
     'Rest Status comparison is unavailable for this publication window.'
 )
-
-STATUS_ORDER = {status: index for index, status in enumerate(BOARD_GROUP_ORDER)}
+ARM_READ_UNAVAILABLE_LIMITATION = (
+    'Arm Read comparison is unavailable for this publication window.'
+)
+ARM_READ_PARTIAL_LIMITATION = (
+    'Some Arm Read transitions are withheld because both governed published '
+    'reads are not comparable.'
+)
+PUBLIC_ARM_READ_SEMANTIC_FAMILY = 'public_arm_read'
 
 
 def _iso_date(value):
@@ -53,10 +57,6 @@ def _display_date(value):
     if value is None:
         return None
     return f'{value:%b} {value.day}'
-
-
-def _end_of_day(value):
-    return datetime.combine(value, time.max)
 
 
 def _generated_at():
@@ -126,6 +126,20 @@ def _base_payload(team, freshness=None, generated_at=None):
             'from_represented_date': None,
             'to_represented_date': None,
             'limitation': REST_STATUS_UNAVAILABLE_LIMITATION,
+        },
+        'arm_read_comparison': {
+            'status': TEAM_STATE_UNAVAILABLE,
+            'reason_code': 'current_missing',
+            'from_represented_date': None,
+            'to_represented_date': None,
+            'previous_delta_snapshot_id': None,
+            'current_delta_snapshot_id': None,
+            'semantic_family': PUBLIC_ARM_READ_SEMANTIC_FAMILY,
+            'comparison_authority': DELTA_COMPARISON_AUTHORITY,
+            'method_version': None,
+            'public_contract_version': None,
+            'withheld_pitcher_count': 0,
+            'limitation': ARM_READ_UNAVAILABLE_LIMITATION,
         },
         'limitations': [],
         'freshness': freshness or {},
@@ -203,142 +217,6 @@ def _team_freshness_notes(team, current_date, freshness):
         f'league data is current through {_display_date(global_latest)}.'
     )
     return global_latest, ['team_data_behind_league'], [limitation]
-
-
-def _latest_scores(pitcher_ids):
-    if not pitcher_ids:
-        return {}
-    subq = (
-        db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc'),
-        )
-        .filter(FatigueScore.pitcher_id.in_(pitcher_ids))
-        .group_by(FatigueScore.pitcher_id)
-        .subquery()
-    )
-    rows = (
-        db.session.query(FatigueScore)
-        .join(
-            subq,
-            (FatigueScore.pitcher_id == subq.c.pitcher_id)
-            & (FatigueScore.calculated_at == subq.c.max_calc),
-        )
-        .all()
-    )
-    return {score.pitcher_id: score for score in rows}
-
-
-def _scores_at_or_before(pitcher_ids, anchor_date):
-    if not pitcher_ids:
-        return {}
-    cutoff = _end_of_day(anchor_date)
-    subq = (
-        db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc'),
-        )
-        .filter(
-            FatigueScore.pitcher_id.in_(pitcher_ids),
-            FatigueScore.calculated_at <= cutoff,
-        )
-        .group_by(FatigueScore.pitcher_id)
-        .subquery()
-    )
-    rows = (
-        db.session.query(FatigueScore)
-        .join(
-            subq,
-            (FatigueScore.pitcher_id == subq.c.pitcher_id)
-            & (FatigueScore.calculated_at == subq.c.max_calc),
-        )
-        .all()
-    )
-    return {score.pitcher_id: score for score in rows}
-
-
-def _availability_context(pitcher_id, reference_date):
-    latest_game_date = (
-        db.session.query(db.func.max(GameLog.game_date))
-        .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date <= reference_date)
-        .scalar()
-    )
-    window_start = reference_date - timedelta(days=4)
-    logs = (
-        GameLog.query
-        .filter(
-            GameLog.pitcher_id == pitcher_id,
-            GameLog.game_date >= window_start,
-            GameLog.game_date <= reference_date,
-        )
-        .order_by(desc(GameLog.game_date))
-        .all()
-    )
-    return logs, latest_game_date
-
-
-def _availability_as_of(pitcher_id, score, reference_date):
-    logs, latest_game_date = _availability_context(pitcher_id, reference_date)
-    return classify_availability(
-        score=score,
-        game_logs=logs,
-        reference_date=reference_date,
-        latest_game_date=latest_game_date,
-        active_window_days=ACTIVE_WINDOW_DAYS,
-    )
-
-
-def _status_change_summary(name, previous_status, current_status):
-    previous_index = STATUS_ORDER.get(previous_status, 0)
-    current_index = STATUS_ORDER.get(current_status, 0)
-    if current_index < previous_index:
-        return f'{name} recovered from {previous_status} to {current_status}.'
-    return f'{name} moved from {previous_status} to {current_status}.'
-
-
-def _status_changes(pitchers, anchor_scores, current_scores, anchor_date, current_date):
-    changes = []
-    limitations = []
-    anchor_statuses = {}
-    current_statuses = {}
-
-    for pitcher in pitchers:
-        current_score = current_scores.get(pitcher.id)
-        anchor_score = anchor_scores.get(pitcher.id)
-
-        if current_score is None:
-            limitations.append(
-                f'Current workload score missing for {pitcher.full_name}; status change not compared.'
-            )
-            continue
-        if anchor_score is None:
-            limitations.append(
-                f'Anchor workload score missing for {pitcher.full_name}; status change not compared.'
-            )
-            continue
-
-        anchor_availability = _availability_as_of(pitcher.id, anchor_score, anchor_date)
-        current_availability = _availability_as_of(pitcher.id, current_score, current_date)
-        previous_status = anchor_availability.get('availability_status')
-        current_status = current_availability.get('availability_status')
-        anchor_statuses[pitcher.id] = previous_status
-        current_statuses[pitcher.id] = current_status
-
-        if previous_status and current_status and previous_status != current_status:
-            changes.append({
-                'type': 'status_change',
-                'pitcher_id': pitcher.id,
-                'pitcher_name': pitcher.full_name,
-                'from_status': previous_status,
-                'to_status': current_status,
-                'summary': _status_change_summary(
-                    pitcher.full_name,
-                    previous_status,
-                    current_status,
-                ),
-            })
-
-    return changes, anchor_statuses, current_statuses, _merge_unique(limitations)
 
 
 def _appearance_summary(game_date, pitches):
@@ -472,16 +350,120 @@ def _rest_status_lane(frozen):
     }
 
 
+def _arm_read_endpoint(record):
+    public_read = (record or {}).get('public_read') or {}
+    key = public_read.get('key')
+    label = public_read.get('label')
+    if not isinstance(key, str) or not key or not isinstance(label, str) or not label:
+        return None
+    return {'key': key, 'label': label}
+
+
+def _arm_read_lane(frozen):
+    window = frozen.get('comparison') or {}
+    domain = (frozen.get('domains') or {}).get('arm_read') or {}
+    status = domain.get('status')
+    comparison = {
+        'status': TEAM_STATE_UNAVAILABLE,
+        'reason_code': domain.get('reason_code') or status,
+        'from_represented_date': window.get('from_represented_date'),
+        'to_represented_date': window.get('to_represented_date'),
+        'previous_delta_snapshot_id': window.get('previous_delta_snapshot_id'),
+        'current_delta_snapshot_id': window.get('current_delta_snapshot_id'),
+        'semantic_family': PUBLIC_ARM_READ_SEMANTIC_FAMILY,
+        'comparison_authority': DELTA_COMPARISON_AUTHORITY,
+        'method_version': domain.get('method_version'),
+        'public_contract_version': domain.get('public_contract_version'),
+        'withheld_pitcher_count': 0,
+        'limitation': ARM_READ_UNAVAILABLE_LIMITATION,
+    }
+    if status != DELTA_COMPARABLE:
+        return comparison, []
+
+    arm_comparisons = domain.get('arm_comparisons')
+    movement_candidates = domain.get('movement_candidates')
+    if not isinstance(arm_comparisons, list) or not isinstance(
+        movement_candidates, list
+    ):
+        comparison['reason_code'] = 'value_missing'
+        return comparison, []
+
+    withheld = [
+        arm for arm in arm_comparisons
+        if not isinstance(arm, dict) or arm.get('comparable') is not True
+    ]
+    changes = []
+    invalid_candidates = 0
+    for movement in movement_candidates:
+        movement = movement if isinstance(movement, dict) else {}
+        previous = movement.get('previous') or {}
+        current = movement.get('current') or {}
+        from_read = _arm_read_endpoint(previous)
+        to_read = _arm_read_endpoint(current)
+        pitcher_id = movement.get('pitcher_id')
+        pitcher_name = current.get('pitcher_name')
+        if (
+            from_read is None
+            or to_read is None
+            or pitcher_id is None
+            or not isinstance(pitcher_name, str)
+            or not pitcher_name.strip()
+        ):
+            invalid_candidates += 1
+            continue
+        pitcher_name = pitcher_name.strip()
+        changes.append({
+            'type': 'arm_read_change',
+            'semantic_family': PUBLIC_ARM_READ_SEMANTIC_FAMILY,
+            'pitcher_id': pitcher_id,
+            'pitcher_name': pitcher_name,
+            'from_read': from_read,
+            'to_read': to_read,
+            'from_date': window.get('from_represented_date'),
+            'to_date': window.get('to_represented_date'),
+            'summary': (
+                f'{pitcher_name} moved from {from_read["label"]} '
+                f'to {to_read["label"]}.'
+            ),
+        })
+
+    withheld_count = len(withheld) + invalid_candidates
+    comparison['withheld_pitcher_count'] = withheld_count
+    if withheld_count:
+        comparison.update({
+            'status': 'partial',
+            'reason_code': next((
+                arm.get('reason_code')
+                for arm in withheld
+                if isinstance(arm, dict) and arm.get('reason_code')
+            ), 'value_missing'),
+            'limitation': ARM_READ_PARTIAL_LIMITATION,
+        })
+    else:
+        comparison.update({
+            'status': TEAM_STATE_CHANGED if changes else TEAM_STATE_UNCHANGED,
+            'reason_code': None,
+            'limitation': None,
+        })
+    return comparison, changes
+
+
 def _apply_terminal_state(payload, state, reason_codes, limitations):
     team_state_change = payload.get('team_state_change')
     rest_status_change = payload.get('rest_status_change')
-    if team_state_change or rest_status_change:
+    arm_read_change = any(
+        change.get('type') == 'arm_read_change'
+        for change in payload.get('pitcher_changes') or []
+        if isinstance(change, dict)
+    )
+    if team_state_change or rest_status_change or arm_read_change:
         payload.update({
             'state': STATE_CHANGES,
             'state_reason_codes': _merge_unique(
                 ['meaningful_changes_detected'],
                 ['team_state_change_detected'] if team_state_change else [],
                 ['rest_status_change_detected'] if rest_status_change else [],
+                ['arm_read_change_detected'] if arm_read_change else [],
                 reason_codes,
             ),
             'limitations': limitations,
@@ -499,9 +481,10 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     Build the team-scoped "What Changed Since Last Game" payload.
 
-    This reads existing game logs, fatigue history, and durable freshness
-    metadata only. It does not rank, select, recommend, predict, or modify the
-    Availability Engine.
+    Team State, Rested Options, and Arm Read movement come only from comparable
+    trusted publication sidecars. New appearances use existing game logs and
+    durable freshness metadata. This service does not rank, select, recommend,
+    predict, or modify the Availability Engine.
     """
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
@@ -510,11 +493,14 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         team_id, frozen=frozen,
     )
     rest_status_comparison, rest_status_change = _rest_status_lane(frozen)
+    arm_read_comparison, arm_read_changes = _arm_read_lane(frozen)
     payload.update({
         'team_state_comparison': team_state_comparison,
         'team_state_change': team_state_change,
         'rest_status_comparison': rest_status_comparison,
         'rest_status_change': rest_status_change,
+        'arm_read_comparison': arm_read_comparison,
+        'pitcher_changes': arm_read_changes,
     })
 
     # Resolve the team's data-derived game dates up front and publish the current
@@ -523,7 +509,9 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     # regardless of wall-clock staleness, so the changes surface must advertise the
     # same date for every availability-related endpoint to agree. Freshness gating
     # below still governs whether *deltas* are computed — not whether the basic
-    # current game date is known.
+    # current game date is known. Governed Arm Read movement above remains
+    # bound to the frozen publication comparison and never uses these live
+    # game-date availability inputs.
     dates = _team_game_dates(team_id)
     current_date = dates[0] if dates else None
     global_latest_date, team_reason_codes, team_limitations = _team_freshness_notes(
@@ -579,28 +567,17 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         reference_date=current_date,
     )
     pitcher_ids = [pitcher.id for pitcher in pitchers]
-    current_scores = _latest_scores(pitcher_ids)
-    anchor_scores = _scores_at_or_before(pitcher_ids, anchor_date)
-
-    status_changes, _anchor_statuses, _current_statuses, coverage_limitations = _status_changes(
-        pitchers,
-        anchor_scores,
-        current_scores,
-        anchor_date,
-        current_date,
-    )
     appearance_changes = _appearance_changes(team_id, anchor_date, current_date, pitcher_ids)
     # Suppress team-level summary counts until they can be guaranteed to match
     # the current board / Follow My Team population for the same data date.
     team_summary = None
 
-    pitcher_changes = status_changes + appearance_changes
+    pitcher_changes = arm_read_changes + appearance_changes
     payload.update({
         'pitcher_changes': pitcher_changes,
         'team_summary': team_summary,
         'limitations': _merge_unique(
             freshness.get('limitations') if freshness else [],
-            coverage_limitations,
             team_limitations,
         ),
     })
@@ -611,6 +588,7 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
             ['meaningful_changes_detected'],
             ['team_state_change_detected'] if team_state_change else [],
             ['rest_status_change_detected'] if rest_status_change else [],
+            ['arm_read_change_detected'] if arm_read_changes else [],
             team_reason_codes,
         )
     else:
