@@ -17,22 +17,26 @@
       "permanent": true
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
-      "destination": "/team/$1/index.html"
+      "src": "^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
+      "dest": "/team/$1/index.html"
     },
     {
-      "source": "/team/(.*)",
-      "destination": "/team/index.html"
+      "handle": "filesystem"
     },
     {
-      "source": "^/share/([A-Za-z0-9._-]{1,64})$",
-      "destination": "/share/$1/index.html"
+      "src": "^/share/([A-Za-z0-9._-]{1,64})$",
+      "dest": "/404.html",
+      "status": 404
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "^/team/(.*)$",
+      "dest": "/team/index.html"
+    },
+    {
+      "src": "^/(.*)$",
+      "dest": "/index.html"
     }
   ]
 }

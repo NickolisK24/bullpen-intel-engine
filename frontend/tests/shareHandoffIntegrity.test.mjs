@@ -6,26 +6,28 @@ const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url
 
 test('share routing resolves share files before the ordinary SPA fallback', () => {
   const redirects = config.redirects || []
-  const rewrites = config.rewrites || []
+  const routes = config.routes || []
   const slashRedirect = redirects.find(rule => rule.source === '/share/:publicId/')
-  const staticShare = rewrites.find(rule => rule.source === '^/share/([A-Za-z0-9._-]{1,64})$')
-  const invalidShare = rewrites.find(rule => rule.source === '^/share/([^/]+)$')
-  const spa = rewrites.find(rule => rule.destination === '/index.html')
+  const filesystem = routes.find(rule => rule.handle === 'filesystem')
+  const invalidShare = routes.find(rule => rule.src === '^/share/([A-Za-z0-9._-]{1,64})$')
+  const spa = routes.find(rule => rule.dest === '/index.html')
 
   assert.deepEqual(slashRedirect, {
     source: '/share/:publicId/',
     destination: '/share/:publicId',
     permanent: true,
   })
-  assert.deepEqual(staticShare, {
-    source: '^/share/([A-Za-z0-9._-]{1,64})$',
-    destination: '/share/$1/index.html',
+  assert.deepEqual(filesystem, { handle: 'filesystem' })
+  assert.deepEqual(invalidShare, {
+    src: '^/share/([A-Za-z0-9._-]{1,64})$',
+    dest: '/404.html',
+    status: 404,
   })
-  assert.equal(invalidShare, undefined)
-  assert.equal(rewrites.indexOf(staticShare) < rewrites.indexOf(spa), true)
-  assert.equal(new RegExp(spa.source).test('/share/missing-id'), true)
-  assert.equal(new RegExp(spa.source).test('/bullpen'), true)
-  assert.equal(new RegExp(spa.source).test('/dashboard'), true)
+  assert.equal(routes.indexOf(filesystem) < routes.indexOf(invalidShare), true)
+  assert.equal(routes.indexOf(invalidShare) < routes.indexOf(spa), true)
+  assert.equal(new RegExp(invalidShare.src).test('/share/missing-id'), true)
+  assert.equal(new RegExp(spa.src).test('/bullpen'), true)
+  assert.equal(new RegExp(spa.src).test('/dashboard'), true)
 })
 
 test('invalid share routes have a static 404 document with no artifact metadata', () => {

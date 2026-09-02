@@ -64,7 +64,7 @@ def _verify_routing_config(path):
         return [f'cannot read share routing config: {exc}']
 
     redirects = config.get('redirects') or []
-    rewrites = config.get('rewrites') or []
+    routes = config.get('routes') or []
     required_redirect = {
         'source': '/share/:publicId/',
         'destination': '/share/:publicId',
@@ -73,30 +73,35 @@ def _verify_routing_config(path):
     if required_redirect not in redirects:
         violations.append('trailing-slash share URL does not redirect to the canonical no-slash URL')
 
-    static_source = r'^/share/([A-Za-z0-9._-]{1,64})$'
-    static_rewrite = next(
-        (row for row in rewrites if row.get('source') == static_source), None,
-    )
-    if static_rewrite != {
-        'source': static_source,
-        'destination': '/share/$1/index.html',
-    }:
-        violations.append('canonical share URL does not resolve to its generated static page')
+    filesystem = next((row for row in routes if row.get('handle') == 'filesystem'), None)
+    if filesystem != {'handle': 'filesystem'}:
+        violations.append('generated share pages are not served by the filesystem authority')
 
-    if any(row.get('destination') == '/share/index.html' for row in rewrites):
+    share_source = r'^/share/([A-Za-z0-9._-]{1,64})$'
+    invalid_share = next((row for row in routes if row.get('src') == share_source), None)
+    if invalid_share != {
+        'src': share_source,
+        'dest': '/404.html',
+        'status': 404,
+    }:
+        violations.append('unmatched canonical share IDs do not return the static HTTP 404')
+
+    if any(row.get('dest') == '/share/index.html' for row in routes):
         violations.append('invalid share IDs still resolve to the legacy HTTP-200 fallback')
 
-    spa = next((row for row in rewrites if row.get('destination') == '/index.html'), None)
+    spa = next((row for row in routes if row.get('dest') == '/index.html'), None)
     if spa is None:
         violations.append('SPA fallback is unavailable for non-share application routes')
     else:
         try:
-            pattern = re.compile(spa['source'])
+            pattern = re.compile(spa['src'])
         except (KeyError, re.error):
             violations.append('SPA fallback source is not a valid bounded route pattern')
         else:
-            if static_rewrite is not None and rewrites.index(static_rewrite) >= rewrites.index(spa):
-                violations.append('canonical share route no longer precedes the SPA fallback')
+            if filesystem is not None and routes.index(filesystem) >= routes.index(spa):
+                violations.append('filesystem share authority no longer precedes the SPA fallback')
+            if invalid_share is not None and routes.index(invalid_share) >= routes.index(spa):
+                violations.append('invalid share 404 no longer precedes the SPA fallback')
             if not pattern.fullmatch('/bullpen'):
                 violations.append('share 404 isolation broke the primary bullpen SPA route')
             if not pattern.fullmatch('/dashboard'):
