@@ -153,28 +153,20 @@ def get_team_state_artifact_for_version(
 def get_published_since_yesterday_change_artifact(
     team_id: int,
     *,
-    current_date,
-    prior_date,
+    comparison_identity,
     verify: bool = True,
     session=None,
 ) -> Optional[ShareArtifact]:
-    """Return the active citation for one exact adjacent comparison pair.
+    """Return the active citation for the rendered publication pair.
 
     The lookup never substitutes another product date or comparison pair. A
     corrected publication supersedes its predecessor, so the newest remaining
     published row is the canonical active citation.
     """
-    try:
-        current_date = (
-            current_date if isinstance(current_date, date)
-            else date.fromisoformat(str(current_date))
-        )
-        prior_date = (
-            prior_date if isinstance(prior_date, date)
-            else date.fromisoformat(str(prior_date))
-        )
-    except (TypeError, ValueError):
-        raise ValueError('comparison_dates_invalid')
+    from services.what_changed_comparison_identity import normalize_comparison_identity
+
+    identity = normalize_comparison_identity(comparison_identity)
+    current_date = date.fromisoformat(identity['current_data_through'])
 
     session = session or db.session
     candidates = (
@@ -183,6 +175,11 @@ def get_published_since_yesterday_change_artifact(
             ShareArtifact.artifact_type == 'since_yesterday_change',
             ShareArtifact.team_id == team_id,
             ShareArtifact.product_date == current_date,
+            ShareArtifact.source_snapshot_id == identity['current_snapshot_id'],
+            ShareArtifact.subject_key == (
+                f'team:{team_id}:prior:{identity["previous_snapshot_id"]}:'
+                f'current:{identity["current_snapshot_id"]}'
+            ),
             ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED,
         )
         .order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
@@ -194,10 +191,7 @@ def get_published_since_yesterday_change_artifact(
             if isinstance(artifact.payload, dict)
             else {}
         )
-        if (
-            authority.get('current_data_through') == current_date.isoformat()
-            and authority.get('previous_data_through') == prior_date.isoformat()
-        ):
+        if authority.get('comparison_identity') == identity:
             return _verify_or_fail(artifact, verify)
     return None
 

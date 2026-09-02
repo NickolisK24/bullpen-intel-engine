@@ -370,6 +370,40 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
             db.session.flush()
         return snapshot
 
+    # Bind the already-authored public comparison to the exact publications
+    # before the candidate becomes the served snapshot.  This does not compute
+    # or alter What Changed; it gives render and citation paths one immutable
+    # pair identity. Missing/incompatible authority leaves only the dependent
+    # share action withheld.
+    comparison_block = (
+        snapshot.payload.get('what_changed_since_yesterday', {})
+        if isinstance(snapshot.payload, Mapping) else {}
+    )
+    comparison = (
+        comparison_block.get('comparison', {})
+        if isinstance(comparison_block, Mapping) else {}
+    )
+    previous_snapshot_id = (
+        comparison.get('previous_snapshot_id')
+        if isinstance(comparison, Mapping) else None
+    )
+    prior_comparison_snapshot = (
+        db.session.get(DashboardSnapshot, previous_snapshot_id)
+        if previous_snapshot_id is not None else None
+    )
+    try:
+        from services.what_changed_comparison_identity import bind_comparison_identity
+        snapshot.payload = bind_comparison_identity(
+            snapshot.payload,
+            snapshot,
+            prior_comparison_snapshot,
+        )
+    except ValueError:
+        logger.warning(
+            'What Changed comparison identity withheld snapshot_id=%s.',
+            snapshot.id,
+        )
+
     now = utc_now_naive()
     prior_published_ids = [
         row.id

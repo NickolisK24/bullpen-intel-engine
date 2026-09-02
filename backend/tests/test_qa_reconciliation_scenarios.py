@@ -314,6 +314,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         + freeze_policy.SD01_UNIFIED_SEARCH_PATHS
         + freeze_policy.PI01_TEAM_STATE_CITATION_PATHS
         + freeze_policy.PI02_SINCE_YESTERDAY_CITATION_PATHS
+        + freeze_policy.F019_WHAT_CHANGED_SHARING_CONTINUITY_PATHS
         + freeze_policy.HIST01_TEAM_STATE_TIMELINE_PATHS
         + freeze_policy.HIST03_QUALIFIED_TRANSACTION_HISTORY_PATHS,
     )

@@ -68,18 +68,32 @@ def get_since_yesterday_share_artifact(team_id):
     from services.share_artifact_repository import (
         get_published_since_yesterday_change_artifact,
     )
+    from services.what_changed_comparison_identity import normalize_comparison_identity
 
-    current_date = request.args.get('current_date')
-    prior_date = request.args.get('prior_date')
+    comparison_identity = {
+        'contract': request.args.get('comparison_contract'),
+        'comparison_authority': request.args.get('comparison_authority'),
+        'method_version': request.args.get('comparison_method_version'),
+        'previous_snapshot_id': request.args.get('previous_snapshot_id'),
+        'current_snapshot_id': request.args.get('current_snapshot_id'),
+        'previous_sync_run_id': request.args.get('previous_sync_run_id'),
+        'current_sync_run_id': request.args.get('current_sync_run_id'),
+        'previous_payload_version': request.args.get('previous_payload_version'),
+        'current_payload_version': request.args.get('current_payload_version'),
+        'previous_data_through': request.args.get('previous_data_through'),
+        'current_data_through': request.args.get('current_data_through'),
+        'previous_publication_state': request.args.get('previous_publication_state'),
+        'current_publication_state': request.args.get('current_publication_state'),
+    }
     try:
+        comparison_identity = normalize_comparison_identity(comparison_identity)
         artifact = get_published_since_yesterday_change_artifact(
             team_id,
-            current_date=current_date,
-            prior_date=prior_date,
+            comparison_identity=comparison_identity,
         )
         result = project_public_share_artifact(artifact)
     except (TypeError, ValueError):
-        return jsonify({'available': False, 'reason': 'comparison_dates_invalid'}), 200
+        return jsonify({'available': False, 'reason': 'comparison_identity_invalid'}), 200
     except Exception:
         return jsonify({'available': False, 'reason': 'unavailable'}), 503
 

@@ -656,6 +656,9 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     : {}
   const previousDate = textValue(comparison.previous_data_through)
   const currentDate = textValue(comparison.current_data_through)
+  const comparisonIdentity = comparison.identity && typeof comparison.identity === 'object'
+    ? comparison.identity
+    : null
   const itemCountValue = numberValue(block.item_count)
   const baseView = {
     state,
@@ -673,7 +676,7 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     const items = (Array.isArray(block.items) ? block.items : [])
       .map((item, index) => normalizeSinceYesterdayItem(item, teamsById, teams, index))
       .filter(Boolean)
-      .map(item => ({ ...item, previousDate, currentDate }))
+      .map(item => ({ ...item, previousDate, currentDate, comparisonIdentity }))
     if (items.length === 0) return null
     const itemCount = itemCountValue ?? items.length
     return {
@@ -1748,7 +1751,7 @@ function SinceYesterdayDetail({ item, detailId }) {
           >
             Open bullpen board
           </Link>
-          {item.teamId && item.previousDate && item.currentDate && (
+          {item.teamId && item.comparisonIdentity && (
             <EvidenceShareMenu
               linkOnly
               loadCardModel={() => loadSinceYesterdayCitation(item)}
