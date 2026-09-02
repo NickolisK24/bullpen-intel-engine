@@ -2968,6 +2968,18 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             what_changed_previous_snapshot
         ),
     )
+    if (
+        what_changed_previous_snapshot is not None
+        and isinstance(changes, dict)
+        and isinstance(changes.get('comparison'), dict)
+        and changes['comparison'].get('comparison_available') is True
+    ):
+        # Publication completes this into the governed comparison identity.
+        # Carry the exact renderer-selected prior; never ask the share path to
+        # find another snapshot from dates later.
+        changes['comparison']['previous_snapshot_id'] = (
+            what_changed_previous_snapshot.id
+        )
     payload['what_changed_since_yesterday'] = changes
 
     return payload

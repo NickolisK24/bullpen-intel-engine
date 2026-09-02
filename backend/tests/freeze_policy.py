@@ -433,6 +433,21 @@ PI02_SINCE_YESTERDAY_CITATION_PATHS = (
     'backend/services/share_artifact_since_yesterday.py',
 )
 
+# F-019, September 2 2026. The rendered governed What Changed comparison and
+# its immutable citation share one exact published-snapshot identity. The
+# publication step binds identity without altering deltas; the share route and
+# frontend only transport it. Date-only share reselection is retired.
+F019_WHAT_CHANGED_SHARING_CONTINUITY_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/api/share_cards.py',
+    'backend/services/dashboard_snapshot.py',
+    'backend/services/share_artifact_repository.py',
+    'backend/services/share_artifact_since_yesterday.py',
+    'backend/services/what_changed_comparison_identity.py',
+    'frontend/src/components/home/IntelligenceSurface.jsx',
+    'frontend/src/utils/sinceYesterdayArtifact.js',
+)
+
 # HIST-01, August 25 2026. Team State History reads only retained, published,
 # integrity-verified Team State ShareArtifacts through one bounded public route.
 # It does not recompute Team State, backfill dates, or read appearance-team

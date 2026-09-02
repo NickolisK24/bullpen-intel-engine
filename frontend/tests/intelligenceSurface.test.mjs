@@ -221,6 +221,21 @@ const dashboardWithSinceYesterdayChanges = {
       comparison_available: true,
       previous_data_through: '2026-06-24',
       current_data_through: '2026-06-25',
+      identity: {
+        contract: 'what_changed_comparison_identity_v1',
+        comparison_authority: 'what_changed_since_yesterday_public_v1',
+        method_version: '2026-06-19.v1',
+        previous_snapshot_id: 400,
+        current_snapshot_id: 401,
+        previous_sync_run_id: 500,
+        current_sync_run_id: 501,
+        previous_payload_version: 1,
+        current_payload_version: 1,
+        previous_data_through: '2026-06-24',
+        current_data_through: '2026-06-25',
+        previous_publication_state: 'trusted_published',
+        current_publication_state: 'current_published',
+      },
     },
     ordering_basis: 'team_abbreviation_then_team_name',
     item_count: 2,
@@ -1044,6 +1059,13 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.equal(view.state, 'changes_detected')
   assert.equal(view.comparisonAvailable, true)
   assert.deepEqual(view.items.map(item => item.teamAbbr), ['NYM', 'SF'])
+  assert.deepEqual(
+    view.items.map(item => item.comparisonIdentity),
+    [
+      dashboardWithSinceYesterdayChanges.what_changed_since_yesterday.comparison.identity,
+      dashboardWithSinceYesterdayChanges.what_changed_since_yesterday.comparison.identity,
+    ],
+  )
 
   // Backend-authored lane and primary delta flow straight through.
   assert.equal(view.items[0].movementLane, 'more_breathing_room')
@@ -1182,6 +1204,19 @@ test('Since Yesterday expands only the selected team and preserves its existing 
   assert.ok(htmlIncludes(expandedHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since_yesterday"'))
   assert.equal(htmlIncludes(expandedHtml, 'San Francisco has fewer rested relievers than yesterday.'), false)
   assert.equal(htmlIncludes(expandedHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since_yesterday"'), false)
+})
+
+test('Since Yesterday withholds sharing when backend comparison identity is absent', () => {
+  const withoutIdentity = clone(dashboardWithSinceYesterdayChanges)
+  delete withoutIdentity.what_changed_since_yesterday.comparison.identity
+  const view = getSinceYesterdayView(withoutIdentity, teams)
+  const html = render(React.createElement(SinceYesterdayBriefingView, {
+    view,
+    expandedKey: 'NYM-what-changed',
+  }))
+
+  assert.ok(htmlIncludes(html, 'Open bullpen board'))
+  assert.equal(htmlIncludes(html, 'Open evidence sharing options'), false)
 })
 
 test('Since Yesterday one-open-row interaction toggles, switches, and resets on filtering', () => {

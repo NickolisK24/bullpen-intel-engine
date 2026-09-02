@@ -16,6 +16,21 @@ const item = {
   teamAbbr: 'NYY',
   previousDate: '2026-08-23',
   currentDate: '2026-08-24',
+  comparisonIdentity: {
+    contract: 'what_changed_comparison_identity_v1',
+    comparison_authority: 'what_changed_since_yesterday_public_v1',
+    method_version: '2026-06-19.v1',
+    previous_snapshot_id: 900,
+    current_snapshot_id: 901,
+    previous_sync_run_id: 1900,
+    current_sync_run_id: 1901,
+    previous_payload_version: 1,
+    current_payload_version: 1,
+    previous_data_through: '2026-08-23',
+    current_data_through: '2026-08-24',
+    previous_publication_state: 'trusted_published',
+    current_publication_state: 'current_published',
+  },
 }
 
 const artifact = {
@@ -46,17 +61,46 @@ test('lazy citation resolution uses one bounded owner request and canonical URL'
       return { available: true, artifact }
     },
   })
-  assert.deepEqual(calls, [[147, { current_date: '2026-08-24', prior_date: '2026-08-23' }]])
+  assert.deepEqual(calls, [[147, {
+    comparison_contract: item.comparisonIdentity.contract,
+    comparison_authority: item.comparisonIdentity.comparison_authority,
+    comparison_method_version: item.comparisonIdentity.method_version,
+    previous_snapshot_id: 900,
+    current_snapshot_id: 901,
+    previous_sync_run_id: 1900,
+    current_sync_run_id: 1901,
+    previous_payload_version: 1,
+    current_payload_version: 1,
+    previous_data_through: '2026-08-23',
+    current_data_through: '2026-08-24',
+    previous_publication_state: 'trusted_published',
+    current_publication_state: 'current_published',
+  }]])
   assert.equal(model.destinationUrl, 'https://baseballos.app/share/change123')
   assert.equal(model.shareText, artifact.copy.description)
 })
 
 test('malformed or unavailable citations fail closed', async () => {
+  assert.equal(await loadSinceYesterdayCitation({ ...item, comparisonIdentity: null }, {
+    fetchArtifact: async () => ({ available: true, artifact }),
+  }), null)
   assert.equal(await loadSinceYesterdayCitation(item, {
     fetchArtifact: async () => ({ available: false }),
   }), null)
   assert.equal(await loadSinceYesterdayCitation(item, {
     fetchArtifact: async () => ({ available: true, artifact: { ...artifact, artifact_type: 'team_state' } }),
+  }), null)
+})
+
+test('citation rejects a response for a different rendered comparison', async () => {
+  assert.equal(await loadSinceYesterdayCitation(item, {
+    fetchArtifact: async () => ({
+      available: true,
+      artifact: {
+        ...artifact,
+        freshness: { ...artifact.freshness, previous_data_through: '2026-08-22' },
+      },
+    }),
   }), null)
 })
 

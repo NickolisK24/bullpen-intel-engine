@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Mapping
 
 from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
-from services import dashboard_snapshot as dashboard_snapshot_service
 from services.share_artifacts import publish_new_share_artifact, supersede_share_artifact
+from services.what_changed_comparison_identity import (
+    ComparisonIdentityInvalid,
+    comparison_identity_from_payload,
+    normalize_comparison_identity,
+    resolve_snapshot_pair,
+    validate_snapshot_pair,
+)
 from utils.db import db
 
 
 ARTIFACT_TYPE = 'since_yesterday_change'
-RENDER_VERSION = 'since-yesterday-change-1.0.0'
+RENDER_VERSION = 'since-yesterday-change-1.1.0'
 SUBJECT_TYPE = 'since_yesterday_change'
 SOURCE = 'what_changed_since_yesterday_public_v1'
 
@@ -38,14 +44,14 @@ def _mapping(value) -> dict:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _public_item(snapshot, team_id: int, current_date: date, prior_date: date) -> tuple[dict, list]:
+def _public_item(snapshot, team_id: int, comparison_identity: Mapping) -> tuple[dict, list]:
     block = _mapping(_mapping(snapshot.payload).get('what_changed_since_yesterday'))
     comparison = _mapping(block.get('comparison'))
     if (
         block.get('state') != 'changes_detected'
         or comparison.get('comparison_available') is not True
-        or _as_date(comparison.get('current_data_through')) != current_date
-        or _as_date(comparison.get('previous_data_through')) != prior_date
+        or comparison_identity_from_payload(snapshot.payload)
+            != normalize_comparison_identity(comparison_identity)
     ):
         raise SinceYesterdayArtifactUnavailable('comparison_unavailable')
     for item in block.get('items') or ():
@@ -76,7 +82,7 @@ def _evidence(item: Mapping[str, Any]) -> list[dict]:
 
 def _payload(
     *, current_snapshot, prior_snapshot, team_id: int,
-    item: Mapping[str, Any], limitations: list,
+    item: Mapping[str, Any], limitations: list, comparison_identity: Mapping,
 ) -> dict:
     team = {
         'team_id': team_id,
@@ -91,6 +97,7 @@ def _payload(
         'current_published_at': _iso(current_snapshot.published_at),
         'previous_published_at': _iso(prior_snapshot.published_at),
         'change_capability': 'what_changed_since_yesterday_public_v1',
+        'comparison_identity': normalize_comparison_identity(comparison_identity),
     }
     change = {
         key: item.get(key)
@@ -121,33 +128,38 @@ def _payload(
 def publish_since_yesterday_change(
     team_id: int,
     *,
-    current_date,
-    prior_date,
+    comparison_identity,
     session=None,
     current_snapshot=None,
     prior_snapshot=None,
 ):
-    """Resolve and publish the exact change shown for one adjacent trusted pair."""
+    """Publish the exact governed comparison identity already shown to readers."""
     session = session or db.session
-    current_date = _as_date(current_date)
-    prior_date = _as_date(prior_date)
-    if current_date is None or prior_date is None or prior_date != current_date - timedelta(days=1):
-        raise SinceYesterdayArtifactUnavailable('comparison_dates_invalid')
+    try:
+        if current_snapshot is None or prior_snapshot is None:
+            prior_snapshot, current_snapshot, identity = resolve_snapshot_pair(
+                comparison_identity,
+                session=session,
+            )
+        else:
+            identity = validate_snapshot_pair(
+                comparison_identity,
+                prior_snapshot,
+                current_snapshot,
+            )
+    except ComparisonIdentityInvalid as exc:
+        raise SinceYesterdayArtifactUnavailable(str(exc)) from exc
+    current_date = _as_date(identity['current_data_through'])
+    prior_date = _as_date(identity['previous_data_through'])
 
-    current_snapshot = current_snapshot or dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
-    if current_snapshot is None or current_snapshot.data_through != current_date:
-        raise SinceYesterdayArtifactUnavailable('current_snapshot_unavailable')
-    prior_snapshot = prior_snapshot or dashboard_snapshot_service.get_latest_trusted_dashboard_snapshot_before(current_date)
-    if prior_snapshot is None or prior_snapshot.data_through != prior_date:
-        raise SinceYesterdayArtifactUnavailable('prior_snapshot_unavailable')
-
-    item, limitations = _public_item(current_snapshot, team_id, current_date, prior_date)
+    item, limitations = _public_item(current_snapshot, team_id, identity)
     payload = _payload(
         current_snapshot=current_snapshot,
         prior_snapshot=prior_snapshot,
         team_id=team_id,
         item=item,
         limitations=limitations,
+        comparison_identity=identity,
     )
     artifact = publish_new_share_artifact(
         artifact_type=ARTIFACT_TYPE,
@@ -210,25 +222,24 @@ def publish_since_yesterday_changes_for_snapshot(current_snapshot, *, session=No
     session = session or db.session
     if current_snapshot is None or not getattr(current_snapshot, 'is_published', False):
         raise SinceYesterdayArtifactUnavailable('current_snapshot_unpublished')
-    current_date = _as_date(getattr(current_snapshot, 'data_through', None))
-    if current_date is None:
-        raise SinceYesterdayArtifactUnavailable('current_snapshot_unavailable')
-    prior_date = current_date - timedelta(days=1)
-    prior_snapshot = dashboard_snapshot_service.get_latest_trusted_dashboard_snapshot_before(
-        current_date
-    )
-    if prior_snapshot is None or prior_snapshot.data_through != prior_date:
-        raise SinceYesterdayArtifactUnavailable('prior_snapshot_unavailable')
-
     block = _mapping(_mapping(current_snapshot.payload).get('what_changed_since_yesterday'))
     comparison = _mapping(block.get('comparison'))
+    identity = comparison_identity_from_payload(current_snapshot.payload)
     if (
         block.get('state') != 'changes_detected'
         or comparison.get('comparison_available') is not True
-        or _as_date(comparison.get('current_data_through')) != current_date
-        or _as_date(comparison.get('previous_data_through')) != prior_date
+        or identity is None
     ):
         return []
+    try:
+        prior_snapshot, resolved_current, identity = resolve_snapshot_pair(
+            identity,
+            session=session,
+        )
+    except ComparisonIdentityInvalid as exc:
+        raise SinceYesterdayArtifactUnavailable(str(exc)) from exc
+    if resolved_current.id != current_snapshot.id:
+        raise SinceYesterdayArtifactUnavailable('comparison_current_snapshot_mismatch')
 
     artifacts = []
     for item in block.get('items') or ():
@@ -240,8 +251,7 @@ def publish_since_yesterday_changes_for_snapshot(current_snapshot, *, session=No
             continue
         artifacts.append(publish_since_yesterday_change(
             team_id,
-            current_date=current_date,
-            prior_date=prior_date,
+            comparison_identity=identity,
             session=session,
             current_snapshot=current_snapshot,
             prior_snapshot=prior_snapshot,

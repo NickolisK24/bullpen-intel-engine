@@ -724,3 +724,36 @@ def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     for label, query in ALL_GUARD_QUERIES:
         used = {freeze_policy.normalize(p) for p in query.get('prefixes', ())}
         assert not (used & banned), f'{label} reintroduced a blanket prefix: {used & banned}'
+
+
+def test_f019_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.F019_WHAT_CHANGED_SHARING_CONTINUITY_PATHS
+    assert approved == (
+        'backend/api/bullpen.py',
+        'backend/api/share_cards.py',
+        'backend/services/dashboard_snapshot.py',
+        'backend/services/share_artifact_repository.py',
+        'backend/services/share_artifact_since_yesterday.py',
+        'backend/services/what_changed_comparison_identity.py',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/utils/sinceYesterdayArtifact.js',
+    )
+    assert freeze_policy.protected_hits(
+        list(approved),
+        exact=freeze_policy.FROZEN_PHASE0E_LEGACY_PUBLIC_PATHS,
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/api/pitchers.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/pitchers.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-09-02-f019-what-changed-sharing-continuity.md'
+    ).read_text(encoding='utf-8')
+    for exact_path in approved:
+        assert f'`{exact_path}`' in decision
+    assert 'Existing immutable artifacts are not rewritten.' in decision

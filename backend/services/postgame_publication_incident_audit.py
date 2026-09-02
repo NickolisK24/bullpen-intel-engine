@@ -332,7 +332,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '132c85f039040a4216fdec3db34aea1dabdcc1f2fd0e7cc9372099cc22d2a760',
+            '2092187900026f51a796f0b5a603c42a9bac6be33bd58efd10273b45e6f062e6',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -346,7 +346,10 @@ PACKAGE_MODIFIED_MODULES = {
             'unset the branch is not taken at all. The Production Accuracy Proof '
             'package subsequently made durable Team State proof mandatory before '
             'a newly trusted/current publication can advance, while retaining the '
-            'prior trusted publication on proof failure'
+            'prior trusted publication on proof failure. F-019 then binds the '
+            'already-rendered What Changed comparison to its exact publication '
+            'pair before the candidate becomes publicly served; missing identity '
+            'withholds only the dependent share action'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and

@@ -2148,6 +2148,21 @@ class TestRepeatedSameDatePublicationPreservesComparison:
             assert first_comparison['comparison_available'] is True
             assert first_comparison['reason_codes'] == []
             assert first_comparison['previous_data_through'] == prior_date.isoformat()
+            assert first_comparison['identity'] == {
+                'contract': 'what_changed_comparison_identity_v1',
+                'comparison_authority': 'what_changed_since_yesterday_public_v1',
+                'method_version': '2026-06-19.v1',
+                'previous_snapshot_id': prior_snapshot_id,
+                'current_snapshot_id': first.id,
+                'previous_sync_run_id': prior_snapshot.sync_run_id,
+                'current_sync_run_id': first.sync_run_id,
+                'previous_payload_version': dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                'current_payload_version': dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                'previous_data_through': prior_date.isoformat(),
+                'current_data_through': workload_date.isoformat(),
+                'previous_publication_state': 'trusted_published',
+                'current_publication_state': 'current_published',
+            }
 
             db.session.refresh(prior_snapshot)
             assert prior_snapshot.is_published is False       # rotated by publish
@@ -2158,6 +2173,9 @@ class TestRepeatedSameDatePublicationPreservesComparison:
             repeated_ids = []
             for _ in range(3):
                 repeated = self._build_and_publish_current()
+                assert self._stored_comparison(repeated)['identity']['previous_snapshot_id'] == (
+                    prior_snapshot_id
+                )
                 repeated_ids.append(repeated.id)
                 comparison = self._stored_comparison(repeated)
                 assert comparison['comparison_available'] is True, comparison
