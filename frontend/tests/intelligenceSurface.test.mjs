@@ -2611,18 +2611,19 @@ test('Since Yesterday loading shell yields to available and governed unavailable
   assert.ok(htmlIncludes(unavailable, 'Since-yesterday movement is unavailable'))
 })
 
-test('Today uses one Dashboard request as the owner of its Landscape publication', () => {
+test('Today uses one Home projection as the owner of its Landscape publication', () => {
   const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
   for (const owner of [
     'getTodayIntelligence',
     'getTonightIntelligence',
-    'getBullpenDashboard',
+    'getHomeProjection',
     'getTeams',
   ]) {
     assert.equal((source.match(new RegExp(`useFetch\\(${owner}\\)`, 'g')) || []).length, 1, owner)
   }
+  assert.equal(source.includes('getBullpenDashboard'), false)
   assert.equal(source.includes('getBullpenLandscape'), false)
-  assert.ok(source.includes('const landscape = dashboard.data?.landscape || null'))
+  assert.ok(source.includes('const landscape = home.data?.landscape || null'))
 })
 
 test('Daily Edition loading is compact and does not block healthy Tonight content', () => {

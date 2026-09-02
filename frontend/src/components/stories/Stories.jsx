@@ -2,7 +2,7 @@ import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard } from '../../utils/api'
+import { getStoriesProjection } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import {
   DataThroughStamp,
@@ -37,15 +37,15 @@ import {
 // BaseballOS Stories — the browseable bullpen intelligence feed. This page
 // renders the canonical backend story feed (dashboard.stories) as the product feed.
 export default function Stories() {
-  const dash = useFetch(getBullpenDashboard)
+  const stories = useFetch(getStoriesProjection)
 
   return (
     <StoriesView
-      dashboard={dash.data}
-      loading={dash.loading}
-      error={dash.error}
-      staleWithError={dash.staleWithError}
-      onRetry={dash.refetch}
+      dashboard={stories.data}
+      loading={stories.loading}
+      error={stories.error}
+      staleWithError={stories.staleWithError}
+      onRetry={stories.refetch}
     />
   )
 }

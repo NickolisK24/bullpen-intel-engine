@@ -1,5 +1,5 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard, getLeagueTeamStates } from '../../utils/api'
+import { getLeagueProjection } from '../../utils/api'
 import { Disclosure, FreshnessStamp, UnavailableDataState } from '../UI'
 import DashboardStorylines from './DashboardStorylines'
 import LeagueTeamStateLandscape from './LeagueTeamStateLandscape'
@@ -15,20 +15,19 @@ import {
 // Final league bullpen orientation: one governed all-club Team State listing
 // leads, while backend-authored storylines and independent context stay intact.
 export default function Dashboard() {
-  const dash = useFetch(getBullpenDashboard)
-  const leagueTeamStates = useFetch(getLeagueTeamStates)
+  const league = useFetch(getLeagueProjection)
   return (
     <DashboardView
-      data={dash.data}
-      loading={dash.loading}
-      error={dash.error}
-      staleWithError={dash.staleWithError}
-      onRetry={dash.refetch}
-      leagueTeamStates={leagueTeamStates.data}
-      leagueTeamStatesLoading={leagueTeamStates.loading}
-      leagueTeamStatesError={leagueTeamStates.error}
-      leagueTeamStatesStaleWithError={leagueTeamStates.staleWithError}
-      onRetryLeagueTeamStates={leagueTeamStates.refetch}
+      data={league.data}
+      loading={league.loading}
+      error={league.error}
+      staleWithError={league.staleWithError}
+      onRetry={league.refetch}
+      leagueTeamStates={league.data?.team_states}
+      leagueTeamStatesLoading={league.loading}
+      leagueTeamStatesError={league.error}
+      leagueTeamStatesStaleWithError={league.staleWithError}
+      onRetryLeagueTeamStates={league.refetch}
     />
   )
 }

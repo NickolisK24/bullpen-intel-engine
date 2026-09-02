@@ -90,6 +90,17 @@ from services.league_team_state_listing import (
     build_snapshot_unavailable_listing,
 )
 from services.public_landscape import build_public_landscape, unavailable_landscape
+from services.public_surface_projections import (
+    HOME_PAYLOAD_KEYS,
+    LEAGUE_PAYLOAD_KEYS,
+    STORIES_PAYLOAD_KEYS,
+    TRUST_PAYLOAD_KEYS,
+    build_home_projection,
+    build_league_projection,
+    build_stories_projection,
+    build_trust_projection,
+    select_trusted_publication,
+)
 from services.snapshot_read_guard import SnapshotReadUnavailable
 from services.tonight_intelligence_snapshot import serve_tonight_cached
 from services.narrative_memory import (
@@ -3298,6 +3309,45 @@ def build_dashboard_snapshot_endpoint():
 @bullpen_bp.route('/dashboard', methods=['GET'])
 def get_bullpen_dashboard():
     return jsonify(bullpen_dashboard_response_payload())
+
+
+def _public_surface_projection(builder, payload_keys):
+    """Serve one compact projection from one selected trusted publication."""
+    try:
+        snapshot, reason = select_trusted_publication(payload_keys)
+        return jsonify(builder(snapshot, unavailable_reason=reason))
+    except SnapshotReadUnavailable:
+        current_app.logger.warning('public surface projection snapshot read unavailable')
+        return jsonify(builder(
+            None,
+            unavailable_reason=SNAPSHOT_READ_UNAVAILABLE,
+        )), 503
+    except Exception:
+        current_app.logger.exception('public surface projection unavailable')
+        return jsonify(builder(
+            None,
+            unavailable_reason='public_surface_projection_unavailable',
+        )), 503
+
+
+@bullpen_bp.route('/home', methods=['GET'])
+def get_public_home_projection():
+    return _public_surface_projection(build_home_projection, HOME_PAYLOAD_KEYS)
+
+
+@bullpen_bp.route('/league', methods=['GET'])
+def get_public_league_projection():
+    return _public_surface_projection(build_league_projection, LEAGUE_PAYLOAD_KEYS)
+
+
+@bullpen_bp.route('/stories', methods=['GET'])
+def get_public_stories_projection():
+    return _public_surface_projection(build_stories_projection, STORIES_PAYLOAD_KEYS)
+
+
+@bullpen_bp.route('/trust', methods=['GET'])
+def get_public_trust_projection():
+    return _public_surface_projection(build_trust_projection, TRUST_PAYLOAD_KEYS)
 
 
 @bullpen_bp.route('/team-states', methods=['GET'])

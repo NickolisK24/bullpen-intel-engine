@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
-  getBullpenDashboard,
+  getHomeProjection,
   getTeams,
   getTodayIntelligence,
   getTonightIntelligence,
@@ -2654,9 +2654,9 @@ export function IntelligenceSurfaceView({
 export default function IntelligenceSurfacePage() {
   const intelligence = useFetch(getTodayIntelligence)
   const tonight = useFetch(getTonightIntelligence)
-  const dashboard = useFetch(getBullpenDashboard)
+  const home = useFetch(getHomeProjection)
   const teams = useFetch(getTeams)
-  const landscape = dashboard.data?.landscape || null
+  const landscape = home.data?.landscape || null
 
   return (
     <IntelligenceSurfaceView
@@ -2669,15 +2669,15 @@ export default function IntelligenceSurfacePage() {
       tonightStaleWithError={tonight.staleWithError}
       onRetryTonight={tonight.refetch}
       landscape={landscape}
-      landscapeLoading={dashboard.loading}
-      landscapeError={dashboard.error}
-      landscapeStaleWithError={dashboard.staleWithError}
-      onRetryLandscape={dashboard.refetch}
-      dashboard={dashboard.data}
-      dashboardLoading={dashboard.loading}
-      dashboardError={dashboard.error}
-      dashboardStaleWithError={dashboard.staleWithError}
-      onRetryDashboard={dashboard.refetch}
+      landscapeLoading={home.loading}
+      landscapeError={home.error}
+      landscapeStaleWithError={home.staleWithError}
+      onRetryLandscape={home.refetch}
+      dashboard={home.data}
+      dashboardLoading={home.loading}
+      dashboardError={home.error}
+      dashboardStaleWithError={home.staleWithError}
+      onRetryDashboard={home.refetch}
       teams={teams.data || []}
     />
   )

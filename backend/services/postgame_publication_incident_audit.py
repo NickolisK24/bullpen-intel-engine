@@ -332,7 +332,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '2092187900026f51a796f0b5a603c42a9bac6be33bd58efd10273b45e6f062e6',
+            '036e81b3bdeb86c1ff26b81224999d373ba8fc75641ee70558e35472bcb1bb9a',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -349,7 +349,9 @@ PACKAGE_MODIFIED_MODULES = {
             'prior trusted publication on proof failure. F-019 then binds the '
             'already-rendered What Changed comparison to its exact publication '
             'pair before the candidate becomes publicly served; missing identity '
-            'withholds only the dependent share action'
+            'withholds only the dependent share action. F-004 added a read-only '
+            'field projection for purpose-built public surfaces; trusted snapshot '
+            'selection and publication eligibility remain unchanged'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and

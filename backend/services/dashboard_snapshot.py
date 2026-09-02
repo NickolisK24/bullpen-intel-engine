@@ -1,5 +1,6 @@
 import json
 import logging
+from types import SimpleNamespace
 from datetime import timedelta
 from time import perf_counter
 from collections.abc import Mapping
@@ -1062,3 +1063,77 @@ def get_latest_valid_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASH
     if snapshot_current_enough(snapshot):
         return snapshot
     return None
+
+
+def get_latest_valid_dashboard_snapshot_projection(
+    payload_keys,
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    """Read one trusted snapshot with only the requested frozen JSON domains.
+
+    Public surface projections do not need the comprehensive multi-megabyte
+    payload. JSON-path selection keeps publication metadata and validation
+    identical while avoiding transfer/deserialization of unrelated domains.
+    Keys are code-owned, not request input.
+    """
+    keys = tuple(dict.fromkeys(str(key) for key in (payload_keys or ())))
+    if 'freshness' not in keys:
+        keys = ('freshness', *keys)
+
+    metadata_columns = (
+        DashboardSnapshot.id,
+        DashboardSnapshot.snapshot_type,
+        DashboardSnapshot.sync_run_id,
+        DashboardSnapshot.status,
+        DashboardSnapshot.is_published,
+        DashboardSnapshot.published_at,
+        DashboardSnapshot.payload_version,
+        DashboardSnapshot.data_through,
+        DashboardSnapshot.availability_reference_date,
+        DashboardSnapshot.snapshot_generated_at,
+    )
+    payload_columns = tuple(
+        DashboardSnapshot.payload[key].label(f'payload__{key}')
+        for key in keys
+    )
+    query = (
+        db.session.query(*metadata_columns, *payload_columns)
+        .filter_by(
+            snapshot_type=snapshot_type,
+            status=SNAPSHOT_STATUS_READY,
+            is_published=True,
+            payload_version=DASHBOARD_PAYLOAD_VERSION,
+        )
+        .order_by(
+            DashboardSnapshot.snapshot_generated_at.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+    )
+    row = read_snapshot_first(
+        query,
+        snapshot_type=snapshot_type,
+        reference_date='current_publication_projection',
+        snapshot_version=DASHBOARD_PAYLOAD_VERSION,
+    )
+    if row is None:
+        return None
+
+    payload = {
+        key: getattr(row, f'payload__{key}')
+        for key in keys
+        if getattr(row, f'payload__{key}') is not None
+    }
+    snapshot = SimpleNamespace(
+        id=row.id,
+        snapshot_type=row.snapshot_type,
+        sync_run_id=row.sync_run_id,
+        status=row.status,
+        is_published=bool(row.is_published),
+        published_at=row.published_at,
+        payload_version=row.payload_version,
+        data_through=row.data_through,
+        availability_reference_date=row.availability_reference_date,
+        snapshot_generated_at=row.snapshot_generated_at,
+        payload=payload,
+    )
+    return snapshot if snapshot_current_enough(snapshot) else None
