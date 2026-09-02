@@ -117,7 +117,8 @@ test('Vite owns route-entry generation when hosting bypasses package scripts', (
   const packageConfig = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
   assert.match(viteConfig, /import \{ writeRouteEntryPages \}/)
-  assert.match(viteConfig, /await writeRouteEntryPages\(\)/)
+  assert.match(viteConfig, /command === 'build'/)
+  assert.match(viteConfig, /if \(command === 'build'\) \{\s*await writeRouteEntryPages\(\)/)
   assert.equal(packageConfig.scripts.build, 'vite build')
   assert.equal(packageConfig.scripts.dev, 'vite')
 })

@@ -13,8 +13,10 @@ const routeEntries = Object.fromEntries(
   ]),
 )
 
-export default defineConfig(async () => {
-  await writeRouteEntryPages()
+export default defineConfig(async ({ command }) => {
+  if (command === 'build') {
+    await writeRouteEntryPages()
+  }
   return {
     plugins: [react()],
     build: {

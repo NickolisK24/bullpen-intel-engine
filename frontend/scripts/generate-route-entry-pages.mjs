@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { PUBLIC_ORIGIN, ROUTE_ENTRY_METADATA } from '../src/utils/publicRouteMetadata.js'
@@ -49,7 +49,6 @@ ${socialUrl ? `    <meta property="og:url" content="${escapeHtml(socialUrl)}" />
 }
 
 export async function writeRouteEntryPages(outputDir = ROUTE_ENTRY_DIR) {
-  await rm(outputDir, { recursive: true, force: true })
   await mkdir(outputDir, { recursive: true })
   for (const entry of ROUTE_ENTRY_METADATA) {
     await writeFile(resolve(outputDir, `${entry.key}.html`), renderRouteEntryHtml(entry), 'utf8')
