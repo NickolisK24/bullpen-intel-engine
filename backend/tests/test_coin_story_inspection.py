@@ -6,6 +6,7 @@ Most tests inject a narrative feed (pure, no DB); one DB-backed test confirms th
 real read path mutates nothing.
 """
 
+from datetime import date
 import json
 
 import pytest
@@ -185,7 +186,7 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
         return coin_story_inspection.inspect_team_story(
             team_id,
             completed_game_context=kwargs.get('completed_game_context'),
-            team_context=_team_context(),
+            team_context=_team_context(optionality_band='flexible'),
         )
 
     report = build_todays_story_editorial_review(
@@ -272,9 +273,23 @@ def test_todays_story_review_swap_test_uses_number_word_normalizer(tmp_path):
             'safe_time_context': 'AFTER_MOST_RECENT_GAME',
             'writer_targets': ['team_story'],
             'package': {
+                'team_id': team_id,
+                'game_pk': ctx.get('game_pk'),
                 'primary_story': 'protected_game_shape',
+                'story_priority': 'CRITICAL',
                 'publish_reason': 'critical_narrative',
+                'availability_snapshot': {'optionality_band': 'flexible'},
+                'workload_snapshot': {'concentration_band': 'normal'},
                 'completed_game_context': ctx,
+                'evidence_blocks': {
+                    'key_relief_appearances': [{
+                        'pitcher_mlb_id': 700000 + team_id,
+                        'name': f'Reliever {team_id}',
+                        'game_pk': ctx.get('game_pk'),
+                        'appearance_team_id': team_id,
+                        'claim_evidence_role': 'claim_supporting_relief_participant',
+                    }],
+                },
             },
             'drafts': [{
                 'writer': 'team_story',
@@ -354,3 +369,70 @@ def test_real_read_path_makes_no_db_writes(app):
         after = CompletedGameContext.query.count()
     assert before == after            # no rows added, changed, or removed
     assert out['team_id'] == 1
+
+
+def test_db_editorial_review_uses_same_today_receipts_and_gate(app, monkeypatch):
+    with app.app_context():
+        db.session.add(CompletedGameContext(
+            team_id=1,
+            game_pk=901,
+            game_date=date(2026, 6, 28),
+            confidence='HIGH',
+            bullpen_story_tag='protected_game_shape',
+            game_shape_created='normal_start',
+            lead_protected=True,
+            lead_lost=False,
+            lead_when_bullpen_entered=2,
+            bullpen_entry_inning=7,
+            bullpen_entry_score_for=3,
+            bullpen_entry_score_against=1,
+            largest_lead=2,
+            largest_deficit=0,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+            starter_name='Review Starter',
+            starter_ip=6.0,
+        ))
+        db.session.commit()
+
+    def enrich(contexts):
+        enriched = []
+        for context in contexts:
+            copied = dict(context)
+            copied['key_relief_appearances'] = [{
+                'pitcher_mlb_id': 700001,
+                'name': 'Review Reliever',
+                'game_pk': 901,
+                'appearance_team_id': 1,
+                'claim_evidence_role': 'claim_supporting_relief_participant',
+            }]
+            enriched.append(copied)
+        return enriched
+
+    monkeypatch.setattr(
+        'services.today_relief_appearance_evidence.'
+        'enrich_today_contexts_with_relief_appearances',
+        enrich,
+    )
+
+    def inspect(team_id, **kwargs):
+        return coin_story_inspection.inspect_team_story(
+            team_id,
+            completed_game_context=kwargs.get('completed_game_context'),
+            team_context=_team_context(optionality_band='flexible'),
+        )
+
+    report = build_todays_story_editorial_review(
+        app=app,
+        reference_date=date(2026, 6, 28),
+        inspect_fn=inspect,
+        generated_at='2026-06-29T00:00:00',
+    )
+
+    assert report['homepage_status'] == 'ok'
+    assert [
+        item['name']
+        for item in report['homepage_lead_story']['claim_evidence']['relief_appearances']
+    ] == ['Review Reliever']
+    assert report['entries'][0]['publishable'] is True
+    assert report['entries'][0]['daily_edition_publication_gate']['status'] == 'pass'

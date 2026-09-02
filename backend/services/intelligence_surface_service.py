@@ -5,16 +5,17 @@ service answers one question:
 
     "What is the one bullpen story BaseballOS sees first today?"
 
-It does NO baseball reasoning and generates NO prose. It builds the existing COIN
-StoryPackage for each candidate team (via the read-only inspection helper, which
-runs the orchestrator and renders the existing writers), keeps only the
-publishable packages, ranks them deterministically, and returns the single lead
+It generates NO prose. It builds the existing COIN StoryPackage for each
+candidate team (via the read-only inspection helper, which runs the orchestrator
+and renders the existing writers), applies the Today-only semantic publication
+gate, ranks the governed packages deterministically, and returns the single lead
 story with its rendered drafts and the metadata that explains the choice.
 
-Selection only — nothing here recomputes a story, fetches MLB data, mutates the
-database, or introduces a new intelligence layer. Candidate context rows are read
-from the existing ``completed_game_contexts`` table (or injected for tests); the
-per-team bullpen snapshot is read through the same path the writers already use.
+Nothing here recomputes a story, fetches MLB data, or mutates the database.
+Candidate context rows are read from the existing ``completed_game_contexts``
+table (or injected for tests) and enriched, transiently, with exact official
+relief lines from existing ``game_logs`` rows; the per-team bullpen snapshot is
+read through the same path the writers already use.
 
 Ranking (deterministic, ascending priority — lower sorts first):
 
@@ -35,9 +36,17 @@ fatal; if nothing is publishable the service returns an honest empty state.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from services.availability_reference_date import product_current_date
 from services.coin_story_inspection import inspect_team_story
 from services.completed_game_context_service import TAG_INSUFFICIENT_CONTEXT
+from services.daily_edition_publication_gate import (
+    GATE_VERSION,
+    STATUS_PASS as GATE_STATUS_PASS,
+    evaluate_daily_edition_publication,
+)
 from services.narrative_context_service import build_narrative_context
 
 # ── Ranking vocabularies ──────────────────────────────────────────────────────
@@ -60,6 +69,7 @@ STATUS_OK = 'ok'
 STATUS_EMPTY = 'empty'
 EMPTY_NO_CANDIDATES = 'no_completed_game_contexts'
 EMPTY_NO_PUBLISHABLE = 'no_publishable_coin_story'
+EMPTY_CLAIM_EVIDENCE_WITHHELD = 'lead_story_withheld_claim_evidence'
 
 # The existing writers, in a stable order for the drafts mapping.
 _DRAFT_ORDER = ('team_story', 'dashboard', 'morning_brief')
@@ -117,7 +127,14 @@ def _resolve_candidates(reference_date, candidate_contexts, current_date=None):
     if candidate_contexts is not None:
         return _iso(reference_date), [c for c in candidate_contexts if c]
     ref_date, rows = _load_candidate_contexts(reference_date, current_date)
-    return _iso(ref_date), [r.to_dict() for r in rows]
+    contexts = [r.to_dict() for r in rows]
+    # CompletedGameContext intentionally stores the derived event, not a second
+    # copy of pitching lines.  Attach the exact game/team relief receipts only
+    # for this read path, before the package and its prose are composed.
+    from services.today_relief_appearance_evidence import (
+        enrich_today_contexts_with_relief_appearances,
+    )
+    return _iso(ref_date), enrich_today_contexts_with_relief_appearances(contexts)
 
 
 def _load_candidate_contexts(reference_date, current_date=None):
@@ -188,6 +205,7 @@ def _select_lead_story(reference_date_iso, contexts, inspect_fn):
     considered = 0
     error_count = 0
     publishable = []
+    semantic_withheld = 0
 
     for ctx in contexts:
         team_id = ctx.get('team_id')
@@ -206,21 +224,30 @@ def _select_lead_story(reference_date_iso, contexts, inspect_fn):
             error_count += 1
             continue
         if inspected and inspected.get('publishable') is True:
-            publishable.append(inspected)
+            gate = evaluate_daily_edition_publication(inspected)
+            if gate.get('status') == GATE_STATUS_PASS:
+                publishable.append((inspected, gate))
+            else:
+                semantic_withheld += 1
 
     if not considered:
         return _empty_response(reference_date_iso, considered, 0, error_count,
                                EMPTY_NO_CANDIDATES)
     if not publishable:
         return _empty_response(reference_date_iso, considered, 0, error_count,
-                               EMPTY_NO_PUBLISHABLE)
+                               _empty_reason(semantic_withheld))
 
-    ranked = sorted(publishable, key=_sort_key)
-    lead = ranked[0]
+    ranked = sorted(publishable, key=lambda item: _sort_key(item[0]))
+    lead, gate = ranked[0]
     return {
         'status': STATUS_OK,
         'reference_date': reference_date_iso,
-        'lead_story': _lead_story_payload(lead, rank=1),
+        'lead_story': _lead_story_payload(
+            lead,
+            gate=gate,
+            rank=1,
+            reference_date_iso=reference_date_iso,
+        ),
         'candidates_considered': considered,
         'publishable_candidates': len(publishable),
         'errors': error_count,
@@ -241,6 +268,7 @@ def _select_first_publishable_lead_story(reference_date_iso, contexts, inspect_f
     considered = 0
     error_count = 0
     previews = []
+    semantic_withheld = 0
 
     for ctx in contexts:
         team_id = ctx.get('team_id')
@@ -271,18 +299,31 @@ def _select_first_publishable_lead_story(reference_date_iso, contexts, inspect_f
             error_count += 1
             continue
         if inspected and inspected.get('publishable') is True:
+            gate = evaluate_daily_edition_publication(inspected)
+            if gate.get('status') != GATE_STATUS_PASS:
+                semantic_withheld += 1
+                continue
             return {
                 'status': STATUS_OK,
                 'reference_date': reference_date_iso,
-                'lead_story': _lead_story_payload(inspected, rank=1),
+                'lead_story': _lead_story_payload(
+                    inspected,
+                    gate=gate,
+                    rank=1,
+                    reference_date_iso=reference_date_iso,
+                ),
                 'candidates_considered': considered,
-                'publishable_candidates': len(previews),
+                # Bounded warming stops after the first governed pass.  Report
+                # only the candidate actually proven publishable, not every
+                # context preview that might have failed inspection or the
+                # semantic gate had it been evaluated.
+                'publishable_candidates': 1,
                 'errors': error_count,
                 'empty_reason': None,
             }
 
     return _empty_response(reference_date_iso, considered, 0, error_count,
-                           EMPTY_NO_PUBLISHABLE)
+                           _empty_reason(semantic_withheld))
 
 
 def _rank_preview_from_context(ctx):
@@ -330,14 +371,22 @@ def _swing(completed):
 
 # ── Response shaping ──────────────────────────────────────────────────────────
 
-def _lead_story_payload(inspected, *, rank):
+def _lead_story_payload(inspected, *, gate, rank, reference_date_iso):
     pkg = inspected.get('package') or {}
     completed = pkg.get('completed_game_context') or {}
+    drafts = _drafts_by_writer(inspected.get('drafts') or [])
     return {
         'team_id': inspected.get('team_id'),
         'game_pk': inspected.get('game_pk'),
         'package': pkg,
-        'drafts': _drafts_by_writer(inspected.get('drafts') or []),
+        'drafts': drafts,
+        'claim_evidence': dict(gate.get('claim_evidence') or {}),
+        'publication_identity': _publication_identity(
+            inspected,
+            gate,
+            drafts,
+            reference_date_iso,
+        ),
         'selection': {
             'rank': rank,
             'reason': pkg.get('publish_reason') or inspected.get('publish_reason'),
@@ -347,7 +396,46 @@ def _lead_story_payload(inspected, *, rank):
             'primary_story': pkg.get('primary_story'),
             'late_runs_allowed': completed.get('late_runs_allowed'),
             'swing': _swing(completed),
+            'semantic_gate': {
+                'status': gate.get('status'),
+                'version': gate.get('gate_version'),
+                'consequence_key': gate.get('consequence_key'),
+            },
         },
+    }
+
+
+def _publication_identity(inspected, gate, drafts, reference_date_iso):
+    pkg = inspected.get('package') or {}
+    team_draft = drafts.get('team_story') or {}
+    basis = {
+        'contract': GATE_VERSION,
+        'reference_date': reference_date_iso,
+        'team_id': inspected.get('team_id'),
+        'game_pk': inspected.get('game_pk'),
+        'generated_at': pkg.get('generated_at'),
+        'package_version': pkg.get('package_version'),
+        'primary_story': pkg.get('primary_story'),
+        'consequence_key': gate.get('consequence_key'),
+        'claim_evidence': gate.get('claim_evidence') or {},
+        'headline': team_draft.get('headline'),
+        'body': team_draft.get('body'),
+    }
+    digest = hashlib.sha256(
+        json.dumps(basis, sort_keys=True, separators=(',', ':'), default=str)
+        .encode('utf-8')
+    ).hexdigest()[:16]
+    return {
+        'publication_id': (
+            f'daily-edition-{reference_date_iso}-'
+            f'{inspected.get("team_id")}-{inspected.get("game_pk")}-{digest}'
+        ),
+        'data_through': reference_date_iso,
+        'generated_at': pkg.get('generated_at'),
+        'reference_date': reference_date_iso,
+        'game_pk': inspected.get('game_pk'),
+        'team_id': inspected.get('team_id'),
+        'semantic_gate_version': gate.get('gate_version'),
     }
 
 
@@ -371,6 +459,14 @@ def _empty_response(reference_date_iso, considered, publishable, errors, reason)
         'errors': errors,
         'empty_reason': reason,
     }
+
+
+def _empty_reason(semantic_withheld):
+    return (
+        EMPTY_CLAIM_EVIDENCE_WITHHELD
+        if semantic_withheld
+        else EMPTY_NO_PUBLISHABLE
+    )
 
 
 # ── Small helpers ─────────────────────────────────────────────────────────────

@@ -35,8 +35,11 @@ const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
 const DAILY_EDITION_TITLE = 'Daily Edition'
 const DAILY_EDITION_UNAVAILABLE_COPY =
   'The Daily Edition lead is temporarily unavailable. The rest of Today is still available.'
+const DAILY_EDITION_CLAIM_EVIDENCE_WITHHELD_COPY =
+  'The Daily Edition lead was withheld because its claim and named evidence could not be published together. The rest of Today is still available.'
 const DAILY_EDITION_UNAVAILABLE_REASONS = new Set([
   'lead_story_unavailable',
+  'lead_story_withheld_claim_evidence',
 ])
 const TONIGHT_SECTION_SUBTITLE =
   'What BaseballOS is watching before first pitch.'
@@ -121,6 +124,7 @@ const INTERNAL_TONIGHT_COPY_PATTERN =
 
 const FAIL_CLOSED_EMPTY_REASONS = new Set([
   'lead_story_unavailable',
+  'lead_story_withheld_claim_evidence',
   'tonight_live_build_timeout',
   'tonight_snapshot_build_unavailable',
   'tonight_snapshot_unavailable',
@@ -755,22 +759,49 @@ function dailyEditionTeam(lead, teams = []) {
 }
 
 function namedRelieverEvidence(lead) {
-  const blocks = firstObjectValue(lead?.package?.evidence_blocks) || {}
-  const reliefAppearances = (Array.isArray(blocks.key_relief_appearances)
-    ? blocks.key_relief_appearances
+  const claimEvidence = firstObjectValue(lead?.claim_evidence) || {}
+  return (Array.isArray(claimEvidence.relief_appearances)
+    ? claimEvidence.relief_appearances
     : [])
     .map(item => textValue(item?.name))
     .filter(Boolean)
-  const availableRelievers = (Array.isArray(blocks.available_relievers)
-    ? blocks.available_relievers
-    : [])
-    .map(item => {
-      const name = textValue(item?.name)
-      if (!name) return null
-      return { name, status: textValue(item?.status) }
-    })
-    .filter(Boolean)
-  return { reliefAppearances, availableRelievers }
+}
+
+function dailyEditionPublicationIdentity(lead) {
+  const identity = firstObjectValue(lead?.publication_identity)
+  if (!identity) return null
+
+  const publicationId = textValue(identity.publication_id)
+  const dataThrough = textValue(identity.data_through)
+  const generatedAt = textValue(identity.generated_at)
+  const referenceDate = textValue(identity.reference_date)
+  const gamePk = textValue(identity.game_pk)
+  const teamId = textValue(identity.team_id)
+  const semanticGateVersion = textValue(identity.semantic_gate_version)
+  const dataThroughLabel = formatFreshnessDate(dataThrough, { includeYear: true })
+  const generatedAtLabel = formatUtcDateTimeEt(generatedAt)
+  const generatedAtDateTime = generatedAt && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(generatedAt)
+    ? `${generatedAt}Z`
+    : generatedAt
+
+  if (
+    !publicationId || !dataThrough || !dataThroughLabel ||
+    !generatedAt || !generatedAtLabel || !referenceDate ||
+    !gamePk || !teamId || !semanticGateVersion
+  ) return null
+
+  return {
+    publicationId,
+    dataThrough,
+    dataThroughLabel,
+    generatedAt,
+    generatedAtDateTime,
+    generatedAtLabel,
+    referenceDate,
+    gamePk,
+    teamId,
+    semanticGateVersion,
+  }
 }
 
 export function getDailyEditionView(response, teams = []) {
@@ -808,7 +839,11 @@ export function getDailyEditionView(response, teams = []) {
   const evidence = (Array.isArray(draft.evidence) ? draft.evidence : [])
     .map(textValue)
     .filter(Boolean)
-  const namedEvidence = namedRelieverEvidence(lead)
+  const reliefAppearances = namedRelieverEvidence(lead)
+  const publicationIdentity = dailyEditionPublicationIdentity(lead)
+  if (!publicationIdentity) {
+    return { ...base, state: 'unavailable' }
+  }
 
   return {
     ...base,
@@ -817,7 +852,8 @@ export function getDailyEditionView(response, teams = []) {
     body,
     teamName,
     evidence,
-    ...namedEvidence,
+    reliefAppearances,
+    publicationIdentity,
     href: teamBoardHrefIfResolvable(team, 'today'),
   }
 }
@@ -2155,39 +2191,49 @@ function DailyEditionLoadingState() {
 
 function DailyEditionNamedEvidence({ view }) {
   const hasAppearances = view.reliefAppearances.length > 0
-  const hasAvailable = view.availableRelievers.length > 0
-  if (!hasAppearances && !hasAvailable) return null
+  if (!hasAppearances) return null
 
   return (
     <div className="mt-4 border-t border-dirt/75 pt-3" aria-label="Named reliever evidence">
       <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
         Named relievers
       </h4>
-      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {hasAppearances && (
-          <div>
-            <p className="text-xs font-semibold text-chalk300">Relief appearances</p>
-            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-chalk200">
-              {view.reliefAppearances.map((name, index) => (
-                <li key={`${name}-${index}`}>{name}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {hasAvailable && (
-          <div>
-            <p className="text-xs font-semibold text-chalk300">Available relievers</p>
-            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-chalk200">
-              {view.availableRelievers.map((item, index) => (
-                <li key={`${item.name}-${index}`}>
-                  {item.name}{item.status ? ` · ${item.status}` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+      <div className="mt-2">
+        <p className="text-xs font-semibold text-chalk300">Relief appearances</p>
+        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-chalk200">
+          {view.reliefAppearances.map((name, index) => (
+            <li key={`${name}-${index}`}>{name}</li>
+          ))}
+        </ul>
       </div>
     </div>
+  )
+}
+
+function DailyEditionPublicationIdentity({ identity }) {
+  if (!identity) return null
+  return (
+    <dl
+      className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-dirt/75 pt-3"
+      aria-label="Daily Edition publication identity"
+    >
+      <div>
+        <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Data through</dt>
+        <dd className="mt-0.5 font-mono text-xs text-chalk300">
+          <time dateTime={identity.dataThrough}>{identity.dataThroughLabel}</time>
+        </dd>
+      </div>
+      <div>
+        <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Generated</dt>
+        <dd className="mt-0.5 font-mono text-xs text-chalk300">
+          <time dateTime={identity.generatedAtDateTime}>{identity.generatedAtLabel}</time>
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Publication</dt>
+        <dd className="mt-0.5 break-all font-mono text-xs text-chalk300">{identity.publicationId}</dd>
+      </div>
+    </dl>
   )
 }
 
@@ -2208,6 +2254,9 @@ function DailyEditionSection({
   const view = error && !intelligence
     ? { state: 'unavailable', referenceDate: null, dateLabel: null }
     : getDailyEditionView(intelligence, teams)
+  const unavailableCopy = String(view.emptyReason || '').toLowerCase() === 'lead_story_withheld_claim_evidence'
+    ? DAILY_EDITION_CLAIM_EVIDENCE_WITHHELD_COPY
+    : DAILY_EDITION_UNAVAILABLE_COPY
 
   return (
     <SectionShell id="daily-edition" title={DAILY_EDITION_TITLE} className="mb-8">
@@ -2242,6 +2291,7 @@ function DailyEditionSection({
             </div>
           )}
           <DailyEditionNamedEvidence view={view} />
+          <DailyEditionPublicationIdentity identity={view.publicationIdentity} />
           {view.href && (
             <div className="mt-5">
               <Link
@@ -2257,7 +2307,7 @@ function DailyEditionSection({
       ) : view.state === 'unavailable' ? (
         <div className="border border-dirt bg-dugout p-4" role="status">
           <p className="text-sm leading-relaxed text-chalk300">
-            {DAILY_EDITION_UNAVAILABLE_COPY}
+            {unavailableCopy}
           </p>
         </div>
       ) : null}

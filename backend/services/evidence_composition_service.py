@@ -88,7 +88,7 @@ def _named_relievers(items, default_status=None) -> list[dict]:
 
 
 def _relief_appearances(items) -> list[dict]:
-    """Normalize per-appearance lines into {name, innings, runs_allowed} facts."""
+    """Normalize named claim-driving appearances without dropping linkage."""
     appearances = []
     for item in _list(items):
         if not isinstance(item, dict):
@@ -97,9 +97,19 @@ def _relief_appearances(items) -> list[dict]:
         if not name:
             continue
         appearances.append(_compact({
+            'pitcher_id': item.get('pitcher_id'),
+            'pitcher_mlb_id': item.get('pitcher_mlb_id'),
             'name': name,
+            'game_pk': item.get('game_pk'),
+            'appearance_team_id': item.get('appearance_team_id'),
             'innings': item.get('innings'),
+            'innings_pitched_outs': item.get('innings_pitched_outs'),
+            'pitches_thrown': item.get('pitches_thrown'),
             'runs_allowed': item.get('runs_allowed'),
+            'claim_evidence_role': item.get('claim_evidence_role'),
+            'claim_event_indexes': item.get('claim_event_indexes'),
+            'claim_event_innings': item.get('claim_event_innings'),
+            'claim_source_play_ids': item.get('claim_source_play_ids'),
         }))
     return appearances
 

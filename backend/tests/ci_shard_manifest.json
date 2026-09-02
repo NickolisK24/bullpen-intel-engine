@@ -357,7 +357,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 506.65,
+      "measured_seconds": 507.5,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -418,6 +418,10 @@
         {
           "path": "tests/test_context_explanation_editorial_review.py",
           "measured_seconds": 0.113
+        },
+        {
+          "path": "tests/test_daily_edition_publication_gate.py",
+          "measured_seconds": 0.22
         },
         {
           "path": "tests/test_cors_allowed_origins.py",
@@ -694,6 +698,10 @@
         {
           "path": "tests/test_tonight_intelligence_snapshot.py",
           "measured_seconds": 8.131
+        },
+        {
+          "path": "tests/test_today_relief_appearance_evidence.py",
+          "measured_seconds": 0.63
         },
         {
           "path": "tests/test_traffic_measurement.py",
