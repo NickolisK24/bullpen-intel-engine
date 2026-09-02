@@ -502,6 +502,12 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // League-wide bullpen landing summary: availability snapshot, Team Context
 // health, and usage-role composition. Context only (no ranking/selection).
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
+// Purpose-built public surface projections. Each projects one trusted
+// Dashboard publication and omits unrelated comprehensive carrier domains.
+export const getHomeProjection = () => request('/bullpen/home')
+export const getLeagueProjection = () => request('/bullpen/league')
+export const getStoriesProjection = () => request('/bullpen/stories')
+export const getTrustProjection = () => request('/bullpen/trust')
 // Governed all-club listing of already-published Team State reads. The browser
 // consumes this contract as published; it does not derive or rank Team State.
 export const getLeagueTeamStates = () => request('/bullpen/team-states')

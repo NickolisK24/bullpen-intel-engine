@@ -552,6 +552,10 @@
           "measured_seconds": 0.05
         },
         {
+          "path": "tests/test_public_surface_projections.py",
+          "measured_seconds": 0.77
+        },
+        {
           "path": "tests/test_public_why_copy_specificity.py",
           "measured_seconds": 0.5
         },

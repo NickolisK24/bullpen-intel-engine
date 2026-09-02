@@ -613,7 +613,8 @@ test('Data & Trust page reuses its sync status request for the trust strip', () 
   // page; it still renders via the shared SyncStatusContent (no duplicate
   // self-fetching <SyncStatus /> instance).
   assert.ok(dataTrustSource.includes('SyncStatusContent'))
-  assert.ok(dataTrustSource.includes('getBullpenDashboard'))
+  assert.ok(dataTrustSource.includes('getTrustProjection'))
+  assert.equal(dataTrustSource.includes('getBullpenDashboard'), false)
   assert.ok(dataTrustSource.includes('freshnessAuthority={servedFreshness}'))
   assert.ok(dataTrustSource.includes('is when BaseballOS last ran'))
   assert.equal(dataTrustSource.includes('sync.data?.data?.latest_game_date'), false)

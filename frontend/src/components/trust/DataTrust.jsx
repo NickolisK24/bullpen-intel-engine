@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
-  getBullpenDashboard,
+  getTrustProjection,
   getSyncStatus,
 } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
@@ -34,7 +34,7 @@ const INSPECT_LINKS = [
 
 export default function DataTrust() {
   const backtest = useFetch(getAvailabilityBacktest)
-  const dashboard = useFetch(getBullpenDashboard)
+  const dashboard = useFetch(getTrustProjection)
   const sync = useFetch(getSyncStatus)
 
   return (
