@@ -1,0 +1,17 @@
+{
+  "name": "BaseballOS",
+  "short_name": "BaseballOS",
+  "description": "Public MLB bullpen usage, workload, rest, and role context.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#10130f",
+  "theme_color": "#10130f",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

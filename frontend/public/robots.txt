@@ -1,2 +1,8 @@
 User-agent: *
 Disallow: /posts-bpen-7f3d9c
+Disallow: /admin/
+Disallow: /internal/
+Disallow: /auth/
+Disallow: /signin
+
+Sitemap: https://baseballos.app/sitemap.xml

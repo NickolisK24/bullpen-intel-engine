@@ -338,23 +338,23 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
             (REPO_ROOT / relative).read_text(encoding='utf-8'),
         )
 
-        # A static route/header table and nothing else. The one redirect family
-        # canonicalizes immutable share URLs on the same origin; no function,
-        # cron, environment, or backend hop can be introduced silently.
+        # A static route/header table and nothing else. Redirects remain
+        # same-origin; no function, cron, environment, or backend hop can be
+        # introduced silently.
         assert sorted(config) == ['headers', 'routes'], relative
 
         for route in config['routes']:
             if route.get('handle') == 'filesystem':
                 continue
             if route.get('status') == 308:
-                assert route['headers']['Location'].startswith('/share/')
+                assert route['headers']['Location'].startswith('/')
                 continue
             destination = route['dest']
             # Static, same-origin, in-bundle. Never an API path and never an
             # absolute URL to another host.
             assert destination.startswith('/'), (relative, destination)
             assert not destination.startswith('//'), (relative, destination)
-            assert destination.endswith('.html'), (relative, destination)
+            assert destination.endswith(('.html', '.svg')), (relative, destination)
             assert '/api/' not in destination, (relative, destination)
 
         # No snapshot-trust vocabulary reaches the routing table in either

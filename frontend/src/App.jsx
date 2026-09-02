@@ -25,6 +25,8 @@ import ShareArtifactOperations from './components/admin/ShareArtifactOperations'
 import { SHARE_ARTIFACT_OPERATIONS_PATH } from './utils/shareArtifactOperations'
 import PublicShareArtifactPage from './components/share/PublicShareArtifactPage'
 import TeamHistoryPage from './components/history/TeamHistoryPage'
+import NotFound from './components/NotFound'
+import RouteMetadata from './components/RouteMetadata'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -46,7 +48,7 @@ export const APP_ROUTES = [
   { path: '/share/:publicId', Component: PublicShareArtifactPage },
   { path: '/history/team/:abbr', Component: TeamHistoryPage },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
-  { path: '*', redirectTo: '/' },
+  { path: '*', Component: NotFound },
 ]
 
 export function AppRoutes() {
@@ -71,6 +73,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <TrafficRouteObserver />
+      <RouteMetadata />
       <div className="app-shell bg-noise flex-col xl:flex-row">
         <Sidebar />
         <main className="flex-1 min-w-0 xl:ml-56">

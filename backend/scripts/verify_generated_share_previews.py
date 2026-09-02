@@ -82,7 +82,7 @@ def _verify_routing_config(path):
     invalid_share = next((row for row in routes if row.get('src') == share_source), None)
     if invalid_share != {
         'src': share_source,
-        'dest': '/404.html',
+        'dest': '/share-404.html',
         'status': 404,
     }:
         violations.append('unmatched canonical share IDs do not return the static HTTP 404')
@@ -90,23 +90,18 @@ def _verify_routing_config(path):
     if any(row.get('dest') == '/share/index.html' for row in routes):
         violations.append('invalid share IDs still resolve to the legacy HTTP-200 fallback')
 
-    spa = next((row for row in routes if row.get('dest') == '/index.html'), None)
-    if spa is None:
-        violations.append('SPA fallback is unavailable for non-share application routes')
-    else:
-        try:
-            pattern = re.compile(spa['src'])
-        except (KeyError, re.error):
-            violations.append('SPA fallback source is not a valid bounded route pattern')
-        else:
-            if filesystem is not None and routes.index(filesystem) >= routes.index(spa):
-                violations.append('filesystem share authority no longer precedes the SPA fallback')
-            if invalid_share is not None and routes.index(invalid_share) >= routes.index(spa):
-                violations.append('invalid share 404 no longer precedes the SPA fallback')
-            if not pattern.fullmatch('/bullpen'):
-                violations.append('share 404 isolation broke the primary bullpen SPA route')
-            if not pattern.fullmatch('/dashboard'):
-                violations.append('share 404 isolation broke the existing SPA fallback')
+    site_not_found = next(
+        (row for row in routes if row.get('src') == r'^/(.*)$'),
+        None,
+    )
+    if site_not_found != {
+        'src': r'^/(.*)$',
+        'dest': '/404.html',
+        'status': 404,
+    }:
+        violations.append('site-wide unknown routes do not fail with the static HTTP 404')
+    elif invalid_share is not None and routes.index(invalid_share) >= routes.index(site_not_found):
+        violations.append('invalid share 404 no longer precedes the site-wide 404')
     return violations
 
 

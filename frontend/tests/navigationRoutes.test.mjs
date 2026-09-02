@@ -77,10 +77,11 @@ test('public homepage and README copy do not imply evidence surfacing', () => {
   }
 })
 
-test('/today redirects to the Today surface and catch-all routes home', () => {
+test('/today redirects to the Today surface and the client catch-all renders not found', () => {
   assert.equal(routeByPath('/')?.Component?.name, 'Home')
   assert.equal(routeByPath('/today')?.redirectTo, '/')
-  assert.equal(routeByPath('*')?.redirectTo, '/')
+  assert.equal(routeByPath('*')?.Component?.name, 'NotFound')
+  assert.equal(routeByPath('*')?.redirectTo, undefined)
 })
 
 test('Pitcher Detail has a first-class standalone route', () => {
@@ -283,7 +284,7 @@ test('xl shell keeps the navigation rail fixed while content scrolls', () => {
   assert.equal(appSource.includes('lg:ml-56'), false)
 })
 
-test('Vercel serves canonical team preview files before the invalid-team and SPA fallbacks', () => {
+test('Vercel serves canonical team preview files before the invalid-team 404', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const routes = config.routes || []
   const teamRoot = new URL('../public/team/', import.meta.url)
@@ -293,29 +294,35 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
     .sort()
   const canonicalTeamSource = '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
 
-  assert.deepEqual(routes[0], {
+  const shareSlash = routes.find(route => route.src === '^/share/([A-Za-z0-9._-]{1,64})/$')
+  const canonicalTeam = routes.find(route => route.src === canonicalTeamSource)
+  const filesystem = routes.find(route => route.handle === 'filesystem')
+  const invalidTeam = routes.find(route => route.src === '^/team/(.*)$')
+  const unknown = routes.at(-1)
+
+  assert.deepEqual(shareSlash, {
     src: '^/share/([A-Za-z0-9._-]{1,64})/$',
     headers: { Location: '/share/$1' },
     status: 308,
   })
-  assert.deepEqual(routes[1], {
+  assert.deepEqual(canonicalTeam, {
     src: canonicalTeamSource,
     dest: '/team/$1/index.html',
   })
-  assert.deepEqual(routes[2], { handle: 'filesystem' })
-  assert.deepEqual(routes[3], {
-    src: '^/share/([A-Za-z0-9._-]{1,64})$',
+  assert.deepEqual(filesystem, { handle: 'filesystem' })
+  assert.deepEqual(invalidTeam, {
+    src: '^/team/(.*)$',
     dest: '/404.html',
     status: 404,
   })
-  assert.deepEqual(routes[4], {
-    src: '^/team/(.*)$',
-    dest: '/team/index.html',
-  })
-  assert.deepEqual(routes[5], {
+  assert.deepEqual(unknown, {
     src: '^/(.*)$',
-    dest: '/index.html',
+    dest: '/404.html',
+    status: 404,
   })
+  assert.equal(routes.indexOf(canonicalTeam) < routes.indexOf(filesystem), true)
+  assert.equal(routes.indexOf(filesystem) < routes.indexOf(invalidTeam), true)
+  assert.equal(routes.indexOf(invalidTeam) < routes.indexOf(unknown), true)
 
   const canonicalTeamPattern = new RegExp(canonicalTeamSource)
   assert.equal(teams.length, 30)
@@ -325,18 +332,18 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
   assert.equal(canonicalTeamPattern.test('/team/INVALID'), false)
 })
 
-test('share preview routing resolves generated files before the SPA fallback', () => {
+test('share preview routing resolves generated files before scoped and site-wide 404s', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const routes = config.routes || []
   const slashRedirect = routes.find(route => route.src === '^/share/([A-Za-z0-9._-]{1,64})/$')
   const filesystem = routes.find(route => route.handle === 'filesystem')
   const invalidShare = routes.find(route => route.src === '^/share/([A-Za-z0-9._-]{1,64})$')
-  const spa = routes.find(route => route.dest === '/index.html')
+  const unknown = routes.at(-1)
 
   assert.deepEqual(filesystem, { handle: 'filesystem' })
   assert.deepEqual(invalidShare, {
     src: '^/share/([A-Za-z0-9._-]{1,64})$',
-    dest: '/404.html',
+    dest: '/share-404.html',
     status: 404,
   })
   assert.deepEqual(slashRedirect, {
@@ -346,11 +353,9 @@ test('share preview routing resolves generated files before the SPA fallback', (
   })
   assert.equal(routes.indexOf(slashRedirect) < routes.indexOf(filesystem), true)
   assert.equal(routes.indexOf(filesystem) < routes.indexOf(invalidShare), true)
-  assert.equal(routes.indexOf(invalidShare) < routes.indexOf(spa), true)
+  assert.equal(routes.indexOf(invalidShare) < routes.indexOf(unknown), true)
   assert.equal(new RegExp(invalidShare.src).test('/share/abc123'), true)
-  assert.equal(new RegExp(spa.src).test('/bullpen'), true)
-  assert.equal(new RegExp(spa.src).test('/dashboard'), true)
-  assert.equal(existsSync(new URL('../public/404.html', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../public/share-404.html', import.meta.url)), true)
 })
 
 test('invalid team share fallback and generic OG card are static public assets', () => {
