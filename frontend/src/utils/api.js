@@ -465,6 +465,14 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
 // Additive Team Board v2 composition contract. Production Team Board adoption
 // remains in later packages; this helper only exposes the versioned read.
 export const getTeamBoardV2 = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2`)
+export const getTeamBoardCore = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/core`)
+export const getTeamBoardDetails = (teamId, identity) => {
+  const params = new URLSearchParams()
+  Object.entries(identity || {}).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) params.set(key, String(value))
+  })
+  return request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/details?${params.toString()}`)
+}
 // Story Intelligence API V1 - one deterministic team bullpen story.
 export const getTeamStory = (teamId, params = {}) => {
   return request(`/bullpen/teams/${teamId}/story${buildQuery(params)}`)

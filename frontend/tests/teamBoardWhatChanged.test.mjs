@@ -357,7 +357,7 @@ test('Team Board consumes the composed What Changed contract', async () => {
   const source = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
 
   assert.equal((source.match(/getTeamChanges\(selectedTeam\)/g) || []).length, 0)
-  assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((source.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.ok(source.includes('teamBoardRead?.whatChanged'))
   assert.ok(source.includes('<TeamBoardWhatChanged'))
   assert.equal(source.includes('getTeamStory'), false)

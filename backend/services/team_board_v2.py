@@ -28,6 +28,10 @@ from services.roster_authority import (
 
 CAPABILITY = 'team_board_v2'
 CONTRACT_VERSION = 'team-board-2.0.0'
+CORE_CAPABILITY = 'team_board_answer_core'
+CORE_CONTRACT_VERSION = 'team_board_answer_core_v1'
+DETAILS_CAPABILITY = 'team_board_deferred_details'
+DETAILS_CONTRACT_VERSION = 'team_board_deferred_details_v1'
 
 STATUS_AVAILABLE = 'available'
 STATUS_PARTIAL = 'partial'
@@ -774,6 +778,7 @@ def build_team_board_v2_payload(
     performance=None,
     what_changed=None,
     section_errors=None,
+    publication_identity=None,
 ):
     """Compose existing public read models without mutating their payloads."""
     if not isinstance(board, dict):
@@ -862,6 +867,7 @@ def build_team_board_v2_payload(
     return {
         'capability': CAPABILITY,
         'contract_version': CONTRACT_VERSION,
+        'publication_identity': deepcopy(publication_identity),
         'team': deepcopy(board.get('team') or {}),
         'represented_date': represented_date,
         'generated_at': board.get('generated_at'),
@@ -898,10 +904,104 @@ def build_team_board_v2_payload(
     }
 
 
+def build_team_board_core_payload(board, *, publication_identity):
+    """Project the trusted answer without executing optional deep reads."""
+    full = build_team_board_v2_payload(
+        board,
+        publication_identity=publication_identity,
+    )
+    core_sections = (
+        'team_state', 'active_bullpen', 'rest_status', 'off_active_count',
+        'workload_overview', 'roles_deployment', 'rotation_impact',
+    )
+    return {
+        'capability': CORE_CAPABILITY,
+        'contract_version': CORE_CONTRACT_VERSION,
+        'publication_identity': deepcopy(publication_identity),
+        'team': full['team'],
+        'represented_date': full['represented_date'],
+        'generated_at': full['generated_at'],
+        'freshness': full['freshness'],
+        'team_state': full['team_state'],
+        'summary': full['summary'],
+        'active_bullpen': full['active_bullpen'],
+        'rest_status': full['rest_status'],
+        'off_active_count': full['off_active_count'],
+        'workload_overview': full['workload_overview'],
+        'roles_deployment': full['roles_deployment'],
+        'rotation_impact': full['rotation_impact'],
+        'roster_context': full['roster_context'],
+        'operating_state': full['operating_state'],
+        'section_status': {
+            key: full['section_status'][key]
+            for key in core_sections
+        },
+        'deferred_sections': [
+            'recent_usage', 'workload_detail', 'deployment_detail',
+            'game_context', 'recent_transactions', 'performance',
+            'what_changed', 'recent_relief_work',
+        ],
+        'limitations': full['limitations'],
+    }
+
+
+def build_team_board_details_payload(
+    board,
+    *,
+    publication_identity,
+    recent_relief_work=None,
+    recent_transactions=None,
+    game_context=None,
+    performance=None,
+    what_changed=None,
+    section_errors=None,
+):
+    """Project optional reads that were built for one explicit publication."""
+    full = build_team_board_v2_payload(
+        board,
+        recent_relief_work=recent_relief_work,
+        recent_transactions=recent_transactions,
+        game_context=game_context,
+        performance=performance,
+        what_changed=what_changed,
+        section_errors=section_errors,
+        publication_identity=publication_identity,
+    )
+    detail_sections = (
+        'recent_usage', 'recently_used_arms', 'workload_overview',
+        'roles_deployment', 'recent_transactions', 'recent_relief_work',
+        'game_context', 'performance', 'what_changed',
+    )
+    return {
+        'capability': DETAILS_CAPABILITY,
+        'contract_version': DETAILS_CONTRACT_VERSION,
+        'publication_identity': deepcopy(publication_identity),
+        'team': full['team'],
+        'represented_date': full['represented_date'],
+        'recent_usage': full['recent_usage'],
+        'recently_used_arms': full['recently_used_arms'],
+        'workload_overview': full['workload_overview'],
+        'roles_deployment': full['roles_deployment'],
+        'recent_transactions': full['recent_transactions'],
+        'recent_relief_work': full['recent_relief_work'],
+        'game_context': full['game_context'],
+        'performance': full['performance'],
+        'what_changed': full['what_changed'],
+        'section_status': {
+            key: full['section_status'][key]
+            for key in detail_sections
+        },
+    }
+
+
 __all__ = [
     'ACTIVE_BULLPEN_POPULATION_BASIS',
     'CAPABILITY',
     'CONTRACT_VERSION',
+    'CORE_CAPABILITY',
+    'CORE_CONTRACT_VERSION',
+    'DETAILS_CAPABILITY',
+    'DETAILS_CONTRACT_VERSION',
     'OFF_ACTIVE_COUNT_AUTHORITY',
     'OFF_ACTIVE_COUNT_CONTRACT',
     'OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES',
@@ -916,5 +1016,7 @@ __all__ = [
     'RECENT_RELIEF_WORK_POPULATION_BASIS',
     'ROTATION_IMPACT_POPULATION_BASIS',
     'build_team_board_v2_payload',
+    'build_team_board_core_payload',
+    'build_team_board_details_payload',
     'unavailable_section',
 ]

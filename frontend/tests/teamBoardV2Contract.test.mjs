@@ -5,7 +5,12 @@ import test from 'node:test'
 import {
   TEAM_BOARD_V2_CAPABILITY,
   TEAM_BOARD_V2_CONTRACT_VERSION,
+  TEAM_BOARD_CORE_CAPABILITY,
+  TEAM_BOARD_CORE_CONTRACT_VERSION,
+  TEAM_BOARD_DETAILS_CAPABILITY,
+  TEAM_BOARD_DETAILS_CONTRACT_VERSION,
   isTeamBoardV2Payload,
+  readTeamBoardDelivery,
   readTeamBoardV2,
 } from '../src/adapters/teamBoardV2.js'
 
@@ -83,6 +88,52 @@ const payload = {
   limitations: [],
 }
 
+const identity = {
+  contract: 'team_board_publication_identity_v1',
+  team_id: 1,
+  team_abbreviation: 'EX',
+  snapshot_id: 1900,
+  sync_run_id: 2900,
+  represented_date: '2026-08-16',
+  availability_reference_date: '2026-08-17',
+  published_at: '2026-08-17T12:01:00',
+  snapshot_generated_at: '2026-08-17T12:00:00',
+  dashboard_payload_version: 1,
+  publication_authority_contract: 'trusted_dashboard_publication_v1',
+  team_board_package_contract: 'trusted_team_board_publication_v1',
+  team_board_contract_version: TEAM_BOARD_V2_CONTRACT_VERSION,
+  team_state_contract: 'team_state_public_v1',
+  bullpen_membership_method_version: 'team_board_default_bullpen_membership_v1',
+  rest_status_method_version: 'rest_status_v1',
+  workload_windows_method_version: 'workload_windows_v1',
+  deployment_profile_method_version: 'deployment_profile_v1',
+  rotation_impact_method_version: 'rotation_support_pressure_v1',
+}
+
+const corePayload = {
+  ...payload,
+  capability: TEAM_BOARD_CORE_CAPABILITY,
+  contract_version: TEAM_BOARD_CORE_CONTRACT_VERSION,
+  publication_identity: identity,
+}
+
+const detailsPayload = {
+  capability: TEAM_BOARD_DETAILS_CAPABILITY,
+  contract_version: TEAM_BOARD_DETAILS_CONTRACT_VERSION,
+  publication_identity: identity,
+  represented_date: payload.represented_date,
+  recent_usage: payload.recent_usage,
+  recently_used_arms: payload.recently_used_arms,
+  workload_overview: payload.workload_overview,
+  roles_deployment: payload.roles_deployment,
+  recent_transactions: payload.recent_transactions,
+  recent_relief_work: payload.recent_relief_work,
+  game_context: payload.game_context,
+  performance: { status: 'available' },
+  what_changed: { state: 'changes' },
+  section_status: payload.section_status,
+}
+
 
 test('v2 guard pins the capability and contract version', () => {
   assert.equal(isTeamBoardV2Payload(payload), true)
@@ -114,7 +165,36 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
 })
 
 
-test('TB-08 reuses the v2 read through Recent Transactions', async () => {
+test('answer core is useful before deferred sections resolve', () => {
+  const view = readTeamBoardDelivery(corePayload)
+  assert.equal(view.teamState, payload.team_state)
+  assert.equal(view.activeBullpen, payload.active_bullpen)
+  assert.equal(view.restStatus, payload.rest_status)
+  assert.equal(view.performance, null)
+  assert.equal(view.whatChanged, null)
+  assert.equal(view.detailsAttached, false)
+})
+
+
+test('deferred sections attach only when every publication identity field matches', () => {
+  const attached = readTeamBoardDelivery(corePayload, detailsPayload)
+  assert.equal(attached.detailsAttached, true)
+  assert.equal(attached.performance, detailsPayload.performance)
+  assert.equal(attached.whatChanged, detailsPayload.what_changed)
+
+  const mismatched = readTeamBoardDelivery(corePayload, {
+    ...detailsPayload,
+    publication_identity: { ...identity, snapshot_id: 1901 },
+  })
+  assert.equal(mismatched.detailsAttached, false)
+  assert.equal(mismatched.detailsRejected, true)
+  assert.equal(mismatched.performance, null)
+  assert.equal(mismatched.whatChanged, null)
+  assert.equal(mismatched.teamState, payload.team_state)
+})
+
+
+test('Team Board loads the answer core first and defers identified depth', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -125,7 +205,8 @@ test('TB-08 reuses the v2 read through Recent Transactions', async () => {
   )
   const apiSource = await readFile(new URL('../src/utils/api.js', import.meta.url), 'utf8')
 
-  assert.equal(boardSource.includes('getTeamBoardV2(selectedTeam)'), true)
+  assert.equal(boardSource.includes('getTeamBoardCore(selectedTeam)'), true)
+  assert.equal(boardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity)'), true)
   assert.equal(boardSource.includes('<TeamBoardAnswerBlock'), true)
   assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
   assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)
@@ -134,10 +215,11 @@ test('TB-08 reuses the v2 read through Recent Transactions', async () => {
   assert.equal(boardSource.includes('<TeamBoardRolesDeployment'), true)
   assert.equal(boardSource.includes('<TeamBoardRotationImpact'), true)
   assert.equal(boardSource.includes('<TeamBoardRecentTransactions'), true)
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardCore\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.match(
     apiSource,
-    /getTeamBoardV2 = \(teamId\) => request\(`\/bullpen\/teams\/\$\{encodeURIComponent\(teamId\)\}\/board-v2`\)/,
+    /getTeamBoardCore = \(teamId\) => request\(`\/bullpen\/teams\/\$\{encodeURIComponent\(teamId\)\}\/board-v2\/core`\)/,
   )
   for (const forbidden of ['reduce(', '/ 3', 'Math.round', 'public_state =', 'summary =']) {
     assert.equal(adapterSource.includes(forbidden), false, forbidden)

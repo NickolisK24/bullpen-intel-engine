@@ -94,7 +94,9 @@ class TeamNotFoundError(LookupError):
     pass
 
 
-def build_public_team_relief_work_payload(team_id):
+def build_public_team_relief_work_payload(
+    team_id, *, data_through=None, freshness=None,
+):
     team_pitcher = (
         Pitcher.query
         .filter(Pitcher.team_id == team_id)
@@ -104,8 +106,12 @@ def build_public_team_relief_work_payload(team_id):
     if team_pitcher is None:
         raise TeamNotFoundError(team_id)
 
-    freshness = board_freshness.board_freshness_block()
-    anchor = _parse_data_through(freshness.get('data_through'))
+    freshness = (
+        dict(freshness)
+        if isinstance(freshness, dict)
+        else board_freshness.board_freshness_block()
+    )
+    anchor = _parse_data_through(data_through or freshness.get('data_through'))
     payload = {
         'capability': CAPABILITY,
         'team': _team_payload(team_pitcher, team_id),

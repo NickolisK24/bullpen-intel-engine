@@ -1,7 +1,7 @@
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
-import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
-import { getTeamBoardV2, getTeamShareCard } from '../../../utils/api'
+import { readTeamBoardDelivery, readTeamBoardV2 } from '../../../adapters/teamBoardV2'
+import { getTeamBoardCore, getTeamBoardDetails, getTeamShareCard } from '../../../utils/api'
 import { TeamBoardSkeleton, ErrorState, EmptyState, SectionPair } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
@@ -54,8 +54,8 @@ export default function TonightsBullpenBoard({
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   const selectedTeamRecord = teamList.find(team => Number(team.team_id) === Number(selectedTeam)) || boardPayload?.team || null
-  const teamBoardV2 = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardV2(selectedTeam)),
+  const teamBoardCore = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardCore(selectedTeam)),
     [selectedTeam],
   )
   const hasTeamBoardV2Override = (
@@ -70,8 +70,29 @@ export default function TonightsBullpenBoard({
         error: teamBoardV2Error ?? null,
         refetch: () => {},
       }
-    : teamBoardV2
-  const teamBoardRead = readTeamBoardV2(teamBoardV2State.data)
+    : teamBoardCore
+  const legacyTeamBoardRead = hasTeamBoardV2Override
+    ? readTeamBoardV2(teamBoardV2State.data)
+    : null
+  const coreIdentity = legacyTeamBoardRead?.publicationIdentity
+    || teamBoardV2State.data?.publication_identity
+    || null
+  const teamBoardDetails = useFetch(
+    () => (
+      selectedTeam == null || !coreIdentity || hasTeamBoardV2Override
+        ? Promise.resolve(null)
+        : getTeamBoardDetails(selectedTeam, coreIdentity)
+    ),
+    [selectedTeam, coreIdentity?.snapshot_id, hasTeamBoardV2Override],
+  )
+  const teamBoardRead = hasTeamBoardV2Override
+    ? legacyTeamBoardRead
+    : readTeamBoardDelivery(teamBoardV2State.data, teamBoardDetails.data)
+  const deepLoading = !hasTeamBoardV2Override && Boolean(teamBoardRead) && teamBoardDetails.loading
+  const deepError = !hasTeamBoardV2Override
+    ? (teamBoardDetails.error || (teamBoardRead?.detailsRejected ? 'Section identity mismatch' : null))
+    : teamBoardV2State.error
+  const retryDeep = hasTeamBoardV2Override ? teamBoardV2State.refetch : teamBoardDetails.refetch
   const teamBoardAnswerRead = teamBoardRead && gameContextPayload !== undefined
     ? { ...teamBoardRead, gameContext: gameContextPayload }
     : teamBoardRead
@@ -79,11 +100,13 @@ export default function TonightsBullpenBoard({
     ? staticFetchState(changesPayload)
     : {
         data: teamBoardRead?.whatChanged || null,
-        loading: teamBoardV2State.loading,
-        error: teamBoardRead?.sectionStatus?.what_changed?.reason_code === 'what_changed_unavailable'
-          ? 'What Changed unavailable'
-          : null,
-        refetch: teamBoardV2State.refetch,
+        loading: deepLoading,
+        error: deepError || (
+          teamBoardRead?.sectionStatus?.what_changed?.reason_code === 'what_changed_unavailable'
+            ? 'What Changed unavailable'
+            : null
+        ),
+        refetch: retryDeep,
       }
   const operatingStatePayload = boardPayload !== undefined
     ? boardPayload
@@ -184,9 +207,9 @@ export default function TonightsBullpenBoard({
 
               <TeamBoardRecentUsage
                 read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
+                loading={deepLoading}
+                error={deepError}
+                onRetry={retryDeep}
                 onSelectPitcher={onSelectPitcher}
               />
               <SectionPair label="Rest and workload" className="mt-section-lg border-t border-line-default pt-section">
@@ -214,9 +237,9 @@ export default function TonightsBullpenBoard({
               />
               <TeamBoardPerformance
                 read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
+                loading={deepLoading}
+                error={deepError}
+                onRetry={retryDeep}
               />
             </SectionPair>
             <SectionPair label="Rotation and transactions">
@@ -228,9 +251,9 @@ export default function TonightsBullpenBoard({
               />
               <TeamBoardRecentTransactions
                 read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
+                loading={deepLoading}
+                error={deepError}
+                onRetry={retryDeep}
                 onSelectPitcher={onSelectPitcher}
               />
             </SectionPair>
@@ -255,9 +278,9 @@ export default function TonightsBullpenBoard({
               </div>
               <TeamReliefWorkPanel
                 read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
+                loading={deepLoading}
+                error={deepError}
+                onRetry={retryDeep}
                 onSelectPitcher={onSelectPitcher}
               />
             </div>

@@ -129,7 +129,7 @@ test('production uses the shared v2 request and leaves later packages untouched'
   const boardSource = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
   const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRolesDeployment.jsx', import.meta.url), 'utf8')
 
-  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/getTeamBoardCore\(/g) || []).length, 1)
   assert.ok(boardSource.includes('<TeamBoardRolesDeployment'))
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   assert.ok(boardSource.indexOf('<TeamBoardWorkloadOverview') < boardSource.indexOf('<TeamBoardRolesDeployment'))

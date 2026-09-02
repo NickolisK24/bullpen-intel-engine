@@ -266,8 +266,9 @@ test('production adoption keeps the Answer Block and current package migrations 
     'utf8',
   )
 
-  assert.ok(source.includes('getTeamBoardV2(selectedTeam)'))
-  assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.ok(source.includes('getTeamBoardCore(selectedTeam)'))
+  assert.ok(source.includes('getTeamBoardDetails(selectedTeam, coreIdentity)'))
+  assert.equal((source.match(/getTeamBoardCore\(/g) || []).length, 1)
   assert.equal(source.includes('getTeamGameContext('), false)
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))

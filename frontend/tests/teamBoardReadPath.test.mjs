@@ -13,15 +13,17 @@ const { createTeamShareCardLoader } = await server.ssrLoadModule(
   '/src/components/bullpen/board/TonightsBullpenBoard.jsx',
 )
 
-test('selected Team Board has one eager content request plus the routing directory', () => {
+test('selected Team Board has one eager core request and one deferred identified request', () => {
   assert.equal((shell.match(/useFetch\(getTeams\)/g) || []).length, 1)
-  assert.equal((board.match(/useFetch\(/g) || []).length, 1)
-  assert.equal((board.match(/getTeamBoardV2\(selectedTeam\)/g) || []).length, 1)
+  assert.equal((board.match(/useFetch\(/g) || []).length, 2)
+  assert.equal((board.match(/getTeamBoardCore\(selectedTeam\)/g) || []).length, 1)
+  assert.equal((board.match(/getTeamBoardDetails\(selectedTeam, coreIdentity\)/g) || []).length, 1)
+  assert.ok(board.includes('readTeamBoardDelivery'))
   assert.equal(board.includes('getTeamBullpenBoard'), false)
   assert.equal(board.includes('getTeamChanges'), false)
 })
 
-test('What Changed and operating disclosure are carried by board-v2', () => {
+test('What Changed is deferred while operating disclosure is carried by core', () => {
   assert.ok(board.includes('teamBoardRead?.whatChanged'))
   assert.ok(board.includes('teamBoardRead?.operatingState'))
   assert.ok(board.includes('teamBoardRead?.sectionStatus?.what_changed'))
@@ -59,5 +61,6 @@ test('creating the share loader is inert and invocation preserves the artifact o
 
 test('team switches cannot render the prior team response', () => {
   assert.ok(board.includes('teamBoardV2State.loading'))
+  assert.ok(board.includes('coreIdentity?.snapshot_id'))
   assert.ok(board.includes('<div key={selectedTeam}'))
 })
