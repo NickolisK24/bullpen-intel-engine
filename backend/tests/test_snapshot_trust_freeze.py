@@ -339,10 +339,16 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
             (REPO_ROOT / relative).read_text(encoding='utf-8'),
         )
 
-        # A rewrite/header table and nothing else. A key that could introduce a
-        # backend hop — `redirects` to another origin, `functions`, `crons`,
-        # `env` — is not present and cannot be added silently.
-        assert sorted(config) == ['headers', 'rewrites'], relative
+        # A static route/header table and nothing else. The one redirect family
+        # canonicalizes immutable share URLs on the same origin; no function,
+        # cron, environment, or backend hop can be introduced silently.
+        assert sorted(config) == ['headers', 'redirects', 'rewrites'], relative
+
+        assert config['redirects'] == [{
+            'source': '/share/:publicId/',
+            'destination': '/share/:publicId',
+            'permanent': True,
+        }]
 
         for rewrite in config['rewrites']:
             destination = rewrite['destination']

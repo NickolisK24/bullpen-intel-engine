@@ -1386,7 +1386,7 @@ GENERIC_TEAM_FALLBACK_REWRITE = {
     'destination': '/team/index.html',
 }
 SPA_CATCH_ALL_REWRITE = {
-    'source': '/(.*)',
+    'source': '^/((?!share(?:/|$)).*)$',
     'destination': '/index.html',
 }
 
@@ -1411,6 +1411,11 @@ def test_routed_team_preview_delivery_changes_routing_only():
         (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(encoding='utf-8'),
     )
     rewrites = config['rewrites']
+    assert config['redirects'] == [{
+        'source': '/share/:publicId/',
+        'destination': '/share/:publicId',
+        'permanent': True,
+    }]
     sources = [rewrite['source'] for rewrite in rewrites]
 
     # (A) exact, and limited to the 30 supported abbreviations.
@@ -1482,8 +1487,7 @@ def test_routed_team_preview_delivery_changes_routing_only():
         if line.startswith('-') and not line.startswith('---')
     ]
     assert added, 'the routing file is in the diff but adds nothing'
-    # Everything added belongs to the canonical team rewrite or the bounded
-    # immutable-share preview + invalid-id fallback rewrites.
+    # Everything added belongs to the bounded generated-preview route contract.
     permitted_added = {
         '{',
         '},',
@@ -1494,10 +1498,21 @@ def test_routed_team_preview_delivery_changes_routing_only():
         '"destination": "/share/$1/index.html"',
         '"source": "^/share/([^/]+)$",',
         '"destination": "/share/index.html"',
+        '"redirects": [',
+        '"source": "/share/:publicId/",',
+        '"destination": "/share/:publicId",',
+        '"permanent": true',
+        '],',
+        '"source": "^/((?!share(?:/|$)).*)$",',
     }
     assert not [line for line in added if line not in permitted_added], added
-    # Nothing is removed but the brace the inserted object displaces.
-    assert not [line for line in removed if line not in {'{', '},', '}'}], removed
+    permitted_removed = {
+        '{', '},', '}',
+        '"source": "^/share/([^/]+)$",',
+        '"destination": "/share/index.html"',
+        '"source": "/(.*)",',
+    }
+    assert not [line for line in removed if line not in permitted_removed], removed
 
 
 BOARD_GROUP_VIEW_FILE = 'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js'

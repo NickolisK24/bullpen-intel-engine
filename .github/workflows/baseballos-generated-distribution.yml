@@ -157,6 +157,7 @@ jobs:
           python backend/scripts/verify_generated_share_previews.py \
             --export-result "$GENERATED_EVIDENCE_DIR/share-export.json" \
             --output-root frontend/public \
+            --routing-config frontend/vercel.json \
             --digest-out "$GENERATED_EVIDENCE_DIR/share-digest.json" \
             --summary-out "$GENERATED_EVIDENCE_DIR/share-verification.json"
 
@@ -207,20 +208,21 @@ jobs:
           python backend/scripts/verify_generated_share_previews.py \
             --export-result "$GENERATED_EVIDENCE_DIR/share-export.json" \
             --output-root frontend/public \
+            --routing-config frontend/vercel.json \
             --digest-out "$GENERATED_EVIDENCE_DIR/share-digest-postbuild.json"
           diff -u "$GENERATED_EVIDENCE_DIR/team-digest.json" "$GENERATED_EVIDENCE_DIR/team-digest-postbuild.json"
           diff -u "$GENERATED_EVIDENCE_DIR/share-digest.json" "$GENERATED_EVIDENCE_DIR/share-digest-postbuild.json"
 
-          git add -- frontend/public/team frontend/public/share
+          git add -- frontend/public/team frontend/public/share frontend/public/404.html
           if git diff --cached --quiet; then
             echo "No generated distribution changes to publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "staged_count=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/|^frontend/public/404\.html$' || true)"
           if [ -n "$unexpected" ]; then
-            echo "::error title=Generated Distribution::Refusing paths outside frontend/public/team/** and frontend/public/share/**."
+            echo "::error title=Generated Distribution::Refusing paths outside frontend/public/team/**, frontend/public/share/**, and frontend/public/404.html."
             echo "$unexpected"
             exit 1
           fi

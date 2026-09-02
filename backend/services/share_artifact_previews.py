@@ -9,7 +9,6 @@ therefore remains a projection of the frozen artifact for its entire lifetime.
 from __future__ import annotations
 
 import html
-import json
 import shutil
 from pathlib import Path
 from typing import Mapping
@@ -78,6 +77,29 @@ def _description(view, title, data_through):
     return value
 
 
+def _live_destination(view, share_route):
+    """Return the backend-owned live product route, never the citation itself."""
+    routes = _mapping(view.get('routes'))
+    for key in ('team_url', 'matchup_url', 'history_url'):
+        value = _clean_text(routes.get(key))
+        if (
+            value
+            and value.startswith('/')
+            and not value.startswith('//')
+            and not value.startswith('/share/')
+            and value.rstrip('/') != share_route
+        ):
+            return value
+    raise ValueError('Published share artifact has no distinct live destination.')
+
+
+def _evidence_rows(view):
+    rows = view.get('evidence')
+    if not isinstance(rows, (list, tuple)):
+        return []
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
 def build_share_artifact_preview(
     artifact,
     *,
@@ -129,6 +151,7 @@ def build_share_artifact_preview_from_public_view(
     data_through = _data_through(view)
     team = _mapping(view.get('team'))
     team_state = _mapping(view.get('team_state'))
+    publication_scope = _mapping(view.get('publication_scope'))
     canonical_url = f'{_site_url(site_url)}{route}'
     return {
         'public_id': public_id,
@@ -146,15 +169,14 @@ def build_share_artifact_preview_from_public_view(
         'team_abbreviation': _clean_text(team.get('team_abbreviation')),
         'team_name': _clean_text(team.get('team_name')),
         'team_state_label': _clean_text(team_state.get('public_label')),
+        'evidence': _evidence_rows(view),
+        'historical_context': _clean_text(publication_scope.get('historical_note')),
         'data_through': data_through,
         'generated_at': _clean_text(view.get('generated_at')),
         'published_at': _clean_text(view.get('published_at')),
         'snapshot_id': source_snapshot_id or authority_snapshot_id(view),
         'sync_run_id': source_sync_run_id or authority_sync_run_id(view),
-        # The no-slash form serves this static document.  The trailing-slash
-        # form misses the route-specific rewrite and hands the human reader to
-        # the existing SPA route; the page then restores the canonical URL.
-        'handoff_path': f'{route}/',
+        'live_destination_path': _live_destination(view, route),
     }
 
 
@@ -187,6 +209,8 @@ def _authority_meta(preview):
         ('artifact-type', preview.get('artifact_type')),
         ('team', preview.get('team_abbreviation')),
         ('team-state', preview.get('team_state_label')),
+        ('evidence-count', len(preview.get('evidence') or [])),
+        ('live-destination', preview.get('live_destination_path')),
         ('data-through', preview.get('data_through')),
         ('generated-at', preview.get('generated_at')),
         ('published-at', preview.get('published_at')),
@@ -204,7 +228,6 @@ def _authority_meta(preview):
 
 
 def render_share_artifact_html(preview):
-    handoff_json = json.dumps(preview['handoff_path'])
     title = preview['title']
     description = preview['description']
     lines = [
@@ -242,10 +265,41 @@ def render_share_artifact_html(preview):
             f'      <p>Baseball data through <time datetime="{date_value}">'
             f'{html.escape(preview["data_through"])}</time>.</p>'
         )
+    if preview.get('team_name') or preview.get('team_state_label'):
+        identity = ' · '.join(
+            value
+            for value in (
+                preview.get('team_name'),
+                preview.get('team_state_label'),
+            )
+            if value
+        )
+        lines.append(f'      <p>{html.escape(identity)}</p>')
+    if preview.get('historical_context'):
+        lines.append(f'      <p>{html.escape(preview["historical_context"])}</p>')
+    evidence = preview.get('evidence') or []
+    if evidence:
+        lines.extend([
+            '      <section aria-labelledby="share-evidence">',
+            '        <h2 id="share-evidence">Evidence behind the read</h2>',
+            '        <ul>',
+        ])
+        for row in evidence:
+            label = _clean_text(row.get('label')) or 'Bullpen evidence'
+            detail = _clean_text(row.get('detail'))
+            if detail:
+                text = f'{label}: {detail}'
+            elif row.get('yesterday') is not None and row.get('today') is not None:
+                text = f'{label}: {row["yesterday"]} → {row["today"]}'
+            elif row.get('count') is not None:
+                text = f'{label}: {row["count"]}'
+            else:
+                text = label
+            lines.append(f'          <li>{html.escape(text)}</li>')
+        lines.extend(['        </ul>', '      </section>'])
     lines.extend([
-        f'      <p><a href="{html.escape(preview["handoff_path"], quote=True)}">Open this published BaseballOS artifact</a></p>',
+        f'      <p><a href="{html.escape(preview["live_destination_path"], quote=True)}">Open the live BaseballOS bullpen view</a></p>',
         '    </main>',
-        f'    <script>window.location.replace({handoff_json});</script>',
         '  </body>',
         '</html>',
         '',
@@ -253,13 +307,9 @@ def render_share_artifact_html(preview):
     return '\n'.join(lines)
 
 
-def render_invalid_share_html(
-    *, site_url=DEFAULT_SITE_URL, og_image_path=DEFAULT_OG_IMAGE_PATH,
-):
-    title = 'Shared BaseballOS artifact'
-    description = 'Open BaseballOS for published bullpen intelligence.'
-    canonical_url = f'{_site_url(site_url)}/share/'
-    image_url = _absolute_url(og_image_path, site_url=site_url)
+def render_invalid_share_html():
+    title = 'Shared artifact not found · BaseballOS'
+    description = 'No published BaseballOS artifact exists for this link.'
     lines = [
         '<!DOCTYPE html>',
         '<html lang="en">',
@@ -269,25 +319,10 @@ def render_invalid_share_html(
         f'    <title>{title}</title>',
         _meta_name('description', description),
         _meta_name('robots', 'noindex,nofollow'),
-        _meta_property('og:type', 'website'),
-        _meta_property('og:site_name', 'BaseballOS'),
-        _meta_property('og:title', title),
-        _meta_property('og:description', description),
-        _meta_property('og:url', canonical_url),
-        _meta_property('og:image', image_url),
-        _meta_property('og:image:width', OG_IMAGE_WIDTH),
-        _meta_property('og:image:height', OG_IMAGE_HEIGHT),
-        _meta_property('og:image:type', OG_IMAGE_TYPE),
-        _meta_name('twitter:card', TWITTER_CARD),
-        _meta_name('twitter:title', title),
-        _meta_name('twitter:description', description),
-        _meta_name('twitter:image', image_url),
         _meta_name('baseballos:representation', INVALID_REPRESENTATION),
-        f'    <link rel="canonical" href="{canonical_url}" />',
         '  </head>',
         '  <body>',
-        '    <main><p>No published BaseballOS artifact exists for this link.</p></main>',
-        '    <script>window.location.replace("/");</script>',
+        f'    <main><h1>{title}</h1><p>{description}</p><p><a href="/">Return to BaseballOS</a></p></main>',
         '  </body>',
         '</html>',
         '',
@@ -356,10 +391,15 @@ def write_share_artifact_pages(
         removed.append(entries[0])
         shutil.rmtree(child)
 
-    fallback = share_root / 'index.html'
+    legacy_fallback = share_root / 'index.html'
+    if legacy_fallback.is_file():
+        legacy_fallback.unlink()
+        removed.append(legacy_fallback)
+
+    fallback = root / '404.html'
     if _write_if_changed(
         fallback,
-        render_invalid_share_html(site_url=site_url, og_image_path=og_image_path),
+        render_invalid_share_html(),
     ):
         changed.append(fallback)
 

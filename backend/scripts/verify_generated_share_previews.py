@@ -22,12 +22,14 @@ OG_PATTERN = re.compile(
     r'<meta\s+property="og:(?P<key>[a-z:]+)"\s+content="(?P<value>[^"]*)"\s*/>'
 )
 CANONICAL_PATTERN = re.compile(r'<link\s+rel="canonical"\s+href="(?P<value>[^"]*)"\s*/>')
+HREF_PATTERN = re.compile(r'<a\s+href="(?P<value>[^"]+)"')
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--export-result', required=True)
     parser.add_argument('--output-root', required=True)
+    parser.add_argument('--routing-config', required=True)
     parser.add_argument('--digest-out')
     parser.add_argument('--summary-out')
     return parser.parse_args(argv)
@@ -54,11 +56,59 @@ def _og(text):
     }
 
 
-def verify(result, output_root):
+def _verify_routing_config(path):
+    violations = []
+    try:
+        config = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [f'cannot read share routing config: {exc}']
+
+    redirects = config.get('redirects') or []
+    rewrites = config.get('rewrites') or []
+    required_redirect = {
+        'source': '/share/:publicId/',
+        'destination': '/share/:publicId',
+        'permanent': True,
+    }
+    if required_redirect not in redirects:
+        violations.append('trailing-slash share URL does not redirect to the canonical no-slash URL')
+
+    static_source = r'^/share/([A-Za-z0-9._-]{1,64})$'
+    static_rewrite = next(
+        (row for row in rewrites if row.get('source') == static_source), None,
+    )
+    if static_rewrite != {
+        'source': static_source,
+        'destination': '/share/$1/index.html',
+    }:
+        violations.append('canonical share URL does not resolve to its generated static page')
+
+    if any(row.get('destination') == '/share/index.html' for row in rewrites):
+        violations.append('invalid share IDs still resolve to the legacy HTTP-200 fallback')
+
+    spa = next((row for row in rewrites if row.get('destination') == '/index.html'), None)
+    if spa is None:
+        violations.append('SPA fallback is unavailable for non-share application routes')
+    else:
+        try:
+            pattern = re.compile(spa['source'])
+        except (KeyError, re.error):
+            violations.append('SPA fallback source is not a valid bounded route pattern')
+        else:
+            if pattern.fullmatch('/share/missing-artifact'):
+                violations.append('invalid share IDs can still fall through to the HTTP-200 SPA shell')
+            if not pattern.fullmatch('/dashboard'):
+                violations.append('share 404 isolation broke the existing SPA fallback')
+    return violations
+
+
+def verify(result, output_root, routing_config=None):
     violations = []
     facts = {'export_status': result.get('status')}
     if result.get('status') != 'ok':
         return ['share preview exporter did not declare success'], facts
+    if routing_config is not None:
+        violations.extend(_verify_routing_config(routing_config))
 
     output = result.get('output')
     if not isinstance(output, dict):
@@ -94,9 +144,8 @@ def verify(result, output_root):
     if fallback is not None:
         expected.add(fallback.resolve())
     on_disk = {path.resolve() for path in share_root.glob('*/index.html')}
-    fallback_on_disk = share_root / 'index.html'
-    if fallback_on_disk.exists():
-        on_disk.add(fallback_on_disk.resolve())
+    if fallback is not None and fallback.is_file():
+        on_disk.add(fallback.resolve())
     if on_disk != expected:
         for path in sorted(on_disk - expected):
             violations.append(f'unexpected generated share page: {path}')
@@ -126,6 +175,26 @@ def verify(result, output_root):
             violations.append(f'{path}: og:url does not match its public_id')
         if canonical_match is None or html.unescape(canonical_match.group('value')) != canonical:
             violations.append(f'{path}: canonical URL does not match its public_id')
+        live_destination = metadata.get('live-destination')
+        hrefs = [html.unescape(match.group('value')) for match in HREF_PATTERN.finditer(text)]
+        if not live_destination or live_destination not in hrefs:
+            violations.append(f'{path}: ordinary live-app destination is missing')
+        if live_destination in {f'/share/{public_id}', f'/share/{public_id}/'}:
+            violations.append(f'{path}: live-app destination targets the share page itself')
+        if 'window.location' in text:
+            violations.append(f'{path}: generated page contains automatic navigation')
+        if metadata.get('team') and metadata['team'] not in text:
+            violations.append(f'{path}: static body does not preserve team identity')
+        if metadata.get('team-state') and metadata['team-state'] not in text:
+            violations.append(f'{path}: static body does not preserve Team State identity')
+        try:
+            evidence_count = int(metadata.get('evidence-count', '0'))
+        except ValueError:
+            evidence_count = -1
+        if evidence_count < 0:
+            violations.append(f'{path}: invalid frozen evidence count')
+        elif evidence_count and 'Evidence behind the read' not in text:
+            violations.append(f'{path}: frozen evidence is absent from static content')
         if open_graph.get('image') != 'https://baseballos.app/og/baseballos-card.png':
             violations.append(f'{path}: social image is not the governed raster card')
         if open_graph.get('image:width') != '1200' or open_graph.get('image:height') != '630':
@@ -134,9 +203,6 @@ def verify(result, output_root):
             violations.append(f'{path}: social image type is not image/png')
         if '<meta name="twitter:card" content="summary_large_image" />' not in text:
             violations.append(f'{path}: twitter card is not summary_large_image')
-        if f'window.location.replace("/share/{public_id}/")' not in text:
-            violations.append(f'{path}: SPA handoff does not preserve the artifact identity')
-
     if fallback is not None and fallback.is_file():
         text = fallback.read_text(encoding='utf-8')
         metadata = _meta(text)
@@ -145,6 +211,9 @@ def verify(result, output_root):
         for forbidden in ('baseballos:public-id', 'baseballos:team-state', 'baseballos:data-through'):
             if forbidden in text:
                 violations.append(f'invalid share fallback leaks claim metadata: {forbidden}')
+        for forbidden in ('rel="canonical"', 'property="og:url"', 'window.location'):
+            if forbidden in text:
+                violations.append(f'invalid share fallback contains false routing metadata: {forbidden}')
     else:
         violations.append('invalid share fallback is missing')
 
@@ -171,7 +240,7 @@ def main(argv=None):
         print(f'::error title=Generated Share Preview::Cannot read export result: {exc}')
         return EXIT_CANNOT_VERIFY
 
-    violations, facts = verify(result, args.output_root)
+    violations, facts = verify(result, args.output_root, args.routing_config)
     digest_rows = digest(result)
     if args.digest_out:
         path = Path(args.digest_out)

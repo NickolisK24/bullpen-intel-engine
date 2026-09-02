@@ -306,11 +306,7 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
     destination: '/share/$1/index.html',
   })
   assert.deepEqual(rewrites[3], {
-    source: '^/share/([^/]+)$',
-    destination: '/share/index.html',
-  })
-  assert.deepEqual(rewrites[4], {
-    source: '/(.*)',
+    source: '^/((?!share(?:/|$)).*)$',
     destination: '/index.html',
   })
 
@@ -322,30 +318,27 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
   assert.equal(canonicalTeamPattern.test('/team/INVALID'), false)
 })
 
-test('share preview routing preserves static metadata, invalid fallback, and SPA handoff', () => {
+test('share preview routing preserves static metadata and keeps invalid IDs out of the SPA', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
+  const redirects = config.redirects || []
   const rewrites = config.rewrites || []
   const staticShare = rewrites.find(rewrite => rewrite.source === '^/share/([A-Za-z0-9._-]{1,64})$')
   const invalidShare = rewrites.find(rewrite => rewrite.source === '^/share/([^/]+)$')
-  const spa = rewrites.find(rewrite => rewrite.source === '/(.*)')
+  const spa = rewrites.find(rewrite => rewrite.destination === '/index.html')
 
   assert.deepEqual(staticShare, {
     source: '^/share/([A-Za-z0-9._-]{1,64})$',
     destination: '/share/$1/index.html',
   })
-  assert.deepEqual(invalidShare, {
-    source: '^/share/([^/]+)$',
-    destination: '/share/index.html',
-  })
-  assert.ok(rewrites.indexOf(staticShare) < rewrites.indexOf(invalidShare))
-  assert.ok(rewrites.indexOf(invalidShare) < rewrites.indexOf(spa))
-
-  // Generated pages hand humans to the same React route with a trailing slash.
-  // The exact-match metadata rewrite does not match that form, so the SPA
-  // catch-all serves the existing share experience before the client restores
-  // the canonical no-slash URL.
-  assert.equal(new RegExp(staticShare.source).test('/share/abc123'), true)
-  assert.equal(new RegExp(staticShare.source).test('/share/abc123/'), false)
+  assert.equal(invalidShare, undefined)
+  assert.deepEqual(redirects, [{
+    source: '/share/:publicId/',
+    destination: '/share/:publicId',
+    permanent: true,
+  }])
+  assert.equal(new RegExp(spa.source).test('/share/abc123'), false)
+  assert.equal(new RegExp(spa.source).test('/dashboard'), true)
+  assert.equal(existsSync(new URL('../public/404.html', import.meta.url)), true)
 })
 
 test('invalid team share fallback and generic OG card are static public assets', () => {

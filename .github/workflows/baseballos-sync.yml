@@ -1071,6 +1071,7 @@ jobs:
           python backend/scripts/verify_generated_share_previews.py \
             --export-result "$GENERATED_EVIDENCE_DIR/share-export-result.json" \
             --output-root frontend/public \
+            --routing-config frontend/vercel.json \
             --digest-out "$GENERATED_EVIDENCE_DIR/share-generated-digest.json" \
             --summary-out "$GENERATED_EVIDENCE_DIR/share-delivery-verification.json"
 
@@ -1139,6 +1140,7 @@ jobs:
           python backend/scripts/verify_generated_share_previews.py \
             --export-result "$GENERATED_EVIDENCE_DIR/share-export-result.json" \
             --output-root frontend/public \
+            --routing-config frontend/vercel.json \
             --digest-out "$GENERATED_EVIDENCE_DIR/share-generated-digest-postbuild.json"
           if ! diff -u \
             "$GENERATED_EVIDENCE_DIR/generated-digest.json" \
@@ -1159,7 +1161,7 @@ jobs:
           # it is a static committed asset that this generator never writes
           # (write_team_story_pages only emits team/**), so including it only
           # widened the commit's blast radius.
-          git add -- frontend/public/team frontend/public/share
+          git add -- frontend/public/team frontend/public/share frontend/public/404.html
 
           # Staged-diff detection, not worktree-diff detection. `git diff` is
           # blind to untracked files, so a newly generated page — a relocated
@@ -1172,7 +1174,7 @@ jobs:
             exit 0
           fi
 
-          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^frontend/public/(team|share)/|^frontend/public/404\.html$' || true)"
           if [ -n "$unexpected" ]; then
             echo "::error title=Generated Preview Publication::Refusing to publish: paths outside the generated delivery scope are staged:"
             echo "$unexpected"

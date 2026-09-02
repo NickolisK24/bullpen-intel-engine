@@ -610,7 +610,7 @@ test('private posts route is obscure, noindexed, robots-excluded, and not in nav
   assert.deepEqual(
     config.rewrites.find(rewrite => matchesPath(rewrite.source, PRIVATE_POSTS_PATH)),
     {
-      source: '/(.*)',
+      source: '^/((?!share(?:/|$)).*)$',
       destination: '/index.html',
     },
   )
