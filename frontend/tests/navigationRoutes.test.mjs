@@ -294,20 +294,25 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
   const canonicalTeamSource = '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
 
   assert.deepEqual(routes[0], {
+    src: '^/share/([A-Za-z0-9._-]{1,64})/$',
+    headers: { Location: '/share/$1' },
+    status: 308,
+  })
+  assert.deepEqual(routes[1], {
     src: canonicalTeamSource,
     dest: '/team/$1/index.html',
   })
-  assert.deepEqual(routes[1], { handle: 'filesystem' })
-  assert.deepEqual(routes[2], {
+  assert.deepEqual(routes[2], { handle: 'filesystem' })
+  assert.deepEqual(routes[3], {
     src: '^/share/([A-Za-z0-9._-]{1,64})$',
     dest: '/404.html',
     status: 404,
   })
-  assert.deepEqual(routes[3], {
+  assert.deepEqual(routes[4], {
     src: '^/team/(.*)$',
     dest: '/team/index.html',
   })
-  assert.deepEqual(routes[4], {
+  assert.deepEqual(routes[5], {
     src: '^/(.*)$',
     dest: '/index.html',
   })
@@ -322,8 +327,8 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
 
 test('share preview routing resolves generated files before the SPA fallback', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
-  const redirects = config.redirects || []
   const routes = config.routes || []
+  const slashRedirect = routes.find(route => route.src === '^/share/([A-Za-z0-9._-]{1,64})/$')
   const filesystem = routes.find(route => route.handle === 'filesystem')
   const invalidShare = routes.find(route => route.src === '^/share/([A-Za-z0-9._-]{1,64})$')
   const spa = routes.find(route => route.dest === '/index.html')
@@ -334,11 +339,12 @@ test('share preview routing resolves generated files before the SPA fallback', (
     dest: '/404.html',
     status: 404,
   })
-  assert.deepEqual(redirects, [{
-    source: '/share/:publicId/',
-    destination: '/share/:publicId',
-    permanent: true,
-  }])
+  assert.deepEqual(slashRedirect, {
+    src: '^/share/([A-Za-z0-9._-]{1,64})/$',
+    headers: { Location: '/share/$1' },
+    status: 308,
+  })
+  assert.equal(routes.indexOf(slashRedirect) < routes.indexOf(filesystem), true)
   assert.equal(routes.indexOf(filesystem) < routes.indexOf(invalidShare), true)
   assert.equal(routes.indexOf(invalidShare) < routes.indexOf(spa), true)
   assert.equal(new RegExp(invalidShare.src).test('/share/abc123'), true)

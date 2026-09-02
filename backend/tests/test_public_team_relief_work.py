@@ -1411,11 +1411,7 @@ def test_routed_team_preview_delivery_changes_routing_only():
         (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(encoding='utf-8'),
     )
     routes = config['routes']
-    assert config['redirects'] == [{
-        'source': '/share/:publicId/',
-        'destination': '/share/:publicId',
-        'permanent': True,
-    }]
+    assert sorted(config) == ['headers', 'routes']
     sources = [route.get('src') for route in routes]
 
     # (A) exact, and limited to the 30 supported abbreviations.
@@ -1458,6 +1454,9 @@ def test_routed_team_preview_delivery_changes_routing_only():
     for route in routes:
         if route.get('handle') == 'filesystem':
             continue
+        if route.get('status') == 308:
+            assert route['headers'] == {'Location': '/share/$1'}
+            continue
         assert route['dest'].startswith('/')
         assert not route['dest'].startswith('//')
         assert route['dest'].endswith('.html')
@@ -1495,6 +1494,10 @@ def test_routed_team_preview_delivery_changes_routing_only():
         '},',
         '}',
         '"routes": [',
+        '"src": "^/share/([A-Za-z0-9._-]{1,64})/$",',
+        '"headers": {',
+        '"Location": "/share/$1"',
+        '"status": 308',
         f'"src": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
         '"dest": "/team/$1/index.html"',
         '"handle": "filesystem"',
@@ -1510,6 +1513,11 @@ def test_routed_team_preview_delivery_changes_routing_only():
     permitted_removed = {
         '{', '},', '}',
         '"rewrites": [',
+        '"redirects": [',
+        '"source": "/share/:publicId/",',
+        '"destination": "/share/:publicId",',
+        '"permanent": true',
+        '],',
         f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
         '"destination": "/team/$1/index.html"',
         '"source": "/team/(.*)",',

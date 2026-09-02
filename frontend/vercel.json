@@ -10,14 +10,14 @@
       ]
     }
   ],
-  "redirects": [
-    {
-      "source": "/share/:publicId/",
-      "destination": "/share/:publicId",
-      "permanent": true
-    }
-  ],
   "routes": [
+    {
+      "src": "^/share/([A-Za-z0-9._-]{1,64})/$",
+      "headers": {
+        "Location": "/share/$1"
+      },
+      "status": 308
+    },
     {
       "src": "^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
       "dest": "/team/$1/index.html"

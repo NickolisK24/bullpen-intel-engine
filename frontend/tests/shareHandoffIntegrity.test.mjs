@@ -5,18 +5,18 @@ import test from 'node:test'
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
 test('share routing resolves share files before the ordinary SPA fallback', () => {
-  const redirects = config.redirects || []
   const routes = config.routes || []
-  const slashRedirect = redirects.find(rule => rule.source === '/share/:publicId/')
+  const slashRedirect = routes.find(rule => rule.src === '^/share/([A-Za-z0-9._-]{1,64})/$')
   const filesystem = routes.find(rule => rule.handle === 'filesystem')
   const invalidShare = routes.find(rule => rule.src === '^/share/([A-Za-z0-9._-]{1,64})$')
   const spa = routes.find(rule => rule.dest === '/index.html')
 
   assert.deepEqual(slashRedirect, {
-    source: '/share/:publicId/',
-    destination: '/share/:publicId',
-    permanent: true,
+    src: '^/share/([A-Za-z0-9._-]{1,64})/$',
+    headers: { Location: '/share/$1' },
+    status: 308,
   })
+  assert.equal(routes.indexOf(slashRedirect) < routes.indexOf(filesystem), true)
   assert.deepEqual(filesystem, { handle: 'filesystem' })
   assert.deepEqual(invalidShare, {
     src: '^/share/([A-Za-z0-9._-]{1,64})$',
