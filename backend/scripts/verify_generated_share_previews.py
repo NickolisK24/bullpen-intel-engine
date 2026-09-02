@@ -95,8 +95,10 @@ def _verify_routing_config(path):
         except (KeyError, re.error):
             violations.append('SPA fallback source is not a valid bounded route pattern')
         else:
-            if pattern.fullmatch('/share/missing-artifact'):
-                violations.append('invalid share IDs can still fall through to the HTTP-200 SPA shell')
+            if static_rewrite is not None and rewrites.index(static_rewrite) >= rewrites.index(spa):
+                violations.append('canonical share route no longer precedes the SPA fallback')
+            if not pattern.fullmatch('/bullpen'):
+                violations.append('share 404 isolation broke the primary bullpen SPA route')
             if not pattern.fullmatch('/dashboard'):
                 violations.append('share 404 isolation broke the existing SPA fallback')
     return violations

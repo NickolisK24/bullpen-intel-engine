@@ -306,7 +306,7 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
     destination: '/share/$1/index.html',
   })
   assert.deepEqual(rewrites[3], {
-    source: '^/((?!share(?:/|$)).*)$',
+    source: '/(.*)',
     destination: '/index.html',
   })
 
@@ -318,7 +318,7 @@ test('Vercel serves canonical team preview files before the invalid-team and SPA
   assert.equal(canonicalTeamPattern.test('/team/INVALID'), false)
 })
 
-test('share preview routing preserves static metadata and keeps invalid IDs out of the SPA', () => {
+test('share preview routing resolves generated files before the SPA fallback', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const redirects = config.redirects || []
   const rewrites = config.rewrites || []
@@ -336,7 +336,9 @@ test('share preview routing preserves static metadata and keeps invalid IDs out 
     destination: '/share/:publicId',
     permanent: true,
   }])
-  assert.equal(new RegExp(spa.source).test('/share/abc123'), false)
+  assert.equal(rewrites.indexOf(staticShare) < rewrites.indexOf(spa), true)
+  assert.equal(new RegExp(spa.source).test('/share/abc123'), true)
+  assert.equal(new RegExp(spa.source).test('/bullpen'), true)
   assert.equal(new RegExp(spa.source).test('/dashboard'), true)
   assert.equal(existsSync(new URL('../public/404.html', import.meta.url)), true)
 })

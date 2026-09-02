@@ -1386,7 +1386,7 @@ GENERIC_TEAM_FALLBACK_REWRITE = {
     'destination': '/team/index.html',
 }
 SPA_CATCH_ALL_REWRITE = {
-    'source': '^/((?!share(?:/|$)).*)$',
+    'source': '/(.*)',
     'destination': '/index.html',
 }
 
@@ -1503,14 +1503,14 @@ def test_routed_team_preview_delivery_changes_routing_only():
         '"destination": "/share/:publicId",',
         '"permanent": true',
         '],',
-        '"source": "^/((?!share(?:/|$)).*)$",',
+        '"source": "/(.*)",',
     }
     assert not [line for line in added if line not in permitted_added], added
     permitted_removed = {
         '{', '},', '}',
         '"source": "^/share/([^/]+)$",',
         '"destination": "/share/index.html"',
-        '"source": "/(.*)",',
+        '"source": "^/((?!share(?:/|$)).*)$",',
     }
     assert not [line for line in removed if line not in permitted_removed], removed
 

@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
-test('share routing has one no-slash canonical URL and excludes invalid IDs from SPA fallback', () => {
+test('share routing resolves share files before the ordinary SPA fallback', () => {
   const redirects = config.redirects || []
   const rewrites = config.rewrites || []
   const slashRedirect = redirects.find(rule => rule.source === '/share/:publicId/')
@@ -22,7 +22,9 @@ test('share routing has one no-slash canonical URL and excludes invalid IDs from
     destination: '/share/$1/index.html',
   })
   assert.equal(invalidShare, undefined)
-  assert.equal(new RegExp(spa.source).test('/share/missing-id'), false)
+  assert.equal(rewrites.indexOf(staticShare) < rewrites.indexOf(spa), true)
+  assert.equal(new RegExp(spa.source).test('/share/missing-id'), true)
+  assert.equal(new RegExp(spa.source).test('/bullpen'), true)
   assert.equal(new RegExp(spa.source).test('/dashboard'), true)
 })
 
