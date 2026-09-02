@@ -328,11 +328,10 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
 
     This freeze protects snapshot trust. The routing table is allowed to change
     so already-generated pages can be served, so this proves the thing the
-    guard actually cares about: the file is a static rewrite/header table and
+    guard actually cares about: the file is a static route/header table and
     declares no snapshot, publication, freshness, or Team State surface at all.
-    Every rewrite destination is a static file inside the deployed frontend, so
-    no route added here can reach a backend read, a snapshot selection, or a
-    trust gate.
+    Every route destination is a static file inside the deployed frontend, so no
+    route added here can reach a backend read, snapshot selection, or trust gate.
     """
     for relative in ROUTED_TEAM_PREVIEW_DELIVERY_FILES:
         config = json.loads(
@@ -342,7 +341,7 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
         # A static route/header table and nothing else. The one redirect family
         # canonicalizes immutable share URLs on the same origin; no function,
         # cron, environment, or backend hop can be introduced silently.
-        assert sorted(config) == ['headers', 'redirects', 'rewrites'], relative
+        assert sorted(config) == ['headers', 'redirects', 'routes'], relative
 
         assert config['redirects'] == [{
             'source': '/share/:publicId/',
@@ -350,8 +349,10 @@ def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
             'permanent': True,
         }]
 
-        for rewrite in config['rewrites']:
-            destination = rewrite['destination']
+        for route in config['routes']:
+            if route.get('handle') == 'filesystem':
+                continue
+            destination = route['dest']
             # Static, same-origin, in-bundle. Never an API path and never an
             # absolute URL to another host.
             assert destination.startswith('/'), (relative, destination)

@@ -1381,13 +1381,13 @@ CANONICAL_TEAM_REWRITE_SOURCE = (
     '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|'
     'MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
 )
-GENERIC_TEAM_FALLBACK_REWRITE = {
-    'source': '/team/(.*)',
-    'destination': '/team/index.html',
+GENERIC_TEAM_FALLBACK_ROUTE = {
+    'src': '^/team/(.*)$',
+    'dest': '/team/index.html',
 }
-SPA_CATCH_ALL_REWRITE = {
-    'source': '/(.*)',
-    'destination': '/index.html',
+SPA_CATCH_ALL_ROUTE = {
+    'src': '^/(.*)$',
+    'dest': '/index.html',
 }
 
 
@@ -1410,17 +1410,17 @@ def test_routed_team_preview_delivery_changes_routing_only():
     config = json.loads(
         (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(encoding='utf-8'),
     )
-    rewrites = config['rewrites']
+    routes = config['routes']
     assert config['redirects'] == [{
         'source': '/share/:publicId/',
         'destination': '/share/:publicId',
         'permanent': True,
     }]
-    sources = [rewrite['source'] for rewrite in rewrites]
+    sources = [route.get('src') for route in routes]
 
     # (A) exact, and limited to the 30 supported abbreviations.
     assert CANONICAL_TEAM_REWRITE_SOURCE in sources
-    canonical = rewrites[sources.index(CANONICAL_TEAM_REWRITE_SOURCE)]
+    canonical = routes[sources.index(CANONICAL_TEAM_REWRITE_SOURCE)]
     pattern = re.compile(CANONICAL_TEAM_REWRITE_SOURCE)
     assert len(GENERATED_TEAM_PAGE_ABBREVIATIONS) == 30
     for abbreviation in GENERATED_TEAM_PAGE_ABBREVIATIONS:
@@ -1432,19 +1432,19 @@ def test_routed_team_preview_delivery_changes_routing_only():
         ), abbreviation
 
     # (B) the destination is exactly the generated file for the matched club.
-    assert canonical['destination'] == '/team/$1/index.html'
+    assert canonical['dest'] == '/team/$1/index.html'
 
     # (C) it resolves BEFORE the generic fallback, or every club path would
     # still reach the invalid-team page and the export would still be discarded.
     assert sources.index(CANONICAL_TEAM_REWRITE_SOURCE) < sources.index(
-        GENERIC_TEAM_FALLBACK_REWRITE['source']
+        GENERIC_TEAM_FALLBACK_ROUTE['src']
     )
 
     # (D) and (E) the two pre-existing routes survive unchanged, in order.
-    assert GENERIC_TEAM_FALLBACK_REWRITE in rewrites
-    assert SPA_CATCH_ALL_REWRITE in rewrites
-    assert sources.index(GENERIC_TEAM_FALLBACK_REWRITE['source']) < sources.index(
-        SPA_CATCH_ALL_REWRITE['source']
+    assert GENERIC_TEAM_FALLBACK_ROUTE in routes
+    assert SPA_CATCH_ALL_ROUTE in routes
+    assert sources.index(GENERIC_TEAM_FALLBACK_ROUTE['src']) < sources.index(
+        SPA_CATCH_ALL_ROUTE['src']
     )
 
     # (F) an unsupported abbreviation is NOT served a generated page; it keeps
@@ -1455,11 +1455,13 @@ def test_routed_team_preview_delivery_changes_routing_only():
     # (G) the change reaches no derivation, authority, or backend surface. A
     # rewrite table can only reach one by naming a destination that leaves the
     # static bundle, and none does.
-    for rewrite in rewrites:
-        assert rewrite['destination'].startswith('/')
-        assert not rewrite['destination'].startswith('//')
-        assert rewrite['destination'].endswith('.html')
-        assert '/api/' not in rewrite['destination']
+    for route in routes:
+        if route.get('handle') == 'filesystem':
+            continue
+        assert route['dest'].startswith('/')
+        assert not route['dest'].startswith('//')
+        assert route['dest'].endswith('.html')
+        assert '/api/' not in route['dest']
 
     source_text = (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(
         encoding='utf-8',
@@ -1492,25 +1494,30 @@ def test_routed_team_preview_delivery_changes_routing_only():
         '{',
         '},',
         '}',
-        f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
-        '"destination": "/team/$1/index.html"',
-        '"source": "^/share/([A-Za-z0-9._-]{1,64})$",',
-        '"destination": "/share/$1/index.html"',
-        '"source": "^/share/([^/]+)$",',
-        '"destination": "/share/index.html"',
-        '"redirects": [',
-        '"source": "/share/:publicId/",',
-        '"destination": "/share/:publicId",',
-        '"permanent": true',
-        '],',
-        '"source": "/(.*)",',
+        '"routes": [',
+        f'"src": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
+        '"dest": "/team/$1/index.html"',
+        '"handle": "filesystem"',
+        '"src": "^/share/([A-Za-z0-9._-]{1,64})$",',
+        '"dest": "/404.html",',
+        '"status": 404',
+        '"src": "^/team/(.*)$",',
+        '"dest": "/team/index.html"',
+        '"src": "^/(.*)$",',
+        '"dest": "/index.html"',
     }
     assert not [line for line in added if line not in permitted_added], added
     permitted_removed = {
         '{', '},', '}',
-        '"source": "^/share/([^/]+)$",',
-        '"destination": "/share/index.html"',
-        '"source": "^/((?!share(?:/|$)).*)$",',
+        '"rewrites": [',
+        f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
+        '"destination": "/team/$1/index.html"',
+        '"source": "/team/(.*)",',
+        '"destination": "/team/index.html"',
+        '"source": "^/share/([A-Za-z0-9._-]{1,64})$",',
+        '"destination": "/share/$1/index.html"',
+        '"source": "/(.*)",',
+        '"destination": "/index.html"',
     }
     assert not [line for line in removed if line not in permitted_removed], removed
 
