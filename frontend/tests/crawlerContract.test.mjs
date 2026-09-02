@@ -112,6 +112,16 @@ test('important static route entries identify themselves without mutable basebal
   assert.doesNotMatch(bullpen, /Fresh|Stretched|Vulnerable|Clean Option|Unavailable/)
 })
 
+test('Vite owns route-entry generation when hosting bypasses package scripts', () => {
+  const viteConfig = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
+  const packageConfig = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+
+  assert.match(viteConfig, /import \{ writeRouteEntryPages \}/)
+  assert.match(viteConfig, /await writeRouteEntryPages\(\)/)
+  assert.equal(packageConfig.scripts.build, 'vite build')
+  assert.equal(packageConfig.scripts.dev, 'vite')
+})
+
 test('valid direct-entry routes are bounded and invalid parameters reach the site 404', () => {
   const sources = (config.routes || []).map(route => route.src).filter(Boolean)
   for (const source of [

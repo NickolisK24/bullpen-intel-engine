@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ROUTE_ENTRY_METADATA } from './src/utils/publicRouteMetadata.js'
+import { writeRouteEntryPages } from './scripts/generate-route-entry-pages.mjs'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 const routeEntries = Object.fromEntries(
@@ -12,23 +13,26 @@ const routeEntries = Object.fromEntries(
   ]),
 )
 
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(root, 'index.html'),
-        ...routeEntries,
+export default defineConfig(async () => {
+  await writeRouteEntryPages()
+  return {
+    plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: {
+          main: resolve(root, 'index.html'),
+          ...routeEntries,
+        },
       },
     },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-      }
-    }
+    server: {
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:5000',
+          changeOrigin: true,
+        },
+      },
+    },
   }
 })

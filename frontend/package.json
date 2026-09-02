@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/generate-route-entry-pages.mjs && vite",
+    "dev": "vite",
     "test": "node --test tests/*.test.mjs",
-    "build": "node scripts/generate-route-entry-pages.mjs && vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
