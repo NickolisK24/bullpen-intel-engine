@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getBullpenDashboard,
-  getBullpenLandscape,
   getTeams,
   getTodayIntelligence,
   getTonightIntelligence,
@@ -1032,6 +1031,7 @@ export function getBullpenPictureView(landscape) {
   if (!view.hasLandscape) {
     return {
       hasLandscape: false,
+      unavailableReason: view.unavailableReason || null,
       teamsEvaluated: null,
       gamesLabel: null,
       columns: [],
@@ -2461,8 +2461,12 @@ function BullpenPicture({
         />
       ) : !picture.hasLandscape ? (
         <UnavailableDataState
-          title="No current bullpen read available."
-          message="No league bullpen picture is available for the current view."
+          title={picture.unavailableReason
+            ? 'Published bullpen picture unavailable.'
+            : 'No current bullpen read available.'}
+          message={picture.unavailableReason
+            ? 'No trusted published league view is available. Other Today sections remain available.'
+            : 'No league bullpen picture is available for the current view.'}
         />
       ) : (
         <>
@@ -2647,9 +2651,9 @@ export function IntelligenceSurfaceView({
 export default function IntelligenceSurfacePage() {
   const intelligence = useFetch(getTodayIntelligence)
   const tonight = useFetch(getTonightIntelligence)
-  const landscape = useFetch(getBullpenLandscape)
   const dashboard = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
+  const landscape = dashboard.data?.landscape || null
 
   return (
     <IntelligenceSurfaceView
@@ -2661,11 +2665,11 @@ export default function IntelligenceSurfacePage() {
       tonightError={tonight.error}
       tonightStaleWithError={tonight.staleWithError}
       onRetryTonight={tonight.refetch}
-      landscape={landscape.data}
-      landscapeLoading={landscape.loading}
-      landscapeError={landscape.error}
-      landscapeStaleWithError={landscape.staleWithError}
-      onRetryLandscape={landscape.refetch}
+      landscape={landscape}
+      landscapeLoading={dashboard.loading}
+      landscapeError={dashboard.error}
+      landscapeStaleWithError={dashboard.staleWithError}
+      onRetryLandscape={dashboard.refetch}
       dashboard={dashboard.data}
       dashboardLoading={dashboard.loading}
       dashboardError={dashboard.error}

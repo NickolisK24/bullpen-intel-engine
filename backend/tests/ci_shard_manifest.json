@@ -544,6 +544,10 @@
           "measured_seconds": 0.6
         },
         {
+          "path": "tests/test_public_landscape.py",
+          "measured_seconds": 0.05
+        },
+        {
           "path": "tests/test_public_why_copy_specificity.py",
           "measured_seconds": 0.5
         },

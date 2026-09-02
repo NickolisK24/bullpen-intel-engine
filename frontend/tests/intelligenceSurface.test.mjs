@@ -2274,6 +2274,38 @@ test('Bullpen Picture failure does not prevent Today page rendering', () => {
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
 })
 
+test('explicit publication-backed Landscape refusal stays scoped and never renders fake league counts', () => {
+  const unavailableLandscape = {
+    capability: 'tonights_bullpen_landscape',
+    status: 'snapshot_unavailable',
+    reason: 'dashboard_snapshot_missing',
+    teams_evaluated: null,
+    constrained_bullpens: null,
+    available_bullpens: null,
+    monitoring_concentration: null,
+    teams: null,
+    publication_authority: null,
+  }
+  const picture = getBullpenPictureView(unavailableLandscape)
+  assert.equal(picture.hasLandscape, false)
+  assert.equal(picture.unavailableReason, 'dashboard_snapshot_missing')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape: unavailableLandscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Published bullpen picture unavailable.'))
+  assert.ok(htmlIncludes(html, 'No trusted published league view is available. Other Today sections remain available.'))
+  assert.equal(htmlIncludes(html, '0 clubs in this published view'), false)
+  assert.equal(htmlIncludes(html, 'Rested &amp; Available'), false)
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
+})
+
 test('Bullpen Picture renders existing landscape lanes and handles missing data', () => {
   const picture = getBullpenPictureView(landscape)
   assert.equal(picture.hasLandscape, true)
@@ -2544,17 +2576,18 @@ test('Since Yesterday loading shell yields to available and governed unavailable
   assert.ok(htmlIncludes(unavailable, 'Since-yesterday movement is unavailable'))
 })
 
-test('Today retains one request owner for each existing public read', () => {
+test('Today uses one Dashboard request as the owner of its Landscape publication', () => {
   const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
   for (const owner of [
     'getTodayIntelligence',
     'getTonightIntelligence',
-    'getBullpenLandscape',
     'getBullpenDashboard',
     'getTeams',
   ]) {
     assert.equal((source.match(new RegExp(`useFetch\\(${owner}\\)`, 'g')) || []).length, 1, owner)
   }
+  assert.equal(source.includes('getBullpenLandscape'), false)
+  assert.ok(source.includes('const landscape = dashboard.data?.landscape || null'))
 })
 
 test('Daily Edition loading is compact and does not block healthy Tonight content', () => {
