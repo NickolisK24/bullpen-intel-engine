@@ -145,6 +145,14 @@ def test_live_feed_uses_configured_host_and_official_v1_1_sibling(app, monkeypat
     assert '/v1.1/game/{id}/feed/live' in client.metrics.snapshot()['by_endpoint']
 
 
+def test_client_exposes_configured_worst_case_attempt_count(app):
+    client = MLBApiClient()
+    with app.app_context():
+        assert client.max_attempts_per_request() == 4
+        app.config['MLB_API_MAX_RETRIES'] = 0
+        assert client.max_attempts_per_request() == 1
+
+
 class TestNonTransient:
     def test_404_is_not_retried(self, app, monkeypatch, sleeps):
         client = _client_with_responses(monkeypatch, [FakeResponse(404)])
