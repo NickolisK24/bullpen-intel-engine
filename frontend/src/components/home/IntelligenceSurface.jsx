@@ -2652,8 +2652,8 @@ export function IntelligenceSurfaceView({
 }
 
 export default function IntelligenceSurfacePage() {
-  const intelligence = useFetch(getTodayIntelligence)
-  const tonight = useFetch(getTonightIntelligence)
+  const intelligence = useFetch(options => getTodayIntelligence({}, options))
+  const tonight = useFetch(options => getTonightIntelligence({}, options))
   const home = useFetch(getHomeProjection)
   const teams = useFetch(getTeams)
   const landscape = home.data?.landscape || null

@@ -224,15 +224,19 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
     }
 
     let cancelled = false
+    const controller = typeof AbortController === 'undefined' ? null : new AbortController()
     const timer = window.setTimeout(() => {
       setLoading(true)
       setError('')
-      searchFn({ q: normalizedQuery })
+      searchFn(
+        { q: normalizedQuery },
+        controller ? { signal: controller.signal, silent: true } : { silent: true },
+      )
         .then(response => {
           if (!cancelled) setPayload(response)
         })
-        .catch(() => {
-          if (!cancelled) {
+        .catch(requestError => {
+          if (!cancelled && requestError?.name !== 'AbortError') {
             setPayload(null)
             setError('unavailable')
           }
@@ -245,6 +249,7 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
     return () => {
       cancelled = true
       window.clearTimeout(timer)
+      controller?.abort()
     }
   }, [normalizedQuery, retryVersion, searchFn])
 

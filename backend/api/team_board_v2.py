@@ -12,6 +12,7 @@ from services.public_team_relief_work import (
 )
 from services.public_recent_transactions import build_public_recent_transactions
 from services.public_team_performance import build_public_team_performance_payload
+from services.public_delivery import apply_public_delivery_headers
 from services.team_changes import build_team_changes_payload
 from services.team_board_delivery import (
     TeamBoardIdentityMismatch,
@@ -153,15 +154,28 @@ def get_team_board_core(team_id):
     if _team_missing(board):
         return jsonify({'error': 'team_not_found'}), 404
     if snapshot is None or identity is None:
-        return jsonify({
+        response = jsonify({
             'capability': 'team_board_answer_core',
             'status': 'snapshot_unavailable',
             'reason_code': 'trusted_team_board_unavailable',
             'publication_identity': None,
-        }), 503
-    return jsonify(build_team_board_core_payload(
+        })
+        response.status_code = 503
+        return apply_public_delivery_headers(
+            response,
+            resource='team_board_answer_core',
+            identity=None,
+            available=False,
+        )
+    payload = build_team_board_core_payload(
         board, publication_identity=identity,
-    ))
+    )
+    return apply_public_delivery_headers(
+        jsonify(payload),
+        resource='team_board_answer_core',
+        identity=identity,
+        contract_version=payload.get('contract_version'),
+    )
 
 
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2/details', methods=['GET'])
@@ -178,12 +192,19 @@ def get_team_board_details(team_id):
         )
         require_matching_team_board_identity(normalized, snapshot, board)
     except TeamBoardIdentityMismatch as exc:
-        return jsonify({
+        response = jsonify({
             'capability': 'team_board_deferred_details',
             'status': 'identity_mismatch',
             'reason_code': str(exc),
             'publication_identity': None,
-        }), 409
+        })
+        response.status_code = 409
+        return apply_public_delivery_headers(
+            response,
+            resource='team_board_deferred_details',
+            identity=None,
+            available=False,
+        )
 
     if _team_missing(board):
         return jsonify({'error': 'team_not_found'}), 404
@@ -191,9 +212,15 @@ def get_team_board_details(team_id):
         sections = _build_deferred_sections(team_id, board, snapshot)
     except TeamNotFoundError:
         return jsonify({'error': 'team_not_found'}), 404
-    return jsonify(build_team_board_details_payload(
+    payload = build_team_board_details_payload(
         board, publication_identity=normalized, **sections,
-    ))
+    )
+    return apply_public_delivery_headers(
+        jsonify(payload),
+        resource='team_board_deferred_details',
+        identity=normalized,
+        contract_version=payload.get('contract_version'),
+    )
 
 
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])

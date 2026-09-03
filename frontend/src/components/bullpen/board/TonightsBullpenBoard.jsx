@@ -55,7 +55,7 @@ export default function TonightsBullpenBoard({
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   const selectedTeamRecord = teamList.find(team => Number(team.team_id) === Number(selectedTeam)) || boardPayload?.team || null
   const teamBoardCore = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardCore(selectedTeam)),
+    options => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardCore(selectedTeam, options)),
     [selectedTeam],
   )
   const hasTeamBoardV2Override = (
@@ -78,10 +78,10 @@ export default function TonightsBullpenBoard({
     || teamBoardV2State.data?.publication_identity
     || null
   const teamBoardDetails = useFetch(
-    () => (
+    options => (
       selectedTeam == null || !coreIdentity || hasTeamBoardV2Override
         ? Promise.resolve(null)
-        : getTeamBoardDetails(selectedTeam, coreIdentity)
+        : getTeamBoardDetails(selectedTeam, coreIdentity, options)
     ),
     [selectedTeam, coreIdentity?.snapshot_id, hasTeamBoardV2Override],
   )

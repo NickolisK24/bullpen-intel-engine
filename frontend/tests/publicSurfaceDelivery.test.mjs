@@ -30,10 +30,10 @@ test('each public surface uses its purpose-built projection instead of Dashboard
 
 
 test('purpose-built API helpers have explicit coherent routes', () => {
-  assert.ok(apiSource.includes("getHomeProjection = () => request('/bullpen/home')"))
-  assert.ok(apiSource.includes("getLeagueProjection = () => request('/bullpen/league')"))
-  assert.ok(apiSource.includes("getStoriesProjection = () => request('/bullpen/stories')"))
-  assert.ok(apiSource.includes("getTrustProjection = () => request('/bullpen/trust')"))
+  assert.ok(apiSource.includes("getHomeProjection = (options = {}) => request('/bullpen/home'"))
+  assert.ok(apiSource.includes("getLeagueProjection = (options = {}) => request('/bullpen/league'"))
+  assert.ok(apiSource.includes("getStoriesProjection = (options = {}) => request('/bullpen/stories'"))
+  assert.ok(apiSource.includes("getTrustProjection = (options = {}) => request('/bullpen/trust'"))
   assert.ok(apiSource.includes("getBullpenDashboard = () => request('/bullpen/dashboard')"))
 })
 
@@ -46,8 +46,8 @@ test('League receives Team States inside the same projection request', () => {
 
 
 test('Home keeps Today and Tonight independent of its publication projection', () => {
-  assert.ok(homeSource.includes('useFetch(getTodayIntelligence)'))
-  assert.ok(homeSource.includes('useFetch(getTonightIntelligence)'))
+  assert.ok(homeSource.includes('getTodayIntelligence({}, options)'))
+  assert.ok(homeSource.includes('getTonightIntelligence({}, options)'))
   assert.ok(homeSource.includes('useFetch(getHomeProjection)'))
   assert.equal(homeSource.includes('getBullpenLandscape'), false)
 })

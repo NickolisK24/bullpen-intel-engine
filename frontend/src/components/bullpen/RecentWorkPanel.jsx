@@ -131,9 +131,9 @@ export default function RecentWorkPanel({
   error: errorOverride,
 }) {
   const fetched = useFetch(
-    () => (payload !== undefined || !isFilled(pitcherId)
+    options => (payload !== undefined || !isFilled(pitcherId)
       ? Promise.resolve(payload ?? null)
-      : getPitcherRecentWork(pitcherId)),
+      : getPitcherRecentWork(pitcherId, options)),
     [pitcherId, payload],
   )
   const data = payload !== undefined ? payload : fetched.data

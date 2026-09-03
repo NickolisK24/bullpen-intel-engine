@@ -68,9 +68,9 @@ export default function MatchupPage() {
   const { gameId: rawGameId } = useParams()
   const gameId = normalizeGameId(rawGameId)
   const matchup = useFetch(
-    () => (gameId == null
+    options => (gameId == null
       ? Promise.reject(new Error('This Matchup destination does not contain a valid game ID.'))
-      : getScheduledGameMatchup(gameId)),
+      : getScheduledGameMatchup(gameId, options)),
     [gameId],
   )
 

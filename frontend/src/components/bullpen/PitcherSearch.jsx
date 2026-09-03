@@ -132,17 +132,21 @@ export default function PitcherSearch({
     }
 
     let cancelled = false
+    const controller = typeof AbortController === 'undefined' ? null : new AbortController()
     setLoading(true)
     setError('')
 
-    searchFn({ q: normalizedQuery })
+    searchFn(
+      { q: normalizedQuery },
+      controller ? { signal: controller.signal, silent: true } : { silent: true },
+    )
       .then(payload => {
         if (!cancelled) {
           setResults(Array.isArray(payload?.results) ? payload.results : [])
         }
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch(requestError => {
+        if (!cancelled && requestError?.name !== 'AbortError') {
           setResults([])
           setError('unavailable')
         }
@@ -155,6 +159,7 @@ export default function PitcherSearch({
 
     return () => {
       cancelled = true
+      controller?.abort()
     }
   }, [query, searchFn])
 

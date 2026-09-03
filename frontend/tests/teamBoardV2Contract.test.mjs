@@ -205,8 +205,8 @@ test('Team Board loads the answer core first and defers identified depth', async
   )
   const apiSource = await readFile(new URL('../src/utils/api.js', import.meta.url), 'utf8')
 
-  assert.equal(boardSource.includes('getTeamBoardCore(selectedTeam)'), true)
-  assert.equal(boardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity)'), true)
+  assert.equal(boardSource.includes('getTeamBoardCore(selectedTeam, options)'), true)
+  assert.equal(boardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity, options)'), true)
   assert.equal(boardSource.includes('<TeamBoardAnswerBlock'), true)
   assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
   assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)
@@ -219,7 +219,7 @@ test('Team Board loads the answer core first and defers identified depth', async
   assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
   assert.match(
     apiSource,
-    /getTeamBoardCore = \(teamId\) => request\(`\/bullpen\/teams\/\$\{encodeURIComponent\(teamId\)\}\/board-v2\/core`\)/,
+    /getTeamBoardCore = \(teamId, options = \{\}\) => request\(`\/bullpen\/teams\/\$\{encodeURIComponent\(teamId\)\}\/board-v2\/core`/,
   )
   for (const forbidden of ['reduce(', '/ 3', 'Math.round', 'public_state =', 'summary =']) {
     assert.equal(adapterSource.includes(forbidden), false, forbidden)

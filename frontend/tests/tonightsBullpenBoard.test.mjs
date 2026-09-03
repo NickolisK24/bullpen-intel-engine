@@ -148,8 +148,8 @@ test('team board launch landing is neutral and ignores stale preferred team stat
 
 test('team board adopts the v2 Answer Block, Active Bullpen, Recent Usage, and Rest Status', () => {
   assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardAnswerBlock'))
-  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardCore(selectedTeam)'))
-  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity)'))
+  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardCore(selectedTeam, options)'))
+  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity, options)'))
   assert.ok(tonightsBullpenBoardSource.includes("href: '#pitcher-lanes'"))
   assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardActiveBullpen'))
   assert.equal(tonightsBullpenBoardSource.includes('<BullpenBoardView'), false)

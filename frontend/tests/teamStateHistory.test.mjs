@@ -564,7 +564,7 @@ test('History disclosure remains local, keyboard-native, and request-free', () =
   assert.ok(source.includes('onClick={() => setDetailsOpen(open => !open)}'))
   assert.ok(source.includes("type=\"button\""))
   assert.ok(source.includes('detailsOpen &&'))
-  assert.equal((source.match(/getTeamStateHistory\(teamAbbreviation, 2026\)/g) || []).length, 1)
+  assert.equal((source.match(/getTeamStateHistory\(teamAbbreviation, 2026, options\)/g) || []).length, 1)
   for (const forbidden of ['getPublicShareArtifact', 'getTeamBoardV2', 'fetch(', 'axios', 'overflow-x-auto', 'fixed inset']) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }
@@ -601,7 +601,7 @@ test('History preserves loading, empty, and retryable error states', () => {
 test('History owns one eager request and no Team Board or per-artifact fan-out', () => {
   const page = readFileSync(new URL('../src/components/history/TeamHistoryPage.jsx', import.meta.url), 'utf8')
   const api = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
-  assert.equal((page.match(/getTeamStateHistory\(teamAbbreviation, 2026\)/g) || []).length, 1)
+  assert.equal((page.match(/getTeamStateHistory\(teamAbbreviation, 2026, options\)/g) || []).length, 1)
   assert.ok(api.includes('request(`/bullpen/teams/${encodeURIComponent(teamAbbreviation)}/history'))
   for (const forbidden of ['getTeamBoardV2', 'getPublicShareArtifact', 'getTeamChanges', 'getTeamReliefWork']) {
     assert.equal(page.includes(forbidden), false, forbidden)

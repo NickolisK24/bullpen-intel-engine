@@ -15,7 +15,7 @@ import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
 export default function PitcherDetail({ pitcherId }) {
   const { data, loading, error, refetch } = useFetch(
-    () => getPitcherFatigue(pitcherId),
+    options => getPitcherFatigue(pitcherId, options),
     [pitcherId],
   )
 

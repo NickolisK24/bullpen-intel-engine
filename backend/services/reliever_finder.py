@@ -8,8 +8,11 @@ league-scale fatigue carrier.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import timedelta
 from math import ceil
+from threading import RLock
+from time import monotonic
 
 from sqlalchemy import or_
 
@@ -29,6 +32,8 @@ FINDER_MIN_QUERY_LENGTH = 2
 FINDER_DEFAULT_LIMIT = 25
 FINDER_MAX_LIMIT = 50
 FINDER_SORTS = frozenset({'name', 'pitches', 'rest'})
+FINDER_POPULATION_CACHE_MAX_ENTRIES = 4
+FINDER_POPULATION_CACHE_TTL_SECONDS = 20
 FINDER_AVAILABILITY_FILTERS = {
     'available': 'Available',
     'monitor': 'On Watch',
@@ -36,6 +41,8 @@ FINDER_AVAILABILITY_FILTERS = {
     'limited': 'Limited',
     'unavailable': 'Unavailable',
 }
+_population_cache = OrderedDict()
+_population_cache_lock = RLock()
 
 
 def normalize_finder_query(value):
@@ -194,6 +201,60 @@ def _sort_rows(rows, sort):
     return sorted(rows, key=name_key)
 
 
+def clear_reliever_finder_population_cache():
+    with _population_cache_lock:
+        _population_cache.clear()
+
+
+def _cached_population(cache_key):
+    if cache_key is None:
+        return None
+    now = monotonic()
+    with _population_cache_lock:
+        cached = _population_cache.get(cache_key)
+        if cached is None:
+            return None
+        expires_at, rows = cached
+        if expires_at <= now:
+            _population_cache.pop(cache_key, None)
+            return None
+        _population_cache.move_to_end(cache_key)
+        return rows
+
+
+def _store_population(cache_key, rows):
+    if cache_key is None:
+        return
+    with _population_cache_lock:
+        _population_cache[cache_key] = (
+            monotonic() + FINDER_POPULATION_CACHE_TTL_SECONDS,
+            rows,
+        )
+        _population_cache.move_to_end(cache_key)
+        while len(_population_cache) > FINDER_POPULATION_CACHE_MAX_ENTRIES:
+            _population_cache.popitem(last=False)
+
+
+def _build_public_rows(
+    *, query, team_id, include_stale, reference_date, score_cutoff,
+):
+    candidates = _latest_score_query(
+        team_id=team_id,
+        query=query,
+        calculated_at_lte=score_cutoff,
+    ).order_by(Pitcher.full_name, Pitcher.id).all()
+    eligible = _eligible_rows(candidates, reference_date=reference_date)
+    if not include_stale:
+        fresh_ids = _fresh_pitcher_ids(eligible, reference_date=reference_date)
+        eligible = [row for row in eligible if row[1].id in fresh_ids]
+    records = classify_fatigue_rows(
+        eligible,
+        reference_date=reference_date,
+        mode=CURRENT_AVAILABILITY_MODE,
+    )
+    return [_public_row(record) for record in records]
+
+
 def build_reliever_finder_payload(
     *,
     query='',
@@ -205,25 +266,31 @@ def build_reliever_finder_payload(
     limit=FINDER_DEFAULT_LIMIT,
     reference_date,
     score_cutoff=None,
+    source_identity=None,
 ):
     """Build one bounded Finder page after the route has established intent."""
     public_availability_filter = normalize_finder_availability(availability)
-    candidates = _latest_score_query(
-        team_id=team_id,
-        query=query,
-        calculated_at_lte=score_cutoff,
-    ).order_by(Pitcher.full_name, Pitcher.id).all()
-    eligible = _eligible_rows(candidates, reference_date=reference_date)
-    if not include_stale:
-        fresh_ids = _fresh_pitcher_ids(eligible, reference_date=reference_date)
-        eligible = [row for row in eligible if row[1].id in fresh_ids]
-
-    records = classify_fatigue_rows(
-        eligible,
-        reference_date=reference_date,
-        mode=CURRENT_AVAILABILITY_MODE,
+    broad_availability_query = (
+        public_availability_filter is not None
+        and not normalize_finder_query(query)
+        and team_id is None
     )
-    rows = [_public_row(record) for record in records]
+    cache_key = None
+    if broad_availability_query and source_identity is not None:
+        cache_key = (
+            tuple(source_identity),
+            bool(include_stale),
+        )
+    rows = _cached_population(cache_key)
+    if rows is None:
+        rows = _build_public_rows(
+            query=query,
+            team_id=team_id,
+            include_stale=include_stale,
+            reference_date=reference_date,
+            score_cutoff=score_cutoff,
+        )
+        _store_population(cache_key, rows)
     if public_availability_filter is not None:
         rows = [
             row for row in rows
@@ -263,3 +330,21 @@ def build_reliever_finder_payload(
         'ranking_applied': False,
         'selection_made': False,
     }
+
+
+__all__ = [
+    'FINDER_AVAILABILITY_FILTERS',
+    'FINDER_CAPABILITY',
+    'FINDER_DEFAULT_LIMIT',
+    'FINDER_MAX_LIMIT',
+    'FINDER_MIN_QUERY_LENGTH',
+    'FINDER_POPULATION_CACHE_MAX_ENTRIES',
+    'FINDER_POPULATION_CACHE_TTL_SECONDS',
+    'FINDER_SORTS',
+    'build_reliever_finder_payload',
+    'clear_reliever_finder_population_cache',
+    'finder_has_intent',
+    'normalize_finder_availability',
+    'normalize_finder_query',
+    'waiting_for_intent_payload',
+]

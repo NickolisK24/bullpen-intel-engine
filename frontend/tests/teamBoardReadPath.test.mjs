@@ -16,8 +16,8 @@ const { createTeamShareCardLoader } = await server.ssrLoadModule(
 test('selected Team Board has one eager core request and one deferred identified request', () => {
   assert.equal((shell.match(/useFetch\(getTeams\)/g) || []).length, 1)
   assert.equal((board.match(/useFetch\(/g) || []).length, 2)
-  assert.equal((board.match(/getTeamBoardCore\(selectedTeam\)/g) || []).length, 1)
-  assert.equal((board.match(/getTeamBoardDetails\(selectedTeam, coreIdentity\)/g) || []).length, 1)
+  assert.equal((board.match(/getTeamBoardCore\(selectedTeam, options\)/g) || []).length, 1)
+  assert.equal((board.match(/getTeamBoardDetails\(selectedTeam, coreIdentity, options\)/g) || []).length, 1)
   assert.ok(board.includes('readTeamBoardDelivery'))
   assert.equal(board.includes('getTeamBullpenBoard'), false)
   assert.equal(board.includes('getTeamChanges'), false)
