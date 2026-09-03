@@ -11,6 +11,9 @@ import {
   getRowAvailabilityStatus,
 } from './availabilityView.js'
 
+export const FINDER_MIN_QUERY_LENGTH = 2
+export const FINDER_PAGE_SIZE = 25
+
 // The finder renders a broad reliever list only once the visitor has asked for
 // something specific: a name search, a single team, or a single public
 // availability status. Provenance-only params (source) never count as intent, so
@@ -20,7 +23,7 @@ export function computeFinderIntent({
   selectedTeam = null,
   availabilityFilter = 'ALL',
 } = {}) {
-  const hasSearchIntent = String(searchTerm || '').trim().length > 0
+  const hasSearchIntent = String(searchTerm || '').trim().length >= FINDER_MIN_QUERY_LENGTH
   const hasTeamIntent = selectedTeam != null
   const hasAvailabilityIntent = Boolean(availabilityFilter) && availabilityFilter !== 'ALL'
   return {
@@ -29,6 +32,31 @@ export function computeFinderIntent({
     hasAvailabilityIntent,
     hasIntent: hasSearchIntent || hasTeamIntent || hasAvailabilityIntent,
   }
+}
+
+export function buildFinderRequestParams({
+  searchTerm = '',
+  selectedTeam = null,
+  availabilityFilter = 'ALL',
+  includeStale = false,
+  sortBy = DEFAULT_FINDER_SORT,
+  page = 1,
+  limit = FINDER_PAGE_SIZE,
+} = {}) {
+  const intent = computeFinderIntent({ searchTerm, selectedTeam, availabilityFilter })
+  if (!intent.hasIntent) return null
+
+  const params = {
+    page,
+    limit,
+    sort: sortBy,
+    include_stale: includeStale,
+  }
+  const query = String(searchTerm || '').trim()
+  if (intent.hasSearchIntent) params.q = query
+  if (intent.hasTeamIntent) params.team_id = selectedTeam
+  if (intent.hasAvailabilityIntent) params.availability = availabilityFilter
+  return params
 }
 
 // Full, unambiguous team name for the compact team select — never a bare city

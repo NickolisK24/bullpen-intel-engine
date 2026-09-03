@@ -207,6 +207,7 @@ def _pitcher_id(full_name):
 PUBLIC_ROUTES = (
     '/api/bullpen/fatigue',
     '/api/bullpen/fatigue?with_meta=true&limit=750&include_stale=true',
+    '/api/bullpen/reliever-finder?q=arm&limit=50',
     f'/api/bullpen/teams/{TEAM_ID}/bullpen',
     f'/api/bullpen/teams/{TEAM_ID}/bullpen?include_stale=true',
     f'/api/bullpen/teams/{TEAM_ID}/board',

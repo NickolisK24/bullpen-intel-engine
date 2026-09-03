@@ -119,6 +119,17 @@ from services.public_team_relief_work import (
     author_deployment_profile,
 )
 from services.public_recent_work import build_public_recent_work_payload
+from services.reliever_finder import (
+    FINDER_DEFAULT_LIMIT,
+    FINDER_MAX_LIMIT,
+    FINDER_MIN_QUERY_LENGTH,
+    FINDER_SORTS,
+    build_reliever_finder_payload,
+    finder_has_intent,
+    normalize_finder_availability,
+    normalize_finder_query,
+    waiting_for_intent_payload,
+)
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
@@ -396,6 +407,75 @@ def _availability_for(pitcher_id, score, reference_date=None):
 
 
 # ─── Fatigue Scores ───────────────────────────────────────────────────────────
+
+@bullpen_bp.route('/reliever-finder', methods=['GET'])
+def get_reliever_finder():
+    """Intent-driven, bounded Reliever Finder projection.
+
+    The legacy ``/fatigue`` list remains available for compatibility.  This
+    purpose-built route is the public Finder contract: it performs no reliever
+    result query without meaningful intent and never returns more than one
+    bounded page.
+    """
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
+    page, error = parse_positive_int_param(request.args, 'page', default=1)
+    if error:
+        return query_param_error_response(error)
+    limit, error = parse_positive_int_param(
+        request.args,
+        'limit',
+        default=FINDER_DEFAULT_LIMIT,
+        maximum=FINDER_MAX_LIMIT,
+        clamp_max=True,
+    )
+    if error:
+        return query_param_error_response(error)
+
+    query = normalize_finder_query(request.args.get('q'))
+    requested_availability = request.args.get('availability')
+    availability = normalize_finder_availability(requested_availability)
+    if requested_availability not in (None, '') and availability is None:
+        return query_param_error_response(QueryParamError(
+            'availability',
+            'availability must be one of: Available, Monitor, On Watch, Limited, Unavailable.',
+        ))
+    if (
+        query
+        and len(query) < FINDER_MIN_QUERY_LENGTH
+        and (team_id is not None or availability is not None)
+    ):
+        return query_param_error_response(QueryParamError(
+            'q', f'q must contain at least {FINDER_MIN_QUERY_LENGTH} characters.',
+        ))
+
+    sort = str(request.args.get('sort') or 'name').strip().lower()
+    if sort not in FINDER_SORTS:
+        return query_param_error_response(QueryParamError(
+            'sort', f"sort must be one of: {', '.join(sorted(FINDER_SORTS))}.",
+        ))
+
+    if not finder_has_intent(
+        query=query,
+        team_id=team_id,
+        availability=availability,
+    ):
+        return jsonify(waiting_for_intent_payload())
+
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
+    return jsonify(build_reliever_finder_payload(
+        query=query,
+        team_id=team_id,
+        availability=availability,
+        include_stale=_truthy(request.args.get('include_stale')),
+        sort=sort,
+        page=page,
+        limit=limit,
+        reference_date=reference_date,
+        score_cutoff=_served_score_cutoff(),
+    ))
 
 @bullpen_bp.route('/fatigue', methods=['GET'])
 def get_fatigue_scores():

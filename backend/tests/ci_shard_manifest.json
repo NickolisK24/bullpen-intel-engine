@@ -576,6 +576,10 @@
           "measured_seconds": 3.316
         },
         {
+          "path": "tests/test_reliever_finder.py",
+          "measured_seconds": 1.36
+        },
+        {
           "path": "tests/test_roster_dead_letter_reconciliation.py",
           "measured_seconds": 4.08
         },

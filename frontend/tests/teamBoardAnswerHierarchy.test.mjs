@@ -351,7 +351,8 @@ test('Team Board owns no fatigue request or fatigue-row join while Finder retain
   assert.equal(boardViewSource.includes('workloadRows'), false)
   assert.equal(boardViewSource.includes('workloadByPitcher'), false)
   assert.equal(containerSource.includes('getFatigueScores'), false)
-  assert.ok(bullpenSource.indexOf('getFatigueScores(params)') > bullpenSource.indexOf('function PitcherView'))
+  assert.equal(bullpenSource.includes('getRelieverFinder(params'), true)
+  assert.ok(bullpenSource.indexOf('useRelieverFinder(finderParams)') > bullpenSource.indexOf('function PitcherView'))
 })
 
 test('summary, Rest Status, and Workload Overview use governed board reads', () => {
