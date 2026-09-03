@@ -4,6 +4,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
+import { readFile } from 'node:fs/promises'
 
 const server = await createServer({
   root: process.cwd(),
@@ -23,6 +24,7 @@ const { filterRowsByAvailability } = await server.ssrLoadModule(
 const { default: Bullpen } = await server.ssrLoadModule('/src/components/bullpen/Bullpen.jsx')
 
 const {
+  buildFinderRequestParams,
   computeFinderIntent,
   describeActiveSort,
   DEFAULT_FINDER_SORT,
@@ -78,6 +80,7 @@ test('the finder has no intent until the visitor asks for something', () => {
 })
 
 test('search, team, or a specific availability status each count as intent', () => {
+  assert.equal(computeFinderIntent({ searchTerm: 'r' }).hasIntent, false)
   assert.equal(computeFinderIntent({ searchTerm: 'rivera' }).hasSearchIntent, true)
   assert.equal(computeFinderIntent({ searchTerm: 'rivera' }).hasIntent, true)
   assert.equal(computeFinderIntent({ selectedTeam: 118 }).hasTeamIntent, true)
@@ -86,6 +89,33 @@ test('search, team, or a specific availability status each count as intent', () 
   assert.equal(computeFinderIntent({ availabilityFilter: 'Available' }).hasIntent, true)
   // Whitespace-only search is not intent.
   assert.equal(computeFinderIntent({ searchTerm: '   ' }).hasIntent, false)
+})
+
+test('finder request params exist only for intent and are bounded', () => {
+  assert.equal(buildFinderRequestParams({}), null)
+  assert.equal(buildFinderRequestParams({ searchTerm: 'r' }), null)
+  assert.deepEqual(buildFinderRequestParams({ searchTerm: ' rivera ' }), {
+    page: 1,
+    limit: 25,
+    sort: 'name',
+    include_stale: false,
+    q: 'rivera',
+  })
+  assert.deepEqual(buildFinderRequestParams({
+    searchTerm: 'r',
+    selectedTeam: 111,
+    availabilityFilter: 'Monitor',
+    includeStale: true,
+    sortBy: 'rest',
+    page: 2,
+  }), {
+    page: 2,
+    limit: 25,
+    sort: 'rest',
+    include_stale: true,
+    team_id: 111,
+    availability: 'Monitor',
+  })
 })
 
 // ── Neutral default sort ────────────────────────────────────────────────────
@@ -223,4 +253,25 @@ test('the freshness window control stays available and the clear action hides un
   assert.ok(htmlIncludes(html, 'Show pitchers outside the freshness window'))
   // No intent yet, so no clear action is shown.
   assert.equal(htmlIncludes(html, 'Clear filters'), false)
+})
+
+test('the Finder delivery path never mounts the legacy 750-row request', async () => {
+  const bullpenSource = await readFile(
+    new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
+    'utf8',
+  )
+  const apiSource = await readFile(
+    new URL('../src/utils/api.js', import.meta.url),
+    'utf8',
+  )
+
+  assert.equal(bullpenSource.includes('limit: 750'), false)
+  assert.equal(bullpenSource.includes('getFatigueScores'), false)
+  assert.ok(bullpenSource.includes('getRelieverFinder(params'))
+  assert.ok(apiSource.includes("request(`/bullpen/reliever-finder"))
+  assert.ok(bullpenSource.includes("typeof AbortController === 'undefined'"))
+  assert.ok(bullpenSource.includes('controller?.abort()'))
+  assert.ok(bullpenSource.includes('FINDER_DEBOUNCE_MS'))
+  assert.equal(bullpenSource.includes('filterRowsByAvailability(allRows'), false)
+  assert.equal(bullpenSource.includes('filterRelieverRowsBySearch('), false)
 })

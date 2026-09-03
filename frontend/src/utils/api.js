@@ -431,6 +431,10 @@ export const getFatigueScores  = (params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/fatigue${q ? `?${q}` : ''}`)
 }
+export const getRelieverFinder = (params = {}, options = {}) => {
+  const q = new URLSearchParams(params).toString()
+  return request(`/bullpen/reliever-finder${q ? `?${q}` : ''}`, options)
+}
 export const getPitcherFatigue = (id) => request(`/bullpen/fatigue/${id}`)
 // No frontend helper for POST /bullpen/fatigue/recalculate: fatigue
 // recalculation is an admin-token-gated operation, triggered server-side or

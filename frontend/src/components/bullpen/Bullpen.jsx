@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import useEvidenceHashNavigation from '../../hooks/useEvidenceHashNavigation'
-import { getFatigueScores, getTeams } from '../../utils/api'
+import { getRelieverFinder, getTeams } from '../../utils/api'
 import {
   BULLPEN_VIEWS,
   buildAllPitchersHref,
@@ -19,17 +19,17 @@ import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
-import { filterRowsByAvailability } from './availabilityView'
 import {
+  buildFinderRequestParams,
   computeFinderIntent,
   describeActiveSort,
   DEFAULT_FINDER_SORT,
-  filterRelieverRowsBySearch,
+  FINDER_MIN_QUERY_LENGTH,
+  FINDER_PAGE_SIZE,
   formatRestDays,
   formatWorkloadCount,
   getAvailabilityFilterOptions,
   getTeamOptionLabel,
-  sortRelieverRows,
 } from './relieverFinderView'
 
 // The old "All Teams" score-table tab (30-team Avg Workload / risk-tier counts)
@@ -44,7 +44,59 @@ const VIEW_MODES   = [
   // label is "Reliever Finder" — "All Pitchers" would overstate the population.
   { id: 'pitchers', label: 'Reliever Finder' },
 ]
-const PAGE_SIZE = 50
+const FINDER_DEBOUNCE_MS = 250
+
+function useRelieverFinder(params) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [retryVersion, setRetryVersion] = useState(0)
+
+  useEffect(() => {
+    if (!params) {
+      setData(null)
+      setLoading(false)
+      setError(null)
+      return undefined
+    }
+
+    let current = true
+    const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+    setLoading(true)
+    setError(null)
+    const timer = setTimeout(() => {
+      getRelieverFinder(params, {
+        ...(controller ? { signal: controller.signal } : {}),
+        silent: true,
+      })
+        .then(result => {
+          if (current) setData(result)
+        })
+        .catch(err => {
+          if (current && err?.name !== 'AbortError') {
+            setData(null)
+            setError(err?.message || 'Failed to load relievers')
+          }
+        })
+        .finally(() => {
+          if (current) setLoading(false)
+        })
+    }, FINDER_DEBOUNCE_MS)
+
+    return () => {
+      current = false
+      clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [params, retryVersion])
+
+  return {
+    data,
+    loading,
+    error,
+    refetch: () => setRetryVersion(value => value + 1),
+  }
+}
 
 // The page identity for the active /bullpen view.
 //
@@ -248,16 +300,19 @@ function PitcherView({
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
-  // This collection belongs to Reliever Finder. Keeping it inside the mounted
-  // finder prevents Team Board from loading a second workload authority.
-  const allScores = useFetch(
-    () => {
-      const params = { limit: 750, include_stale: includeStale, with_meta: true }
-      if (selectedTeam) params.team_id = selectedTeam
-      return getFatigueScores(params)
-    },
-    [selectedTeam, includeStale],
-  )
+  const finderParams = useMemo(() => buildFinderRequestParams({
+    searchTerm,
+    selectedTeam,
+    availabilityFilter,
+    includeStale,
+    sortBy,
+    page,
+    limit: FINDER_PAGE_SIZE,
+  }), [availabilityFilter, includeStale, page, searchTerm, selectedTeam, sortBy])
+  // No request exists until finderParams carries real user intent. Superseded
+  // requests are aborted and guarded so an older response cannot replace a
+  // newer query.
+  const allScores = useRelieverFinder(finderParams)
 
   const fatiguePayload = allScores.data
   const allRows = Array.isArray(fatiguePayload) ? fatiguePayload : (fatiguePayload?.data || [])
@@ -270,31 +325,19 @@ function PitcherView({
   // status. Until then the surface stays a calm finder, not a league dump.
   const { hasIntent } = computeFinderIntent({ searchTerm, selectedTeam, availabilityFilter })
 
-  // Availability filter → search filter → neutral (or user-chosen) order. Each
-  // step reuses the shared authority; nothing here reclassifies a reliever.
-  const sorted = useMemo(
-    () => sortRelieverRows(
-      filterRelieverRowsBySearch(
-        filterRowsByAvailability(allRows, availabilityFilter),
-        searchTerm,
-      ),
-      sortBy,
-    ),
-    [allRows, availabilityFilter, searchTerm, sortBy],
-  )
-
-  // Pagination math
-  const totalRows  = sorted.length
-  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE))
-  const safePage   = Math.min(page, totalPages)
-  const startIdx   = (safePage - 1) * PAGE_SIZE
-  const endIdx     = Math.min(startIdx + PAGE_SIZE, totalRows)
-  const visible    = sorted.slice(startIdx, endIdx)
+  // Filtering, ordering, and pagination are backend-owned. The browser renders
+  // one bounded page exactly as returned.
+  const totalRows = Number(meta?.total_results ?? allRows.length)
+  const totalPages = Math.max(1, Number(meta?.total_pages || 1))
+  const safePage = Math.min(Number(meta?.page || page), totalPages)
+  const startIdx = totalRows === 0 ? 0 : (safePage - 1) * FINDER_PAGE_SIZE
+  const endIdx = Math.min(startIdx + allRows.length, totalRows)
+  const visible = allRows
   // The empty state only speaks once the visitor has expressed intent — it never
   // reports "no results" against the neutral opening view.
   const emptyState = getBullpenEmptyState({
     allRowsCount: allRows.length,
-    visibleRowsCount: sorted.length,
+    visibleRowsCount: allRows.length,
     meta,
     includeStale,
     selectedTeam,
@@ -360,8 +403,12 @@ function PitcherView({
               onChange={e => setSearchTerm(e.target.value)}
               aria-label="Search relievers by name"
               placeholder="Search reliever"
+              aria-describedby="reliever-finder-search-help"
               className="mt-1 w-full min-w-0 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
             />
+            <p id="reliever-finder-search-help" className="mt-1 font-mono text-[10px] text-chalk600">
+              Enter at least {FINDER_MIN_QUERY_LENGTH} characters.
+            </p>
           </div>
           <div className="min-w-0">
             <label htmlFor="reliever-finder-team" className="block font-mono text-[11px] uppercase tracking-widest text-chalk500">
@@ -431,7 +478,7 @@ function PitcherView({
               <LoadingPane message="Loading recent workload data..." />
             ) : allScores.error ? (
               <ErrorState message={allScores.error} onRetry={allScores.refetch} />
-            ) : sorted.length === 0 ? (
+            ) : allRows.length === 0 ? (
               <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
             ) : (
               <>
