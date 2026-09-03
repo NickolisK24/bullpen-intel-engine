@@ -135,7 +135,7 @@ export function SearchPageView({
   return (
     <div className="mx-auto min-h-[70vh] max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
       <header className="border-b border-dirt pb-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber/75">Search / Discovery</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">Search / Discovery</p>
         <h1 className="mt-2 font-display text-3xl tracking-wide text-chalk100 sm:text-4xl">Search BaseballOS</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
           Find a team, reliever, or today&apos;s scheduled matchup and open its canonical BaseballOS destination.

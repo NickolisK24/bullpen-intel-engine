@@ -54,7 +54,7 @@ export default function About() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       <section className="rounded border border-dirt bg-dugout/70 p-6 sm:p-8">
-        <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
+        <div className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
           {HERO.eyebrow}
         </div>
         <h1 className="mt-3 font-display text-4xl tracking-wider text-chalk100 sm:text-5xl">
@@ -80,7 +80,7 @@ export default function About() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {PRODUCT_CARDS.map(card => (
             <article key={card.title} className="rounded border border-dirt bg-field/45 p-4">
-              <h3 className="font-mono text-xs uppercase tracking-widest text-amber/80">
+              <h3 className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
                 {card.title}
               </h3>
               <p className="mt-3 text-sm leading-6 text-chalk400">

@@ -86,7 +86,7 @@ function SubHead({ eyebrow, children, id }) {
   return (
     <div className="mb-3">
       {eyebrow && (
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
           {eyebrow}
         </div>
       )}
@@ -105,7 +105,7 @@ export function MethodologyView() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
       <header className="mb-8 border-b border-dirt pb-4">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
           Methodology
         </div>
         <h1 className="mt-1 font-display text-3xl sm:text-4xl tracking-wide text-chalk100">
@@ -217,7 +217,7 @@ export function MethodologyView() {
             From facts to a public read
           </SubHead>
           <div className="rounded-lg border border-amber/30 bg-amber/5 p-4">
-            <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-metadata-accent">
               Illustrative example — not current MLB data
             </p>
             <dl className="mt-3 space-y-3 text-sm leading-relaxed">

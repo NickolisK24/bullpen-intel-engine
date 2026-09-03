@@ -25,6 +25,7 @@ export const designTokens = Object.freeze({
     'state-constrained': '#E08585',
     'brand-blue': '#7BA7CC',
     'brand-gold': '#C9A24A',
+    'metadata-accent': '#D8B568',
     'chart-bar': '#6E8799',
     field: '#080d14',
     dugout: '#0f1620',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   copyExactLink,
   downloadEvidenceCard,
@@ -33,6 +33,7 @@ export default function EvidenceShareMenu({
   const [busy, setBusy] = useState(false)
   const [loadedCardModel, setLoadedCardModel] = useState(null)
   const [cardLoadError, setCardLoadError] = useState(false)
+  const optionsId = useId()
   const rootRef = useRef(null)
   const busyRef = useRef(false)
   const resolvedCardModel = cardModel || loadedCardModel
@@ -120,49 +121,45 @@ export default function EvidenceShareMenu({
         type="button"
         data-share-menu-trigger
         aria-label="Open evidence sharing options"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={optionsId}
         onClick={openMenu}
         className={isTeamBoard
           ? 'min-h-11 rounded-sm border border-brand-blue/50 bg-transparent px-3 py-2 font-board text-board-metadata text-brand-blue hover:border-brand-blue hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus'
-          : 'rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/40'}
+          : 'min-h-11 rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/40'}
       >
         Share
       </button>
       {open && (
         <div
-          role="menu"
-          aria-label="Evidence sharing options"
+          id={optionsId}
           className="absolute right-0 top-full z-30 mt-2 w-64 rounded border border-dirt bg-dugout p-2 shadow-xl"
         >
           <button
             type="button"
-            role="menuitem"
             disabled={busy || (typeof loadCardModel === 'function' && !cardAvailable) || (!linkOnly && !cardAvailable)}
             title={!cardAvailable && typeof loadCardModel === 'function' ? CARD_UNAVAILABLE : undefined}
             onClick={() => run('share')}
-            className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
+            className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
             {linkOnly ? 'Share exact link' : isTeamBoard ? 'Share published observation' : 'Share card'}
           </button>
           <button
             type="button"
-            role="menuitem"
             disabled={busy || (typeof loadCardModel === 'function' && !cardAvailable) || (!linkOnly && !cardAvailable)}
             title={!cardAvailable && typeof loadCardModel === 'function' ? CARD_UNAVAILABLE : undefined}
             onClick={() => run('copy')}
-            className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
+            className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
           >
             {isTeamBoard ? 'Copy published link' : 'Copy exact link'}
           </button>
           {!linkOnly && (
             <button
               type="button"
-              role="menuitem"
               disabled={busy || !cardAvailable}
               title={!cardAvailable ? CARD_UNAVAILABLE : undefined}
               onClick={() => run('download')}
-              className="block w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
+              className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-chalk200 hover:bg-field disabled:cursor-not-allowed disabled:text-chalk600"
             >
               {isTeamBoard ? 'Download image' : 'Download card'}
             </button>

@@ -45,8 +45,8 @@ test('Reliever Finder source shows honest workload facts with a neutral default 
     'useState(DEFAULT_FINDER_SORT)',
     // The pitches and rest orderings stay user-selectable, keyboard-reachable
     // sorts of honest baseball facts.
-    "sortHeaderProps('pitches')",
-    "sortHeaderProps('rest')",
+    '<SortHeader column="pitches"',
+    '<SortHeader column="rest"',
     // Reader-clear column labels replace the cramped P/7d and App/7d.
     'Pitches (7d)',
     'Appearances (7d)',

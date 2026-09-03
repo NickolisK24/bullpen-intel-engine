@@ -321,9 +321,11 @@ test('cancelled and failed story-card actions still record nothing', async () =>
 test('share menu keeps one in-flight action and exposes accessibility behavior', async () => {
   const source = await import('node:fs').then(fs => fs.readFileSync('src/components/share/EvidenceShareMenu.jsx', 'utf8'))
   for (const contract of [
-    'aria-label="Open evidence sharing options"', 'aria-haspopup="menu"',
+    'aria-label="Open evidence sharing options"', 'aria-expanded={open}', 'aria-controls={optionsId}',
     'aria-live="polite"', "event.key === 'Escape'", "document.addEventListener('focusin'",
     "document.addEventListener('pointerdown'", 'if (busyRef.current) return',
     'Card unavailable until a current evidence-backed read is available.',
   ]) assert.ok(source.includes(contract), contract)
+  assert.equal(source.includes('aria-haspopup="menu"'), false)
+  assert.equal(source.includes('role="menuitem"'), false)
 })

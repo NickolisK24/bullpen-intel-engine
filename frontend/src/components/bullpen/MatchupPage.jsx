@@ -37,7 +37,7 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
   return (
     <div className="space-y-6">
       <header className="border-b border-dirt pb-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber/75">Scheduled Matchup</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">Scheduled Matchup</p>
         <h1 className="mt-2 break-words font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">
           {awayName} at {homeName}
         </h1>

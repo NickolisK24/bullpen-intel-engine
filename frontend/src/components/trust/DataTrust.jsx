@@ -128,7 +128,7 @@ export function DataTrustView({
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <header className="mb-8 border-b border-dirt pb-4">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
           Data &amp; Trust
         </div>
         <h1 className="mt-1 font-display text-3xl sm:text-4xl tracking-wide text-chalk100">

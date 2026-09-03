@@ -99,7 +99,7 @@ function DefinitionGrid({ items, columns = 'md:grid-cols-3' }) {
     <div className={`grid grid-cols-1 gap-4 ${columns}`}>
       {items.map(item => (
         <article key={item.title} className="rounded border border-dirt bg-field/45 p-4">
-          <h3 className="font-mono text-xs uppercase tracking-widest text-amber/80">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
             {item.title}
           </h3>
           <p className="mt-3 text-sm leading-6 text-chalk400">
@@ -115,7 +115,7 @@ export default function HowToRead() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       <section className="rounded border border-dirt bg-dugout/70 p-6 sm:p-8">
-        <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
+        <div className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
           {HERO.eyebrow}
         </div>
         <h1 className="mt-3 font-display text-4xl tracking-wider text-chalk100 sm:text-5xl">
@@ -160,7 +160,7 @@ export default function HowToRead() {
       >
         <DefinitionGrid items={PITCHER_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
         <div className="mt-8 rounded-lg border border-amber/25 bg-amber/5 p-5">
-          <h3 className="font-mono text-xs uppercase tracking-widest text-amber/80">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
             Four labels share the word &ldquo;Limited&rdquo;
           </h3>
           <dl className="mt-4 space-y-3">
@@ -200,13 +200,13 @@ export default function HowToRead() {
         intro="Three different clocks, and a status describing the data itself rather than any bullpen."
       >
         <DefinitionGrid items={FRESHNESS_LABELS} columns="sm:grid-cols-2 lg:grid-cols-3" />
-        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-metadata-accent">
           Data status
         </h3>
         <div className="mt-4">
           <DefinitionGrid items={DATA_STATUSES} columns="sm:grid-cols-2 lg:grid-cols-4" />
         </div>
-        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-metadata-accent">
           {WORKLOAD_DATA_FAMILY}
         </h3>
         <p className="mt-2 max-w-3xl text-sm leading-7 text-chalk400">
@@ -216,7 +216,7 @@ export default function HowToRead() {
         <div className="mt-4">
           <DefinitionGrid items={WORKLOAD_DATA} columns="sm:grid-cols-2 lg:grid-cols-4" />
         </div>
-        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-metadata-accent">
           Provenance stamps
         </h3>
         <div className="mt-4">
