@@ -1153,12 +1153,31 @@ def _execute_cycle(**kwargs):
             continue
 
         if config.mode == ActivationMode.PROOF_PUBLICATION:
+            proof_cache_required = (
+                kwargs['cache_adapter'] is not None
+                or (
+                    work_job is not None
+                    and (work_job.details_json or {}).get('proof_cache_required')
+                    is True
+                )
+            )
             if work_job is not None:
                 work_job = continuous_game_work.checkpoint(
                     work_job,
                     continuous_game_work.STAGE_PUBLICATION_PENDING,
                     canonical_impact=impact_dict,
+                    proof_cache_required=proof_cache_required,
                 )
+            if proof_cache_required and kwargs['cache_adapter'] is None:
+                deferred = continuous_game_work.defer(
+                    work_job,
+                    reason='cache_handoff_unavailable',
+                    stage=continuous_game_work.STAGE_PUBLICATION_PENDING,
+                    canonical_impact=impact_dict,
+                )
+                work_results.append(deferred.to_dict())
+                downstream.append(game_result)
+                continue
             try:
                 publication = _publish(
                     kwargs['proof_publisher'], read_models, change, kwargs,
@@ -1168,6 +1187,45 @@ def _execute_cycle(**kwargs):
                     raise RuntimeError(
                         publication.get('reason_code') or 'publication_not_committed'
                     )
+                if (
+                    work_job is not None
+                    and publication.get('reason_code') == 'semantic_no_change'
+                    and proof_cache_required
+                ):
+                    receipt = cu07.recover_committed_publication_receipt(
+                        publication.get('candidate_id'),
+                        expected_publication_id=publication.get(
+                            'previous_publication_id'
+                        ),
+                        expected_team_ids=publication.get('affected_team_ids') or (),
+                        expected_game_ids=publication.get('affected_game_ids') or (),
+                    )
+                    if receipt is None:
+                        raise RuntimeError(
+                            'proof_publication_receipt_not_recoverable'
+                        )
+                    work_job = continuous_game_work.checkpoint(
+                        work_job,
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        canonical_impact=impact_dict,
+                        proof_publication_receipt=receipt,
+                        publication=publication,
+                    )
+                    keys = cu07.retry_cache_handoff(
+                        receipt['publication_id'],
+                        kwargs['cache_adapter'],
+                        expected_candidate_id=receipt['candidate_id'],
+                        expected_payload_version=receipt['payload_version'],
+                    )
+                    publication = {
+                        **publication,
+                        'new_publication_id': receipt['publication_id'],
+                        'committed': True,
+                        'cache_handoff_status': 'complete',
+                        'cache_keys': list(keys),
+                    }
+                    game_result['publication'] = publication
+                    counters['cache_handoffs'] += 1
                 if publication.get('cache_handoff_status') == 'retry_required':
                     if work_job is None:
                         raise RuntimeError('proof_cache_receipt_requires_durable_work')

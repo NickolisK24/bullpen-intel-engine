@@ -1851,6 +1851,170 @@ def test_proof_cache_failure_persists_receipt_and_retries_cache_only(
     assert recovered.work_obligations_pending == 0
 
 
+def test_post_authority_commit_crash_recovers_exact_proof_and_cache_only(
+    app, monkeypatch,
+):
+    class ProcessDeath(BaseException):
+        pass
+
+    class CrashWindowCache(ProofCache):
+        def __init__(self):
+            super().__init__()
+            self.process_death = True
+
+        def handoff(self, publication_id, payload, keys):
+            self.calls.append((publication_id, tuple(keys)))
+            if self.process_death:
+                raise ProcessDeath('authority committed before receipt checkpoint')
+            if self.fail:
+                raise RuntimeError('controlled cache failure')
+            self.payloads[publication_id] = deepcopy(payload)
+
+    cache = CrashWindowCache()
+    with app.app_context():
+        seed_accepted_observation()
+
+    with pytest.raises(ProcessDeath):
+        run(
+            app,
+            monkeypatch,
+            config(continuous.ActivationMode.PROOF_PUBLICATION),
+            results=[change()],
+            read_model_service=proof_read_models,
+            cache_adapter=cache,
+        )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_RUNNING
+        assert job.details_json['stage'] == (
+            continuous_game_work.STAGE_PUBLICATION_PENDING
+        )
+        assert job.details_json['proof_cache_required'] is True
+        assert 'proof_publication_receipt' not in job.details_json
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+        abandoned_at = continuous_game_work.utc_now_naive() - timedelta(minutes=4)
+        job.started_at = abandoned_at
+        job.last_heartbeat_at = abandoned_at
+        job.updated_at = abandoned_at
+        db.session.commit()
+        db.session.remove()
+
+    cache.process_death = False
+    cache.fail = True
+    monkeypatch.setattr(
+        cu07,
+        '_commit_candidate',
+        lambda *_args, **_kwargs: pytest.fail(
+            'recovery must not commit a second proof publication'
+        ),
+    )
+    cache_failed, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        receipt = job.details_json['proof_publication_receipt']
+        publication_id = receipt['publication_id']
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.details_json['stage'] == (
+            continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+        )
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+        db.session.remove()
+    assert cache_failed.work_obligations_pending == 1
+    assert len(cache.calls) == 2
+
+    cache.fail = False
+    recovered, retry_calls = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'cache-pending recovery must not rebuild or republish'
+        ),
+        read_model_service=lambda *_args, **_kwargs: pytest.fail(
+            'cache-pending recovery must not rebuild read models'
+        ),
+        cache_adapter=cache,
+    )
+
+    assert retry_calls == []
+    assert len(cache.calls) == 3
+    assert cache.read(publication_id) is not None
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_SUCCEEDED
+        assert job.details_json['proof_publication_receipt'] == receipt
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert recovered.work_obligations_completed == 1
+    assert recovered.work_obligations_pending == 0
+
+
+def test_semantic_no_change_without_exact_proof_receipt_does_not_complete(
+    app, monkeypatch,
+):
+    cache = ProofCache()
+    with app.app_context():
+        seed_accepted_observation()
+        job = continuous_game_work.ensure_obligation(change())
+        continuous_game_work.checkpoint(
+            job,
+            continuous_game_work.STAGE_PUBLICATION_PENDING,
+            canonical_impact={
+                'game_pk': GAME_PK,
+                'canonical_mutation_performed': True,
+                'affected_pitcher_ids': [11, 12],
+                'affected_team_ids': [21, 22],
+            },
+            proof_cache_required=True,
+        )
+        unrelated = cu07.publish_incremental(
+            proof_read_models({'game_pk': GAME_PK}),
+            source_identity='different-observation',
+            source_order=continuous._source_order('2026-08-29T22:00:00'),
+            sync_run_id=90,
+            expected_current_id=None,
+        )
+        assert unrelated.committed is True
+
+    result, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.details_json['stage'] == (
+            continuous_game_work.STAGE_PUBLICATION_PENDING
+        )
+        assert 'proof_publication_receipt' not in job.details_json
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert cache.calls == []
+    assert result.work_obligations_completed == 0
+    assert result.work_obligations_pending == 1
+
+
 def test_proof_cache_retries_are_bounded_and_terminal(app, monkeypatch):
     cache = ProofCache(fail=True)
     with app.app_context():
