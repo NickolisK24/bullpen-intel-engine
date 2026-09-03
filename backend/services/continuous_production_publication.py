@@ -50,10 +50,34 @@ def publish_continuous_update(
     sync_run_id,
     expected_current_id,
     cache_adapter=None,
+    require_published_receipt=False,
 ):
     """Publish one complete serving snapshot after a bounded continuous cycle."""
     del source_identity, source_order, cache_adapter
     current_id = current_publication_id()
+    try:
+        current = dashboard_snapshot.get_latest_valid_dashboard_snapshot()
+    except RuntimeError:
+        # Unit-level adapters may provide only the established id seam. The
+        # durable receipt lookup is an additional production safeguard.
+        current = None
+    receipt = _published_receipt(sync_run_id, current=current)
+    if receipt is not None:
+        cache_status, errors = _refresh_tonight()
+        return ContinuousProductionPublicationResult(
+            status='already_committed',
+            reason_code='production_snapshot_already_committed',
+            previous_publication_id=receipt.id,
+            new_publication_id=receipt.id,
+            cache_handoff_status=cache_status,
+            errors=errors,
+        )
+    if require_published_receipt:
+        return ContinuousProductionPublicationResult(
+            status='withheld',
+            reason_code='publication_receipt_missing',
+            previous_publication_id=current_id,
+        )
     if current_id != expected_current_id:
         return ContinuousProductionPublicationResult(
             status='conflict',
@@ -80,17 +104,7 @@ def publish_continuous_update(
             new_publication_id=getattr(snapshot, 'id', None),
         )
 
-    cache_status = 'complete'
-    errors = ()
-    try:
-        generate_tonight_snapshot_for_date(
-            product_current_date(),
-            source=PUBLICATION_SOURCE,
-        )
-    except Exception as exc:  # Dashboard authority is already durable.
-        cache_status = 'retry_required'
-        errors = (type(exc).__name__,)
-
+    cache_status, errors = _refresh_tonight()
     return ContinuousProductionPublicationResult(
         status='committed',
         reason_code='production_snapshot_published',
@@ -100,3 +114,42 @@ def publish_continuous_update(
         cache_handoff_status=cache_status,
         errors=errors,
     )
+
+
+def _published_receipt(sync_run_id, *, current=None):
+    """Find durable publication proof even after a newer snapshot supersedes it."""
+    if (
+        current is not None
+        and current.source == PUBLICATION_SOURCE
+        and current.sync_run_id == sync_run_id
+    ):
+        return current
+    try:
+        return (
+            dashboard_snapshot.DashboardSnapshot.query
+            .filter_by(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                source=PUBLICATION_SOURCE,
+                sync_run_id=sync_run_id,
+            )
+            .filter(
+                dashboard_snapshot.DashboardSnapshot.published_at.isnot(None)
+            )
+            .order_by(dashboard_snapshot.DashboardSnapshot.id.desc())
+            .first()
+        )
+    except RuntimeError:
+        # Small unit seams can run without an application/database context.
+        return None
+
+
+def _refresh_tonight():
+    try:
+        generate_tonight_snapshot_for_date(
+            product_current_date(),
+            source=PUBLICATION_SOURCE,
+        )
+    except Exception as exc:  # Dashboard authority is already durable.
+        return 'retry_required', (type(exc).__name__,)
+    return 'complete', ()

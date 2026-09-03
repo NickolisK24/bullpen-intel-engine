@@ -138,6 +138,10 @@ class MLBApiClient:
             'jitter': self._config('MLB_API_BACKOFF_JITTER', _DEFAULT_BACKOFF_JITTER),
         }
 
+    def max_attempts_per_request(self):
+        """Return the configured worst-case physical attempts for one GET."""
+        return max(1, int(self._request_settings()['max_retries']) + 1)
+
     def _backoff_delay(self, attempt, base, cap, jitter, retry_after=None):
         """
         Exponential backoff with full jitter, capped. A Retry-After hint (429)
