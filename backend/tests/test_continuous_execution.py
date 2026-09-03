@@ -176,6 +176,47 @@ def durable_jobs():
     )
 
 
+def seed_raw_durable_job(details, *, suffix):
+    now = datetime(2026, 8, 28, 12, 0)
+    job = SyncJob(
+        job_name=continuous_game_work.JOB_NAME,
+        job_family=continuous_game_work.JOB_FAMILY,
+        lane=sync_jobs.LANE_INTERNAL,
+        scope_key=f'invalid:{suffix}',
+        product_date=date(2026, 8, 28),
+        status=sync_jobs.STATUS_PENDING,
+        attempts=0,
+        max_attempts=continuous_game_work.MAX_ATTEMPTS,
+        details_json=details,
+        created_at=now,
+        updated_at=now,
+    )
+    db.session.add(job)
+    db.session.commit()
+    return job
+
+
+def valid_durable_details(*, stage=None):
+    details = {
+        'schema_version': continuous_game_work.SUPPORTED_SCHEMA_VERSION,
+        'work_kind': continuous_game_work.WORK_KIND_ACCEPTED_OBSERVATION,
+        'work_status': continuous_game_work.WORK_PLANNED,
+        'stage': stage or continuous_game_work.STAGE_CANONICAL_PENDING,
+        'game_pk': GAME_PK,
+        'observation_fingerprint': f'identity-{GAME_PK}',
+        'source_observed_at': '2026-08-29T22:00:00',
+        'change': change(),
+    }
+    if stage and stage != continuous_game_work.STAGE_CANONICAL_PENDING:
+        details['canonical_impact'] = {
+            'game_pk': GAME_PK,
+            'canonical_mutation_performed': True,
+            'affected_pitcher_ids': [11, 12],
+            'affected_team_ids': [21, 22],
+        }
+    return details
+
+
 def seed_completed_ingestion_work_item(
     game_pk=GAME_PK,
     *,
@@ -300,6 +341,34 @@ def chain_services(calls):
         }
 
     return orchestrator, workload, team_state, read_models
+
+
+def proof_read_models(state, **_kwargs):
+    game_pk = state['game_pk']
+    team_ids = (21, 22)
+    return {
+        'game_pk': game_pk,
+        'represented_date': '2026-08-29',
+        'status': 'complete',
+        'parity_status': 'match',
+        'rebuild_performed': True,
+        'requested_team_ids': list(team_ids),
+        'team_boards_rebuilt': list(team_ids),
+        'league_rows_rebuilt': list(team_ids),
+        'matchups_rebuilt': [game_pk],
+        'tonight_entries_rebuilt': [game_pk],
+        'pitcher_models_rebuilt': [],
+        'team_board_results': {
+            str(team_id): {'team_id': team_id} for team_id in team_ids
+        },
+        'league_row_results': {
+            str(team_id): {'team_id': team_id} for team_id in team_ids
+        },
+        'matchup_results': {str(game_pk): {'game_pk': game_pk}},
+        'tonight_results': {str(game_pk): {'game_pk': game_pk}},
+        'failures': [],
+        'parity_mismatches': [],
+    }
 
 
 def run(
@@ -681,14 +750,159 @@ def test_cache_retry_without_durable_receipt_identity_fails_closed(
         job = durable_jobs()[0]
         assert job.status == sync_jobs.STATUS_FAILED
         assert job.details_json['work_status'] == (
-            continuous_game_work.WORK_RETRYABLE_FAILURE
+            continuous_game_work.WORK_TERMINAL_FAILURE
         )
-        assert job.details_json['last_failure'] == (
-            'publication_receipt_identity_missing'
+        assert job.details_json['invalid_work']['reason'] == (
+            'missing_stage_checkpoint'
         )
     assert retry_calls == []
-    assert result.failures[-1]['error'] == 'publication_receipt_identity_missing'
+    assert result.work_obligations_pending == 0
     assert result.live_publications == 0
+
+
+@pytest.mark.parametrize(
+    ('details_factory', 'reason'),
+    (
+        (lambda: None, 'invalid_work_payload'),
+        (lambda: 'not-an-object', 'invalid_work_payload'),
+        (lambda: [], 'invalid_work_payload'),
+        (
+            lambda: {
+                key: value
+                for key, value in valid_durable_details().items()
+                if key != 'schema_version'
+            },
+            'missing_work_schema',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'schema_version': 2},
+            'unsupported_work_schema',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'work_kind': 'unknown'},
+            'invalid_work_kind',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'game_pk': 0},
+            'missing_work_identity',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'game_pk': None},
+            'missing_work_identity',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'stage': 'unknown'},
+            'invalid_work_stage',
+        ),
+        (
+            lambda: {**valid_durable_details(), 'change': []},
+            'invalid_change_payload',
+        ),
+        (
+            lambda: {
+                **valid_durable_details(),
+                'stage': continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+            },
+            'missing_stage_checkpoint',
+        ),
+    ),
+)
+def test_invalid_durable_payload_is_terminal_and_inspectable(
+    app, monkeypatch, details_factory, reason,
+):
+    with app.app_context():
+        seed_raw_durable_job(details_factory(), suffix=reason)
+
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.SHADOW_FULL_CHAIN),
+        results=[change(classification='unchanged', changed=False)],
+    )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.attempts == job.max_attempts
+        assert job.error_type == 'InvalidContinuousWorkPayload'
+        assert job.details_json['work_status'] == (
+            continuous_game_work.WORK_TERMINAL_FAILURE
+        )
+        assert job.details_json['invalid_work']['reason'] == reason
+        assert job.details_json['invalid_work_at']
+    assert calls == []
+    assert result.work_obligations_failed == 1
+    assert result.work_obligations_pending == 0
+
+
+def test_malformed_oldest_job_does_not_starve_valid_work(app, monkeypatch):
+    with app.app_context():
+        invalid = seed_raw_durable_job(None, suffix='oldest')
+        seed_accepted_observation()
+        valid = continuous_game_work.ensure_obligation(change())
+        invalid_id = invalid.id
+        valid_id = valid.id
+
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(
+            continuous.ActivationMode.SHADOW_FULL_CHAIN,
+            max_canonical_actions=1,
+        ),
+        results=[change(classification='unchanged', changed=False)],
+    )
+
+    with app.app_context():
+        assert db.session.get(SyncJob, invalid_id).status == sync_jobs.STATUS_FAILED
+        assert db.session.get(SyncJob, valid_id).status == sync_jobs.STATUS_SUCCEEDED
+    assert [item[0] for item in calls] == ['cu03', 'cu04', 'cu05', 'cu06']
+    assert result.work_obligations_completed == 1
+    assert result.work_obligations_pending == 0
+
+
+def test_multiple_malformed_jobs_make_progress_before_valid_work(
+    app, monkeypatch,
+):
+    with app.app_context():
+        first = seed_raw_durable_job(None, suffix='first')
+        second = seed_raw_durable_job(
+            {**valid_durable_details(), 'stage': 'unknown'}, suffix='second',
+        )
+        seed_accepted_observation()
+        valid = continuous_game_work.ensure_obligation(change())
+        ids = first.id, second.id, valid.id
+
+    first_cycle, first_calls = run(
+        app,
+        monkeypatch,
+        config(
+            continuous.ActivationMode.SHADOW_FULL_CHAIN,
+            max_canonical_actions=1,
+        ),
+        results=[change(classification='unchanged', changed=False)],
+    )
+    second_cycle, second_calls = run(
+        app,
+        monkeypatch,
+        config(
+            continuous.ActivationMode.SHADOW_FULL_CHAIN,
+            max_canonical_actions=1,
+        ),
+        results=[change(classification='unchanged', changed=False)],
+    )
+
+    with app.app_context():
+        rows = [db.session.get(SyncJob, job_id) for job_id in ids]
+        assert [row.status for row in rows] == [
+            sync_jobs.STATUS_FAILED,
+            sync_jobs.STATUS_FAILED,
+            sync_jobs.STATUS_SUCCEEDED,
+        ]
+    assert first_calls == []
+    assert [item[0] for item in second_calls] == ['cu03', 'cu04', 'cu05', 'cu06']
+    assert first_cycle.work_obligations_pending == 1
+    assert second_cycle.work_obligations_pending == 0
 
 
 def test_failed_cohort_does_not_consume_healthy_publication_attempts(
@@ -1567,6 +1781,236 @@ def test_downstream_and_publication_failures_resume_durable_work(
     assert success_publications == ([True] if failed_stage == 'publication' else [])
     assert retried.work_obligations_completed == 1
     assert retried.work_obligations_pending == 0
+
+
+def test_proof_cache_failure_persists_receipt_and_retries_cache_only(
+    app, monkeypatch,
+):
+    cache = ProofCache(fail=True)
+    with app.app_context():
+        seed_accepted_observation()
+
+    failed, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change()],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        receipt = job.details_json['proof_publication_receipt']
+        publication_id = receipt['publication_id']
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.details_json['stage'] == (
+            continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+        )
+        assert receipt == {
+            'publication_id': publication_id,
+            'candidate_id': job.details_json['publication']['candidate_id'],
+            'snapshot_type': cu07.PROOF_SNAPSHOT_TYPE,
+            'payload_version': 1,
+        }
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+        db.session.remove()
+    assert failed.work_obligations_pending == 1
+    assert len(cache.calls) == 1
+
+    cache.fail = False
+    recovered, retry_calls = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        read_model_service=lambda *_args, **_kwargs: pytest.fail(
+            'cache-only retry must not rebuild read models'
+        ),
+        proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'cache-only retry must not republish'
+        ),
+        cache_adapter=cache,
+    )
+
+    assert retry_calls == []
+    assert len(cache.calls) == 2
+    assert cache.read(publication_id) is not None
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_SUCCEEDED
+        assert job.details_json['outcome'] == (
+            'proof_publication_cache_handoff_complete'
+        )
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert recovered.work_obligations_completed == 1
+    assert recovered.work_obligations_pending == 0
+
+
+def test_proof_cache_retries_are_bounded_and_terminal(app, monkeypatch):
+    cache = ProofCache(fail=True)
+    with app.app_context():
+        seed_accepted_observation()
+
+    first, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change()],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+    assert first.work_obligations_pending == 1
+
+    for _ in range(continuous_game_work.MAX_ATTEMPTS - 1):
+        retried, _ = run(
+            app,
+            monkeypatch,
+            config(continuous.ActivationMode.PROOF_PUBLICATION),
+            results=[change(classification='unchanged', changed=False)],
+            proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+                'cache retry must not republish'
+            ),
+            cache_adapter=cache,
+        )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.attempts == continuous_game_work.MAX_ATTEMPTS
+        assert job.details_json['work_status'] == (
+            continuous_game_work.WORK_TERMINAL_FAILURE
+        )
+        assert job.details_json['stage'] == (
+            continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+        )
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert len(cache.calls) == continuous_game_work.MAX_ATTEMPTS
+    assert retried.work_obligations_pending == 0
+
+
+def test_proof_cache_receipt_mismatch_fails_closed_without_republication(
+    app, monkeypatch,
+):
+    cache = ProofCache(fail=True)
+    with app.app_context():
+        seed_accepted_observation()
+    run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change()],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+    with app.app_context():
+        job = durable_jobs()[0]
+        details = dict(job.details_json)
+        receipt = dict(details['proof_publication_receipt'])
+        receipt['candidate_id'] = 'wrong-candidate'
+        details['proof_publication_receipt'] = receipt
+        job.details_json = details
+        db.session.commit()
+
+    retry, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'invalid receipt must not republish'
+        ),
+        cache_adapter=cache,
+    )
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_FAILED
+        assert job.details_json['last_failure'] == 'ValueError'
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert len(cache.calls) == 1
+    assert retry.work_obligations_pending == 1
+
+
+def test_proof_cache_success_before_completion_replays_idempotently(
+    app, monkeypatch,
+):
+    cache = ProofCache(fail=True)
+    with app.app_context():
+        seed_accepted_observation()
+    run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change()],
+        read_model_service=proof_read_models,
+        cache_adapter=cache,
+    )
+
+    original_complete = continuous_game_work.complete
+    crashed = {'value': False}
+
+    def crash_before_completion(job, *, outcome, **fields):
+        if outcome == 'proof_publication_cache_handoff_complete' and not crashed['value']:
+            crashed['value'] = True
+            raise RuntimeError('controlled completion checkpoint crash')
+        return original_complete(job, outcome=outcome, **fields)
+
+    cache.fail = False
+    monkeypatch.setattr(continuous_game_work, 'complete', crash_before_completion)
+    interrupted, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'cache retry must not republish'
+        ),
+        cache_adapter=cache,
+    )
+    assert interrupted.status == continuous.RESULT_PARTIAL
+    assert len(cache.calls) == 2
+
+    with app.app_context():
+        job = durable_jobs()[0]
+        publication_id = job.details_json['proof_publication_receipt'][
+            'publication_id'
+        ]
+        abandoned_at = continuous_game_work.utc_now_naive() - timedelta(minutes=4)
+        job.started_at = abandoned_at
+        job.last_heartbeat_at = abandoned_at
+        job.updated_at = abandoned_at
+        db.session.commit()
+        db.session.remove()
+
+    monkeypatch.setattr(continuous_game_work, 'complete', original_complete)
+    recovered, _ = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.PROOF_PUBLICATION),
+        results=[change(classification='unchanged', changed=False)],
+        proof_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'cache retry must not republish'
+        ),
+        cache_adapter=cache,
+    )
+
+    assert len(cache.calls) == 3
+    assert cache.read(publication_id) is not None
+    with app.app_context():
+        assert durable_jobs()[0].status == sync_jobs.STATUS_SUCCEEDED
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+    assert recovered.work_obligations_completed == 1
 
 
 def test_abandoned_running_work_is_reclaimed_after_session_restart(

@@ -431,6 +431,37 @@ def test_cache_failure_occurs_after_commit_and_retry_is_idempotent(app):
         assert cu07.read_current_cohort(cache_adapter=cache) == cu07.get_current_publication().payload
 
 
+def test_cache_retry_rejects_mismatched_durable_candidate_receipt(app):
+    with app.app_context():
+        cache = ProofCache(fail=True)
+        result = _publish(_cu06(), order=1, expected=None, cache=cache)
+
+        with pytest.raises(
+            ValueError, match='proof publication identity mismatch',
+        ):
+            cu07.retry_cache_handoff(
+                result.new_publication_id,
+                cache,
+                expected_candidate_id='wrong-candidate',
+            )
+
+        assert len(cache.calls) == 1
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+
+        row = db.session.get(DashboardSnapshot, result.new_publication_id)
+        row.payload_version = 2
+        db.session.commit()
+        with pytest.raises(ValueError, match='proof publication version mismatch'):
+            cu07.retry_cache_handoff(
+                result.new_publication_id,
+                cache,
+                expected_candidate_id=result.candidate_id,
+                expected_payload_version=1,
+            )
+
+
 def test_unrelated_team_and_production_pointer_remain_unchanged(app):
     with app.app_context():
         production = DashboardSnapshot(

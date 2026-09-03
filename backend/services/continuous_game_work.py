@@ -60,6 +60,7 @@ WORK_SUPERSEDED = 'superseded'
 
 WORK_KIND_ACCEPTED_OBSERVATION = 'accepted_observation'
 WORK_KIND_CORRECTION_RECHECK = 'scheduled_correction_recheck'
+SUPPORTED_SCHEMA_VERSION = 1
 CORRECTION_RECHECK_REASON = 'bounded_canonical_correction_recheck'
 
 ACTIONABLE_CLASSIFICATIONS = frozenset({'finalized', 'corrected'})
@@ -292,11 +293,16 @@ def claimable_obligations(*, limit):
         predecessor.id < SyncJob.id,
         predecessor.details_json['game_pk'].as_integer()
         == SyncJob.details_json['game_pk'].as_integer(),
-        predecessor.status.in_((
-            sync_jobs.STATUS_PENDING,
-            sync_jobs.STATUS_RUNNING,
-            sync_jobs.STATUS_FAILED,
-        )),
+        or_(
+            predecessor.status.in_((
+                sync_jobs.STATUS_PENDING,
+                sync_jobs.STATUS_RUNNING,
+            )),
+            and_(
+                predecessor.status == sync_jobs.STATUS_FAILED,
+                predecessor.attempts < predecessor.max_attempts,
+            ),
+        ),
     ))
     return (
         SyncJob.query
@@ -337,11 +343,104 @@ def unresolved_count():
 
 
 def change_for(job):
-    return dict((job.details_json or {}).get('change') or {})
+    details = job.details_json if isinstance(job.details_json, dict) else {}
+    change = details.get('change')
+    return dict(change) if isinstance(change, dict) else {}
 
 
 def stage_for(job):
-    return (job.details_json or {}).get('stage') or STAGE_CANONICAL_PENDING
+    details = job.details_json if isinstance(job.details_json, dict) else {}
+    return details.get('stage') or STAGE_CANONICAL_PENDING
+
+
+def validate_obligation(job):
+    """Return a fail-closed validation issue for one durable work payload."""
+    details = job.details_json
+    if not isinstance(details, dict):
+        return _validation_issue(
+            'invalid_work_payload', details_type=type(details).__name__,
+        )
+    schema_version = details.get('schema_version')
+    if schema_version is None:
+        return _validation_issue('missing_work_schema')
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != SUPPORTED_SCHEMA_VERSION
+    ):
+        return _validation_issue(
+            'unsupported_work_schema', schema_version=schema_version,
+        )
+    work_kind = details.get('work_kind')
+    if work_kind not in {
+        WORK_KIND_ACCEPTED_OBSERVATION,
+        WORK_KIND_CORRECTION_RECHECK,
+    }:
+        return _validation_issue('invalid_work_kind', work_kind=work_kind)
+    stage = details.get('stage')
+    if stage not in {
+        STAGE_CANONICAL_PENDING,
+        STAGE_DOWNSTREAM_PENDING,
+        STAGE_PUBLICATION_PENDING,
+        STAGE_PUBLICATION_CACHE_PENDING,
+    }:
+        return _validation_issue('invalid_work_stage', stage=stage)
+    game_pk = details.get('game_pk')
+    if not _is_positive_integer(game_pk):
+        return _validation_issue('missing_work_identity', game_pk=game_pk)
+    fingerprint = details.get('observation_fingerprint')
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        return _validation_issue('missing_work_identity', game_pk=game_pk)
+    change = details.get('change')
+    if not isinstance(change, dict) or not _valid_change_payload(
+        change, game_pk=game_pk, fingerprint=fingerprint,
+    ):
+        return _validation_issue('invalid_change_payload', game_pk=game_pk)
+    if stage != STAGE_CANONICAL_PENDING:
+        impact = details.get('canonical_impact')
+        if (
+            not isinstance(impact, dict)
+            or impact.get('game_pk') != game_pk
+            or not isinstance(impact.get('canonical_mutation_performed'), bool)
+        ):
+            return _validation_issue(
+                'missing_stage_checkpoint', game_pk=game_pk, stage=stage,
+            )
+    if stage == STAGE_PUBLICATION_CACHE_PENDING:
+        production_receipt = _positive_int(
+            details.get('publication_attempt_sync_run_id')
+        )
+        proof_receipt = details.get('proof_publication_receipt')
+        if production_receipt is None and not _valid_proof_receipt(proof_receipt):
+            return _validation_issue(
+                'missing_stage_checkpoint', game_pk=game_pk, stage=stage,
+            )
+    return None
+
+
+def quarantine_invalid(job, issue):
+    """Move unparseable/unsupported work directly to inspectable terminal failure."""
+    current = db.session.get(SyncJob, job.id)
+    original = current.details_json
+    preserved = dict(original) if isinstance(original, dict) else {}
+    now = utc_now_naive()
+    reason = issue['reason']
+    preserved.update({
+        'work_status': WORK_TERMINAL_FAILURE,
+        'invalid_work': issue,
+        'invalid_work_at': now.isoformat(),
+        'invalid_original_details_type': type(original).__name__,
+    })
+    current.attempts = current.max_attempts
+    current.status = sync_jobs.STATUS_FAILED
+    current.completed_at = now
+    current.last_heartbeat_at = now
+    current.error_message = reason
+    current.error_type = 'InvalidContinuousWorkPayload'
+    current.details_json = preserved
+    current.updated_at = now
+    db.session.commit()
+    return current
 
 
 def claim(job, *, sync_run_id, exclusive_cycle_lock_held=False):
@@ -585,6 +684,43 @@ def _change_payload(change):
         'reason',
     )
     return {field: _get(change, field) for field in fields}
+
+
+def _valid_change_payload(change, *, game_pk, fingerprint):
+    return (
+        change.get('game_pk') == game_pk
+        and change.get('accepted') is True
+        and change.get('changed') is True
+        and change.get('classification') in ACTIONABLE_CLASSIFICATIONS
+        and change.get('finality_state') in ACTIONABLE_FINALITY_STATES
+        and change.get('current_observation_identity') == fingerprint
+        and _valid_source_observed_at(change.get('source_observed_at'))
+    )
+
+
+def _valid_proof_receipt(receipt):
+    return (
+        isinstance(receipt, dict)
+        and _is_positive_integer(receipt.get('publication_id'))
+        and isinstance(receipt.get('candidate_id'), str)
+        and bool(receipt['candidate_id'].strip())
+        and receipt.get('snapshot_type') == 'cu07_incremental_proof'
+        and receipt.get('payload_version') == 1
+    )
+
+
+def _valid_source_observed_at(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _validation_issue(reason, **fields):
+    return {'reason': reason, **fields}
 
 
 def _product_date(row, now):

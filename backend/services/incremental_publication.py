@@ -323,12 +323,28 @@ def publish_incremental(
     )
 
 
-def retry_cache_handoff(publication_id, cache_adapter):
+def retry_cache_handoff(
+    publication_id,
+    cache_adapter,
+    *,
+    expected_candidate_id=None,
+    expected_payload_version=None,
+):
     """Idempotently populate versioned cache entries after durable commit."""
     row = db.session.get(DashboardSnapshot, publication_id)
     if row is None or row.snapshot_type != PROOF_SNAPSHOT_TYPE or not row.is_published:
         raise ValueError('Cache handoff requires the current CU-07 proof publication')
     meta = _publication_meta(row)
+    if (
+        expected_candidate_id is not None
+        and meta.get('candidate_id') != expected_candidate_id
+    ):
+        raise ValueError('Cache handoff proof publication identity mismatch')
+    if (
+        expected_payload_version is not None
+        and row.payload_version != expected_payload_version
+    ):
+        raise ValueError('Cache handoff proof publication version mismatch')
     candidate = PublicationCandidate(
         candidate_id=meta['candidate_id'],
         semantic_fingerprint=meta['semantic_fingerprint'],

@@ -446,8 +446,10 @@ def _execute_cycle(**kwargs):
         limit=max(config.max_canonical_actions, 1),
         sync_run_id=kwargs['sync_run_id'],
     )
-    preexisting_work = continuous_game_work.claimable_obligations(
-        limit=config.max_canonical_actions,
+    preexisting_work, invalid_work = _validated_work(
+        continuous_game_work.claimable_obligations(
+            limit=config.max_canonical_actions,
+        )
     )
     pending_source_reserve = max(
         (
@@ -529,23 +531,45 @@ def _execute_cycle(**kwargs):
         'skipped_by_allowlist': 0,
         'work_obligations_claimed': 0,
         'work_obligations_completed': 0,
-        'work_obligations_failed': 0,
+        'work_obligations_failed': len(invalid_work),
     }
     affected_pitchers = set()
     affected_teams = set()
     downstream = []
     production_publication_queue = []
-    work_results = []
+    work_results = list(invalid_work)
+    failures.extend({
+        'scope': 'durable_work',
+        'game_pk': (item.get('details_json') or {}).get('game_pk'),
+        'error': (
+            ((item.get('details_json') or {}).get('invalid_work') or {}).get(
+                'reason'
+            )
+            or 'invalid_work_payload'
+        ),
+    } for item in invalid_work)
     timeout_reached = False
     publication_target = _publication_target(config.mode)
 
-    work_jobs = (
-        []
-        if config.mode == ActivationMode.SHADOW_DETECT
-        else continuous_game_work.claimable_obligations(
-            limit=config.max_canonical_actions,
+    work_jobs = []
+    if config.mode != ActivationMode.SHADOW_DETECT:
+        work_jobs, newly_invalid = _validated_work(
+            continuous_game_work.claimable_obligations(
+                limit=config.max_canonical_actions,
+            )
         )
-    )
+        counters['work_obligations_failed'] += len(newly_invalid)
+        work_results.extend(newly_invalid)
+        failures.extend({
+            'scope': 'durable_work',
+            'game_pk': (item.get('details_json') or {}).get('game_pk'),
+            'error': (
+                ((item.get('details_json') or {}).get('invalid_work') or {}).get(
+                    'reason'
+                )
+                or 'invalid_work_payload'
+            ),
+        } for item in newly_invalid)
     durable_identities = {
         str((job.details_json or {}).get('observation_fingerprint') or '')
         for job in observation_jobs
@@ -642,21 +666,35 @@ def _execute_cycle(**kwargs):
         if (
             work_job is not None
             and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
-            and config.mode not in PRODUCTION_MODES
+            and config.mode not in {
+                ActivationMode.PROOF_PUBLICATION,
+                *PRODUCTION_MODES,
+            }
         ):
             counters['skipped_by_mode'] += 1
             _rotate_unclaimed_work(
-                work_job, 'production_cache_handoff_disabled_by_mode', work_results,
+                work_job, 'cache_handoff_disabled_by_mode', work_results,
             )
             continue
+        proof_cache_retry = (
+            (work_job.details_json or {}).get('proof_publication_receipt')
+            if work_job is not None
+            and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+            else None
+        )
+        cache_retry_unavailable = (
+            kwargs['cache_adapter'] is None
+            if proof_cache_retry is not None
+            else kwargs['production_publisher'] is None
+        )
         if (
             work_job is not None
             and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
-            and kwargs['production_publisher'] is None
+            and cache_retry_unavailable
         ):
             counters['skipped_by_mode'] += 1
             _rotate_unclaimed_work(
-                work_job, 'production_publisher_unavailable', work_results,
+                work_job, 'cache_handoff_unavailable', work_results,
             )
             continue
         if (
@@ -791,6 +829,45 @@ def _execute_cycle(**kwargs):
             },
         }
         if work_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING:
+            if proof_cache_retry is not None:
+                receipt = proof_cache_retry
+                try:
+                    keys = cu07.retry_cache_handoff(
+                        receipt.get('publication_id'),
+                        kwargs['cache_adapter'],
+                        expected_candidate_id=receipt.get('candidate_id'),
+                        expected_payload_version=receipt.get('payload_version'),
+                    )
+                except Exception as exc:
+                    failures.append({
+                        'scope': 'proof_publication_cache',
+                        'game_pk': change.get('game_pk'),
+                        'error': type(exc).__name__,
+                    })
+                    _record_work_failure(
+                        work_job,
+                        exc,
+                        stage=continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        counters=counters,
+                        results=work_results,
+                    )
+                else:
+                    counters['cache_handoffs'] += 1
+                    completed = continuous_game_work.complete(
+                        work_job,
+                        outcome='proof_publication_cache_handoff_complete',
+                        publication={
+                            'new_publication_id': receipt['publication_id'],
+                            'candidate_id': receipt['candidate_id'],
+                            'committed': True,
+                            'cache_handoff_status': 'complete',
+                            'cache_keys': list(keys),
+                        },
+                    )
+                    counters['work_obligations_completed'] += 1
+                    work_results.append(completed.to_dict())
+                downstream.append(game_result)
+                continue
             publication_sync_run_id = _positive_int(
                 (work_job.details_json or {}).get(
                     'publication_attempt_sync_run_id'
@@ -1087,10 +1164,22 @@ def _execute_cycle(**kwargs):
                     kwargs['proof_publisher'], read_models, change, kwargs,
                     game_result, counters, proof=True,
                 )
-                if not _publication_satisfied(publication):
+                if not _publication_authority_satisfied(publication):
                     raise RuntimeError(
                         publication.get('reason_code') or 'publication_not_committed'
                     )
+                if publication.get('cache_handoff_status') == 'retry_required':
+                    if work_job is None:
+                        raise RuntimeError('proof_cache_receipt_requires_durable_work')
+                    receipt = _proof_publication_receipt(publication)
+                    work_job = continuous_game_work.checkpoint(
+                        work_job,
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        canonical_impact=impact_dict,
+                        proof_publication_receipt=receipt,
+                        publication=publication,
+                    )
+                    raise RuntimeError('proof_publication_cache_retry_required')
             except Exception as exc:
                 failures.append({
                     'scope': 'proof_publication', 'game_pk': change.get('game_pk'),
@@ -1099,7 +1188,12 @@ def _execute_cycle(**kwargs):
                 if work_job is not None:
                     _record_work_failure(
                         work_job, exc,
-                        stage=continuous_game_work.STAGE_PUBLICATION_PENDING,
+                        stage=(
+                            continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+                            if continuous_game_work.stage_for(work_job)
+                            == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+                            else continuous_game_work.STAGE_PUBLICATION_PENDING
+                        ),
                         counters=counters, results=work_results,
                     )
             else:
@@ -1505,6 +1599,36 @@ def _publication_satisfied(value):
         _publication_authority_satisfied(value)
         and value.get('cache_handoff_status') != 'retry_required'
     )
+
+
+def _proof_publication_receipt(publication):
+    publication_id = _positive_int(publication.get('new_publication_id'))
+    candidate_id = publication.get('candidate_id')
+    if (
+        publication_id is None
+        or not isinstance(candidate_id, str)
+        or not candidate_id.strip()
+    ):
+        raise RuntimeError('proof_publication_receipt_invalid')
+    return {
+        'publication_id': publication_id,
+        'candidate_id': candidate_id,
+        'snapshot_type': cu07.PROOF_SNAPSHOT_TYPE,
+        'payload_version': 1,
+    }
+
+
+def _validated_work(jobs):
+    valid = []
+    invalid = []
+    for job in jobs:
+        issue = continuous_game_work.validate_obligation(job)
+        if issue is None:
+            valid.append(job)
+            continue
+        quarantined = continuous_game_work.quarantine_invalid(job, issue)
+        invalid.append(quarantined.to_dict())
+    return valid, invalid
 
 
 def _publication_batch_sync_run_id(queue, *, current_sync_run_id):
