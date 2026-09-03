@@ -77,10 +77,10 @@ function GlanceMetric({ metric }) {
 function EvidenceCell({ label, children, className = '' }) {
   return (
     <div className={className}>
-      <span className="mb-0.5 block font-mono text-[10px] uppercase tracking-widest text-chalk600 sm:hidden">
+      <dt className="mb-0.5 block font-mono text-[10px] uppercase tracking-widest text-chalk500 sm:sr-only">
         {label}
-      </span>
-      <span className="text-chalk200">{children}</span>
+      </dt>
+      <dd className="text-chalk200">{children}</dd>
     </div>
   )
 }
@@ -104,28 +104,30 @@ function RelieverRow({ row }) {
       : `${row.rest_days} ${row.rest_days === 1 ? 'day' : 'days'}`
 
   return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-dirt px-4 py-3 text-sm sm:grid-cols-[2fr_1.4fr_1.8fr_1fr_1.2fr] sm:items-center sm:gap-y-0">
-      <EvidenceCell label="Reliever" className="col-span-2 sm:col-span-1">
-        <span className="font-medium text-chalk100">{row.name || '—'}</span>
-      </EvidenceCell>
-      <EvidenceCell label="Last 3 games">{appearanceText}</EvidenceCell>
-      <EvidenceCell label="Last appearance">
-        {lastDate ? (
-          <time dateTime={row.last_appearance_date}>{lastText}</time>
-        ) : (
-          lastText
-        )}
-      </EvidenceCell>
-      <EvidenceCell label="Rest">{restText}</EvidenceCell>
-      <EvidenceCell label="Availability">
-        {availabilityLabel ? (
-          <SharedAvailabilityBadge
-            availability={{ availability_status: row.availability, availability_public_label: availabilityLabel }}
-            compact
-          />
-        ) : <span className="text-chalk500">—</span>}
-      </EvidenceCell>
-    </div>
+    <li className="border-t border-dirt px-4 py-3 text-sm">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-[2fr_1.4fr_1.8fr_1fr_1.2fr] sm:items-center sm:gap-y-0">
+        <EvidenceCell label="Reliever" className="col-span-2 sm:col-span-1">
+          <span className="font-medium text-chalk100">{row.name || '—'}</span>
+        </EvidenceCell>
+        <EvidenceCell label="Last 3 games">{appearanceText}</EvidenceCell>
+        <EvidenceCell label="Last appearance">
+          {lastDate ? (
+            <time dateTime={row.last_appearance_date}>{lastText}</time>
+          ) : (
+            lastText
+          )}
+        </EvidenceCell>
+        <EvidenceCell label="Rest">{restText}</EvidenceCell>
+        <EvidenceCell label="Availability">
+          {availabilityLabel ? (
+            <SharedAvailabilityBadge
+              availability={{ availability_status: row.availability, availability_public_label: availabilityLabel }}
+              compact
+            />
+          ) : <span className="text-chalk500">—</span>}
+        </EvidenceCell>
+      </dl>
+    </li>
   )
 }
 
@@ -203,20 +205,22 @@ export default function TeamStateArtifactCard({ card }) {
           Current bullpen evidence
         </h2>
         {relievers.length ? (
-          <div className="mt-2" role="table" aria-label="Current bullpen evidence">
+          <div className="mt-2">
             <div
               className="hidden px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 sm:grid sm:grid-cols-[2fr_1.4fr_1.8fr_1fr_1.2fr]"
-              role="row"
+              aria-hidden="true"
             >
-              <span role="columnheader">Reliever</span>
-              <span role="columnheader">Last 3 games</span>
-              <span role="columnheader">Last appearance</span>
-              <span role="columnheader">Rest</span>
-              <span role="columnheader">Availability</span>
+              <span>Reliever</span>
+              <span>Last 3 games</span>
+              <span>Last appearance</span>
+              <span>Rest</span>
+              <span>Availability</span>
             </div>
-            {relievers.map((row, index) => (
-              <RelieverRow key={row.pitcher_id ?? index} row={row} />
-            ))}
+            <ul aria-label="Current bullpen evidence">
+              {relievers.map((row, index) => (
+                <RelieverRow key={row.pitcher_id ?? index} row={row} />
+              ))}
+            </ul>
           </div>
         ) : (
           <p className="mt-2 px-4 text-sm text-chalk400">

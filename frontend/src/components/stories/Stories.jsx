@@ -75,7 +75,7 @@ export function StoriesView({
       <header className="mb-5 border-b border-dirt pb-4 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
               The Bullpen Intelligence Feed
             </div>
             <h1 className="mt-1 font-display text-4xl tracking-wider text-chalk100 leading-none">
@@ -83,7 +83,7 @@ export function StoriesView({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-chalk400">
-            <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
+            <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-metadata-accent">
               Descriptive bullpen notes.
             </span>
           </div>
@@ -144,7 +144,7 @@ export function StoriesView({
             </div>
 
             <div className="mb-4 border-y border-dirt/70 py-3">
-              <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">{activeLabel}</p>
+              <p className="font-mono text-[11px] uppercase tracking-widest text-metadata-accent">{activeLabel}</p>
               <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk400">{activeOption.description}</p>
             </div>
 
@@ -238,7 +238,7 @@ function FeedScope({ feed, counts }) {
 
   return (
     <section className="mb-6 border border-dirt bg-dugout p-4 sm:p-5" aria-label="Stories scope">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
         Beyond Today
       </div>
       <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
@@ -348,7 +348,7 @@ function FeedStoryCard({ story }) {
 
       {story.reviewNote && (
         <div className="mt-3 border border-amber/25 bg-amber/5 px-3 py-2">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
             {story.reviewNote.label}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-chalk500">

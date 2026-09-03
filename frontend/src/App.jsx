@@ -27,6 +27,7 @@ import PublicShareArtifactPage from './components/share/PublicShareArtifactPage'
 import TeamHistoryPage from './components/history/TeamHistoryPage'
 import NotFound from './components/NotFound'
 import RouteMetadata from './components/RouteMetadata'
+import RouteAccessibility from './components/RouteAccessibility'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -74,9 +75,16 @@ export default function App() {
     <BrowserRouter>
       <TrafficRouteObserver />
       <RouteMetadata />
+      <RouteAccessibility />
       <div className="app-shell bg-noise flex-col xl:flex-row">
+        <a
+          href="#main-content"
+          className="skip-link"
+        >
+          Skip to main content
+        </a>
         <Sidebar />
-        <main className="flex-1 min-w-0 xl:ml-56">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 xl:ml-56">
           <AppRoutes />
           <Footer />
         </main>

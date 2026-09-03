@@ -196,7 +196,7 @@ export default function AvailabilityBacktestCard({
     <section className={`${embedded ? 'p-4' : 'card mb-6 p-5'} animate-fade-up opacity-0`} style={{ animationFillMode: 'forwards' }}>
       <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
+          <div className="font-mono text-xs uppercase tracking-widest text-metadata-accent">
             Usage Check
           </div>
           <h2 className="mt-1 font-display text-2xl tracking-wider text-chalk100">

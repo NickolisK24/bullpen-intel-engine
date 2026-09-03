@@ -53,7 +53,7 @@ export function DashboardView({
         <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-4 sm:p-5 bg-stadium-glow">
           <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10">
-            <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">
+            <div className="font-mono text-xs text-metadata-accent uppercase tracking-widest mb-2">
               MLB Bullpen Overview
             </div>
             <h1 className="mb-2 font-display text-4xl leading-none tracking-wider text-chalk100 sm:text-5xl">
@@ -153,7 +153,7 @@ function InjuryIlContextSection({ context }) {
       <div className="card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
               Explanatory Only
             </div>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk300">

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -15,6 +16,8 @@
     "react-router-dom": "^6.30.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",

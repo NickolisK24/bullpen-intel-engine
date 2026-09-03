@@ -1073,7 +1073,7 @@ function SectionShell({ id, title, eyebrow, subtitle, children, className = '' }
     <section id={id} aria-labelledby={`${id}-title`} className={`mb-10 ${className}`}>
       <div className="mb-3 border-t border-dirt pt-4">
         {eyebrow && (
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-amber/75">
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
             {eyebrow}
           </div>
         )}
@@ -1201,7 +1201,7 @@ function AudienceSignupForm() {
 function SeesHeader() {
   return (
     <header className="mb-4 max-w-4xl pt-1 sm:pt-2">
-      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
+      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-metadata-accent">
         MLB BULLPEN INTELLIGENCE — UPDATED DAILY
       </div>
       <h1 className="mt-2 font-display text-3xl leading-none tracking-wide text-chalk100 sm:text-4xl lg:text-5xl">
@@ -1284,7 +1284,7 @@ function TonightCard({ card }) {
 
   return (
     <article className="flex min-w-0 flex-col border border-dirt bg-dugout p-4 sm:p-5">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
         {card.teamName}
       </div>
       <h3 className="mt-3 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
@@ -2271,7 +2271,7 @@ function DailyEditionSection({
       {view.state === 'available' ? (
         <article className="border border-amber/25 bg-dugout p-4 sm:p-5">
           {view.teamName && (
-            <p className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
               {view.teamName}
             </p>
           )}
@@ -2555,7 +2555,7 @@ function ExploreBaseballOS() {
   return (
     <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="mb-10">
       <div className="mb-3 border-t border-dirt pt-4">
-        <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-amber/75">
+        <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-metadata-accent">
           Explore BaseballOS
         </div>
         <h2 id="explore-baseballos-title" className="font-display text-2xl tracking-wide text-chalk100">

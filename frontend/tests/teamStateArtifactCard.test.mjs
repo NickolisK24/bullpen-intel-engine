@@ -126,7 +126,7 @@ test('card glance renders the four readiness metrics with count-of-total', () =>
   assert.match(html, /of 8/)
 })
 
-test('card evidence table renders the five governed columns and canonical availability labels', () => {
+test('card evidence list renders the five governed facts and canonical availability labels', () => {
   const html = render(React.createElement(TeamStateArtifactCard, { card: cardFixture() }))
   assert.match(html, /Current bullpen evidence/)
   assert.match(html, /Reliever/)

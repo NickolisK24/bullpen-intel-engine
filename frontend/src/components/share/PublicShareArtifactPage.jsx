@@ -252,7 +252,7 @@ function SinceYesterdayArtifactBody({ artifact }) {
   return (
     <>
       <section className="card border border-amber/30 p-5 sm:p-6" aria-labelledby="portable-change-title">
-        <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">
+        <p className="font-mono text-[11px] uppercase tracking-widest text-metadata-accent">
           {team.team_name || 'Bullpen'} · Published change
         </p>
         <h1 id="portable-change-title" className="mt-2 font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">

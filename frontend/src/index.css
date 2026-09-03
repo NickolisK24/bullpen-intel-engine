@@ -16,6 +16,10 @@
     overflow-wrap: break-word;
   }
 
+  :focus {
+    scroll-margin-block: 1rem;
+  }
+
   html,
   body,
   #root {
@@ -47,6 +51,12 @@
 }
 
 @layer components {
+  .skip-link {
+    @apply fixed left-4 top-4 z-50 -translate-y-24 rounded-sm border border-line-focus bg-surface-base px-4 py-3 font-board text-sm font-semibold text-text-primary shadow-xl transition-transform;
+  }
+  .skip-link:focus {
+    @apply translate-y-0;
+  }
   /* ── Layout ── */
   .app-shell {
     display: flex;
@@ -487,5 +497,20 @@
   .animate-fade-up {
     opacity: 0;
     animation: fadeUp 0.5s ease forwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

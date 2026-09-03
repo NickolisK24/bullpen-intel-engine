@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import useEvidenceHashNavigation from '../../hooks/useEvidenceHashNavigation'
 import { getRelieverFinder, getTeams } from '../../utils/api'
@@ -359,31 +359,21 @@ function PitcherView({
     if (selectedTeam != null) onSelectTeam(null)
   }
 
-  const handlePitcherRowKeyDown = (event, row) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      onSelectPitcher(row)
-    }
-  }
+  const sortDirection = key => (
+    sortBy === key ? (key === 'pitches' ? 'descending' : 'ascending') : 'none'
+  )
 
-  const thStyle = (key) =>
-    `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
-
-  // Sortable column headers are reachable by keyboard and announce the active
-  // order, so the explicit workload/rest sorts are not mouse-only.
-  const sortHeaderProps = (key) => ({
-    className: `${thStyle(key)} focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70`,
-    role: 'button',
-    tabIndex: 0,
-    'aria-sort': sortBy === key ? (key === 'pitches' ? 'descending' : 'ascending') : 'none',
-    onClick: () => setSortBy(key),
-    onKeyDown: (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault()
-        setSortBy(key)
-      }
-    },
-  })
+  const SortHeader = ({ column, label, arrow }) => (
+    <th scope="col" aria-sort={sortDirection(column)}>
+      <button
+        type="button"
+        onClick={() => setSortBy(column)}
+        className={`min-h-11 select-none text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 ${sortBy === column ? 'text-amber' : 'text-chalk400 hover:text-chalk200'}`}
+      >
+        {label} {sortBy === column && <span aria-hidden="true">{arrow}</span>}
+      </button>
+    </th>
+  )
 
   return (
     <>
@@ -479,13 +469,15 @@ function PitcherView({
             ) : allScores.error ? (
               <ErrorState message={allScores.error} onRetry={allScores.refetch} />
             ) : allRows.length === 0 ? (
-              <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
+              <div role="status" aria-live="polite">
+                <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
+              </div>
             ) : (
               <>
                 {/* Result summary + active order + column-abbreviation legend.
                     Wraps cleanly so nothing is clipped at 320px. */}
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-dirt bg-chalk/20 px-4 py-2">
-                  <p className="min-w-0 font-mono text-[11px] text-chalk500">
+                  <p className="min-w-0 font-mono text-[11px] text-chalk500" role="status" aria-live="polite">
                     <span className="text-chalk300">{totalRows}</span>{' '}
                     reliever{totalRows === 1 ? '' : 's'} · sorted by {describeActiveSort(sortBy)}
                   </p>
@@ -497,25 +489,28 @@ function PitcherView({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th {...sortHeaderProps('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
-                      <th className="text-chalk400">Team</th>
-                      <th className="text-chalk400">Availability</th>
-                      <th {...sortHeaderProps('pitches')}>Pitches (7d) {sortBy === 'pitches' && '↓'}</th>
-                      <th {...sortHeaderProps('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
-                      <th className="text-chalk400">Appearances (7d)</th>
+                      <SortHeader column="name" label="Pitcher" arrow="↑" />
+                      <th scope="col" className="text-chalk400">Team</th>
+                      <th scope="col" className="text-chalk400">Availability</th>
+                      <SortHeader column="pitches" label="Pitches (7d)" arrow="↓" />
+                      <SortHeader column="rest" label="Rest" arrow="↑" />
+                      <th scope="col" className="text-chalk400">Appearances (7d)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visible.map(row => (
-                      <tr
-                        key={row.pitcher?.id ?? row.pitcher?.mlb_id}
-                        onClick={() => onSelectPitcher(row)}
-                        onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
-                        tabIndex={0}
-                        aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
-                        className="focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70"
-                      >
-                        <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
+                      <tr key={row.pitcher?.id ?? row.pitcher?.mlb_id}>
+                        <td className="font-medium">
+                          {row.pitcher?.id ? (
+                            <Link
+                              to={buildPitcherHref(row.pitcher.id, { teamRef: row.pitcher, source: 'all_pitchers' })}
+                              aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
+                              className="inline-flex min-h-11 items-center text-chalk200 underline decoration-transparent underline-offset-4 hover:text-amber hover:decoration-current focus-visible:ring-2 focus-visible:ring-amber/70"
+                            >
+                              {row.pitcher?.full_name ?? '—'}
+                            </Link>
+                          ) : '—'}
+                        </td>
                         <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation ?? '—'}</td>
                         <td><AvailabilityBadge availability={row.availability} showDataState /></td>
                         <td className="font-mono text-xs text-chalk200">{formatWorkloadCount(row.pitches_last_7_days)}</td>
@@ -558,15 +553,15 @@ function Pagination({ page, totalPages, startIdx, endIdx, totalRows, onPageChang
   for (let i = start; i <= end; i++) pages.push(i)
 
   const btnStyle = (active) =>
-    `min-w-[2rem] px-2 py-1 rounded font-mono text-xs transition-all ${
+    `min-h-11 min-w-11 px-2 py-1 rounded font-mono text-xs transition-all ${
       active
         ? 'bg-amber/20 border border-amber/40 text-amber'
         : 'border border-dirt text-chalk400 hover:text-chalk200 hover:border-chalk400'
     }`
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-dirt bg-chalk/20">
-      <div className="text-chalk600 text-xs font-mono">
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-dirt bg-chalk/20">
+      <div className="text-chalk500 text-xs font-mono" aria-live="polite">
         Showing {startIdx + 1}–{endIdx} of {totalRows}
       </div>
       <div className="flex items-center gap-1">

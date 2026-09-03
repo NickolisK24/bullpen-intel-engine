@@ -4,7 +4,7 @@ export default function NotFound() {
   return (
     <section className="mx-auto max-w-3xl px-5 py-16 sm:px-8" aria-labelledby="not-found-title">
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay">BaseballOS</p>
-      <h1 id="not-found-title" className="mt-3 font-display text-4xl text-chalk sm:text-5xl">
+      <h1 id="not-found-title" className="mt-3 font-display text-4xl text-chalk100 sm:text-5xl">
         Page not found
       </h1>
       <p className="mt-4 max-w-xl text-base leading-7 text-fog">

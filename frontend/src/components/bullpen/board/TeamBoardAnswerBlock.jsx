@@ -196,7 +196,7 @@ function BullpenSummary({ read }) {
             >
               {figure.value ?? '—'}
             </dd>
-            <p className="type-metadata mt-meta break-words text-text-withheld">{figure.qualifier}</p>
+            <dd className="type-metadata mt-meta break-words text-text-withheld">{figure.qualifier}</dd>
           </div>
         ))}
       </dl>

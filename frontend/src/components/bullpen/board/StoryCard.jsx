@@ -41,7 +41,7 @@ export default function StoryCard({
   if (error) {
     return (
       <StoryShell tone="error">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Note</div>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">Bullpen Note</div>
         <h3 className="mt-2 font-display text-xl tracking-wide text-chalk100">Story note paused</h3>
         <p className="mt-2 text-sm leading-relaxed text-chalk400">
           The bullpen board is still available; BaseballOS is holding this note until it can load cleanly.
@@ -82,7 +82,7 @@ export default function StoryCard({
   return (
     <StoryShell>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Note</div>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-metadata-accent">Bullpen Note</div>
         <div className="flex flex-wrap gap-1.5">
           {visibleMeta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
         </div>
