@@ -19,7 +19,10 @@ import models.prospect  # noqa: F401
 from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from services import change_impact_orchestration
+from services import game_change_detection
 from services import game_driven_ingestion
+from services import game_finality
 from services import game_log_reconciliation as reconciliation
 from services import pitcher_identity_reconciliation as pitcher_identity
 from services import sync as sync_service
@@ -165,6 +168,9 @@ def test_a_corrected_replay_updates_governed_fields_and_records_the_correction(
             BoxscoreClient(_one_reliever(910004, 5004, earned_runs=1)),
         )
         _run()
+        original_revision = GameIngestionWorkItem.query.filter_by(
+            mlb_game_pk=910004,
+        ).one().source_revision
         monkeypatch.setattr(
             sync_service, 'mlb_client',
             BoxscoreClient(_one_reliever(910004, 5004, earned_runs=3)),
@@ -178,6 +184,10 @@ def test_a_corrected_replay_updates_governed_fields_and_records_the_correction(
         assert GameLog.query.filter_by(mlb_game_pk=910004).count() == 1
         row = GameLog.query.filter_by(mlb_game_pk=910004).one()
         assert row.earned_runs == 3
+        corrected_revision = GameIngestionWorkItem.query.filter_by(
+            mlb_game_pk=910004,
+        ).one().source_revision
+        assert corrected_revision != original_revision
 
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910004).one()
         assert item.correction_count == 1
@@ -226,9 +236,26 @@ def test_a_game_is_not_completed_when_its_writes_roll_back(app, monkeypatch):
 
         report = _run()
 
+        impact = change_impact_orchestration.orchestrate_game_change(
+            {
+                'game_pk': 910006,
+                'classification': game_change_detection.FINALIZED,
+                'accepted': True,
+                'changed': True,
+                'finality_state': game_finality.FINAL_AND_USABLE,
+            },
+            allow_canonical_write=True,
+            expected_plan_fingerprint='already-authorized-for-test',
+            canonical_ingestor=lambda *_args, **_kwargs: report,
+        )
+
         assert original is not None
         assert report['games_completed'] == 0
         assert report['games_failed'] == 1
+        assert impact.orchestration_status == (
+            change_impact_orchestration.STATUS_CANONICAL_FAILED
+        )
+        assert impact.source_failure_state == 'unexpected_error'
         assert GameLog.query.filter_by(mlb_game_pk=910006).count() == 0
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910006).one()
         assert item.status != GameIngestionWorkItem.STATUS_COMPLETED

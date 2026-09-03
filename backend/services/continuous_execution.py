@@ -21,6 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from models.game_observation_state import GameObservationState
 from services import change_impact_orchestration as cu03
+from services import continuous_game_work
 from services import game_change_detection as cu02
 from services import incremental_arm_read_team_state as cu05
 from services import incremental_publication as cu07
@@ -59,6 +60,8 @@ DEFAULT_MAX_CANONICAL_ACTIONS = 4
 DEFAULT_MAX_COHORTS = 2
 DEFAULT_MAX_RUNTIME_SECONDS = 120
 DEFAULT_CORE_FAILURE_BREAKER = 3
+CANONICAL_WRITE_SOURCE_REQUESTS = 3
+AUTOMATIC_PLAN_SOURCE_REQUESTS = 1
 REPLAY_JOB_NAME = 'continuous_game_replay'
 REPLAY_JOB_FAMILY = 'continuous_replay'
 REPLAY_MAX_ATTEMPTS = 2
@@ -223,6 +226,11 @@ class ContinuousCycleResult:
     detection_results: tuple = ()
     downstream_results: tuple = ()
     replay_results: tuple = ()
+    work_results: tuple = ()
+    work_obligations_pending: int = 0
+    work_obligations_claimed: int = 0
+    work_obligations_completed: int = 0
+    work_obligations_failed: int = 0
     runtime_ms: float = 0.0
 
     def to_dict(self):
@@ -231,6 +239,7 @@ class ContinuousCycleResult:
             'affected_pitcher_ids', 'affected_team_ids', 'failures',
             'detection_results', 'downstream_results',
             'replay_results',
+            'work_results',
         ):
             value[key] = list(value[key])
         return value
@@ -403,6 +412,7 @@ def run_continuous_cycle(
                 source_snapshot=source_snapshot,
             )
         except Exception as exc:  # cycle-level acquisition/config failure
+            db.session.rollback()
             result = _empty_result(
                 config, represented, started_at, started_clock,
                 status=RESULT_PARTIAL, reason='cycle_execution_failed',
@@ -429,21 +439,77 @@ def _execute_cycle(**kwargs):
     client = kwargs['client']
     started_clock = kwargs['started_clock']
     before_metrics = _metrics(client)
-    max_feed_games = min(
-        config.max_games,
-        max(0, config.source_request_budget - 1),
-    )
-    detection_cycle = kwargs['detector'](
+    attempts_per_source_request = _max_attempts_per_request(client)
+    continuous_game_work.ensure_due_correction_rechecks(
         reference_date=kwargs['represented'].date(),
         correction_days=config.correction_days,
-        client=client,
-        max_games=max_feed_games,
+        limit=max(config.max_canonical_actions, 1),
+        sync_run_id=kwargs['sync_run_id'],
     )
+    preexisting_work, invalid_work = _validated_work(
+        continuous_game_work.claimable_obligations(
+            limit=config.max_canonical_actions,
+        )
+    )
+    pending_source_reserve = max(
+        (
+            _canonical_source_reserve(config, continuous_game_work.change_for(job))
+            for job in preexisting_work
+            if continuous_game_work.stage_for(job)
+            == continuous_game_work.STAGE_CANONICAL_PENDING
+        ),
+        default=0,
+    ) * attempts_per_source_request
+    detection_budget = config.source_request_budget - pending_source_reserve
+    max_feed_games = min(
+        config.max_games,
+        max(
+            0,
+            (detection_budget - attempts_per_source_request)
+            // attempts_per_source_request,
+        ),
+    )
+    detection_deferred_for_source_budget = (
+        detection_budget < attempts_per_source_request
+    )
+    if not detection_deferred_for_source_budget:
+        detection_cycle = kwargs['detector'](
+            reference_date=kwargs['represented'].date(),
+            correction_days=config.correction_days,
+            client=client,
+            max_games=max_feed_games,
+        )
+    else:
+        # Durable work has already paid the observation edge. Preserve enough
+        # worst-case retry budget for CU-01 instead of spending it on another
+        # schedule request that cannot make the obligation more authoritative.
+        detection_cycle = {
+            'candidate_game_pks': [],
+            'games_checked': 0,
+            'unchanged_games': 0,
+            'changed_games': 0,
+            'source_failures': 0,
+            'requests_expected': 0,
+            'results': [],
+        }
     detection_results = list(detection_cycle.get('results') or ())
+    observation_jobs = continuous_game_work.ensure_obligations(
+        detection_results,
+        sync_run_id=kwargs['sync_run_id'],
+    )
     replay_changes, replay_results = _prepare_governed_replays(
         config, detection_results, sync_run_id=kwargs['sync_run_id'],
     )
     failures = []
+    if detection_deferred_for_source_budget:
+        failures.append({
+            'scope': 'detection',
+            'error': (
+                'source_budget_reserved_for_durable_work'
+                if pending_source_reserve
+                else 'source_budget_insufficient_for_detection'
+            ),
+        })
     source_failures = int(detection_cycle.get('source_failures') or 0)
     checked = int(detection_cycle.get('games_checked') or 0)
     breaker_open = source_failures >= config.core_failure_breaker
@@ -463,15 +529,72 @@ def _execute_cycle(**kwargs):
         'proof_publications': 0, 'live_publications': 0,
         'cache_handoffs': 0, 'skipped_by_mode': 0,
         'skipped_by_allowlist': 0,
+        'work_obligations_claimed': 0,
+        'work_obligations_completed': 0,
+        'work_obligations_failed': len(invalid_work),
     }
     affected_pitchers = set()
     affected_teams = set()
     downstream = []
     production_publication_queue = []
+    work_results = list(invalid_work)
+    failures.extend({
+        'scope': 'durable_work',
+        'game_pk': (item.get('details_json') or {}).get('game_pk'),
+        'error': (
+            ((item.get('details_json') or {}).get('invalid_work') or {}).get(
+                'reason'
+            )
+            or 'invalid_work_payload'
+        ),
+    } for item in invalid_work)
     timeout_reached = False
     publication_target = _publication_target(config.mode)
 
-    for change in [*detection_results, *replay_changes]:
+    work_jobs = []
+    if config.mode != ActivationMode.SHADOW_DETECT:
+        work_jobs, newly_invalid = _validated_work(
+            continuous_game_work.claimable_obligations(
+                limit=config.max_canonical_actions,
+            )
+        )
+        counters['work_obligations_failed'] += len(newly_invalid)
+        work_results.extend(newly_invalid)
+        failures.extend({
+            'scope': 'durable_work',
+            'game_pk': (item.get('details_json') or {}).get('game_pk'),
+            'error': (
+                ((item.get('details_json') or {}).get('invalid_work') or {}).get(
+                    'reason'
+                )
+                or 'invalid_work_payload'
+            ),
+        } for item in newly_invalid)
+    durable_identities = {
+        str((job.details_json or {}).get('observation_fingerprint') or '')
+        for job in observation_jobs
+    }
+    durable_changes = [
+        (continuous_game_work.change_for(job), job)
+        for job in work_jobs
+    ]
+    transient_changes = [
+        (change, None)
+        for change in detection_results
+        if (
+            config.mode == ActivationMode.SHADOW_DETECT
+            or str(change.get('current_observation_identity') or '')
+            not in durable_identities
+        )
+    ]
+    pipeline_changes = [
+        *durable_changes,
+        *transient_changes,
+        *((change, None) for change in replay_changes),
+    ]
+    action_slots_started = 0
+
+    for change, work_job in pipeline_changes:
         replay_result = change.get('_replay_result')
         if config.mode == ActivationMode.SHADOW_DETECT:
             counters['skipped_by_mode'] += int(bool(change.get('changed')))
@@ -480,58 +603,224 @@ def _execute_cycle(**kwargs):
             # CU-02 has already classified unchanged/rejected/failed evidence;
             # no later service can turn it into canonical work safely.
             continue
-        current_metrics = _metrics(client)
-        if (
-            current_metrics['api_calls'] - before_metrics['api_calls']
-            >= config.source_request_budget
-        ):
-            counters['skipped_by_mode'] += 1
-            continue
-        if breaker_open:
-            counters['skipped_by_mode'] += int(bool(change.get('changed')))
-            continue
+        preclaim_stage = (
+            continuous_game_work.stage_for(work_job)
+            if work_job is not None
+            else continuous_game_work.STAGE_CANONICAL_PENDING
+        )
+        if preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING:
+            current_metrics = _metrics(client)
+            observed_source_attempts = max(
+                0,
+                current_metrics['api_calls'] - before_metrics['api_calls'],
+            )
+            source_requests_used = (
+                observed_source_attempts
+                if observed_source_attempts
+                else int(detection_cycle.get('requests_expected') or 0)
+                * attempts_per_source_request
+            )
+            source_requests_required = (
+                _canonical_source_reserve(config, change)
+                * attempts_per_source_request
+            )
+            if source_requests_used + source_requests_required > (
+                config.source_request_budget
+            ):
+                counters['skipped_by_mode'] += 1
+                _rotate_unclaimed_work(work_job, 'source_budget_deferred', work_results)
+                continue
+            if breaker_open:
+                counters['skipped_by_mode'] += int(bool(change.get('changed')))
+                _rotate_unclaimed_work(
+                    work_job, 'source_circuit_breaker_open', work_results,
+                )
+                continue
         if monotonic() - started_clock >= config.max_runtime_seconds:
             timeout_reached = True
             break
-        if counters['canonical_actions'] >= config.max_canonical_actions:
+        if action_slots_started >= config.max_canonical_actions:
             counters['skipped_by_mode'] += int(bool(change.get('changed')))
             continue
-        if config.mode == ActivationMode.LIMITED_LIVE and not _change_is_allowlisted(
-            change, config,
+        if (
+            preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING
+            and config.mode == ActivationMode.LIMITED_LIVE
+            and not _change_is_allowlisted(change, config)
         ):
             counters['skipped_by_allowlist'] += int(bool(change.get('changed')))
+            _rotate_unclaimed_work(work_job, 'change_not_allowlisted', work_results)
+            continue
+        if (
+            work_job is not None
+            and preclaim_stage in {
+                continuous_game_work.STAGE_PUBLICATION_PENDING,
+                continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+            }
+            and config.mode == ActivationMode.SHADOW_FULL_CHAIN
+        ):
+            counters['skipped_by_mode'] += 1
+            _rotate_unclaimed_work(
+                work_job, 'publication_disabled_by_mode', work_results,
+            )
+            continue
+        if (
+            work_job is not None
+            and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+            and config.mode not in {
+                ActivationMode.PROOF_PUBLICATION,
+                *PRODUCTION_MODES,
+            }
+        ):
+            counters['skipped_by_mode'] += 1
+            _rotate_unclaimed_work(
+                work_job, 'cache_handoff_disabled_by_mode', work_results,
+            )
+            continue
+        proof_cache_retry = (
+            (work_job.details_json or {}).get('proof_publication_receipt')
+            if work_job is not None
+            and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+            else None
+        )
+        cache_retry_unavailable = (
+            kwargs['cache_adapter'] is None
+            if proof_cache_retry is not None
+            else kwargs['production_publisher'] is None
+        )
+        if (
+            work_job is not None
+            and preclaim_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+            and cache_retry_unavailable
+        ):
+            counters['skipped_by_mode'] += 1
+            _rotate_unclaimed_work(
+                work_job, 'cache_handoff_unavailable', work_results,
+            )
+            continue
+        if (
+            work_job is not None
+            and preclaim_stage != continuous_game_work.STAGE_CANONICAL_PENDING
+            and config.mode == ActivationMode.LIMITED_LIVE
+            and not _cohort_is_allowlisted(
+                (work_job.details_json or {}).get('canonical_impact') or {},
+                config,
+            )
+        ):
+            counters['skipped_by_allowlist'] += 1
+            _rotate_unclaimed_work(work_job, 'cohort_not_allowlisted', work_results)
+            continue
+        if (
+            config.mode == ActivationMode.PROOF_PUBLICATION
+            and counters['publication_candidates'] >= config.max_publication_cohorts
+        ) or (
+            config.mode in PRODUCTION_MODES
+            and config.max_publication_cohorts < 1
+        ):
+            counters['skipped_by_mode'] += int(bool(change.get('changed')))
+            _rotate_unclaimed_work(work_job, 'publication_cohort_limit', work_results)
             continue
 
-        fingerprint = config.expected_plan_fingerprints.get(int(change.get('game_pk') or 0))
-        if not fingerprint and config.mode in PRODUCTION_MODES:
-            try:
-                fingerprint = cu03.derive_current_plan_fingerprint(change)
-            except Exception as exc:
+        fingerprint = None
+        if preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING:
+            fingerprint = config.expected_plan_fingerprints.get(
+                int(change.get('game_pk') or 0)
+            )
+            if not fingerprint and config.mode in PRODUCTION_MODES:
+                try:
+                    fingerprint = cu03.derive_current_plan_fingerprint(
+                        change,
+                        source_client=client,
+                    )
+                except Exception as exc:
+                    failures.append({
+                        'scope': 'plan_authorization',
+                        'game_pk': change.get('game_pk'),
+                        'error': type(exc).__name__,
+                    })
+                    _rotate_unclaimed_work(
+                        work_job,
+                        'plan_fingerprint_derivation_failed',
+                        work_results,
+                    )
+                    continue
+            if work_job is not None and not fingerprint:
                 failures.append({
                     'scope': 'plan_authorization',
                     'game_pk': change.get('game_pk'),
+                    'error': 'reviewed_plan_fingerprint_unavailable',
+                })
+                _rotate_unclaimed_work(
+                    work_job,
+                    'reviewed_plan_fingerprint_unavailable',
+                    work_results,
+                )
+                continue
+        if work_job is not None:
+            work_job = continuous_game_work.claim(
+                work_job,
+                sync_run_id=kwargs['sync_run_id'],
+                exclusive_cycle_lock_held=True,
+            )
+            if work_job is None:
+                continue
+            counters['work_obligations_claimed'] += 1
+        action_slots_started += 1
+
+        work_stage = preclaim_stage
+        canonical_ran = work_stage == continuous_game_work.STAGE_CANONICAL_PENDING
+        stage_started = monotonic()
+        if canonical_ran:
+            orchestrator_kwargs = {
+                'allow_canonical_write': True,
+                'expected_plan_fingerprint': fingerprint,
+            }
+            if replay_result is None:
+                orchestrator_kwargs['source_client'] = client
+            if work_job is not None:
+                orchestrator_kwargs['canonical_completion_callback'] = (
+                    _canonical_completion_callback(work_job)
+                )
+            try:
+                impact = kwargs['orchestrator'](change, **orchestrator_kwargs)
+            except Exception as exc:  # one game must not poison independent cohorts
+                if replay_result is not None:
+                    _fail_replay(replay_result, exc)
+                if work_job is not None:
+                    _record_work_failure(
+                        work_job, exc,
+                        stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                        counters=counters, results=work_results,
+                    )
+                failures.append({
+                    'scope': 'orchestration', 'game_pk': change.get('game_pk'),
                     'error': type(exc).__name__,
                 })
                 continue
-        stage_started = monotonic()
-        try:
-            impact = kwargs['orchestrator'](
-                change,
-                allow_canonical_write=True,
-                expected_plan_fingerprint=fingerprint,
-            )
-        except Exception as exc:  # one game must not poison independent cohorts
+            impact_dict = _dict(impact)
             if replay_result is not None:
-                _fail_replay(replay_result, exc)
-            failures.append({
-                'scope': 'orchestration', 'game_pk': change.get('game_pk'),
-                'error': type(exc).__name__,
-            })
-            continue
-        impact_dict = _dict(impact)
-        if replay_result is not None:
-            _settle_replay(replay_result, impact_dict)
-        counters['canonical_actions'] += int(impact_dict.get('cu01_invocations') or 0)
+                _settle_replay(replay_result, impact_dict)
+            counters['canonical_actions'] += int(
+                impact_dict.get('cu01_invocations') or 0
+            )
+        else:
+            impact_dict = dict(
+                (work_job.details_json or {}).get('canonical_impact') or {}
+            )
+            impact = impact_dict
+            if not impact_dict:
+                error = 'durable_canonical_impact_missing'
+                failures.append({
+                    'scope': 'canonical_checkpoint',
+                    'game_pk': change.get('game_pk'),
+                    'error': error,
+                })
+                _record_work_failure(
+                    work_job, error,
+                    stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                    counters=counters, results=work_results,
+                )
+                continue
+
         game_result = {
             'game_pk': change.get('game_pk'), 'cu03': impact_dict,
             'latency': {
@@ -539,24 +828,206 @@ def _execute_cycle(**kwargs):
                 'canonical_stage_completed_at': utc_now_naive().isoformat(),
             },
         }
+        if work_stage == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING:
+            if proof_cache_retry is not None:
+                receipt = proof_cache_retry
+                try:
+                    keys = cu07.retry_cache_handoff(
+                        receipt.get('publication_id'),
+                        kwargs['cache_adapter'],
+                        expected_candidate_id=receipt.get('candidate_id'),
+                        expected_payload_version=receipt.get('payload_version'),
+                    )
+                except Exception as exc:
+                    failures.append({
+                        'scope': 'proof_publication_cache',
+                        'game_pk': change.get('game_pk'),
+                        'error': type(exc).__name__,
+                    })
+                    _record_work_failure(
+                        work_job,
+                        exc,
+                        stage=continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        counters=counters,
+                        results=work_results,
+                    )
+                else:
+                    counters['cache_handoffs'] += 1
+                    completed = continuous_game_work.complete(
+                        work_job,
+                        outcome='proof_publication_cache_handoff_complete',
+                        publication={
+                            'new_publication_id': receipt['publication_id'],
+                            'candidate_id': receipt['candidate_id'],
+                            'committed': True,
+                            'cache_handoff_status': 'complete',
+                            'cache_keys': list(keys),
+                        },
+                    )
+                    counters['work_obligations_completed'] += 1
+                    work_results.append(completed.to_dict())
+                downstream.append(game_result)
+                continue
+            publication_sync_run_id = _positive_int(
+                (work_job.details_json or {}).get(
+                    'publication_attempt_sync_run_id'
+                )
+            )
+            if publication_sync_run_id is None:
+                error = 'publication_receipt_identity_missing'
+                failures.append({
+                    'scope': 'tonight_refresh',
+                    'game_pk': change.get('game_pk'),
+                    'error': error,
+                })
+                _record_work_failure(
+                    work_job,
+                    error,
+                    stage=continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                    counters=counters,
+                    results=work_results,
+                )
+                downstream.append(game_result)
+                continue
+            try:
+                publication = _publish(
+                    kwargs['production_publisher'], {}, change, kwargs,
+                    game_result, counters, proof=False,
+                    sync_run_id=publication_sync_run_id,
+                    require_published_receipt=True,
+                )
+                if not _publication_satisfied(publication):
+                    raise RuntimeError(
+                        publication.get('reason_code')
+                        or 'publication_cache_handoff_incomplete'
+                    )
+            except Exception as exc:
+                failures.append({
+                    'scope': 'tonight_refresh',
+                    'game_pk': change.get('game_pk'),
+                    'error': type(exc).__name__,
+                })
+                _record_work_failure(
+                    work_job,
+                    exc,
+                    stage=continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                    counters=counters,
+                    results=work_results,
+                )
+            else:
+                completed = continuous_game_work.complete(
+                    work_job,
+                    outcome='production_cache_handoff_complete',
+                    publication=publication,
+                )
+                counters['work_obligations_completed'] += 1
+                work_results.append(completed.to_dict())
+            downstream.append(game_result)
+            continue
         if impact_dict.get('orchestration_status') == cu03.STATUS_CANONICAL_FAILED:
+            error = impact_dict.get('source_failure_state') or 'canonical_failed'
             failures.append({
                 'scope': 'canonical', 'game_pk': change.get('game_pk'),
-                'error': impact_dict.get('source_failure_state') or 'canonical_failed',
+                'error': error,
             })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, error,
+                    stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                    counters=counters, results=work_results,
+                )
+            downstream.append(game_result)
+            continue
+        if (
+            canonical_ran
+            and impact_dict.get('canonical_action_attempted') is not True
+            and int(impact_dict.get('cu01_invocations') or 0) == 0
+        ):
+            if work_job is not None:
+                deferred = continuous_game_work.defer(
+                    work_job,
+                    reason=(
+                        impact_dict.get('reason_code')
+                        or 'canonical_action_not_attempted'
+                    ),
+                    stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                )
+                work_results.append(deferred.to_dict())
+            downstream.append(game_result)
+            continue
+        if work_job is not None and canonical_ran:
+            work_job = db.session.get(sync_jobs.SyncJob, work_job.id)
+            if continuous_game_work.stage_for(work_job) == (
+                continuous_game_work.STAGE_CANONICAL_PENDING
+            ):
+                error = 'canonical_checkpoint_missing'
+                failures.append({
+                    'scope': 'canonical_checkpoint',
+                    'game_pk': change.get('game_pk'),
+                    'error': error,
+                })
+                _record_work_failure(
+                    work_job,
+                    error,
+                    stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                    counters=counters,
+                    results=work_results,
+                )
+                downstream.append(game_result)
+                continue
+            checkpointed_impact = (
+                (work_job.details_json or {}).get('canonical_impact') or {}
+            )
+            if checkpointed_impact.get('canonical_source_revision'):
+                impact_dict['canonical_source_revision'] = (
+                    checkpointed_impact['canonical_source_revision']
+                )
+                game_result['cu03'] = impact_dict
         if not impact_dict.get('canonical_mutation_performed'):
+            if work_job is not None:
+                completed = continuous_game_work.complete(
+                    work_job,
+                    outcome='canonical_no_op',
+                    canonical_impact=impact_dict,
+                )
+                counters['work_obligations_completed'] += 1
+                work_results.append(completed.to_dict())
             downstream.append(game_result)
             continue
 
-        counters['canonical_mutation_games'] += 1
+        counters['canonical_mutation_games'] += int(canonical_ran)
         affected_pitchers.update(impact_dict.get('affected_pitcher_ids') or ())
         affected_teams.update(impact_dict.get('affected_team_ids') or ())
-        data_through = _game_data_through(change.get('game_pk'))
+        if not (
+            impact_dict.get('affected_pitcher_ids')
+            or impact_dict.get('affected_team_ids')
+        ):
+            if work_job is not None:
+                completed = continuous_game_work.complete(
+                    work_job,
+                    outcome='canonical_mutation_without_public_impact',
+                    canonical_impact=impact_dict,
+                )
+                counters['work_obligations_completed'] += 1
+                work_results.append(completed.to_dict())
+            downstream.append(game_result)
+            continue
+        data_through = (
+            work_job.product_date
+            if work_job is not None
+            else _game_data_through(change.get('game_pk'))
+        )
         if data_through is None:
             failures.append({
                 'scope': 'represented_date', 'game_pk': change.get('game_pk'),
                 'error': 'official_date_missing',
             })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, 'official_date_missing',
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
             downstream.append(game_result)
             continue
         try:
@@ -567,6 +1038,12 @@ def _execute_cycle(**kwargs):
                 'scope': 'cu04', 'game_pk': change.get('game_pk'),
                 'error': type(exc).__name__,
             })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, exc,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
             downstream.append(game_result)
             continue
         workload_dict = _dict(workload)
@@ -576,6 +1053,20 @@ def _execute_cycle(**kwargs):
             workload_dict.get('pitchers_recomputed') or ()
         )
         counters['cu04_teams_recomputed'] += len(workload_dict.get('teams_recomputed') or ())
+        if work_job is not None and not _trusted_stage_result(workload_dict):
+            error = workload_dict.get('reason_code') or 'cu04_incomplete'
+            failures.append({
+                'scope': 'cu04', 'game_pk': change.get('game_pk'),
+                'error': error,
+            })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, error,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
+            downstream.append(game_result)
+            continue
         try:
             stage_started = monotonic()
             state = kwargs['team_state_service'](
@@ -586,6 +1077,12 @@ def _execute_cycle(**kwargs):
                 'scope': 'cu05', 'game_pk': change.get('game_pk'),
                 'error': type(exc).__name__,
             })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, exc,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
             downstream.append(game_result)
             continue
         state_dict = _dict(state)
@@ -595,6 +1092,20 @@ def _execute_cycle(**kwargs):
             state_dict.get('arm_reads_recomputed') or ()
         )
         counters['cu05_teams_recomputed'] += len(state_dict.get('teams_recomputed') or ())
+        if work_job is not None and not _trusted_stage_result(state_dict):
+            error = state_dict.get('reason_code') or 'cu05_incomplete'
+            failures.append({
+                'scope': 'cu05', 'game_pk': change.get('game_pk'),
+                'error': error,
+            })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, error,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
+            downstream.append(game_result)
+            continue
         try:
             stage_started = monotonic()
             read_models = kwargs['read_model_service'](
@@ -605,6 +1116,12 @@ def _execute_cycle(**kwargs):
                 'scope': 'cu06', 'game_pk': change.get('game_pk'),
                 'error': type(exc).__name__,
             })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, exc,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
             downstream.append(game_result)
             continue
         read_dict = _dict(read_models)
@@ -617,37 +1134,179 @@ def _execute_cycle(**kwargs):
             'team_boards_rebuilt', 'league_rows_rebuilt', 'matchups_rebuilt',
             'tonight_entries_rebuilt', 'pitcher_models_rebuilt',
         ))
+        if (
+            work_job is not None
+            and not _trusted_stage_result(read_dict, require_rebuild=True)
+        ):
+            error = read_dict.get('reason_code') or 'cu06_incomplete'
+            failures.append({
+                'scope': 'cu06', 'game_pk': change.get('game_pk'),
+                'error': error,
+            })
+            if work_job is not None:
+                _record_work_failure(
+                    work_job, error,
+                    stage=continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                    counters=counters, results=work_results,
+                )
+            downstream.append(game_result)
+            continue
 
         if config.mode == ActivationMode.PROOF_PUBLICATION:
-            if counters['publication_candidates'] >= config.max_publication_cohorts:
-                game_result['publication'] = {
-                    'status': 'skipped', 'reason_code': 'max_publication_cohorts_reached',
-                }
-            else:
-                try:
-                    _publish(
-                        kwargs['proof_publisher'], read_models, change, kwargs,
-                        game_result, counters, proof=True,
+            proof_cache_required = (
+                kwargs['cache_adapter'] is not None
+                or (
+                    work_job is not None
+                    and (work_job.details_json or {}).get('proof_cache_required')
+                    is True
+                )
+            )
+            if work_job is not None:
+                work_job = continuous_game_work.checkpoint(
+                    work_job,
+                    continuous_game_work.STAGE_PUBLICATION_PENDING,
+                    canonical_impact=impact_dict,
+                    proof_cache_required=proof_cache_required,
+                )
+            if proof_cache_required and kwargs['cache_adapter'] is None:
+                deferred = continuous_game_work.defer(
+                    work_job,
+                    reason='cache_handoff_unavailable',
+                    stage=continuous_game_work.STAGE_PUBLICATION_PENDING,
+                    canonical_impact=impact_dict,
+                )
+                work_results.append(deferred.to_dict())
+                downstream.append(game_result)
+                continue
+            try:
+                publication = _publish(
+                    kwargs['proof_publisher'], read_models, change, kwargs,
+                    game_result, counters, proof=True,
+                )
+                if not _publication_authority_satisfied(publication):
+                    raise RuntimeError(
+                        publication.get('reason_code') or 'publication_not_committed'
                     )
-                except Exception as exc:
-                    failures.append({
-                        'scope': 'proof_publication', 'game_pk': change.get('game_pk'),
-                        'error': type(exc).__name__,
-                    })
+                if (
+                    work_job is not None
+                    and publication.get('reason_code') == 'semantic_no_change'
+                    and proof_cache_required
+                ):
+                    receipt = cu07.recover_committed_publication_receipt(
+                        publication.get('candidate_id'),
+                        expected_publication_id=publication.get(
+                            'previous_publication_id'
+                        ),
+                        expected_team_ids=publication.get('affected_team_ids') or (),
+                        expected_game_ids=publication.get('affected_game_ids') or (),
+                    )
+                    if receipt is None:
+                        raise RuntimeError(
+                            'proof_publication_receipt_not_recoverable'
+                        )
+                    work_job = continuous_game_work.checkpoint(
+                        work_job,
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        canonical_impact=impact_dict,
+                        proof_publication_receipt=receipt,
+                        publication=publication,
+                    )
+                    keys = cu07.retry_cache_handoff(
+                        receipt['publication_id'],
+                        kwargs['cache_adapter'],
+                        expected_candidate_id=receipt['candidate_id'],
+                        expected_payload_version=receipt['payload_version'],
+                    )
+                    publication = {
+                        **publication,
+                        'new_publication_id': receipt['publication_id'],
+                        'committed': True,
+                        'cache_handoff_status': 'complete',
+                        'cache_keys': list(keys),
+                    }
+                    game_result['publication'] = publication
+                    counters['cache_handoffs'] += 1
+                if publication.get('cache_handoff_status') == 'retry_required':
+                    if work_job is None:
+                        raise RuntimeError('proof_cache_receipt_requires_durable_work')
+                    receipt = _proof_publication_receipt(publication)
+                    work_job = continuous_game_work.checkpoint(
+                        work_job,
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        canonical_impact=impact_dict,
+                        proof_publication_receipt=receipt,
+                        publication=publication,
+                    )
+                    raise RuntimeError('proof_publication_cache_retry_required')
+            except Exception as exc:
+                failures.append({
+                    'scope': 'proof_publication', 'game_pk': change.get('game_pk'),
+                    'error': type(exc).__name__,
+                })
+                if work_job is not None:
+                    _record_work_failure(
+                        work_job, exc,
+                        stage=(
+                            continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+                            if continuous_game_work.stage_for(work_job)
+                            == continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+                            else continuous_game_work.STAGE_PUBLICATION_PENDING
+                        ),
+                        counters=counters, results=work_results,
+                    )
+            else:
+                if work_job is not None:
+                    completed = continuous_game_work.complete(
+                        work_job,
+                        outcome='proof_publication_complete',
+                        canonical_impact=impact_dict,
+                        publication=publication,
+                    )
+                    counters['work_obligations_completed'] += 1
+                    work_results.append(completed.to_dict())
         elif config.mode in PRODUCTION_MODES:
             if not _cohort_is_allowlisted(impact_dict, config):
                 counters['skipped_by_allowlist'] += 1
                 game_result['publication'] = {
                     'status': 'skipped', 'reason_code': 'cohort_not_allowlisted',
                 }
+                if work_job is not None:
+                    deferred = continuous_game_work.defer(
+                        work_job,
+                        reason='cohort_not_allowlisted',
+                        stage=continuous_game_work.STAGE_PUBLICATION_PENDING,
+                        canonical_impact=impact_dict,
+                    )
+                    work_results.append(deferred.to_dict())
             else:
+                if work_job is not None:
+                    work_job = continuous_game_work.checkpoint(
+                        work_job,
+                        continuous_game_work.STAGE_PUBLICATION_PENDING,
+                        canonical_impact=impact_dict,
+                        publication_attempt_sync_run_id=(
+                            (work_job.details_json or {}).get(
+                                'publication_attempt_sync_run_id'
+                            )
+                            or kwargs['sync_run_id']
+                        ),
+                    )
                 production_publication_queue.append(
-                    (read_models, change, game_result)
+                    (read_models, change, game_result, work_job)
                 )
                 game_result['publication'] = {
                     'status': 'queued',
                     'reason_code': 'cycle_publication_pending',
                 }
+        else:
+            if work_job is not None:
+                completed = continuous_game_work.complete(
+                    work_job,
+                    outcome='bounded_downstream_complete',
+                    canonical_impact=impact_dict,
+                )
+                counters['work_obligations_completed'] += 1
+                work_results.append(completed.to_dict())
         if 'publication' in game_result:
             game_result['latency']['publication_stage_completed_at'] = (
                 utc_now_naive().isoformat()
@@ -655,10 +1314,15 @@ def _execute_cycle(**kwargs):
         downstream.append(game_result)
 
     if production_publication_queue:
-        read_models, change, game_result = production_publication_queue[-1]
+        read_models, change, game_result, publication_work_job = (
+            production_publication_queue[-1]
+        )
         blocking_scopes = {'represented_date', 'cu04', 'cu05', 'cu06'}
         blocked = any(item.get('scope') in blocking_scopes for item in failures)
         cycle_publication_committed = False
+        publication = None
+        publication_attempted = False
+        publication_deferral_reason = None
         if config.max_publication_cohorts < 1:
             failures.append({
                 'scope': 'publication',
@@ -668,6 +1332,7 @@ def _execute_cycle(**kwargs):
                 'status': 'skipped',
                 'reason_code': 'max_publication_cohorts_reached',
             }
+            publication_deferral_reason = 'max_publication_cohorts_reached'
         elif blocked:
             failures.append({
                 'scope': 'publication',
@@ -677,6 +1342,7 @@ def _execute_cycle(**kwargs):
                 'status': 'blocked',
                 'reason_code': 'downstream_recomputation_incomplete',
             }
+            publication_deferral_reason = 'downstream_recomputation_incomplete'
         elif kwargs['production_publisher'] is None:
             failures.append({
                 'scope': 'publication',
@@ -686,14 +1352,42 @@ def _execute_cycle(**kwargs):
                 'status': 'blocked',
                 'reason_code': 'production_publisher_unavailable',
             }
+            publication_deferral_reason = 'production_publisher_unavailable'
         else:
             try:
+                publication_attempted = True
+                publication_sync_run_id = _publication_batch_sync_run_id(
+                    production_publication_queue,
+                    current_sync_run_id=kwargs['sync_run_id'],
+                )
+                for queued_job in (
+                    queued_job
+                    for _models, _queued_change, _queued_result, queued_job
+                    in production_publication_queue
+                    if queued_job is not None
+                ):
+                    if (
+                        (queued_job.details_json or {}).get(
+                            'publication_attempt_sync_run_id'
+                        )
+                        != publication_sync_run_id
+                    ):
+                        continuous_game_work.checkpoint(
+                            queued_job,
+                            continuous_game_work.STAGE_PUBLICATION_PENDING,
+                            publication_attempt_sync_run_id=publication_sync_run_id,
+                        )
                 publication = _publish(
                     kwargs['production_publisher'], read_models, change, kwargs,
                     game_result, counters, proof=False,
+                    sync_run_id=publication_sync_run_id,
                 )
-                cycle_publication_committed = bool(publication.get('committed'))
-                if not cycle_publication_committed:
+                authority_committed = _publication_authority_satisfied(publication)
+                cycle_publication_committed = (
+                    authority_committed
+                    and publication.get('cache_handoff_status') != 'retry_required'
+                )
+                if not authority_committed:
                     failures.append({
                         'scope': 'live_publication',
                         'game_pk': change.get('game_pk'),
@@ -702,7 +1396,7 @@ def _execute_cycle(**kwargs):
                             or 'publication_not_committed'
                         ),
                     })
-                elif publication.get('cache_handoff_status') == 'retry_required':
+                elif not cycle_publication_committed:
                     failures.append({
                         'scope': 'tonight_refresh',
                         'game_pk': change.get('game_pk'),
@@ -713,7 +1407,57 @@ def _execute_cycle(**kwargs):
                     'scope': 'live_publication', 'game_pk': change.get('game_pk'),
                     'error': type(exc).__name__,
                 })
-        for _models, _queued_change, queued_result in production_publication_queue[:-1]:
+        queued_jobs = [
+            queued_job
+            for _models, _queued_change, _queued_result, queued_job
+            in production_publication_queue
+            if queued_job is not None
+        ]
+        if cycle_publication_committed:
+            for queued_job in queued_jobs:
+                completed = continuous_game_work.complete(
+                    queued_job,
+                    outcome='production_publication_complete',
+                    publication=publication,
+                )
+                counters['work_obligations_completed'] += 1
+                work_results.append(completed.to_dict())
+        elif publication_attempted:
+            error = (
+                (publication or {}).get('reason_code')
+                if isinstance(publication, dict)
+                else None
+            ) or 'production_publication_failed'
+            for queued_job in queued_jobs:
+                authority_committed = _publication_authority_satisfied(
+                    publication or {}
+                )
+                if authority_committed:
+                    queued_job = continuous_game_work.checkpoint(
+                        queued_job,
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING,
+                        publication=publication,
+                    )
+                _record_work_failure(
+                    queued_job, error,
+                    stage=(
+                        continuous_game_work.STAGE_PUBLICATION_CACHE_PENDING
+                        if authority_committed
+                        else continuous_game_work.STAGE_PUBLICATION_PENDING
+                    ),
+                    counters=counters, results=work_results,
+                )
+        else:
+            for queued_job in queued_jobs:
+                deferred = continuous_game_work.defer(
+                    queued_job,
+                    reason=publication_deferral_reason or 'publication_deferred',
+                    stage=continuous_game_work.STAGE_PUBLICATION_PENDING,
+                )
+                work_results.append(deferred.to_dict())
+        for (
+            _models, _queued_change, queued_result, _queued_job
+        ) in production_publication_queue[:-1]:
             if cycle_publication_committed:
                 queued_result['publication'] = {
                     'status': 'included',
@@ -729,7 +1473,10 @@ def _execute_cycle(**kwargs):
         after_metrics['api_calls'] - before_metrics['api_calls'],
     )
     source_retries = max(0, after_metrics['retries'] - before_metrics['retries'])
-    source_budget_exhausted = source_requests >= config.source_request_budget
+    source_budget_exhausted = (
+        detection_deferred_for_source_budget
+        or source_requests >= config.source_request_budget
+    )
     status = RESULT_PARTIAL if failures or timeout_reached else RESULT_COMPLETE
     reason = (
         'cycle_completed_with_failures' if failures
@@ -764,6 +1511,8 @@ def _execute_cycle(**kwargs):
         detection_results=tuple(detection_results),
         downstream_results=tuple(downstream),
         replay_results=tuple(replay_results),
+        work_results=tuple(work_results),
+        work_obligations_pending=continuous_game_work.unresolved_count(),
         runtime_ms=round((monotonic() - started_clock) * 1000, 3),
         **counters,
     )
@@ -773,7 +1522,18 @@ def _execute_cycle(**kwargs):
     return result
 
 
-def _publish(publisher, read_models, change, kwargs, game_result, counters, *, proof):
+def _publish(
+    publisher,
+    read_models,
+    change,
+    kwargs,
+    game_result,
+    counters,
+    *,
+    proof,
+    sync_run_id=None,
+    require_published_receipt=False,
+):
     counters['publication_candidates'] += 1
     expected_current_id = None
     if proof:
@@ -781,14 +1541,28 @@ def _publish(publisher, read_models, change, kwargs, game_result, counters, *, p
         expected_current_id = current.id if current is not None else None
     elif kwargs['production_current_id_provider'] is not None:
         expected_current_id = kwargs['production_current_id_provider']()
-    result = publisher(
-        read_models,
-        source_identity=change.get('current_observation_identity'),
-        source_order=_source_order(change.get('source_observed_at')),
-        sync_run_id=kwargs['sync_run_id'],
-        expected_current_id=expected_current_id,
-        cache_adapter=kwargs['cache_adapter'],
+    correction_recheck = (
+        change.get('reason') == continuous_game_work.CORRECTION_RECHECK_REASON
     )
+    canonical_impact = game_result.get('cu03') or {}
+    publisher_kwargs = {
+        'source_identity': (
+            canonical_impact.get('canonical_source_revision')
+            if correction_recheck else change.get('current_observation_identity')
+        ),
+        'source_order': _source_order(
+            change.get('detected_at')
+            if correction_recheck else change.get('source_observed_at')
+        ),
+        'sync_run_id': (
+            kwargs['sync_run_id'] if sync_run_id is None else sync_run_id
+        ),
+        'expected_current_id': expected_current_id,
+        'cache_adapter': kwargs['cache_adapter'],
+    }
+    if require_published_receipt:
+        publisher_kwargs['require_published_receipt'] = True
+    result = publisher(read_models, **publisher_kwargs)
     value = _dict(result)
     game_result['publication'] = value
     if value.get('committed'):
@@ -796,6 +1570,182 @@ def _publish(publisher, read_models, change, kwargs, game_result, counters, *, p
     if value.get('cache_handoff_status') == 'complete':
         counters['cache_handoffs'] += 1
     return value
+
+
+def _canonical_completion_callback(work_job):
+    """Checkpoint CU-01 impact in the same transaction as canonical rows."""
+    def checkpoint(outcome):
+        impact = _canonical_impact_from_game_outcome(outcome)
+        stage = (
+            continuous_game_work.STAGE_DOWNSTREAM_PENDING
+            if impact['canonical_mutation_performed']
+            else continuous_game_work.STAGE_COMPLETE
+        )
+        continuous_game_work.checkpoint(
+            work_job,
+            stage,
+            commit=False,
+            canonical_impact=impact,
+        )
+
+    return checkpoint
+
+
+def _canonical_impact_from_game_outcome(outcome):
+    optional = (outcome.get('optional_source_domains') or {}).get(
+        'final_play_by_play'
+    ) or {}
+    pitch_rows = optional.get('pitch_rows') or {}
+    impact = outcome.get('impact') or {}
+    mutation_count = sum(int(outcome.get(field) or 0) for field in (
+        'inserted', 'updated', 'pitcher_identity_mutations',
+    )) + sum(int(pitch_rows.get(field) or 0) for field in (
+        'inserted', 'updated', 'superseded',
+    ))
+    return {
+        'game_pk': outcome.get('game_pk'),
+        'represented_date': outcome.get('represented_date'),
+        'detection_classification': 'durable_observation_work',
+        'decision': cu03.INSPECT_POST_FINAL_CORRECTION,
+        'orchestration_status': cu03.STATUS_RECONCILED,
+        'reason_code': 'cu01_canonical_reconciliation_complete',
+        'canonical_action_attempted': True,
+        'canonical_ingestion_mode': 'cu01_write_non_authoritative',
+        'cu01_invocations': 1,
+        'game_log_inserted': int(outcome.get('inserted') or 0),
+        'game_log_updated': int(outcome.get('updated') or 0),
+        'pitch_inserted': int(pitch_rows.get('inserted') or 0),
+        'pitch_updated': int(pitch_rows.get('updated') or 0),
+        'pitch_superseded': int(pitch_rows.get('superseded') or 0),
+        'canonical_mutation_performed': mutation_count > 0,
+        'canonical_source_revision': outcome.get('source_revision'),
+        'affected_pitcher_mlb_ids': list(
+            impact.get('affected_pitcher_mlb_ids') or ()
+        ),
+        'affected_pitcher_ids': list(impact.get('affected_pitcher_ids') or ()),
+        'affected_team_ids': list(impact.get('affected_team_ids') or ()),
+        'optional_pbp_status': optional.get('processing_status') or 'not_requested',
+        'publication_affected': False,
+        'downstream_recomputation_triggered': False,
+    }
+
+
+def _trusted_stage_result(value, *, require_rebuild=False):
+    performed = (
+        value.get('rebuild_performed')
+        if require_rebuild
+        else value.get('recomputation_performed')
+    )
+    return (
+        value.get('status') == 'complete'
+        and value.get('parity_status') == 'match'
+        and performed is True
+        and not value.get('failures')
+        and not value.get('parity_mismatches')
+    )
+
+
+def _publication_authority_satisfied(value):
+    return bool(value.get('committed')) or value.get('reason_code') in {
+        'semantic_no_change',
+        'production_snapshot_already_committed',
+    }
+
+
+def _publication_satisfied(value):
+    return (
+        _publication_authority_satisfied(value)
+        and value.get('cache_handoff_status') != 'retry_required'
+    )
+
+
+def _proof_publication_receipt(publication):
+    publication_id = _positive_int(publication.get('new_publication_id'))
+    candidate_id = publication.get('candidate_id')
+    if (
+        publication_id is None
+        or not isinstance(candidate_id, str)
+        or not candidate_id.strip()
+    ):
+        raise RuntimeError('proof_publication_receipt_invalid')
+    return {
+        'publication_id': publication_id,
+        'candidate_id': candidate_id,
+        'snapshot_type': cu07.PROOF_SNAPSHOT_TYPE,
+        'payload_version': 1,
+    }
+
+
+def _validated_work(jobs):
+    valid = []
+    invalid = []
+    for job in jobs:
+        issue = continuous_game_work.validate_obligation(job)
+        if issue is None:
+            valid.append(job)
+            continue
+        quarantined = continuous_game_work.quarantine_invalid(job, issue)
+        invalid.append(quarantined.to_dict())
+    return valid, invalid
+
+
+def _publication_batch_sync_run_id(queue, *, current_sync_run_id):
+    """Return a receipt identity that proves the entire queued cohort.
+
+    A single failed cohort may reuse its first publication attempt so a durable
+    Dashboard receipt can resume only the cache handoff.  Mixed cohorts cannot
+    reuse one member's receipt: they receive the current cycle identity before
+    publication, proving that every queued game was included together.
+    """
+    attempt_ids = set()
+    for _models, _change, _result, job in queue:
+        if job is None:
+            return current_sync_run_id
+        attempt_id = (job.details_json or {}).get('publication_attempt_sync_run_id')
+        if attempt_id is None:
+            return current_sync_run_id
+        attempt_ids.add(attempt_id)
+    if len(attempt_ids) == 1:
+        return next(iter(attempt_ids))
+    return current_sync_run_id
+
+
+def _canonical_source_reserve(config, change):
+    """Reserve the known endpoint reads before starting one canonical action.
+
+    A reviewed CU-01 write rechecks its boxscore plan, refetches the boxscore
+    it applies, and attempts final play-by-play. Production auto-authorization
+    adds one shadow boxscore read to derive that reviewed plan identity. MLB
+    client's endpoint-level retries remain separately bounded and reported.
+    """
+    if config.mode not in CHAIN_MODES:
+        return 0
+    game_pk = int(
+        (
+            change.get('game_pk')
+            if isinstance(change, dict)
+            else getattr(change, 'game_pk', None)
+        )
+        or 0
+    )
+    if config.expected_plan_fingerprints.get(game_pk):
+        return CANONICAL_WRITE_SOURCE_REQUESTS
+    if config.mode in PRODUCTION_MODES:
+        return CANONICAL_WRITE_SOURCE_REQUESTS + AUTOMATIC_PLAN_SOURCE_REQUESTS
+    return 0
+
+
+def _record_work_failure(job, error, *, stage, counters, results):
+    failed = continuous_game_work.fail(job, error, stage=stage)
+    counters['work_obligations_failed'] += 1
+    results.append(failed.to_dict())
+
+
+def _rotate_unclaimed_work(job, reason, results):
+    if job is None:
+        return
+    deferred = continuous_game_work.defer_unclaimed(job, reason=reason)
+    results.append(deferred.to_dict())
 
 
 def _prepare_governed_replays(config, detection_results, *, sync_run_id):
@@ -1119,6 +2069,26 @@ def _metrics(client):
         'api_calls': int(value.get('api_calls') or 0),
         'retries': int(value.get('retries') or 0),
     }
+
+
+def _max_attempts_per_request(client):
+    getter = getattr(client, 'max_attempts_per_request', None)
+    if not callable(getter):
+        return 1
+    try:
+        return max(1, int(getter()))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _positive_int(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _elapsed_ms(started):

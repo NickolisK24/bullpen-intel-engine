@@ -204,6 +204,8 @@ def run_game_driven_ingestion(
     process_game=None,
     fetch_boxscore=None,
     plan_game=None,
+    completion_callback=None,
+    source_client=None,
 ) -> dict:
     """Run one game-driven ingestion pass and return its full run report.
 
@@ -292,7 +294,17 @@ def run_game_driven_ingestion(
         report['planner_seconds'] = round(time.monotonic() - planner_started, 3)
         return report
 
-    handlers = _resolve_handlers(process_game, fetch_boxscore, plan_game)
+    handler_options = (
+        {'source_client': source_client}
+        if source_client is not None
+        else {}
+    )
+    handlers = _resolve_handlers(
+        process_game,
+        fetch_boxscore,
+        plan_game,
+        **handler_options,
+    )
 
     # ── Reviewed-plan authorization ─────────────────────────────────────────
     # An exclusive write recomputes the plan from CURRENT database state and
@@ -337,6 +349,7 @@ def run_game_driven_ingestion(
             sync_run_id=sync_run_id,
             job_name=job_name,
             report=report,
+            completion_callback=completion_callback,
         )
         report['games'].append(outcome)
 
@@ -392,7 +405,16 @@ def run_game_driven_ingestion(
 # ── One game ────────────────────────────────────────────────────────────────
 
 
-def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) -> dict:
+def _process_one_game(
+    item,
+    *,
+    mode,
+    handlers,
+    sync_run_id,
+    job_name,
+    report,
+    completion_callback,
+) -> dict:
     game_started = time.monotonic()
     report['games_attempted'] += 1
     outcome = {
@@ -582,6 +604,8 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
                 'updated': persisted['updated'],
             },
         )
+        if completion_callback is not None:
+            completion_callback(outcome)
         db.session.commit()
         _record_effect(report, 'work_items_completed')
         _record_effect(report, 'checkpoints_advanced')
@@ -1042,7 +1066,13 @@ def _safe_row_entries(plan) -> list[dict]:
 # ── Handlers (canonical implementations, injectable for tests) ──────────────
 
 
-def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
+def _resolve_handlers(
+    process_game,
+    fetch_boxscore,
+    plan_game=None,
+    *,
+    source_client=None,
+) -> dict:
     if process_game is not None and fetch_boxscore is not None:
         return {
             'fetch': fetch_boxscore,
@@ -1056,18 +1086,17 @@ def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
     # box-score parser, and the canonical idempotent GameLog upsert all come
     # from there — this module introduces none of its own.
     from services import sync as sync_service
+    client = source_client or sync_service.mlb_client
 
     def _fetch(item):
         game_payload = _game_payload(item)
-        boxscore = sync_service.mlb_client.get_game_boxscore(item.game_pk)
+        boxscore = client.get_game_boxscore(item.game_pk)
         return game_payload, boxscore
 
     def _fetch_optional(item):
         try:
             return {
-                'play_by_play': sync_service.mlb_client.get_game_play_by_play(
-                    item.game_pk
-                ),
+                'play_by_play': client.get_game_play_by_play(item.game_pk),
                 'error': None,
             }
         except Exception as exc:  # noqa: BLE001 - optional domain is reported

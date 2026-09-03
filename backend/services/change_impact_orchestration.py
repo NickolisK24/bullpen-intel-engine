@@ -123,6 +123,8 @@ def orchestrate_game_change(
     allow_canonical_write=False,
     expected_plan_fingerprint=None,
     canonical_ingestor=None,
+    canonical_completion_callback=None,
+    source_client=None,
 ):
     """Apply the CU-03 decision and optionally invoke one reviewed CU-01 write."""
     decision, status, reason = decide_game_change(change)
@@ -146,14 +148,20 @@ def orchestrate_game_change(
         return ChangeImpactResult(**base)
 
     ingestor = canonical_ingestor or _run_reviewed_cu01_write
-    report = ingestor(
-        change,
-        expected_plan_fingerprint=expected_plan_fingerprint,
-    )
+    ingestor_kwargs = {
+        'expected_plan_fingerprint': expected_plan_fingerprint,
+    }
+    if canonical_completion_callback is not None:
+        ingestor_kwargs['canonical_completion_callback'] = (
+            canonical_completion_callback
+        )
+    if canonical_ingestor is None and source_client is not None:
+        ingestor_kwargs['source_client'] = source_client
+    report = ingestor(change, **ingestor_kwargs)
     return _from_cu01_report(base, report)
 
 
-def derive_current_plan_fingerprint(change):
+def derive_current_plan_fingerprint(change, *, source_client=None):
     """Build the exact current CU-01 plan identity for an unattended final.
 
     The write path still recomputes and compares this fingerprint before its
@@ -173,6 +181,7 @@ def derive_current_plan_fingerprint(change):
         date.fromisoformat(official_date),
         mode=cu01.MODE_SHADOW,
         only_game_pks=[game_pk],
+        source_client=source_client,
     )
     fingerprint = report.get('complete_reconciliation_fingerprint')
     if report.get('status') != 'complete' or not fingerprint:
@@ -206,7 +215,13 @@ def detect_and_orchestrate_game(
     }
 
 
-def _run_reviewed_cu01_write(change, *, expected_plan_fingerprint):
+def _run_reviewed_cu01_write(
+    change,
+    *,
+    expected_plan_fingerprint,
+    canonical_completion_callback=None,
+    source_client=None,
+):
     game_pk = _get(change, 'game_pk')
     state = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
     official_date = (
@@ -222,6 +237,8 @@ def _run_reviewed_cu01_write(change, *, expected_plan_fingerprint):
         mode=cu01.MODE_WRITE,
         only_game_pks=[game_pk],
         expected_plan_fingerprint=expected_plan_fingerprint,
+        completion_callback=canonical_completion_callback,
+        source_client=source_client,
     )
 
 
@@ -232,7 +249,20 @@ def _from_cu01_report(base, report):
         'canonical_ingestion_mode': 'cu01_write_non_authoritative',
         'cu01_invocations': 1,
     })
-    if report.get('status') != 'complete':
+    games = list(report.get('games') or ())
+    target_games = [
+        game for game in games
+        if game.get('game_pk') == base.get('game_pk')
+    ]
+    canonical_game_completed = (
+        int(report.get('games_failed') or 0) == 0
+        and int(report.get('games_completed') or 0) == 1
+        and len(target_games) == 1
+        and target_games[0].get('status') in {
+            'completed', 'completed_with_correction',
+        }
+    )
+    if report.get('status') != 'complete' or not canonical_game_completed:
         values.update({
             'orchestration_status': STATUS_CANONICAL_FAILED,
             'reason_code': 'cu01_canonical_ingestion_failed',
@@ -240,7 +270,6 @@ def _from_cu01_report(base, report):
         })
         return ChangeImpactResult(**values)
 
-    games = report.get('games') or []
     pitch_counts = _pitch_counts(games)
     affected_local_ids = sorted({
         pitcher_id

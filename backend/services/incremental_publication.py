@@ -323,12 +323,28 @@ def publish_incremental(
     )
 
 
-def retry_cache_handoff(publication_id, cache_adapter):
+def retry_cache_handoff(
+    publication_id,
+    cache_adapter,
+    *,
+    expected_candidate_id=None,
+    expected_payload_version=None,
+):
     """Idempotently populate versioned cache entries after durable commit."""
     row = db.session.get(DashboardSnapshot, publication_id)
     if row is None or row.snapshot_type != PROOF_SNAPSHOT_TYPE or not row.is_published:
         raise ValueError('Cache handoff requires the current CU-07 proof publication')
     meta = _publication_meta(row)
+    if (
+        expected_candidate_id is not None
+        and meta.get('candidate_id') != expected_candidate_id
+    ):
+        raise ValueError('Cache handoff proof publication identity mismatch')
+    if (
+        expected_payload_version is not None
+        and row.payload_version != expected_payload_version
+    ):
+        raise ValueError('Cache handoff proof publication version mismatch')
     candidate = PublicationCandidate(
         candidate_id=meta['candidate_id'],
         semantic_fingerprint=meta['semantic_fingerprint'],
@@ -342,6 +358,53 @@ def retry_cache_handoff(publication_id, cache_adapter):
     keys = cache_keys(candidate)
     cache_adapter.handoff(row.id, row.payload, keys)
     return keys
+
+
+def recover_committed_publication_receipt(
+    candidate_id,
+    *,
+    expected_publication_id=None,
+    expected_team_ids=(),
+    expected_game_ids=(),
+    expected_payload_version=1,
+):
+    """Recover one exact current proof publication after orchestration loss."""
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        raise ValueError('Proof publication recovery candidate identity is required')
+    rows = (
+        DashboardSnapshot.query
+        .filter_by(
+            snapshot_type=PROOF_SNAPSHOT_TYPE,
+            is_published=True,
+            status=STATUS_CURRENT,
+        )
+        .order_by(DashboardSnapshot.id.asc())
+        .limit(2)
+        .all()
+    )
+    if len(rows) > 1:
+        raise ValueError('Proof publication recovery authority is ambiguous')
+    if not rows:
+        return None
+
+    row = rows[0]
+    if expected_publication_id is not None and row.id != expected_publication_id:
+        raise ValueError('Proof publication recovery publication identity mismatch')
+    if row.payload_version != expected_payload_version:
+        raise ValueError('Proof publication recovery payload version mismatch')
+    meta = _publication_meta(row)
+    if meta.get('candidate_id') != candidate_id:
+        return None
+    if tuple(meta.get('affected_team_ids') or ()) != tuple(expected_team_ids):
+        raise ValueError('Proof publication recovery team identity mismatch')
+    if tuple(meta.get('affected_game_ids') or ()) != tuple(expected_game_ids):
+        raise ValueError('Proof publication recovery game identity mismatch')
+    return {
+        'publication_id': row.id,
+        'candidate_id': candidate_id,
+        'snapshot_type': PROOF_SNAPSHOT_TYPE,
+        'payload_version': row.payload_version,
+    }
 
 
 def get_current_publication():

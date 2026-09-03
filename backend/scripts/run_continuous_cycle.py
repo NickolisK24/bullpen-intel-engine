@@ -43,7 +43,7 @@ def _boolean_safety_value(payload, key):
 
 
 def _compact_cycle_payload(payload):
-    return {
+    compact = {
         'event': 'continuous_cycle',
         'mode': payload.get('mode'),
         'sync_run_id': payload.get('sync_run_id'),
@@ -73,6 +73,15 @@ def _compact_cycle_payload(payload):
             payload, 'circuit_breaker_open'
         ),
     }
+    for key in (
+        'work_obligations_pending',
+        'work_obligations_claimed',
+        'work_obligations_completed',
+        'work_obligations_failed',
+    ):
+        if key in payload:
+            compact[key] = payload[key]
+    return compact
 
 
 def _changed_game_payload(observation):

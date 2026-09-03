@@ -431,6 +431,129 @@ def test_cache_failure_occurs_after_commit_and_retry_is_idempotent(app):
         assert cu07.read_current_cohort(cache_adapter=cache) == cu07.get_current_publication().payload
 
 
+def test_cache_retry_rejects_mismatched_durable_candidate_receipt(app):
+    with app.app_context():
+        cache = ProofCache(fail=True)
+        result = _publish(_cu06(), order=1, expected=None, cache=cache)
+
+        with pytest.raises(
+            ValueError, match='proof publication identity mismatch',
+        ):
+            cu07.retry_cache_handoff(
+                result.new_publication_id,
+                cache,
+                expected_candidate_id='wrong-candidate',
+            )
+
+        assert len(cache.calls) == 1
+        assert DashboardSnapshot.query.filter_by(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+        ).count() == 1
+
+        row = db.session.get(DashboardSnapshot, result.new_publication_id)
+        row.payload_version = 2
+        db.session.commit()
+        with pytest.raises(ValueError, match='proof publication version mismatch'):
+            cu07.retry_cache_handoff(
+                result.new_publication_id,
+                cache,
+                expected_candidate_id=result.candidate_id,
+                expected_payload_version=1,
+            )
+
+
+def test_exact_committed_publication_receipt_is_recoverable(app):
+    with app.app_context():
+        result = _publish(_cu06(), order=1, expected=None)
+
+        receipt = cu07.recover_committed_publication_receipt(
+            result.candidate_id,
+            expected_publication_id=result.new_publication_id,
+            expected_team_ids=result.affected_team_ids,
+            expected_game_ids=result.affected_game_ids,
+        )
+
+        assert receipt == {
+            'publication_id': result.new_publication_id,
+            'candidate_id': result.candidate_id,
+            'snapshot_type': cu07.PROOF_SNAPSHOT_TYPE,
+            'payload_version': 1,
+        }
+
+
+def test_committed_publication_recovery_rejects_wrong_or_invalid_identity(app):
+    with app.app_context():
+        result = _publish(_cu06(), order=1, expected=None)
+
+        assert cu07.recover_committed_publication_receipt(
+            'wrong-candidate',
+            expected_publication_id=result.new_publication_id,
+            expected_team_ids=result.affected_team_ids,
+            expected_game_ids=result.affected_game_ids,
+        ) is None
+        with pytest.raises(ValueError, match='publication identity mismatch'):
+            cu07.recover_committed_publication_receipt(
+                result.candidate_id,
+                expected_publication_id=result.new_publication_id + 1,
+                expected_team_ids=result.affected_team_ids,
+                expected_game_ids=result.affected_game_ids,
+            )
+        with pytest.raises(ValueError, match='team identity mismatch'):
+            cu07.recover_committed_publication_receipt(
+                result.candidate_id,
+                expected_publication_id=result.new_publication_id,
+                expected_team_ids=(999,),
+                expected_game_ids=result.affected_game_ids,
+            )
+        row = db.session.get(DashboardSnapshot, result.new_publication_id)
+        row.payload_version = 2
+        db.session.commit()
+        with pytest.raises(ValueError, match='payload version mismatch'):
+            cu07.recover_committed_publication_receipt(
+                result.candidate_id,
+                expected_publication_id=result.new_publication_id,
+                expected_team_ids=result.affected_team_ids,
+                expected_game_ids=result.affected_game_ids,
+            )
+
+
+def test_committed_publication_recovery_fails_closed_for_no_or_ambiguous_proof(app):
+    with app.app_context():
+        assert cu07.recover_committed_publication_receipt('missing') is None
+
+        wrong_namespace = DashboardSnapshot(
+            snapshot_type='bullpen_dashboard',
+            sync_run_id=_sync_run(),
+            status=cu07.STATUS_CURRENT,
+            is_published=True,
+            payload={'publication': {'candidate_id': 'missing'}},
+            payload_version=1,
+            source='sync',
+        )
+        db.session.add(wrong_namespace)
+        db.session.commit()
+        assert cu07.recover_committed_publication_receipt('missing') is None
+
+        result = _publish(_cu06(), order=1, expected=None)
+        current = db.session.get(DashboardSnapshot, result.new_publication_id)
+        duplicate = DashboardSnapshot(
+            snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
+            sync_run_id=_sync_run(),
+            status=cu07.STATUS_CURRENT,
+            is_published=True,
+            payload=deepcopy(current.payload),
+            payload_version=current.payload_version,
+            data_through=current.data_through,
+            availability_reference_date=current.availability_reference_date,
+            source=current.source,
+        )
+        db.session.add(duplicate)
+        db.session.commit()
+
+        with pytest.raises(ValueError, match='authority is ambiguous'):
+            cu07.recover_committed_publication_receipt(result.candidate_id)
+
+
 def test_unrelated_team_and_production_pointer_remain_unchanged(app):
     with app.app_context():
         production = DashboardSnapshot(

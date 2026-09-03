@@ -164,6 +164,8 @@ def test_final_actions_require_explicit_write_and_reviewed_plan(
 def _cu01_report(*, optional_status='fully_processed', inserted=2, pitches=3):
     return {
         'status': 'complete',
+        'games_completed': 1,
+        'games_failed': 0,
         'rows_inserted': inserted,
         'rows_updated': 0,
         'rows_unchanged': 2 if not inserted else 0,
@@ -171,6 +173,8 @@ def _cu01_report(*, optional_status='fully_processed', inserted=2, pitches=3):
         'affected_pitcher_mlb_ids': [1002, 2002] if inserted else [],
         'affected_team_ids': [AWAY_TEAM, HOME_TEAM] if inserted else [],
         'games': [{
+            'game_pk': GAME_PK,
+            'status': 'completed',
             'impact': {'affected_pitcher_ids': [12, 22] if inserted else []},
             'optional_source_domains': {'final_play_by_play': {
                 'processing_status': optional_status,
@@ -250,6 +254,7 @@ def test_continuous_plan_fingerprint_is_derived_from_current_final_observation(
         {
             'mode': game_driven_ingestion.MODE_SHADOW,
             'only_game_pks': [GAME_PK],
+            'source_client': None,
         },
     )]
 
@@ -293,7 +298,17 @@ def test_core_source_failure_is_fail_closed_and_emits_no_impact():
         allow_canonical_write=True,
         expected_plan_fingerprint='reviewed-plan',
         canonical_ingestor=lambda *args, **kwargs: {
-            'status': 'failed', 'failure_classes': {'boxscore_fetch_failed': 1},
+            # CU-01 reports a completed *run* even when its one per-game unit
+            # failed and remains retryable. CU-03 must inspect that unit proof.
+            'status': 'complete',
+            'games_completed': 0,
+            'games_failed': 1,
+            'failure_classes': {'boxscore_fetch_failed': 1},
+            'games': [{
+                'game_pk': GAME_PK,
+                'status': 'retryable_failure',
+                'error_class': 'boxscore_fetch_failed',
+            }],
         },
     )
 

@@ -13,6 +13,8 @@ import json
 from time import perf_counter
 
 from models.game_observation_state import GameObservationState
+from services import continuous_game_work
+from services import game_appearance_extraction
 from services import game_finality
 from services.mlb_api import MlbApiFetchError, mlb_client
 from utils.db import db
@@ -31,6 +33,8 @@ SOURCE_FAILURE = 'source_failure'
 SOURCE_AUTHORITY = 'mlb_statsapi_live_feed_v1_1'
 SOURCE_ENDPOINT = '/api/v1.1/game/{game_pk}/feed/live'
 SOURCE_AUTHORITY_RANKS = {SOURCE_AUTHORITY: 100}
+EQUAL_REVISION_FINAL_VERIFIED = 'equal_revision_final_boxscore_verified'
+FINAL_EVIDENCE_REGRESSION = 'final_evidence_regression'
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,7 @@ def observe_game_change(
     client=None,
     source_authority=SOURCE_AUTHORITY,
     commit=True,
+    create_work_obligation=False,
 ):
     """Fetch or accept one live-feed payload and compare it to durable state."""
     started = perf_counter()
@@ -109,14 +114,19 @@ def observe_game_change(
             accepted_at=detected_at,
         )
         db.session.add(row)
-        _finish(commit)
-        return _result(
+        result = _result(
             game_pk=observation['game_pk'], classification=NEW_GAME, changed=True,
             current=fingerprint, finality=observation['finality']['state'],
             source_authority=source_authority, source_observed_at=source_observed_at,
             detected_at=detected_at, reason='first_accepted_observation', accepted=True,
             payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
         )
+        if create_work_obligation:
+            continuous_game_work.ensure_obligation(
+                result, row=row, commit=False,
+            )
+        _finish(commit)
+        return result
 
     if fingerprint == row.observation_fingerprint:
         # Exact material replay is a true no-op: not even observation-state
@@ -136,6 +146,25 @@ def observe_game_change(
         incoming_authority=source_authority,
         incoming_observed_at=source_observed_at,
     )
+
+    if (
+        ordering not in {'older', 'weaker'}
+        and _is_final_evidence_regression(row.observation, observation)
+    ):
+        ordering = 'ambiguous'
+        reason = FINAL_EVIDENCE_REGRESSION
+
+    if (
+        ordering == 'ambiguous'
+        and reason == 'equal_revision_with_different_material_content'
+        and _equal_revision_final_is_verified(
+            previous=row.observation,
+            current=observation,
+            payload=payload,
+        )
+    ):
+        ordering = 'newer'
+        reason = EQUAL_REVISION_FINAL_VERIFIED
     if ordering != 'newer':
         classification = (
             STALE_OBSERVATION if ordering in {'older', 'weaker'}
@@ -165,15 +194,20 @@ def observe_game_change(
     row.last_classification = classification
     row.last_change_summary = differences
     row.accepted_at = detected_at
-    _finish(commit)
-    return _result(
+    result = _result(
         game_pk=observation['game_pk'], classification=classification, changed=True,
         previous=previous, current=fingerprint,
         finality=observation['finality']['state'], source_authority=source_authority,
         source_observed_at=source_observed_at, detected_at=detected_at,
-        differences=differences, reason='newer_upstream_observation', accepted=True,
+        differences=differences, reason=reason, accepted=True,
         payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
     )
+    if create_work_obligation:
+        continuous_game_work.ensure_obligation(
+            result, row=row, commit=False,
+        )
+    _finish(commit)
+    return result
 
 
 def detect_active_slate_changes(
@@ -214,7 +248,13 @@ def detect_active_slate_changes(
         candidates = _prioritize_bounded_candidates(games, candidates, ref)
         candidates = candidates[:max(0, int(max_games))]
     results = [
-        observe_game_change(pk, client=client, commit=False) for pk in candidates
+        observe_game_change(
+            pk,
+            client=client,
+            commit=False,
+            create_work_obligation=True,
+        )
+        for pk in candidates
     ]
     if commit:
         db.session.commit()
@@ -234,10 +274,16 @@ def canonicalize_game_observation(payload, *, expected_game_pk=None):
 
     game_data = payload.get('gameData') or {}
     status = game_data.get('status') or {}
-    decision = game_finality.classify_game_finality(
-        {'gamePk': game_pk, 'status': status}, require_boxscore=False,
-    )
     live = payload.get('liveData') or {}
+    boxscore = live.get('boxscore')
+    # Finality is evaluated with the embedded official pitching boxscore. This
+    # makes final_pending_data -> final_and_usable a real, monotonic evidence
+    # upgrade that can safely resolve an equal MLB metadata timestamp.
+    decision = game_finality.classify_game_finality(
+        {'gamePk': game_pk, 'status': status},
+        boxscore=boxscore,
+        require_boxscore=True,
+    )
     linescore = live.get('linescore') or {}
     plays = (live.get('plays') or {})
     all_plays = plays.get('allPlays') or []
@@ -249,6 +295,17 @@ def canonicalize_game_observation(payload, *, expected_game_pk=None):
     dt = game_data.get('datetime') or {}
     game = game_data.get('game') or {}
     probable = game_data.get('probablePitchers') or {}
+    pitching_fingerprint = (
+        _official_pitching_fingerprint(
+            game_pk=game_pk,
+            official_date=dt.get('officialDate') or dt.get('originalDate'),
+            home_team_id=_nested_id(teams.get('home')),
+            away_team_id=_nested_id(teams.get('away')),
+            boxscore=boxscore,
+        )
+        if decision.state == game_finality.FINAL_AND_USABLE
+        else None
+    )
 
     return {
         'schema_version': 1,
@@ -276,6 +333,10 @@ def canonicalize_game_observation(payload, *, expected_game_pk=None):
             'reason': decision.reason,
             'status_state': decision.status_state,
             'final_status': decision.final_status,
+        },
+        'pitching_evidence': {
+            'source_authority': game_appearance_extraction.SOURCE_AUTHORITY,
+            'appearance_set_fingerprint': pitching_fingerprint,
         },
         'linescore': {
             'inning': _int_or_none(linescore.get('currentInning')),
@@ -358,6 +419,145 @@ def _compare_order(*, accepted_authority, accepted_observed_at,
     if incoming_observed_at < accepted_observed_at:
         return 'older', 'older_upstream_observation'
     return 'ambiguous', 'equal_revision_with_different_material_content'
+
+
+def _equal_revision_final_is_verified(*, previous, current, payload):
+    """Admit one equal-timestamp final correction only on stronger evidence.
+
+    An MLB timestamp tie is never enough by itself. The accepted observation
+    must still be waiting on usable final data, while the incoming observation
+    must advance to final_and_usable using the embedded official pitching
+    boxscore. Once that terminal state is accepted, another same-timestamp
+    variant cannot supersede it, preventing oscillation between replicas.
+    """
+    previous_finality = (previous or {}).get('finality') or {}
+    current_finality = (current or {}).get('finality') or {}
+
+    if previous_finality.get('state') != game_finality.FINAL_PENDING_DATA:
+        return False
+    if current_finality.get('state') != game_finality.FINAL_AND_USABLE:
+        return False
+    if not previous_finality.get('final_status') or not current_finality.get('final_status'):
+        return False
+
+    boxscore = ((payload or {}).get('liveData') or {}).get('boxscore')
+    if not game_finality.classify_boxscore_usability(boxscore).is_final_and_usable:
+        return False
+
+    previous_result = _verified_final_result_identity(previous)
+    current_result = _verified_final_result_identity(current)
+    if previous_result is None or current_result is None:
+        return False
+    if previous_result != current_result:
+        return False
+
+    previous_evidence = (previous or {}).get('pitching_evidence') or {}
+    current_evidence = (current or {}).get('pitching_evidence') or {}
+    if (
+        current_evidence.get('source_authority')
+        != game_appearance_extraction.SOURCE_AUTHORITY
+        or not current_evidence.get('appearance_set_fingerprint')
+    ):
+        return False
+    if (
+        previous_evidence
+        and previous_evidence.get('source_authority')
+        != game_appearance_extraction.SOURCE_AUTHORITY
+    ):
+        return False
+
+    # The exception admits only the finality evidence upgrade. Any other
+    # material observation difference remains ambiguous at an equal revision.
+    # The source-authority key is allowed solely as a legacy-schema bootstrap;
+    # its exact governed value was validated above.
+    allowed_differences = {
+        'finality.reason',
+        'finality.state',
+        'pitching_evidence.source_authority',
+        'pitching_evidence.appearance_set_fingerprint',
+    }
+    if set(observation_diff(previous, current)) - allowed_differences:
+        return False
+
+    return True
+
+
+def _is_final_evidence_regression(previous, current):
+    previous_finality = (previous or {}).get('finality') or {}
+    current_finality = (current or {}).get('finality') or {}
+    return (
+        previous_finality.get('state') == game_finality.FINAL_AND_USABLE
+        and current_finality.get('state') == game_finality.FINAL_PENDING_DATA
+        and previous_finality.get('final_status') is True
+        and current_finality.get('final_status') is True
+    )
+
+
+def _official_pitching_fingerprint(
+    *, game_pk, official_date, home_team_id, away_team_id, boxscore,
+):
+    """Hash canonical appearance fields from the already-fetched official feed."""
+    try:
+        from services import sync as sync_service
+
+        appearances = game_appearance_extraction.extract_game_appearances(
+            game={
+                'gamePk': game_pk,
+                'teams': {
+                    'home': {'team': {'id': home_team_id}},
+                    'away': {'team': {'id': away_team_id}},
+                },
+            },
+            pitching_lines=sync_service._extract_pitching_lines_from_boxscore(
+                boxscore
+            ),
+            pitcher_order=sync_service._pitcher_order_by_side(boxscore),
+            game_date=official_date,
+        )
+    except (TypeError, ValueError, game_appearance_extraction.AppearanceExtractionError):
+        return None
+    if not appearances:
+        return None
+    return game_appearance_extraction.appearance_set_fingerprint(appearances)
+
+
+def _verified_final_result_identity(observation):
+    observation = observation or {}
+    identity = observation.get('identity') or {}
+    official_date = identity.get('official_date')
+    try:
+        parsed_date = date.fromisoformat(official_date)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(official_date, str) or official_date != parsed_date.isoformat():
+        return None
+
+    home_team_id = identity.get('home_team_id')
+    away_team_id = identity.get('away_team_id')
+    if not _is_positive_integer(home_team_id) or not _is_positive_integer(away_team_id):
+        return None
+    if home_team_id == away_team_id:
+        return None
+
+    linescore = observation.get('linescore') or {}
+    home_score = (linescore.get('home') or {}).get('runs')
+    away_score = (linescore.get('away') or {}).get('runs')
+    if not _is_nonnegative_integer(home_score):
+        return None
+    if not _is_nonnegative_integer(away_score):
+        return None
+
+    game_pk = observation.get('game_pk')
+    if not _is_positive_integer(game_pk):
+        return None
+    return (
+        game_pk,
+        official_date,
+        home_team_id,
+        away_team_id,
+        home_score,
+        away_score,
+    )
 
 
 def _accepted_change_classification(previous_finality, current_finality):
@@ -473,7 +673,7 @@ def _flatten(value, prefix=''):
 def _team_totals(value):
     value = value or {}
     return {
-        'runs': _int_or_none(value.get('runs')),
+        'runs': _score_or_none(value.get('runs')),
         'hits': _int_or_none(value.get('hits')),
         'errors': _int_or_none(value.get('errors')),
     }
@@ -482,7 +682,8 @@ def _team_totals(value):
 def _nested_id(value):
     if not isinstance(value, dict):
         return None
-    return _positive_int(value.get('id') or (value.get('team') or {}).get('id'))
+    raw_value = value.get('id') or (value.get('team') or {}).get('id')
+    return raw_value if _is_positive_integer(raw_value) else None
 
 
 def _event_fallback_identity(play, event):
@@ -494,6 +695,18 @@ def _event_fallback_identity(play, event):
 def _positive_int(value):
     parsed = _int_or_none(value)
     return parsed if parsed is not None and parsed > 0 else None
+
+
+def _score_or_none(value):
+    return value if _is_nonnegative_integer(value) else None
+
+
+def _is_positive_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_nonnegative_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _int_or_none(value):
