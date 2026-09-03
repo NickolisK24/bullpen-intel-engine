@@ -143,15 +143,27 @@ test('standalone Matchup keeps game identity when comparison is unavailable', ()
 test('standalone Matchup owns one eager request with no Team Board fan-out', () => {
   const page = readFileSync(new URL('../src/components/bullpen/MatchupPage.jsx', import.meta.url), 'utf8')
   const api = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
-  assert.equal((page.match(/getScheduledGameMatchup\(gameId\)/g) || []).length, 1)
+  assert.equal((page.match(/getScheduledGameMatchup\(gameId, options\)/g) || []).length, 1)
   assert.ok(page.includes('<BullpenComparisonView'))
-  assert.ok(api.includes('request(`/bullpen/matchups/${encodeURIComponent(gameId)}`)'))
+  assert.ok(api.includes('request(`/bullpen/matchups/${encodeURIComponent(gameId)}`,'))
   assert.equal(page.includes('overflow-x-auto'), false)
   assert.equal(page.includes('min-w-['), false)
   assert.equal(page.includes('<Navigate'), false)
   for (const forbidden of ['getTeams', 'getTeamBoardV2', 'getTonightIntelligence', 'getTeamBullpenComparison']) {
     assert.equal(page.includes(forbidden), false, forbidden)
   }
+})
+
+test('route-bound public reads pass cancellation through the shared request lifecycle', () => {
+  const matchup = readFileSync(new URL('../src/components/bullpen/MatchupPage.jsx', import.meta.url), 'utf8')
+  const pitcher = readFileSync(new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url), 'utf8')
+  const search = readFileSync(new URL('../src/components/search/SearchPage.jsx', import.meta.url), 'utf8')
+
+  assert.ok(matchup.includes('getScheduledGameMatchup(gameId, options)'))
+  assert.ok(pitcher.includes('getPitcherFatigue(pitcherId, options)'))
+  assert.ok(search.includes("typeof AbortController === 'undefined'"))
+  assert.ok(search.includes('controller?.abort()'))
+  assert.ok(search.includes('signal: controller.signal'))
 })
 
 test('standalone Matchup keeps loading and game-not-found states local', () => {
@@ -176,7 +188,7 @@ test('standalone Pitcher shell owns one request and never mounts Team Board depe
   const detail = readFileSync(new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url), 'utf8')
   const route = readFileSync(new URL('../src/components/bullpen/BullpenRoute.jsx', import.meta.url), 'utf8')
 
-  assert.equal((detail.match(/getPitcherFatigue\(pitcherId\)/g) || []).length, 1)
+  assert.equal((detail.match(/getPitcherFatigue\(pitcherId, options\)/g) || []).length, 1)
   for (const forbidden of ['getTeams', 'getTeamBoardV2', 'TonightsBullpenBoard', 'getPitcherRecentWork']) {
     assert.equal(page.includes(forbidden), false, forbidden)
   }

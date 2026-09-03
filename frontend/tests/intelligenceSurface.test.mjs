@@ -746,8 +746,7 @@ test('Today mounts exactly one Daily Edition owner request with no team fan-out'
     'utf8',
   )
 
-  assert.equal((source.match(/useFetch\(getTodayIntelligence\)/g) || []).length, 1)
-  assert.equal(source.includes('getTodayIntelligence('), false)
+  assert.equal((source.match(/getTodayIntelligence\(\{\}, options\)/g) || []).length, 1)
   assert.equal(source.includes('getTeamBoardV2'), false)
   assert.equal(source.includes('getTeamBullpen'), false)
 })
@@ -1869,7 +1868,7 @@ test('Tonight slate source keeps a one-column mobile stack and bounded desktop c
   assert.ok(source.includes('min-h-11 w-full min-w-0'))
   assert.ok(source.includes("const gameIdentity = games.map(game => game.key).join('|')"))
   assert.ok(source.includes('min-w-0 overflow-hidden border border-dirt bg-dugout'))
-  assert.equal(source.match(/useFetch\(getTonightIntelligence\)/g)?.length, 1)
+  assert.equal(source.match(/getTonightIntelligence\(\{\}, options\)/g)?.length, 1)
   assert.equal(source.includes('getScheduledGameMatchup'), false)
   assert.equal(source.includes('getTeamBoardV2'), false)
   assert.equal(source.includes('getTeamBullpen'), false)
@@ -2614,13 +2613,13 @@ test('Since Yesterday loading shell yields to available and governed unavailable
 test('Today uses one Home projection as the owner of its Landscape publication', () => {
   const source = readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8')
   for (const owner of [
-    'getTodayIntelligence',
-    'getTonightIntelligence',
     'getHomeProjection',
     'getTeams',
   ]) {
     assert.equal((source.match(new RegExp(`useFetch\\(${owner}\\)`, 'g')) || []).length, 1, owner)
   }
+  assert.equal((source.match(/getTodayIntelligence\(\{\}, options\)/g) || []).length, 1)
+  assert.equal((source.match(/getTonightIntelligence\(\{\}, options\)/g) || []).length, 1)
   assert.equal(source.includes('getBullpenDashboard'), false)
   assert.equal(source.includes('getBullpenLandscape'), false)
   assert.ok(source.includes('const landscape = home.data?.landscape || null'))

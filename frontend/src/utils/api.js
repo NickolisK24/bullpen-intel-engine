@@ -6,11 +6,18 @@ import {
   OBSERVATION_ITEM_REQUIRED_FIELDS,
   OBSERVATION_RESPONSE_REQUIRED_FIELDS,
 } from '../types/observations'
+import { publicResponseCache } from './publicResponseCache'
 
 const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
 const TONIGHT_INTELLIGENCE_TIMEOUT_MS = 12000
+const COMPACT_QUERY_TIMEOUT_MS = 8000
+const PUBLIC_SNAPSHOT_TIMEOUT_MS = 15000
+const DEFERRED_DETAIL_TIMEOUT_MS = 20000
+const CURRENT_ALIAS_TTL_MS = 30000
+const IMMUTABLE_SNAPSHOT_TTL_MS = 10 * 60 * 1000
+const QUERY_CACHE_TTL_MS = 15000
 
 export const AUTH_TOKEN_STORAGE_KEY = 'baseballos.authToken'
 export const AUTH_TOKEN_CHANGED_EVENT = 'baseballos:auth-token-changed'
@@ -24,6 +31,55 @@ export const EXPLANATION_AVAILABILITY_ROUTE_PREFIX = '/explanations/availability
 export const EXPLANATION_TEAM_READINESS_ROUTE = '/explanations/team-readiness'
 export const BULLPEN_INTELLIGENCE_OBSERVATIONS_ROUTE = BULLPEN_OBSERVATIONS_ROUTE
 const inFlightGetRequests = new Map()
+
+export function clearPublicDeliveryStateForTests() {
+  for (const entry of inFlightGetRequests.values()) entry.controller?.abort()
+  inFlightGetRequests.clear()
+  publicResponseCache.clear()
+}
+
+function normalizedRequestPath(path) {
+  const [pathname, query = ''] = String(path).split('?', 2)
+  if (!query) return pathname
+  const params = new URLSearchParams(query)
+  params.sort()
+  const normalized = params.toString()
+  return normalized ? `${pathname}?${normalized}` : pathname
+}
+
+function abortError() {
+  const error = new Error('API request canceled')
+  error.name = 'AbortError'
+  error.status = 'canceled'
+  return error
+}
+
+function subscribeToRequest(entry, signal) {
+  entry.consumers += 1
+  return new Promise((resolve, reject) => {
+    let released = false
+    const release = (canceled = false) => {
+      if (released) return
+      released = true
+      entry.consumers -= 1
+      signal?.removeEventListener?.('abort', onAbort)
+      if (canceled && entry.consumers === 0 && !entry.settled) entry.controller?.abort()
+    }
+    const onAbort = () => {
+      release(true)
+      reject(abortError())
+    }
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+    entry.promise.then(
+      value => { release(); resolve(value) },
+      error => { release(); reject(error) },
+    )
+  })
+}
 
 function getBrowserStorage() {
   if (typeof window === 'undefined') return null
@@ -311,31 +367,44 @@ async function request(path, options = {}) {
     silent = false,
     authToken: _authToken,
     timeoutMs = 0,
+    cachePolicy = null,
+    forceRefresh = false,
+    signal: callerSignal,
     ...fetchOptions
   } = options
   const { headers, token } = buildRequestHeaders(options)
   const method = String(options.method || 'GET').toUpperCase()
+  const normalizedPath = normalizedRequestPath(path)
   const dedupeKey = method === 'GET' && !options.body
-    ? `${BASE}${path}|auth:${token || ''}`
+    ? `${BASE}${normalizedPath}|auth:${token || ''}`
     : null
+  const cacheKey = dedupeKey && !token && cachePolicy ? dedupeKey : null
+  if (cacheKey && !forceRefresh) {
+    const cached = publicResponseCache.get(cacheKey)
+    if (cached !== null) return cached
+  }
   if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
-    return inFlightGetRequests.get(dedupeKey)
+    return subscribeToRequest(inFlightGetRequests.get(dedupeKey), callerSignal)
   }
 
-  const requestPromise = (async () => {
+  const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+  const entry = { controller, consumers: 0, settled: false, promise: null }
+  entry.promise = (async () => {
     const timeoutDuration = Number(timeoutMs)
     const shouldTimeout = Number.isFinite(timeoutDuration)
       && timeoutDuration > 0
-      && typeof AbortController !== 'undefined'
-      && !fetchOptions.signal
-    const controller = shouldTimeout ? new AbortController() : null
+      && controller
     const requestOptions = controller
       ? { ...fetchOptions, signal: controller.signal }
       : fetchOptions
     let timeoutId = null
+    let timedOut = false
     try {
-      if (controller) {
-        timeoutId = setTimeout(() => controller.abort(), timeoutDuration)
+      if (shouldTimeout) {
+        timeoutId = setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, timeoutDuration)
       }
       const res = await fetch(`${BASE}${path}`, { ...requestOptions, headers })
       if (!res.ok) {
@@ -344,18 +413,21 @@ async function request(path, options = {}) {
         error.status = res.status
         throw error
       }
-      return await res.json()
+      const payload = await res.json()
+      if (cacheKey) publicResponseCache.set(cacheKey, payload, cachePolicy)
+      return payload
     } catch (err) {
-      const requestError = controller && err?.name === 'AbortError'
+      const requestError = timedOut && err?.name === 'AbortError'
         ? Object.assign(
           new Error(`API request timed out after ${timeoutDuration}ms`),
           { status: 'timeout' },
         )
         : err
-      if (!silent) console.error(`[API] ${path}`, requestError)
+      if (!silent && requestError?.name !== 'AbortError') console.error(`[API] ${path}`, requestError)
       throw requestError
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
+      entry.settled = true
       if (dedupeKey) {
         inFlightGetRequests.delete(dedupeKey)
       }
@@ -363,9 +435,9 @@ async function request(path, options = {}) {
   })()
 
   if (dedupeKey) {
-    inFlightGetRequests.set(dedupeKey, requestPromise)
+    inFlightGetRequests.set(dedupeKey, entry)
   }
-  return requestPromise
+  return subscribeToRequest(entry, callerSignal)
 }
 
 // ── Auth / Identity ────────────────────────────────────────
@@ -433,9 +505,16 @@ export const getFatigueScores  = (params = {}) => {
 }
 export const getRelieverFinder = (params = {}, options = {}) => {
   const q = new URLSearchParams(params).toString()
-  return request(`/bullpen/reliever-finder${q ? `?${q}` : ''}`, options)
+  return request(`/bullpen/reliever-finder${q ? `?${q}` : ''}`, {
+    timeoutMs: DEFERRED_DETAIL_TIMEOUT_MS,
+    cachePolicy: { ttlMs: QUERY_CACHE_TTL_MS },
+    ...options,
+  })
 }
-export const getPitcherFatigue = (id) => request(`/bullpen/fatigue/${id}`)
+export const getPitcherFatigue = (id, options = {}) => request(`/bullpen/fatigue/${id}`, {
+  timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+  ...options,
+})
 // No frontend helper for POST /bullpen/fatigue/recalculate: fatigue
 // recalculation is an admin-token-gated operation, triggered server-side or
 // via curl (see docs/current/SETUP.md), never from the browser.
@@ -444,20 +523,37 @@ export const getPitchers       = (params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/pitchers${q ? `?${q}` : ''}`)
 }
-export const searchPitchers    = (params = {}) => {
+export const searchPitchers    = (params = {}, options = {}) => {
   const queryParams = typeof params === 'string' ? { q: params } : params
-  return request(`/pitchers/search${buildQuery(queryParams)}`)
+  return request(`/pitchers/search${buildQuery(queryParams)}`, {
+    timeoutMs: COMPACT_QUERY_TIMEOUT_MS,
+    ...options,
+  })
 }
-export const searchDiscovery   = (params = {}) => {
+export const searchDiscovery   = (params = {}, options = {}) => {
   const queryParams = typeof params === 'string' ? { q: params } : params
-  return request(`/search${buildQuery(queryParams)}`)
+  return request(`/search${buildQuery(queryParams)}`, {
+    timeoutMs: COMPACT_QUERY_TIMEOUT_MS,
+    ...options,
+  })
 }
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
-export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`)
+export const getPitcherRecentWork = (id, options = {}) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`, {
+  timeoutMs: DEFERRED_DETAIL_TIMEOUT_MS,
+  ...options,
+})
 
-export const getTeams          = () => request('/bullpen/teams')
-export const getTeamStateHistory = (teamAbbreviation, season = 2026) => (
-  request(`/bullpen/teams/${encodeURIComponent(teamAbbreviation)}/history${buildQuery({ season })}`)
+export const getTeams          = (options = {}) => request('/bullpen/teams', {
+  timeoutMs: COMPACT_QUERY_TIMEOUT_MS,
+  cachePolicy: { ttlMs: IMMUTABLE_SNAPSHOT_TTL_MS },
+  ...options,
+})
+export const getTeamStateHistory = (teamAbbreviation, season = 2026, options = {}) => (
+  request(`/bullpen/teams/${encodeURIComponent(teamAbbreviation)}/history${buildQuery({ season })}`, {
+    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+    cachePolicy: { ttlMs: CURRENT_ALIAS_TTL_MS },
+    ...options,
+  })
 )
 export const getTeamReliefWork = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/relief-work`)
 // Tonight's Bullpen Board — existing availability classifications grouped for a
@@ -469,13 +565,27 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
 // Additive Team Board v2 composition contract. Production Team Board adoption
 // remains in later packages; this helper only exposes the versioned read.
 export const getTeamBoardV2 = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2`)
-export const getTeamBoardCore = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/core`)
-export const getTeamBoardDetails = (teamId, identity) => {
+export const getTeamBoardCore = (teamId, options = {}) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/core`, {
+  timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+  cachePolicy: {
+    ttlMs: CURRENT_ALIAS_TTL_MS,
+    immutableTtlMs: IMMUTABLE_SNAPSHOT_TTL_MS,
+  },
+  ...options,
+})
+export const getTeamBoardDetails = (teamId, identity, options = {}) => {
   const params = new URLSearchParams()
   Object.entries(identity || {}).forEach(([key, value]) => {
     if (value !== null && value !== undefined) params.set(key, String(value))
   })
-  return request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/details?${params.toString()}`)
+  return request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/details?${params.toString()}`, {
+    timeoutMs: DEFERRED_DETAIL_TIMEOUT_MS,
+    cachePolicy: {
+      ttlMs: CURRENT_ALIAS_TTL_MS,
+      immutableTtlMs: CURRENT_ALIAS_TTL_MS,
+    },
+    ...options,
+  })
 }
 // Story Intelligence API V1 - one deterministic team bullpen story.
 export const getTeamStory = (teamId, params = {}) => {
@@ -499,8 +609,11 @@ export const getTeamBullpenComparison = (teamA, teamB, params = {}) => {
   const q = new URLSearchParams({ team_a: teamA, team_b: teamB, ...params }).toString()
   return request(`/bullpen/teams/compare?${q}`)
 }
-export const getScheduledGameMatchup = gameId => (
-  request(`/bullpen/matchups/${encodeURIComponent(gameId)}`)
+export const getScheduledGameMatchup = (gameId, options = {}) => (
+  request(`/bullpen/matchups/${encodeURIComponent(gameId)}`, {
+    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+    ...options,
+  })
 )
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // League-wide bullpen landing summary: availability snapshot, Team Context
@@ -508,10 +621,18 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
 // Purpose-built public surface projections. Each projects one trusted
 // Dashboard publication and omits unrelated comprehensive carrier domains.
-export const getHomeProjection = () => request('/bullpen/home')
-export const getLeagueProjection = () => request('/bullpen/league')
-export const getStoriesProjection = () => request('/bullpen/stories')
-export const getTrustProjection = () => request('/bullpen/trust')
+const currentProjectionOptions = options => ({
+  timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+  cachePolicy: {
+    ttlMs: CURRENT_ALIAS_TTL_MS,
+    immutableTtlMs: IMMUTABLE_SNAPSHOT_TTL_MS,
+  },
+  ...options,
+})
+export const getHomeProjection = (options = {}) => request('/bullpen/home', currentProjectionOptions(options))
+export const getLeagueProjection = (options = {}) => request('/bullpen/league', currentProjectionOptions(options))
+export const getStoriesProjection = (options = {}) => request('/bullpen/stories', currentProjectionOptions(options))
+export const getTrustProjection = (options = {}) => request('/bullpen/trust', currentProjectionOptions(options))
 // Governed all-club listing of already-published Team State reads. The browser
 // consumes this contract as published; it does not derive or rank Team State.
 export const getLeagueTeamStates = () => request('/bullpen/team-states')
@@ -525,8 +646,11 @@ export const markSlateBriefingPosted = (payload) => request('/slate-briefing/mar
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
 // Intelligence Surface — the single league lead story for the homepage.
-export const getTodayIntelligence = (params = {}) => (
-  request(`/bullpen/intelligence/today${buildQuery(params)}`)
+export const getTodayIntelligence = (params = {}, options = {}) => (
+  request(`/bullpen/intelligence/today${buildQuery(params)}`, {
+    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+    ...options,
+  })
 )
 // Intelligence Surface — pregame bullpen cards for the homepage Tonight rail.
 export const getTonightIntelligence = (params = {}, options = {}) => (
@@ -537,7 +661,10 @@ export const getTonightIntelligence = (params = {}, options = {}) => (
 )
 // Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
-export const getSyncStatus     = () => request('/bullpen/sync/status')
+export const getSyncStatus     = (options = {}) => request('/bullpen/sync/status', {
+  timeoutMs: COMPACT_QUERY_TIMEOUT_MS,
+  ...options,
+})
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')
 // No public helper for /bullpen/fatigue/snapshot: latest-workload snapshot mode
 // is admin/dev validation only and must not power current-availability UI.
@@ -1119,4 +1246,7 @@ export const getTeamReadinessExplanation = async (params = {}) => {
 
 // ── Methodology ───────────────────────────────────────────────
 export const getMethodology = () => request('/methodology/')
-export const getAvailabilityBacktest = () => request('/methodology/availability-backtest')
+export const getAvailabilityBacktest = (options = {}) => request('/methodology/availability-backtest', {
+  timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+  ...options,
+})

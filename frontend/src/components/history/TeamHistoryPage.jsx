@@ -444,8 +444,8 @@ export default function TeamHistoryPage() {
   const { abbr } = useParams()
   const teamAbbreviation = safeTeamAbbreviation(abbr)
   const history = useFetch(
-    () => (teamAbbreviation
-      ? getTeamStateHistory(teamAbbreviation, 2026)
+    options => (teamAbbreviation
+      ? getTeamStateHistory(teamAbbreviation, 2026, options)
       : Promise.reject(new Error('This History destination does not contain a valid team abbreviation.'))),
     [teamAbbreviation],
   )

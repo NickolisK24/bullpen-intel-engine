@@ -189,7 +189,7 @@ test('Pitcher detail uses one eager owner request and the composed recent-work p
     'utf8',
   )
 
-  assert.equal((source.match(/getPitcherFatigue\(pitcherId\)/g) || []).length, 1)
+  assert.equal((source.match(/getPitcherFatigue\(pitcherId, options\)/g) || []).length, 1)
   assert.equal(source.includes('getPitcherRecentWork'), false)
   assert.ok(source.includes('payload={recentWork}'))
   assert.ok(source.includes("recentWorkStatus?.status === 'unavailable'"))

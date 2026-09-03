@@ -1,9 +1,11 @@
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
 
 import api.bullpen as bullpen_api
+import services.reliever_finder as finder_service
 from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
@@ -185,6 +187,58 @@ def test_limit_is_clamped_to_strict_finder_ceiling(client, monkeypatch):
     assert captured['limit'] == FINDER_MAX_LIMIT == 50
 
 
+def test_finder_selects_one_publication_for_cutoff_and_delivery_identity(client, monkeypatch):
+    selected_at = utc_now_naive()
+    snapshot = SimpleNamespace(
+        id=1878,
+        sync_run_id=2870,
+        data_through=date(2026, 9, 1),
+        availability_reference_date=date(2026, 9, 2),
+        published_at=selected_at,
+        snapshot_generated_at=selected_at,
+        payload={'freshness': {'availability_reference_date': '2026-09-02'}},
+    )
+    calls = []
+    captured = {}
+
+    def select_once():
+        calls.append(True)
+        return snapshot
+
+    monkeypatch.setattr(
+        bullpen_api.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot',
+        select_once,
+    )
+    monkeypatch.setattr(
+        bullpen_api.board_freshness,
+        'published_snapshot_freshness_block',
+        lambda *, snapshot: snapshot.payload['freshness'],
+    )
+    monkeypatch.setattr(
+        bullpen_api,
+        'build_reliever_finder_payload',
+        lambda **kwargs: captured.update(kwargs) or {
+            'capability': 'reliever_finder_v1',
+            'status': 'empty',
+            'data': [],
+            'meta': {},
+        },
+    )
+
+    response = client.get('/api/bullpen/reliever-finder?q=smith')
+    body = response.get_json()
+
+    assert len(calls) == 1
+    assert captured['score_cutoff'] == selected_at
+    assert captured['source_identity'][:3] == (1878, 2870, '2026-09-02')
+    assert body['identity']['snapshot_id'] == 1878
+    assert body['identity']['sync_run_id'] == 2870
+    assert body['identity']['represented_date'] == '2026-09-01'
+    assert response.headers['X-BaseballOS-Snapshot-ID'] == '1878'
+    assert response.headers['ETag']
+
+
 def test_pagination_and_supported_sorts_are_deterministic(client):
     with client.application.app_context():
         _seed_population()
@@ -242,3 +296,66 @@ def test_legacy_bulk_fatigue_endpoint_remains_compatible(client):
     body = response.get_json()
     assert isinstance(body['data'], list)
     assert body['meta']['returned_pitchers'] == len(body['data'])
+
+
+def test_availability_pages_reuse_one_short_lived_governed_population(monkeypatch):
+    calls = []
+    rows = [
+        {
+            'pitcher': {'id': index, 'full_name': f'Reliever {index}'},
+            'availability': {'availability_public_label': 'Available'},
+            'destination': f'/pitcher/{index}',
+        }
+        for index in range(1, 61)
+    ]
+    finder_service.clear_reliever_finder_population_cache()
+    monkeypatch.setattr(
+        finder_service,
+        '_build_public_rows',
+        lambda **kwargs: calls.append(kwargs) or rows,
+    )
+    common = {
+        'availability': 'Available',
+        'reference_date': date(2026, 9, 2),
+        'score_cutoff': None,
+        'source_identity': (1878, 2870, '2026-09-02', 'cutoff', 'roster'),
+        'limit': 25,
+    }
+
+    first = finder_service.build_reliever_finder_payload(page=1, **common)
+    second = finder_service.build_reliever_finder_payload(page=2, **common)
+
+    assert len(calls) == 1
+    assert len(first['data']) == 25
+    assert len(second['data']) == 25
+    assert first['meta']['total_results'] == second['meta']['total_results'] == 60
+    assert first['data'][0]['pitcher']['id'] == 1
+    assert {
+        row['pitcher']['id'] for row in first['data']
+    }.isdisjoint({row['pitcher']['id'] for row in second['data']})
+
+
+def test_availability_population_cache_is_identity_scoped(monkeypatch):
+    calls = []
+    finder_service.clear_reliever_finder_population_cache()
+    monkeypatch.setattr(
+        finder_service,
+        '_build_public_rows',
+        lambda **_kwargs: calls.append(True) or [],
+    )
+    base = {
+        'availability': 'Available',
+        'reference_date': date(2026, 9, 2),
+        'score_cutoff': None,
+        'limit': 25,
+        'page': 1,
+    }
+
+    finder_service.build_reliever_finder_payload(
+        source_identity=(1878, 2870, '2026-09-02'), **base,
+    )
+    finder_service.build_reliever_finder_payload(
+        source_identity=(1879, 2871, '2026-09-03'), **base,
+    )
+
+    assert len(calls) == 2

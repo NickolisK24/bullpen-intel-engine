@@ -1562,6 +1562,9 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
     assert 'performance' not in payload
     assert 'recent_relief_work' not in payload
+    assert response.headers['Cache-Control'] == 'public, max-age=0, must-revalidate'
+    assert response.headers['X-BaseballOS-Snapshot-ID'] == '1900'
+    assert response.headers['ETag']
 
 
 def test_selected_snapshot_freshness_never_reselects_latest(monkeypatch):
@@ -1689,6 +1692,8 @@ def test_deferred_endpoint_attaches_only_the_exact_requested_identity(
     assert payload['publication_identity'] == identity
     assert payload['performance'] == _performance()
     assert payload['what_changed'] == _what_changed()
+    assert response.headers['Cache-Control'] == 'public, max-age=0, must-revalidate'
+    assert response.headers['X-BaseballOS-Snapshot-ID'] == str(snapshot.id)
 
 
 def test_deferred_endpoint_fails_closed_on_identity_mismatch(client, monkeypatch):
@@ -1700,6 +1705,7 @@ def test_deferred_endpoint_fails_closed_on_identity_mismatch(client, monkeypatch
     )
     response = client.get('/api/bullpen/teams/1/board-v2/details')
     assert response.status_code == 409
+    assert response.headers['Cache-Control'] == 'no-store'
     assert response.get_json() == {
         'capability': 'team_board_deferred_details',
         'status': 'identity_mismatch',

@@ -353,6 +353,56 @@ def test_routes_select_one_publication_and_keep_dashboard_compatibility(client, 
     assert '/api/bullpen/dashboard' in {rule.rule for rule in client.application.url_map.iter_rules()}
 
 
+def test_publication_projection_exposes_stable_etag_and_honors_revalidation(client, monkeypatch):
+    snapshot = _snapshot()
+    monkeypatch.setattr(
+        bullpen_api,
+        'select_trusted_publication',
+        lambda _payload_keys: (snapshot, None),
+    )
+    monkeypatch.setattr(
+        bullpen_api,
+        'build_home_projection',
+        lambda selected, unavailable_reason=None: {
+            'capability': 'public_home_projection_v1',
+            'version': '1.0.0',
+            'status': 'ok',
+            'snapshot': {
+                'snapshot_id': selected.id,
+                'sync_run_id': selected.sync_run_id,
+                'represented_date': selected.data_through.isoformat(),
+                'payload_version': selected.payload_version,
+            },
+        },
+    )
+
+    first = client.get('/api/bullpen/home')
+    validator = first.headers['ETag']
+    second = client.get('/api/bullpen/home', headers={'If-None-Match': validator})
+
+    assert first.status_code == 200
+    assert first.headers['Cache-Control'] == 'public, max-age=0, must-revalidate'
+    assert first.headers['X-BaseballOS-Snapshot-ID'] == str(snapshot.id)
+    assert second.status_code == 304
+    assert second.data == b''
+    assert second.headers['ETag'] == validator
+
+
+def test_unavailable_projection_is_never_cached_as_current(client, monkeypatch):
+    monkeypatch.setattr(
+        bullpen_api,
+        'select_trusted_publication',
+        lambda _payload_keys: (None, 'trusted_publication_unavailable'),
+    )
+
+    response = client.get('/api/bullpen/trust')
+
+    assert response.status_code == 200
+    assert response.get_json()['status'] == 'snapshot_unavailable'
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert 'ETag' not in response.headers
+
+
 def test_all_projection_routes_are_registered(client):
     rules = {rule.rule for rule in client.application.url_map.iter_rules()}
     assert {

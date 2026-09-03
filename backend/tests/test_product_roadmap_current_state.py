@@ -383,7 +383,8 @@ def test_today_01_completion_integrates_the_existing_lead_owner_once():
     assert "@bullpen_bp.route('/intelligence/today', methods=['GET'])" in bullpen_api
     assert 'serve_today_lead_story(reference_date=reference_date)' in bullpen_api
     assert 'export const getTodayIntelligence' in frontend_api
-    assert today_surface.count('useFetch(getTodayIntelligence)') == 1
+    today_owner = 'useFetch(options => getTodayIntelligence({}, options))'
+    assert today_surface.count(today_owner) == 1
     assert 'getTeamBoardV2' not in today_surface
     assert 'getTeamBullpen' not in today_surface
 

@@ -27,30 +27,45 @@ export function getFetchStatus({ data, error, loading }) {
   }
 }
 
+export function isCanceledFetch(error) {
+  return error?.name === 'AbortError' || error?.status === 'canceled'
+}
+
 export function useFetch(fetchFn, deps = []) {
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
   const requestGuardRef = useRef(null)
+  const controllerRef = useRef(null)
   if (!requestGuardRef.current) requestGuardRef.current = createRequestGuard()
 
   const run = useCallback(async () => {
+    controllerRef.current?.abort()
+    const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+    controllerRef.current = controller
     const request = requestGuardRef.current.begin()
     setLoading(true)
     setError(null)
     try {
-      const result = await fetchFn()
+      const result = await fetchFn(controller ? { signal: controller.signal } : {})
       if (requestGuardRef.current.isCurrent(request)) setData(result)
     } catch (err) {
-      if (requestGuardRef.current.isCurrent(request)) setError(err.message || 'Failed to load')
+      if (requestGuardRef.current.isCurrent(request) && !isCanceledFetch(err)) {
+        setError(err.message || 'Failed to load')
+      }
     } finally {
       if (requestGuardRef.current.isCurrent(request)) setLoading(false)
+      if (controllerRef.current === controller) controllerRef.current = null
     }
   }, deps) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     run()
-    return () => requestGuardRef.current.invalidate()
+    return () => {
+      requestGuardRef.current.invalidate()
+      controllerRef.current?.abort()
+      controllerRef.current = null
+    }
   }, [run])
 
   return {

@@ -222,7 +222,7 @@ test('Observed Deployment adds no request or frontend baseball authority', async
     'utf8',
   )
 
-  assert.equal((detailSource.match(/getPitcherFatigue\(pitcherId\)/g) || []).length, 1)
+  assert.equal((detailSource.match(/getPitcherFatigue\(pitcherId, options\)/g) || []).length, 1)
   assert.ok(detailSource.includes('<ObservedDeployment context={deploymentContext} />'))
   for (const requestToken of ['useFetch', '/api/', 'fetch(', 'getTeamBoard']) {
     assert.equal(source.includes(requestToken), false, requestToken)

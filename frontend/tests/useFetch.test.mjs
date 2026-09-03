@@ -13,7 +13,7 @@ after(async () => {
   await server.close()
 })
 
-const { createRequestGuard, getFetchStatus } = await server.ssrLoadModule('/src/hooks/useFetch.js')
+const { createRequestGuard, getFetchStatus, isCanceledFetch } = await server.ssrLoadModule('/src/hooks/useFetch.js')
 
 test('fetch status distinguishes fresh data, stale data with error, and no-data error', () => {
   assert.deepEqual(
@@ -42,4 +42,12 @@ test('request guard rejects late responses after a dependency change or newer re
 
   guard.invalidate()
   assert.equal(guard.isCurrent(secondTeam), false)
+})
+
+test('request cancellation is not classified as a user-facing failure', () => {
+  const canceled = new Error('canceled')
+  canceled.name = 'AbortError'
+  assert.equal(isCanceledFetch(canceled), true)
+  assert.equal(isCanceledFetch({ status: 'canceled' }), true)
+  assert.equal(isCanceledFetch(new Error('network failed')), false)
 })

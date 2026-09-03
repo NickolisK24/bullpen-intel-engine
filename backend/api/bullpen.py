@@ -101,6 +101,7 @@ from services.public_surface_projections import (
     build_trust_projection,
     select_trusted_publication,
 )
+from services.public_delivery import apply_public_delivery_headers
 from services.snapshot_read_guard import SnapshotReadUnavailable
 from services.tonight_intelligence_snapshot import serve_tonight_cached
 from services.narrative_memory import (
@@ -463,9 +464,40 @@ def get_reliever_finder():
     ):
         return jsonify(waiting_for_intent_payload())
 
-    freshness = _board_freshness_block()
+    # Select the current publication once.  Its score cutoff, represented date,
+    # and response identity must advance together rather than being discovered by
+    # separate "latest" reads.
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    freshness = (
+        board_freshness.published_snapshot_freshness_block(snapshot=snapshot)
+        if snapshot is not None else _board_freshness_block()
+    )
     reference_date = _public_availability_reference_date(freshness)
-    return jsonify(build_reliever_finder_payload(
+    score_cutoff = snapshot.snapshot_generated_at if snapshot is not None else None
+    roster_version = db.session.query(db.func.max(Pitcher.updated_at)).scalar()
+    identity = {
+        'snapshot_id': snapshot.id if snapshot is not None else None,
+        'sync_run_id': snapshot.sync_run_id if snapshot is not None else None,
+        'represented_date': (
+            snapshot.data_through.isoformat()
+            if snapshot is not None and snapshot.data_through is not None else None
+        ),
+        'availability_reference_date': reference_date.isoformat(),
+        'published_at': (
+            snapshot.published_at.isoformat()
+            if snapshot is not None and snapshot.published_at is not None else None
+        ),
+        'payload_version': 'reliever-finder-1.0.0',
+        'source_revision': roster_version.isoformat() if roster_version is not None else None,
+    }
+    source_identity = (
+        identity['snapshot_id'],
+        identity['sync_run_id'],
+        identity['availability_reference_date'],
+        score_cutoff.isoformat() if score_cutoff is not None else None,
+        identity['source_revision'],
+    )
+    payload = build_reliever_finder_payload(
         query=query,
         team_id=team_id,
         availability=availability,
@@ -474,8 +506,18 @@ def get_reliever_finder():
         page=page,
         limit=limit,
         reference_date=reference_date,
-        score_cutoff=_served_score_cutoff(),
-    ))
+        score_cutoff=score_cutoff,
+        source_identity=source_identity,
+    )
+    payload['identity'] = identity
+    response = jsonify(payload)
+    return apply_public_delivery_headers(
+        response,
+        resource=f'reliever_finder:{request.query_string.decode("utf-8")}',
+        identity=identity,
+        contract_version=identity['payload_version'],
+        available=identity['snapshot_id'] is not None,
+    )
 
 @bullpen_bp.route('/fatigue', methods=['GET'])
 def get_fatigue_scores():
@@ -3395,19 +3437,41 @@ def _public_surface_projection(builder, payload_keys):
     """Serve one compact projection from one selected trusted publication."""
     try:
         snapshot, reason = select_trusted_publication(payload_keys)
-        return jsonify(builder(snapshot, unavailable_reason=reason))
+        payload = builder(snapshot, unavailable_reason=reason)
+        response = jsonify(payload)
+        return apply_public_delivery_headers(
+            response,
+            resource=payload.get('capability'),
+            identity=payload.get('snapshot'),
+            contract_version=payload.get('version'),
+            available=payload.get('status') == 'ok',
+        )
     except SnapshotReadUnavailable:
         current_app.logger.warning('public surface projection snapshot read unavailable')
-        return jsonify(builder(
+        response = jsonify(builder(
             None,
             unavailable_reason=SNAPSHOT_READ_UNAVAILABLE,
-        )), 503
+        ))
+        response.status_code = 503
+        return apply_public_delivery_headers(
+            response,
+            resource='public_surface_projection',
+            identity=None,
+            available=False,
+        )
     except Exception:
         current_app.logger.exception('public surface projection unavailable')
-        return jsonify(builder(
+        response = jsonify(builder(
             None,
             unavailable_reason='public_surface_projection_unavailable',
-        )), 503
+        ))
+        response.status_code = 503
+        return apply_public_delivery_headers(
+            response,
+            resource='public_surface_projection',
+            identity=None,
+            available=False,
+        )
 
 
 @bullpen_bp.route('/home', methods=['GET'])

@@ -185,7 +185,7 @@ test('Pitcher detail retains one eager owner request and no pattern fan-out', as
     'utf8',
   )
 
-  assert.equal((detailSource.match(/getPitcherFatigue\(pitcherId\)/g) || []).length, 1)
+  assert.equal((detailSource.match(/getPitcherFatigue\(pitcherId, options\)/g) || []).length, 1)
   assert.ok(detailSource.includes('<WorkloadPatterns workloadSignal={workloadSignal} />'))
   assert.equal(patternSource.includes('useFetch'), false)
   assert.equal(patternSource.includes('/api/'), false)
