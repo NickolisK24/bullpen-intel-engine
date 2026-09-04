@@ -426,12 +426,11 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
 
     assert status['status'] == sync_metadata.STATUS_SUCCESS
     assert status['dashboard_snapshot_id'] == 456
-    assert status['intelligence_snapshot'] == 'ok'
+    assert status['intelligence_snapshot'] == 'publication_bound'
     assert events == [
         'fatigue_recalculation',
         'public_roster_authority_preparation',
         'dashboard_snapshot_publish',
-        'intelligence_snapshot_publish',
         sync_metadata.STAGE_WORKLOAD_EVIDENCE,
         sync_metadata.STAGE_COMPOSED_READS,
         sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT,

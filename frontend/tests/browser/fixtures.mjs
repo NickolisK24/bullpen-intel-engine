@@ -3,6 +3,32 @@ export const teams = [
   { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
 ]
 
+export const dailyEditionPayload = {
+  status: 'ok', reference_date: '2026-09-03', candidates_considered: 9,
+  publishable_candidates: 8, errors: 0, empty_reason: null,
+  lead_story: {
+    team_id: 138, game_pk: 823907,
+    claim_evidence: { relief_appearances: [{ name: 'Fixture Cardinals Reliever' }] },
+    publication_identity: {
+      publication_id: 'daily-edition-2026-09-03-138-823907-fixture',
+      data_through: '2026-09-03', generated_at: '2026-09-04T06:09:28Z',
+      reference_date: '2026-09-03', game_pk: 823907, team_id: 138,
+      semantic_gate_version: 'daily_edition_claim_evidence_v1',
+      dashboard_snapshot_id: 2054, dashboard_sync_run_id: 3838,
+    },
+    package: {
+      primary_story: 'lost_game_shape',
+      completed_game_context: { team_id: 138, team_name: 'St. Louis Cardinals' },
+    },
+    drafts: {
+      team_story: {
+        writer: 'team_story', headline: 'Lead disappeared late',
+        body: 'St. Louis carried a lead into the late innings before the bullpen story changed.',
+      },
+    },
+  },
+}
+
 export const identity = {
   contract: 'team_board_publication_identity_v1',
   team_id: 111,

@@ -53,6 +53,10 @@ echo "[render_start] Applying database migrations: flask db upgrade"
 flask db upgrade
 echo "[render_start] Database migrations applied successfully."
 
+echo "[render_start] Preparing Daily Edition for the current trusted publication."
+python scripts/prepare_daily_edition_snapshot.py
+echo "[render_start] Daily Edition preparation completed successfully."
+
 # Start the production server only after migrations succeed. An explicit server
 # command passed as arguments is exec'd verbatim; otherwise fall back to the
 # documented gunicorn invocation bound to Render's $PORT (default 10000). exec

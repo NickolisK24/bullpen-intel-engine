@@ -104,6 +104,8 @@ def create_app(config_name=None):
     # is not an operational toggle: every authorized production publisher
     # (Render primary or GitHub fallback) crosses the same boundary.
     app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = config_name == 'production'
+    # Home publication and its Daily Edition read model advance together.
+    app.config['DAILY_EDITION_PUBLICATION_REQUIRED'] = config_name == 'production'
     # Per-environment validation (production fails fast on unsafe config).
     cfg.init_app(app)
 

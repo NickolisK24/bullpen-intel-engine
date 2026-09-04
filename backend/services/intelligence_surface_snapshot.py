@@ -100,7 +100,10 @@ def _story_generation_fingerprint() -> str:
         path = backend_dir / rel_path
         digest.update(rel_path.encode('utf-8'))
         digest.update(b'\0')
-        digest.update(path.read_bytes())
+        # Git checkouts may materialize tracked LF text as CRLF on Windows.
+        # Fingerprint the repository content, not the deployment host's newline
+        # convention, so the same writer build has one portable identity.
+        digest.update(path.read_bytes().replace(b'\r\n', b'\n'))
         digest.update(b'\0')
     return digest.hexdigest()[:12]
 
@@ -130,9 +133,16 @@ def serve_today_lead_story(
     """
     start = perf_counter()
 
-    resolved = resolve_default_reference_date(reference_date, current_date)
+    publication = None
+    if reference_date is None:
+        publication = _current_trusted_publication()
+    resolved = (
+        getattr(publication, 'data_through', None)
+        if publication is not None
+        else resolve_default_reference_date(reference_date, current_date)
+    )
     if resolved is not None:
-        cached = read_snapshot(resolved)
+        cached = read_snapshot(resolved, expected_publication=publication)
         if cached is not None:
             _log_timing(SERVED_FROM_SNAPSHOT, cached, start)
             return cached
@@ -161,7 +171,11 @@ def serve_today_lead_story(
         _log_timing(SERVED_FROM_ON_DEMAND_FAILED, response, start)
         return response
     if persist:
-        _safe_write_snapshot(response, source=SERVED_FROM_ON_DEMAND)
+        _safe_write_snapshot(
+            response,
+            source=SERVED_FROM_ON_DEMAND,
+            publication_snapshot=publication,
+        )
     _log_timing(SERVED_FROM_ON_DEMAND, response, start)
     return response
 
@@ -172,6 +186,8 @@ def generate_snapshot_for_date(
     source,
     current_date=None,
     step_logger=None,
+    publication_snapshot=None,
+    commit=True,
 ):
     """Build and store the snapshot for one explicit slate date.
 
@@ -204,7 +220,14 @@ def generate_snapshot_for_date(
         'Intelligence surface snapshot write step starting for %s.',
         reference_date,
     )
-    write_snapshot(response, source=source)
+    row = write_snapshot(
+        response,
+        source=source,
+        publication_snapshot=publication_snapshot,
+        commit=commit,
+    )
+    if row is None:
+        raise RuntimeError('Daily Edition snapshot response is not persistable')
     log.info(
         'Intelligence surface snapshot write step completed for %s: '
         'elapsed_ms=%s.',
@@ -214,9 +237,54 @@ def generate_snapshot_for_date(
     return response
 
 
+def prepare_snapshot_for_publication(publication_snapshot, *, source):
+    """Prepare the exact Daily Edition artifact before a public pointer advances."""
+    reference_date = getattr(publication_snapshot, 'data_through', None)
+    if reference_date is None:
+        raise RuntimeError('Daily Edition publication requires data_through identity')
+    return generate_snapshot_for_date(
+        reference_date,
+        source=source,
+        publication_snapshot=publication_snapshot,
+        commit=False,
+    )
+
+
+def ensure_snapshot_for_current_publication(*, source='deployment_startup'):
+    """Idempotently prepare the current trusted publication for this writer build."""
+    publication = _current_trusted_publication()
+    if publication is None:
+        return {'status': 'no_trusted_publication'}
+    existing = read_snapshot(
+        publication.data_through,
+        expected_publication=publication,
+    )
+    if existing is not None:
+        return {
+            'status': 'ready',
+            'snapshot_id': publication.id,
+            'reference_date': publication.data_through.isoformat(),
+        }
+    generate_snapshot_for_date(
+        publication.data_through,
+        source=source,
+        publication_snapshot=publication,
+    )
+    return {
+        'status': 'generated',
+        'snapshot_id': publication.id,
+        'reference_date': publication.data_through.isoformat(),
+    }
+
+
 # ── Storage ───────────────────────────────────────────────────────────────────
 
-def read_snapshot(reference_date, version=SNAPSHOT_VERSION):
+def read_snapshot(
+    reference_date,
+    version=SNAPSHOT_VERSION,
+    *,
+    expected_publication=None,
+):
     """Return the stored response_json for a slate, or None when absent.
 
     A normal miss (no stored row) returns None. A transient DB connection
@@ -238,7 +306,11 @@ def read_snapshot(reference_date, version=SNAPSHOT_VERSION):
     )
     if row is None:
         return None
-    if not _stored_response_is_current(row.response_json, version):
+    if not _stored_response_is_current(
+        row.response_json,
+        version,
+        expected_publication=expected_publication,
+    ):
         logger.warning(
             'Ignoring stale intelligence surface snapshot: reference_date=%s '
             'version=%s expected_fingerprint=%s.',
@@ -250,7 +322,14 @@ def read_snapshot(reference_date, version=SNAPSHOT_VERSION):
     return _public_response(row.response_json)
 
 
-def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
+def write_snapshot(
+    response,
+    *,
+    source,
+    version=SNAPSHOT_VERSION,
+    publication_snapshot=None,
+    commit=True,
+):
     """Upsert the snapshot for ``response['reference_date']``.
 
     Returns the row, or None when the response has no slate date to key on (an
@@ -272,6 +351,7 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
         # the next request can validate it again after the dependency recovers.
         return None
 
+    response = _bind_publication_identity(response, publication_snapshot)
     ref_date = _as_date((response or {}).get('reference_date'))
     if ref_date is None:
         return None
@@ -304,14 +384,21 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
     row.errors = response.get('errors') or 0
     row.source = source
     row.generated_at = generated_at
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return row
 
 
-def _safe_write_snapshot(response, *, source):
+def _safe_write_snapshot(response, *, source, publication_snapshot=None):
     """Persist a snapshot without ever breaking the serving path."""
     try:
-        write_snapshot(response, source=source)
+        write_snapshot(
+            response,
+            source=source,
+            publication_snapshot=publication_snapshot,
+        )
     except Exception:  # noqa: BLE001 — caching is best-effort, never fatal
         db.session.rollback()
         logger.warning('Intelligence surface snapshot write failed', exc_info=True)
@@ -334,6 +421,11 @@ def _as_date(value):
 
 def _stored_response(response, *, source, version, generated_at):
     payload = _public_response(response)
+    trusted_publication = (
+        (response or {}).get(SNAPSHOT_METADATA_KEY, {}).get('trusted_publication')
+        if isinstance((response or {}).get(SNAPSHOT_METADATA_KEY), dict)
+        else None
+    )
     claim_evidence_digest = _response_claim_evidence_digest(payload)
     payload[SNAPSHOT_METADATA_KEY] = {
         'snapshot_version': version,
@@ -342,6 +434,7 @@ def _stored_response(response, *, source, version, generated_at):
         'source': source,
         'generated_at': generated_at.isoformat() if generated_at else None,
         CLAIM_EVIDENCE_DIGEST_KEY: claim_evidence_digest,
+        'trusted_publication': trusted_publication,
     }
     return payload
 
@@ -370,7 +463,12 @@ def _public_response(response):
     return payload
 
 
-def _stored_response_is_current(response, version) -> bool:
+def _stored_response_is_current(
+    response,
+    version,
+    *,
+    expected_publication=None,
+) -> bool:
     if not isinstance(response, dict):
         return False
     metadata = response.get(SNAPSHOT_METADATA_KEY)
@@ -385,11 +483,62 @@ def _stored_response_is_current(response, version) -> bool:
         return False
     stored_digest = _response_claim_evidence_digest(response)
     if stored_digest is None:
-        return True
+        # A publication-bound artifact must carry a verifiable claim/evidence
+        # contract. Keep legacy explicit-date reads compatible, but fail closed
+        # for the normal public path when that digest is absent.
+        return expected_publication is None
+    if expected_publication is not None:
+        return (
+            metadata.get(CLAIM_EVIDENCE_DIGEST_KEY) == stored_digest
+            and _publication_identity_matches(metadata, expected_publication)
+        )
     return (
         metadata.get(CLAIM_EVIDENCE_DIGEST_KEY) == stored_digest
         and _current_claim_evidence_digest(response) == stored_digest
         and _current_consequence_matches(response)
+    )
+
+
+def _current_trusted_publication():
+    from services.dashboard_snapshot import get_latest_valid_dashboard_snapshot
+    return get_latest_valid_dashboard_snapshot()
+
+
+def _publication_identity(snapshot):
+    if snapshot is None:
+        return None
+    data_through = getattr(snapshot, 'data_through', None)
+    return {
+        'dashboard_snapshot_id': getattr(snapshot, 'id', None),
+        'dashboard_sync_run_id': getattr(snapshot, 'sync_run_id', None),
+        'dashboard_data_through': (
+            data_through.isoformat() if data_through is not None else None
+        ),
+        'dashboard_payload_version': getattr(snapshot, 'payload_version', None),
+        'publication_authority_contract': 'trusted_dashboard_publication_v1',
+    }
+
+
+def _bind_publication_identity(response, snapshot):
+    payload = copy.deepcopy(response or {})
+    payload.pop(SNAPSHOT_METADATA_KEY, None)
+    identity = _publication_identity(snapshot)
+    if identity is None:
+        return payload
+    lead = payload.get('lead_story')
+    if isinstance(lead, dict):
+        lead_identity = dict(lead.get('publication_identity') or {})
+        lead_identity.update(identity)
+        lead['publication_identity'] = lead_identity
+    payload[SNAPSHOT_METADATA_KEY] = {'trusted_publication': identity}
+    return payload
+
+
+def _publication_identity_matches(metadata, expected_publication):
+    if expected_publication is None:
+        return True
+    return metadata.get('trusted_publication') == _publication_identity(
+        expected_publication
     )
 
 

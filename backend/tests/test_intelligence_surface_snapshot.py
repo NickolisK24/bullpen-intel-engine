@@ -9,8 +9,10 @@ future-date default cap still holds through the cache. Everything is DB-backed
 and read-only against COIN gates — no story data is invented.
 """
 
+import hashlib
 import logging
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -365,6 +367,92 @@ def test_present_snapshot_is_served_verbatim(app):
     assert result['lead_story']['team_id'] == 555   # could only come from the cache
 
 
+def _trusted_publication(snapshot_id=52, data_through=_REF):
+    return SimpleNamespace(
+        id=snapshot_id,
+        sync_run_id=91,
+        data_through=data_through,
+        payload_version=1,
+    )
+
+
+def test_story_generation_fingerprint_is_checkout_newline_independent(
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / 'writer.py'
+    source.write_bytes(b'headline\r\nbody\r\n')
+    monkeypatch.setattr(snap, '_FINGERPRINTED_SOURCE_FILES', ('writer.py',))
+    monkeypatch.setattr(snap, '__file__', str(tmp_path / 'services' / 'snapshot.py'))
+
+    expected = hashlib.sha256()
+    expected.update(b'writer.py\0headline\nbody\n\0')
+
+    assert snap._story_generation_fingerprint() == expected.hexdigest()[:12]
+
+
+def test_publication_precompute_makes_default_get_a_read_only_snapshot_hit(
+    app,
+    monkeypatch,
+):
+    """A reader is never required to warm the current trusted publication."""
+    publication = _trusted_publication()
+    with app.app_context():
+        _seed_lost_game_shape(137, 137000)
+        generate_snapshot_for_date(
+            _REF,
+            source='scheduled_sync:publication',
+            publication_snapshot=publication,
+        )
+        monkeypatch.setattr(
+            snap, '_current_trusted_publication', lambda: publication,
+        )
+        monkeypatch.setattr(
+            snap,
+            'build_today_lead_story',
+            lambda **_kwargs: (_ for _ in ()).throw(
+                AssertionError('public GET must not invoke the story builder')
+            ),
+        )
+
+        result = serve_today_lead_story()
+        row = IntelligenceSurfaceSnapshot.query.one()
+
+    assert result['status'] == 'ok'
+    assert result['lead_story']['publication_identity']['dashboard_snapshot_id'] == 52
+    assert row.source == 'scheduled_sync:publication'
+    assert row.response_json['_snapshot_metadata']['trusted_publication'] == {
+        'dashboard_snapshot_id': 52,
+        'dashboard_sync_run_id': 91,
+        'dashboard_data_through': '2026-06-25',
+        'dashboard_payload_version': 1,
+        'publication_authority_contract': 'trusted_dashboard_publication_v1',
+    }
+
+
+def test_publication_advance_rejects_prior_identity_until_precomputed(app):
+    first = _trusted_publication(snapshot_id=52)
+    second = _trusted_publication(snapshot_id=53)
+    with app.app_context():
+        _seed_lost_game_shape(137, 137000)
+        generate_snapshot_for_date(
+            _REF,
+            source='postgame_refresh:publication',
+            publication_snapshot=first,
+        )
+        assert read_snapshot(_REF, expected_publication=first) is not None
+        assert read_snapshot(_REF, expected_publication=second) is None
+
+        generate_snapshot_for_date(
+            _REF,
+            source='continuous_update:publication',
+            publication_snapshot=second,
+        )
+        current = read_snapshot(_REF, expected_publication=second)
+
+    assert current['lead_story']['publication_identity']['dashboard_snapshot_id'] == 53
+
+
 def test_endpoint_serves_present_snapshot(client):
     with client.application.app_context():
         _store_marker_snapshot(_REF, team_id=555)
@@ -676,6 +764,41 @@ def test_old_writer_version_snapshot_is_not_served_and_is_rebuilt(app):
         assert stale_row.response_json == stale
         assert current_row.source == 'on_demand'
         assert current_row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+
+
+def test_deployment_startup_prepares_new_writer_before_public_serving(
+    app,
+    monkeypatch,
+):
+    publication = _trusted_publication()
+    with app.app_context():
+        _seed_lost_game_shape(137, 137000)
+        _insert_snapshot_row(
+            _REF,
+            version='intelligence_surface_v1_oldwriter',
+            response=_stale_burke_response(_REF),
+        )
+        monkeypatch.setattr(
+            snap, '_current_trusted_publication', lambda: publication,
+        )
+
+        prepared = snap.ensure_snapshot_for_current_publication()
+        monkeypatch.setattr(
+            snap,
+            'build_today_lead_story',
+            lambda **_kwargs: (_ for _ in ()).throw(
+                AssertionError('public GET must not repair a deployment miss')
+            ),
+        )
+        served = serve_today_lead_story()
+
+    assert prepared == {
+        'status': 'generated',
+        'snapshot_id': 52,
+        'reference_date': '2026-06-25',
+    }
+    assert served['status'] == 'ok'
+    assert served['lead_story']['publication_identity']['dashboard_snapshot_id'] == 52
 
 
 def test_june_29_reference_date_regenerates_current_burke_story(app):

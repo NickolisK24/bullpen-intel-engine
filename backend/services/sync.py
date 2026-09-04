@@ -6401,13 +6401,7 @@ def run_postgame_refresh(
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                 )
                 status['dashboard_snapshot_id'] = snapshot.id
-
-                # Refresh the Intelligence Surface homepage cache from the freshly
-                # derived contexts before internal-only enrichment. Best-effort:
-                # it never blocks or fails the refresh.
-                if status['completed_game_contexts_upserted'] > 0:
-                    _safe_generate_intelligence_surface_snapshot(
-                        schedule_date, status=status, run_logger=run_logger)
+                status['intelligence_snapshot'] = 'publication_bound'
 
                 if include_internal_enrichment:
                     enrichment_slate_dates = (

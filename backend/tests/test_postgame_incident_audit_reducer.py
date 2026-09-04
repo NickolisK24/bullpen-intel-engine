@@ -365,7 +365,7 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     }
     dashboard = audit.PACKAGE_MODIFIED_MODULES['services/dashboard_snapshot.py']
     assert dashboard['digest_after'] == (
-        '036e81b3bdeb86c1ff26b81224999d373ba8fc75641ee70558e35472bcb1bb9a'
+        'aad00171d280696b9a49ee316c3eb8e34ca31ca90574ab6c819b7638be4ca8d3'
     )
     assert dashboard['behaviour_changed'] is True
     assert 'D-054' in dashboard['change']
@@ -373,6 +373,7 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     assert 'Production Accuracy Proof' in dashboard['change']
     assert 'F-019' in dashboard['change']
     assert 'F-004' in dashboard['change']
+    assert 'Daily Edition cold-start' in dashboard['change']
 
 
 def test_126d_the_modified_module_is_reported_as_changed_by_this_package():

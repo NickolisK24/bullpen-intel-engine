@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 import api.bullpen as bullpen_api
 import services.sync as sync_service
+from services import intelligence_surface_snapshot
 from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
@@ -372,6 +373,72 @@ def _minimal_dashboard_payload():
 
 
 class TestDashboardSnapshotService:
+    def test_daily_edition_is_prepared_before_publication_pointer_advances(
+        self,
+        app,
+        monkeypatch,
+    ):
+        observed = []
+        monkeypatch.setattr(
+            intelligence_surface_snapshot,
+            'prepare_snapshot_for_publication',
+            lambda snapshot, **kwargs: observed.append({
+                'snapshot_id': snapshot.id,
+                'is_published': snapshot.is_published,
+                'data_through': snapshot.data_through,
+                'kwargs': kwargs,
+            }),
+        )
+        with app.app_context():
+            app.config['DAILY_EDITION_PUBLICATION_REQUIRED'] = True
+            _seed_dashboard_data()
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                bullpen_api.build_bullpen_dashboard_payload(),
+                sync_run_id=1,
+                source='scheduled_sync',
+            )
+
+        assert snapshot.is_published is True
+        assert observed == [{
+            'snapshot_id': snapshot.id,
+            'is_published': False,
+            'data_through': snapshot.data_through,
+            'kwargs': {'source': 'scheduled_sync:publication'},
+        }]
+
+    def test_daily_edition_failure_preserves_prior_publication(
+        self,
+        app,
+        monkeypatch,
+    ):
+        with app.app_context():
+            _seed_dashboard_data()
+            prior = dashboard_snapshot.store_dashboard_snapshot(
+                bullpen_api.build_bullpen_dashboard_payload(),
+                sync_run_id=1,
+                source='prior',
+            )
+            app.config['DAILY_EDITION_PUBLICATION_REQUIRED'] = True
+            monkeypatch.setattr(
+                intelligence_surface_snapshot,
+                'prepare_snapshot_for_publication',
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    RuntimeError('Daily Edition preparation failed')
+                ),
+            )
+
+            with pytest.raises(RuntimeError, match='Daily Edition preparation failed'):
+                dashboard_snapshot.store_dashboard_snapshot(
+                    bullpen_api.build_bullpen_dashboard_payload(),
+                    sync_run_id=1,
+                    source='candidate',
+                )
+            db.session.rollback()
+            current = dashboard_snapshot.get_latest_dashboard_snapshot()
+
+        assert current.id == prior.id
+        assert current.is_published is True
+
     def test_model_table_accepts_json_payload(self, app):
         with app.app_context():
             snapshot = DashboardSnapshot(
