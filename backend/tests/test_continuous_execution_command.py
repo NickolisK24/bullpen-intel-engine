@@ -127,6 +127,24 @@ def test_changed_cycle_emits_summary_and_changed_observations_only():
     }
 
 
+def test_cycle_summary_exposes_finalization_selection_and_work_creation():
+    summary = json.loads(command.render_output(cycle_payload(
+        candidate_game_pks=[824424, 823256],
+        finalization_priority_game_pks=[824424],
+        finalization_candidates_selected=[824424],
+        pending_finalization_count=1,
+        final_observations_accepted=1,
+        durable_work_created=1,
+    ))[0])
+
+    assert summary['candidate_game_pks'] == [824424, 823256]
+    assert summary['finalization_priority_game_pks'] == [824424]
+    assert summary['finalization_candidates_selected'] == [824424]
+    assert summary['pending_finalization_count'] == 1
+    assert summary['final_observations_accepted'] == 1
+    assert summary['durable_work_created'] == 1
+
+
 def test_failure_summary_preserves_failure_and_safety_state():
     payload = cycle_payload(
         status='partial',
