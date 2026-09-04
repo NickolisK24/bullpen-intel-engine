@@ -342,24 +342,19 @@ def test_extra_innings_keep_7_to_9_window_separate(app, monkeypatch):
 
 # ── Intelligence Surface snapshot generation after postgame refresh ───────────
 
-def test_postgame_refresh_generates_intelligence_surface_snapshot(app, monkeypatch):
-    # A real completed slate -> contexts derived -> homepage snapshot refreshed.
+def test_postgame_refresh_binds_intelligence_snapshot_to_publication(app, monkeypatch):
+    # A real completed slate -> contexts derived -> one publication owns readiness.
     _patch_mlb(monkeypatch, [_game()], linescore=_linescore(), play_by_play=_play_by_play())
 
     status = _run(app)
 
     assert status['completed_game_contexts_upserted'] == 2
-    assert status['intelligence_snapshot'] in ('ok', 'empty')
+    assert status['intelligence_snapshot'] == 'publication_bound'
     with app.app_context():
-        snap = IntelligenceSurfaceSnapshot.query.filter_by(
-            reference_date=SCHEDULE_DATE).one()
-        assert snap.snapshot_version
-        assert snap.source == 'postgame_refresh'
-        assert snap.response_json['reference_date'] == SCHEDULE_DATE.isoformat()
-        assert snap.status == snap.response_json['status']
+        assert IntelligenceSurfaceSnapshot.query.count() == 0
 
 
-def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(
+def test_retired_postgame_snapshot_tail_is_not_called(
     app,
     monkeypatch,
     caplog,
@@ -369,7 +364,7 @@ def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(
     def _boom(*args, **kwargs):
         raise RuntimeError('snapshot build exploded')
 
-    # Make the homepage snapshot generation fail; the refresh must shrug it off.
+    # The old post-publication cache tail must no longer be a second owner.
     monkeypatch.setattr(
         'services.intelligence_surface_snapshot.generate_snapshot_for_date', _boom)
 
@@ -379,21 +374,16 @@ def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(
     # Contexts were still derived and committed; the run still succeeds.
     assert status['completed_game_contexts_upserted'] == 2
     assert status['status'] == sync_metadata.STATUS_SUCCESS
-    assert status['intelligence_snapshot'] == 'failed'
-    assert status['intelligence_snapshot_error'] == 'snapshot build exploded'
+    assert status['intelligence_snapshot'] == 'publication_bound'
+    assert 'intelligence_snapshot_error' not in status
     messages = [r.getMessage() for r in caplog.records]
-    assert any(
-        'Intelligence surface snapshot refresh failed' in m
-        and 'postgame refresh will continue' in m
-        and 'snapshot build exploded' in m
-        for m in messages
-    ), messages
+    assert not any('snapshot build exploded' in m for m in messages), messages
     with app.app_context():
         assert CompletedGameContext.query.count() == 2
         assert IntelligenceSurfaceSnapshot.query.count() == 0
 
 
-def test_snapshot_timeout_does_not_fail_postgame_or_weaken_contexts(
+def test_retired_postgame_snapshot_timeout_path_is_not_called(
     app,
     monkeypatch,
     caplog,
@@ -416,15 +406,10 @@ def test_snapshot_timeout_does_not_fail_postgame_or_weaken_contexts(
 
     assert status['completed_game_contexts_upserted'] == 2
     assert status['status'] == sync_metadata.STATUS_SUCCESS
-    assert status['intelligence_snapshot'] == 'timed_out'
-    assert status['intelligence_snapshot_error'] == (
-        'Intelligence surface snapshot exceeded 0.25s')
+    assert status['intelligence_snapshot'] == 'publication_bound'
+    assert 'intelligence_snapshot_error' not in status
     messages = [r.getMessage() for r in caplog.records]
-    assert any(
-        'Intelligence surface snapshot refresh timed out' in m
-        and 'postgame refresh will continue' in m
-        for m in messages
-    ), messages
+    assert not any('Intelligence surface snapshot refresh timed out' in m for m in messages)
     with app.app_context():
         assert CompletedGameContext.query.count() == 2
         assert IntelligenceSurfaceSnapshot.query.count() == 0

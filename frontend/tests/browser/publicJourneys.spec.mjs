@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import {
+  dailyEditionPayload,
   discoveryPayload,
   finderPayload,
   historyPayload,
@@ -63,6 +64,7 @@ async function installApiFixtures(page, {
     if (path.startsWith('/api/share-artifacts/')) return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
     if (path === '/api/bullpen/league') return json({ team_states: leagueTeams, landscape: { items: [] } })
     if (path === '/api/bullpen/home') return json({ status: 'unavailable', reference_date: '2026-09-03', team_states: leagueTeams })
+    if (path === '/api/bullpen/intelligence/today') return json(dailyEditionPayload)
     if (path === '/api/bullpen/stories') return json({ status: 'ok', stories: { items: [] } })
     if (path === '/api/bullpen/trust') return json({ status: 'ok' })
     return json({})
@@ -96,6 +98,21 @@ test('Home supports direct entry without loading the legacy Dashboard carrier', 
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   expect(requests.some(url => url.includes('/api/bullpen/dashboard'))).toBe(false)
+})
+
+test('cold Home renders the precomputed Daily Edition without refresh', async ({ page }) => {
+  let todayRequests = 0
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/bullpen/intelligence/today') {
+      todayRequests += 1
+    }
+  })
+  await installApiFixtures(page)
+  await page.goto('/')
+
+  await expect(page.getByText('Lead disappeared late')).toBeVisible()
+  await expect(page.getByText('The Daily Edition lead is temporarily unavailable.')).toHaveCount(0)
+  expect(todayRequests).toBe(1)
 })
 
 test('route navigation focuses and announces the destination heading', async ({ page }) => {

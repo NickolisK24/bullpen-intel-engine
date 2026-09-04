@@ -405,6 +405,18 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
             snapshot.id,
         )
 
+    if (
+        snapshot.snapshot_type == SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+        and _daily_edition_publication_required()
+    ):
+        from services.intelligence_surface_snapshot import (
+            prepare_snapshot_for_publication,
+        )
+        prepare_snapshot_for_publication(
+            snapshot,
+            source=f'{snapshot.source}:publication',
+        )
+
     now = utc_now_naive()
     prior_published_ids = [
         row.id
@@ -486,6 +498,17 @@ def _team_state_publication_proof_required():
         return bool(
             current_app
             and current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED', False)
+        )
+    except Exception:
+        return False
+
+
+def _daily_edition_publication_required():
+    try:
+        from flask import current_app
+        return bool(
+            current_app
+            and current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED', False)
         )
     except Exception:
         return False
