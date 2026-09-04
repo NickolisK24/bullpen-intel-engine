@@ -23,6 +23,7 @@ from models.game_observation_state import GameObservationState
 from services import change_impact_orchestration as cu03
 from services import continuous_game_work
 from services import game_change_detection as cu02
+from services import game_finality
 from services import incremental_arm_read_team_state as cu05
 from services import incremental_publication as cu07
 from services import incremental_read_model_rebuild as cu06
@@ -195,6 +196,12 @@ class ContinuousCycleResult:
     lock_acquired: bool = False
     public_writer_lock_acquired: bool = False
     games_considered: int = 0
+    candidate_game_pks: tuple = ()
+    finalization_priority_game_pks: tuple = ()
+    finalization_candidates_selected: tuple = ()
+    pending_finalization_count: int = 0
+    final_observations_accepted: int = 0
+    durable_work_created: int = 0
     games_checked: int = 0
     unchanged_games: int = 0
     changed_games: int = 0
@@ -237,6 +244,8 @@ class ContinuousCycleResult:
         value = asdict(self)
         for key in (
             'affected_pitcher_ids', 'affected_team_ids', 'failures',
+            'candidate_game_pks', 'finalization_priority_game_pks',
+            'finalization_candidates_selected',
             'detection_results', 'downstream_results',
             'replay_results',
             'work_results',
@@ -1491,6 +1500,25 @@ def _execute_cycle(**kwargs):
         sync_run_id=kwargs['sync_run_id'], lock_acquired=True,
         public_writer_lock_acquired=kwargs['public_writer_lock_acquired'],
         games_considered=len(detection_cycle.get('candidate_game_pks') or ()),
+        candidate_game_pks=tuple(detection_cycle.get('candidate_game_pks') or ()),
+        finalization_priority_game_pks=tuple(
+            detection_cycle.get('finalization_priority_game_pks') or ()
+        ),
+        finalization_candidates_selected=tuple(
+            detection_cycle.get('finalization_candidates_selected') or ()
+        ),
+        pending_finalization_count=int(
+            detection_cycle.get('pending_finalization_count') or 0
+        ),
+        final_observations_accepted=sum(
+            bool(item.get('accepted'))
+            and item.get('finality_state') in {
+                game_finality.FINAL_PENDING_DATA,
+                game_finality.FINAL_AND_USABLE,
+            }
+            for item in detection_results
+        ),
+        durable_work_created=len(observation_jobs),
         games_checked=checked,
         unchanged_games=int(detection_cycle.get('unchanged_games') or 0),
         changed_games=int(detection_cycle.get('changed_games') or 0),

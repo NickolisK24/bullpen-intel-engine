@@ -74,6 +74,12 @@ def _compact_cycle_payload(payload):
         ),
     }
     for key in (
+        'candidate_game_pks',
+        'finalization_priority_game_pks',
+        'finalization_candidates_selected',
+        'pending_finalization_count',
+        'final_observations_accepted',
+        'durable_work_created',
         'work_obligations_pending',
         'work_obligations_claimed',
         'work_obligations_completed',

@@ -23,6 +23,7 @@ from tests.test_continuous_reliever_ingestion import (
 )
 from tests.test_game_change_detection import _feed
 from tests.test_game_change_detection import _equal_timestamp_final_incident
+from tests.test_game_change_detection import _with_usable_boxscore
 from tests.test_incremental_arm_read_team_state import _fake_provider
 from tests.test_incremental_publication import ProofCache, _sync_run
 from tests.test_incremental_read_model_rebuild import (
@@ -570,6 +571,96 @@ def test_full_live_derives_current_plan_when_no_manual_fingerprint(
     assert calls[0][2]['expected_plan_fingerprint'] == f'automatic-{GAME_PK}'
     assert len(publications) == 1
     assert result.live_publications == 1
+
+
+def test_full_live_finalizes_recently_active_game_on_busy_bounded_slate(
+    app, monkeypatch,
+):
+    finalizing_pk = 824424
+    active_pks = list(range(824500, 824514))
+
+    def feed(game_pk, *, final=False):
+        payload = _feed(
+            timestamp='20260829_221100' if final else '20260829_215400',
+            status='Final' if final else 'Live',
+            code='F' if final else 'I',
+        )
+        payload['gamePk'] = game_pk
+        payload['gameData']['datetime'].update({
+            'dateTime': '2026-08-29T19:00:00Z',
+            'originalDate': '2026-08-29',
+            'officialDate': '2026-08-29',
+        })
+        return _with_usable_boxscore(payload) if final else payload
+
+    schedule = [{
+        'gamePk': finalizing_pk,
+        'officialDate': '2026-08-29',
+        'status': {'statusCode': 'F', 'detailedState': 'Final'},
+    }, *[{
+        'gamePk': game_pk,
+        'officialDate': '2026-08-29',
+        'status': {'statusCode': 'I', 'detailedState': 'In Progress'},
+    } for game_pk in active_pks]]
+
+    class BusySlateClient(Client):
+        def get_schedule(self, **_kwargs):
+            return schedule
+
+        def get_game_live_feed(self, game_pk):
+            return feed(game_pk, final=game_pk == finalizing_pk)
+
+    patch_run_metadata(monkeypatch)
+    calls = []
+    services = chain_services(calls)
+    publications = []
+    cfg = config(
+        continuous.ActivationMode.FULL_LIVE,
+        production_publication_enabled=True,
+        full_live_acknowledged=True,
+        expected_plan_fingerprints={finalizing_pk: 'reviewed-final'},
+        max_games=7,
+    )
+
+    with app.app_context():
+        detection.observe_game_change(
+            finalizing_pk, payload=feed(finalizing_pk),
+        )
+        for game_pk in active_pks:
+            detection.observe_game_change(game_pk, payload=feed(game_pk))
+
+        result = continuous.run_continuous_cycle(
+            config=cfg,
+            represented_time=NOW,
+            client=BusySlateClient(),
+            orchestrator=services[0],
+            workload_service=services[1],
+            team_state_service=services[2],
+            read_model_service=services[3],
+            production_publisher=lambda models, **kwargs: (
+                publications.append((models, kwargs))
+                or {'committed': True, 'cache_handoff_status': 'complete'}
+            ),
+            production_current_id_provider=lambda: 44,
+            cycle_lock_factory=Lock,
+        )
+
+        jobs = durable_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].status == sync_jobs.STATUS_SUCCEEDED
+
+    assert result.candidate_game_pks[0] == finalizing_pk
+    assert result.finalization_priority_game_pks == (finalizing_pk,)
+    assert result.finalization_candidates_selected == (finalizing_pk,)
+    assert result.pending_finalization_count == 1
+    assert result.final_observations_accepted == 1
+    assert result.durable_work_created == 1
+    assert [item[0] for item in calls] == ['cu03', 'cu04', 'cu05', 'cu06']
+    assert result.canonical_mutation_games == 1
+    assert result.work_obligations_completed == 1
+    assert result.live_publications == 1
+    assert result.cache_handoffs == 1
+    assert len(publications) == 1
 
 
 def test_full_live_publishes_one_complete_cycle_after_multiple_games(
@@ -2350,6 +2441,31 @@ def test_daily_correction_recheck_is_durable_bounded_and_idempotent(app):
         assert jobs[0].details_json['correction_recheck_date'] == (
             NOW.date().isoformat()
         )
+
+
+def test_daily_correction_rechecks_advance_past_older_planned_games(app):
+    game_pks = (GAME_PK, GAME_PK + 1, GAME_PK + 2)
+    with app.app_context():
+        for offset, game_pk in enumerate(game_pks):
+            seed_accepted_observation(game_pk)
+            seed_completed_ingestion_work_item(
+                game_pk,
+                last_attempted_at=datetime(2026, 8, 25 + offset, 12, 0),
+            )
+
+        planned = []
+        for sync_run_id in (91, 92, 93):
+            jobs = continuous_game_work.ensure_due_correction_rechecks(
+                reference_date=NOW.date(),
+                correction_days=4,
+                limit=1,
+                sync_run_id=sync_run_id,
+            )
+            assert len(jobs) == 1
+            planned.append(jobs[0].details_json['game_pk'])
+
+        assert planned == list(game_pks)
+        assert len(durable_jobs()) == 3
 
 
 def test_stronger_final_evidence_supersedes_only_the_unfinished_obligation(app):

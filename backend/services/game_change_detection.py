@@ -244,8 +244,14 @@ def detect_active_slate_changes(
             if value is not None
         }
         candidates = [game_pk for game_pk in candidates if game_pk in allowed]
+    finalization_priority = _finalization_priority_candidates(games, candidates)
     if max_games is not None:
-        candidates = _prioritize_bounded_candidates(games, candidates, ref)
+        candidates = _prioritize_bounded_candidates(
+            games,
+            candidates,
+            ref,
+            finalization_priority=finalization_priority,
+        )
         candidates = candidates[:max(0, int(max_games))]
     results = [
         observe_game_change(
@@ -260,7 +266,18 @@ def detect_active_slate_changes(
         db.session.commit()
     else:
         db.session.flush()
-    return _cycle(candidates, results, started, schedule_requests=1)
+    ordered_finalization_priority = tuple(
+        pk for pk, _rank in sorted(
+            finalization_priority.items(), key=lambda item: (item[1], item[0])
+        )
+    )
+    return _cycle(
+        candidates,
+        results,
+        started,
+        schedule_requests=1,
+        finalization_priority_game_pks=ordered_finalization_priority,
+    )
 
 
 def canonicalize_game_observation(payload, *, expected_game_pk=None):
@@ -589,9 +606,67 @@ def _candidate_game_pks(games, reference_date, correction_start):
     return sorted(pk for pk in candidates if pk is not None)
 
 
-def _prioritize_bounded_candidates(games, candidate_game_pks, reference_date):
-    """Keep active/current games ahead of correction-window finals when capped."""
+def _finalization_priority_candidates(games, candidate_game_pks):
+    """Return persisted games whose safe terminal observation is still owed.
+
+    A schedule-final row is a fetch trigger, not canonical evidence.  If the
+    latest accepted live feed still says the game was active, keep the game at
+    the front of the bounded detector until CU-02 observes its final feed.  A
+    final-pending observation remains eligible behind newly-final active games;
+    its durable work obligation owns canonical retries independently.
+    """
     allowed = set(candidate_game_pks)
+    schedule_final = {
+        pk
+        for game in games or ()
+        if (
+            (pk := _positive_int((game or {}).get('gamePk'))) in allowed
+            and game_finality.classify_game_finality(game).has_safe_final_status
+        )
+    }
+    if not schedule_final:
+        return {}
+    rows = GameObservationState.query.filter(
+        GameObservationState.mlb_game_pk.in_(schedule_final)
+    ).all()
+    priority = {}
+    for row in rows:
+        if row.finality_state == game_finality.FINAL_PENDING_DATA:
+            priority[row.mlb_game_pk] = 1
+            continue
+        observation = row.observation if isinstance(row.observation, dict) else {}
+        if (
+            row.finality_state == game_finality.NOT_FINAL
+            and _accepted_observation_was_active(observation)
+        ):
+            priority[row.mlb_game_pk] = 0
+    return priority
+
+
+def _accepted_observation_was_active(observation):
+    status = (observation or {}).get('status') or {}
+    raw_status = {
+        'statusCode': status.get('status_code') or status.get('coded'),
+        'codedGameState': status.get('coded'),
+        'abstractGameState': status.get('abstract'),
+        'detailedState': status.get('detailed'),
+    }
+    return (
+        game_finality.classify_status(raw_status).reason
+        == 'live_or_in_progress_status'
+    )
+
+
+def _prioritize_bounded_candidates(
+    games,
+    candidate_game_pks,
+    reference_date,
+    *,
+    finalization_priority=None,
+):
+    """Keep owed terminal observations ahead of ordinary bounded polling."""
+    allowed = set(candidate_game_pks)
+    finalization_priority = finalization_priority or {}
     ranked = []
     for game in games or []:
         pk = _positive_int((game or {}).get('gamePk'))
@@ -607,24 +682,38 @@ def _prioritize_bounded_candidates(games, candidate_game_pks, reference_date):
         decision = game_finality.classify_game_finality(game)
         status = (game or {}).get('status') or {}
         status_code = str(status.get('statusCode') or status.get('codedGameState') or '')
-        if game_date == reference_date and status_code in game_finality.IN_PROGRESS_STATUS_CODES:
-            tier = 0
-        elif decision.state == game_finality.SUSPENDED:
-            tier = 1
-        elif game_date == reference_date and not decision.has_safe_final_status:
+        if pk in finalization_priority:
+            tier = finalization_priority[pk]
+        elif game_date == reference_date and status_code in game_finality.IN_PROGRESS_STATUS_CODES:
             tier = 2
-        elif game_date == reference_date:
+        elif decision.state == game_finality.SUSPENDED:
             tier = 3
-        else:
+        elif game_date == reference_date and not decision.has_safe_final_status:
             tier = 4
+        elif game_date == reference_date:
+            tier = 5
+        else:
+            tier = 6
         ranked.append((tier, -game_date.toordinal(), pk))
     return [pk for _tier, _ordinal, pk in sorted(ranked)]
 
 
-def _cycle(candidates, results, started, *, schedule_requests):
+def _cycle(
+    candidates,
+    results,
+    started,
+    *,
+    schedule_requests,
+    finalization_priority_game_pks=(),
+):
     values = [item.to_dict() for item in results]
+    finalization_set = set(finalization_priority_game_pks)
+    selected_finalization = tuple(pk for pk in candidates if pk in finalization_set)
     return {
         'candidate_game_pks': candidates,
+        'finalization_priority_game_pks': list(finalization_priority_game_pks),
+        'finalization_candidates_selected': list(selected_finalization),
+        'pending_finalization_count': len(finalization_priority_game_pks),
         'games_checked': len([r for r in results if r.game_pk is not None]),
         'unchanged_games': sum(r.classification == UNCHANGED for r in results),
         'changed_games': sum(r.changed for r in results),

@@ -8,6 +8,7 @@ from flask import Flask
 
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
+import models.dashboard_snapshot  # noqa: F401
 from models.game_log import GameLog
 from models.game_observation_state import GameObservationState
 from models.play_by_play_foundation import GamePitchEvent
@@ -844,3 +845,219 @@ def test_bounded_cap_prioritizes_current_live_game_over_recent_finals(app):
         reference_date=today, correction_days=2, client=Client(), max_games=1,
     )
     assert cycle['candidate_game_pks'] == [GAME_PK]
+
+
+def _schedule_game(game_pk, *, status_code, detailed, official_date='2026-08-25'):
+    return {
+        'gamePk': game_pk,
+        'officialDate': official_date,
+        'status': {'statusCode': status_code, 'detailedState': detailed},
+    }
+
+
+def _game_feed(game_pk, *, timestamp, status, code, usable=False):
+    payload = _feed(timestamp=timestamp, status=status, code=code)
+    payload['gamePk'] = game_pk
+    return _with_usable_boxscore(payload) if usable else payload
+
+
+def test_recently_active_game_stays_bounded_priority_when_schedule_turns_final(app):
+    finalizing_pk = 824424
+    detection.observe_game_change(
+        finalizing_pk,
+        payload=_game_feed(
+            finalizing_pk,
+            timestamp='20260904_215400',
+            status='Live',
+            code='I',
+        ),
+    )
+    games = [
+        _schedule_game(finalizing_pk, status_code='F', detailed='Final'),
+        *[
+            _schedule_game(824500 + offset, status_code='I', detailed='In Progress')
+            for offset in range(14)
+        ],
+    ]
+
+    unbounded = detection._candidate_game_pks(
+        games, date(2026, 8, 25), date(2026, 8, 23),
+    )
+    prior_bounded_order = detection._prioritize_bounded_candidates(
+        games, unbounded, date(2026, 8, 25),
+    )[:7]
+    assert finalizing_pk in unbounded
+    assert finalizing_pk not in prior_bounded_order
+
+    class Client:
+        def __init__(self):
+            self.feed_calls = []
+
+        def get_schedule(self, **_kwargs):
+            return games
+
+        def get_game_live_feed(self, game_pk):
+            self.feed_calls.append(game_pk)
+            return _game_feed(
+                game_pk,
+                timestamp='20260904_221100',
+                status='Final' if game_pk == finalizing_pk else 'Live',
+                code='F' if game_pk == finalizing_pk else 'I',
+                usable=game_pk == finalizing_pk,
+            )
+
+    client = Client()
+    cycle = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=client, max_games=7,
+    )
+
+    assert len(cycle['candidate_game_pks']) == 7
+    assert cycle['candidate_game_pks'][0] == finalizing_pk
+    assert cycle['finalization_priority_game_pks'] == [finalizing_pk]
+    assert cycle['finalization_candidates_selected'] == [finalizing_pk]
+    assert client.feed_calls[0] == finalizing_pk
+    assert cycle['results'][0]['classification'] == detection.FINALIZED
+    assert cycle['results'][0]['finality_state'] == 'final_and_usable'
+
+
+def test_final_pending_data_remains_a_bounded_finalization_candidate(app):
+    finalizing_pk = 824424
+    detection.observe_game_change(
+        finalizing_pk,
+        payload=_game_feed(
+            finalizing_pk,
+            timestamp='20260904_215400',
+            status='Live',
+            code='I',
+        ),
+    )
+    games = [
+        _schedule_game(finalizing_pk, status_code='F', detailed='Final'),
+        *[
+            _schedule_game(824500 + offset, status_code='I', detailed='In Progress')
+            for offset in range(14)
+        ],
+    ]
+
+    class Client:
+        def get_schedule(self, **_kwargs):
+            return games
+
+        def get_game_live_feed(self, game_pk):
+            return _game_feed(
+                game_pk,
+                timestamp='20260904_221100',
+                status='Final' if game_pk == finalizing_pk else 'Live',
+                code='F' if game_pk == finalizing_pk else 'I',
+            )
+
+    first = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=Client(), max_games=7,
+    )
+    second = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=Client(), max_games=7,
+    )
+
+    assert first['results'][0]['finality_state'] == 'final_pending_data'
+    assert second['candidate_game_pks'][0] == finalizing_pk
+    assert second['finalization_priority_game_pks'] == [finalizing_pk]
+    assert second['results'][0]['classification'] == detection.UNCHANGED
+    jobs = SyncJob.query.filter_by(
+        job_name=continuous_game_work.JOB_NAME,
+    ).all()
+    assert len(jobs) == 1
+    assert jobs[0].status == sync_jobs.STATUS_PENDING
+
+
+def test_newly_final_games_rotate_ahead_of_already_pending_finalization(app):
+    finalizing_pks = list(range(824420, 824428))
+    for game_pk in finalizing_pks:
+        detection.observe_game_change(
+            game_pk,
+            payload=_game_feed(
+                game_pk,
+                timestamp='20260904_215400',
+                status='Live',
+                code='I',
+            ),
+        )
+    games = [
+        *[
+            _schedule_game(game_pk, status_code='F', detailed='Final')
+            for game_pk in finalizing_pks
+        ],
+        *[
+            _schedule_game(824500 + offset, status_code='I', detailed='In Progress')
+            for offset in range(7)
+        ],
+    ]
+
+    class Client:
+        def get_schedule(self, **_kwargs):
+            return games
+
+        def get_game_live_feed(self, game_pk):
+            return _game_feed(
+                game_pk,
+                timestamp='20260904_221100',
+                status='Final' if game_pk in finalizing_pks else 'Live',
+                code='F' if game_pk in finalizing_pks else 'I',
+            )
+
+    first = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=Client(), max_games=7,
+    )
+    second = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=Client(), max_games=7,
+    )
+
+    assert len(first['candidate_game_pks']) == 7
+    assert finalizing_pks[-1] not in first['candidate_game_pks']
+    assert second['candidate_game_pks'][0] == finalizing_pks[-1]
+    assert finalizing_pks[-1] in second['finalization_candidates_selected']
+
+
+def test_usable_final_observation_releases_detector_priority(app):
+    finalizing_pk = 824424
+    detection.observe_game_change(
+        finalizing_pk,
+        payload=_game_feed(
+            finalizing_pk,
+            timestamp='20260904_215400',
+            status='Live',
+            code='I',
+        ),
+    )
+    detection.observe_game_change(
+        finalizing_pk,
+        payload=_game_feed(
+            finalizing_pk,
+            timestamp='20260904_221100',
+            status='Final',
+            code='F',
+            usable=True,
+        ),
+    )
+    games = [
+        _schedule_game(finalizing_pk, status_code='F', detailed='Final'),
+        *[
+            _schedule_game(824500 + offset, status_code='I', detailed='In Progress')
+            for offset in range(7)
+        ],
+    ]
+
+    class Client:
+        def get_schedule(self, **_kwargs):
+            return games
+
+        def get_game_live_feed(self, game_pk):
+            return _game_feed(
+                game_pk, timestamp='20260904_221200', status='Live', code='I',
+            )
+
+    cycle = detection.detect_active_slate_changes(
+        reference_date=date(2026, 8, 25), client=Client(), max_games=7,
+    )
+
+    assert finalizing_pk not in cycle['finalization_priority_game_pks']
+    assert finalizing_pk not in cycle['candidate_game_pks']
