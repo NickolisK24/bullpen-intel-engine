@@ -54,7 +54,7 @@ flask db upgrade
 echo "[render_start] Database migrations applied successfully."
 
 echo "[render_start] Preparing Daily Edition for the current trusted publication."
-python scripts/prepare_daily_edition_snapshot.py
+python -m scripts.prepare_daily_edition_snapshot
 echo "[render_start] Daily Edition preparation completed successfully."
 
 # Start the production server only after migrations succeed. An explicit server
