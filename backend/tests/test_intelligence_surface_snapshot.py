@@ -11,7 +11,11 @@ and read-only against COIN gates — no story data is invented.
 
 import hashlib
 import logging
+import os
+import subprocess
+import sys
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -799,6 +803,39 @@ def test_deployment_startup_prepares_new_writer_before_public_serving(
     }
     assert served['status'] == 'ok'
     assert served['lead_story']['publication_identity']['dashboard_snapshot_id'] == 52
+
+
+def test_render_start_invokes_daily_edition_helper_as_importable_module():
+    backend_dir = Path(__file__).resolve().parents[1]
+    startup = (backend_dir / 'scripts' / 'render_start.sh').read_text(
+        encoding='utf-8',
+    )
+    module_command = 'python -m scripts.prepare_daily_edition_snapshot'
+    direct_command = 'python scripts/prepare_daily_edition_snapshot.py'
+    gunicorn_command = 'exec gunicorn app:app'
+
+    assert module_command in startup
+    assert direct_command not in startup
+    assert startup.index(module_command) < startup.index(gunicorn_command)
+
+    env = os.environ.copy()
+    env.update({
+        'APP_ENV': 'test',
+        'AUTO_SYNC': 'false',
+        'DATABASE_URL': 'sqlite:///:memory:',
+    })
+    result = subprocess.run(
+        [sys.executable, '-m', 'scripts.prepare_daily_edition_snapshot'],
+        cwd=backend_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert '"status": "no_trusted_publication"' in result.stdout
 
 
 def test_june_29_reference_date_regenerates_current_burke_story(app):
