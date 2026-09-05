@@ -594,16 +594,26 @@ def test_missing_proof_source_identity_and_partial_population_fail_closed(app):
         author_league_dashboard_team_publications(snapshot)
     assert TeamPublicPublication.query.count() == 0
 
+    wrong_run = SyncRun(
+        job_name='daily_sync',
+        status='success',
+        stage='complete',
+        source='test-wrong-source',
+        latest_game_date=snapshot.data_through,
+        latest_workload_date=snapshot.data_through,
+    )
+    db.session.add(wrong_run)
+    db.session.flush()
     proof = TeamStatePublicationProof(
         snapshot_id=snapshot.id,
-        sync_run_id=snapshot.sync_run_id + 99,
+        sync_run_id=wrong_run.id,
         data_through=snapshot.data_through,
         proof={
             'contract': 'team_state_vnext_production_proof_v1',
             'schema_version': '1.0.0',
             'publication': {
                 'dashboard_snapshot_id': snapshot.id,
-                'sync_run_id': snapshot.sync_run_id + 99,
+                'sync_run_id': wrong_run.id,
                 'data_through': snapshot.data_through.isoformat(),
             },
             'teams': [_proof_team(club) for club in MLB_CLUBS],
