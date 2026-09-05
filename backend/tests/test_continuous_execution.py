@@ -556,11 +556,6 @@ def test_full_live_derives_current_plan_when_no_manual_fingerprint(
         'derive_current_plan_fingerprint',
         lambda value, **_kwargs: f"automatic-{value['game_pk']}",
     )
-    monkeypatch.setattr(
-        continuous.cu03,
-        'persist_accepted_final_schedule_authority',
-        lambda _value: 0,
-    )
     publications = []
 
     def publisher(read_models, **kwargs):
