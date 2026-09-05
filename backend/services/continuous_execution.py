@@ -30,6 +30,7 @@ from services import incremental_read_model_rebuild as cu06
 from services import incremental_workload_rest as cu04
 from services import sync_metadata
 from services import sync_jobs
+from services import team_publication_storage
 from services.mlb_api import mlb_client
 from utils.db import db
 from utils.time import utc_now_naive
@@ -238,6 +239,11 @@ class ContinuousCycleResult:
     work_obligations_claimed: int = 0
     work_obligations_completed: int = 0
     work_obligations_failed: int = 0
+    shadow_team_packages_created: int = 0
+    shadow_team_packages_reused: int = 0
+    shadow_team_packages_equivalent: int = 0
+    shadow_team_authoring_failures: int = 0
+    shadow_authoring_results: tuple = ()
     runtime_ms: float = 0.0
 
     def to_dict(self):
@@ -249,6 +255,7 @@ class ContinuousCycleResult:
             'detection_results', 'downstream_results',
             'replay_results',
             'work_results',
+            'shadow_authoring_results',
         ):
             value[key] = list(value[key])
         return value
@@ -318,6 +325,7 @@ def run_continuous_cycle(
     proof_publisher=None,
     production_publisher=None,
     production_current_id_provider=None,
+    shadow_team_publisher=None,
     cache_adapter=None,
     source_snapshot=None,
     cycle_lock_factory=None,
@@ -417,6 +425,10 @@ def run_continuous_cycle(
                 proof_publisher=proof_publisher or cu07.publish_incremental,
                 production_publisher=production_publisher,
                 production_current_id_provider=production_current_id_provider,
+                shadow_team_publisher=(
+                    shadow_team_publisher
+                    or team_publication_storage.author_continuous_team_publications_shadow
+                ),
                 cache_adapter=cache_adapter,
                 source_snapshot=source_snapshot,
             )
@@ -541,12 +553,17 @@ def _execute_cycle(**kwargs):
         'work_obligations_claimed': 0,
         'work_obligations_completed': 0,
         'work_obligations_failed': len(invalid_work),
+        'shadow_team_packages_created': 0,
+        'shadow_team_packages_reused': 0,
+        'shadow_team_packages_equivalent': 0,
+        'shadow_team_authoring_failures': 0,
     }
     affected_pitchers = set()
     affected_teams = set()
     downstream = []
     production_publication_queue = []
     work_results = list(invalid_work)
+    shadow_authoring_results = []
     failures.extend({
         'scope': 'durable_work',
         'game_pk': (item.get('details_json') or {}).get('game_pk'),
@@ -1166,6 +1183,61 @@ def _execute_cycle(**kwargs):
             downstream.append(game_result)
             continue
 
+        if config.mode in PRODUCTION_MODES and work_job is not None:
+            try:
+                shadow_result = kwargs['shadow_team_publisher'](
+                    change=change,
+                    canonical_impact=impact_dict,
+                    workload_result=workload_dict,
+                    team_state_result=state_dict,
+                    read_model_result=read_dict,
+                    source_sync_run_id=kwargs['sync_run_id'],
+                    work_job_id=work_job.id,
+                )
+                shadow_result = _dict(shadow_result)
+            except Exception as exc:
+                db.session.rollback()
+                shadow_result = {
+                    'event': 'team_publication_shadow',
+                    'status': 'failed',
+                    'game_pk': change.get('game_pk'),
+                    'affected_team_ids': list(
+                        impact_dict.get('affected_team_ids') or ()
+                    ),
+                    'reason': str(exc) or type(exc).__name__,
+                    'error_type': type(exc).__name__,
+                    'packages_created': 0,
+                    'packages_reused': 0,
+                    'equivalent': 0,
+                    'validation_failures': 1,
+                    'equivalence_failures': int(
+                        'equivalence' in str(exc).lower()
+                    ),
+                    'pointers_advanced': 0,
+                }
+                counters['shadow_team_authoring_failures'] += 1
+                logger.warning(json.dumps(shadow_result, sort_keys=True))
+            else:
+                counters['shadow_team_packages_created'] += int(
+                    shadow_result.get('packages_created') or 0
+                )
+                counters['shadow_team_packages_reused'] += int(
+                    shadow_result.get('packages_reused') or 0
+                )
+                counters['shadow_team_packages_equivalent'] += int(
+                    shadow_result.get('equivalent') or 0
+                )
+                logger.info(json.dumps(shadow_result, sort_keys=True))
+            shadow_authoring_results.append(shadow_result)
+            game_result['team_publication_shadow'] = shadow_result
+            work_job = db.session.get(sync_jobs.SyncJob, work_job.id)
+            work_job = continuous_game_work.checkpoint(
+                work_job,
+                continuous_game_work.STAGE_DOWNSTREAM_PENDING,
+                canonical_impact=impact_dict,
+                team_publication_shadow=shadow_result,
+            )
+
         if config.mode == ActivationMode.PROOF_PUBLICATION:
             proof_cache_required = (
                 kwargs['cache_adapter'] is not None
@@ -1545,6 +1617,7 @@ def _execute_cycle(**kwargs):
         downstream_results=tuple(downstream),
         replay_results=tuple(replay_results),
         work_results=tuple(work_results),
+        shadow_authoring_results=tuple(shadow_authoring_results),
         work_obligations_pending=continuous_game_work.unresolved_count(),
         runtime_ms=round((monotonic() - started_clock) * 1000, 3),
         **counters,

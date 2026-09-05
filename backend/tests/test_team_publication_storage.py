@@ -1,4 +1,4 @@
-"""D-058 Package 1 dormant storage, authoring, and isolation proof."""
+"""D-058 dormant storage, league bootstrap, and continuous shadow proof."""
 
 from copy import deepcopy
 from datetime import date, datetime, timedelta
@@ -23,10 +23,12 @@ from services.public_serving_authority import (
 )
 from services.team_publication_storage import (
     AUTHORITY_VERSION,
+    CONTINUOUS_COHORT_CONTRACT,
     PAYLOAD_CONTRACT,
     TeamPublicationConflict,
     TeamPublicationError,
     advance_pointer_compare_and_set,
+    author_continuous_team_publications_shadow,
     author_league_dashboard_team_publications,
     bootstrap_current_trusted_dashboard,
     canonical_json,
@@ -237,6 +239,381 @@ def _clone_publication(source, **overrides):
     }
     values.update(overrides)
     return TeamPublicPublication(**values)
+
+
+def _continuous_inputs(
+    *, game_pk=824424, fingerprint='a' * 64, represented_date=date(2026, 9, 4),
+    correction=False,
+):
+    team_ids = (114, 116)
+    pitcher_ids_by_team = {
+        114: (1140, 1141, 1142, 1143),
+        116: (1160, 1161, 1162),
+    }
+    pitcher_ids = tuple(
+        pitcher_id
+        for team_id in team_ids
+        for pitcher_id in pitcher_ids_by_team[team_id]
+    )
+    run = SyncRun(
+        job_name='continuous_cycle', status='success', stage='complete',
+        source='continuous', latest_game_date=represented_date,
+        latest_workload_date=represented_date,
+    )
+    db.session.add(run)
+    db.session.flush()
+    boards = {}
+    team_packages = {}
+    team_states = {}
+    workload_by_pitcher = {}
+    availability = {}
+    arm_reads = {}
+    team_workload = {}
+    for team_id in team_ids:
+        team_pitcher_ids = pitcher_ids_by_team[team_id]
+        club = next(club for club in MLB_CLUBS if club.team_id == team_id)
+        state = {
+            'public_state': 'Fresh',
+            'status_code': 'operationally_stable',
+            'data_through': represented_date.isoformat(),
+        }
+        boards[str(team_id)] = {
+            'team': {'team_id': team_id, 'team_name': f'Team {team_id}'},
+            'groups': [{
+                'label': 'Available',
+                'pitchers': [
+                    {
+                        'pitcher_id': pitcher_id,
+                        'name': f'Arm {pitcher_id}',
+                        'availability_status': 'available',
+                        'workload_facts': {'pitches_last_7_days': 30},
+                    }
+                    for pitcher_id in team_pitcher_ids
+                ],
+            }],
+            'roster_authority': {
+                'contract': 'roster_authority_v1',
+                'team_id': team_id,
+                'reference_date': represented_date.isoformat(),
+            },
+            'team_state': deepcopy(state),
+            'freshness': {'data_through': represented_date.isoformat()},
+            'publication_method_versions': {
+                'bullpen_membership': 'membership-v1',
+                'rest_status': 'rest-v1',
+                'workload_windows': 'workload-v1',
+                'deployment_profile': 'deployment-v1',
+                'rotation_impact': 'rotation-v1',
+            },
+            'publication_authority': {'dashboard_snapshot_id': 1},
+            'served_from': 'trusted_dashboard_snapshot',
+        }
+        team_package = _team_board(club)
+        team_package['records'] = []
+        for pitcher_id in team_pitcher_ids:
+            team_package['records'].append({
+                'pitcher_id': pitcher_id,
+                'name': f'Arm {pitcher_id}',
+                'workload_facts': {'pitches_last_7_days': 30},
+                'last_appearance': {
+                    'game_pk': game_pk,
+                    'game_date': represented_date.isoformat(),
+                },
+                'availability': {'status': 'available'},
+            })
+        team_package['default_pitcher_ids'] = list(team_pitcher_ids)
+        team_package['workload_windows']['data_through'] = (
+            represented_date.isoformat()
+        )
+        team_package['roster_authority'] = deepcopy(
+            boards[str(team_id)]['roster_authority']
+        )
+        team_packages[str(team_id)] = team_package
+        team_states[str(team_id)] = {
+            'public_team_state': deepcopy(state),
+            'team_state_evidence': {'method_version': 'v3_phase_5'},
+        }
+        for pitcher_id in team_pitcher_ids:
+            workload_by_pitcher[str(pitcher_id)] = {
+                'fatigue_workload': {'pitches_last_7_days': 30},
+                'rest_workload_inputs': {'days_rest': 0},
+            }
+            availability[str(pitcher_id)] = {'availability_status': 'available'}
+            arm_reads[str(pitcher_id)] = {
+                'pitcher_id': pitcher_id,
+                'read': 'Fresh',
+            }
+        team_workload[str(team_id)] = {
+            'team_id': team_id, 'data_through': represented_date.isoformat(),
+        }
+    change = {
+        'game_pk': game_pk,
+        'current_observation_identity': fingerprint,
+        'source_authority': 'mlb_live_feed',
+        'source_observed_at': f'{represented_date.isoformat()}T22:10:00Z',
+        'classification': 'corrected_observation' if correction else 'game_changed',
+        'reason': 'completed_game_correction_recheck' if correction else 'game_changed',
+    }
+    impact = {
+        'game_pk': game_pk,
+        'canonical_mutation_performed': True,
+        'canonical_source_revision': f'{represented_date.isoformat()}T22:10:00Z',
+        'affected_pitcher_ids': list(pitcher_ids),
+        'affected_team_ids': list(team_ids),
+        'game_log_inserted': 9,
+        'pitch_inserted': 300,
+        'optional_pbp_status': 'complete',
+    }
+    workload = {
+        'game_pk': game_pk, 'status': 'complete', 'parity_status': 'match',
+        'data_through': represented_date.isoformat(),
+        'availability_reference_date': represented_date.isoformat(),
+        'pitchers_recomputed': list(pitcher_ids),
+        'teams_recomputed': list(team_ids),
+        'pitcher_results': deepcopy(workload_by_pitcher),
+        'team_results': deepcopy(team_workload),
+    }
+    team_state = {
+        'game_pk': game_pk, 'status': 'complete', 'parity_status': 'match',
+        'data_through': represented_date.isoformat(),
+        'availability_reference_date': represented_date.isoformat(),
+        'arm_reads_recomputed': list(pitcher_ids),
+        'teams_recomputed': list(team_ids),
+        'team_state_results': team_states,
+        'workload_rest_pitcher_results': workload_by_pitcher,
+        'workload_rest_team_results': team_workload,
+        'availability_results': availability,
+        'arm_read_results': arm_reads,
+    }
+    read_models = {
+        'game_pk': game_pk, 'status': 'complete', 'parity_status': 'match',
+        'represented_date': represented_date.isoformat(),
+        'requested_team_ids': list(team_ids),
+        'team_boards_rebuilt': list(team_ids),
+        'team_board_results': boards,
+        'team_package_results': team_packages,
+        'rebuild_performed': True,
+    }
+    return run, change, impact, workload, team_state, read_models
+
+
+def _author_continuous(inputs, *, work_job_id=245):
+    run, change, impact, workload, team_state, read_models = inputs
+    return author_continuous_team_publications_shadow(
+        change=change,
+        canonical_impact=impact,
+        workload_result=workload,
+        team_state_result=team_state,
+        read_model_result=read_models,
+        source_sync_run_id=run.id,
+        work_job_id=work_job_id,
+    )
+
+
+def test_continuous_shadow_authors_two_team_cohort_without_pointer_movement(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    before = {
+        row.team_id: (row.current_publication_id, row.sequence)
+        for row in TeamPublicCurrentPointer.query.filter(
+            TeamPublicCurrentPointer.team_id.in_((114, 116))
+        ).all()
+    }
+
+    result = _author_continuous(_continuous_inputs())
+
+    assert result.to_dict() == {
+        'event': 'team_publication_shadow',
+        'status': 'complete',
+        'game_pk': 824424,
+        'source_sync_run_id': result.source_sync_run_id,
+        'work_job_id': 245,
+        'affected_team_ids': [114, 116],
+        'cohort_id': result.cohort_id,
+        'packages_attempted': 2,
+        'packages_created': 2,
+        'packages_reused': 0,
+        'equivalent': 2,
+        'validation_failures': 0,
+        'equivalence_failures': 0,
+        'pointers_advanced': 0,
+        'publication_ids': list(result.publication_ids),
+    }
+    rows = TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).order_by(TeamPublicPublication.team_id).all()
+    assert [(row.team_id, row.sequence) for row in rows] == [(114, 2), (116, 2)]
+    assert {row.cohort_id for row in rows} == {result.cohort_id}
+    assert all(row.predecessor_publication_id is not None for row in rows)
+    assert all(row.source_dashboard_snapshot_id is None for row in rows)
+    assert all(row.source_game_pks == [824424] for row in rows)
+    assert all(validate_publication(row)['valid'] for row in rows)
+    after = {
+        row.team_id: (row.current_publication_id, row.sequence)
+        for row in TeamPublicCurrentPointer.query.filter(
+            TeamPublicCurrentPointer.team_id.in_((114, 116))
+        ).all()
+    }
+    assert after == before
+
+
+def test_continuous_shadow_retry_reuses_rows_without_sequence_inflation(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    inputs = _continuous_inputs()
+    first = _author_continuous(inputs)
+    inputs[3]['pitcher_recomputation_ms'] = 99.1
+    inputs[4]['team_state_recomputation_ms'] = 88.2
+    inputs[5]['rebuild_ms'] = 77.3
+    second = _author_continuous(inputs)
+
+    assert first.publication_ids == second.publication_ids
+    assert second.packages_created == 0
+    assert second.packages_reused == 2
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 2
+    assert {
+        row.sequence for row in TeamPublicPublication.query.filter_by(
+            source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+        ).all()
+    } == {2}
+
+
+def test_continuous_shadow_atomic_commit_recovers_after_precommit_crash(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    inputs = _continuous_inputs()
+    run, change, impact, workload, team_state, read_models = inputs
+    # The continuous SyncRun is durable before Package 2 authoring starts. Keep
+    # that prerequisite outside the simulated shadow-publication transaction so
+    # rollback models only the pre-commit affected-team cohort crash window.
+    db.session.commit()
+    result = author_continuous_team_publications_shadow(
+        change=change, canonical_impact=impact, workload_result=workload,
+        team_state_result=team_state, read_model_result=read_models,
+        source_sync_run_id=run.id, work_job_id=245, commit=False,
+    )
+    assert result.packages_created == 2
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 2
+    db.session.rollback()
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 0
+
+    recovered = _author_continuous(inputs)
+
+    assert recovered.packages_created == 2
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 2
+    assert all(
+        pointer.sequence == 1
+        for pointer in TeamPublicCurrentPointer.query.filter(
+            TeamPublicCurrentPointer.team_id.in_((114, 116))
+        ).all()
+    )
+
+
+def test_continuous_shadow_equivalence_failure_is_atomic(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    inputs = list(_continuous_inputs())
+    inputs[5]['team_board_results']['116']['team_state']['public_state'] = 'Stretched'
+
+    with pytest.raises(
+        TeamPublicationError,
+        match='team_publication_continuous_equivalence_invalid:116',
+    ):
+        _author_continuous(tuple(inputs))
+
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 0
+    assert TeamPublicCurrentPointer.query.filter(
+        TeamPublicCurrentPointer.team_id.in_((114, 116)),
+        TeamPublicCurrentPointer.sequence != 1,
+    ).count() == 0
+
+
+@pytest.mark.parametrize('domain', ('workload', 'roster', 'method_version'))
+def test_continuous_shadow_fails_closed_on_incoherent_required_domain(app, domain):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    inputs = list(_continuous_inputs())
+    board = inputs[5]['team_board_results']['116']
+    if domain == 'workload':
+        board['groups'][0]['pitchers'][0]['workload_facts'][
+            'pitches_last_7_days'
+        ] = 99
+    elif domain == 'roster':
+        board['roster_authority']['team_id'] = 114
+    else:
+        del board['publication_method_versions']['workload_windows']
+
+    with pytest.raises(TeamPublicationError):
+        _author_continuous(tuple(inputs))
+
+    assert TeamPublicPublication.query.filter_by(
+        source_type=TeamPublicPublication.SOURCE_CONTINUOUS_TEAM
+    ).count() == 0
+
+
+def test_continuous_shadow_lineage_extends_latest_immutable_and_corrections(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    first = _author_continuous(_continuous_inputs())
+    second_inputs = _continuous_inputs(
+        game_pk=824717, fingerprint='b' * 64,
+    )
+    second = _author_continuous(second_inputs, work_job_id=246)
+    correction_inputs = _continuous_inputs(
+        game_pk=824717, fingerprint='c' * 64, correction=True,
+    )
+    correction = _author_continuous(correction_inputs, work_job_id=247)
+
+    assert first.cohort_id != second.cohort_id != correction.cohort_id
+    for team_id in (114, 116):
+        rows = TeamPublicPublication.query.filter_by(team_id=team_id).order_by(
+            TeamPublicPublication.sequence
+        ).all()
+        assert [row.sequence for row in rows] == [1, 2, 3, 4]
+        assert rows[2].predecessor_publication_id == rows[1].id
+        assert rows[3].predecessor_publication_id == rows[2].id
+        assert rows[3].is_correction is True
+        pointer = db.session.get(TeamPublicCurrentPointer, team_id)
+        assert pointer.sequence == 1
+
+
+def test_continuous_shadow_digest_tampering_and_observability(app):
+    snapshot, _proof = _source()
+    author_league_dashboard_team_publications(snapshot)
+    result = _author_continuous(_continuous_inputs())
+    status = inspect_team_publication_storage()
+    cle = next(item for item in status['teams'] if item['team_id'] == 114)
+    assert cle == {
+        **cle,
+        'current_sequence': 1,
+        'latest_sequence': 2,
+        'latest_source_type': TeamPublicPublication.SOURCE_CONTINUOUS_TEAM,
+        'latest_source_game_pk': 824424,
+        'latest_digest_valid': True,
+        'latest_equivalence_status': 'equivalent',
+        'shadow_ahead': True,
+        'sequence_gap': 1,
+    }
+    row = TeamPublicPublication.query.filter_by(
+        publication_id=result.publication_ids[0]
+    ).one()
+    db.session.expunge(row)
+    tampered = _clone_publication(row)
+    tampered.payload['continuous_evidence']['team_state']['public_team_state'][
+        'public_state'
+    ] = 'Vulnerable'
+    with pytest.raises(TeamPublicationError):
+        validate_publication(tampered)
 
 
 def test_bootstrap_authors_exact_30_team_cohort_and_equivalent_payloads(app):

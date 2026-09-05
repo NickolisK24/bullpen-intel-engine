@@ -1,7 +1,8 @@
 """Dormant D-058 per-team public publication storage.
 
-Package 1 stores immutable team publication packages and one backend-owned current
-pointer per team.  No public reader consumes either table yet.
+Package 1 stores league-derived rows and one backend-owned current pointer per
+team. Package 2 may append continuous shadow rows, but no public reader consumes
+them and continuous work cannot move a pointer.
 """
 
 from sqlalchemy import event
