@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from services import intraday_reconcile, sync_metadata
+from services import intraday_reconcile, sync_metadata, sync_control_plane
 from services.availability_reference_date import product_current_date
 from services.sync_publication_proof import build_candidate_publication_proof
 from utils.db import db
@@ -141,7 +141,34 @@ def run_intraday_roster_repair(
         scope = build_roster_repair_scope(audit)
         result['repair_scope'] = scope
         if scope['status'] == 'no_change' and not repair_transaction_roster_evidence:
+            sync_run_id = sync_metadata.start_sync_run(
+                source=source,
+                started_at=started_at.replace(tzinfo=None),
+                job_name=JOB_INTRADAY_REPAIR,
+                run_type=sync_control_plane.RunType.TARGETED_REPAIR,
+                trigger_type=sync_control_plane.TriggerType.REPAIR,
+                baseball_date=product_current_date(),
+                source_domain=sync_control_plane.SourceDomain.ROSTER,
+                scopes=sync_control_plane.scope_entries(
+                    source_domains=(sync_control_plane.SourceDomain.ROSTER,),
+                ),
+            )
+            run = sync_metadata.finish_sync_run(
+                sync_run_id,
+                status=sync_metadata.STATUS_SUCCESS,
+                source=source,
+                started_at=started_at.replace(tzinfo=None),
+                job_name=JOB_INTRADAY_REPAIR,
+                stage=sync_control_plane.RunStage.RECONCILE.value,
+                source_reads=int((audit or {}).get('source_reads') or 0),
+                source_changes=0,
+                canonical_mutations=0,
+                affected_teams=0,
+                affected_pitchers=0,
+                outcome={'reason': 'no_governed_changes'},
+            )
             result['status'] = sync_metadata.STATUS_SUCCESS
+            result['sync_run_id'] = getattr(run, 'id', sync_run_id)
             result['message'] = 'No governed intraday roster changes detected.'
             return result
         if scope['status'] not in ('ready', 'no_change'):
@@ -157,6 +184,18 @@ def run_intraday_roster_repair(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
                 job_name=JOB_INTRADAY_REPAIR,
+                run_type=sync_control_plane.RunType.TARGETED_REPAIR,
+                trigger_type=sync_control_plane.TriggerType.REPAIR,
+                baseball_date=product_current_date(),
+                source_domain=sync_control_plane.SourceDomain.MULTI_DOMAIN,
+                scopes=sync_control_plane.scope_entries(
+                    team_ids=scope['affected_team_ids'],
+                    pitcher_ids=scope['affected_pitcher_mlb_ids'],
+                    source_domains=(
+                        sync_control_plane.SourceDomain.ROSTER,
+                        sync_control_plane.SourceDomain.TRANSACTIONS,
+                    ),
+                ),
             )
 
             transaction_result = None
@@ -192,6 +231,14 @@ def run_intraday_roster_repair(
                     started_at=started_at.replace(tzinfo=None),
                     job_name=JOB_INTRADAY_REPAIR,
                     stage=sync_metadata.STAGE_TRANSACTIONS,
+                    source_reads=int(
+                        (transaction_result or {}).get('roster_gets_attempted') or 0
+                    ),
+                    source_changes=0,
+                    canonical_mutations=0,
+                    affected_teams=0,
+                    affected_pitchers=0,
+                    outcome={'reason': 'no_publishable_changes'},
                 )
                 result['status'] = sync_metadata.STATUS_SUCCESS
                 result['sync_run_id'] = getattr(run, 'id', sync_run_id)
@@ -280,6 +327,28 @@ def run_intraday_roster_repair(
                 started_at=started_at.replace(tzinfo=None),
                 snapshot_source=JOB_INTRADAY_REPAIR,
                 job_name=JOB_INTRADAY_REPAIR,
+                source_reads=int(
+                    (transaction_result or {}).get('roster_gets_attempted') or 0
+                ),
+                source_changes=(
+                    int(roster_result.get('pitchers_changed') or 0)
+                    + identity_changes
+                    + transactions_corrected
+                ),
+                canonical_mutations=(
+                    int(roster_result.get('pitchers_changed') or 0)
+                    + int(log_result.get('new_logs_added') or 0)
+                    + int(log_result.get('logs_corrected') or 0)
+                    + identity_changes
+                    + transactions_corrected
+                ),
+                affected_teams=len(scope['affected_team_ids']),
+                affected_pitchers=len(scope['affected_pitcher_mlb_ids']),
+                outcome={
+                    'repair_transaction_roster_evidence': bool(
+                        repair_transaction_roster_evidence
+                    ),
+                },
             )
             result['dashboard_snapshot_id'] = getattr(snapshot, 'id', None)
             proof = publication_proof_builder(

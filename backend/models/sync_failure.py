@@ -18,6 +18,8 @@ class SyncFailure(db.Model):
     __table_args__ = (
         db.Index('ix_sync_failures_resolved', 'resolved'),
         db.Index('ix_sync_failures_run', 'sync_run_id'),
+        db.Index('ix_sync_failures_run_stage', 'sync_run_id', 'stage'),
+        db.Index('ix_sync_failures_class', 'failure_class'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -32,6 +34,10 @@ class SyncFailure(db.Model):
     # Payload/identifier needed to retry the entity (e.g. pitcher_id, mlb_id,
     # season, game_pk). db.JSON maps to JSONB on Postgres and TEXT on SQLite.
     payload = db.Column(db.JSON)
+    failure_class = db.Column(db.String(40), nullable=True)
+    stage = db.Column(db.String(50), nullable=True)
+    source_domain = db.Column(db.String(40), nullable=True)
+    retryable = db.Column(db.Boolean, nullable=True)
 
     error = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
@@ -47,6 +53,10 @@ class SyncFailure(db.Model):
             'entity_type': self.entity_type,
             'entity_ref': self.entity_ref,
             'payload': self.payload,
+            'failure_class': self.failure_class,
+            'stage': self.stage,
+            'source_domain': self.source_domain,
+            'retryable': self.retryable,
             'error': self.error,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'resolved': bool(self.resolved),

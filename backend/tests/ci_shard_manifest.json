@@ -1339,7 +1339,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 507.48,
+      "measured_seconds": 508.64,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1608,6 +1608,14 @@
         {
           "path": "tests/test_story_narrative_structure_c2c.py",
           "measured_seconds": 0.021
+        },
+        {
+          "path": "tests/test_sync_control_plane.py",
+          "measured_seconds": 0.85
+        },
+        {
+          "path": "tests/test_sync_control_plane_migration.py",
+          "measured_seconds": 0.31
         },
         {
           "path": "tests/test_sync_jobs.py",

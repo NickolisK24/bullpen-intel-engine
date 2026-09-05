@@ -55,6 +55,15 @@ def app(tmp_path, monkeypatch):
             source=kwargs.get('source', 'test'),
             started_at=kwargs.get('started_at'),
             job_name=kwargs.get('job_name', sync_metadata.JOB_POSTGAME_REFRESH),
+            source_reads=kwargs.get('source_reads'),
+            source_changes=kwargs.get('source_changes'),
+            canonical_mutations=kwargs.get('canonical_mutations'),
+            affected_games=kwargs.get('affected_games'),
+            affected_teams=kwargs.get('affected_teams'),
+            affected_pitchers=kwargs.get('affected_pitchers'),
+            downstream_work_created=kwargs.get('downstream_work_created'),
+            warnings_count=kwargs.get('warnings_count'),
+            outcome=kwargs.get('outcome'),
         )
         return run, SimpleNamespace(id=123)
 
@@ -323,6 +332,18 @@ def test_postgame_refresh_processes_newly_completed_games(app, monkeypatch):
     assert marker.pitchers_touched == 2
     assert pbp_marker.processing_status == PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
     assert pbp_marker.events_stored == 2
+    assert run.run_type == 'final_game_reconciliation'
+    assert run.trigger_type == 'game_final'
+    assert run.baseball_date == date(2026, 6, 20)
+    assert run.source_changes == 2
+    assert run.canonical_mutations == 2
+    assert run.zero_mutation is False
+    assert {(scope.scope_type, scope.scope_key) for scope in run.scopes} >= {
+        ('league', 'mlb'),
+        ('game', '7001'),
+        ('team', '1'),
+        ('team', '2'),
+    }
     assert run.job_name == sync_metadata.JOB_POSTGAME_REFRESH
     assert run.latest_game_date == date(2026, 6, 20)
     assert run.new_logs_added == 2

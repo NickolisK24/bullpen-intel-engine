@@ -10,6 +10,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.sync_run import SyncRun
 from services import slate_coverage, source_readiness
+from services import sync_control_plane as control_plane
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
@@ -19,10 +20,10 @@ from utils.db import db
 from utils.time import to_utc_iso, utc_now_naive
 
 
-STATUS_RUNNING = 'running'
-STATUS_SUCCESS = 'success'
-STATUS_PARTIAL = 'partial'
-STATUS_FAILED = 'failed'
+STATUS_RUNNING = control_plane.RunStatus.RUNNING.value
+STATUS_SUCCESS = control_plane.RunStatus.SUCCEEDED.value
+STATUS_PARTIAL = control_plane.RunStatus.PARTIAL.value
+STATUS_FAILED = control_plane.RunStatus.FAILED.value
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
@@ -47,19 +48,19 @@ SYNC_RUNNING_LIMITATION_TEXT = (
 TRANSIENT_FRESHNESS_REASON_CODES = frozenset({'latest_sync_running'})
 TRANSIENT_LIMITATION_TEXTS = frozenset({SYNC_RUNNING_LIMITATION_TEXT})
 
-STAGE_STARTED = 'started'
-STAGE_TEAM_ASSIGNMENTS = 'team_assignments'
-STAGE_ROSTER_STATUS = 'roster_status'
-STAGE_TRANSACTIONS = 'transactions'
-STAGE_SCHEDULE_FINALITY_PREFLIGHT = 'schedule_finality_preflight'
-STAGE_LOG_INGESTION = 'log_ingestion'
-STAGE_FATIGUE_RECALCULATION = 'fatigue_recalculation'
-STAGE_WORKLOAD_EVIDENCE = 'workload_evidence'
-STAGE_COMPOSED_READS = 'composed_reads'
-STAGE_BACKTEST_REFRESH = 'backtest_refresh'
-STAGE_DASHBOARD_SNAPSHOT = 'dashboard_snapshot'
-STAGE_PUBLISHED = 'published'
-STAGE_FAILED = 'failed'
+STAGE_STARTED = control_plane.RunStage.STARTED.value
+STAGE_TEAM_ASSIGNMENTS = control_plane.RunStage.TEAM_ASSIGNMENTS.value
+STAGE_ROSTER_STATUS = control_plane.RunStage.ROSTER_STATUS.value
+STAGE_TRANSACTIONS = control_plane.RunStage.TRANSACTIONS.value
+STAGE_SCHEDULE_FINALITY_PREFLIGHT = control_plane.RunStage.SCHEDULE_FINALITY_PREFLIGHT.value
+STAGE_LOG_INGESTION = control_plane.RunStage.LOG_INGESTION.value
+STAGE_FATIGUE_RECALCULATION = control_plane.RunStage.FATIGUE_RECALCULATION.value
+STAGE_WORKLOAD_EVIDENCE = control_plane.RunStage.WORKLOAD_EVIDENCE.value
+STAGE_COMPOSED_READS = control_plane.RunStage.COMPOSED_READS.value
+STAGE_BACKTEST_REFRESH = control_plane.RunStage.BACKTEST_REFRESH.value
+STAGE_DASHBOARD_SNAPSHOT = control_plane.RunStage.DASHBOARD_SNAPSHOT.value
+STAGE_PUBLISHED = control_plane.RunStage.PUBLISHED.value
+STAGE_FAILED = control_plane.RunStage.FAILED.value
 
 # A run counts as a "successful" data write for freshness purposes when it
 # either fully succeeded or completed with partial dead-lettered records — in
@@ -575,7 +576,19 @@ def canonical_fatigue_reference_date(reference_date=None):
     return product_availability_reference_date_from_metadata(collect_data_metadata())
 
 
-def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYNC):
+def start_sync_run(
+    source=SOURCE_MANUAL,
+    started_at=None,
+    job_name=JOB_DAILY_SYNC,
+    *,
+    run_type=control_plane.RunType.FULL_RECONCILIATION,
+    trigger_type=None,
+    baseball_date=None,
+    source_domain=control_plane.SourceDomain.MULTI_DOMAIN,
+    parent_sync_run_id=None,
+    correlation_id=None,
+    scopes=(),
+):
     started_at = started_at or _now()
     # Start from a clean transaction. If an earlier statement in this request
     # left the session in an aborted/poisoned state (a classic Postgres
@@ -586,18 +599,23 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYN
     except SQLAlchemyError:
         pass
     try:
-        run = SyncRun(
+        run = control_plane.start_run(
+            run_type=run_type,
+            trigger_type=(
+                trigger_type or control_plane.trigger_for_source(source)
+            ),
+            baseball_date=baseball_date,
+            source_domain=source_domain,
+            parent_sync_run_id=parent_sync_run_id,
+            correlation_id=correlation_id,
             job_name=job_name,
             started_at=started_at,
-            status=STATUS_RUNNING,
-            stage=STAGE_STARTED,
             source=source,
-            created_at=started_at,
+            scopes=scopes,
+            commit=True,
         )
-        db.session.add(run)
-        db.session.commit()
         return run.id
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, LookupError, ValueError) as exc:
         db.session.rollback()
         # Loud: a failed durable write must not hide behind the legacy file.
         logger.error('Could not persist sync start metadata: %s', exc)
@@ -608,18 +626,22 @@ def set_sync_stage(sync_run_id, stage, *, commit=True):
     if not sync_run_id:
         return None
     try:
-        run = db.session.get(SyncRun, sync_run_id)
-        if run is None:
-            return None
-        run.stage = stage
-        if commit:
-            db.session.commit()
-        else:
-            db.session.flush()
-        return run
-    except SQLAlchemyError as exc:
+        return control_plane.mark_stage(sync_run_id, stage, commit=commit)
+    except (SQLAlchemyError, LookupError, ValueError) as exc:
         db.session.rollback()
         logger.warning('Could not persist sync stage %s: %s', stage, exc)
+        return None
+
+
+def add_sync_scopes(sync_run_id, scopes, *, commit=True):
+    """Best-effort compatibility wrapper for queryable control-plane scope."""
+    if not sync_run_id:
+        return None
+    try:
+        return control_plane.add_scopes(sync_run_id, scopes, commit=commit)
+    except (SQLAlchemyError, LookupError, ValueError) as exc:
+        db.session.rollback()
+        logger.warning('Could not persist sync scope: %s', exc)
         return None
 
 
@@ -643,6 +665,21 @@ def finish_sync_run(
     published_dashboard_snapshot_id=None,
     commit=True,
     rollback_before=True,
+    source_reads=None,
+    source_changes=None,
+    canonical_mutations=None,
+    affected_games=None,
+    affected_teams=None,
+    affected_pitchers=None,
+    downstream_work_created=None,
+    warnings_count=None,
+    publication_id=None,
+    outcome=None,
+    run_type=control_plane.RunType.FULL_RECONCILIATION,
+    trigger_type=None,
+    baseball_date=None,
+    source_domain=control_plane.SourceDomain.MULTI_DOMAIN,
+    scopes=(),
 ):
     """
     Record the outcome of a sync as a durable sync_runs row.
@@ -661,47 +698,67 @@ def finish_sync_run(
             pass
     try:
         run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+        if run is not None and run.status in control_plane.TERMINAL_STATUSES:
+            return run
         if run is None:
             # Self-heal: start never persisted (or the id was lost). Create the
             # durable row now so the sync is never recorded only in the file.
-            run = SyncRun(
+            run = control_plane.create_run(
+                run_type=run_type,
+                trigger_type=(
+                    trigger_type or control_plane.trigger_for_source(source)
+                ),
+                baseball_date=baseball_date,
+                source_domain=source_domain,
                 job_name=job_name,
                 started_at=started_at or completed_at,
-                status=status,
-                stage=stage or (
-                    STAGE_FAILED if status == STATUS_FAILED else STAGE_PUBLISHED
-                ),
+                status=control_plane.RunStatus.RUNNING,
+                stage=control_plane.RunStage.STARTED,
                 source=source,
-                created_at=started_at or completed_at,
+                commit=False,
             )
-            db.session.add(run)
 
         metadata = collect_data_metadata()
-        run.completed_at = completed_at
-        run.status = status
-        run.stage = stage or (
-            STAGE_FAILED if status == STATUS_FAILED else STAGE_PUBLISHED
+        control_plane.add_scopes(run, scopes, commit=False)
+        control_plane.record_outcome(
+            run,
+            source_reads=source_reads,
+            source_changes=source_changes,
+            canonical_mutations=canonical_mutations,
+            affected_games=affected_games,
+            affected_teams=affected_teams,
+            affected_pitchers=affected_pitchers,
+            downstream_work_created=downstream_work_created,
+            warnings_count=warnings_count,
+            publication_id=publication_id,
+            outcome=outcome,
+            commit=False,
         )
-        run.failed_stage = failed_stage
-        if published_dashboard_snapshot_id is not None:
-            run.published_dashboard_snapshot_id = published_dashboard_snapshot_id
-        run.latest_game_date = metadata['latest_game_date']
-        run.latest_workload_date = metadata['latest_workload_date']
-        run.latest_fatigue_calculated_at = metadata['latest_fatigue_calculated_at']
-        run.records_processed = records_processed or 0
-        run.records_failed = records_failed or 0
-        run.new_logs_added = new_logs_added or 0
-        run.pitchers_updated = pitchers_updated or 0
-        run.errors = errors or 0
-        run.api_calls_made = api_calls_made or 0
-        run.retries_used = retries_used or 0
-        run.error_message = error_message
-        if commit:
-            db.session.commit()
-        else:
-            db.session.flush()
-        return run
-    except SQLAlchemyError as exc:
+        return control_plane.finalize_run(
+            run,
+            status,
+            completed_at=completed_at,
+            stage=stage or (
+                STAGE_FAILED if status == STATUS_FAILED else STAGE_PUBLISHED
+            ),
+            failed_stage=failed_stage,
+            updates={
+                'published_dashboard_snapshot_id': published_dashboard_snapshot_id,
+                'latest_game_date': metadata['latest_game_date'],
+                'latest_workload_date': metadata['latest_workload_date'],
+                'latest_fatigue_calculated_at': metadata['latest_fatigue_calculated_at'],
+                'records_processed': records_processed or 0,
+                'records_failed': records_failed or 0,
+                'new_logs_added': new_logs_added or 0,
+                'pitchers_updated': pitchers_updated or 0,
+                'errors': errors or 0,
+                'api_calls_made': api_calls_made or 0,
+                'retries_used': retries_used or 0,
+                'error_message': error_message,
+            },
+            commit=commit,
+        )
+    except (SQLAlchemyError, LookupError, ValueError) as exc:
         db.session.rollback()
         logger.error('Could not persist sync completion metadata: %s', exc)
         return None

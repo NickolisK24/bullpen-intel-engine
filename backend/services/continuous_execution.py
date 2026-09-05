@@ -29,6 +29,7 @@ from services import incremental_publication as cu07
 from services import incremental_read_model_rebuild as cu06
 from services import incremental_workload_rest as cu04
 from services import sync_metadata
+from services import sync_control_plane
 from services import sync_jobs
 from services import team_publication_storage
 from services.mlb_api import mlb_client
@@ -407,6 +408,14 @@ def run_continuous_cycle(
                 source=SOURCE_CONTINUOUS,
                 started_at=started_at,
                 job_name=JOB_CONTINUOUS_CYCLE,
+                run_type=sync_control_plane.RunType.LIVE_GAME,
+                trigger_type=sync_control_plane.TriggerType.SOURCE_CHANGE,
+                baseball_date=represented.date(),
+                source_domain=sync_control_plane.SourceDomain.LIVE_FEED,
+                scopes=sync_control_plane.scope_entries(
+                    league=True,
+                    source_domains=(sync_control_plane.SourceDomain.LIVE_FEED,),
+                ),
             )
         try:
             result = _execute_cycle(
@@ -2074,6 +2083,19 @@ def _finish_run(result):
         errors=len(result.failures),
         api_calls_made=result.source_requests,
         retries_used=result.source_retries,
+        source_reads=result.source_requests,
+        source_changes=result.changed_games,
+        canonical_mutations=result.canonical_mutation_games,
+        affected_games=result.changed_games,
+        affected_teams=len(result.affected_team_ids),
+        affected_pitchers=len(result.affected_pitcher_ids),
+        downstream_work_created=result.durable_work_created,
+        warnings_count=len(result.failures),
+        outcome={
+            'unchanged_games': result.unchanged_games,
+            'proof_publications': result.proof_publications,
+            'live_publications': result.live_publications,
+        },
         error_message=json.dumps({
             'mode': result.mode,
             'reason': result.reason_code,
@@ -2083,7 +2105,21 @@ def _finish_run(result):
         }, sort_keys=True),
         source=SOURCE_CONTINUOUS,
         job_name=JOB_CONTINUOUS_CYCLE,
-        stage=(sync_metadata.STAGE_PUBLISHED if result.live_publications else 'continuous_complete'),
+        run_type=sync_control_plane.RunType.LIVE_GAME,
+        trigger_type=sync_control_plane.TriggerType.SOURCE_CHANGE,
+        baseball_date=datetime.fromisoformat(result.represented_time).date(),
+        source_domain=sync_control_plane.SourceDomain.LIVE_FEED,
+        scopes=sync_control_plane.scope_entries(
+            league=True,
+            team_ids=result.affected_team_ids,
+            pitcher_ids=result.affected_pitcher_ids,
+            source_domains=(sync_control_plane.SourceDomain.LIVE_FEED,),
+        ),
+        stage=(
+            sync_metadata.STAGE_PUBLISHED
+            if result.live_publications
+            else sync_control_plane.RunStage.CONTINUOUS_COMPLETE.value
+        ),
     )
 
 

@@ -27,6 +27,7 @@ from models.pitcher import Pitcher
 from models.pitcher_season_ledger_coverage import PitcherSeasonLedgerCoverage
 from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
+from models.sync_run import SyncRun
 from services import sync_metadata
 from services.mlb_api import MlbApiMetrics, mlb_client, normalize_endpoint_template
 from utils.db import db
@@ -514,6 +515,18 @@ def test_daily_sync_clean_partial_finishes_snapshot_and_metadata(app, monkeypatc
     assert status['budget_exhausted_pitchers'] == 493
     assert status['dashboard_snapshot_id'] == 88
     assert status['finished_at']
+    with app.app_context():
+        run = db.session.get(SyncRun, status['sync_run_id'])
+        assert run.run_type == 'full_reconciliation'
+        assert run.trigger_type == 'scheduled'
+        assert run.baseball_date == REFERENCE_DATE
+        assert {(scope.scope_type, scope.scope_key) for scope in run.scopes} >= {
+            ('league', 'mlb'),
+            ('source_domain', 'roster'),
+            ('source_domain', 'transactions'),
+            ('source_domain', 'schedule'),
+            ('source_domain', 'boxscore'),
+        }
 
 
 def test_budget_env_default_and_override(monkeypatch):
