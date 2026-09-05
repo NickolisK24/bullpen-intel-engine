@@ -59,6 +59,7 @@ class IncrementalReadModelResult:
     tonight_entries_rebuilt: tuple = ()
     pitcher_models_rebuilt: tuple = ()
     team_board_results: dict = field(default_factory=dict)
+    team_package_results: dict = field(default_factory=dict)
     league_row_results: dict = field(default_factory=dict)
     matchup_results: dict = field(default_factory=dict)
     tonight_results: dict = field(default_factory=dict)
@@ -250,6 +251,17 @@ def rebuild_read_model_impact(
         matchups_rebuilt=tuple(sorted(matchups)),
         tonight_entries_rebuilt=tuple(sorted(tonight)),
         team_board_results=boards,
+        team_package_results={
+            team_id: deepcopy(
+                (
+                    (shadow_snapshot.payload or {})
+                    .get(public_serving_authority.TEAM_BOARD_PACKAGE_KEY, {})
+                    .get('by_team_id', {})
+                    .get(str(team_id), {})
+                )
+            )
+            for team_id in team_ids
+        },
         league_row_results=league_rows,
         matchup_results=matchups,
         tonight_results=tonight,
@@ -349,6 +361,7 @@ def _default_team_board_builder(team_id, snapshot, team_state):
         team_id,
         snapshot_override=snapshot,
         team_state_override=team_state,
+        include_delivery_identity=True,
     )
 
 

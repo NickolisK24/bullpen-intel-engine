@@ -542,6 +542,129 @@ def test_limited_live_simulation_uses_explicit_production_publisher(app, monkeyp
     assert result.production_authority_affected is True
 
 
+def test_limited_live_shadow_authors_after_cu06_without_moving_public_completion(
+    app, monkeypatch,
+):
+    with app.app_context():
+        seed_accepted_observation()
+    cfg = config(
+        continuous.ActivationMode.LIMITED_LIVE,
+        production_publication_enabled=True,
+        allowlist_game_pks=(GAME_PK,),
+    )
+    stage_order = []
+
+    def shadow_authorer(**kwargs):
+        stage_order.append('shadow')
+        assert kwargs['canonical_impact']['canonical_mutation_performed'] is True
+        assert kwargs['read_model_result']['rebuild_performed'] is True
+        assert kwargs['work_job_id'] > 0
+        return {
+            'event': 'team_publication_shadow', 'status': 'complete',
+            'game_pk': GAME_PK, 'affected_team_ids': [21, 22],
+            'cohort_id': 'c' * 64, 'packages_created': 2,
+            'packages_reused': 0, 'equivalent': 2,
+            'validation_failures': 0, 'equivalence_failures': 0,
+            'pointers_advanced': 0,
+        }
+
+    services = chain_services(stage_order)
+    result, _calls = run(
+        app, monkeypatch, cfg,
+        orchestrator=services[0], workload_service=services[1],
+        team_state_service=services[2], read_model_service=services[3],
+        shadow_team_publisher=shadow_authorer,
+        production_publisher=lambda *_args, **_kwargs: {
+            'committed': True, 'cache_handoff_status': 'complete',
+        },
+    )
+
+    assert [item[0] if isinstance(item, tuple) else item for item in stage_order] == [
+        'cu03', 'cu04', 'cu05', 'cu06', 'shadow',
+    ]
+    assert result.status == continuous.RESULT_COMPLETE
+    assert result.shadow_team_packages_created == 2
+    assert result.shadow_team_packages_equivalent == 2
+    assert result.shadow_team_authoring_failures == 0
+    assert result.shadow_authoring_results[0]['pointers_advanced'] == 0
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_SUCCEEDED
+        assert job.details_json['team_publication_shadow']['status'] == 'complete'
+
+
+def test_shadow_authoring_failure_is_visible_but_does_not_change_public_semantics(
+    app, monkeypatch,
+):
+    with app.app_context():
+        seed_accepted_observation()
+    cfg = config(
+        continuous.ActivationMode.LIMITED_LIVE,
+        production_publication_enabled=True,
+        allowlist_game_pks=(GAME_PK,),
+    )
+
+    def fail_shadow(**_kwargs):
+        raise ValueError('team_publication_continuous_equivalence_invalid:22')
+
+    result, _calls = run(
+        app, monkeypatch, cfg,
+        shadow_team_publisher=fail_shadow,
+        production_publisher=lambda *_args, **_kwargs: {
+            'committed': True, 'cache_handoff_status': 'complete',
+        },
+    )
+
+    assert result.status == continuous.RESULT_COMPLETE
+    assert result.failures == ()
+    assert result.live_publications == 1
+    assert result.shadow_team_authoring_failures == 1
+    shadow = result.shadow_authoring_results[0]
+    assert shadow['status'] == 'failed'
+    assert shadow['equivalence_failures'] == 1
+    assert shadow['pointers_advanced'] == 0
+    with app.app_context():
+        job = durable_jobs()[0]
+        assert job.status == sync_jobs.STATUS_SUCCEEDED
+        assert job.details_json['team_publication_shadow']['status'] == 'failed'
+
+
+def test_shadow_success_does_not_satisfy_global_dashboard_publication(app, monkeypatch):
+    with app.app_context():
+        seed_accepted_observation()
+    cfg = config(
+        continuous.ActivationMode.LIMITED_LIVE,
+        production_publication_enabled=True,
+        allowlist_game_pks=(GAME_PK,),
+    )
+
+    result, _calls = run(
+        app, monkeypatch, cfg,
+        shadow_team_publisher=lambda **_kwargs: {
+            'event': 'team_publication_shadow', 'status': 'complete',
+            'game_pk': GAME_PK, 'affected_team_ids': [21, 22],
+            'cohort_id': 'c' * 64, 'packages_created': 2,
+            'packages_reused': 0, 'equivalent': 2,
+            'validation_failures': 0, 'equivalence_failures': 0,
+            'pointers_advanced': 0,
+        },
+        production_publisher=lambda *_args, **_kwargs: {
+            'committed': False,
+            'reason_code': 'dashboard_snapshot_slate_coverage_incomplete',
+            'cache_handoff_status': 'not_attempted',
+        },
+    )
+
+    assert result.status == continuous.RESULT_PARTIAL
+    assert result.live_publications == 0
+    assert result.production_authority_affected is False
+    assert result.shadow_team_packages_created == 2
+    assert any(
+        failure['error'] == 'dashboard_snapshot_slate_coverage_incomplete'
+        for failure in result.failures
+    )
+
+
 def test_full_live_derives_current_plan_when_no_manual_fingerprint(
     app, monkeypatch,
 ):
