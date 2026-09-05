@@ -10,9 +10,12 @@ from dataclasses import asdict, dataclass
 from datetime import date
 
 from models.game_observation_state import GameObservationState
+from models.scheduled_game import ScheduledGame
 from services import game_change_detection as detection
+from services import game_appearance_extraction
 from services import game_driven_ingestion as cu01
 from services import game_finality
+from utils.db import db
 
 
 NO_ACTION = 'no_action'
@@ -39,6 +42,7 @@ _LIVE_BULLPEN_PATHS = {
     'play.all_play_count',
     'play.last_event_identity',
 }
+CONTINUOUS_FINALITY_SOURCE = 'continuous_final_observation'
 
 
 @dataclass(frozen=True)
@@ -240,6 +244,59 @@ def _run_reviewed_cu01_write(
         completion_callback=canonical_completion_callback,
         source_client=source_client,
     )
+
+
+def persist_accepted_final_schedule_authority(change):
+    """Advance stale schedule rows from the exact accepted final observation."""
+    game_pk = _get(change, 'game_pk')
+    fingerprint = _get(change, 'current_observation_identity')
+    state = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
+    if (
+        state is None
+        or state.observation_fingerprint != fingerprint
+        or state.source_authority != detection.SOURCE_AUTHORITY
+        or state.finality_state != game_finality.FINAL_AND_USABLE
+    ):
+        raise ValueError('accepted final observation authority unavailable')
+    observation = state.observation if isinstance(state.observation, dict) else {}
+    result_identity = detection._verified_final_result_identity(observation)
+    if result_identity is None:
+        raise ValueError('accepted final result identity unavailable')
+    _, official_date, home_team_id, away_team_id, _, _ = result_identity
+    finality = observation.get('finality') or {}
+    evidence = observation.get('pitching_evidence') or {}
+    if (
+        finality.get('state') != game_finality.FINAL_AND_USABLE
+        or finality.get('status_state') != game_finality.FINAL_STATUS_STATE
+        or finality.get('final_status') is not True
+        or evidence.get('source_authority')
+        != game_appearance_extraction.SOURCE_AUTHORITY
+        or not evidence.get('appearance_set_fingerprint')
+    ):
+        raise ValueError('accepted final evidence unavailable')
+    rows = ScheduledGame.query.filter_by(game_pk=game_pk).all()
+    expected = {
+        ('home', home_team_id, away_team_id),
+        ('away', away_team_id, home_team_id),
+    }
+    actual = {(row.home_away, row.team_id, row.opponent_team_id) for row in rows}
+    if actual != expected or any(
+        row.game_date.isoformat() != official_date for row in rows
+    ):
+        raise ValueError('accepted final schedule identity mismatch')
+    states = {row.status_state for row in rows}
+    if states == {ScheduledGame.STATE_FINAL}:
+        return 0
+    if states != {ScheduledGame.STATE_SCHEDULED}:
+        raise ValueError('accepted final schedule state conflict')
+    status = observation.get('status') or {}
+    status_code = status.get('status_code') or status.get('coded')
+    for row in rows:
+        row.status_code = status_code
+        row.status_state = ScheduledGame.STATE_FINAL
+        row.source = CONTINUOUS_FINALITY_SOURCE
+    db.session.commit()
+    return len(rows)
 
 
 def _from_cu01_report(base, report):

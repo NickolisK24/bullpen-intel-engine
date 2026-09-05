@@ -36,6 +36,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.game_observation_state import GameObservationState
 from models.play_by_play_foundation import GamePitchEvent
+from models.scheduled_game import ScheduledGame
 from models.slate_game import SlateGame
 from models.sync_job import SyncJob
 from models.sync_run import SyncRun
@@ -555,6 +556,11 @@ def test_full_live_derives_current_plan_when_no_manual_fingerprint(
         'derive_current_plan_fingerprint',
         lambda value, **_kwargs: f"automatic-{value['game_pk']}",
     )
+    monkeypatch.setattr(
+        continuous.cu03,
+        'persist_accepted_final_schedule_authority',
+        lambda _value: 0,
+    )
     publications = []
 
     def publisher(read_models, **kwargs):
@@ -571,6 +577,194 @@ def test_full_live_derives_current_plan_when_no_manual_fingerprint(
     assert calls[0][2]['expected_plan_fingerprint'] == f'automatic-{GAME_PK}'
     assert len(publications) == 1
     assert result.live_publications == 1
+
+
+def test_full_live_claims_final_work_when_schedule_ledger_is_stale(
+    app, monkeypatch,
+):
+    """SyncRun 4109 regression: accepted final work must not scope-mismatch."""
+    class FinalClient(Client):
+        def get_game_boxscore(self, game_pk):
+            assert game_pk == REAL_GAME_PK
+            return deepcopy(_boxscore())
+
+        def get_game_play_by_play(self, game_pk):
+            assert game_pk == REAL_GAME_PK
+            return deepcopy(_play_by_play())
+
+    def payload(*, timestamp, status, code, usable=False):
+        value = deepcopy(_feed(
+            timestamp=timestamp, status=status, code=code, inning=9, outs=3,
+        ))
+        value['gamePk'] = REAL_GAME_PK
+        value['gameData']['datetime'].update({
+            'dateTime': f'{GAME_DATE.isoformat()}T19:00:00Z',
+            'originalDate': GAME_DATE.isoformat(),
+            'officialDate': GAME_DATE.isoformat(),
+        })
+        value['gameData']['teams'] = {
+            'away': {'id': AWAY_TEAM}, 'home': {'id': HOME_TEAM},
+        }
+        if usable:
+            value['liveData']['boxscore'] = deepcopy(_boxscore())
+        return value
+
+    with app.app_context():
+        _seed_pitchers()
+        schedule_final_game(REAL_GAME_PK, game_date=GAME_DATE)
+        for row in ScheduledGame.query.filter_by(game_pk=REAL_GAME_PK).all():
+            row.status_code = 'S'
+            row.status_state = ScheduledGame.STATE_SCHEDULED
+        db.session.commit()
+        detection.observe_game_change(
+            REAL_GAME_PK,
+            payload=payload(
+                timestamp='20260904_215400', status='Live', code='I',
+            ),
+        )
+        final = detection.observe_game_change(
+            REAL_GAME_PK,
+            payload=payload(
+                timestamp='20260904_215647', status='Final', code='F',
+                usable=True,
+            ),
+        )
+
+    patch_run_metadata(monkeypatch)
+    calls = []
+    services = chain_services(calls)
+    publications = []
+    with app.app_context():
+        result = continuous.run_continuous_cycle(
+            config=config(
+                continuous.ActivationMode.FULL_LIVE,
+                production_publication_enabled=True,
+                full_live_acknowledged=True,
+                expected_plan_fingerprints={},
+            ),
+            represented_time=NOW,
+            detector=detector_for([final.to_dict()]),
+            orchestrator=services[0],
+            workload_service=services[1],
+            team_state_service=services[2],
+            read_model_service=services[3],
+            production_publisher=lambda models, **kwargs: (
+                publications.append((models, kwargs))
+                or {'committed': True, 'cache_handoff_status': 'complete'}
+            ),
+            production_current_id_provider=lambda: 44,
+            client=FinalClient(),
+            cycle_lock_factory=Lock,
+        )
+
+        job = durable_jobs()[0]
+        assert result.status == continuous.RESULT_COMPLETE
+        assert result.failures == ()
+        assert result.work_obligations_claimed == 1
+        assert result.work_obligations_completed == 1
+        assert result.work_obligations_pending == 0
+        assert job.status == sync_jobs.STATUS_SUCCEEDED
+        assert job.attempts == 1
+        assert len(publications) == 1
+
+
+def test_plan_derivation_failure_is_partial_and_names_unclaimed_work(
+    app, monkeypatch,
+):
+    with app.app_context():
+        state = seed_accepted_observation()
+        observation = deepcopy(state.observation)
+        observation['status'] = {
+            'coded': 'F', 'status_code': 'F',
+        }
+        observation['finality']['status_state'] = 'final'
+        observation['pitching_evidence'] = {
+            'source_authority': 'completed_game_boxscore_pitching_section',
+            'appearance_set_fingerprint': 'a' * 64,
+        }
+        state.observation = observation
+        for team_id, opponent_id, side in (
+            (21, 22, 'home'), (22, 21, 'away'),
+        ):
+            db.session.add(ScheduledGame(
+                team_id=team_id,
+                game_pk=GAME_PK,
+                game_date=date(2026, 8, 29),
+                opponent_team_id=opponent_id,
+                home_away=side,
+                status_code='S',
+                status_state=ScheduledGame.STATE_SCHEDULED,
+            ))
+        db.session.commit()
+        job = continuous_game_work.ensure_obligation(change())
+        job_id = job.id
+
+    monkeypatch.setattr(
+        continuous.cu03,
+        'derive_current_plan_fingerprint',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('unavailable')),
+    )
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(
+            continuous.ActivationMode.FULL_LIVE,
+            production_publication_enabled=True,
+            full_live_acknowledged=True,
+            expected_plan_fingerprints={},
+        ),
+        results=[change(classification='unchanged', changed=False)],
+        production_publisher=lambda *_args, **_kwargs: pytest.fail(
+            'publication must not run'
+        ),
+        production_current_id_provider=lambda: 44,
+    )
+
+    assert result.status == continuous.RESULT_PARTIAL
+    assert result.failures == ({
+        'scope': 'plan_authorization',
+        'game_pk': GAME_PK,
+        'error': 'RuntimeError',
+        'work_job_id': job_id,
+        'stage': continuous_game_work.STAGE_CANONICAL_PENDING,
+        'reason': 'plan_fingerprint_derivation_failed',
+    },)
+    assert result.work_obligations_claimed == 0
+    assert result.work_obligations_pending == 1
+    assert calls == []
+
+
+def test_rejected_observations_are_visible_without_execution_failure(
+    app, monkeypatch,
+):
+    rejected = [
+        {
+            **change(classification=detection.STALE_OBSERVATION, changed=False),
+            'accepted': False,
+            'reason': 'older_upstream_observation',
+        },
+        {
+            **change(
+                classification=detection.AMBIGUOUS_OBSERVATION,
+                changed=False,
+                game_pk=GAME_PK + 1,
+            ),
+            'accepted': False,
+            'reason': 'equal_revision_with_different_material_content',
+        },
+    ]
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.SHADOW_FULL_CHAIN),
+        results=rejected,
+    )
+
+    assert result.status == continuous.RESULT_COMPLETE
+    assert result.rejected_observations == 2
+    assert result.failures == ()
+    assert result.work_obligations_pending == 0
+    assert calls == []
 
 
 def test_full_live_finalizes_recently_active_game_on_busy_bounded_slate(

@@ -11,9 +11,11 @@ import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
+from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_observation_state import GameObservationState
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import GamePitchEvent
+from models.scheduled_game import ScheduledGame
 from services import change_impact_orchestration as orchestration
 from services import game_change_detection as detection
 from services import game_driven_ingestion
@@ -257,6 +259,92 @@ def test_continuous_plan_fingerprint_is_derived_from_current_final_observation(
             'source_client': None,
         },
     )]
+
+
+def test_accepted_final_observation_bridges_stale_schedule_finality(
+    app, monkeypatch,
+):
+    """Production regression: 824424 was final while its ledger said scheduled."""
+    class Client:
+        def get_game_boxscore(self, game_pk):
+            assert game_pk == GAME_PK
+            return deepcopy(_boxscore())
+
+        def get_game_play_by_play(self, game_pk):
+            assert game_pk == GAME_PK
+            return deepcopy(_play_by_play())
+
+    def payload(*, timestamp, status, code, usable=False):
+        value = deepcopy(_feed(
+            timestamp=timestamp, status=status, code=code, inning=9, outs=3,
+        ))
+        value['gamePk'] = GAME_PK
+        value['gameData']['datetime'].update({
+            'dateTime': f'{GAME_DATE.isoformat()}T19:00:00Z',
+            'originalDate': GAME_DATE.isoformat(),
+            'officialDate': GAME_DATE.isoformat(),
+        })
+        value['gameData']['teams'] = {
+            'away': {'id': AWAY_TEAM}, 'home': {'id': HOME_TEAM},
+        }
+        if usable:
+            value['liveData']['boxscore'] = deepcopy(_boxscore())
+        return value
+
+    with app.app_context():
+        _seed_pitchers()
+        schedule_final_game(GAME_PK, game_date=GAME_DATE)
+        for row in ScheduledGame.query.filter_by(game_pk=GAME_PK).all():
+            row.status_code = 'S'
+            row.status_state = ScheduledGame.STATE_SCHEDULED
+        db.session.commit()
+
+        detection.observe_game_change(
+            GAME_PK,
+            payload=payload(
+                timestamp='20260904_215400', status='Live', code='I',
+            ),
+        )
+        final = detection.observe_game_change(
+            GAME_PK,
+            payload=payload(
+                timestamp='20260904_215647', status='Final', code='F',
+                usable=True,
+            ),
+        )
+        assert final.classification == detection.FINALIZED
+        assert final.finality_state == game_finality.FINAL_AND_USABLE
+
+        without_observation = game_driven_ingestion.run_game_driven_ingestion(
+            GAME_DATE,
+            mode=game_driven_ingestion.MODE_SHADOW,
+            only_game_pks=[GAME_PK],
+            source_client=Client(),
+        )
+        assert without_observation['status'] == 'scope_mismatch'
+
+        assert orchestration.persist_accepted_final_schedule_authority(final) == 2
+        fingerprint = orchestration.derive_current_plan_fingerprint(
+            final, source_client=Client(),
+        )
+        result = orchestration.orchestrate_game_change(
+            final,
+            allow_canonical_write=True,
+            expected_plan_fingerprint=fingerprint,
+            source_client=Client(),
+        )
+
+        assert result.orchestration_status == orchestration.STATUS_RECONCILED
+        assert result.cu01_invocations == 1
+        assert result.canonical_mutation_performed is True
+        assert GameLog.query.filter_by(mlb_game_pk=GAME_PK).count() == 4
+        assert GameIngestionWorkItem.query.filter_by(
+            mlb_game_pk=GAME_PK,
+        ).one().status == GameIngestionWorkItem.STATUS_COMPLETED
+        assert {
+            row.status_state
+            for row in ScheduledGame.query.filter_by(game_pk=GAME_PK).all()
+        } == {ScheduledGame.STATE_FINAL}
 
 
 def test_idempotent_canonical_replay_returns_zero_impact():
