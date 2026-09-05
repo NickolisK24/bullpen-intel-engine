@@ -452,6 +452,13 @@ def test_shadow_detect_persists_non_public_cycle_metadata(app):
         assert row.job_name == continuous.JOB_CONTINUOUS_CYCLE
         assert row.status == 'success'
         assert row.stage == 'continuous_complete'
+        assert row.run_type == 'live_game'
+        assert row.trigger_type == 'source_change'
+        assert row.baseball_date == NOW.date()
+        assert row.source_reads == 1
+        assert row.source_changes == 0
+        assert row.canonical_mutations == 0
+        assert row.zero_mutation is True
         assert row.published_dashboard_snapshot_id is None
         assert '"mode": "shadow_detect"' in row.error_message
 

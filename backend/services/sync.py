@@ -36,6 +36,7 @@ from services import publication_criticality
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
+from services import sync_control_plane
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
     resolve_product_day,
@@ -5604,6 +5605,15 @@ def complete_sync_run_with_snapshot(
     started_at=None,
     snapshot_source='sync_completion',
     job_name=sync_metadata.JOB_DAILY_SYNC,
+    source_reads=None,
+    source_changes=None,
+    canonical_mutations=None,
+    affected_games=None,
+    affected_teams=None,
+    affected_pitchers=None,
+    downstream_work_created=None,
+    warnings_count=None,
+    outcome=None,
 ):
     from services import dashboard_snapshot as dashboard_snapshot_service
 
@@ -5625,6 +5635,15 @@ def complete_sync_run_with_snapshot(
             started_at=started_at,
             job_name=job_name,
             stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
+            source_reads=source_reads,
+            source_changes=source_changes,
+            canonical_mutations=canonical_mutations,
+            affected_games=affected_games,
+            affected_teams=affected_teams,
+            affected_pitchers=affected_pitchers,
+            downstream_work_created=downstream_work_created,
+            warnings_count=warnings_count,
+            outcome=outcome,
             commit=False,
             rollback_before=False,
         )
@@ -5639,6 +5658,7 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
+            run.publication_id = str(snapshot.id)
         db.session.commit()
         # SC-03B-04: this path publishes with commit=False and owns the commit, so
         # the post-publication generation hook must be invoked here (once, after the
@@ -5914,6 +5934,21 @@ def run_postgame_refresh(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
                 job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                run_type=sync_control_plane.RunType.FINAL_GAME_RECONCILIATION,
+                trigger_type=sync_control_plane.trigger_for_source(
+                    source,
+                    fallback=sync_control_plane.TriggerType.GAME_FINAL,
+                ),
+                baseball_date=schedule_date,
+                source_domain=sync_control_plane.SourceDomain.MULTI_DOMAIN,
+                scopes=sync_control_plane.scope_entries(
+                    league=True,
+                    source_domains=(
+                        sync_control_plane.SourceDomain.SCHEDULE,
+                        sync_control_plane.SourceDomain.BOXSCORE,
+                        sync_control_plane.SourceDomain.PLAY_BY_PLAY,
+                    ),
+                ),
             )
             status['sync_run_id'] = sync_run_id
             mlb_client.metrics.reset()
@@ -5965,6 +6000,27 @@ def run_postgame_refresh(
                         continue
                     slate_by_game_pk[game_pk] = slate_date
                     completed_games.append(game)
+            if sync_run_id is not None:
+                sync_metadata.add_sync_scopes(
+                    sync_run_id,
+                    sync_control_plane.scope_entries(
+                        game_pks=tuple(
+                            game_pk
+                            for game_pk in (_game_pk(game) for game in completed_games)
+                            if game_pk is not None
+                        ),
+                        team_ids=tuple(
+                            team_id
+                            for game in completed_games
+                            for team_id in (
+                                _game_team_id(game, 'home'),
+                                _game_team_id(game, 'away'),
+                            )
+                            if team_id is not None
+                        ),
+                    ),
+                    commit=False,
+                )
             unprocessed_games, marker_counts = _unprocessed_completed_games(completed_games)
             status['completed_games_found'] = len(completed_games)
             status['newly_completed_games'] = len(unprocessed_games)
@@ -6394,6 +6450,16 @@ def run_postgame_refresh(
                     errors=status['errors'],
                     api_calls_made=api_metrics['api_calls'],
                     retries_used=api_metrics['retries'],
+                    source_reads=api_metrics['api_calls'],
+                    source_changes=changed_log_count,
+                    canonical_mutations=changed_log_count,
+                    affected_games=status['games_processed'],
+                    affected_pitchers=status['pitchers_touched'],
+                    warnings_count=status['records_failed'],
+                    outcome={
+                        'logs_corrected': status['logs_corrected'],
+                        'games_incomplete': status['games_incomplete'],
+                    },
                     error_message=status['message'] or None,
                     source=source,
                     started_at=started_at.replace(tzinfo=None),
@@ -6465,6 +6531,12 @@ def run_postgame_refresh(
                     started_at=started_at.replace(tzinfo=None),
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                     stage=sync_metadata.STAGE_ROSTER_STATUS,
+                    source_reads=api_metrics['api_calls'],
+                    source_changes=changed_log_count,
+                    canonical_mutations=changed_log_count,
+                    affected_games=status['games_processed'],
+                    affected_pitchers=status['pitchers_touched'],
+                    warnings_count=status['records_failed'],
                 )
             else:
                 sync_metadata.finish_sync_run(
@@ -6486,6 +6558,11 @@ def run_postgame_refresh(
                         if status['status'] == sync_metadata.STATUS_FAILED
                         else sync_metadata.STAGE_LOG_INGESTION
                     ),
+                    source_reads=api_metrics['api_calls'],
+                    source_changes=0,
+                    canonical_mutations=0,
+                    affected_games=status['games_processed'],
+                    warnings_count=status['records_failed'],
                 )
     except sync_metadata.SyncWriterConflict as conflict:
         status.update(sync_metadata.sync_writer_conflict_payload(conflict))
@@ -6613,6 +6690,19 @@ def run_daily_sync(
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
+                run_type=sync_control_plane.RunType.FULL_RECONCILIATION,
+                trigger_type=sync_control_plane.trigger_for_source(source),
+                baseball_date=product_day.calendar_date,
+                source_domain=sync_control_plane.SourceDomain.MULTI_DOMAIN,
+                scopes=sync_control_plane.scope_entries(
+                    league=True,
+                    source_domains=(
+                        sync_control_plane.SourceDomain.ROSTER,
+                        sync_control_plane.SourceDomain.TRANSACTIONS,
+                        sync_control_plane.SourceDomain.SCHEDULE,
+                        sync_control_plane.SourceDomain.BOXSCORE,
+                    ),
+                ),
             )
             status['sync_run_id'] = sync_run_id
             # Fresh API metrics for this run so api_calls_made / retries_used
@@ -7010,6 +7100,15 @@ def run_daily_sync(
                     ),
                     api_calls_made=api_metrics['api_calls'],
                     retries_used=api_metrics['retries'],
+                    source_reads=api_metrics['api_calls'],
+                    source_changes=changed_log_count,
+                    canonical_mutations=changed_log_count,
+                    affected_pitchers=pitchers_updated,
+                    warnings_count=records_failed,
+                    outcome={
+                        'logs_corrected': logs_corrected,
+                        'publication_critical_complete': publication_critical['complete'],
+                    },
                     error_message=status['message'] or None,
                     source=source,
                     started_at=started_at.replace(tzinfo=None),

@@ -172,6 +172,19 @@ def test_disabled_transaction_repair_preserves_ordinary_no_change(monkeypatch):
         'acquire_sync_writer_guard',
         lambda **_kwargs: called.append('writer'),
     )
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata,
+        'start_sync_run',
+        lambda **_kwargs: called.append('run_started') or 91,
+    )
+    monkeypatch.setattr(
+        intraday_repair.sync_metadata,
+        'finish_sync_run',
+        lambda sync_run_id, **_kwargs: (
+            called.append(('run_finished', sync_run_id, _kwargs))
+            or SimpleNamespace(id=sync_run_id)
+        ),
+    )
 
     result = intraday_repair.run_intraday_roster_repair(
         _fake_app(),
@@ -182,7 +195,10 @@ def test_disabled_transaction_repair_preserves_ordinary_no_change(monkeypatch):
 
     assert result['status'] == 'success'
     assert result['transaction_roster_repair'] is None
-    assert called == []
+    assert called[0] == 'run_started'
+    assert called[1][0:2] == ('run_finished', 91)
+    assert called[1][2]['canonical_mutations'] == 0
+    assert 'writer' not in called
 
 
 def test_transaction_correction_survives_roster_no_change_and_publishes(monkeypatch):

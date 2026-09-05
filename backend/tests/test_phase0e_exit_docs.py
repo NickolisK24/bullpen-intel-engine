@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # The current revisions add canonical reliever/pitch evidence and persisted PBP
 # observation ordering. The pin exists so a migration cannot enter unnoticed;
 # moving it deliberately acknowledges review and verifies one head remains.
-EXPECTED_ALEMBIC_HEAD = 'e8a4c2f9b1d6'
+EXPECTED_ALEMBIC_HEAD = 'b5e7c1d9a4f2'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',
