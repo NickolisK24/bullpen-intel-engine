@@ -17,6 +17,15 @@ from services import continuous_game_work
 from services import game_appearance_extraction
 from services import game_finality
 from services.mlb_api import MlbApiFetchError, mlb_client
+from services.source_observations import (
+    ObservationCompleteness,
+    PayloadKind,
+    SourceProvider,
+    SourceSubjectType,
+    build_source_identity,
+    record_source_observation,
+)
+from services.sync_control_plane import SourceDomain
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -57,6 +66,8 @@ class GameChangeResult:
     affected_teams: tuple = ()
     approximate_payload_bytes: int | None = None
     elapsed_ms: float | None = None
+    source_observation_id: int | None = None
+    source_observation_outcome: str | None = None
 
     def to_dict(self):
         value = asdict(self)
@@ -100,12 +111,20 @@ def observe_game_change(
     ).one_or_none()
 
     if row is None:
+        source_result = _record_live_source_observation(
+            observation=observation,
+            source_observed_at=source_observed_at,
+            source_authority=source_authority,
+            payload_bytes=payload_bytes,
+            correction=False,
+        )
         row = GameObservationState(
             mlb_game_pk=observation['game_pk'],
             observation_fingerprint=fingerprint,
             observation=observation,
             source_authority=source_authority,
             source_endpoint=SOURCE_ENDPOINT.format(game_pk=observation['game_pk']),
+            source_observation_id=source_result.observation.id,
             source_observed_at=source_observed_at,
             finality_state=observation['finality']['state'],
             previous_observation_fingerprint=None,
@@ -120,6 +139,8 @@ def observe_game_change(
             source_authority=source_authority, source_observed_at=source_observed_at,
             detected_at=detected_at, reason='first_accepted_observation', accepted=True,
             payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
+            source_observation_id=source_result.observation.id,
+            source_observation_outcome=source_result.outcome,
         )
         if create_work_obligation:
             continuous_game_work.ensure_obligation(
@@ -131,14 +152,25 @@ def observe_game_change(
     if fingerprint == row.observation_fingerprint:
         # Exact material replay is a true no-op: not even observation-state
         # timestamps are rewritten.
-        return _result(
+        source_result = _record_live_source_observation(
+            observation=observation,
+            source_observed_at=source_observed_at,
+            source_authority=source_authority,
+            payload_bytes=payload_bytes,
+            correction=False,
+        )
+        result = _result(
             game_pk=observation['game_pk'], classification=UNCHANGED, changed=False,
             previous=row.observation_fingerprint, current=fingerprint,
             finality=row.finality_state, source_authority=source_authority,
             source_observed_at=source_observed_at, detected_at=detected_at,
             reason='material_fingerprint_match', accepted=False,
             payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
+            source_observation_id=source_result.observation.id,
+            source_observation_outcome=source_result.outcome,
         )
+        _finish(commit)
+        return result
 
     ordering, reason = _compare_order(
         accepted_authority=row.source_authority,
@@ -184,11 +216,19 @@ def observe_game_change(
         row.finality_state, observation['finality']['state']
     )
     previous = row.observation_fingerprint
+    source_result = _record_live_source_observation(
+        observation=observation,
+        source_observed_at=source_observed_at,
+        source_authority=source_authority,
+        payload_bytes=payload_bytes,
+        correction=classification == CORRECTED,
+    )
     row.previous_observation_fingerprint = previous
     row.observation_fingerprint = fingerprint
     row.observation = observation
     row.source_authority = source_authority
     row.source_endpoint = SOURCE_ENDPOINT.format(game_pk=observation['game_pk'])
+    row.source_observation_id = source_result.observation.id
     row.source_observed_at = source_observed_at
     row.finality_state = observation['finality']['state']
     row.last_classification = classification
@@ -201,6 +241,8 @@ def observe_game_change(
         source_observed_at=source_observed_at, detected_at=detected_at,
         differences=differences, reason=reason, accepted=True,
         payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
+        source_observation_id=source_result.observation.id,
+        source_observation_outcome=source_result.outcome,
     )
     if create_work_obligation:
         continuous_game_work.ensure_obligation(
@@ -728,7 +770,8 @@ def _cycle(
 def _result(*, game_pk, classification, changed, source_authority,
             detected_at, reason, accepted, previous=None, current=None,
             finality=None, source_observed_at=None, differences=None,
-            payload_bytes=None, elapsed_ms=None):
+            payload_bytes=None, elapsed_ms=None, source_observation_id=None,
+            source_observation_outcome=None):
     return GameChangeResult(
         game_pk=game_pk, classification=classification, changed=changed,
         previous_observation_identity=previous,
@@ -738,7 +781,56 @@ def _result(*, game_pk, classification, changed, source_authority,
         detected_at=detected_at.isoformat(), differences=differences or {},
         reason=reason, accepted=accepted,
         approximate_payload_bytes=payload_bytes, elapsed_ms=elapsed_ms,
+        source_observation_id=source_observation_id,
+        source_observation_outcome=source_observation_outcome,
     )
+
+
+def _record_live_source_observation(
+    *, observation, source_observed_at, source_authority, payload_bytes, correction,
+):
+    game_pk = observation['game_pk']
+    official_date = ((observation.get('identity') or {}).get('official_date'))
+    result = record_source_observation(
+        identity=build_source_identity(
+            provider=SourceProvider.MLB_STATS_API,
+            source_domain=SourceDomain.LIVE_FEED,
+            endpoint=SOURCE_ENDPOINT,
+            subject_type=SourceSubjectType.GAME,
+            subject_key=str(game_pk),
+            request_parameters={'gamePk': game_pk},
+            baseball_date=_source_baseball_date(official_date),
+        ),
+        payload=observation,
+        fingerprint_payload=observation,
+        completeness=ObservationCompleteness.COMPLETE,
+        payload_schema_version=int(observation.get('schema_version') or 1),
+        payload_kind=PayloadKind.NORMALIZED_JSON,
+        record_count=1,
+        correction=correction,
+        source_updated_at=source_observed_at,
+        source_revision=(
+            source_observed_at.isoformat(timespec='seconds')
+            if source_observed_at is not None else None
+        ),
+        response_bytes=payload_bytes,
+        commit=False,
+    )
+    # CU-02's established digest and the generic v1 digest intentionally use
+    # the same canonical JSON contract. Drift here would create two meanings
+    # for one accepted live-feed observation and therefore fails explicitly.
+    if result.observation.fingerprint != observation_fingerprint(observation):
+        raise RuntimeError(
+            f'Source fingerprint mismatch for {source_authority} game {game_pk}'
+        )
+    return result
+
+
+def _source_baseball_date(value):
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _finish(commit):

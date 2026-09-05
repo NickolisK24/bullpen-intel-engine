@@ -13,6 +13,7 @@ from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWi
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
+from models.source_observation import SourceFetchAttempt, SourceObservation
 from services import source_readiness
 import services.sync as sync_service
 from services.mlb_api import MLBApiClient
@@ -1478,6 +1479,26 @@ def test_repeated_sync_is_idempotent_and_corrections_track_provenance(app):
     assert row.correction_source == 'mlb_stats_api:transactions'
 
 
+def test_empty_transaction_window_is_complete_empty_valid_source_evidence(app):
+    with app.app_context():
+        result = sync_transactions(
+            client=FakeTransactionClient([]),
+            start_date=date(2026, 9, 5),
+            end_date=date(2026, 9, 5),
+            timestamp=datetime(2026, 9, 5, 12, 0, 0),
+        )
+        window = PlayerTransactionSyncWindow.query.one()
+        observation = SourceObservation.query.one()
+        attempt = SourceFetchAttempt.query.one()
+
+    assert result['source_observation_outcome'] == 'empty_valid'
+    assert result['source_observation_changed'] is True
+    assert observation.completeness == 'complete'
+    assert observation.record_count == 0
+    assert window.source_observation_id == observation.id
+    assert attempt.status == 'succeeded'
+
+
 def test_roster_alignment_and_precedence_fail_closed(app):
     with app.app_context():
         aligned_pitcher = _pitcher(mlb_id=700001, team_id=113)
@@ -1523,8 +1544,13 @@ def test_fetch_failure_deadletters_and_degrades_transaction_readiness(app):
         readiness = source_readiness.source_readiness_payload(
             reference_date=date(2026, 7, 4),
         )['families']['player_transactions']
+        source_attempt = SourceFetchAttempt.query.one()
+        source_observation_count = SourceObservation.query.count()
 
     assert result['records_failed'] == 1
+    assert source_observation_count == 0
+    assert source_attempt.status == 'failed'
+    assert source_attempt.source_observation_id is None
     assert failure.payload['reason'] == 'fetch_failed'
     assert window.status == 'failed'
     assert readiness['status'] == source_readiness.UNAVAILABLE

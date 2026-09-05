@@ -13,6 +13,17 @@ from services.canonical_transaction_pitcher_acquisition import (
     acquire_canonical_transaction_pitchers,
 )
 from services.mlb_api import mlb_client
+from services.source_observations import (
+    ObservationCompleteness,
+    PayloadKind,
+    SourceProvider,
+    SourceSubjectType,
+    build_source_identity,
+    canonical_record_collection,
+    record_source_fetch_failure,
+    record_source_observation,
+)
+from services.sync_control_plane import SourceDomain
 from services.transaction_participant_qualification import (
     AUTHORITY_MLB_TRANSACTION,
     qualification_from_position,
@@ -228,6 +239,7 @@ def sync_transactions(
     timestamp=None,
     commit=True,
     sync_run_id=None,
+    sync_job_id=None,
 ):
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
@@ -237,6 +249,8 @@ def sync_transactions(
         or (end_date - timedelta(days=TRANSACTION_SYNC_WINDOW_DAYS))
     )
     window_ref = _window_ref(start_date, end_date)
+    source_identity = _transaction_source_identity(start_date, end_date)
+    fetch_started_at = utc_now_naive()
 
     counts = Counter()
     errors = []
@@ -247,6 +261,18 @@ def sync_transactions(
             end_date=end_date.isoformat(),
         )
     except Exception as exc:  # noqa: BLE001 - source failure degrades this family only
+        try:
+            record_source_fetch_failure(
+                identity=source_identity,
+                error=exc,
+                attempt_started_at=fetch_started_at,
+                http_status=getattr(exc, 'status_code', None),
+                sync_run_id=sync_run_id,
+                sync_job_id=sync_job_id,
+                commit=False,
+            )
+        except Exception:  # evidence failure must not replace established failure flow
+            logger.exception('Could not persist failed transaction fetch evidence')
         detail = {
             'reason': 'fetch_failed',
             'source_endpoint': SOURCE_ENDPOINT,
@@ -275,8 +301,30 @@ def sync_transactions(
             db.session.commit()
         return _summary(start_date, end_date, counts, errors)
 
-    if not isinstance(transactions, list):
+    response_was_list = isinstance(transactions, list)
+    if not response_was_list:
         transactions = []
+
+    source_result = record_source_observation(
+        identity=source_identity,
+        payload=transactions,
+        fingerprint_payload=canonical_record_collection(transactions),
+        completeness=(
+            ObservationCompleteness.COMPLETE
+            if response_was_list else ObservationCompleteness.UNKNOWN
+        ),
+        payload_schema_version=1,
+        payload_kind=PayloadKind.NORMALIZED_JSON,
+        record_count=len(transactions),
+        empty_valid=response_was_list and not transactions,
+        attempt_started_at=fetch_started_at,
+        sync_run_id=sync_run_id,
+        sync_job_id=sync_job_id,
+        commit=commit,
+    )
+    counts['source_observation_id'] = source_result.observation.id
+    counts['source_observation_outcome'] = source_result.outcome
+    counts['source_observation_changed'] = source_result.changed
 
     counts['records_fetched'] = len(transactions)
     participant_ids = {
@@ -453,6 +501,7 @@ def sync_transactions(
         status=window_status,
         counts=counts,
         sync_run_id=sync_run_id,
+        source_observation_id=source_result.observation.id,
     )
     if commit:
         db.session.commit()
@@ -856,6 +905,7 @@ def _record_sync_window(
     status,
     counts,
     sync_run_id=None,
+    source_observation_id=None,
 ):
     window = PlayerTransactionSyncWindow(
         source=SOURCE_PREFIX,
@@ -876,6 +926,7 @@ def _record_sync_window(
         alignment_no_snapshot_count=counts.get('alignment_no_snapshot_count', 0),
         records_failed=counts.get('records_failed', 0),
         sync_run_id=sync_run_id,
+        source_observation_id=source_observation_id,
         created_at=timestamp,
     )
     db.session.add(window)
@@ -948,6 +999,9 @@ def _summary(start_date, end_date, counts, errors):
         'records_failed': counts.get('records_failed', 0),
         'errors': counts.get('errors', 0),
         'error_details': errors,
+        'source_observation_id': counts.get('source_observation_id'),
+        'source_observation_outcome': counts.get('source_observation_outcome'),
+        'source_observation_changed': counts.get('source_observation_changed'),
         'exact_roster_newly_resolved_pitchers': counts.get(
             'exact_roster_newly_resolved_pitchers', 0,
         ),
@@ -979,6 +1033,23 @@ def _summary(start_date, end_date, counts, errors):
             'exact_roster_snapshot_conflicts', 0,
         ),
     }
+
+
+def _transaction_source_identity(start_date, end_date):
+    return build_source_identity(
+        provider=SourceProvider.MLB_STATS_API,
+        source_domain=SourceDomain.TRANSACTIONS,
+        endpoint=SOURCE_ENDPOINT,
+        subject_type=SourceSubjectType.DATE_RANGE,
+        subject_key=f'{start_date.isoformat()}:{end_date.isoformat()}',
+        request_parameters={
+            'sportId': 1,
+            'startDate': start_date.isoformat(),
+            'endDate': end_date.isoformat(),
+        },
+        range_start=start_date,
+        range_end=end_date,
+    )
 
 
 def _transaction_key(values):

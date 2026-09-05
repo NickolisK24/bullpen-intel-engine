@@ -17,6 +17,7 @@ from services import schedule_ingestion
 from services.schedule_ingestion import ingest_games, ingest_schedule
 from utils.db import db
 from models.scheduled_game import ScheduledGame
+from models.source_observation import SourceFetchAttempt, SourceObservation
 import models.prospect  # noqa: F401  (full model registry for create_all)
 
 # Script under test (argument/window resolution).
@@ -278,6 +279,15 @@ def test_ingest_schedule_calls_mlb_client_with_window(app, monkeypatch):
         assert seen == {'start': '2026-06-20', 'end': '2026-06-30'}
         assert summary['rows_created'] == 2
         assert ScheduledGame.query.filter_by(game_pk=600).count() == 2
+        assert summary['source_observation_outcome'] == 'new'
+        observation = db.session.get(
+            SourceObservation, summary['source_observation_id']
+        )
+        assert observation.subject.source_domain == 'schedule'
+        assert {
+            row.source_observation_id
+            for row in ScheduledGame.query.filter_by(game_pk=600).all()
+        } == {observation.id}
 
 
 def test_ingest_schedule_empty_result_is_safe(app, monkeypatch):
@@ -287,6 +297,9 @@ def test_ingest_schedule_empty_result_is_safe(app, monkeypatch):
         summary = ingest_schedule('2026-06-20', '2026-06-30')
         assert summary['games_seen'] == 0
         assert summary['rows_created'] == 0
+        assert summary['source_observation_outcome'] == 'empty_valid'
+        assert SourceObservation.query.one().record_count == 0
+        assert SourceFetchAttempt.query.one().status == 'succeeded'
 
 
 def test_refresh_non_final_games_for_slate_updates_stale_prior_game_to_final(app, monkeypatch):
