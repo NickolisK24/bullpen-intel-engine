@@ -56,7 +56,7 @@ def _create_sync_run():
     return sync_run
 
 
-def test_sync_jobs_table_has_unique_constraint_and_indexes(app):
+def test_sync_jobs_table_replaces_permanent_identity_with_active_dedupe(app):
     with app.app_context():
         inspector = inspect(db.engine)
         assert 'sync_jobs' in inspector.get_table_names()
@@ -69,6 +69,7 @@ def test_sync_jobs_table_has_unique_constraint_and_indexes(app):
             'ix_sync_jobs_lane',
             'ix_sync_jobs_job_name',
             'ix_sync_jobs_updated_at',
+            'uq_sync_jobs_active_dedupe_key',
         }.issubset(indexes)
 
         job = SyncJob(
@@ -77,6 +78,7 @@ def test_sync_jobs_table_has_unique_constraint_and_indexes(app):
             lane=sync_jobs.LANE_INTERNAL,
             scope_key=sync_jobs.scope_key_for_product_date(PRODUCT_DATE),
             product_date=PRODUCT_DATE,
+            dedupe_key='workload_evidence:2026-07-05',
             status=sync_jobs.STATUS_PENDING,
             created_at=utc_now_naive(),
             updated_at=utc_now_naive(),
@@ -87,6 +89,7 @@ def test_sync_jobs_table_has_unique_constraint_and_indexes(app):
             lane=job.lane,
             scope_key=job.scope_key,
             product_date=job.product_date,
+            dedupe_key=job.dedupe_key,
             status=sync_jobs.STATUS_PENDING,
             created_at=utc_now_naive(),
             updated_at=utc_now_naive(),

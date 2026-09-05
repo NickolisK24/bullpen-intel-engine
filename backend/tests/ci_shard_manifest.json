@@ -1618,6 +1618,14 @@
           "measured_seconds": 0.31
         },
         {
+          "path": "tests/test_sync_job_queue.py",
+          "measured_seconds": 7.0
+        },
+        {
+          "path": "tests/test_sync_job_queue_migration.py",
+          "measured_seconds": 0.35
+        },
+        {
           "path": "tests/test_sync_jobs.py",
           "measured_seconds": 3.148
         },
