@@ -1,7 +1,8 @@
 # D-051 — Trusted public serving authority and manual daily retirement
 
 - **Date:** 2026-08-07
-- **Status:** Approved founder decision; implementation tracked by PR #627
+- **Status:** Approved founder decision; Team Board/Compare clauses amended by D-058;
+  all trigger, league-publication, and Tonight boundaries remain in force
 - **Scope:** Production full-daily trigger authority and the serving authority for Team Board, Compare, and Tonight. No scoring, Team State vocabulary, publication-gate, game-driven writer, backfill, or model-threshold change.
 
 ## Context
@@ -115,6 +116,23 @@ A manual daily run is no longer evidence and does not substitute for any schedul
 - OPS-002 remains open until the three scheduled production runs prove the new operating
   contract.
 
+## D-058 amendment
+
+D-058 supplies the separate authority decision anticipated by clause 8. It permits Team
+Board to move, through a staged and separately proven cutover, from a Dashboard-only
+team slice to one complete immutable per-team public-read package selected by a
+backend-owned current pointer. It does not permit field overlays or mutable request-time
+reconstruction.
+
+Compare remains common-boundary-only: it may use per-team packages only when both teams
+share one compatible publication cohort; otherwise it continues using a common trusted
+league boundary or fails closed. Home, League, Tonight, league-wide changes, and other
+common-population surfaces retain their existing complete league/snapshot authority.
+
+D-058 is architecture-only until its rollout gates pass. Therefore the production reader
+implemented by PR #627 remains authoritative during migration, and accepting D-058 does
+not itself change a serving path.
+
 ## References
 
 - Issue #620 — OPS-002 daily-sync runtime-budget exhaustion and production proof
@@ -126,3 +144,5 @@ A manual daily run is no longer evidence and does not substitute for any schedul
 - `backend/app.py` — production serving installation and retired admin sync endpoint
 - `backend/services/dashboard_snapshot.py` — trusted Dashboard publication lifecycle
 - `backend/models/share_artifact.py` — immutable Team State artifact authority
+- `docs/decisions/2026-09-04-per-team-public-read-authority-continuous-updates.md`
+  — D-058's bounded amendment and staged cutover contract

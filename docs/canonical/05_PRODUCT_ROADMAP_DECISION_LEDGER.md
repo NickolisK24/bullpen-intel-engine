@@ -6,17 +6,17 @@ Product Roadmap & Decision Ledger
 
 Condensed Canonical Edition · Visual Audit Integrated
 
-No active feature package. One canonical roadmap. Every durable decision recorded.
+No active implementation package. D-058 accepted; implementation pending.
 
-VERSION 5.15  ·  HISTORY/MEMORY CLOSEOUT · PLATFORM CORE LOOP COMPLETE
+VERSION 5.16  ·  PER-TEAM PUBLIC READ AUTHORITY · IMPLEMENTATION PENDING
 
 Owner: Nickolis Kacludis
 
-Effective August 26, 2026
+Effective September 4, 2026
 
 # Contents
 
-This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority, closes the deployed and production-proven History/Memory phase, records the platform core loop complete, and preserves the historical decisions that led to the present state.
+This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority, preserves the deployed History/Memory and platform core-loop closeout, and records D-058's bounded per-team public-read authority decision without claiming implementation.
 
 01  Document Control
 
@@ -52,17 +52,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 5.15 |
-| Effective date | August 26, 2026 |
+| Version | 5.16 |
+| Effective date | September 4, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Audited `origin/main` at `8450485c7166c99ae65872a3d2aa2dcea41248b4`, after HIST-04 merged and deployed with the ShareArtifact publication-seal repair preserved. Includes the production-proven Team State timeline, comparison-carrier repair, backend-authored Team State change markers, qualified transaction context, PI-01 Team State Portable Citation, PI-02 Since Yesterday Portable Change, and all prior core-complete product surfaces; historical Today/Tonight phase closeout basis: `f545eb700408b18f5987b7fab0c868c4b6b65dd1`. |
-| Decision basis | Decision Ledger through D-057. No durable decision is added by this package closeout or ordinary roadmap sequencing. |
-| Audit basis | Repository history, current backend and frontend contracts, PR #757 CI, successful post-merge main CI and Vercel deployment, and read-only production proof across all 30 Team History endpoints through August 26, 2026. No production workflow, production mutation, or synthetic production evidence was used. |
-| Supersedes | Version 5.14 current-state, active-objective, and sequencing language while preserving its historical decisions and completion evidence. |
+| Repository basis | Audited `origin/main` at `653d41450c2d09e42044c5848d2eb8ee7ef1b851`. D-058 is grounded in the existing D-007 team-progressive authority, D-051 trusted Dashboard boundary, immutable Team Board and What Changed carriers, and read-only production evidence from game 824424 / SyncRun 4127. |
+| Decision basis | Decision Ledger through D-058. D-058 accepts architecture only; implementation and production cutover remain pending. |
+| Audit basis | Repository history, canonical standards, current backend and frontend read contracts, prior authority decisions, and read-only production evidence. No production workflow, production mutation, replay, or synthetic production evidence was used. |
+| Supersedes | Version 5.15 document-control and decision-basis language while preserving its History/Memory closeout, execution sequence, and completion evidence. |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Team Board 2.0, Today/Tonight, Pitcher 2.0, Matchup/Compare, Search/Discovery, Portable Intelligence, and History/Memory are core-complete for their current governed scopes. HIST-01 through HIST-04 are complete, the platform core loop is complete, and no HIST package is active. Future depth remains expansion or operational follow-up and may not reopen a core-complete phase by implication. D-001 through D-057 remain in force according to their recorded status. |
+| INTEGRATION RULE | Team Board 2.0, Today/Tonight, Pitcher 2.0, Matchup/Compare, Search/Discovery, Portable Intelligence, and History/Memory remain core-complete for their currently implemented scopes. D-058 authorizes a staged per-team publication expansion but changes no running reader until its cutover gates pass. The complete-only league Dashboard remains authoritative for league surfaces, and Compare remains common-boundary-only. D-001 through D-058 remain in force according to their recorded status. |
 | --- | --- |
 
 # Part I - Executive State
@@ -395,7 +395,9 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-Version 5.15 adds no durable Decision Ledger ID. Closing HIST-04, History/Memory, and the platform core loop is ordinary status reconciliation supported by deployed production proof. D-001 through D-057 remain unchanged and in force according to their recorded status.
+Version 5.15 added no durable Decision Ledger ID. Closing HIST-04, History/Memory, and the platform core loop was ordinary status reconciliation supported by deployed production proof. D-001 through D-057 remain preserved according to their recorded status.
+
+Version 5.16 adds D-058. D-058 authorizes a staged immutable per-team public-read authority for Team Board, team What Changed, and future Team State Share Artifacts while preserving the complete-only league Dashboard and common-boundary Compare. It amends only D-051's Team Board/Compare/team-progressive clauses; implementation is pending.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
@@ -429,7 +431,7 @@ The ledger is history and current policy at once, and until Version 4.0 the two 
 
 Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
 
-Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior decision status. Version 5.0 adds D-057 and records D-056 without changing D-001 through D-055. Versions 5.1 and 5.2 change no decision ID or status.
+Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior decision status. Version 5.0 adds D-057 and records D-056 without changing D-001 through D-055. Versions 5.1 through 5.15 change no decision ID or status. Version 5.16 adds D-058 and amends D-051 only where D-058 explicitly states.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -483,13 +485,14 @@ Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 changed no prior d
 | D-048 | Aug 6, 2026 | Game 824487's source-revision checkpoint was corrected through the reviewed one-row workflow, terminally re-observed as already applied with zero additional writes, and the single-purpose repair capability is retired. This grants no broader game-driven write or publication authority. | Permanent |
 | D-049 | Aug 6, 2026 | UX-001 closes after corrected production proved backend-owned Stretched and Vulnerable states plus governed fail-closed behavior; naturally absent Fresh evidence is never manufactured. | Permanent |
 | D-050 | Aug 6, 2026 | OPS-002 uses temporary runtime headroom while preserving publication gates and all game-driven authority boundaries; permanent work reduction remains separate. | Operational until permanent work-reduction proof supersedes it |
-| D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. | Standing trust boundary |
+| D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. **Amended by D-058, September 4, 2026:** after staged cutover, Team Board may advance from one complete immutable per-team publication; Compare remains common-boundary-only and league surfaces remain complete-slate-only. | Amended by D-058; remaining trust and trigger boundaries stand |
 | D-052 | Aug 10, 2026 | Phase 1A Game-Driven Ingestion Authority Qualification is complete after OPS-002 scheduled reliability proof, OPS-001 scheduled signal-separation proof, read-only candidate audit run 31393177954, and no-op write qualification PASS run 31395294655 for game 823924. The PASS proves safe governed entry into the write-capable path with zero baseball-data mutation and exact lane-ledger movement. It grants no automated/scheduled write authority, no game-driven publication authority, no backfill authority, and no legacy-writer retirement. | Permanent phase-exit decision |
 | D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; production-exercised and production-verified August 14, 2026: scheduled run 31794183367 produced gated commit `2e83fa0` under the machine identity, deployment succeeded, and read-only verification of the live routed page served trusted snapshot 411. Amends D-013 by scoping it to human-authored engineering work. |
 | D-054 | Aug 15, 2026 | The league Dashboard may serve a neutral listing of already-published Team State artifacts pinned to one current trusted Dashboard snapshot. One immutable 30-club registry owns denominator integrity and fallback identity only; live directory identity may improve labels but never membership. The listing computes no Team State, derives no state from counts, introduces no ranking or new public state vocabulary, and must preserve `represented + withheld = expected = 30` with Withheld remaining a publication state rather than a Team State. | Standing read-only publication-serving boundary |
 | D-055 | Aug 15, 2026 | The Team Board may embed the exact already-public `days_since_last_appearance`, `appearances_last_7`, and `pitches_last_7_days` workload values plus the governed `back_to_back` availability input from records its authority already loaded, and may author a fail-closed Rest Status using the fixed date definitions recorded in the decision. Missing or stale required evidence withholds every Rest Status count rather than inventing zero. No score, Team State or availability change, frontend derivation, ranking, prediction, reader-path acquisition, write authority, or publication authority is added. | Standing additive public-read boundary |
 | D-056 | Aug 18, 2026 | Published Team State and its matching card read use the canonical next-day availability reference date while roster membership remains anchored to the represented baseball date. Contract A, thresholds, vocabulary, partitions, artifact schema, roster authority, and publication authority are unchanged. | Adopted; repository correction complete, corrected natural-production observation remains separately required |
 | D-057 | Aug 23, 2026 | Repository evidence at `c63877a` establishes the current Team Board 2.0 package state recorded in Appendix D and advances PRE-02B read-path consolidation as the single active objective. The package may consolidate transport and duplicate population only; it may not change baseball semantics, frontend interpretation authority, API meaning, thresholds, writers, publication gates, or activate governance/substrate-blocked depth. | Standing execution decision |
+| D-058 | Sep 4, 2026 | BaseballOS adopts one immutable per-team public-read publication family for Team Board, team What Changed, and new Team State Share Artifacts. League-derived and continuous-derived packages use one backend-owned per-team current pointer; no rendered package may mix authorities. Compare remains common-boundary-only, and Home, League, global landscape, league-wide changes, Tonight, and other common-population surfaces remain on their existing complete league/snapshot authority. Architecture is accepted; staged implementation and production proof are pending. | Adopted architecture; implementation pending |
 
 ## 16. Open Decisions
 
@@ -792,3 +795,4 @@ not a reason to reopen the completed Team Board packages.
 | 5.13 | August 26, 2026 | Nickolis Kacludis | Reconciled `origin/main` `b842d399` after HIST-02 merged. Closed HIST-02 on backend-proven comparable-and-changed Team State markers with deterministic identity, exact immutable citations, and no frontend inference or causal language. Activated HIST-03 Qualified Transaction Overlay as the sole objective, bounded to currently qualified pitcher transactions on exact retained Team State dates with historical source/destination attribution, explicit source coverage, no event-only dates, and no new durable decision. Portable Intelligence remains core-complete; D-001 through D-057 remain unchanged. |
 | 5.14 | August 26, 2026 | Nickolis Kacludis | Reconciled `origin/main` `a492dc04` after HIST-03 merged. Closed HIST-03 on exact-date qualified pitcher transactions, historical source/destination attribution, explicit source coverage, local failure isolation, and unchanged History request semantics. Activated HIST-04 Team State Comparison Carrier Repair as the sole objective after read-only production proof found canonical Team State 1.2 nested values frozen into an incompatible sidecar shape. HIST-04 is limited to correct future projection and exact read-only retained-shape compatibility; it may not mutate artifacts or sidecars, change comparison meaning, or add History depth. Portable Intelligence remains core-complete; D-001 through D-057 remain unchanged. |
 | 5.15 | August 26, 2026 | Nickolis Kacludis | Reconciled deployed `origin/main` `8450485c` after PR #757. Closed HIST-04 on the exact Team State 1.2 projection repair and immutable read-time compatibility path: 30 of 30 live History endpoints returned `team_state_history_v3`, 1,019 canonical rows yielded 180 comparable pairs, 95 change markers, 85 comparable unchanged pairs, zero known-defect `value_missing`, 808 legitimate `comparison_authority_missing`, and one explicit gap; qualified transactions, one-request composition, and mobile/desktop usability remained operational. Declared History/Memory core-complete and the platform core loop complete without selecting HIST-05 or another feature package. PI-02 natural production generation remains an operational proof follow-up and does not reopen Portable Intelligence. No durable decision was added or changed; D-001 through D-057 remain unchanged. |
+| 5.16 | September 4, 2026 | Nickolis Kacludis | Added D-058 after game 824424 / SyncRun 4127 proved that continuous canonical reconciliation can succeed while the complete-slate Dashboard correctly remains ineligible. Adopted one immutable per-team public-read authority family, one backend current pointer per team, exact lineage and comparison identities, common-boundary-only Compare, share-artifact convergence, staged cutover and rollback, while preserving league Dashboard completeness. Implementation remains pending; no model, migration, service, API, frontend, or production authority changed in this documentation package. |

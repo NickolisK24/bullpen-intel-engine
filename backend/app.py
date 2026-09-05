@@ -166,6 +166,7 @@ def create_app(config_name=None):
     )
     from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
     from models.team_progressive_publication import TeamProgressivePublication
+    from models.team_publication import TeamPublicCurrentPointer, TeamPublicPublication
     from models.team_state_publication_proof import TeamStatePublicationProof
     from models.official_pitching_line_repair_execution import (
         OfficialPitchingLineRepairExecution,
