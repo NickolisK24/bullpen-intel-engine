@@ -1277,6 +1277,10 @@
           "measured_seconds": 7.648
         },
         {
+          "path": "tests/test_team_publication_storage.py",
+          "measured_seconds": 4.95
+        },
+        {
           "path": "tests/test_team_state_card_v1_2.py",
           "measured_seconds": 32.102
         },
