@@ -485,6 +485,10 @@ def test_continuous_shadow_atomic_commit_recovers_after_precommit_crash(app):
     author_league_dashboard_team_publications(snapshot)
     inputs = _continuous_inputs()
     run, change, impact, workload, team_state, read_models = inputs
+    # The continuous SyncRun is durable before Package 2 authoring starts. Keep
+    # that prerequisite outside the simulated shadow-publication transaction so
+    # rollback models only the pre-commit affected-team cohort crash window.
+    db.session.commit()
     result = author_continuous_team_publications_shadow(
         change=change, canonical_impact=impact, workload_result=workload,
         team_state_result=team_state, read_model_result=read_models,
