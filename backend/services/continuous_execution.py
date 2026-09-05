@@ -736,6 +736,7 @@ def _execute_cycle(**kwargs):
             )
             if not fingerprint and config.mode in PRODUCTION_MODES:
                 try:
+                    cu03.persist_accepted_final_schedule_authority(change)
                     fingerprint = cu03.derive_current_plan_fingerprint(
                         change,
                         source_client=client,
@@ -745,6 +746,9 @@ def _execute_cycle(**kwargs):
                         'scope': 'plan_authorization',
                         'game_pk': change.get('game_pk'),
                         'error': type(exc).__name__,
+                        'work_job_id': getattr(work_job, 'id', None),
+                        'stage': preclaim_stage,
+                        'reason': 'plan_fingerprint_derivation_failed',
                     })
                     _rotate_unclaimed_work(
                         work_job,
