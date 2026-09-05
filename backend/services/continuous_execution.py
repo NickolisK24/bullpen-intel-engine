@@ -736,7 +736,8 @@ def _execute_cycle(**kwargs):
             )
             if not fingerprint and config.mode in PRODUCTION_MODES:
                 try:
-                    cu03.persist_accepted_final_schedule_authority(change)
+                    if work_job is not None:
+                        cu03.persist_accepted_final_schedule_authority(change)
                     fingerprint = cu03.derive_current_plan_fingerprint(
                         change,
                         source_client=client,
