@@ -65,42 +65,12 @@ def ingest_schedule(
     leave it ``None``. Read of MLB data, write of scheduled_games only.
     """
     def _run():
-        start_value = _iso(start_date)
-        end_value = _iso(end_date)
-        identity = _schedule_source_identity(start_value, end_value)
-        fetch_started_at = utc_now_naive()
-        try:
-            games = list(mlb_client.get_schedule(
-                start_date=start_value, end_date=end_value
-            ) or [])
-        except Exception as exc:
-            try:
-                record_source_fetch_failure(
-                    identity=identity,
-                    error=exc,
-                    attempt_started_at=fetch_started_at,
-                    http_status=getattr(exc, 'status_code', None),
-                    sync_run_id=sync_run_id,
-                    sync_job_id=sync_job_id,
-                    commit=commit,
-                )
-            except Exception:  # evidence failure must not replace source error
-                logger.exception('Could not persist failed schedule fetch evidence')
-            raise
-
-        source_result = record_source_observation(
-            identity=identity,
-            payload=games,
-            fingerprint_payload=canonical_record_collection(games),
-            completeness=ObservationCompleteness.COMPLETE,
-            payload_schema_version=1,
-            payload_kind=PayloadKind.NORMALIZED_JSON,
-            record_count=len(games),
-            empty_valid=not games,
-            attempt_started_at=fetch_started_at,
+        games, source_result = observe_schedule(
+            start_date,
+            end_date,
+            commit=commit,
             sync_run_id=sync_run_id,
             sync_job_id=sync_job_id,
-            commit=commit,
         )
         summary = ingest_games(
             games,
@@ -117,6 +87,56 @@ def ingest_schedule(
         with app.app_context():
             return _run()
     return _run()
+
+
+def observe_schedule(
+    start_date,
+    end_date,
+    *,
+    completeness=ObservationCompleteness.COMPLETE,
+    commit=True,
+    sync_run_id=None,
+    sync_job_id=None,
+):
+    """Fetch and record schedule evidence without mutating schedule authority."""
+    start_value = _iso(start_date)
+    end_value = _iso(end_date)
+    identity = _schedule_source_identity(start_value, end_value)
+    fetch_started_at = utc_now_naive()
+    try:
+        games = list(mlb_client.get_schedule(
+            start_date=start_value, end_date=end_value
+        ) or [])
+    except Exception as exc:
+        try:
+            record_source_fetch_failure(
+                identity=identity,
+                error=exc,
+                attempt_started_at=fetch_started_at,
+                http_status=getattr(exc, 'status_code', None),
+                sync_run_id=sync_run_id,
+                sync_job_id=sync_job_id,
+                commit=commit,
+            )
+        except Exception:  # evidence failure must not replace source error
+            logger.exception('Could not persist failed schedule fetch evidence')
+        raise
+
+    source_result = record_source_observation(
+        identity=identity,
+        payload=games,
+        fingerprint_payload=canonical_record_collection(games),
+        completeness=completeness,
+        payload_schema_version=1,
+        payload_kind=PayloadKind.NORMALIZED_JSON,
+        record_count=len(games),
+        empty_valid=not games,
+        attempt_started_at=fetch_started_at,
+        sync_run_id=sync_run_id,
+        sync_job_id=sync_job_id,
+        commit=commit,
+    )
+    return games, source_result
 
 
 def ingest_games(
@@ -307,6 +327,8 @@ def _parse_game(game):
         'game_type': _str_or_none(game.get('gameType')),
         'status_code': status_code,
         'status_state': _normalize_status_state(game),
+        'status_detailed_state': _str_or_none(status.get('detailedState')),
+        'status_abstract_state': _str_or_none(status.get('abstractGameState')),
         'doubleheader': _str_or_none(game.get('doubleHeader')),
         'game_number': _int(game.get('gameNumber')),
         'series_game_number': _int(game.get('seriesGameNumber')),
@@ -364,6 +386,8 @@ def _upsert_row(
     row.game_type = parsed['game_type']
     row.status_code = parsed['status_code']
     row.status_state = parsed['status_state']
+    row.status_detailed_state = parsed['status_detailed_state']
+    row.status_abstract_state = parsed['status_abstract_state']
     row.doubleheader = parsed['doubleheader']
     row.game_number = parsed['game_number']
     row.series_game_number = parsed['series_game_number']
