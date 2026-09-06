@@ -361,7 +361,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 507.5,
+      "measured_seconds": 511.5,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -614,6 +614,14 @@
         {
           "path": "tests/test_schedule_ingestion.py",
           "measured_seconds": 14.866
+        },
+        {
+          "path": "tests/test_source_observation_migration.py",
+          "measured_seconds": 0.8
+        },
+        {
+          "path": "tests/test_source_observations.py",
+          "measured_seconds": 3.2
         },
         {
           "path": "tests/test_scheduled_sync_health.py",

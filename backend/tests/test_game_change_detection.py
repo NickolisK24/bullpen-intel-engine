@@ -14,6 +14,7 @@ from models.game_observation_state import GameObservationState
 from models.play_by_play_foundation import GamePitchEvent
 from models.share_artifact import ShareArtifact
 from models.sync_job import SyncJob
+from models.source_observation import SourceFetchAttempt, SourceObservation
 from services import continuous_game_work
 from services import game_change_detection as detection
 from services import sync_jobs
@@ -228,6 +229,13 @@ def test_first_identical_and_restart_replay_are_new_then_unchanged(app):
     assert GameObservationState.query.count() == 1
     assert GameObservationState.query.one().updated_at == persisted_updated_at
     assert second.affected_pitchers == second.affected_teams == ()
+    assert first.source_observation_outcome == 'new'
+    assert second.source_observation_outcome == third.source_observation_outcome == 'unchanged'
+    assert first.source_observation_id == second.source_observation_id
+    assert second.source_observation_id == third.source_observation_id
+    assert GameObservationState.query.one().source_observation_id == first.source_observation_id
+    assert SourceObservation.query.count() == 1
+    assert SourceFetchAttempt.query.count() == 3
 
 
 @pytest.mark.parametrize(
@@ -278,6 +286,11 @@ def test_newer_post_final_change_is_correction_and_replay_is_unchanged(app):
     replay = detection.observe_game_change(GAME_PK, payload=deepcopy(corrected))
     assert accepted.classification == detection.CORRECTED
     assert replay.classification == detection.UNCHANGED
+    assert accepted.source_observation_outcome == 'corrected'
+    assert replay.source_observation_id == accepted.source_observation_id
+    assert SourceObservation.query.count() == 2
+    newest = db.session.get(SourceObservation, accepted.source_observation_id)
+    assert newest.predecessor_observation_id is not None
 
 
 def test_equal_timestamp_pending_final_can_upgrade_to_verified_usable_final(app):

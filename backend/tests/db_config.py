@@ -149,6 +149,7 @@ def create_test_schema(app):
     import models.sync_failure  # noqa: F401
     import models.sync_run  # noqa: F401
     import models.sync_job  # noqa: F401
+    import models.source_observation  # noqa: F401
     import models.traffic_internal_visitor  # noqa: F401
     import models.traffic_page_view  # noqa: F401
     from utils.db import db

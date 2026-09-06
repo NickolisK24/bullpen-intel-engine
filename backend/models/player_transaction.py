@@ -185,6 +185,10 @@ class PlayerTransactionSyncWindow(db.Model):
             'status',
             'attempted_at',
         ),
+        db.Index(
+            'ix_player_transaction_sync_windows_source_observation',
+            'source_observation_id',
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -206,6 +210,11 @@ class PlayerTransactionSyncWindow(db.Model):
     alignment_no_snapshot_count = db.Column(db.Integer, nullable=False, default=0)
     records_failed = db.Column(db.Integer, nullable=False, default=0)
     sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
+    source_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
 
     def to_dict(self):
@@ -229,6 +238,7 @@ class PlayerTransactionSyncWindow(db.Model):
             'alignment_no_snapshot_count': self.alignment_no_snapshot_count or 0,
             'records_failed': self.records_failed or 0,
             'sync_run_id': self.sync_run_id,
+            'source_observation_id': self.source_observation_id,
             'created_at': _iso(self.created_at),
         }
 

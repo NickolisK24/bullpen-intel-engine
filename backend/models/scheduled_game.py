@@ -37,6 +37,7 @@ class ScheduledGame(db.Model):
         db.Index('ix_scheduled_games_status_state', 'status_state'),
         db.Index('ix_scheduled_games_resumed_from_game_pk', 'resumed_from_game_pk'),
         db.Index('ix_scheduled_games_resumed_to_game_pk', 'resumed_to_game_pk'),
+        db.Index('ix_scheduled_games_source_observation', 'source_observation_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -76,6 +77,11 @@ class ScheduledGame(db.Model):
 
     # ── Provenance ─────────────────────────────────────────────────────────────
     source = db.Column(db.String(40), nullable=False, default='schedule_ingestion')
+    source_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive

@@ -22,6 +22,17 @@ from models.scheduled_game import ScheduledGame
 from services.game_finality import normalize_schedule_status_state
 from services.mlb_api import mlb_client
 from services.schedule_authority import upsert_slate_game
+from services.source_observations import (
+    ObservationCompleteness,
+    PayloadKind,
+    SourceProvider,
+    SourceSubjectType,
+    build_source_identity,
+    canonical_record_collection,
+    record_source_fetch_failure,
+    record_source_observation,
+)
+from services.sync_control_plane import SourceDomain
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -36,7 +47,16 @@ _NON_FINAL_REFRESH_STATES = (
 )
 
 
-def ingest_schedule(start_date, end_date, *, source=DEFAULT_SOURCE, app=None, commit=True):
+def ingest_schedule(
+    start_date,
+    end_date,
+    *,
+    source=DEFAULT_SOURCE,
+    app=None,
+    commit=True,
+    sync_run_id=None,
+    sync_job_id=None,
+):
     """Fetch and upsert the MLB schedule for [start_date, end_date].
 
     ``start_date`` / ``end_date`` may be ``date`` objects or ISO ``YYYY-MM-DD``
@@ -45,9 +65,53 @@ def ingest_schedule(start_date, end_date, *, source=DEFAULT_SOURCE, app=None, co
     leave it ``None``. Read of MLB data, write of scheduled_games only.
     """
     def _run():
-        games = mlb_client.get_schedule(
-            start_date=_iso(start_date), end_date=_iso(end_date))
-        return ingest_games(games or [], source=source, commit=commit)
+        start_value = _iso(start_date)
+        end_value = _iso(end_date)
+        identity = _schedule_source_identity(start_value, end_value)
+        fetch_started_at = utc_now_naive()
+        try:
+            games = list(mlb_client.get_schedule(
+                start_date=start_value, end_date=end_value
+            ) or [])
+        except Exception as exc:
+            try:
+                record_source_fetch_failure(
+                    identity=identity,
+                    error=exc,
+                    attempt_started_at=fetch_started_at,
+                    http_status=getattr(exc, 'status_code', None),
+                    sync_run_id=sync_run_id,
+                    sync_job_id=sync_job_id,
+                    commit=commit,
+                )
+            except Exception:  # evidence failure must not replace source error
+                logger.exception('Could not persist failed schedule fetch evidence')
+            raise
+
+        source_result = record_source_observation(
+            identity=identity,
+            payload=games,
+            fingerprint_payload=canonical_record_collection(games),
+            completeness=ObservationCompleteness.COMPLETE,
+            payload_schema_version=1,
+            payload_kind=PayloadKind.NORMALIZED_JSON,
+            record_count=len(games),
+            empty_valid=not games,
+            attempt_started_at=fetch_started_at,
+            sync_run_id=sync_run_id,
+            sync_job_id=sync_job_id,
+            commit=commit,
+        )
+        summary = ingest_games(
+            games,
+            source=source,
+            commit=commit,
+            source_observation_id=source_result.observation.id,
+        )
+        summary['source_observation_id'] = source_result.observation.id
+        summary['source_observation_outcome'] = source_result.outcome
+        summary['source_observation_changed'] = source_result.changed
+        return summary
 
     if app is not None:
         with app.app_context():
@@ -55,7 +119,13 @@ def ingest_schedule(start_date, end_date, *, source=DEFAULT_SOURCE, app=None, co
     return _run()
 
 
-def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
+def ingest_games(
+    games,
+    *,
+    source=DEFAULT_SOURCE,
+    commit=True,
+    source_observation_id=None,
+):
     """Upsert an iterable of raw MLB schedule game dicts. Returns a summary.
 
     Idempotent: each game yields one row per team keyed by (team_id, game_pk).
@@ -89,7 +159,14 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
             ):
                 if team_id is None:
                     continue
-                outcome = _upsert_row(team_id, opponent_id, home_away, parsed, source)
+                outcome = _upsert_row(
+                    team_id,
+                    opponent_id,
+                    home_away,
+                    parsed,
+                    source,
+                    source_observation_id=source_observation_id,
+                )
                 summary[f'rows_{outcome}'] += 1
             summary['games_ingested'] += 1
         except Exception:  # noqa: BLE001 — one bad game never sinks the window
@@ -260,7 +337,15 @@ def _normalize_status_state(game_or_status):
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
 
-def _upsert_row(team_id, opponent_team_id, home_away, parsed, source):
+def _upsert_row(
+    team_id,
+    opponent_team_id,
+    home_away,
+    parsed,
+    source,
+    *,
+    source_observation_id=None,
+):
     """Insert or update one team's row for a game. Returns 'created' or 'updated'."""
     row = (
         ScheduledGame.query
@@ -290,6 +375,8 @@ def _upsert_row(team_id, opponent_team_id, home_away, parsed, source):
     row.resumed_from_game_pk = parsed['resumed_from_game_pk']
     row.resumed_to_game_pk = parsed['resumed_to_game_pk']
     row.source = source
+    if source_observation_id is not None:
+        row.source_observation_id = source_observation_id
     return 'created' if created else 'updated'
 
 
@@ -371,3 +458,21 @@ def _iso(value):
     if callable(isoformat) and not isinstance(value, str):
         return isoformat()
     return value
+
+
+def _schedule_source_identity(start_date, end_date):
+    return build_source_identity(
+        provider=SourceProvider.MLB_STATS_API,
+        source_domain=SourceDomain.SCHEDULE,
+        endpoint='/schedule',
+        subject_type=SourceSubjectType.DATE_RANGE,
+        subject_key=f'{start_date}:{end_date}',
+        request_parameters={
+            'sportId': 1,
+            'hydrate': 'team',
+            'startDate': start_date,
+            'endDate': end_date,
+        },
+        range_start=start_date,
+        range_end=end_date,
+    )

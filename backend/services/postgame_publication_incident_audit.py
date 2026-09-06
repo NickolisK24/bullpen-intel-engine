@@ -314,6 +314,17 @@ INCIDENT_CANONICAL_MODULE_DIGESTS = {
 # differs because a named governed package changed it is a different fact from
 # unexplained production drift, and the two must not be conflated.
 PACKAGE_MODIFIED_MODULES = {
+    'services/schedule_ingestion.py': {
+        'digest_after':
+            'a166b440ed7f6dc8ceaab44c5126f52a85e06a35b6bc81f094d6886557029cdf',
+        'change': (
+            'SP-03 wrapped the existing schedule normalization path with '
+            'immutable source-observation evidence, completeness, fingerprint, '
+            'and provenance linkage; schedule acquisition, normalized baseball '
+            'fields, status mapping, and publication semantics are unchanged'
+        ),
+        'behaviour_changed': True,
+    },
     'services/game_ingestion_completeness.py': {
         'digest_after':
             'cd715a1b701f6aec9525c5565611bd2aa62fc3c72f5741bea2fc982b34d2b362',
