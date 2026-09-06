@@ -53,7 +53,7 @@ A newly discovered already-final game is `game_discovered`; SP-12 historical clo
 
 ## 6. Source Observation Flow
 
-`observe_schedule()` is the non-mutating acquisition/evidence boundary extracted from the existing ingestion service. It retains the same MLB call, request identity, canonical collection fingerprint, payload artifact behavior, fetch-attempt behavior, and run/job links.
+`observe_schedule()` is the SP-04 non-mutating acquisition/evidence boundary. It reuses the frozen ingestion module's established schedule identity builder and the same MLB client, request identity, canonical collection fingerprint, payload artifact behavior, fetch-attempt behavior, and run/job links. The legacy ingestion module remains byte-for-byte unchanged because a governed incident-audit contract pins it.
 
 The one-shot path is:
 

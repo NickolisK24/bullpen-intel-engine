@@ -11,12 +11,18 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import hashlib
+import logging
 
 from models.scheduled_game import ScheduledGame
-from services.schedule_ingestion import ingest_games, observe_schedule
+from services.mlb_api import mlb_client
+from services.schedule_ingestion import _schedule_source_identity, ingest_games
 from services.source_observations import (
     ObservationCompleteness,
     ObservationOutcome,
+    PayloadKind,
+    canonical_record_collection,
+    record_source_fetch_failure,
+    record_source_observation,
     stable_json_dumps,
 )
 from services.sync_control_plane import (
@@ -45,6 +51,8 @@ from services.sync_jobs import (
 from utils.db import db
 from utils.time import utc_now_naive
 
+
+logger = logging.getLogger(__name__)
 
 POLLING_POLICY_VERSION = 'game-state-poll-v1'
 POLL_PAYLOAD_SCHEMA_VERSION = 1
@@ -109,6 +117,60 @@ class PollDecision:
     interval_seconds: int
     priority: int
     policy_version: str = POLLING_POLICY_VERSION
+
+
+def observe_schedule(
+    start_date,
+    end_date,
+    *,
+    completeness=ObservationCompleteness.COMPLETE,
+    commit=True,
+    sync_run_id=None,
+    sync_job_id=None,
+):
+    """Fetch SP-04 schedule evidence without mutating schedule authority.
+
+    The identity builder and source-evidence contract are the established
+    schedule/SP-03 implementations. Keeping this wrapper here preserves the
+    governed byte-level freeze on the legacy ingestion module.
+    """
+    start_value = _iso(start_date)
+    end_value = _iso(end_date)
+    identity = _schedule_source_identity(start_value, end_value)
+    fetch_started_at = utc_now_naive()
+    try:
+        games = list(mlb_client.get_schedule(
+            start_date=start_value, end_date=end_value,
+        ) or [])
+    except Exception as exc:
+        try:
+            record_source_fetch_failure(
+                identity=identity,
+                error=exc,
+                attempt_started_at=fetch_started_at,
+                http_status=getattr(exc, 'status_code', None),
+                sync_run_id=sync_run_id,
+                sync_job_id=sync_job_id,
+                commit=commit,
+            )
+        except Exception:
+            logger.exception('Could not persist failed adaptive schedule fetch evidence')
+        raise
+    result = record_source_observation(
+        identity=identity,
+        payload=games,
+        fingerprint_payload=canonical_record_collection(games),
+        completeness=completeness,
+        payload_schema_version=1,
+        payload_kind=PayloadKind.NORMALIZED_JSON,
+        record_count=len(games),
+        empty_valid=not games,
+        attempt_started_at=fetch_started_at,
+        sync_run_id=sync_run_id,
+        sync_job_id=sync_job_id,
+        commit=commit,
+    )
+    return games, result
 
 
 def normalize_game_state(game_or_status) -> str:
@@ -552,6 +614,8 @@ def _enqueue_poll(baseball_date, available_at, *, priority, reason, game_pks=(),
 def _update_operational_rows(snapshot, decision, transition, observation_id, *, now):
     for row in ScheduledGame.query.filter_by(game_pk=snapshot.game_pk).all():
         row.operational_state = snapshot.state
+        row.status_detailed_state = snapshot.raw_detailed_state
+        row.status_abstract_state = snapshot.raw_abstract_state
         row.game_state_fingerprint = snapshot.fingerprint
         row.next_poll_at = decision.next_poll_at
         row.polling_policy_version = decision.policy_version
@@ -652,4 +716,11 @@ def _datetime_value(value):
 def _naive_utc(value):
     if value.tzinfo is not None:
         return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _iso(value):
+    isoformat = getattr(value, 'isoformat', None)
+    if callable(isoformat) and not isinstance(value, str):
+        return isoformat()
     return value
