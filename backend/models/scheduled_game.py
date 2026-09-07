@@ -29,6 +29,20 @@ class ScheduledGame(db.Model):
     STATE_SUSPENDED = 'suspended'
     STATE_OTHER = 'other'
 
+    # SP-04 operational states are deliberately separate from ``status_state``.
+    # The latter remains the established publication/finality compatibility
+    # contract; this field is only used to decide when synchronization work is
+    # due.
+    OPERATIONAL_SCHEDULED = 'scheduled'
+    OPERATIONAL_PREGAME = 'pregame'
+    OPERATIONAL_LIVE = 'live'
+    OPERATIONAL_DELAYED = 'delayed'
+    OPERATIONAL_SUSPENDED = 'suspended'
+    OPERATIONAL_POSTPONED = 'postponed'
+    OPERATIONAL_CANCELLED = 'cancelled'
+    OPERATIONAL_FINAL = 'final'
+    OPERATIONAL_UNKNOWN = 'unknown'
+
     __table_args__ = (
         db.UniqueConstraint('team_id', 'game_pk',
                             name='uq_scheduled_games_team_game'),
@@ -38,6 +52,8 @@ class ScheduledGame(db.Model):
         db.Index('ix_scheduled_games_resumed_from_game_pk', 'resumed_from_game_pk'),
         db.Index('ix_scheduled_games_resumed_to_game_pk', 'resumed_to_game_pk'),
         db.Index('ix_scheduled_games_source_observation', 'source_observation_id'),
+        db.Index('ix_scheduled_games_operational_state', 'operational_state'),
+        db.Index('ix_scheduled_games_next_poll_at', 'next_poll_at'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -59,6 +75,22 @@ class ScheduledGame(db.Model):
     status_code = db.Column(db.String(10), nullable=True)   # raw MLB statusCode
     status_state = db.Column(db.String(20), nullable=False,  # normalized
                              default=STATE_OTHER)
+    operational_state = db.Column(db.String(20), nullable=True)
+    status_detailed_state = db.Column(db.String(80), nullable=True)
+    status_abstract_state = db.Column(db.String(40), nullable=True)
+    game_state_fingerprint = db.Column(db.String(64), nullable=True)
+
+    # Durable SP-04 polling/transition evidence. The values are duplicated on
+    # the two team perspectives for the same gamePk, just like schedule status.
+    next_poll_at = db.Column(db.DateTime, nullable=True)
+    polling_policy_version = db.Column(db.String(40), nullable=True)
+    last_transition = db.Column(db.String(40), nullable=True)
+    last_transition_at = db.Column(db.DateTime, nullable=True)
+    last_transition_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
 
     # ── Doubleheader / series ──────────────────────────────────────────────────
     doubleheader = db.Column(db.String(2), nullable=True)   # raw MLB 'N'/'Y'/'S'
@@ -97,6 +129,10 @@ class ScheduledGame(db.Model):
         'game_type',
         'status_code',
         'status_state',
+        'operational_state',
+        'status_detailed_state',
+        'status_abstract_state',
+        'game_state_fingerprint',
         'doubleheader',
         'game_number',
         'series_game_number',

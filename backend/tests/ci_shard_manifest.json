@@ -357,6 +357,10 @@
         {
           "path": "tests/test_continuous_governed_replay.py",
           "measured_seconds": 12.75
+        },
+        {
+          "path": "tests/test_adaptive_game_state.py",
+          "measured_seconds": 1.6
         }
       ]
     },
