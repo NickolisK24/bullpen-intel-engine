@@ -17,6 +17,7 @@ class PlayerTransaction(db.Model):
         'effective_date',
         'resolution_date',
         'transaction_type_code',
+        'transaction_type_description',
         'normalized_category',
         'is_il_placement',
         'is_il_activation',
@@ -88,6 +89,7 @@ class PlayerTransaction(db.Model):
     effective_date = db.Column(db.Date)
     resolution_date = db.Column(db.Date)
     transaction_type_code = db.Column(db.String(40))
+    transaction_type_description = db.Column(db.String(255))
     normalized_category = db.Column(db.String(40), nullable=False, default='unknown')
     is_il_placement = db.Column(db.Boolean, nullable=False, default=False)
     is_il_activation = db.Column(db.Boolean, nullable=False, default=False)
@@ -119,6 +121,12 @@ class PlayerTransaction(db.Model):
     source_query_start_date = db.Column(db.Date, nullable=False)
     source_query_end_date = db.Column(db.Date, nullable=False)
     sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
+    source_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    current_version_number = db.Column(db.Integer, nullable=False, default=0)
     first_seen_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     last_corrected_at = db.Column(db.DateTime)
     correction_count = db.Column(db.Integer, nullable=False, default=0)
@@ -144,6 +152,7 @@ class PlayerTransaction(db.Model):
             'effective_date': _iso(self.effective_date),
             'resolution_date': _iso(self.resolution_date),
             'transaction_type_code': self.transaction_type_code,
+            'transaction_type_description': self.transaction_type_description,
             'normalized_category': self.normalized_category,
             'is_il_placement': bool(self.is_il_placement),
             'is_il_activation': bool(self.is_il_activation),
@@ -162,6 +171,8 @@ class PlayerTransaction(db.Model):
             'source_query_start_date': _iso(self.source_query_start_date),
             'source_query_end_date': _iso(self.source_query_end_date),
             'sync_run_id': self.sync_run_id,
+            'source_observation_id': self.source_observation_id,
+            'current_version_number': self.current_version_number or 0,
             'first_seen_at': _iso(self.first_seen_at),
             'last_corrected_at': _iso(self.last_corrected_at),
             'correction_count': self.correction_count or 0,

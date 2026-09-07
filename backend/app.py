@@ -155,6 +155,11 @@ def create_app(config_name=None):
     from models.traffic_internal_visitor import TrafficInternalVisitor
     from models.traffic_page_view import TrafficPageView
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
+    from models.roster_membership import (
+        PlayerTransactionVersion,
+        RosterMembershipInterval,
+        RosterMembershipMutation,
+    )
     from models.play_by_play_foundation import (
         GamePitchEvent,
         GamePlayByPlayEvent,

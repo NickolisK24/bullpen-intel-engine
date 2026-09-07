@@ -58,6 +58,16 @@ class RosterStatusSnapshot(db.Model):
 
     source = db.Column(db.String(100), nullable=False)
     sync_run_id = db.Column(db.Integer, db.ForeignKey('sync_runs.id'), nullable=True)
+    active_roster_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    forty_man_roster_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
     first_seen_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     last_corrected_at = db.Column(db.DateTime)
     correction_count = db.Column(db.Integer, nullable=False, default=0)
@@ -89,6 +99,8 @@ class RosterStatusSnapshot(db.Model):
             'roster_status_raw_description': self.roster_status_raw_description,
             'source': self.source,
             'sync_run_id': self.sync_run_id,
+            'active_roster_observation_id': self.active_roster_observation_id,
+            'forty_man_roster_observation_id': self.forty_man_roster_observation_id,
             'first_seen_at': self.first_seen_at.isoformat() if self.first_seen_at else None,
             'last_corrected_at': (
                 self.last_corrected_at.isoformat() if self.last_corrected_at else None

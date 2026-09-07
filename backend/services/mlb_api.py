@@ -2,6 +2,7 @@ import logging
 import random
 import time
 import re
+from dataclasses import dataclass
 
 import requests
 from flask import current_app, has_app_context
@@ -30,6 +31,13 @@ _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 _ENDPOINT_ID_PATTERN = re.compile(r'/\d+')
+
+
+@dataclass(frozen=True)
+class MlbCollectionResult:
+    records: list
+    completeness: str
+    proof: dict
 
 
 def normalize_endpoint_template(endpoint) -> str:
@@ -516,10 +524,38 @@ class MLBApiClient:
         if hydrate:
             params['hydrate'] = hydrate
 
+        return self.get_team_roster_with_completeness(
+            team_id,
+            roster_type=roster_type,
+            season=season,
+            date=date,
+            hydrate=hydrate,
+        ).records
+
+    def get_team_roster_with_completeness(
+        self, team_id, roster_type='pitchers', season=None, date=None, hydrate=None,
+    ):
+        """Return roster rows plus evidence that the requested collection exists."""
+        params = {'rosterType': roster_type}
+        if season:
+            params['season'] = season
+        if date:
+            params['date'] = date
+        if hydrate:
+            params['hydrate'] = hydrate
         data = self._get(f'/teams/{team_id}/roster', params=params)
-        if not data:
-            return []
-        return data.get('roster', [])
+        roster = data.get('roster') if isinstance(data, dict) else None
+        complete = isinstance(roster, list)
+        return MlbCollectionResult(
+            records=list(roster) if complete else [],
+            completeness='complete' if complete else 'unknown',
+            proof={
+                'response_is_object': isinstance(data, dict),
+                'roster_collection_present': complete,
+                'record_count': len(roster) if complete else 0,
+                'pagination': 'not_exposed_by_endpoint_contract',
+            },
+        )
 
     # ─── Pitchers ────────────────────────────────────────────
 
@@ -614,10 +650,24 @@ class MLBApiClient:
         The raw response is consumed transiently. Callers receive typed fields
         only, plus query metadata needed for provenance/readiness.
         """
+        return self.get_transactions_with_completeness(
+            start_date, end_date, team_id=team_id, player_id=player_id,
+        ).records
+
+    def get_transactions_with_completeness(
+        self, start_date, end_date, team_id=None, player_id=None, limit=1000,
+    ):
+        """Return a bounded transaction collection with conservative coverage proof.
+
+        MLB documents ``limit`` but no offset, cursor, page, or total-count
+        response field for this endpoint. A response at the safety limit is
+        therefore retained as partial and must not author canonical state.
+        """
         params = {
             'sportId': 1,
             'startDate': start_date,
             'endDate': end_date,
+            'limit': int(limit),
         }
         if team_id:
             params['teamId'] = team_id
@@ -626,15 +676,22 @@ class MLBApiClient:
 
         endpoint = '/transactions'
         data = self._get(endpoint, params=params)
-        if not data:
-            return []
-        if isinstance(data, list):
+        if isinstance(data, dict):
+            collection_present = (
+                isinstance(data.get('transactions'), list)
+                or isinstance(data.get('transaction'), list)
+            )
+            transactions = data.get('transactions')
+            if not isinstance(transactions, list):
+                transactions = data.get('transaction')
+        elif isinstance(data, list):
+            collection_present = True
             transactions = data
-        elif isinstance(data, dict):
-            transactions = data.get('transactions') or data.get('transaction') or []
         else:
-            return []
-        return [
+            collection_present = False
+            transactions = []
+        transactions = transactions if isinstance(transactions, list) else []
+        records = [
             self._transaction_record(
                 row,
                 source_endpoint=endpoint,
@@ -643,6 +700,24 @@ class MLBApiClient:
             for row in transactions
             if isinstance(row, dict)
         ]
+        limit_reached = collection_present and len(transactions) >= int(limit)
+        completeness = (
+            'partial' if limit_reached
+            else 'complete' if collection_present
+            else 'unknown'
+        )
+        return MlbCollectionResult(
+            records=records,
+            completeness=completeness,
+            proof={
+                'response_collection_present': collection_present,
+                'raw_record_count': len(transactions),
+                'normalized_record_count': len(records),
+                'requested_limit': int(limit),
+                'limit_reached': limit_reached,
+                'pagination': 'no_offset_cursor_page_or_total_contract',
+            },
+        )
 
     def get_game_boxscore(self, game_pk):
         """Get full boxscore for a specific game."""

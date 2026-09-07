@@ -1216,7 +1216,7 @@ def test_natural_resync_records_missing_to_canonical_linkage_correction(
     assert row.last_corrected_at == datetime(2026, 7, 4, 13, 0, 0)
 
 
-def test_typed_transaction_response_stores_fact_without_raw_or_free_text(app):
+def test_typed_transaction_response_stores_governed_description_without_raw_blob(app):
     with app.app_context():
         pitcher = _pitcher()
         _snapshot(pitcher)
@@ -1239,7 +1239,7 @@ def test_typed_transaction_response_stores_fact_without_raw_or_free_text(app):
     assert row.explanatory_linkage_eligible is True
     assert not hasattr(row, 'raw_response')
     assert not hasattr(row, 'raw_response_json')
-    assert not hasattr(row, 'transaction_type_description')
+    assert row.transaction_type_description == 'Free text is diagnostic only'
     assert not hasattr(row, 'injury_description')
     assert not hasattr(row, 'health_status')
 

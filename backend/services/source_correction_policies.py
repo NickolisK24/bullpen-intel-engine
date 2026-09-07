@@ -221,6 +221,10 @@ PLAYER_TRANSACTION_CORRECTION_POLICY = register_correction_policy(SourceCorrecti
         CorrectionFieldPolicy('resolution_date', update_after_final=True),
         CorrectionFieldPolicy('transaction_type_code', update_after_final=True),
         CorrectionFieldPolicy(
+            'transaction_type_description',
+            update_after_final=True,
+        ),
+        CorrectionFieldPolicy(
             'normalized_category',
             update_after_final=True,
             unknown_on_unsafe_conflict=True,

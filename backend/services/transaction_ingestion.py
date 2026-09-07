@@ -7,6 +7,7 @@ import logging
 
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
+from models.roster_membership import PlayerTransactionVersion
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
 from services.canonical_transaction_pitcher_acquisition import (
@@ -22,6 +23,8 @@ from services.source_observations import (
     canonical_record_collection,
     record_source_fetch_failure,
     record_source_observation,
+    stable_json_dumps,
+    stable_json_value,
 )
 from services.sync_control_plane import SourceDomain
 from services.transaction_participant_qualification import (
@@ -44,6 +47,8 @@ SOURCE_PREFIX = 'mlb_stats_api:transactions'
 SOURCE_ENDPOINT = '/transactions'
 TRANSACTION_SYNC_WINDOW_DAYS = 7
 TRANSACTION_STALE_AFTER_DAYS = 2
+TRANSACTION_FETCH_LIMIT = 1000
+TRANSACTION_FACT_SCHEMA_VERSION = 1
 
 TRANSACTION_FETCH_ENTITY_TYPE = 'player_transactions_fetch'
 TRANSACTION_SHAPE_ENTITY_TYPE = 'player_transactions_shape'
@@ -169,6 +174,7 @@ _TRANSACTION_FACT_FIELDS = (
     'effective_date',
     'resolution_date',
     'transaction_type_code',
+    'transaction_type_description',
     'normalized_category',
     'is_il_placement',
     'is_il_activation',
@@ -192,6 +198,11 @@ _TRANSACTION_FACT_FIELDS = (
     'source_endpoint',
     'source_query_start_date',
     'source_query_end_date',
+)
+
+_TRANSACTION_VERSION_FACT_FIELDS = tuple(
+    field for field in _TRANSACTION_FACT_FIELDS
+    if field not in {'source_query_start_date', 'source_query_end_date'}
 )
 
 _SNAPSHOT_NOT_PROVIDED = object()
@@ -240,6 +251,7 @@ def sync_transactions(
     commit=True,
     sync_run_id=None,
     sync_job_id=None,
+    team_id=None,
 ):
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
@@ -249,17 +261,38 @@ def sync_transactions(
         or (end_date - timedelta(days=TRANSACTION_SYNC_WINDOW_DAYS))
     )
     window_ref = _window_ref(start_date, end_date)
-    source_identity = _transaction_source_identity(start_date, end_date)
+    source_identity = _transaction_source_identity(start_date, end_date, team_id=team_id)
     fetch_started_at = utc_now_naive()
 
     counts = Counter()
     errors = []
     transactions = None
     try:
-        transactions = client.get_transactions(
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
+        collection_reader = getattr(
+            type(client), 'get_transactions_with_completeness', None,
         )
+        if callable(collection_reader):
+            collection = client.get_transactions_with_completeness(
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
+                team_id=team_id,
+                limit=TRANSACTION_FETCH_LIMIT,
+            )
+            transactions = collection.records
+            source_completeness = collection.completeness
+            completeness_proof = dict(collection.proof or {})
+        else:
+            transactions = client.get_transactions(
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
+                team_id=team_id,
+            )
+            source_completeness = (
+                ObservationCompleteness.COMPLETE.value
+                if isinstance(transactions, list)
+                else ObservationCompleteness.UNKNOWN.value
+            )
+            completeness_proof = {'legacy_client_contract': True}
     except Exception as exc:  # noqa: BLE001 - source failure degrades this family only
         try:
             record_source_fetch_failure(
@@ -305,28 +338,54 @@ def sync_transactions(
     if not response_was_list:
         transactions = []
 
+    try:
+        completeness = ObservationCompleteness(source_completeness)
+    except ValueError:
+        completeness = ObservationCompleteness.UNKNOWN
+
     source_result = record_source_observation(
         identity=source_identity,
         payload=transactions,
         fingerprint_payload=canonical_record_collection(transactions),
-        completeness=(
-            ObservationCompleteness.COMPLETE
-            if response_was_list else ObservationCompleteness.UNKNOWN
-        ),
+        completeness=completeness,
         payload_schema_version=1,
         payload_kind=PayloadKind.NORMALIZED_JSON,
         record_count=len(transactions),
-        empty_valid=response_was_list and not transactions,
+        empty_valid=(
+            completeness == ObservationCompleteness.COMPLETE and not transactions
+        ),
         attempt_started_at=fetch_started_at,
         sync_run_id=sync_run_id,
         sync_job_id=sync_job_id,
-        commit=commit,
+        commit=False,
     )
     counts['source_observation_id'] = source_result.observation.id
     counts['source_observation_outcome'] = source_result.outcome
     counts['source_observation_changed'] = source_result.changed
 
     counts['records_fetched'] = len(transactions)
+    counts['completeness'] = completeness.value
+    counts['completeness_proof'] = completeness_proof
+    if completeness != ObservationCompleteness.COMPLETE:
+        detail = {
+            'reason': 'transaction_collection_not_complete',
+            'completeness': completeness.value,
+            'proof': completeness_proof,
+        }
+        errors.append(detail)
+        counts['errors'] += 1
+        _record_sync_window(
+            start_date=start_date,
+            end_date=end_date,
+            timestamp=timestamp,
+            status=WINDOW_STATUS_PARTIAL,
+            counts=counts,
+            sync_run_id=sync_run_id,
+            source_observation_id=source_result.observation.id,
+        )
+        if commit:
+            db.session.commit()
+        return _summary(start_date, end_date, counts, errors)
     participant_ids = {
         _int_or_none(transaction.get('player_mlb_id'))
         for transaction in transactions
@@ -460,6 +519,7 @@ def sync_transactions(
             values,
             sync_run_id=sync_run_id,
             timestamp=timestamp,
+            source_observation_id=source_result.observation.id,
         )
         if row is None:
             continue
@@ -477,6 +537,16 @@ def sync_transactions(
 
         counts['records_stored'] += 1
         counts[f'records_{action}'] += 1
+        if action in {'created', 'corrected'}:
+            affected_players = set(counts.get('affected_player_mlb_ids') or ())
+            affected_players.add(row.player_mlb_id)
+            counts['affected_player_mlb_ids'] = sorted(affected_players)
+            affected_teams = set(counts.get('affected_team_ids') or ())
+            affected_teams.update(
+                value for value in (row.from_team_id, row.to_team_id)
+                if value is not None
+            )
+            counts['affected_team_ids'] = sorted(affected_teams)
         if row.normalized_category == CATEGORY_UNKNOWN:
             counts['unknown_type_count'] += 1
         if row.roster_snapshot_alignment == ALIGNMENT_UNKNOWN:
@@ -598,6 +668,9 @@ def _values_from_transaction(
         'effective_date': _coerce_date(transaction.get('effective_date')),
         'resolution_date': _coerce_date(transaction.get('resolution_date')),
         'transaction_type_code': type_code,
+        'transaction_type_description': _string_or_none(
+            transaction.get('transaction_type_description')
+        ),
         'normalized_category': normalized_category,
         'is_il_placement': normalized_category == CATEGORY_IL_PLACEMENT,
         'is_il_activation': normalized_category == CATEGORY_IL_ACTIVATION,
@@ -673,7 +746,9 @@ def read_transaction_values(
     )
 
 
-def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
+def _upsert_player_transaction(
+    values, *, sync_run_id=None, timestamp=None, source_observation_id=None,
+):
     timestamp = timestamp or utc_now_naive()
     existing = PlayerTransaction.query.filter_by(
         transaction_key=values['transaction_key'],
@@ -689,14 +764,39 @@ def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
         )
         db.session.add(row)
         db.session.flush()
+        row.source_observation_id = source_observation_id
+        _append_transaction_version(
+            row, values, source_observation_id=source_observation_id, timestamp=timestamp,
+        )
         return row, 'created'
 
+    if existing.current_version_number in (None, 0):
+        # Additive migration preserves historical rows as-is. Before any later
+        # correction can replace their compatibility projection, snapshot the
+        # pre-SP-05 fact set as V1 (with nullable observation when unavailable).
+        _append_transaction_version(
+            existing,
+            {
+                field: getattr(existing, field)
+                for field in _TRANSACTION_VERSION_FACT_FIELDS
+            },
+            source_observation_id=existing.source_observation_id,
+            timestamp=existing.created_at or timestamp,
+        )
+
     changed = False
-    for field in _TRANSACTION_FACT_FIELDS:
+    for field in _TRANSACTION_VERSION_FACT_FIELDS:
         if getattr(existing, field) != values[field]:
             setattr(existing, field, values[field])
             changed = True
+    # Request-window provenance describes this fetch, not a correction to the
+    # baseball event. Refresh it without manufacturing a semantic version.
+    existing.source = values['source']
+    existing.source_endpoint = values['source_endpoint']
+    existing.source_query_start_date = values['source_query_start_date']
+    existing.source_query_end_date = values['source_query_end_date']
     existing.sync_run_id = sync_run_id
+    existing.source_observation_id = source_observation_id
     existing.updated_at = timestamp
     if changed:
         source_provenance.record_source_correction(
@@ -711,11 +811,49 @@ def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
         )
         db.session.add(existing)
         db.session.flush()
+        _append_transaction_version(
+            existing,
+            values,
+            source_observation_id=source_observation_id,
+            timestamp=timestamp,
+        )
         return existing, 'corrected'
 
     db.session.add(existing)
     db.session.flush()
     return existing, 'unchanged'
+
+
+def _append_transaction_version(
+    transaction, values, *, source_observation_id, timestamp,
+):
+    facts = stable_json_value({
+        field: values.get(field) for field in _TRANSACTION_VERSION_FACT_FIELDS
+    })
+    fingerprint = hashlib.sha256(stable_json_dumps(facts).encode('utf-8')).hexdigest()
+    prior = (
+        PlayerTransactionVersion.query
+        .filter_by(player_transaction_id=transaction.id)
+        .order_by(PlayerTransactionVersion.version_number.desc())
+        .first()
+    )
+    if prior is not None and prior.fact_fingerprint == fingerprint:
+        transaction.current_version_number = prior.version_number
+        return prior
+    version = PlayerTransactionVersion(
+        player_transaction_id=transaction.id,
+        version_number=(prior.version_number + 1) if prior else 1,
+        predecessor_version_id=prior.id if prior else None,
+        source_observation_id=source_observation_id,
+        fact_fingerprint=fingerprint,
+        fact_schema_version=TRANSACTION_FACT_SCHEMA_VERSION,
+        fact_json=facts,
+        created_at=timestamp,
+    )
+    db.session.add(version)
+    db.session.flush()
+    transaction.current_version_number = version.version_number
+    return version
 
 
 def realign_stored_transactions_from_exact_roster(
@@ -1002,6 +1140,10 @@ def _summary(start_date, end_date, counts, errors):
         'source_observation_id': counts.get('source_observation_id'),
         'source_observation_outcome': counts.get('source_observation_outcome'),
         'source_observation_changed': counts.get('source_observation_changed'),
+        'completeness': counts.get('completeness'),
+        'completeness_proof': counts.get('completeness_proof'),
+        'affected_player_mlb_ids': counts.get('affected_player_mlb_ids', []),
+        'affected_team_ids': counts.get('affected_team_ids', []),
         'exact_roster_newly_resolved_pitchers': counts.get(
             'exact_roster_newly_resolved_pitchers', 0,
         ),
@@ -1035,18 +1177,25 @@ def _summary(start_date, end_date, counts, errors):
     }
 
 
-def _transaction_source_identity(start_date, end_date):
+def _transaction_source_identity(start_date, end_date, *, team_id=None):
+    parameters = {
+        'sportId': 1,
+        'startDate': start_date.isoformat(),
+        'endDate': end_date.isoformat(),
+        'limit': TRANSACTION_FETCH_LIMIT,
+    }
+    if team_id is not None:
+        parameters['teamId'] = int(team_id)
     return build_source_identity(
         provider=SourceProvider.MLB_STATS_API,
         source_domain=SourceDomain.TRANSACTIONS,
         endpoint=SOURCE_ENDPOINT,
         subject_type=SourceSubjectType.DATE_RANGE,
-        subject_key=f'{start_date.isoformat()}:{end_date.isoformat()}',
-        request_parameters={
-            'sportId': 1,
-            'startDate': start_date.isoformat(),
-            'endDate': end_date.isoformat(),
-        },
+        subject_key=(
+            f'{start_date.isoformat()}:{end_date.isoformat()}:'
+            f'{int(team_id) if team_id is not None else "league"}'
+        ),
+        request_parameters=parameters,
         range_start=start_date,
         range_end=end_date,
     )
