@@ -826,7 +826,7 @@ def _enqueue_membership_impact(
     pitcher_ids = sorted({row.pitcher_id for row in mutations})
     observation_ids = sorted({row.id for row in observations.values()})
     return enqueue_job(
-        job_type=JobType.REBUILD_TEAM,
+        job_type=JobType.PROCESS_CANONICAL_IMPACT,
         scope_type=JobScopeType.TEAM,
         scope_key=str(team_id),
         product_date=roster_date,
@@ -839,6 +839,8 @@ def _enqueue_membership_impact(
         parent_job_id=parent_job_id,
         payload_schema_version=1,
         payload={
+            'mutation_family': 'roster_membership',
+            'authority_class': 'roster_authoritative',
             'team_id': team_id,
             'pitcher_ids': pitcher_ids,
             'source_observation_ids': observation_ids,

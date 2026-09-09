@@ -91,6 +91,10 @@
           "measured_seconds": 1.1
         },
         {
+          "path": "tests/test_canonical_impact.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_game_context.py",
           "measured_seconds": 6.534
         },

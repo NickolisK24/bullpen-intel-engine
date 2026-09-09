@@ -585,6 +585,12 @@ def execute_final_game_job(job, *, acquirer=acquire_final_game_sources):
                 parent_job_id=job.id,
                 payload_schema_version=FINAL_JOB_PAYLOAD_SCHEMA_VERSION,
                 payload={
+                    'mutation_family': 'final_game_context',
+                    'authority_class': (
+                        'corrected_final'
+                        if any(row.mutation_type.endswith('corrected') for row in result.mutations)
+                        else 'final'
+                    ),
                     'game_pk': game_pk,
                     'baseball_date': baseball_date,
                     'final_game_version_id': result.game_version.id,

@@ -544,6 +544,32 @@ def execute_pregame_context_job(job, *, now=None, observer=observe_pregame_conte
         created = bool(persistence and persistence.created)
         mutations = tuple(persistence.mutations) if persistence else ()
         discrepancies = tuple(persistence.roster_discrepancies) if persistence else ()
+        impact_job = None
+        if mutations:
+            impact_job = enqueue_job(
+                job_type=JobType.PROCESS_CANONICAL_IMPACT,
+                scope_type=JobScopeType.GAME,
+                scope_key=str(game_pk),
+                product_date=persistence.version.baseball_date,
+                dedupe_key=(
+                    f'CANONICAL_IMPACT:pregame:{game_pk}:'
+                    f'context:{persistence.version.id}'
+                ),
+                priority=PRIORITY_NORMAL,
+                sync_run_id=run.id,
+                parent_job_id=job.id,
+                payload_schema_version=1,
+                payload={
+                    'mutation_family': 'pregame_context',
+                    'authority_class': 'pregame_authoritative',
+                    'game_pk': game_pk,
+                    'baseball_date': persistence.version.baseball_date,
+                    'pregame_context_version_id': persistence.version.id,
+                    'pregame_context_mutation_ids': [item.id for item in mutations],
+                    'source_observation_id': observation.id if observation else None,
+                },
+                commit=False,
+            )
         add_scopes(run, [
             (ScopeType.GAME, game_pk),
             (ScopeType.TEAM, row.team_id),
@@ -556,7 +582,7 @@ def execute_pregame_context_job(job, *, now=None, observer=observe_pregame_conte
             canonical_mutations=int(created),
             affected_games=int(created),
             affected_teams=len({item.team_id for item in mutations if item.team_id}),
-            downstream_work_created=0,
+            downstream_work_created=int(impact_job is not None),
             warnings_count=int(not authoritative) + len(discrepancies),
             outcome={
                 'game_pk': game_pk,
@@ -570,6 +596,7 @@ def execute_pregame_context_job(job, *, now=None, observer=observe_pregame_conte
                 'next_pregame_poll_at': decision.next_poll_at,
                 'pregame_policy_version': PREGAME_POLICY_VERSION,
                 'next_job_id': next_job.id if next_job else None,
+                'impact_job_id': impact_job.id if impact_job else None,
             },
             commit=False,
         )
@@ -587,6 +614,7 @@ def execute_pregame_context_job(job, *, now=None, observer=observe_pregame_conte
             'context_created': created,
             'mutation_ids': [item.id for item in mutations],
             'next_job_id': next_job.id if next_job else None,
+            'impact_job_id': impact_job.id if impact_job else None,
         }
     except Exception as exc:
         db.session.rollback()

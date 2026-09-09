@@ -47,6 +47,7 @@ class JobType(str, Enum):
     FETCH_PREGAME_CONTEXT = 'fetch_pregame_context'
     RECONCILE_FINAL_GAME = 'reconcile_final_game'
     PROCESS_CANONICAL_IMPACT = 'process_canonical_impact'
+    PROCESS_DERIVED_INTELLIGENCE = 'process_derived_intelligence'
     FETCH_ROSTER = 'fetch_roster'
     FETCH_TRANSACTIONS = 'fetch_transactions'
     FETCH_STATCAST = 'fetch_statcast'
