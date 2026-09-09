@@ -342,8 +342,8 @@ def test_each_shard_runs_its_own_postgres_16_service(shard_job):
     assert '5432:5432' in service['ports']
 
 
-def test_each_shard_has_a_twenty_minute_timeout(shard_job):
-    assert shard_job['timeout-minutes'] == 20
+def test_each_shard_has_a_twenty_five_minute_timeout(shard_job):
+    assert shard_job['timeout-minutes'] == 25
 
 
 def test_the_shard_command_takes_its_file_list_from_the_shard_script(shard_job):

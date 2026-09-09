@@ -777,6 +777,14 @@
           "measured_seconds": 0.31
         },
         {
+          "path": "tests/test_daily_closure_migration.py",
+          "measured_seconds": 0.3
+        },
+        {
+          "path": "tests/test_daily_reconciliation.py",
+          "measured_seconds": 1.5
+        },
+        {
           "path": "tests/test_appearance_context_evidence.py",
           "measured_seconds": 6.516
         },
