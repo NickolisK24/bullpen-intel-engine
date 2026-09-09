@@ -762,7 +762,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 509.89,
+      "measured_seconds": 511.19,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -931,6 +931,14 @@
         {
           "path": "tests/test_derived_intelligence_migration.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_repair_orchestration.py",
+          "measured_seconds": 0.8
+        },
+        {
+          "path": "tests/test_repair_orchestration_migration.py",
+          "measured_seconds": 0.5
         },
         {
           "path": "tests/test_editorial_voice_inventory_e2a.py",

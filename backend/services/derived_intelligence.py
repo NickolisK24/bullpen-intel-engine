@@ -274,6 +274,13 @@ def execute_derived_intelligence_plan(
     execution = dependency_closure(requested)
     manifest = capture_input_manifest(plan)
     versions = method_version_manifest(execution)
+    overrides = dict(getattr(plan, 'method_versions_override_json', None) or {})
+    unknown_overrides = set(overrides).difference(execution)
+    if unknown_overrides:
+        raise ValueError(f'Method-version overrides are outside the execution domains: {sorted(unknown_overrides)}')
+    if any(not str(value).strip() for value in overrides.values()):
+        raise ValueError('Method-version overrides must be non-empty strings.')
+    versions.update({key: str(value) for key, value in overrides.items()})
     fingerprint = cohort_fingerprint(plan, manifest, execution, versions)
     existing = DerivedIntelligenceCohort.query.filter_by(
         cohort_fingerprint=fingerprint
@@ -377,7 +384,11 @@ def execute_derived_intelligence_plan(
             else CohortStatus.PARTIAL.value if completed
             else CohortStatus.FAILED.value
         )
-        publication = _enqueue_publication_candidate(cohort, plan) if _publication_eligible(cohort) else None
+        publication = (
+            _enqueue_publication_candidate(cohort, plan)
+            if _publication_eligible(cohort) and getattr(plan, 'publication_mode', 'current') == 'current'
+            else None
+        )
         if publication is not None:
             cohort.publication_job_id = publication.id
     cohort.completed_at = utc_now_naive()
@@ -607,6 +618,8 @@ def execute_derived_intelligence_job(job):
                 'completed_domains': result.cohort.completed_domains_json if result.cohort else [],
                 'withheld_domains': result.cohort.withheld_domains_json if result.cohort else [],
                 'publication_candidate_job_id': result.publication_job.id if result.publication_job else None,
+                'publication_mode': getattr(plan, 'publication_mode', 'current'),
+                'replay_kind': getattr(plan, 'replay_kind', None),
             },
             commit=False,
         )
@@ -618,6 +631,7 @@ def execute_derived_intelligence_job(job):
             'cohort_id': result.cohort.id if result.cohort else None,
             'cohort_status': result.cohort.status if result.cohort else 'no_work',
             'publication_candidate_job_id': result.publication_job.id if result.publication_job else None,
+            'publication_mode': getattr(plan, 'publication_mode', 'current'),
         }
     except Exception as exc:
         db.session.rollback()

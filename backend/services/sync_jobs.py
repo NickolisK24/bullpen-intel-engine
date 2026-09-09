@@ -52,6 +52,8 @@ class JobType(str, Enum):
     HANDOFF_PUBLICATION_CACHE = 'handoff_publication_cache'
     RUN_MORNING_RECONCILIATION = 'run_morning_reconciliation'
     CHECK_BASEBALL_DATE_CLOSURE = 'check_baseball_date_closure'
+    RUN_REPAIR_REQUEST = 'run_repair_request'
+    CHECK_REPAIR_REQUEST = 'check_repair_request'
     FETCH_ROSTER = 'fetch_roster'
     FETCH_TRANSACTIONS = 'fetch_transactions'
     FETCH_STATCAST = 'fetch_statcast'

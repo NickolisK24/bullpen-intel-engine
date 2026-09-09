@@ -17,10 +17,15 @@ class CanonicalImpactPlan(db.Model):
             "status IN ('planned', 'dispatched', 'superseded')",
             name='ck_canonical_impact_plans_status',
         ),
+        db.CheckConstraint(
+            "publication_mode IN ('current', 'historical')",
+            name='ck_canonical_impact_plans_publication_mode',
+        ),
         db.Index('ix_canonical_impact_plans_date', 'baseball_date', 'id'),
         db.Index('ix_canonical_impact_plans_authority', 'authority_class', 'id'),
         db.Index('ix_canonical_impact_plans_correlation', 'correlation_id', 'id'),
         db.Index('ix_canonical_impact_plans_sync_run', 'sync_run_id', 'id'),
+        db.Index('ix_canonical_impact_plans_repair', 'repair_request_id', 'id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -48,6 +53,17 @@ class CanonicalImpactPlan(db.Model):
         db.Integer,
         db.ForeignKey('sync_jobs.id', ondelete='SET NULL'),
     )
+    repair_request_id = db.Column(
+        db.Integer,
+        db.ForeignKey('repair_requests.id', ondelete='SET NULL'),
+    )
+    replay_kind = db.Column(db.String(20))
+    replay_from_plan_id = db.Column(
+        db.Integer,
+        db.ForeignKey('canonical_impact_plans.id', ondelete='SET NULL'),
+    )
+    method_versions_override_json = db.Column(db.JSON, nullable=False, default=dict)
+    publication_mode = db.Column(db.String(20), nullable=False, default='current')
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     dispatched_at = db.Column(db.DateTime)
 
@@ -55,6 +71,9 @@ class CanonicalImpactPlan(db.Model):
         'CanonicalImpactPlan',
         remote_side=[id],
         foreign_keys=[supersedes_plan_id],
+    )
+    replay_from_plan = db.relationship(
+        'CanonicalImpactPlan', remote_side=[id], foreign_keys=[replay_from_plan_id],
     )
 
 

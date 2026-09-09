@@ -208,6 +208,9 @@ def create_app(config_name=None):
         BaseballDateClosure, BaseballDateClosureBlocker,
         BaseballDateClosureVersion,
     )
+    from models.repair_request import (
+        RepairRequest, RepairRequestBlocker, RepairRequestChunk,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
