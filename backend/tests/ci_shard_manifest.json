@@ -540,6 +540,10 @@
           "measured_seconds": 0.015
         },
         {
+          "path": "tests/test_pregame_context.py",
+          "measured_seconds": 1.42
+        },
+        {
           "path": "tests/test_private_posts_access.py",
           "measured_seconds": 4.54
         },
