@@ -129,6 +129,7 @@ def create_test_schema(app):
     # the durable sync run model. Import it here so FK metadata is complete
     # regardless of pytest collection order.
     import models.composed_read  # noqa: F401
+    import models.dashboard_snapshot  # noqa: F401
     import models.audience_subscriber  # noqa: F401
     import models.evidence_contract  # noqa: F401
     import models.fatigue_score  # noqa: F401
@@ -140,6 +141,7 @@ def create_test_schema(app):
     import models.play_by_play_foundation  # noqa: F401
     import models.postgame_processed_game  # noqa: F401
     import models.roster_status_snapshot  # noqa: F401
+    import models.roster_membership  # noqa: F401
     import models.scheduled_game  # noqa: F401
     import models.share_artifact  # noqa: F401
     import models.share_artifact_generation_audit  # noqa: F401

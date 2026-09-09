@@ -365,7 +365,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 511.5,
+      "measured_seconds": 512.95,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -602,6 +602,10 @@
         {
           "path": "tests/test_roster_status_snapshots.py",
           "measured_seconds": 4.601
+        },
+        {
+          "path": "tests/test_roster_transaction_authority.py",
+          "measured_seconds": 1.45
         },
         {
           "path": "tests/test_rotation_support_game_shape.py",

@@ -58,6 +58,8 @@ _SNAPSHOT_FACT_FIELDS = (
     'roster_status_raw_code',
     'roster_status_raw_description',
     'source',
+    'active_roster_observation_id',
+    'forty_man_roster_observation_id',
 )
 
 _CACHE_FIELDS = (
@@ -482,6 +484,8 @@ def _snapshot_values(
     evidence,
     timestamp,
     sync_run_id,
+    active_roster_observation_id=None,
+    forty_man_roster_observation_id=None,
 ):
     roster_types = set((evidence or {}).get('roster_types') or ())
     entry = _preferred_entry(evidence)
@@ -509,6 +513,8 @@ def _snapshot_values(
         'roster_status_raw_description': classification.get('raw_status_description'),
         'source': classification['source'],
         'sync_run_id': sync_run_id,
+        'active_roster_observation_id': active_roster_observation_id,
+        'forty_man_roster_observation_id': forty_man_roster_observation_id,
         'first_seen_at': timestamp,
         'created_at': timestamp,
         'updated_at': timestamp,
