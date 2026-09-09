@@ -288,7 +288,7 @@ def reconcile_final_game(bundle, *, sync_run_id=None, commit=True, fail_after_co
         game_date=baseball_date,
     )
     contexts = (
-        _appearance_contexts(bundle.game, bundle.play_by_play)
+        extraction.appearance_contexts(bundle.game, bundle.play_by_play)
         if bundle.play_by_play_completeness == 'complete' else {}
     )
     projections = _appearance_projections(appearances, contexts)
@@ -533,6 +533,10 @@ def reconcile_final_game(bundle, *, sync_run_id=None, commit=True, fail_after_co
 
     if fail_after_core:
         raise RuntimeError('simulated failure during canonical final reconciliation')
+    # SP-08 evidence remains immutable history, but a successful official final
+    # generation ends its current provisional authority.
+    from services.live_game_delta import supersede_live_game_with_final
+    supersede_live_game_with_final(game_pk, game_version.id, now=now)
     db.session.flush()
     if commit:
         db.session.commit()

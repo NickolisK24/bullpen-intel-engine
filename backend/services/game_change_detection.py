@@ -24,6 +24,7 @@ from services.source_observations import (
     SourceSubjectType,
     build_source_identity,
     record_source_observation,
+    record_source_fetch_failure,
 )
 from services.sync_control_plane import SourceDomain
 from utils.db import db
@@ -38,6 +39,7 @@ CORRECTED = 'corrected'
 STALE_OBSERVATION = 'stale_observation'
 AMBIGUOUS_OBSERVATION = 'ambiguous_observation'
 SOURCE_FAILURE = 'source_failure'
+PARTIAL_OBSERVATION = 'partial_observation'
 
 SOURCE_AUTHORITY = 'mlb_statsapi_live_feed_v1_1'
 SOURCE_ENDPOINT = '/api/v1.1/game/{game_pk}/feed/live'
@@ -84,6 +86,9 @@ def observe_game_change(
     source_authority=SOURCE_AUTHORITY,
     commit=True,
     create_work_obligation=False,
+    sync_run_id=None,
+    sync_job_id=None,
+    require_live_pitching=False,
 ):
     """Fetch or accept one live-feed payload and compare it to durable state."""
     started = perf_counter()
@@ -94,6 +99,16 @@ def observe_game_change(
             payload = client.get_game_live_feed(game_pk)
         observation = canonicalize_game_observation(payload, expected_game_pk=game_pk)
     except (MlbApiFetchError, ValueError, TypeError) as exc:
+        try:
+            record_source_fetch_failure(
+                identity=_live_source_identity(game_pk), error=exc,
+                attempt_started_at=detected_at,
+                http_status=getattr(exc, 'status_code', None),
+                sync_run_id=sync_run_id, sync_job_id=sync_job_id,
+                commit=commit,
+            )
+        except Exception:
+            db.session.rollback()
         return _result(
             game_pk=_positive_int(game_pk), classification=SOURCE_FAILURE,
             changed=False, detected_at=detected_at, source_authority=source_authority,
@@ -106,6 +121,28 @@ def observe_game_change(
         ((payload or {}).get('metaData') or {}).get('timeStamp')
     )
     payload_bytes = len(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode())
+    if (
+        require_live_pitching
+        and ((observation.get('live_pitching') or {}).get('completeness')
+             != 'complete_for_observation')
+    ):
+        source_result = _record_live_source_observation(
+            observation=observation, source_observed_at=source_observed_at,
+            source_authority=source_authority, payload_bytes=payload_bytes,
+            correction=False, completeness=ObservationCompleteness.PARTIAL,
+            sync_run_id=sync_run_id, sync_job_id=sync_job_id,
+        )
+        _finish(commit)
+        return _result(
+            game_pk=observation['game_pk'], classification=PARTIAL_OBSERVATION,
+            changed=False, current=observation_fingerprint(observation),
+            finality=observation['finality']['state'], source_authority=source_authority,
+            source_observed_at=source_observed_at, detected_at=detected_at,
+            reason='live_pitching_projection_incomplete', accepted=False,
+            payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
+            source_observation_id=source_result.observation.id,
+            source_observation_outcome=source_result.outcome,
+        )
     row = GameObservationState.query.filter_by(
         mlb_game_pk=observation['game_pk']
     ).one_or_none()
@@ -117,6 +154,7 @@ def observe_game_change(
             source_authority=source_authority,
             payload_bytes=payload_bytes,
             correction=False,
+            sync_run_id=sync_run_id, sync_job_id=sync_job_id,
         )
         row = GameObservationState(
             mlb_game_pk=observation['game_pk'],
@@ -158,6 +196,7 @@ def observe_game_change(
             source_authority=source_authority,
             payload_bytes=payload_bytes,
             correction=False,
+            sync_run_id=sync_run_id, sync_job_id=sync_job_id,
         )
         result = _result(
             game_pk=observation['game_pk'], classification=UNCHANGED, changed=False,
@@ -222,6 +261,7 @@ def observe_game_change(
         source_authority=source_authority,
         payload_bytes=payload_bytes,
         correction=classification == CORRECTED,
+        sync_run_id=sync_run_id, sync_job_id=sync_job_id,
     )
     row.previous_observation_fingerprint = previous
     row.observation_fingerprint = fingerprint
@@ -366,8 +406,8 @@ def canonicalize_game_observation(payload, *, expected_game_pk=None):
         else None
     )
 
-    return {
-        'schema_version': 1,
+    result = {
+        'schema_version': 2 if decision.state == game_finality.NOT_FINAL else 1,
         'game_pk': game_pk,
         'identity': {
             'official_date': dt.get('officialDate') or dt.get('originalDate'),
@@ -433,11 +473,27 @@ def canonicalize_game_observation(payload, *, expected_game_pk=None):
             'last_event_code': (last_event.get('details') or {}).get('eventType'),
         },
     }
+    if decision.state == game_finality.NOT_FINAL:
+        result['live_pitching'] = _live_pitching_projection(
+            game_pk, dt.get('officialDate') or dt.get('originalDate'),
+            game_data, boxscore, plays, linescore,
+        )
+    return result
 
 
 def observation_fingerprint(observation):
-    encoded = json.dumps(observation, sort_keys=True, separators=(',', ':')).encode()
+    encoded = json.dumps(
+        _fingerprint_projection(observation), sort_keys=True, separators=(',', ':'),
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _fingerprint_projection(observation):
+    """Exclude display-only identity text from material live change identity."""
+    value = json.loads(json.dumps(observation))
+    for appearance in ((value.get('live_pitching') or {}).get('appearances') or []):
+        appearance.pop('pitcher_name', None)
+    return value
 
 
 def observation_diff(previous, current):
@@ -788,22 +844,15 @@ def _result(*, game_pk, classification, changed, source_authority,
 
 def _record_live_source_observation(
     *, observation, source_observed_at, source_authority, payload_bytes, correction,
+    sync_run_id=None, sync_job_id=None, completeness=ObservationCompleteness.COMPLETE,
 ):
     game_pk = observation['game_pk']
     official_date = ((observation.get('identity') or {}).get('official_date'))
     result = record_source_observation(
-        identity=build_source_identity(
-            provider=SourceProvider.MLB_STATS_API,
-            source_domain=SourceDomain.LIVE_FEED,
-            endpoint=SOURCE_ENDPOINT,
-            subject_type=SourceSubjectType.GAME,
-            subject_key=str(game_pk),
-            request_parameters={'gamePk': game_pk},
-            baseball_date=_source_baseball_date(official_date),
-        ),
+        identity=_live_source_identity(game_pk, official_date),
         payload=observation,
-        fingerprint_payload=observation,
-        completeness=ObservationCompleteness.COMPLETE,
+        fingerprint_payload=_fingerprint_projection(observation),
+        completeness=completeness,
         payload_schema_version=int(observation.get('schema_version') or 1),
         payload_kind=PayloadKind.NORMALIZED_JSON,
         record_count=1,
@@ -814,6 +863,8 @@ def _record_live_source_observation(
             if source_observed_at is not None else None
         ),
         response_bytes=payload_bytes,
+        sync_run_id=sync_run_id,
+        sync_job_id=sync_job_id,
         commit=False,
     )
     # CU-02's established digest and the generic v1 digest intentionally use
@@ -824,6 +875,94 @@ def _record_live_source_observation(
             f'Source fingerprint mismatch for {source_authority} game {game_pk}'
         )
     return result
+
+
+def _live_source_identity(game_pk, official_date=None):
+    return build_source_identity(
+        provider=SourceProvider.MLB_STATS_API,
+        source_domain=SourceDomain.LIVE_FEED,
+        endpoint=SOURCE_ENDPOINT,
+        subject_type=SourceSubjectType.GAME,
+        subject_key=str(game_pk),
+        request_parameters={'gamePk': int(game_pk)},
+        baseball_date=_source_baseball_date(official_date),
+    )
+
+
+def _live_pitching_projection(game_pk, official_date, game_data, boxscore, plays, linescore):
+    """Bounded bullpen-relevant projection retained in the SP-03 observation."""
+    if not isinstance(boxscore, dict):
+        return {'completeness': 'partial', 'appearances': []}
+    from services.sync import _extract_pitching_lines_from_boxscore, _pitcher_order_by_side
+
+    game = {
+        'gamePk': game_pk,
+        'officialDate': official_date,
+        'teams': {
+            side: {
+                'team': (((game_data.get('teams') or {}).get(side)) or {}),
+            }
+            for side in ('home', 'away')
+        },
+    }
+    pitcher_order = _pitcher_order_by_side(boxscore)
+    if any(not isinstance((((boxscore.get('teams') or {}).get(side) or {}).get('pitchers')), list)
+           for side in ('home', 'away')):
+        return {'completeness': 'partial', 'appearances': []}
+    try:
+        appearances = game_appearance_extraction.extract_game_appearances(
+            game=game,
+            pitching_lines=_extract_pitching_lines_from_boxscore(boxscore),
+            pitcher_order=pitcher_order,
+            game_date=_source_baseball_date(official_date),
+        )
+    except (game_appearance_extraction.AppearanceExtractionError, TypeError, ValueError):
+        return {'completeness': 'partial', 'appearances': []}
+    contexts = game_appearance_extraction.appearance_contexts(
+        game, {'allPlays': (plays or {}).get('allPlays') or []}
+    )
+    active_by_team = {}
+    for pitcher_id, context in contexts.items():
+        team_id = context.get('team_id')
+        if team_id is None:
+            continue
+        current = active_by_team.get(team_id)
+        if current is None or context.get('first_index', -1) > current[0]:
+            active_by_team[team_id] = (context.get('first_index', -1), pitcher_id)
+    active_ids = {value[1] for value in active_by_team.values()}
+    values = []
+    for item in appearances:
+        context = contexts.get(item['pitcher_mlb_id']) or {}
+        values.append({
+            key: item.get(key) for key in (
+                'pitcher_mlb_id', 'team_id', 'opponent_team_id', 'side',
+                'appearance_role', 'outs_recorded', 'pitches_thrown', 'strikes',
+                'balls', 'batters_faced', 'hits_allowed', 'runs_allowed',
+                'earned_runs', 'walks', 'strikeouts', 'home_runs_allowed',
+            )
+        } | {
+            'pitcher_name': next(
+                (line.get('name') for line in _extract_pitching_lines_from_boxscore(boxscore)
+                 if _positive_int(line.get('player_id')) == item['pitcher_mlb_id']),
+                None,
+            ),
+            'appearance_role': 'starter' if item['is_starter'] else 'reliever',
+            'appearance_order': 0 if item['is_starter'] else context.get('appearance_order'),
+            'outing_status': (
+                'active' if item['pitcher_mlb_id'] in active_ids else
+                'closed' if item['team_id'] in active_by_team else 'unknown'
+            ),
+            'current_inning': context.get('exit_inning'),
+            'current_half': context.get('exit_half'),
+            'entry_inning': context.get('entry_inning'),
+            'entry_half': context.get('entry_half'),
+            'entry_outs': context.get('entry_outs'),
+            'entry_home_score': context.get('entry_home_score'),
+            'entry_away_score': context.get('entry_away_score'),
+            'entry_base_state': None,
+            'inherited_runners': item.get('inherited_runners'),
+        })
+    return {'completeness': 'complete_for_observation', 'appearances': values}
 
 
 def _source_baseball_date(value):

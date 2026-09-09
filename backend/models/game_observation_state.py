@@ -12,6 +12,7 @@ class GameObservationState(db.Model):
         db.Index('ix_game_observation_states_finality', 'finality_state'),
         db.Index('ix_game_observation_states_source_observed', 'source_observed_at'),
         db.Index('ix_game_observation_states_source_observation', 'source_observation_id'),
+        db.Index('ix_game_observation_states_next_live_poll', 'next_live_poll_at'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -32,6 +33,9 @@ class GameObservationState(db.Model):
     last_classification = db.Column(db.String(40), nullable=False)
     last_change_summary = db.Column(db.JSON, nullable=True)
     accepted_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
+    live_bullpen_fingerprint = db.Column(db.String(64), nullable=True)
+    next_live_poll_at = db.Column(db.DateTime, nullable=True)
+    live_polling_policy_version = db.Column(db.String(40), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive,

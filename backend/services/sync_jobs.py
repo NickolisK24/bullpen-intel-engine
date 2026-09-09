@@ -43,6 +43,7 @@ MAX_RETRY_AFTER_SECONDS = 21600
 class JobType(str, Enum):
     FETCH_SCHEDULE = 'fetch_schedule'
     FETCH_GAME = 'fetch_game'
+    FETCH_LIVE_GAME_DELTA = 'fetch_live_game_delta'
     FETCH_PREGAME_CONTEXT = 'fetch_pregame_context'
     RECONCILE_FINAL_GAME = 'reconcile_final_game'
     PROCESS_CANONICAL_IMPACT = 'process_canonical_impact'

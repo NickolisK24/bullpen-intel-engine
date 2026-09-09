@@ -248,6 +248,67 @@ def relief_appearance_count(appearances) -> int:
     return sum(1 for record in appearances or [] if record.get('is_reliever'))
 
 
+def appearance_contexts(game, play_by_play):
+    """Return PBP-proven appearance order and entry/exit state by MLB pitcher id."""
+    all_plays = (play_by_play or {}).get('allPlays')
+    if not isinstance(all_plays, list) or not all_plays:
+        return {}
+    teams = game.get('teams') or {}
+    team_ids = {
+        side: _positive_int((((teams.get(side) or {}).get('team')) or {}).get('id'))
+        for side in ('home', 'away')
+    }
+    groups = {}
+    previous = None
+    for index, play in enumerate(all_plays):
+        about = play.get('about') or {}
+        matchup = play.get('matchup') or {}
+        result = play.get('result') or {}
+        pitcher_id = _positive_int((matchup.get('pitcher') or {}).get('id'))
+        inning = _int_or_none(about.get('inning'))
+        half = str(about.get('halfInning') or '').lower() or None
+        if pitcher_id is None or inning is None or half not in {'top', 'bottom'}:
+            previous = play
+            continue
+        side = 'home' if half == 'top' else 'away'
+        entry = groups.setdefault(pitcher_id, {
+            'team_id': team_ids[side], 'first_index': index,
+            'entry_inning': inning, 'entry_half': half,
+            'entry_outs': _context_entry_outs(previous, inning, half),
+            'entry_home_score': _context_prior_score(previous, 'homeScore'),
+            'entry_away_score': _context_prior_score(previous, 'awayScore'),
+        })
+        entry.update({
+            'exit_inning': inning, 'exit_half': half,
+            'exit_outs': _int_or_none(about.get('outs')),
+            'exit_home_score': _int_or_none(result.get('homeScore')),
+            'exit_away_score': _int_or_none(result.get('awayScore')),
+        })
+        previous = play
+    by_team = {}
+    for pitcher_id, context in groups.items():
+        by_team.setdefault(context['team_id'], []).append((context['first_index'], pitcher_id))
+    for entries in by_team.values():
+        for order, (_index, pitcher_id) in enumerate(sorted(entries)):
+            groups[pitcher_id]['appearance_order'] = order
+    return groups
+
+
+def _context_entry_outs(previous, inning, half):
+    if not isinstance(previous, dict):
+        return 0
+    about = previous.get('about') or {}
+    if _int_or_none(about.get('inning')) != inning or str(about.get('halfInning') or '').lower() != half:
+        return 0
+    return _int_or_none(about.get('outs'))
+
+
+def _context_prior_score(previous, key):
+    if not isinstance(previous, dict):
+        return 0
+    return _int_or_none((previous.get('result') or {}).get(key))
+
+
 def _games_started_for_line(line: dict, pitcher_order: dict) -> int:
     """Official per-game start signal, with the existing positional fallback."""
     stats = line.get('stats') or {}
