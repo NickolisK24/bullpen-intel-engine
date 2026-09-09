@@ -17,6 +17,8 @@ from models.final_game_reconciliation import (
 )
 from models.game_log import GameLog
 from models.game_ingestion_work_item import GameIngestionWorkItem
+from models.live_game_delta import ProvisionalPitchingAppearanceState
+from models.pitcher import Pitcher
 from models.source_observation import SourceObservation
 from models.sync_job import SyncJob
 from models.sync_run import SyncRun
@@ -254,6 +256,36 @@ def test_repeat_identical_final_is_zero_mutation(app):
         assert FinalGameVersion.query.count() == 1
         assert FinalPitchingAppearanceVersion.query.count() == 4
         assert FinalGameMutation.query.count() == 5
+
+
+def test_final_authority_supersedes_but_preserves_live_evidence(app):
+    with app.app_context():
+        _seed_schedule()
+        bundle = _bundle()
+        pitcher = Pitcher(mlb_id=303, full_name='Home Reliever', active=False, position='P')
+        db.session.add(pitcher)
+        db.session.flush()
+        live = ProvisionalPitchingAppearanceState(
+            game_pk=GAME_PK, baseball_date=GAME_DATE, pitcher_id=pitcher.id,
+            pitcher_mlb_id=303, team_id_at_appearance=HOME_TEAM, side='home',
+            appearance_role='reliever', outing_status='closed', outs_recorded=8,
+            pitches_thrown=17, first_observation_id=bundle.boxscore_observation.id,
+            latest_observation_id=bundle.boxscore_observation.id,
+            fact_fingerprint='a' * 64, fingerprint_version='live-appearance-v1',
+            completeness='complete_for_observation', authority_state='live',
+            is_current=True, first_seen_at=utc_now_naive(), latest_seen_at=utc_now_naive(),
+        )
+        db.session.add(live)
+        db.session.commit()
+        result = reconcile_final_game(bundle)
+        db.session.refresh(live)
+        assert live.is_current is False
+        assert live.pitches_thrown == 17
+        assert live.superseded_by_final_game_version_id == result.game_version.id
+        final = FinalPitchingAppearanceVersion.query.filter_by(
+            game_pk=GAME_PK, pitcher_mlb_id=303, is_current=True,
+        ).one()
+        assert final.pitches_thrown == 18
 
 
 def test_legacy_completed_game_bootstraps_versions_without_false_mutation(app):
