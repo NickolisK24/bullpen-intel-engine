@@ -200,6 +200,10 @@ def create_app(config_name=None):
         DerivedCohortInput, DerivedCohortSnapshot,
         DerivedIntelligenceCohort, DerivedIntelligenceCohortDomain,
     )
+    from models.atomic_publication import (
+        AtomicPublication, AtomicPublicationArtifact,
+        AtomicPublicationCacheHandoff, AtomicPublicationCurrent,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
