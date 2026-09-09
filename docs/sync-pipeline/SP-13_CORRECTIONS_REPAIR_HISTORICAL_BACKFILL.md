@@ -232,8 +232,9 @@ Controlled types include `source_unavailable`, `source_partial`,
 `unsupported_historical_context`, `child_job_failed`, `closure_blocked`,
 `publication_blocked`, `authority_conflict`, `missing_identity`, and `unknown`.
 
-Retryable children keep the request running and schedule a 20-minute checker. Exhausted
-required work fails the request. Permanent source limitations yield
+Retryable source-completeness blockers keep the request blocked and schedule a
+20-minute checker. Other pending children keep it running. Exhausted required work
+fails the request. Permanent source limitations yield
 `completed_partial`, never `completed`.
 
 ## 22. Concurrency / Fencing
