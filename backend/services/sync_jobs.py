@@ -49,6 +49,7 @@ class JobType(str, Enum):
     PROCESS_CANONICAL_IMPACT = 'process_canonical_impact'
     PROCESS_DERIVED_INTELLIGENCE = 'process_derived_intelligence'
     PUBLISH_DERIVED_COHORT = 'publish_derived_cohort'
+    HANDOFF_PUBLICATION_CACHE = 'handoff_publication_cache'
     FETCH_ROSTER = 'fetch_roster'
     FETCH_TRANSACTIONS = 'fetch_transactions'
     FETCH_STATCAST = 'fetch_statcast'
