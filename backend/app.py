@@ -191,6 +191,11 @@ def create_app(config_name=None):
     from models.game_ingestion_work_item import GameIngestionWorkItem
     from models.game_observation_state import GameObservationState
     from models.live_game_delta import ProvisionalPitchingAppearanceState, LiveGameMutation
+    from models.canonical_impact import (
+        CanonicalImpactPlan,
+        CanonicalImpactPlanEntity,
+        CanonicalImpactPlanMutation,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

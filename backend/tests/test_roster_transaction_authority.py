@@ -121,7 +121,7 @@ def test_complete_rosters_open_distinct_memberships_and_provenance(app):
         assert snapshot.forty_man_roster_observation_id
         assert pitcher.team_id == 110
         assert pitcher.active is True
-        assert SyncJob.query.filter_by(job_name='rebuild_team').count() == 1
+        assert SyncJob.query.filter_by(job_name='process_canonical_impact').count() == 1
 
 
 def test_unchanged_roster_creates_no_interval_or_downstream_duplicate(app):
@@ -134,7 +134,7 @@ def test_unchanged_roster_creates_no_interval_or_downstream_duplicate(app):
         assert second['mutation_count'] == 0
         assert RosterMembershipInterval.query.count() == 2
         assert SourceObservation.query.count() == 2
-        assert SyncJob.query.filter_by(job_name='rebuild_team').count() == 1
+        assert SyncJob.query.filter_by(job_name='process_canonical_impact').count() == 1
 
 
 def test_removal_closes_then_readdition_opens_a_new_stint(app):
@@ -190,7 +190,7 @@ def test_complete_team_move_closes_old_and_opens_new_without_overlap(app):
             assert rows[1].effective_end_date is None
         assert Pitcher.query.one().team_id == 111
         assert {row.scope_key for row in SyncJob.query.filter_by(
-            job_name='rebuild_team'
+            job_name='process_canonical_impact'
         ).all()} == {'110', '111'}
 
 
@@ -518,4 +518,4 @@ def test_same_team_concurrent_contract_is_postgresql_enforced(app):
         assert sorted(counts) == [0, 2]
         assert RosterMembershipInterval.query.count() == 2
         assert RosterMembershipMutation.query.count() == 2
-        assert SyncJob.query.filter_by(job_name='rebuild_team').count() == 1
+        assert SyncJob.query.filter_by(job_name='process_canonical_impact').count() == 1
