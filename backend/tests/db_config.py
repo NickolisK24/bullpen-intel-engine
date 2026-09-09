@@ -138,6 +138,7 @@ def create_test_schema(app):
     import models.final_game_reconciliation  # noqa: F401
     import models.live_game_delta  # noqa: F401
     import models.canonical_impact  # noqa: F401
+    import models.derived_intelligence  # noqa: F401
     import models.legacy_read_audit  # noqa: F401
     import models.official_pitching_line_repair_execution  # noqa: F401
     import models.pitcher  # noqa: F401

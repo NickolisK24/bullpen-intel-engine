@@ -196,6 +196,10 @@ def create_app(config_name=None):
         CanonicalImpactPlanEntity,
         CanonicalImpactPlanMutation,
     )
+    from models.derived_intelligence import (
+        DerivedCohortInput, DerivedCohortSnapshot,
+        DerivedIntelligenceCohort, DerivedIntelligenceCohortDomain,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
