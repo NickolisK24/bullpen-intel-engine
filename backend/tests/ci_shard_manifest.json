@@ -909,6 +909,14 @@
           "measured_seconds": 0.6
         },
         {
+          "path": "tests/test_derived_intelligence.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_derived_intelligence_migration.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_editorial_voice_inventory_e2a.py",
           "measured_seconds": 0.001
         },
