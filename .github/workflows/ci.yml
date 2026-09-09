@@ -254,7 +254,11 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          # Chromium comes from Playwright. Ignore the runner image's unrelated
+          # Google Chrome apt feed so its transient metadata cannot block CI.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          npx playwright install --with-deps chromium
 
       - name: Run browser quality gate
         run: npm run test:browser
