@@ -257,7 +257,9 @@ jobs:
         run: |
           # Chromium comes from Playwright. Ignore the runner image's unrelated
           # Google Chrome apt feed so its transient metadata cannot block CI.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo rm -f \
+            /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.sources
           npx playwright install --with-deps chromium
 
       - name: Run browser quality gate
