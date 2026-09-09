@@ -75,6 +75,7 @@ FINGERPRINT_FIELDS = (
     'games_finished',
     'hit_batters',
     'wild_pitches',
+    'balks',
     'inherited_runners',
     'inherited_runners_scored',
     'save_situation',
@@ -199,6 +200,7 @@ def extract_game_appearances(
             'games_finished': _int_or_none(stats.get('gamesFinished')),
             'hit_batters': _first_int(stats, 'hitBatsmen', 'hitByPitch'),
             'wild_pitches': _int_or_none(stats.get('wildPitches')),
+            'balks': _int_or_none(stats.get('balks')),
             'inherited_runners': _int_or_none(stats.get('inheritedRunners')),
             'inherited_runners_scored': _int_or_none(
                 stats.get('inheritedRunnersScored')

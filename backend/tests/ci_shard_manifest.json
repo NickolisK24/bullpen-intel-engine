@@ -925,6 +925,10 @@
           "measured_seconds": 0.012
         },
         {
+          "path": "tests/test_final_game_reconciliation.py",
+          "measured_seconds": 2.04
+        },
+        {
           "path": "tests/test_freeze_policy.py",
           "measured_seconds": 0.07
         },

@@ -148,6 +148,11 @@ def create_app(config_name=None):
     from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
     from models.scheduled_game import ScheduledGame
     from models.pregame_context import GamePregameContextVersion, PregameContextMutation
+    from models.final_game_reconciliation import (
+        FinalGameMutation,
+        FinalGameVersion,
+        FinalPitchingAppearanceVersion,
+    )
     from models.slate_game import SlateGame
     from models.editorial_post_history import EditorialPostHistory
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
