@@ -50,6 +50,8 @@ class JobType(str, Enum):
     PROCESS_DERIVED_INTELLIGENCE = 'process_derived_intelligence'
     PUBLISH_DERIVED_COHORT = 'publish_derived_cohort'
     HANDOFF_PUBLICATION_CACHE = 'handoff_publication_cache'
+    RUN_MORNING_RECONCILIATION = 'run_morning_reconciliation'
+    CHECK_BASEBALL_DATE_CLOSURE = 'check_baseball_date_closure'
     FETCH_ROSTER = 'fetch_roster'
     FETCH_TRANSACTIONS = 'fetch_transactions'
     FETCH_STATCAST = 'fetch_statcast'

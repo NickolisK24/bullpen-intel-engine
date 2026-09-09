@@ -204,6 +204,10 @@ def create_app(config_name=None):
         AtomicPublication, AtomicPublicationArtifact,
         AtomicPublicationCacheHandoff, AtomicPublicationCurrent,
     )
+    from models.daily_closure import (
+        BaseballDateClosure, BaseballDateClosureBlocker,
+        BaseballDateClosureVersion,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
