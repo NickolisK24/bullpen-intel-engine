@@ -618,15 +618,20 @@ class MLBApiClient:
 
     # ─── Schedule & Games ────────────────────────────────────
 
-    def get_schedule(self, start_date=None, end_date=None, team_id=None):
+    def get_schedule(
+        self, start_date=None, end_date=None, team_id=None, *,
+        game_pk=None, hydrate='team',
+    ):
         """Get game schedule."""
-        params = {'sportId': 1, 'hydrate': 'team'}
+        params = {'sportId': 1, 'hydrate': hydrate}
         if start_date:
             params['startDate'] = start_date
         if end_date:
             params['endDate'] = end_date
         if team_id:
             params['teamId'] = team_id
+        if game_pk:
+            params['gamePk'] = int(game_pk)
 
         data = self._get('/schedule', params=params)
         if not data:

@@ -54,6 +54,19 @@ class ScheduledGame(db.Model):
         db.Index('ix_scheduled_games_source_observation', 'source_observation_id'),
         db.Index('ix_scheduled_games_operational_state', 'operational_state'),
         db.Index('ix_scheduled_games_next_poll_at', 'next_poll_at'),
+        db.Index('ix_scheduled_games_next_pregame_poll_at', 'next_pregame_poll_at'),
+        db.Index(
+            'ix_scheduled_games_home_probable_pitcher',
+            'home_probable_pitcher_mlb_id',
+        ),
+        db.Index(
+            'ix_scheduled_games_away_probable_pitcher',
+            'away_probable_pitcher_mlb_id',
+        ),
+        db.Index(
+            'ix_scheduled_games_pregame_observation',
+            'pregame_context_observation_id',
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -91,6 +104,31 @@ class ScheduledGame(db.Model):
         db.ForeignKey('source_observations.id', ondelete='SET NULL'),
         nullable=True,
     )
+
+    # SP-06 current pregame projection. The authoritative revision history is
+    # retained in ``game_pregame_context_versions``; these duplicated values
+    # keep current game reads simple without making schedule time or roster
+    # membership a second authority.
+    home_probable_pitcher_mlb_id = db.Column(db.Integer, nullable=True)
+    away_probable_pitcher_mlb_id = db.Column(db.Integer, nullable=True)
+    home_probable_pitcher_name = db.Column(db.String(100), nullable=True)
+    away_probable_pitcher_name = db.Column(db.String(100), nullable=True)
+    pregame_context_observation_id = db.Column(
+        db.Integer,
+        db.ForeignKey('source_observations.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    pregame_context_version_id = db.Column(
+        db.Integer,
+        db.ForeignKey('game_pregame_context_versions.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    pregame_context_fingerprint = db.Column(db.String(64), nullable=True)
+    pregame_context_version = db.Column(db.Integer, nullable=True)
+    pregame_context_completeness = db.Column(db.String(20), nullable=True)
+    pregame_context_updated_at = db.Column(db.DateTime, nullable=True)
+    next_pregame_poll_at = db.Column(db.DateTime, nullable=True)
+    pregame_policy_version = db.Column(db.String(40), nullable=True)
 
     # ── Doubleheader / series ──────────────────────────────────────────────────
     doubleheader = db.Column(db.String(2), nullable=True)   # raw MLB 'N'/'Y'/'S'

@@ -139,10 +139,12 @@ def create_test_schema(app):
     import models.pitcher  # noqa: F401
     import models.pitcher_season_ledger_coverage  # noqa: F401
     import models.play_by_play_foundation  # noqa: F401
+    import models.player_transaction  # noqa: F401
     import models.postgame_processed_game  # noqa: F401
     import models.roster_status_snapshot  # noqa: F401
     import models.roster_membership  # noqa: F401
     import models.scheduled_game  # noqa: F401
+    import models.pregame_context  # noqa: F401
     import models.share_artifact  # noqa: F401
     import models.share_artifact_generation_audit  # noqa: F401
     import models.team_progressive_publication  # noqa: F401
