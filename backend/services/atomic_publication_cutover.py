@@ -32,7 +32,7 @@ def _pointer_id():
     return pointer.publication_id if pointer else None
 
 
-def _candidate_report(cohort):
+def _candidate_report(cohort, *, include_baseline=False):
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
     reason = None
     artifact_count = 0
@@ -42,7 +42,10 @@ def _candidate_report(cohort):
     except PublicationValidationError as exc:
         reason = exc.reason
     publication = AtomicPublication.query.filter_by(cohort_id=cohort.id).one_or_none()
-    baseline = first_publication_baseline_report(cohort) if _pointer_id() is None else None
+    baseline = (
+        first_publication_baseline_report(cohort)
+        if include_baseline and _pointer_id() is None else None
+    )
     input_manifest = list(cohort.input_manifest_json or ())
     return {
         'cohort_id': cohort.id,
@@ -90,6 +93,13 @@ def inspect_publication_candidates(*, limit=20):
         DerivedIntelligenceCohort.authority_class.in_(tuple(ALLOWED_AUTHORITIES)),
     ).order_by(DerivedIntelligenceCohort.id.desc()).limit(max(1, min(limit, 100))).all()
     reports = [_candidate_report(row) for row in rows]
+    if _pointer_id() is None:
+        for index, report in enumerate(reports):
+            if report['ineligible_reason'] is not None:
+                continue
+            reports[index] = _candidate_report(rows[index], include_baseline=True)
+            if reports[index]['eligible']:
+                break
     return {
         'mode': 'read_only',
         'current_publication_id': _pointer_id(),
@@ -102,7 +112,7 @@ def publish_selected_cohort(cohort_id):
     cohort = db.session.get(DerivedIntelligenceCohort, int(cohort_id))
     if cohort is None:
         raise PublicationValidationError('cohort_missing')
-    report = _candidate_report(cohort)
+    report = _candidate_report(cohort, include_baseline=True)
     if not report['eligible'] and report['ineligible_reason'] != 'already_published':
         raise PublicationValidationError(report['ineligible_reason'])
 
