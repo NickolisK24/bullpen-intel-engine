@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
@@ -20,12 +21,13 @@ from models.final_game_reconciliation import FinalGameVersion
 from models.game_observation_state import GameObservationState
 from models.repair_request import RepairRequest
 from models.scheduled_game import ScheduledGame
-from models.source_observation import SourceFetchAttempt, SourceObservation, SourceSubject
+from models.source_observation import SourceFetchAttempt
 from models.sync_certification import (
     SyncCertificationCheck, SyncCertificationRun, SyncLegacyTransitionState,
 )
 from models.sync_job import SyncJob
 from models.sync_run import SyncRun
+from services.roster_authority_health import roster_authority_coverage
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -280,15 +282,11 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         elif AtomicPublicationArtifact.query.filter_by(publication_id=publication.id).count() == 0:
             pointer_inconsistencies += 1
 
-    roster_team_count = (
-        db.session.query(func.count(func.distinct(SourceSubject.subject_key)))
-        .join(SourceObservation, SourceObservation.source_subject_id == SourceSubject.id)
-        .filter(
-            SourceSubject.source_domain == 'roster',
-            SourceObservation.is_authoritative.is_(True),
-            SourceObservation.completeness == 'complete',
-        ).scalar() or 0
-    )
+    roster_date = now.replace(tzinfo=timezone.utc).astimezone(
+        ZoneInfo('America/New_York')
+    ).date()
+    roster_authority = roster_authority_coverage(roster_date, now=now)
+    roster_team_count = roster_authority['active_roster_coverage_count']
     continuous_runs = SyncRun.query.filter(
         SyncRun.job_name == 'continuous_cycle',
         SyncRun.started_at >= source_cutoff,
@@ -297,6 +295,10 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         (run.outcome_json or {}).get('observation_outcomes') or {}
         for run in continuous_runs
     ]
+    last_shadow_job = SyncJob.query.filter_by(
+        job_family='sync_pipeline_shadow',
+        status='succeeded',
+    ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
     signals = {
         'queue_depth_by_status': queue_counts,
         'pending_jobs': queue_counts.get('pending', 0),
@@ -322,6 +324,13 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'unreconciled_final_games': len(final_game_pks - reconciled_game_pks),
         'roster_authority_team_count': int(roster_team_count),
         'missing_roster_authority_teams': max(0, 30 - int(roster_team_count)),
+        'roster_authority': roster_authority,
+        'last_recurring_shadow_job_id': last_shadow_job.id if last_shadow_job else None,
+        'last_recurring_shadow_completed_at': (
+            last_shadow_job.completed_at.isoformat()
+            if last_shadow_job and last_shadow_job.completed_at else None
+        ),
+        'last_shadow_morning_run_id': roster_authority['morning_sync_run_id'],
         'pending_impact_plans': CanonicalImpactPlan.query.filter_by(status='planned').count(),
         'running_or_stale_cohorts': DerivedIntelligenceCohort.query.filter(
             DerivedIntelligenceCohort.status.in_(('running', 'stale', 'failed')),

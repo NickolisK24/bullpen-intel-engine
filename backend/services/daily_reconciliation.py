@@ -62,6 +62,7 @@ class MorningPlan:
     child_job_ids: tuple[int, ...]
     pregame_job_ids: tuple[int, ...]
     repair_job_ids: tuple[int, ...]
+    suppressed_obligations: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,7 +88,10 @@ def game_resolution_state(row):
 
 def _team_ids(client):
     teams = client.get_all_teams()
-    values = sorted({int(row['id']) for row in teams if row.get('id') is not None})
+    raw_values = [int(row['id']) for row in teams if row.get('id') is not None]
+    if len(raw_values) != len(set(raw_values)):
+        raise RuntimeError('Official MLB team coverage contains duplicate team IDs.')
+    values = sorted(set(raw_values))
     if len(values) != EXPECTED_MLB_TEAMS:
         raise RuntimeError(
             f'Official MLB team coverage expected {EXPECTED_MLB_TEAMS}, received {len(values)}.'
@@ -137,7 +141,14 @@ def _enqueue_missing_final(game, run_id, *, parent_job_id=None):
     )
 
 
-def _repair_orphaned_pipeline(target_date, run_id, *, parent_job_id=None):
+def _repair_orphaned_pipeline(
+    target_date,
+    run_id,
+    *,
+    parent_job_id=None,
+    publication_candidate_enabled=True,
+    suppressed_obligations=None,
+):
     jobs = []
     mutations = FinalGameMutation.query.filter_by(baseball_date=target_date).order_by(
         FinalGameMutation.final_game_version_id, FinalGameMutation.id,
@@ -199,23 +210,38 @@ def _repair_orphaned_pipeline(target_date, run_id, *, parent_job_id=None):
         elif cohort is not None and cohort.status == 'complete':
             publication = AtomicPublication.query.filter_by(cohort_id=cohort.id).first()
             if publication is None:
-                jobs.append(enqueue_job(
-                    job_type=JobType.PUBLISH_DERIVED_COHORT,
-                    scope_type=JobScopeType.BASEBALL_DATE,
-                    scope_key=target_date.isoformat(),
-                    product_date=target_date,
-                    dedupe_key=f'PUBLISH_DERIVED_COHORT:{cohort.cohort_fingerprint}',
-                    payload={'cohort_id': cohort.id},
-                    priority=70,
-                    sync_run_id=run_id,
-                    parent_job_id=parent_job_id,
-                    commit=False,
-                ))
+                if publication_candidate_enabled:
+                    jobs.append(enqueue_job(
+                        job_type=JobType.PUBLISH_DERIVED_COHORT,
+                        scope_type=JobScopeType.BASEBALL_DATE,
+                        scope_key=target_date.isoformat(),
+                        product_date=target_date,
+                        dedupe_key=f'PUBLISH_DERIVED_COHORT:{cohort.cohort_fingerprint}',
+                        payload={'cohort_id': cohort.id},
+                        priority=70,
+                        sync_run_id=run_id,
+                        parent_job_id=parent_job_id,
+                        commit=False,
+                    ))
+                elif suppressed_obligations is not None:
+                    suppressed_obligations.append({
+                        'job_type': JobType.PUBLISH_DERIVED_COHORT.value,
+                        'cohort_id': cohort.id,
+                        'reason': 'shadow_publication_disabled',
+                    })
     return jobs
 
 
 def plan_morning_reconciliation(
-    target_date=None, *, client=None, now=None, parent_job_id=None, commit=True,
+    target_date=None,
+    *,
+    client=None,
+    now=None,
+    parent_job_id=None,
+    commit=True,
+    shadow_mode=False,
+    publication_candidate_enabled=True,
+    closure_checks_enabled=True,
 ):
     now = now or utc_now_naive()
     target_date = target_date or now.date()
@@ -224,7 +250,10 @@ def plan_morning_reconciliation(
     run = create_run(
         run_type=RunType.MORNING_RECONCILIATION,
         trigger_type=TriggerType.SCHEDULED,
-        source='sp12_morning_reconciliation',
+        source=(
+            'sp12_morning_shadow'
+            if shadow_mode else 'sp12_morning_reconciliation'
+        ),
         job_name='run_morning_reconciliation',
         baseball_date=target_date,
         source_domain=SourceDomain.MULTI_DOMAIN,
@@ -265,18 +294,30 @@ def plan_morning_reconciliation(
             ).all()
         ),
     }
-    for closure_date in sorted(closure_dates):
-        jobs.append(enqueue_closure_check(
-            closure_date, sync_run_id=run.id, parent_job_id=parent_job_id,
-            generation=f'morning:{target_date.isoformat()}', commit=False,
-        ))
+    suppressed_obligations = []
+    if closure_checks_enabled:
+        for closure_date in sorted(closure_dates):
+            jobs.append(enqueue_closure_check(
+                closure_date, sync_run_id=run.id, parent_job_id=parent_job_id,
+                generation=f'morning:{target_date.isoformat()}', commit=False,
+            ))
+    else:
+        suppressed_obligations.extend({
+            'job_type': JobType.CHECK_BASEBALL_DATE_CLOSURE.value,
+            'baseball_date': closure_date.isoformat(),
+            'reason': 'shadow_closure_disabled',
+        } for closure_date in sorted(closure_dates))
     pregame = plan_pregame_context_polls(
         now=now, baseball_dates=[target_date], commit=False,
     )
     repairs = []
     for repair_date in sorted({row.game_date for row in games} | {target_date}):
         repairs.extend(_repair_orphaned_pipeline(
-            repair_date, run.id, parent_job_id=parent_job_id,
+            repair_date,
+            run.id,
+            parent_job_id=parent_job_id,
+            publication_candidate_enabled=publication_candidate_enabled,
+            suppressed_obligations=suppressed_obligations,
         ))
     record_outcome(
         run,
@@ -289,6 +330,10 @@ def plan_morning_reconciliation(
             'child_job_ids': sorted({row.id for row in jobs}),
             'pregame_job_ids': sorted({row.id for row in pregame}),
             'repair_job_ids': sorted({row.id for row in repairs}),
+            'shadow_mode': bool(shadow_mode),
+            'publication_candidate_enabled': bool(publication_candidate_enabled),
+            'closure_checks_enabled': bool(closure_checks_enabled),
+            'suppressed_obligations': suppressed_obligations,
             'correction_lookback_days': CORRECTION_LOOKBACK_DAYS,
         },
         commit=False,
@@ -303,6 +348,7 @@ def plan_morning_reconciliation(
         tuple(sorted({row.id for row in jobs})),
         tuple(sorted({row.id for row in pregame})),
         tuple(sorted({row.id for row in repairs})),
+        tuple(suppressed_obligations),
     )
 
 

@@ -60,7 +60,7 @@ Read-only Render inspection on 2026-09-09 found these repository-backed services
 
 GitHub Actions remains scheduled at 10:17, 14:23, and 02:11/04:11/06:11 UTC as fallback/reconciliation. No schedule is changed by SP-14 while the verdict is NO-GO.
 
-CR-01 adds a manual-only `shadow_sp` workflow mode. It is isolated from `public-sync` and all other legacy jobs, and it uses job-scoped safe shadow controls. It has no cron trigger. The existing three-minute Render shadow cron remains the legacy CU command and remains kill-switch disabled until a reviewed Render deployment can point to the completed SP entrypoint.
+CR-03 extends the manual `shadow_sp` workflow mode with the non-publishing SP-05 roster/transaction worker path and one idempotent SP-12 morning plan per baseball date. It is isolated from `public-sync` and all other legacy jobs, and it uses job-scoped safe shadow controls. It still has no cron trigger. The existing three-minute Render shadow cron remains the legacy CU command on `main`; recurring SP execution is blocked until that dedicated service can be reviewed and repointed to an exact integration SHA.
 
 ## Target architecture and cadence
 
@@ -78,23 +78,25 @@ Exact Render commands, concurrency, and final UTC schedules require a separate r
 ## Current legacy decisions
 
 * Legacy daily, morning, postgame, continuous, incremental intelligence, and publication remain primary.
-* The configured shadow cron remains a verifier but is currently disabled by its kill switch.
+* The configured shadow cron remains the legacy CU verifier and is not the certified SP shadow entrypoint.
 * Request-time and independently resolved public reads remain a retirement blocker until they consume one SP-11 publication identity.
 * Manual intraday repair remains available; SP-13 is not activated automatically.
 * No legacy code is deleted in this package.
 
 ## CR-01 shadow execution boundary
 
-`python backend/scripts/run_sync_pipeline_shadow.py` is the only production shadow entrypoint for the completed SP pipeline. It seeds current-date SP-04 work and drains a bounded SP-02 allowlist:
+`python backend/scripts/run_sync_pipeline_shadow.py --include-morning` is the only production shadow entrypoint for the completed SP pipeline with SP-05/SP-12 planning. It seeds current-date SP-04 work, plans the morning contract once per baseball date, and drains a bounded SP-02 allowlist:
 
 * `FETCH_SCHEDULE`
+* `FETCH_ROSTER`
+* `FETCH_TRANSACTIONS`
 * `FETCH_PREGAME_CONTEXT`
 * `FETCH_LIVE_GAME_DELTA`
 * `RECONCILE_FINAL_GAME`
 * `PROCESS_CANONICAL_IMPACT`
 * `PROCESS_DERIVED_INTELLIGENCE`
 
-SP-10 receives `publication_candidate_enabled=false` in this path. The worker cannot claim `PUBLISH_DERIVED_COHORT`, `HANDOFF_PUBLICATION_CACHE`, morning, or closure jobs. The entrypoint snapshots the SP-11 current pointer before work and fails if it changes. Legacy publication and legacy scheduler controls must remain enabled, or the entrypoint rejects the configuration before planning work.
+SP-10 receives `publication_candidate_enabled=false` in this path. SP-12 morning planning explicitly records but suppresses publication and closure obligations. The worker cannot claim `PUBLISH_DERIVED_COHORT`, `HANDOFF_PUBLICATION_CACHE`, morning orchestration, or closure jobs. Twelve of the 24 default claim slots are reserved for roster/transaction work so the 30-team sweep drains across bounded cycles. The entrypoint snapshots the SP-11 current pointer before work and fails if it changes. Legacy publication and legacy scheduler controls must remain enabled, or the entrypoint rejects the configuration before planning work.
 
 ## Rollback
 

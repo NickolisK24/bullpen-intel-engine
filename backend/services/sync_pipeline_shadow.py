@@ -1,6 +1,7 @@
 """Bounded production-shadow execution for the completed sync pipeline.
 
-The entrypoint plans current-date acquisition and consumes only SP-04 through
+The entrypoint plans current-date acquisition and can plan the SP-12 morning
+contract once per baseball date. It consumes only non-publishing SP-04 through
 SP-10 work. SP-11 publication and all legacy writers are deliberately outside
 this worker registry.
 """
@@ -11,7 +12,7 @@ from datetime import datetime
 import os
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from models.atomic_publication import AtomicPublicationCurrent
 from models.canonical_impact import CanonicalImpactPlan
@@ -27,10 +28,15 @@ from services.adaptive_game_state import (
     execute_game_state_poll,
 )
 from services.canonical_impact import execute_canonical_impact_job
+from services.daily_reconciliation import plan_morning_reconciliation
 from services.derived_intelligence import execute_derived_intelligence_job
 from services.final_game_reconciliation import execute_final_game_job
 from services.live_game_delta import execute_live_game_delta, plan_live_game_polls
 from services.pregame_context import execute_pregame_context_job, plan_pregame_context_polls
+from services.roster_transaction_authority import (
+    execute_roster_job,
+    execute_transaction_job,
+)
 from services.sync_jobs import (
     CANONICAL_ACTIVE_STATUSES,
     JobScopeType,
@@ -47,18 +53,22 @@ from utils.db import db
 from utils.time import utc_now_naive
 
 
-SHADOW_ENTRYPOINT_VERSION = 'production-shadow-v1'
+SHADOW_ENTRYPOINT_VERSION = 'production-shadow-v2'
 SHADOW_JOB_FAMILY = 'sync_pipeline_shadow'
 DEFAULT_MAX_JOBS = 24
 MAX_JOBS_LIMIT = 100
+ACQUISITION_JOB_RESERVE = 12
 SAFE_JOB_TYPES = (
     JobType.FETCH_SCHEDULE,
+    JobType.FETCH_ROSTER,
+    JobType.FETCH_TRANSACTIONS,
     JobType.FETCH_PREGAME_CONTEXT,
     JobType.FETCH_LIVE_GAME_DELTA,
     JobType.RECONCILE_FINAL_GAME,
     JobType.PROCESS_CANONICAL_IMPACT,
     JobType.PROCESS_DERIVED_INTELLIGENCE,
 )
+ROSTER_JOB_TYPES = (JobType.FETCH_ROSTER, JobType.FETCH_TRANSACTIONS)
 FORBIDDEN_JOB_TYPES = frozenset({
     JobType.PUBLISH_DERIVED_COHORT.value,
     JobType.HANDOFF_PUBLICATION_CACHE.value,
@@ -115,6 +125,8 @@ def production_shadow_handlers():
     """Return the complete allowlist; publication can never be claimed here."""
     return {
         JobType.FETCH_SCHEDULE.value: execute_game_state_poll,
+        JobType.FETCH_ROSTER.value: execute_roster_job,
+        JobType.FETCH_TRANSACTIONS.value: execute_transaction_job,
         JobType.FETCH_PREGAME_CONTEXT.value: execute_pregame_context_job,
         JobType.FETCH_LIVE_GAME_DELTA.value: execute_live_game_delta,
         JobType.RECONCILE_FINAL_GAME.value: execute_final_game_job,
@@ -124,6 +136,40 @@ def production_shadow_handlers():
                 job, publication_candidate_enabled=False,
             )
         ),
+    }
+
+
+def ensure_shadow_morning_plan(baseball_date, *, now=None, client=None):
+    """Plan SP-12 once per date without closure or publication authority."""
+    existing = (
+        SyncRun.query
+        .filter_by(
+            source='sp12_morning_shadow',
+            baseball_date=baseball_date,
+            status='success',
+        )
+        .order_by(SyncRun.id.desc())
+        .first()
+    )
+    if existing is not None:
+        return {
+            'created': False,
+            'run_id': existing.id,
+            'outcome': existing.outcome_json or {},
+        }
+    plan = plan_morning_reconciliation(
+        baseball_date,
+        client=client,
+        now=now,
+        shadow_mode=True,
+        publication_candidate_enabled=False,
+        closure_checks_enabled=False,
+    )
+    run = db.session.get(SyncRun, plan.run_id)
+    return {
+        'created': True,
+        'run_id': plan.run_id,
+        'outcome': run.outcome_json or {},
     }
 
 
@@ -161,9 +207,24 @@ def ensure_current_date_poll(baseball_date, *, now=None):
     return job, True
 
 
+def shadow_queue_counts():
+    relevant = tuple(item.value for item in SAFE_JOB_TYPES)
+    rows = (
+        db.session.query(SyncJob.job_name, SyncJob.status, func.count(SyncJob.id))
+        .filter(SyncJob.job_name.in_(relevant))
+        .group_by(SyncJob.job_name, SyncJob.status)
+        .all()
+    )
+    result = {job_type: {} for job_type in relevant}
+    for job_name, status, count in rows:
+        result[job_name][status] = int(count)
+    return result
+
+
 def run_production_shadow_cycle(
     *, now=None, baseball_date=None, max_jobs=DEFAULT_MAX_JOBS, worker_id=None,
     env=None, migration_head_reader=current_migration_heads, handlers=None,
+    include_morning=False, morning_client=None,
 ):
     """Plan current-date work and drain a bounded, non-public worker allowlist."""
     controls = assert_shadow_ready(env=env, migration_head_reader=migration_head_reader)
@@ -182,21 +243,33 @@ def run_production_shadow_cycle(
     started_at = utc_now_naive()
     pointer_before = db.session.get(AtomicPublicationCurrent, 1)
     pointer_before_id = pointer_before.publication_id if pointer_before else None
+    queue_before = shadow_queue_counts()
+    morning_plan = (
+        ensure_shadow_morning_plan(
+            baseball_date, now=now, client=morning_client,
+        )
+        if include_morning else None
+    )
     seed_job, seed_created = ensure_current_date_poll(baseball_date, now=now)
     processed = []
     errors = []
-    for _ in range(max_jobs):
+    acquisition_budget = min(max_jobs, ACQUISITION_JOB_RESERVE) if include_morning else 0
+    job_type_passes = [ROSTER_JOB_TYPES] * acquisition_budget
+    job_type_passes.extend([SAFE_JOB_TYPES] * (max_jobs - acquisition_budget))
+    for job_types in job_type_passes:
         try:
             settled = run_next_job(
                 worker_id,
                 handlers,
-                job_types=SAFE_JOB_TYPES,
+                job_types=job_types,
                 lease_seconds=300,
             )
         except Exception as exc:
             errors.append({'error_type': type(exc).__name__, 'error': str(exc)[:500]})
             continue
         if settled is None:
+            if job_types == ROSTER_JOB_TYPES:
+                continue
             break
         processed.append(settled.id)
         if settled.job_name == JobType.FETCH_SCHEDULE.value:
@@ -221,6 +294,14 @@ def run_production_shadow_cycle(
         'status': 'partial' if errors else 'success',
         'baseball_date': baseball_date.isoformat(),
         'configuration_fingerprint': controls.fingerprint,
+        'code_sha': (
+            os.environ.get('SYNC_PIPELINE_DEPLOY_SHA')
+            or os.environ.get('RENDER_GIT_COMMIT')
+            or os.environ.get('GITHUB_SHA')
+        ),
+        'morning_plan': morning_plan,
+        'queue_before': queue_before,
+        'queue_after': shadow_queue_counts(),
         'seed_job_id': seed_job.id,
         'seed_job_created': seed_created,
         'processed_job_ids': processed,
@@ -285,9 +366,10 @@ def run_production_shadow_cycle(
 
 
 __all__ = [
-    'DEFAULT_MAX_JOBS', 'FORBIDDEN_JOB_TYPES', 'SAFE_JOB_TYPES',
+    'ACQUISITION_JOB_RESERVE', 'DEFAULT_MAX_JOBS', 'FORBIDDEN_JOB_TYPES',
+    'ROSTER_JOB_TYPES', 'SAFE_JOB_TYPES',
     'SHADOW_ENTRYPOINT_VERSION', 'ShadowConfigurationError',
-    'assert_shadow_ready', 'ensure_current_date_poll',
+    'assert_shadow_ready', 'ensure_current_date_poll', 'ensure_shadow_morning_plan',
     'production_shadow_handlers', 'run_production_shadow_cycle',
-    'validate_shadow_controls',
+    'shadow_queue_counts', 'validate_shadow_controls',
 ]

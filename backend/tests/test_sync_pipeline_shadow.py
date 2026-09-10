@@ -74,6 +74,11 @@ def _game():
     }
 
 
+class TeamsClient:
+    def get_all_teams(self):
+        return [{'id': value} for value in range(101, 131)]
+
+
 def test_shadow_configuration_requires_pipeline_and_preserves_legacy_authority():
     controls = ActivationControls.from_environment(SAFE_ENV)
     assert validate_shadow_controls(controls) == ()
@@ -97,7 +102,52 @@ def test_shadow_worker_allowlist_is_consumable_and_excludes_publication():
     assert set(handlers) == {item.value for item in SAFE_JOB_TYPES}
     assert not set(handlers).intersection(FORBIDDEN_JOB_TYPES)
     assert 'fetch_schedule' in handlers
+    assert 'fetch_roster' in handlers
+    assert 'fetch_transactions' in handlers
     assert 'process_derived_intelligence' in handlers
+
+
+def test_shadow_morning_runs_once_and_reserves_bounded_roster_consumption(app):
+    handlers = {
+        item.value: (lambda job: {'handled': job.job_name})
+        for item in SAFE_JOB_TYPES
+    }
+    first = run_production_shadow_cycle(
+        now=NOW,
+        baseball_date=SLATE,
+        max_jobs=2,
+        worker_id='shadow-morning-one',
+        env=SAFE_ENV,
+        migration_head_reader=lambda: (EXPECTED_MIGRATION_HEAD,),
+        handlers=handlers,
+        include_morning=True,
+        morning_client=TeamsClient(),
+    )
+    second = run_production_shadow_cycle(
+        now=NOW,
+        baseball_date=SLATE,
+        max_jobs=2,
+        worker_id='shadow-morning-two',
+        env=SAFE_ENV,
+        migration_head_reader=lambda: (EXPECTED_MIGRATION_HEAD,),
+        handlers=handlers,
+        include_morning=True,
+        morning_client=TeamsClient(),
+    )
+
+    assert first['morning_plan']['created'] is True
+    assert second['morning_plan']['created'] is False
+    assert first['morning_plan']['run_id'] == second['morning_plan']['run_id']
+    assert all(
+        row['job_type'] in {'fetch_roster', 'fetch_transactions'}
+        for row in first['processed_jobs'] + second['processed_jobs']
+    )
+    assert SyncJob.query.filter_by(job_name='fetch_roster').count() == 30
+    assert SyncJob.query.filter_by(job_name='fetch_transactions').count() == 1
+    assert SyncJob.query.filter_by(job_name='publish_derived_cohort').count() == 0
+    assert SyncJob.query.filter_by(job_name='check_baseball_date_closure').count() == 0
+    assert first['publication_pointer_before'] == first['publication_pointer_after']
+    assert second['publication_pointer_before'] == second['publication_pointer_after']
 
 
 def test_shadow_cycle_creates_run_job_and_source_lineage_without_pointer_change(
@@ -193,11 +243,13 @@ def test_manual_production_workflow_isolated_from_public_and_legacy_jobs():
         'SECRET_KEY': '${{ secrets.SECRET_KEY }}',
         'ADMIN_API_TOKEN': '${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}',
         'AUTO_SYNC': 'false',
+        'SYNC_PIPELINE_DEPLOY_SHA': '${{ github.sha }}',
         **SAFE_ENV,
     }
     assert 'flask --app app db upgrade' in step['run']
     assert 'run_sync_pipeline_shadow.py' in step['run']
     assert '--include-continuous-observation' in step['run']
+    assert '--include-morning' in step['run']
     assert 'run_continuous_cycle.py' not in step['run']
     assert 'publish' not in step['run'].lower()
     public_condition = workflow['jobs']['public-sync']['if']

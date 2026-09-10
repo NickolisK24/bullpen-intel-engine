@@ -18,7 +18,7 @@ Persisting a production evidence record requires both `--record` and `--allow-pr
 
 ## Run one production shadow cycle
 
-The dedicated shadow entrypoint consumes only the SP-04 through SP-10 allowlist. It never claims SP-11 publication, cache handoff, morning, or closure work.
+The dedicated shadow entrypoint consumes only the non-publishing SP-04 through SP-10 allowlist. With `--include-morning`, it plans SP-12 acquisition once per baseball date, including all 30 roster jobs and a bounded transaction window. It never claims SP-11 publication, cache handoff, morning orchestration, or closure work.
 
 ```powershell
 $env:SYNC_PIPELINE_ENABLED = 'true'
@@ -28,12 +28,20 @@ $env:SYNC_PIPELINE_MORNING_ENABLED = 'false'
 $env:SYNC_PIPELINE_CLOSURE_ENABLED = 'false'
 $env:BASEBALLOS_LEGACY_PUBLICATION_ENABLED = 'true'
 $env:BASEBALLOS_LEGACY_SCHEDULERS_ENABLED = 'true'
-python scripts/run_sync_pipeline_shadow.py --max-jobs 24
+python scripts/run_sync_pipeline_shadow.py --max-jobs 24 --include-morning
 ```
 
 The command fails closed unless the database is at the expected Alembic head and the exact shadow safety posture is valid. Its JSON output includes processed job, run, source observation, mutation, impact-plan, and cohort IDs plus publication-pointer before/after values. A nonzero exit indicates a partial or rejected cycle.
 
-Before a permanent Render service is reviewed, the same bounded path can be invoked against the production application database through the manual `shadow_sp` mode of `.github/workflows/baseballos-sync.yml`. That mode skips the public-sync and other legacy workflow jobs, applies additive migrations, runs the allowlisted worker, captures the read-only health report, and retains both JSON artifacts for 30 days. It is not a scheduler and must not be treated as recurrent activation.
+Inspect exact 30-team evidence without a source read or write:
+
+```powershell
+python scripts/report_roster_authority_coverage.py --baseball-date <yyyy-mm-dd>
+```
+
+The report fails nonzero unless the latest shadow morning run enumerated exactly 30 teams and every team has a complete authoritative active-roster attempt plus current SP-05 pitcher membership. Forty-man coverage is reported separately. Partial, failed, missing, and suspicious empty active rosters remain explicit.
+
+Before a permanent Render service is reviewed, the bounded path can be invoked against the production application database through the manual `shadow_sp` mode of `.github/workflows/baseballos-sync.yml`. That mode skips the public-sync and other legacy workflow jobs, applies additive migrations, runs the allowlisted worker, captures the read-only health report, and retains both JSON artifacts for 30 days. It is not a scheduler and must not be treated as recurrent activation.
 
 Rollback sets `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false`. Leave the two legacy controls true. Existing shadow evidence is retained.
 

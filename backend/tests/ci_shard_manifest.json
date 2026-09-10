@@ -624,6 +624,10 @@
           "measured_seconds": 4.601
         },
         {
+          "path": "tests/test_roster_authority_health.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_roster_transaction_authority.py",
           "measured_seconds": 1.45
         },
