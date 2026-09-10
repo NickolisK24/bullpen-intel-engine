@@ -148,6 +148,13 @@ python scripts/run_sync_repair.py targeted --start-date 2026-09-09 --domain fina
 
 This dispatches SP-07 owner work. Follow the repair request, child jobs, SP-09 plan, SP-10 cohort, SP-11 publication, and SP-12 closure rather than editing rows.
 
+For a production terminal final-game obligation, the internal GitHub workflow
+also exposes `mode=repair_final`. It requires `backfill_date`, `repair_game_pk`,
+`recovery_reason`, and `confirm_recovery=RECOVER`. The workflow creates the same
+SP-13 request, explicitly gives its SP-07 owner job the first claim, drains only
+the non-publishing shadow allowlist, and uploads request, shadow, and health
+evidence. It never revives or edits the terminal job and cannot publish.
+
 ## Bounded backfill
 
 ```powershell
@@ -190,4 +197,43 @@ For a Final, inspect SP-04 state, SP-07 version, mutation references, and active
 5. Verify the public legacy publication identity and freshness endpoint.
 6. Record the incident and open a bounded repair if authority work was interrupted.
 
+For atomic-reader rollback, explicitly set both
+`SYNC_PIPELINE_ATOMIC_READS_ENABLED=false` and
+`SYNC_PIPELINE_PUBLICATION_ENABLED=false`. Existing SP-11 manifests and
+artifacts remain immutable; no database downgrade or evidence deletion is needed.
+
 SP-14 does not perform this cutover because the current certification verdict is NO-GO.
+
+## Controlled integration deployment preflight
+
+Before any atomic publication or reader cutover, verify all of the following
+against the actual Render service rather than repository intent:
+
+1. The dedicated shadow service reports `branch=feat/sync-pipeline` and the
+   reviewed exact commit in `RENDER_GIT_COMMIT`.
+2. Its command is
+   `python backend/scripts/run_sync_pipeline_shadow.py --max-jobs 24 --include-morning --include-continuous-observation`.
+3. Existing database and secret-group wiring remains attached without printing
+   values.
+4. Publication, morning, and closure controls remain false during the first
+   three recurring cycles; both legacy controls remain true.
+5. Those cycles create SyncRuns, consume SP-02 jobs, preserve 30/30 roster
+   authority, drain rather than grow the bounded queue, and leave
+   `atomic_publication_current` unchanged.
+
+The queue proof must include SP-09/SP-10 progress. A cycle that drains live or
+pregame acquisition while `process_derived_intelligence` grows is not stable
+enough for publication, even when the overall worker result is `success`.
+
+The repoint gate was satisfied on 2026-09-10 for cron
+`crn-da98kclg1s2s739k0870`, deploy `dep-dahc5i15efls73dfnub0`, and SHA
+`63f87feb421eb446fae09d28ab86390ecbbbb8ed`. Operators must still run the full
+list above after every deploy. A recurring service on an older integration SHA
+does not prove later repair/publication code.
+
+Do not enable publication merely because recurrence passes. Confirm
+`blocking_dead_jobs=0`, `unreconciled_final_games=0`, 30/30 roster authority,
+bounded queue progress, a selected/revalidated current SP-10 cohort, and a
+deployed publication-bound consumer with a tested legacy rollback. A historical
+dead row may remain only when health records a later succeeded owner job and a
+current final version; otherwise it is still blocking.

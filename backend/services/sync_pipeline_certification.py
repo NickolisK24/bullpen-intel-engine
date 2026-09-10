@@ -35,6 +35,7 @@ from utils.time import utc_now_naive
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
 EXPECTED_MIGRATION_HEAD = 'c9d4e6f8a1b2'
+HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {
     'A': 'Schema / Migration',
@@ -203,7 +204,7 @@ def classify_operational_health(signals):
     blockers = []
     degraded = []
     blocking_fields = {
-        'dead_jobs': 'dead_job_present',
+        'blocking_dead_jobs': 'dead_job_present',
         'missing_roster_authority_teams': 'thirty_team_roster_authority_incomplete',
         'unreconciled_final_games': 'unreconciled_final_game',
         'current_publication_missing': 'atomic_current_publication_missing',
@@ -299,12 +300,72 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         job_family='sync_pipeline_shadow',
         status='succeeded',
     ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
+    def job_health_detail(job):
+        current_final = None
+        resolved_by_job = None
+        if job.job_name == 'reconcile_final_game':
+            try:
+                game_pk = int(job.scope_key)
+            except (TypeError, ValueError):
+                game_pk = None
+            if game_pk is not None:
+                current_final = FinalGameVersion.query.filter_by(
+                    game_pk=game_pk, is_current=True,
+                ).order_by(FinalGameVersion.id.desc()).first()
+            if game_pk is not None and job.completed_at is not None:
+                resolved_by_job = SyncJob.query.filter(
+                    SyncJob.job_name == job.job_name,
+                    SyncJob.scope_type == job.scope_type,
+                    SyncJob.scope_key == job.scope_key,
+                    SyncJob.product_date == job.product_date,
+                    SyncJob.status == 'succeeded',
+                    SyncJob.completed_at > job.completed_at,
+                ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
+        resolved = current_final is not None and resolved_by_job is not None
+        return {
+            'id': job.id,
+            'job_name': job.job_name,
+            'job_family': job.job_family,
+            'scope_type': job.scope_type,
+            'scope_key': job.scope_key,
+            'product_date': job.product_date.isoformat() if job.product_date else None,
+            'attempts': int(job.attempts or 0),
+            'max_attempts': int(job.max_attempts or 0),
+            'available_at': job.available_at.isoformat() if job.available_at else None,
+            'error_type': job.error_type,
+            'error_message': job.error_message,
+            'sync_run_id': job.sync_run_id,
+            'parent_job_id': job.parent_job_id,
+            'current_final_version_id': current_final.id if current_final else None,
+            'current_final_observed_at': (
+                current_final.observed_at.isoformat() if current_final else None
+            ),
+            'resolved_by_job_id': resolved_by_job.id if resolved_by_job else None,
+            'blocking': not resolved,
+        }
+
+    retry_wait_job_details = [
+        job_health_detail(job)
+        for job in SyncJob.query.filter_by(status='retry_wait')
+        .order_by(SyncJob.available_at.asc(), SyncJob.id.asc())
+        .limit(HEALTH_JOB_DETAIL_LIMIT).all()
+    ]
+    dead_job_details = [
+        job_health_detail(job)
+        for job in SyncJob.query.filter_by(status='dead')
+        .order_by(SyncJob.completed_at.desc(), SyncJob.id.desc())
+        .limit(HEALTH_JOB_DETAIL_LIMIT).all()
+    ]
     signals = {
         'queue_depth_by_status': queue_counts,
         'pending_jobs': queue_counts.get('pending', 0),
         'running_jobs': queue_counts.get('running', 0),
         'retry_wait_jobs': queue_counts.get('retry_wait', 0),
+        'retry_wait_job_details': retry_wait_job_details,
         'dead_jobs': queue_counts.get('dead', 0),
+        'dead_job_details': dead_job_details,
+        'blocking_dead_jobs': sum(1 for item in dead_job_details if item['blocking']),
+        'resolved_dead_jobs': sum(1 for item in dead_job_details if not item['blocking']),
         'stale_leases': SyncJob.query.filter(
             SyncJob.status == 'running', SyncJob.lease_until < now,
         ).count(),

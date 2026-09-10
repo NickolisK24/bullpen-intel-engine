@@ -492,6 +492,36 @@ def test_acquisition_records_failed_optional_pbp_without_fake_observation(app):
         assert SourceObservation.query.count() == 2
 
 
+def test_acquisition_selects_requested_date_when_rescheduled_game_pk_has_two_rows(app):
+    postponed = _game()
+    # MLB retains the makeup date as officialDate on both rows while gameDate
+    # preserves the original postponed slot on the non-final row.
+    postponed['officialDate'] = GAME_DATE.isoformat()
+    postponed['gameDate'] = '2026-06-18T23:15:00Z'
+    postponed['status'] = {
+        'statusCode': 'DR',
+        'detailedState': 'Postponed',
+        'abstractGameState': 'Preview',
+    }
+
+    class Client:
+        def get_schedule(self, **_kwargs):
+            return [postponed, _game()]
+
+        def get_game_boxscore(self, _game_pk):
+            return _boxscore()
+
+        def get_game_play_by_play(self, _game_pk):
+            return _pbp()
+
+    with app.app_context():
+        bundle = acquire_final_game_sources(GAME_PK, GAME_DATE, client=Client())
+
+        assert bundle.game['officialDate'] == GAME_DATE.isoformat()
+        assert bundle.game['status']['abstractGameState'] == 'Final'
+        assert bundle.finality_observation.completeness == 'complete'
+
+
 def test_doubleheaders_and_extra_innings_remain_game_pk_scoped(app):
     with app.app_context():
         _seed_schedule(GAME_PK)

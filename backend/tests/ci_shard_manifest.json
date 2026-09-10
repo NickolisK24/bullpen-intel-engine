@@ -785,6 +785,14 @@
           "measured_seconds": 1.17
         },
         {
+          "path": "tests/test_atomic_publication_cutover.py",
+          "measured_seconds": 0.01
+        },
+        {
+          "path": "tests/test_atomic_publication_reads.py",
+          "measured_seconds": 0.01
+        },
+        {
           "path": "tests/test_atomic_publication_migration.py",
           "measured_seconds": 0.31
         },

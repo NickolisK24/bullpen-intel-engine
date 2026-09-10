@@ -154,7 +154,7 @@ def _source_data_through(cohort):
     return datetime.combine(cohort.baseball_date, time.min)
 
 
-def _validate_cohort(cohort, plan):
+def validate_publication_cohort(cohort, plan):
     if cohort.status != 'complete':
         raise PublicationValidationError('cohort_not_complete')
     if cohort.authority_class not in ALLOWED_AUTHORITIES:
@@ -171,7 +171,7 @@ def _validate_cohort(cohort, plan):
         raise PublicationStaleError('cohort_input_watermark_drifted')
 
 
-def _candidate_specs(cohort):
+def publication_candidate_specs(cohort):
     completed = set(cohort.completed_domains_json or ())
     snapshots = DerivedCohortSnapshot.query.filter_by(cohort_id=cohort.id).order_by(
         DerivedCohortSnapshot.entity_type,
@@ -268,8 +268,8 @@ def publish_derived_cohort(
         return PublicationResult(existing, False, bool(pointer and pointer.publication_id == existing.id), handoff)
 
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
-    _validate_cohort(cohort, plan)
-    candidate_specs = _candidate_specs(cohort)
+    validate_publication_cohort(cohort, plan)
+    candidate_specs = publication_candidate_specs(cohort)
     if lease_fence:
         lease_fence()
 
@@ -287,7 +287,7 @@ def publish_derived_cohort(
         if (row.artifact_type, row.entity_type, row.entity_key) not in candidate_keys
     ]
 
-    _validate_cohort(cohort, plan)
+    validate_publication_cohort(cohort, plan)
     if lease_fence:
         lease_fence()
     manifest = _manifest_material(cohort, candidate_specs, inherited)
@@ -352,7 +352,7 @@ def publish_derived_cohort(
     db.session.flush()
     if failure_hook:
         failure_hook('before_pointer_switch', publication)
-    _validate_cohort(cohort, plan)
+    validate_publication_cohort(cohort, plan)
     if lease_fence:
         lease_fence()
     switch_started = perf_counter()
@@ -610,6 +610,8 @@ __all__ = [
     'ALLOWED_AUTHORITIES', 'ARTIFACT_REQUIRED_DOMAIN', 'PUBLICATION_SCHEMA_VERSION',
     'PublicationResult', 'PublicationStaleError', 'PublicationValidationError',
     'execute_publication_job', 'get_current_publication', 'handoff_publication_cache',
-    'publish_derived_cohort', 'read_current_publication_bundle',
+    'publication_candidate_specs', 'publish_derived_cohort',
+    'read_current_publication_bundle',
     'read_publication_bundle', 'run_atomic_publication_worker_once',
+    'validate_publication_cohort',
 ]

@@ -385,7 +385,7 @@ def execute_derived_intelligence_plan(
             else CohortStatus.FAILED.value
         )
         publication = (
-            _enqueue_publication_candidate(cohort, plan)
+            enqueue_publication_candidate(cohort, plan)
             if (
                 publication_candidate_enabled
                 and _publication_eligible(cohort)
@@ -719,7 +719,7 @@ def _latest_live_cohort(game_ids):
     )
 
 
-def _enqueue_publication_candidate(cohort, plan):
+def enqueue_publication_candidate(cohort, plan):
     payload = {
         'cohort_id': cohort.id, 'cohort_fingerprint': cohort.cohort_fingerprint,
         'impact_plan_id': plan.id, 'authority_class': cohort.authority_class,
@@ -794,5 +794,5 @@ __all__ = [
     'METHOD_VERSIONS', 'capture_input_manifest', 'cohort_fingerprint',
     'dependency_closure', 'execute_derived_intelligence_job',
     'execute_derived_intelligence_plan', 'method_version_manifest',
-    'run_derived_intelligence_worker_once',
+    'enqueue_publication_candidate', 'run_derived_intelligence_worker_once',
 ]

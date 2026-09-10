@@ -12,11 +12,13 @@ from models.sync_run import SyncRun
 from services import adaptive_game_state
 from services.sync_pipeline_certification import ActivationControls, EXPECTED_MIGRATION_HEAD
 from services.sync_pipeline_shadow import (
+    DOWNSTREAM_JOB_RESERVE,
     FORBIDDEN_JOB_TYPES,
     SAFE_JOB_TYPES,
     ShadowConfigurationError,
     production_shadow_handlers,
     run_production_shadow_cycle,
+    shadow_job_type_passes,
     validate_shadow_controls,
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
@@ -148,6 +150,17 @@ def test_shadow_morning_runs_once_and_reserves_bounded_roster_consumption(app):
     assert SyncJob.query.filter_by(job_name='check_baseball_date_closure').count() == 0
     assert first['publication_pointer_before'] == first['publication_pointer_after']
     assert second['publication_pointer_before'] == second['publication_pointer_after']
+
+
+def test_shadow_cycle_reserves_downstream_capacity_after_acquisition():
+    passes = shadow_job_type_passes(max_jobs=24, include_morning=True)
+
+    assert len(passes) == 24
+    assert passes[:12] == (('fetch_roster', 'fetch_transactions'),) * 12
+    assert passes[12:18] == (SAFE_JOB_TYPES,) * 6
+    assert passes[-DOWNSTREAM_JOB_RESERVE:] == (
+        ('process_canonical_impact', 'process_derived_intelligence'),
+    ) * DOWNSTREAM_JOB_RESERVE
 
 
 def test_shadow_cycle_creates_run_job_and_source_lineage_without_pointer_change(

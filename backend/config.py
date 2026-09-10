@@ -194,6 +194,9 @@ class Config:
     SYNC_PIPELINE_PUBLICATION_ENABLED = os.environ.get(
         'SYNC_PIPELINE_PUBLICATION_ENABLED', 'false',
     ).lower() in ('1', 'true', 'yes', 'on')
+    SYNC_PIPELINE_ATOMIC_READS_ENABLED = os.environ.get(
+        'SYNC_PIPELINE_ATOMIC_READS_ENABLED', 'false',
+    ).lower() in ('1', 'true', 'yes', 'on')
     SYNC_PIPELINE_MORNING_ENABLED = os.environ.get(
         'SYNC_PIPELINE_MORNING_ENABLED', 'false',
     ).lower() in ('1', 'true', 'yes', 'on')

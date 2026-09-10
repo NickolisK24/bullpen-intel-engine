@@ -169,7 +169,12 @@ def acquire_final_game_sources(
             finality_identity, exc, started, sync_run_id, sync_job_id,
         )
         raise
-    matching = [game for game in games if _int((game or {}).get('gamePk')) == game_pk]
+    matching = [
+        game for game in games
+        if _int((game or {}).get('gamePk')) == game_pk
+        and _game_baseball_date(game) == baseball_date
+        and classify_game_finality(game).has_safe_final_status
+    ]
     finality_completeness = (
         ObservationCompleteness.COMPLETE if len(matching) == 1
         else ObservationCompleteness.UNKNOWN
@@ -1046,6 +1051,11 @@ def _date(value):
         return date.fromisoformat(str(value)[:10])
     except (TypeError, ValueError):
         return None
+
+
+def _game_baseball_date(game):
+    game = game or {}
+    return _date(game.get('officialDate') or game.get('gameDate'))
 
 
 def _int(value):
