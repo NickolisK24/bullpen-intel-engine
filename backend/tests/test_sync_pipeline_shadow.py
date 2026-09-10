@@ -1,0 +1,165 @@
+from datetime import date, datetime
+
+import pytest
+from flask import Flask
+
+from models.atomic_publication import AtomicPublicationCurrent
+from models.source_observation import SourceObservation
+from models.sync_job import SyncJob
+from models.sync_run import SyncRun
+from services import adaptive_game_state
+from services.sync_pipeline_certification import ActivationControls, EXPECTED_MIGRATION_HEAD
+from services.sync_pipeline_shadow import (
+    FORBIDDEN_JOB_TYPES,
+    SAFE_JOB_TYPES,
+    ShadowConfigurationError,
+    production_shadow_handlers,
+    run_production_shadow_cycle,
+    validate_shadow_controls,
+)
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from utils.db import db
+
+import models.dashboard_snapshot  # noqa: F401
+import models.prospect  # noqa: F401
+
+
+SLATE = date(2026, 9, 9)
+NOW = datetime(2026, 9, 9, 14, 0)
+SAFE_ENV = {
+    'SYNC_PIPELINE_ENABLED': 'true',
+    'SYNC_PIPELINE_SHADOW_MODE': 'true',
+    'SYNC_PIPELINE_PUBLICATION_ENABLED': 'false',
+    'SYNC_PIPELINE_MORNING_ENABLED': 'false',
+    'SYNC_PIPELINE_CLOSURE_ENABLED': 'false',
+    'BASEBALLOS_LEGACY_PUBLICATION_ENABLED': 'true',
+    'BASEBALLOS_LEGACY_SCHEDULERS_ENABLED': 'true',
+}
+
+
+@pytest.fixture
+def app():
+    flask_app = Flask(__name__)
+    configure_test_database(flask_app)
+    db.init_app(flask_app)
+    with flask_app.app_context():
+        create_test_schema(flask_app)
+        try:
+            yield flask_app
+        finally:
+            db.session.remove()
+            drop_test_schema(flask_app)
+
+
+def _game():
+    return {
+        'gamePk': 889901,
+        'officialDate': SLATE.isoformat(),
+        'gameDate': '2026-09-09T23:10:00Z',
+        'gameType': 'R',
+        'gameNumber': 1,
+        'doubleHeader': 'N',
+        'status': {
+            'statusCode': 'S',
+            'detailedState': 'Scheduled',
+            'abstractGameState': 'Preview',
+        },
+        'teams': {
+            'home': {'team': {'id': 110}},
+            'away': {'team': {'id': 111}},
+        },
+    }
+
+
+def test_shadow_configuration_requires_pipeline_and_preserves_legacy_authority():
+    controls = ActivationControls.from_environment(SAFE_ENV)
+    assert validate_shadow_controls(controls) == ()
+
+    pipeline_off = dict(SAFE_ENV, SYNC_PIPELINE_ENABLED='false')
+    assert 'SYNC_PIPELINE_SHADOW_MODE_requires_SYNC_PIPELINE_ENABLED' in (
+        validate_shadow_controls(ActivationControls.from_environment(pipeline_off))
+    )
+    publication_on = dict(SAFE_ENV, SYNC_PIPELINE_PUBLICATION_ENABLED='true')
+    assert 'shadow_mode_cannot_publish' in (
+        validate_shadow_controls(ActivationControls.from_environment(publication_on))
+    )
+    assert validate_shadow_controls(ActivationControls(
+        pipeline_enabled=True, shadow_mode=False, publication_enabled=True,
+        legacy_publication_enabled=True, legacy_schedulers_enabled=True,
+    ))
+
+
+def test_shadow_worker_allowlist_is_consumable_and_excludes_publication():
+    handlers = production_shadow_handlers()
+    assert set(handlers) == {item.value for item in SAFE_JOB_TYPES}
+    assert not set(handlers).intersection(FORBIDDEN_JOB_TYPES)
+    assert 'fetch_schedule' in handlers
+    assert 'process_derived_intelligence' in handlers
+
+
+def test_shadow_cycle_creates_run_job_and_source_lineage_without_pointer_change(
+    app, monkeypatch,
+):
+    monkeypatch.setattr(
+        'services.schedule_ingestion.mlb_client.get_schedule',
+        lambda **_kwargs: [_game()],
+    )
+    result = run_production_shadow_cycle(
+        now=NOW,
+        baseball_date=SLATE,
+        max_jobs=1,
+        worker_id='shadow-test',
+        env=SAFE_ENV,
+        migration_head_reader=lambda: (EXPECTED_MIGRATION_HEAD,),
+    )
+
+    assert result['status'] == 'success'
+    assert result['processed_job_ids'] == [result['seed_job_id']]
+    assert result['sync_run_ids']
+    assert result['source_observation_ids']
+    assert SyncRun.query.filter(SyncRun.id.in_(result['sync_run_ids'])).count() == 1
+    assert SourceObservation.query.filter(
+        SourceObservation.id.in_(result['source_observation_ids'])
+    ).count() == 1
+    assert db.session.get(SyncJob, result['seed_job_id']).status == 'succeeded'
+    assert result['publication_pointer_before'] is None
+    assert result['publication_pointer_after'] is None
+    assert db.session.get(AtomicPublicationCurrent, 1) is None
+
+
+def test_shadow_disabled_stops_before_planning_and_keeps_history(app):
+    old = SyncJob(
+        job_name='fetch_schedule', job_family='sync_pipeline_shadow',
+        lane='sync_pipeline', scope_type='baseball_date', scope_key='2026-09-08',
+        product_date=date(2026, 9, 8), payload_schema_version=1,
+        dedupe_key='old-shadow-proof', priority=10, status='succeeded',
+        attempts=1, max_attempts=3,
+    )
+    db.session.add(old)
+    db.session.commit()
+    disabled = dict(SAFE_ENV, SYNC_PIPELINE_SHADOW_MODE='false')
+
+    with pytest.raises(ShadowConfigurationError):
+        run_production_shadow_cycle(
+            now=NOW,
+            baseball_date=SLATE,
+            env=disabled,
+            migration_head_reader=lambda: (EXPECTED_MIGRATION_HEAD,),
+        )
+
+    assert SyncJob.query.count() == 1
+    assert db.session.get(SyncJob, old.id).status == 'succeeded'
+
+
+def test_shadow_cycle_rejects_a_publication_handler_before_claiming(app):
+    handlers = production_shadow_handlers()
+    handlers['publish_derived_cohort'] = lambda _job: {}
+    with pytest.raises(ShadowConfigurationError, match='forbidden_job_type'):
+        run_production_shadow_cycle(
+            now=NOW,
+            baseball_date=SLATE,
+            env=SAFE_ENV,
+            migration_head_reader=lambda: (EXPECTED_MIGRATION_HEAD,),
+            handlers=handlers,
+        )
+    assert SyncJob.query.count() == 0

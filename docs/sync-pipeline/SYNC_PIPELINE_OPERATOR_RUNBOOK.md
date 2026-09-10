@@ -16,6 +16,25 @@ This command is read-only by default and exits nonzero when a critical gate is f
 
 Persisting a production evidence record requires both `--record` and `--allow-production-record`. Use it only after reviewing an evidence JSON document.
 
+## Run one production shadow cycle
+
+The dedicated shadow entrypoint consumes only the SP-04 through SP-10 allowlist. It never claims SP-11 publication, cache handoff, morning, or closure work.
+
+```powershell
+$env:SYNC_PIPELINE_ENABLED = 'true'
+$env:SYNC_PIPELINE_SHADOW_MODE = 'true'
+$env:SYNC_PIPELINE_PUBLICATION_ENABLED = 'false'
+$env:SYNC_PIPELINE_MORNING_ENABLED = 'false'
+$env:SYNC_PIPELINE_CLOSURE_ENABLED = 'false'
+$env:BASEBALLOS_LEGACY_PUBLICATION_ENABLED = 'true'
+$env:BASEBALLOS_LEGACY_SCHEDULERS_ENABLED = 'true'
+python scripts/run_sync_pipeline_shadow.py --max-jobs 24
+```
+
+The command fails closed unless the database is at the expected Alembic head and the exact shadow safety posture is valid. Its JSON output includes processed job, run, source observation, mutation, impact-plan, and cohort IDs plus publication-pointer before/after values. A nonzero exit indicates a partial or rejected cycle.
+
+Rollback sets `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false`. Leave the two legacy controls true. Existing shadow evidence is retained.
+
 ## Inspect the durable queue
 
 ```sql
