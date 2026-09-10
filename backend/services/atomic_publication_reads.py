@@ -11,6 +11,7 @@ from typing import Callable
 from flask import g, has_request_context
 
 from models.atomic_publication import AtomicPublication, AtomicPublicationArtifact
+from models.derived_intelligence import DerivedCohortSnapshot
 from services.atomic_publication import (
     get_current_publication,
     read_current_publication_bundle,
@@ -46,6 +47,16 @@ def _cached_publication_reader_coverage(_database_identity, publication_id, _fin
     artifacts = AtomicPublicationArtifact.query.filter_by(
         publication_id=int(publication_id),
     ).all()
+    direct_snapshot_ids = {
+        artifact.source_snapshot_id for artifact in artifacts
+        if artifact.source_snapshot_id is not None
+    }
+    direct_snapshots = {
+        snapshot.id: snapshot
+        for snapshot in DerivedCohortSnapshot.query.filter(
+            DerivedCohortSnapshot.id.in_(direct_snapshot_ids),
+        ).all()
+    } if direct_snapshot_ids else {}
     present = {
         'team_board': set(),
         'team_board_v2': set(),
@@ -59,7 +70,9 @@ def _cached_publication_reader_coverage(_database_identity, publication_id, _fin
         if artifact.entity_type not in artifact_counts:
             continue
         artifact_counts[artifact.entity_type] += 1
-        snapshot = resolve_artifact_snapshot(artifact)
+        snapshot = direct_snapshots.get(artifact.source_snapshot_id)
+        if snapshot is None:
+            snapshot = resolve_artifact_snapshot(artifact)
         payload = snapshot.payload_json if isinstance(snapshot.payload_json, dict) else {}
         read_models = payload.get('read_models')
         read_models = read_models if isinstance(read_models, dict) else {}

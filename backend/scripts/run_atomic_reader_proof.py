@@ -195,8 +195,9 @@ def main():
                 if before[key] != after[key]
             },
             'all_atomic_reads_bound_to_current': all(
-                row['atomic']['publication_id'] == publication_id
-                for row in cases if row['atomic']['status_code'] == 200
+                row['atomic']['status_code'] == 200
+                and row['atomic']['publication_id'] == publication_id
+                for row in cases
             ),
         }
         print(json.dumps(report, indent=2, sort_keys=True))
