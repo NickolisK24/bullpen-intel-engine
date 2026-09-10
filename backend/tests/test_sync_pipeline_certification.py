@@ -119,7 +119,7 @@ def test_critical_failure_is_no_go():
 
 @pytest.mark.parametrize(
     ('signals', 'expected'),
-    (({}, 'healthy'), ({'retry_wait_jobs': 1}, 'degraded'), ({'dead_jobs': 1}, 'blocked')),
+    (({}, 'healthy'), ({'retry_wait_jobs': 1}, 'degraded'), ({'blocking_dead_jobs': 1}, 'blocked')),
 )
 def test_operational_health_vocabulary(signals, expected):
     assert classify_operational_health(signals)['status'] == expected
@@ -212,6 +212,8 @@ def test_database_health_exposes_bounded_retry_job_identity_without_payload(app)
         'parent_job_id': None,
         'current_final_version_id': None,
         'current_final_observed_at': None,
+        'resolved_by_job_id': None,
+        'blocking': True,
     }]
     assert 'details_json' not in health['signals']['retry_wait_job_details'][0]
 
@@ -225,6 +227,9 @@ def test_database_health_exposes_bounded_retry_job_identity_without_payload(app)
     assert detail['id'] == job.id
     assert detail['scope_key'] == 'game:123'
     assert detail['current_final_version_id'] is None
+    assert detail['blocking'] is True
+    assert health['signals']['blocking_dead_jobs'] == 1
+    assert health['signals']['resolved_dead_jobs'] == 0
     assert 'details_json' not in detail
 
 

@@ -56,6 +56,7 @@ on:
           - backfill
           - intraday
           - shadow_sp
+          - repair_final
       backfill_date:
         description: >-
           Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
@@ -81,6 +82,11 @@ on:
         required: false
         default: ''
         type: string
+      repair_game_pk:
+        description: MLB gamePk required when mode=repair_final.
+        required: false
+        default: ''
+        type: string
 
 # Never let scheduled + manual runs pile up on top of each other.
 concurrency:
@@ -101,7 +107,7 @@ jobs:
     # The intraday mode is audit-only and never publishes; it runs in the
     # isolated intraday-audit job below and must not trigger any part of this
     # publish-oriented lane (including the always() ledger/snapshot steps).
-    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.mode == 'intraday' || inputs.mode == 'shadow_sp')) }}
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.mode == 'intraday' || inputs.mode == 'shadow_sp' || inputs.mode == 'repair_final')) }}
     # Public freshness lane only: acquisition, public derived state, snapshot
     # publication, Tonight warm, appearance ledger audit, and dashboard cache
     # verification. 60 minutes covers the worst case of the step timeouts below
@@ -1500,6 +1506,117 @@ jobs:
           path: |
             sync-pipeline-shadow-result.json
             sync-pipeline-shadow-health.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  # Manual-only governed recovery for one terminal SP-07 final-game obligation.
+  # It creates an SP-13 request, lets SP-13 dispatch the owner job, and uses the
+  # same non-publishing shadow allowlist to consume bounded downstream work.
+  sync-pipeline-final-repair:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'repair_final' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Dispatch and consume governed final-game repair
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'true'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
+          SYNC_PIPELINE_MORNING_ENABLED: 'false'
+          SYNC_PIPELINE_CLOSURE_ENABLED: 'false'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+          SYNC_PIPELINE_DEPLOY_SHA: ${{ github.sha }}
+          REPAIR_GAME_PK: ${{ inputs.repair_game_pk }}
+          REPAIR_DATE: ${{ inputs.backfill_date }}
+          REPAIR_REASON: ${{ inputs.recovery_reason }}
+          CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
+          REPAIR_OPERATOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM_RECOVERY" != "RECOVER" ] || [ -z "$REPAIR_GAME_PK" ] || [ -z "$REPAIR_DATE" ] || [ -z "$REPAIR_REASON" ]; then
+            echo "::error::repair_final requires confirm_recovery=RECOVER, repair_game_pk, backfill_date, and recovery_reason."
+            exit 1
+          fi
+          cd backend
+          python -m flask --app app db upgrade
+          python scripts/run_sync_repair.py targeted \
+            --start-date "$REPAIR_DATE" \
+            --domain final_game \
+            --game-pk "$REPAIR_GAME_PK" \
+            --reason "$REPAIR_REASON" \
+            --requested-by "$REPAIR_OPERATOR" \
+            --apply > ../sync-pipeline-repair-request.json
+          python - <<'PY'
+          from app import app
+          from services.repair_orchestration import run_repair_worker_once
+
+          with app.app_context():
+              job = run_repair_worker_once('github-final-repair-dispatch')
+              if job is None:
+                  raise SystemExit('No SP-13 repair planner job was available.')
+          PY
+          python scripts/run_sync_pipeline_shadow.py \
+            --max-jobs 24 \
+            --output ../sync-pipeline-repair-shadow-result.json
+          python - <<'PY'
+          from app import app
+          from services.repair_orchestration import run_repair_worker_once
+
+          with app.app_context():
+              run_repair_worker_once('github-final-repair-check')
+          PY
+
+      - name: Capture read-only pipeline health
+        if: ${{ always() }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'true'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
+          SYNC_PIPELINE_MORNING_ENABLED: 'false'
+          SYNC_PIPELINE_CLOSURE_ENABLED: 'false'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+        run: |
+          set +e
+          cd backend
+          python scripts/run_sync_pipeline_certification.py \
+            --environment production \
+            --expected-sha "$GITHUB_SHA" \
+            --output ../sync-pipeline-repair-health.json
+          exit 0
+
+      - name: Upload governed repair evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-pipeline-final-repair-${{ github.run_id }}
+          path: |
+            sync-pipeline-repair-request.json
+            sync-pipeline-repair-shadow-result.json
+            sync-pipeline-repair-health.json
           retention-days: 30
           if-no-files-found: warn
 

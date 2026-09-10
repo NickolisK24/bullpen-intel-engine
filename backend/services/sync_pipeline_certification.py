@@ -204,7 +204,7 @@ def classify_operational_health(signals):
     blockers = []
     degraded = []
     blocking_fields = {
-        'dead_jobs': 'dead_job_present',
+        'blocking_dead_jobs': 'dead_job_present',
         'missing_roster_authority_teams': 'thirty_team_roster_authority_incomplete',
         'unreconciled_final_games': 'unreconciled_final_game',
         'current_publication_missing': 'atomic_current_publication_missing',
@@ -302,6 +302,7 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
     ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
     def job_health_detail(job):
         current_final = None
+        resolved_by_job = None
         if job.job_name == 'reconcile_final_game':
             try:
                 game_pk = int(job.scope_key)
@@ -311,6 +312,15 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
                 current_final = FinalGameVersion.query.filter_by(
                     game_pk=game_pk, is_current=True,
                 ).order_by(FinalGameVersion.id.desc()).first()
+                resolved_by_job = SyncJob.query.filter(
+                    SyncJob.job_name == job.job_name,
+                    SyncJob.scope_type == job.scope_type,
+                    SyncJob.scope_key == job.scope_key,
+                    SyncJob.product_date == job.product_date,
+                    SyncJob.status == 'succeeded',
+                    SyncJob.completed_at > job.completed_at,
+                ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
+        resolved = current_final is not None and resolved_by_job is not None
         return {
             'id': job.id,
             'job_name': job.job_name,
@@ -329,6 +339,8 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
             'current_final_observed_at': (
                 current_final.observed_at.isoformat() if current_final else None
             ),
+            'resolved_by_job_id': resolved_by_job.id if resolved_by_job else None,
+            'blocking': not resolved,
         }
 
     retry_wait_job_details = [
@@ -351,6 +363,8 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'retry_wait_job_details': retry_wait_job_details,
         'dead_jobs': queue_counts.get('dead', 0),
         'dead_job_details': dead_job_details,
+        'blocking_dead_jobs': sum(1 for item in dead_job_details if item['blocking']),
+        'resolved_dead_jobs': sum(1 for item in dead_job_details if not item['blocking']),
         'stale_leases': SyncJob.query.filter(
             SyncJob.status == 'running', SyncJob.lease_until < now,
         ).count(),
