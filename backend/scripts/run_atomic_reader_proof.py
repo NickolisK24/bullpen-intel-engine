@@ -115,27 +115,35 @@ def main():
             'derived_snapshot_count': DerivedCohortSnapshot.query.count(),
             'pointer_id': pointer.publication_id,
         }
+        publication_id = publication.id
+        publication_fingerprint = publication.publication_fingerprint
 
-        client = app.test_client()
-        cases = []
-        paths = [
-            *((f'team:{value}', f'/api/bullpen/teams/{value}/board') for value in team_ids),
-            *((f'pitcher:{value}', f'/api/bullpen/fatigue/{value}') for value in pitcher_ids),
-            *((f'game:{value}', f'/api/bullpen/matchups/{value}') for value in game_ids),
-            ('league', '/api/bullpen/team-states'),
-            ('what_changed', f'/api/bullpen/teams/{team_ids[0]}/changes'),
-        ]
-        for name, path in paths:
-            legacy = _request(client, path, False)
-            atomic = _request(client, path, True)
-            cases.append({
-                'case': name,
-                'path': path,
-                'classification': _comparison(legacy, atomic),
-                'legacy': {key: value for key, value in legacy.items() if key != '_payload'},
-                'atomic': {key: value for key, value in atomic.items() if key != '_payload'},
-            })
+    # Do not retain an application context across requests. Flask stores `g`
+    # on that context, so doing so would incorrectly reuse the first legacy
+    # request's disabled resolver result for every later atomic request.
+    client = app.test_client()
+    cases = []
+    atomic_payloads = {}
+    paths = [
+        *((f'team:{value}', f'/api/bullpen/teams/{value}/board') for value in team_ids),
+        *((f'pitcher:{value}', f'/api/bullpen/fatigue/{value}') for value in pitcher_ids),
+        *((f'game:{value}', f'/api/bullpen/matchups/{value}') for value in game_ids),
+        ('league', '/api/bullpen/team-states'),
+        ('what_changed', f'/api/bullpen/teams/{team_ids[0]}/changes'),
+    ]
+    for name, path in paths:
+        legacy = _request(client, path, False)
+        atomic = _request(client, path, True)
+        atomic_payloads[name] = atomic.get('_payload')
+        cases.append({
+            'case': name,
+            'path': path,
+            'classification': _comparison(legacy, atomic),
+            'legacy': {key: value for key, value in legacy.items() if key != '_payload'},
+            'atomic': {key: value for key, value in atomic.items() if key != '_payload'},
+        })
 
+    with app.app_context():
         pointer_after = db.session.get(AtomicPublicationCurrent, 1)
         after = {
             'publication_count': AtomicPublication.query.count(),
@@ -146,18 +154,20 @@ def main():
         }
         report = {
             'mode': 'read_only',
-            'publication_id': publication.id,
-            'publication_fingerprint': publication.publication_fingerprint,
+            'publication_id': publication_id,
+            'publication_fingerprint': publication_fingerprint,
             'samples': {
                 'team_ids': team_ids, 'pitcher_ids': pitcher_ids, 'game_ids': game_ids,
             },
             'cases': cases,
-            'league_team_count': 30,
+            'league_team_count': len(
+                (atomic_payloads.get('league') or {}).get('teams') or ()
+            ),
             'authority_rows_before': before,
             'authority_rows_after': after,
             'request_time_authority_writes': before != after,
             'all_atomic_reads_bound_to_current': all(
-                row['atomic']['publication_id'] == publication.id
+                row['atomic']['publication_id'] == publication_id
                 for row in cases if row['atomic']['status_code'] == 200
             ),
         }
