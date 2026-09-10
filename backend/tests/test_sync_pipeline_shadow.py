@@ -197,6 +197,8 @@ def test_manual_production_workflow_isolated_from_public_and_legacy_jobs():
     }
     assert 'flask --app app db upgrade' in step['run']
     assert 'run_sync_pipeline_shadow.py' in step['run']
+    assert '--include-continuous-observation' in step['run']
+    assert 'run_continuous_cycle.py' not in step['run']
     assert 'publish' not in step['run'].lower()
     public_condition = workflow['jobs']['public-sync']['if']
     assert "inputs.mode == 'shadow_sp'" in public_condition

@@ -1463,6 +1463,7 @@ jobs:
           python -m flask --app app db upgrade
           python scripts/run_sync_pipeline_shadow.py \
             --max-jobs 24 \
+            --include-continuous-observation \
             --output ../sync-pipeline-shadow-result.json
 
       - name: Capture read-only pipeline health

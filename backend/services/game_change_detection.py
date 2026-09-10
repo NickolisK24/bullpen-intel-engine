@@ -16,6 +16,7 @@ from models.game_observation_state import GameObservationState
 from services import continuous_game_work
 from services import game_appearance_extraction
 from services import game_finality
+from services import continuous_observation_outcomes
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services.source_observations import (
     ObservationCompleteness,
@@ -40,6 +41,7 @@ STALE_OBSERVATION = 'stale_observation'
 AMBIGUOUS_OBSERVATION = 'ambiguous_observation'
 SOURCE_FAILURE = 'source_failure'
 PARTIAL_OBSERVATION = 'partial_observation'
+MALFORMED_OBSERVATION = 'malformed_observation'
 
 SOURCE_AUTHORITY = 'mlb_statsapi_live_feed_v1_1'
 SOURCE_ENDPOINT = '/api/v1.1/game/{game_pk}/feed/live'
@@ -70,6 +72,10 @@ class GameChangeResult:
     elapsed_ms: float | None = None
     source_observation_id: int | None = None
     source_observation_outcome: str | None = None
+    observation_outcome: str | None = None
+    outcome_severity: str | None = None
+    retryable: bool = False
+    blocks_required_obligation: bool = False
 
     def to_dict(self):
         value = asdict(self)
@@ -109,8 +115,12 @@ def observe_game_change(
             )
         except Exception:
             db.session.rollback()
+        classification = (
+            SOURCE_FAILURE if isinstance(exc, MlbApiFetchError)
+            else MALFORMED_OBSERVATION
+        )
         return _result(
-            game_pk=_positive_int(game_pk), classification=SOURCE_FAILURE,
+            game_pk=_positive_int(game_pk), classification=classification,
             changed=False, detected_at=detected_at, source_authority=source_authority,
             reason=f'{type(exc).__name__}: {exc}', accepted=False,
             elapsed_ms=_elapsed(started),
@@ -121,6 +131,9 @@ def observe_game_change(
         ((payload or {}).get('metaData') or {}).get('timeStamp')
     )
     payload_bytes = len(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode())
+    row = GameObservationState.query.filter_by(
+        mlb_game_pk=observation['game_pk']
+    ).one_or_none()
     if (
         require_live_pitching
         and ((observation.get('live_pitching') or {}).get('completeness')
@@ -142,10 +155,8 @@ def observe_game_change(
             payload_bytes=payload_bytes, elapsed_ms=_elapsed(started),
             source_observation_id=source_result.observation.id,
             source_observation_outcome=source_result.outcome,
+            current_authority_satisfied=row is not None,
         )
-    row = GameObservationState.query.filter_by(
-        mlb_game_pk=observation['game_pk']
-    ).one_or_none()
 
     if row is None:
         source_result = _record_live_source_observation(
@@ -248,6 +259,7 @@ def observe_game_change(
             source_observed_at=source_observed_at, detected_at=detected_at,
             reason=reason, accepted=False, payload_bytes=payload_bytes,
             elapsed_ms=_elapsed(started),
+            current_authority_satisfied=True,
         )
 
     differences = observation_diff(row.observation, observation)
@@ -827,7 +839,14 @@ def _result(*, game_pk, classification, changed, source_authority,
             detected_at, reason, accepted, previous=None, current=None,
             finality=None, source_observed_at=None, differences=None,
             payload_bytes=None, elapsed_ms=None, source_observation_id=None,
-            source_observation_outcome=None):
+            source_observation_outcome=None,
+            current_authority_satisfied=False):
+    outcome = continuous_observation_outcomes.classify(
+        classification,
+        reason=reason,
+        accepted=accepted,
+        current_authority_satisfied=current_authority_satisfied,
+    )
     return GameChangeResult(
         game_pk=game_pk, classification=classification, changed=changed,
         previous_observation_identity=previous,
@@ -839,6 +858,10 @@ def _result(*, game_pk, classification, changed, source_authority,
         approximate_payload_bytes=payload_bytes, elapsed_ms=elapsed_ms,
         source_observation_id=source_observation_id,
         source_observation_outcome=source_observation_outcome,
+        observation_outcome=outcome.outcome,
+        outcome_severity=outcome.severity,
+        retryable=outcome.retryable,
+        blocks_required_obligation=outcome.blocks_required_obligation,
     )
 
 

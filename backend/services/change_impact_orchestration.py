@@ -165,7 +165,9 @@ def orchestrate_game_change(
     return _from_cu01_report(base, report)
 
 
-def derive_current_plan_fingerprint(change, *, source_client=None):
+def derive_current_plan_fingerprint(
+    change, *, source_client=None, official_date_fallback=None,
+):
     """Build the exact current CU-01 plan identity for an unattended final.
 
     The write path still recomputes and compares this fingerprint before its
@@ -179,6 +181,12 @@ def derive_current_plan_fingerprint(change, *, source_client=None):
         ((state.observation or {}).get('identity') or {}).get('official_date')
         if state is not None else None
     )
+    if not official_date and official_date_fallback:
+        official_date = (
+            official_date_fallback.isoformat()
+            if isinstance(official_date_fallback, date)
+            else str(official_date_fallback)
+        )
     if not official_date:
         raise ValueError('accepted final observation is missing official_date')
     report = cu01.run_game_driven_ingestion(
