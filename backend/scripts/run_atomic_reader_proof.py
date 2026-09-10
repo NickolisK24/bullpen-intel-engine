@@ -132,11 +132,11 @@ def main():
     # retain an application context while assembling their snapshot response;
     # alternating flags request-by-request can therefore leak the legacy
     # resolver result into the following test-client request.
-    legacy_results = {
-        name: _request(app.test_client(), path, False) for name, path in paths
-    }
     atomic_results = {
         name: _request(app.test_client(), path, True) for name, path in paths
+    }
+    legacy_results = {
+        name: _request(app.test_client(), path, False) for name, path in paths
     }
     cases = []
     atomic_payloads = {}
@@ -174,7 +174,15 @@ def main():
             ),
             'authority_rows_before': before,
             'authority_rows_after': after,
-            'request_time_authority_writes': before != after,
+            'request_time_authority_writes': any(
+                before[key] != after[key]
+                for key in ('publication_count', 'artifact_count', 'pointer_id')
+            ),
+            'concurrent_pipeline_evidence_drift': {
+                key: {'before': before[key], 'after': after[key]}
+                for key in ('source_observation_count', 'derived_snapshot_count')
+                if before[key] != after[key]
+            },
             'all_atomic_reads_bound_to_current': all(
                 row['atomic']['publication_id'] == publication_id
                 for row in cases if row['atomic']['status_code'] == 200
