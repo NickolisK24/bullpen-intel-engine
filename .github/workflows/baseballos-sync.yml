@@ -1453,6 +1453,7 @@ jobs:
           SYNC_PIPELINE_CLOSURE_ENABLED: 'false'
           BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
           BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+          SYNC_PIPELINE_DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -1463,6 +1464,7 @@ jobs:
           python -m flask --app app db upgrade
           python scripts/run_sync_pipeline_shadow.py \
             --max-jobs 24 \
+            --include-morning \
             --include-continuous-observation \
             --output ../sync-pipeline-shadow-result.json
 

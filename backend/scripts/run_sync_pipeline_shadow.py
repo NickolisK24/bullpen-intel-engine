@@ -24,6 +24,11 @@ def _args(argv=None):
         action='store_true',
         help='Also run one bounded CU shadow-detection cycle.',
     )
+    parser.add_argument(
+        '--include-morning',
+        action='store_true',
+        help='Plan the non-publishing SP-12 morning contract once for the date.',
+    )
     parser.add_argument('--output')
     return parser.parse_args(argv)
 
@@ -37,13 +42,18 @@ def main(argv=None):
         run_continuous_cycle,
     )
     from services.sync_pipeline_shadow import run_production_shadow_cycle
+    from services.roster_authority_health import roster_authority_coverage
 
     app = create_app(os.environ.get('APP_ENV', 'production'))
     with app.app_context():
         result = run_production_shadow_cycle(
             baseball_date=args.baseball_date,
             max_jobs=args.max_jobs,
+            include_morning=args.include_morning,
         )
+        if args.include_morning:
+            target_date = date.fromisoformat(result['baseball_date'])
+            result['roster_authority'] = roster_authority_coverage(target_date)
         if args.include_continuous_observation:
             observation = run_continuous_cycle(config=ContinuousExecutionConfig(
                 mode=ActivationMode.SHADOW_DETECT,

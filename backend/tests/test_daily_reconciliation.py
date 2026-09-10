@@ -122,6 +122,26 @@ def test_morning_reconciliation_enumerates_all_30_and_dedupes_jobs(app):
     assert SyncJob.query.count() == total
 
 
+def test_shadow_morning_plans_acquisition_but_suppresses_closure_and_publication(app):
+    plan = plan_morning_reconciliation(
+        DAY,
+        client=TeamsClient(),
+        shadow_mode=True,
+        publication_candidate_enabled=False,
+        closure_checks_enabled=False,
+    )
+
+    assert len(plan.team_ids) == 30
+    assert SyncJob.query.filter_by(job_name='fetch_roster').count() == 30
+    assert SyncJob.query.filter_by(job_name='fetch_transactions').count() == 1
+    assert SyncJob.query.filter_by(job_name='check_baseball_date_closure').count() == 0
+    assert SyncJob.query.filter_by(job_name='publish_derived_cohort').count() == 0
+    assert any(
+        row['job_type'] == 'check_baseball_date_closure'
+        for row in plan.suppressed_obligations
+    )
+
+
 def test_morning_fails_closed_without_exact_team_denominator(app):
     client = TeamsClient()
     client.get_all_teams = lambda: [{'id': value} for value in range(101, 130)]
