@@ -1,6 +1,8 @@
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
+import yaml
 from flask import Flask
 
 from models.atomic_publication import AtomicPublicationCurrent
@@ -35,6 +37,7 @@ SAFE_ENV = {
     'BASEBALLOS_LEGACY_PUBLICATION_ENABLED': 'true',
     'BASEBALLOS_LEGACY_SCHEDULERS_ENABLED': 'true',
 }
+WORKFLOW_PATH = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
 
 
 @pytest.fixture
@@ -163,3 +166,24 @@ def test_shadow_cycle_rejects_a_publication_handler_before_claiming(app):
             handlers=handlers,
         )
     assert SyncJob.query.count() == 0
+
+
+def test_manual_production_workflow_isolated_from_public_and_legacy_jobs():
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding='utf-8'))
+    job = workflow['jobs']['sync-pipeline-shadow']
+    assert "inputs.mode == 'shadow_sp'" in job['if']
+    assert 'schedule' not in job['if']
+    step = next(row for row in job['steps'] if row.get('name') == 'Run bounded production shadow cycle')
+    assert step['env'] == {
+        'APP_ENV': 'production',
+        'DATABASE_URL': '${{ secrets.DATABASE_URL }}',
+        'SECRET_KEY': '${{ secrets.SECRET_KEY }}',
+        'ADMIN_API_TOKEN': '${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}',
+        'AUTO_SYNC': 'false',
+        **SAFE_ENV,
+    }
+    assert 'flask --app app db upgrade' in step['run']
+    assert 'run_sync_pipeline_shadow.py' in step['run']
+    assert 'publish' not in step['run'].lower()
+    public_condition = workflow['jobs']['public-sync']['if']
+    assert "inputs.mode == 'shadow_sp'" in public_condition

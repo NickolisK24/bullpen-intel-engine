@@ -19,6 +19,7 @@ def _args(argv=None):
     parser = argparse.ArgumentParser(description='Run one bounded sync-pipeline shadow cycle.')
     parser.add_argument('--baseball-date', type=date.fromisoformat)
     parser.add_argument('--max-jobs', type=int, default=24)
+    parser.add_argument('--output')
     return parser.parse_args(argv)
 
 
@@ -33,7 +34,10 @@ def main(argv=None):
             baseball_date=args.baseball_date,
             max_jobs=args.max_jobs,
         )
-    print(json.dumps(result, sort_keys=True, default=str))
+    body = json.dumps(result, indent=2, sort_keys=True, default=str)
+    print(body)
+    if args.output:
+        Path(args.output).write_text(body + '\n', encoding='utf-8')
     return 0 if result['status'] == 'success' else 1
 
 

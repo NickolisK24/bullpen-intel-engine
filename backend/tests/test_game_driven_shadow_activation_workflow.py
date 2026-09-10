@@ -118,7 +118,9 @@ def test_no_cron_was_added(workflow):
 
 def test_the_manual_modes_include_only_governed_recovery(workflow):
     options = workflow[True]['workflow_dispatch']['inputs']['mode']['options']
-    assert options == ['recovery_daily', 'recovery_postgame', 'backfill', 'intraday']
+    assert options == [
+        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday', 'shadow_sp',
+    ]
 
 
 def test_the_manual_inputs_include_recovery_evidence(workflow):
@@ -296,7 +298,7 @@ def test_the_intraday_job_never_reaches_the_lane(workflow):
 
 @pytest.mark.parametrize('job_name', [
     'internal-enrichment', 'static-team-story-preview', 'intraday-audit',
-    SHADOW_JOB,
+    'sync-pipeline-shadow', SHADOW_JOB,
 ])
 def test_an_unrelated_job_configures_no_mode(workflow, job_name):
     job = workflow['jobs'][job_name]
@@ -315,7 +317,8 @@ def test_no_workflow_input_can_select_the_game_driven_mode(workflow_text, workfl
     inputs = workflow[True]['workflow_dispatch']['inputs']
     assert MODE_ENV.lower() not in ' '.join(inputs).lower()
     for name, spec in inputs.items():
-        assert 'shadow' not in json.dumps(spec).lower(), name
+        if name != 'mode':
+            assert 'shadow' not in json.dumps(spec).lower(), name
 
 
 def test_no_repository_variable_can_promote_the_mode(workflow_text):
@@ -814,7 +817,8 @@ def test_the_expected_jobs_exist(workflow):
     # tests/test_team_state_vnext_proof_workflow.py.
     assert sorted(workflow['jobs']) == sorted([
         'public-sync', SHADOW_JOB, 'internal-enrichment',
-        'static-team-story-preview', 'intraday-audit', 'team-state-vnext-proof',
+        'static-team-story-preview', 'sync-pipeline-shadow', 'intraday-audit',
+        'team-state-vnext-proof',
     ])
 
 
@@ -989,7 +993,7 @@ def test_the_mitigation_did_not_add_a_schedule(workflow):
 
 def test_the_mitigation_did_not_add_a_manual_mode(workflow):
     assert workflow[True]['workflow_dispatch']['inputs']['mode']['options'] == [
-        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday',
+        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday', 'shadow_sp',
     ]
 
 

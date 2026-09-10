@@ -311,7 +311,9 @@ def test_workflow_pins_fallback_recovery_and_due_coordinator_contract():
         'group': 'baseballos-sync', 'cancel-in-progress': False,
     }
     options = workflow[True]['workflow_dispatch']['inputs']['mode']['options']
-    assert options == ['recovery_daily', 'recovery_postgame', 'backfill', 'intraday']
+    assert options == [
+        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday', 'shadow_sp',
+    ]
     assert '--execution-source "$EXECUTION_SOURCE"' in text
     assert 'run_due_sync.py --mode daily' in text
     assert 'run_due_sync.py --mode postgame' in text
