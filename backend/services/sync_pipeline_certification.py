@@ -25,6 +25,7 @@ from models.sync_certification import (
     SyncCertificationCheck, SyncCertificationRun, SyncLegacyTransitionState,
 )
 from models.sync_job import SyncJob
+from models.sync_run import SyncRun
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -220,6 +221,7 @@ def classify_operational_health(signals):
         'publication_candidates': 'publication_candidate_waiting',
         'cache_handoff_failures': 'cache_handoff_retrying',
         'active_repairs': 'repair_request_active',
+        'continuous_unhealthy_runs': 'continuous_update_required_obligation_unresolved',
     }
     for field, reason in blocking_fields.items():
         if int(signals.get(field) or 0) > 0:
@@ -287,6 +289,14 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
             SourceObservation.completeness == 'complete',
         ).scalar() or 0
     )
+    continuous_runs = SyncRun.query.filter(
+        SyncRun.job_name == 'continuous_cycle',
+        SyncRun.started_at >= source_cutoff,
+    ).all()
+    continuous_outcomes = [
+        (run.outcome_json or {}).get('observation_outcomes') or {}
+        for run in continuous_runs
+    ]
     signals = {
         'queue_depth_by_status': queue_counts,
         'pending_jobs': queue_counts.get('pending', 0),
@@ -334,6 +344,26 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'blocked_repairs': RepairRequest.query.filter(
             RepairRequest.status.in_(('blocked', 'failed')),
         ).count(),
+        # Warning/no-op counts are intentionally observable but do not degrade
+        # health. Only runs with unresolved required work are unhealthy.
+        'continuous_warning_observations': sum(
+            int(item.get('warnings') or 0) for item in continuous_outcomes
+        ),
+        'continuous_stale_observations': sum(
+            int(item.get('stale') or 0) for item in continuous_outcomes
+        ),
+        'continuous_duplicate_observations': sum(
+            int(item.get('duplicate') or 0) for item in continuous_outcomes
+        ),
+        'continuous_safe_rejections': sum(
+            int(item.get('safe_rejection') or 0) for item in continuous_outcomes
+        ),
+        'continuous_blocking_ambiguities': sum(
+            int(item.get('blocking_ambiguity') or 0) for item in continuous_outcomes
+        ),
+        'continuous_unhealthy_runs': sum(
+            run.status in ('partial', 'failed') for run in continuous_runs
+        ),
         'measured_at': now.isoformat(),
     }
     return classify_operational_health(signals)

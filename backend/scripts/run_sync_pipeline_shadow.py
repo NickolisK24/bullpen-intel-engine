@@ -19,6 +19,11 @@ def _args(argv=None):
     parser = argparse.ArgumentParser(description='Run one bounded sync-pipeline shadow cycle.')
     parser.add_argument('--baseball-date', type=date.fromisoformat)
     parser.add_argument('--max-jobs', type=int, default=24)
+    parser.add_argument(
+        '--include-continuous-observation',
+        action='store_true',
+        help='Also run one bounded CU shadow-detection cycle.',
+    )
     parser.add_argument('--output')
     return parser.parse_args(argv)
 
@@ -26,6 +31,11 @@ def _args(argv=None):
 def main(argv=None):
     args = _args(argv)
     from app import create_app
+    from services.continuous_execution import (
+        ActivationMode,
+        ContinuousExecutionConfig,
+        run_continuous_cycle,
+    )
     from services.sync_pipeline_shadow import run_production_shadow_cycle
 
     app = create_app(os.environ.get('APP_ENV', 'production'))
@@ -34,6 +44,15 @@ def main(argv=None):
             baseball_date=args.baseball_date,
             max_jobs=args.max_jobs,
         )
+        if args.include_continuous_observation:
+            observation = run_continuous_cycle(config=ContinuousExecutionConfig(
+                mode=ActivationMode.SHADOW_DETECT,
+                enabled=True,
+                production_publication_enabled=False,
+            ))
+            result['continuous_observation'] = observation.to_dict()
+            if observation.status not in {'complete', 'skipped'}:
+                result['status'] = 'partial'
     body = json.dumps(result, indent=2, sort_keys=True, default=str)
     print(body)
     if args.output:

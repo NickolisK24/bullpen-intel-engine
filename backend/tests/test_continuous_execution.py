@@ -793,7 +793,7 @@ def test_full_live_claims_final_work_when_schedule_ledger_is_stale(
         assert len(publications) == 1
 
 
-def test_plan_derivation_failure_is_partial_and_names_unclaimed_work(
+def test_plan_derivation_failure_is_partial_and_consumes_retry_attempt(
     app, monkeypatch,
 ):
     with app.app_context():
@@ -854,9 +854,57 @@ def test_plan_derivation_failure_is_partial_and_names_unclaimed_work(
         'stage': continuous_game_work.STAGE_CANONICAL_PENDING,
         'reason': 'plan_fingerprint_derivation_failed',
     },)
-    assert result.work_obligations_claimed == 0
+    assert result.work_obligations_claimed == 1
+    assert result.work_obligations_failed == 1
     assert result.work_obligations_pending == 1
     assert calls == []
+    with app.app_context():
+        failed_job = db.session.get(SyncJob, job_id)
+        assert failed_job.status == sync_jobs.STATUS_FAILED
+        assert failed_job.attempts == 1
+        assert failed_job.details_json['work_status'] == (
+            continuous_game_work.WORK_RETRYABLE_FAILURE
+        )
+
+
+def test_superseded_work_is_skipped_before_plan_derivation(app, monkeypatch):
+    with app.app_context():
+        original = seed_accepted_observation()
+        job = continuous_game_work.ensure_obligation(change())
+        original.observation_fingerprint = 'newer-observation'
+        db.session.commit()
+        job_id = job.id
+
+    monkeypatch.setattr(
+        continuous.cu03,
+        'derive_current_plan_fingerprint',
+        lambda *_args, **_kwargs: pytest.fail(
+            'superseded work must not derive a plan fingerprint'
+        ),
+    )
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(
+            continuous.ActivationMode.FULL_LIVE,
+            production_publication_enabled=True,
+            full_live_acknowledged=True,
+            expected_plan_fingerprints={},
+        ),
+        results=[change(classification='unchanged', changed=False)],
+        production_current_id_provider=lambda: 44,
+    )
+
+    assert result.status == continuous.RESULT_COMPLETE
+    assert result.failures == ()
+    assert result.work_obligations_claimed == 0
+    assert calls == []
+    with app.app_context():
+        superseded = db.session.get(SyncJob, job_id)
+        assert superseded.status == sync_jobs.STATUS_SKIPPED
+        assert superseded.details_json['work_status'] == (
+            continuous_game_work.WORK_SUPERSEDED
+        )
 
 
 def test_rejected_observations_are_visible_without_execution_failure(
@@ -887,8 +935,41 @@ def test_rejected_observations_are_visible_without_execution_failure(
 
     assert result.status == continuous.RESULT_COMPLETE
     assert result.rejected_observations == 2
+    assert result.stale_observations == 1
+    assert result.warning_observations == 1
+    assert result.blocking_ambiguities == 0
     assert result.failures == ()
     assert result.work_obligations_pending == 0
+    assert calls == []
+
+
+def test_blocking_ambiguity_keeps_run_unhealthy(app, monkeypatch):
+    blocked = [{
+        **change(classification=detection.AMBIGUOUS_OBSERVATION, changed=False),
+        'accepted': False,
+        'reason': 'incomparable_source_authority',
+        'observation_outcome': 'ambiguous_blocking',
+        'outcome_severity': 'blocking',
+        'retryable': True,
+        'blocks_required_obligation': True,
+    }]
+    result, calls = run(
+        app,
+        monkeypatch,
+        config(continuous.ActivationMode.SHADOW_FULL_CHAIN),
+        results=blocked,
+    )
+
+    assert result.status == continuous.RESULT_PARTIAL
+    assert result.blocking_ambiguities == 1
+    assert result.failures == ({
+        'scope': 'observation',
+        'game_pk': GAME_PK,
+        'error': 'ambiguous_blocking',
+        'classification': detection.AMBIGUOUS_OBSERVATION,
+        'reason': 'incomparable_source_authority',
+        'retryable': True,
+    },)
     assert calls == []
 
 

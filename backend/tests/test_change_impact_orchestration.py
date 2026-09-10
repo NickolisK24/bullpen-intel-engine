@@ -261,6 +261,39 @@ def test_continuous_plan_fingerprint_is_derived_from_current_final_observation(
     )]
 
 
+def test_plan_fingerprint_uses_durable_job_date_for_legacy_observation(
+    app, monkeypatch,
+):
+    with app.app_context():
+        db.session.add(GameObservationState(
+            mlb_game_pk=GAME_PK,
+            observation_fingerprint='a' * 64,
+            observation={'identity': {}},
+            source_authority=detection.SOURCE_AUTHORITY,
+            source_endpoint='schedule-feed',
+            finality_state=game_finality.FINAL_AND_USABLE,
+            last_classification=detection.FINALIZED,
+        ))
+        db.session.commit()
+        calls = []
+
+        def plan(reference_date, **kwargs):
+            calls.append((reference_date, kwargs['only_game_pks']))
+            return {
+                'status': 'complete',
+                'complete_reconciliation_fingerprint': 'legacy-plan',
+            }
+
+        monkeypatch.setattr(orchestration.cu01, 'run_game_driven_ingestion', plan)
+        fingerprint = orchestration.derive_current_plan_fingerprint(
+            _change(detection.FINALIZED),
+            official_date_fallback=GAME_DATE,
+        )
+
+    assert fingerprint == 'legacy-plan'
+    assert calls == [(GAME_DATE, [GAME_PK])]
+
+
 def test_accepted_final_observation_bridges_stale_schedule_finality(
     app, monkeypatch,
 ):

@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.game_observation_state import GameObservationState
 from services import change_impact_orchestration as cu03
 from services import continuous_game_work
+from services import continuous_observation_outcomes as observation_outcomes
 from services import game_change_detection as cu02
 from services import game_finality
 from services import incremental_arm_read_team_state as cu05
@@ -208,6 +209,14 @@ class ContinuousCycleResult:
     unchanged_games: int = 0
     changed_games: int = 0
     rejected_observations: int = 0
+    accepted_changes: int = 0
+    accepted_no_changes: int = 0
+    duplicate_observations: int = 0
+    stale_observations: int = 0
+    superseded_observations: int = 0
+    safe_rejections: int = 0
+    warning_observations: int = 0
+    blocking_ambiguities: int = 0
     source_failures: int = 0
     canonical_actions: int = 0
     canonical_mutation_games: int = 0
@@ -522,7 +531,10 @@ def _execute_cycle(**kwargs):
             'requests_expected': 0,
             'results': [],
         }
-    detection_results = list(detection_cycle.get('results') or ())
+    detection_results = [
+        _with_observation_outcome(item)
+        for item in (detection_cycle.get('results') or ())
+    ]
     observation_jobs = continuous_game_work.ensure_obligations(
         detection_results,
         sync_run_id=kwargs['sync_run_id'],
@@ -530,7 +542,16 @@ def _execute_cycle(**kwargs):
     replay_changes, replay_results = _prepare_governed_replays(
         config, detection_results, sync_run_id=kwargs['sync_run_id'],
     )
-    failures = []
+    failures = [
+        _observation_evidence(item)
+        for item in detection_results
+        if item.get('blocks_required_obligation') is True
+    ]
+    observation_warnings = [
+        _observation_evidence(item)
+        for item in detection_results
+        if item.get('outcome_severity') == observation_outcomes.WARNING
+    ]
     if detection_deferred_for_source_budget:
         failures.append({
             'scope': 'detection',
@@ -755,6 +776,22 @@ def _execute_cycle(**kwargs):
             _rotate_unclaimed_work(work_job, 'publication_cohort_limit', work_results)
             continue
 
+        work_claimed = False
+        if (
+            work_job is not None
+            and preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING
+            and config.mode in PRODUCTION_MODES
+        ):
+            work_job = continuous_game_work.claim(
+                work_job,
+                sync_run_id=kwargs['sync_run_id'],
+                exclusive_cycle_lock_held=True,
+            )
+            if work_job is None:
+                continue
+            counters['work_obligations_claimed'] += 1
+            work_claimed = True
+
         fingerprint = None
         if preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING:
             fingerprint = config.expected_plan_fingerprints.get(
@@ -767,6 +804,9 @@ def _execute_cycle(**kwargs):
                     fingerprint = cu03.derive_current_plan_fingerprint(
                         change,
                         source_client=client,
+                        official_date_fallback=(
+                            work_job.product_date if work_job is not None else None
+                        ),
                     )
                 except Exception as exc:
                     failures.append({
@@ -777,25 +817,38 @@ def _execute_cycle(**kwargs):
                         'stage': preclaim_stage,
                         'reason': 'plan_fingerprint_derivation_failed',
                     })
-                    _rotate_unclaimed_work(
-                        work_job,
-                        'plan_fingerprint_derivation_failed',
-                        work_results,
-                    )
+                    if work_job is not None:
+                        _record_work_failure(
+                            work_job,
+                            exc,
+                            stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                            counters=counters,
+                            results=work_results,
+                        )
                     continue
             if work_job is not None and not fingerprint:
+                error = RuntimeError('reviewed_plan_fingerprint_unavailable')
                 failures.append({
                     'scope': 'plan_authorization',
                     'game_pk': change.get('game_pk'),
                     'error': 'reviewed_plan_fingerprint_unavailable',
                 })
-                _rotate_unclaimed_work(
-                    work_job,
-                    'reviewed_plan_fingerprint_unavailable',
-                    work_results,
-                )
+                if work_claimed:
+                    _record_work_failure(
+                        work_job,
+                        error,
+                        stage=continuous_game_work.STAGE_CANONICAL_PENDING,
+                        counters=counters,
+                        results=work_results,
+                    )
+                else:
+                    _rotate_unclaimed_work(
+                        work_job,
+                        'reviewed_plan_fingerprint_unavailable',
+                        work_results,
+                    )
                 continue
-        if work_job is not None:
+        if work_job is not None and not work_claimed:
             work_job = continuous_game_work.claim(
                 work_job,
                 sync_run_id=kwargs['sync_run_id'],
@@ -1613,6 +1666,28 @@ def _execute_cycle(**kwargs):
                 cu02.STALE_OBSERVATION, cu02.AMBIGUOUS_OBSERVATION,
             } for item in detection_results
         ),
+        accepted_changes=_outcome_count(
+            detection_results, observation_outcomes.ACCEPTED_CHANGE,
+        ),
+        accepted_no_changes=_outcome_count(
+            detection_results, observation_outcomes.ACCEPTED_NO_CHANGE,
+        ),
+        duplicate_observations=_outcome_count(
+            detection_results, observation_outcomes.DUPLICATE,
+        ),
+        stale_observations=_outcome_count(
+            detection_results, observation_outcomes.STALE,
+        ),
+        superseded_observations=_outcome_count(
+            detection_results, observation_outcomes.SUPERSEDED,
+        ),
+        safe_rejections=_outcome_count(
+            detection_results, observation_outcomes.SAFE_REJECTION,
+        ),
+        warning_observations=len(observation_warnings),
+        blocking_ambiguities=_outcome_count(
+            detection_results, observation_outcomes.AMBIGUOUS_BLOCKING,
+        ),
         source_failures=source_failures,
         affected_pitcher_ids=tuple(sorted(affected_pitchers)),
         affected_team_ids=tuple(sorted(affected_teams)),
@@ -2079,6 +2154,43 @@ def _replay_log(event, game_pk, **fields):
     }, sort_keys=True))
 
 
+def _with_observation_outcome(item):
+    value = dict(item or {})
+    if value.get('observation_outcome'):
+        return value
+    outcome = observation_outcomes.classify(
+        value.get('classification'),
+        reason=value.get('reason'),
+        accepted=value.get('accepted') is True,
+        current_authority_satisfied=(
+            value.get('classification') in {
+                cu02.UNCHANGED,
+                cu02.STALE_OBSERVATION,
+                cu02.AMBIGUOUS_OBSERVATION,
+            }
+        ),
+    )
+    value.update(outcome.to_dict())
+    value['observation_outcome'] = value.pop('outcome')
+    value['outcome_severity'] = value.pop('severity')
+    return value
+
+
+def _outcome_count(results, outcome):
+    return sum(item.get('observation_outcome') == outcome for item in results)
+
+
+def _observation_evidence(item):
+    return {
+        'scope': 'observation',
+        'game_pk': item.get('game_pk'),
+        'error': item.get('observation_outcome') or 'observation_blocked',
+        'classification': item.get('classification'),
+        'reason': item.get('reason'),
+        'retryable': bool(item.get('retryable')),
+    }
+
+
 def _finish_run(result):
     return sync_metadata.finish_sync_run(
         result.sync_run_id,
@@ -2097,9 +2209,25 @@ def _finish_run(result):
         affected_teams=len(result.affected_team_ids),
         affected_pitchers=len(result.affected_pitcher_ids),
         downstream_work_created=result.durable_work_created,
-        warnings_count=len(result.failures),
+        warnings_count=result.warning_observations,
         outcome={
             'unchanged_games': result.unchanged_games,
+            'observation_outcomes': {
+                'accepted_change': result.accepted_changes,
+                'accepted_no_change': result.accepted_no_changes,
+                'duplicate': result.duplicate_observations,
+                'stale': result.stale_observations,
+                'superseded': result.superseded_observations,
+                'safe_rejection': result.safe_rejections,
+                'warnings': result.warning_observations,
+                'blocking_ambiguity': result.blocking_ambiguities,
+                'source_failure': result.source_failures,
+            },
+            'observation_warnings': [
+                _observation_evidence(item)
+                for item in result.detection_results
+                if item.get('outcome_severity') == observation_outcomes.WARNING
+            ],
             'proof_publications': result.proof_publications,
             'live_publications': result.live_publications,
         },

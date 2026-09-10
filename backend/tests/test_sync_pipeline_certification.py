@@ -125,6 +125,24 @@ def test_operational_health_vocabulary(signals, expected):
     assert classify_operational_health(signals)['status'] == expected
 
 
+def test_continuous_warning_observations_are_visible_without_degrading_health():
+    health = classify_operational_health({
+        'continuous_warning_observations': 4,
+        'continuous_stale_observations': 3,
+        'continuous_safe_rejections': 1,
+    })
+    assert health['status'] == 'healthy'
+    assert health['signals']['continuous_stale_observations'] == 3
+
+
+def test_continuous_unresolved_required_work_degrades_health():
+    health = classify_operational_health({'continuous_unhealthy_runs': 1})
+    assert health['status'] == 'degraded'
+    assert health['degraded_conditions'] == [
+        'continuous_update_required_obligation_unresolved'
+    ]
+
+
 def test_database_health_detects_stale_dead_and_blocked_obligations(app):
     now = datetime(2026, 9, 9, 12)
     db.session.add(SyncJob(

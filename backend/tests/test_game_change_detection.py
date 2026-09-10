@@ -360,6 +360,9 @@ def test_equal_timestamp_upgrade_requires_complete_matching_final_result(
     assert result.classification == detection.AMBIGUOUS_OBSERVATION
     assert result.accepted is False
     assert result.reason == 'equal_revision_with_different_material_content'
+    assert result.observation_outcome == 'ambiguous_nonblocking'
+    assert result.outcome_severity == 'warning'
+    assert result.blocks_required_obligation is False
     row = GameObservationState.query.one()
     assert row.observation_fingerprint == first.current_observation_identity
     assert row.finality_state == detection.game_finality.FINAL_PENDING_DATA
@@ -429,8 +432,10 @@ def test_equal_timestamp_upgrade_rejects_different_game_identity(app):
     first = detection.observe_game_change(GAME_PK, payload=stored)
     result = detection.observe_game_change(GAME_PK, payload=incoming)
 
-    assert result.classification == detection.SOURCE_FAILURE
+    assert result.classification == detection.MALFORMED_OBSERVATION
     assert result.accepted is False
+    assert result.observation_outcome == 'malformed'
+    assert result.blocks_required_obligation is True
     assert GameObservationState.query.one().observation_fingerprint == (
         first.current_observation_identity
     )
@@ -478,6 +483,9 @@ def test_usable_final_cannot_regress_to_pending_final(
     assert result.classification == detection.AMBIGUOUS_OBSERVATION
     assert result.accepted is False
     assert result.reason == expected_reason
+    assert result.observation_outcome == 'safe_rejection'
+    assert result.outcome_severity == 'warning'
+    assert result.blocks_required_obligation is False
     row = GameObservationState.query.one()
     assert row.observation_fingerprint == first.current_observation_identity
     assert row.finality_state == detection.game_finality.FINAL_AND_USABLE
@@ -675,6 +683,9 @@ def test_stale_observation_is_rejected_before_and_after_restart(app):
     stale_after_restart = detection.observe_game_change(GAME_PK, payload=older)
     assert accepted.classification == detection.CHANGED
     assert stale.classification == stale_after_restart.classification == detection.STALE_OBSERVATION
+    assert stale.observation_outcome == 'stale'
+    assert stale.outcome_severity == 'healthy'
+    assert stale.retryable is False
     assert GameObservationState.query.one().observation_fingerprint == fingerprint
     assert stale.affected_pitchers == stale.affected_teams == ()
 
