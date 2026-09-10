@@ -25,6 +25,7 @@ from models.derived_intelligence import DerivedCohortSnapshot, DerivedIntelligen
 from models.source_observation import SourceObservation
 from models.sync_run import SyncRun
 from services.derived_intelligence import capture_input_manifest
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync_control_plane import (
     FailureClass,
     RunStage,
@@ -210,6 +211,105 @@ def publication_candidate_specs(cohort):
     return specs
 
 
+def first_publication_baseline_specs(cohort):
+    """Assemble one complete first generation from current SP-10 snapshots.
+
+    A normal publication inherits unaffected artifacts from its predecessor.  The
+    first publication has no predecessor, so it must explicitly carry the latest
+    still-current SP-10 snapshot for every available entity.  No baseball value
+    is recomputed here: every artifact keeps its exact source cohort/snapshot.
+    """
+    anchor_specs = publication_candidate_specs(cohort)
+    selected = {spec['key']: spec for spec in anchor_specs}
+    cohort_cache = {cohort.id: cohort}
+    validity_cache = {cohort.id: True}
+    snapshots = (
+        DerivedCohortSnapshot.query
+        .join(
+            DerivedIntelligenceCohort,
+            DerivedIntelligenceCohort.id == DerivedCohortSnapshot.cohort_id,
+        )
+        .filter(
+            DerivedIntelligenceCohort.status == 'complete',
+            DerivedIntelligenceCohort.authority_class.in_(tuple(ALLOWED_AUTHORITIES)),
+        )
+        .order_by(
+            DerivedIntelligenceCohort.id.desc(),
+            DerivedCohortSnapshot.id.desc(),
+        )
+        .all()
+    )
+    for snapshot in snapshots:
+        key = (snapshot.snapshot_type, snapshot.entity_type, snapshot.entity_key)
+        if key in selected:
+            continue
+        source_cohort = cohort_cache.get(snapshot.cohort_id)
+        if source_cohort is None:
+            source_cohort = db.session.get(DerivedIntelligenceCohort, snapshot.cohort_id)
+            cohort_cache[snapshot.cohort_id] = source_cohort
+        valid = validity_cache.get(snapshot.cohort_id)
+        if valid is None:
+            try:
+                source_plan = db.session.get(
+                    CanonicalImpactPlan, source_cohort.impact_plan_id,
+                )
+                validate_publication_cohort(source_cohort, source_plan)
+                valid = True
+            except PublicationValidationError:
+                valid = False
+            validity_cache[snapshot.cohort_id] = valid
+        if not valid or not isinstance(snapshot.payload_json, dict) or not snapshot.payload_json:
+            continue
+        selected[key] = {
+            'key': key,
+            'source_cohort_id': source_cohort.id,
+            'source_snapshot_id': snapshot.id,
+            'schema_version': str(snapshot.payload_schema_version),
+            'payload_fingerprint': _fingerprint(snapshot.payload_json),
+        }
+
+    team_ids = {
+        int(spec['key'][2]) for spec in selected.values()
+        if spec['key'][1] == 'team' and str(spec['key'][2]).isdigit()
+    }
+    missing_teams = sorted(set(MLB_TEAM_IDS) - team_ids)
+    pitcher_count = sum(spec['key'][1] == 'pitcher' for spec in selected.values())
+    game_count = sum(spec['key'][1] == 'game' for spec in selected.values())
+    if missing_teams:
+        raise PublicationValidationError(
+            'first_publication_team_coverage_incomplete:'
+            + ','.join(map(str, missing_teams))
+        )
+    if pitcher_count == 0:
+        raise PublicationValidationError('first_publication_pitcher_coverage_empty')
+    if game_count == 0:
+        raise PublicationValidationError('first_publication_game_coverage_empty')
+    return sorted(selected.values(), key=lambda spec: spec['key'])
+
+
+def first_publication_baseline_report(cohort):
+    """Return read-only first-generation coverage for controlled cutover."""
+    try:
+        specs = first_publication_baseline_specs(cohort)
+        reason = None
+    except PublicationValidationError as exc:
+        specs = []
+        reason = exc.reason
+    counts = {
+        kind: sum(spec['key'][1] == kind for spec in specs)
+        for kind in ('team', 'pitcher', 'game')
+    }
+    return {
+        'complete': reason is None,
+        'reason': reason,
+        'expected_team_count': len(MLB_TEAM_IDS),
+        'artifact_counts': counts,
+        'artifact_count': len(specs),
+        'source_cohort_ids': sorted({spec['source_cohort_id'] for spec in specs}),
+        'source_snapshot_ids': sorted({spec['source_snapshot_id'] for spec in specs}),
+    }
+
+
 def _existing_artifacts(publication_id):
     if publication_id is None:
         return []
@@ -253,6 +353,7 @@ def publish_derived_cohort(
     sync_run_id=None,
     lease_fence=None,
     cache_configured=False,
+    bootstrap_first_publication=False,
     failure_hook=None,
     commit=True,
 ):
@@ -276,6 +377,8 @@ def publish_derived_cohort(
     _acquire_publication_lock()
     pointer = _current_pointer_locked()
     predecessor = db.session.get(AtomicPublication, pointer.publication_id) if pointer else None
+    if predecessor is None and bootstrap_first_publication:
+        candidate_specs = first_publication_baseline_specs(cohort)
     current_artifacts = _existing_artifacts(predecessor.id if predecessor else None)
     candidate_keys = {spec['key'] for spec in candidate_specs}
     for row in current_artifacts:
@@ -523,6 +626,9 @@ def execute_publication_job(job, *, cache_adapter=None):
             sync_run_id=run.id,
             lease_fence=fence,
             cache_configured=cache_adapter is not None,
+            bootstrap_first_publication=bool(
+                (job.details_json or {}).get('bootstrap_first_publication')
+            ),
             commit=False,
         )
         add_scopes(run, [
@@ -608,6 +714,7 @@ def _start_run(job, cohort, job_type):
 
 __all__ = [
     'ALLOWED_AUTHORITIES', 'ARTIFACT_REQUIRED_DOMAIN', 'PUBLICATION_SCHEMA_VERSION',
+    'first_publication_baseline_report', 'first_publication_baseline_specs',
     'PublicationResult', 'PublicationStaleError', 'PublicationValidationError',
     'execute_publication_job', 'get_current_publication', 'handoff_publication_cache',
     'publication_candidate_specs', 'publish_derived_cohort',

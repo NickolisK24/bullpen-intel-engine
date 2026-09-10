@@ -11,6 +11,7 @@ from services.atomic_publication_cutover import (
     inspect_publication_candidates,
     publish_selected_cohort,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -62,6 +63,13 @@ def _candidate(marker='a', status='complete'):
             authority_class='final', payload_schema_version=1,
             payload_json={f'{kind}_snapshot': {'marker': marker}},
         ))
+    for team_id in sorted(set(MLB_TEAM_IDS) - {110}):
+        db.session.add(DerivedCohortSnapshot(
+            cohort_id=cohort.id, entity_type='team', entity_key=str(team_id),
+            snapshot_type='team_intelligence', baseball_date=cohort.baseball_date,
+            authority_class='final', payload_schema_version=1,
+            payload_json={'team_snapshot': {'marker': marker, 'team_id': team_id}},
+        ))
     db.session.commit()
     return cohort
 
@@ -71,7 +79,22 @@ def test_inspection_is_read_only_and_reports_eligible_cohort(app):
     report = inspect_publication_candidates()
     assert report['current_publication_id'] is None
     assert report['eligible_candidates'][0]['cohort_id'] == cohort.id
+    assert report['eligible_candidates'][0]['first_publication_baseline']['complete'] is True
+    assert report['eligible_candidates'][0]['first_publication_baseline']['artifact_counts']['team'] == 30
     assert AtomicPublication.query.count() == 0
+
+
+def test_inspection_blocks_incomplete_first_generation(app):
+    cohort = _candidate()
+    DerivedCohortSnapshot.query.filter_by(
+        cohort_id=cohort.id, entity_type='team', entity_key='108',
+    ).delete()
+    db.session.commit()
+    report = inspect_publication_candidates()
+    candidate = report['reviewed_candidates'][0]
+    assert candidate['eligible'] is False
+    assert candidate['ineligible_reason'] == 'first_publication_team_coverage_incomplete:108'
+    assert db.session.get(AtomicPublicationCurrent, 1) is None
 
 
 def test_controlled_publication_uses_sp11_job_and_advances_once(app):
@@ -80,7 +103,9 @@ def test_controlled_publication_uses_sp11_job_and_advances_once(app):
     assert result['pointer_before'] is None
     assert result['pointer_after'] == result['publication_id']
     assert result['publication_job_status'] == 'succeeded'
-    assert len(result['artifact_ids']) == 3
+    assert len(result['artifact_ids']) == 32
+    assert result['artifact_created_count'] == 32
+    assert result['artifact_inherited_count'] == 0
     assert db.session.get(AtomicPublicationCurrent, 1).publication_id == result['publication_id']
 
 

@@ -1,5 +1,8 @@
 """Governed CR-04 inspection and one-cohort SP-11 publication control."""
 
+from hashlib import sha256
+import json
+
 from models.atomic_publication import (
     AtomicPublication,
     AtomicPublicationArtifact,
@@ -12,6 +15,7 @@ from services.atomic_publication import (
     ALLOWED_AUTHORITIES,
     PublicationValidationError,
     publication_candidate_specs,
+    first_publication_baseline_report,
     run_atomic_publication_worker_once,
     validate_publication_cohort,
 )
@@ -38,6 +42,8 @@ def _candidate_report(cohort):
     except PublicationValidationError as exc:
         reason = exc.reason
     publication = AtomicPublication.query.filter_by(cohort_id=cohort.id).one_or_none()
+    baseline = first_publication_baseline_report(cohort) if _pointer_id() is None else None
+    input_manifest = list(cohort.input_manifest_json or ())
     return {
         'cohort_id': cohort.id,
         'cohort_fingerprint': cohort.cohort_fingerprint,
@@ -45,6 +51,9 @@ def _candidate_report(cohort):
         'authority_class': cohort.authority_class,
         'baseball_date': cohort.baseball_date.isoformat(),
         'impact_plan_id': cohort.impact_plan_id,
+        'impact_plan_fingerprint': plan.plan_fingerprint if plan else None,
+        'impact_plan_status': plan.status if plan else None,
+        'publication_mode': getattr(plan, 'publication_mode', None) if plan else None,
         'affected_game_ids': list(cohort.affected_game_ids_json or ()),
         'affected_team_ids': list(cohort.affected_team_ids_json or ()),
         'affected_pitcher_ids': list(cohort.affected_pitcher_ids_json or ()),
@@ -55,9 +64,21 @@ def _candidate_report(cohort):
             for row in (cohort.input_manifest_json or ())
             if row.get('source_observation_id') is not None
         }),
+        'input_manifest': input_manifest,
+        'input_manifest_fingerprint': sha256(json.dumps(
+            input_manifest, sort_keys=True, separators=(',', ':'),
+        ).encode('utf-8')).hexdigest(),
         'candidate_artifact_count': artifact_count,
-        'eligible': reason is None and publication is None,
-        'ineligible_reason': reason or ('already_published' if publication else None),
+        'first_publication_baseline': baseline,
+        'eligible': (
+            reason is None and publication is None
+            and (baseline is None or baseline['complete'])
+        ),
+        'ineligible_reason': (
+            reason
+            or ('already_published' if publication else None)
+            or (baseline and baseline['reason'])
+        ),
         'publication_id': publication.id if publication else None,
         'completed_at': cohort.completed_at.isoformat() if cohort.completed_at else None,
     }
@@ -95,6 +116,10 @@ def publish_selected_cohort(cohort_id):
     pointer_before = _pointer_id()
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
     publication_job = enqueue_publication_candidate(cohort, plan)
+    publication_job.details_json = {
+        **(publication_job.details_json or {}),
+        'bootstrap_first_publication': pointer_before is None,
+    }
     cohort.publication_job_id = publication_job.id
     db.session.commit()
     settled = run_atomic_publication_worker_once('cr04-controlled-publication')
@@ -114,6 +139,10 @@ def publish_selected_cohort(cohort_id):
         'publication_fingerprint': publication.publication_fingerprint,
         'predecessor_publication_id': publication.predecessor_publication_id,
         'artifact_ids': [row.id for row in artifacts],
+        'artifact_count': len(artifacts),
+        'artifact_created_count': publication.artifact_created_count,
+        'artifact_inherited_count': publication.artifact_inherited_count,
+        'first_publication_baseline': report.get('first_publication_baseline'),
         'pointer_before': pointer_before,
         'pointer_after': _pointer_id(),
         'published_at': publication.published_at.isoformat(),
