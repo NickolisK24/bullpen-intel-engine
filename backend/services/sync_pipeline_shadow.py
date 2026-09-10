@@ -58,6 +58,7 @@ SHADOW_JOB_FAMILY = 'sync_pipeline_shadow'
 DEFAULT_MAX_JOBS = 24
 MAX_JOBS_LIMIT = 100
 ACQUISITION_JOB_RESERVE = 12
+DOWNSTREAM_JOB_RESERVE = 6
 SAFE_JOB_TYPES = (
     JobType.FETCH_SCHEDULE,
     JobType.FETCH_ROSTER,
@@ -69,6 +70,10 @@ SAFE_JOB_TYPES = (
     JobType.PROCESS_DERIVED_INTELLIGENCE,
 )
 ROSTER_JOB_TYPES = (JobType.FETCH_ROSTER, JobType.FETCH_TRANSACTIONS)
+DOWNSTREAM_JOB_TYPES = (
+    JobType.PROCESS_CANONICAL_IMPACT,
+    JobType.PROCESS_DERIVED_INTELLIGENCE,
+)
 FORBIDDEN_JOB_TYPES = frozenset({
     JobType.PUBLISH_DERIVED_COHORT.value,
     JobType.HANDOFF_PUBLICATION_CACHE.value,
@@ -221,6 +226,18 @@ def shadow_queue_counts():
     return result
 
 
+def shadow_job_type_passes(*, max_jobs, include_morning):
+    """Return bounded claim lanes with guaranteed downstream capacity."""
+    acquisition_budget = min(max_jobs, ACQUISITION_JOB_RESERVE) if include_morning else 0
+    remaining_budget = max_jobs - acquisition_budget
+    downstream_budget = min(remaining_budget, DOWNSTREAM_JOB_RESERVE)
+    general_budget = remaining_budget - downstream_budget
+    passes = [ROSTER_JOB_TYPES] * acquisition_budget
+    passes.extend([SAFE_JOB_TYPES] * general_budget)
+    passes.extend([DOWNSTREAM_JOB_TYPES] * downstream_budget)
+    return tuple(passes)
+
+
 def run_production_shadow_cycle(
     *, now=None, baseball_date=None, max_jobs=DEFAULT_MAX_JOBS, worker_id=None,
     env=None, migration_head_reader=current_migration_heads, handlers=None,
@@ -253,9 +270,9 @@ def run_production_shadow_cycle(
     seed_job, seed_created = ensure_current_date_poll(baseball_date, now=now)
     processed = []
     errors = []
-    acquisition_budget = min(max_jobs, ACQUISITION_JOB_RESERVE) if include_morning else 0
-    job_type_passes = [ROSTER_JOB_TYPES] * acquisition_budget
-    job_type_passes.extend([SAFE_JOB_TYPES] * (max_jobs - acquisition_budget))
+    job_type_passes = shadow_job_type_passes(
+        max_jobs=max_jobs, include_morning=include_morning,
+    )
     for job_types in job_type_passes:
         try:
             settled = run_next_job(
@@ -268,9 +285,15 @@ def run_production_shadow_cycle(
             errors.append({'error_type': type(exc).__name__, 'error': str(exc)[:500]})
             continue
         if settled is None:
-            if job_types == ROSTER_JOB_TYPES:
-                continue
-            break
+            if job_types != SAFE_JOB_TYPES:
+                settled = run_next_job(
+                    worker_id,
+                    handlers,
+                    job_types=SAFE_JOB_TYPES,
+                    lease_seconds=300,
+                )
+            if settled is None:
+                break
         processed.append(settled.id)
         if settled.job_name == JobType.FETCH_SCHEDULE.value:
             plan_pregame_context_polls(
@@ -366,10 +389,11 @@ def run_production_shadow_cycle(
 
 
 __all__ = [
-    'ACQUISITION_JOB_RESERVE', 'DEFAULT_MAX_JOBS', 'FORBIDDEN_JOB_TYPES',
-    'ROSTER_JOB_TYPES', 'SAFE_JOB_TYPES',
+    'ACQUISITION_JOB_RESERVE', 'DEFAULT_MAX_JOBS', 'DOWNSTREAM_JOB_RESERVE',
+    'DOWNSTREAM_JOB_TYPES', 'FORBIDDEN_JOB_TYPES', 'ROSTER_JOB_TYPES',
+    'SAFE_JOB_TYPES',
     'SHADOW_ENTRYPOINT_VERSION', 'ShadowConfigurationError',
     'assert_shadow_ready', 'ensure_current_date_poll', 'ensure_shadow_morning_plan',
     'production_shadow_handlers', 'run_production_shadow_cycle',
-    'shadow_queue_counts', 'validate_shadow_controls',
+    'shadow_job_type_passes', 'shadow_queue_counts', 'validate_shadow_controls',
 ]
