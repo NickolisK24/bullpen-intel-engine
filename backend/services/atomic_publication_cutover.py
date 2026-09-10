@@ -115,6 +115,21 @@ def _prepublication_health():
         ),
         'atomic_pointer_consistent': signals['publication_pointer_inconsistencies'] == 0,
     }
+    return {
+        'status': 'pass' if all(checks.values()) else 'fail',
+        'checks': checks,
+        'active_roster_coverage_count': roster['active_roster_coverage_count'],
+        'forty_man_coverage_count': roster['forty_man_coverage_count'],
+        'unreconciled_final_games': signals['unreconciled_final_games'],
+        'blocking_dead_jobs': signals['blocking_dead_jobs'],
+        'required_retry_wait_jobs': required_retry_wait,
+        'stale_leases': signals['stale_leases'],
+        'pending_impact_plans': signals['pending_impact_plans'],
+        'pending_derived_jobs': pending_derived,
+        'current_publication_id': signals['current_publication_id'],
+        'pointer_writer': 'services.atomic_publication.publish_derived_cohort',
+        'measured_at': signals['measured_at'],
+    }
 
 
 def _current_publication_report():
@@ -128,7 +143,7 @@ def _current_publication_report():
     final_mutations = []
     final_version_ids = set()
     for ref in refs:
-        if ref.mutation_family != 'final_game':
+        if ref.mutation_family not in ('final_appearance', 'final_game_context'):
             continue
         mutation = db.session.get(FinalGameMutation, ref.source_mutation_id)
         if mutation is None:
@@ -235,23 +250,6 @@ def _current_publication_report():
             'created_at': row.created_at.isoformat(),
         } for row in live_mutations],
     }
-    return {
-        'status': 'pass' if all(checks.values()) else 'fail',
-        'checks': checks,
-        'active_roster_coverage_count': roster['active_roster_coverage_count'],
-        'forty_man_coverage_count': roster['forty_man_coverage_count'],
-        'unreconciled_final_games': signals['unreconciled_final_games'],
-        'blocking_dead_jobs': signals['blocking_dead_jobs'],
-        'required_retry_wait_jobs': required_retry_wait,
-        'stale_leases': signals['stale_leases'],
-        'pending_impact_plans': signals['pending_impact_plans'],
-        'pending_derived_jobs': pending_derived,
-        'current_publication_id': signals['current_publication_id'],
-        'pointer_writer': 'services.atomic_publication.publish_derived_cohort',
-        'measured_at': signals['measured_at'],
-    }
-
-
 def inspect_publication_candidates(*, limit=20):
     rows = DerivedIntelligenceCohort.query.filter(
         DerivedIntelligenceCohort.status == 'complete',

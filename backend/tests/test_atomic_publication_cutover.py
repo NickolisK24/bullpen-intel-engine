@@ -94,6 +94,7 @@ def test_inspection_is_read_only_and_reports_eligible_cohort(app):
     assert report['eligible_candidates'][0]['cohort_id'] == cohort.id
     assert report['eligible_candidates'][0]['first_publication_baseline']['complete'] is True
     assert report['eligible_candidates'][0]['first_publication_baseline']['artifact_counts']['team'] == 30
+    assert report['prepublication_health']['status'] in ('pass', 'fail')
     assert AtomicPublication.query.count() == 0
 
 
