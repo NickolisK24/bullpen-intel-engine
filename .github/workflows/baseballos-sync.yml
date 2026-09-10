@@ -1563,7 +1563,7 @@ jobs:
             --game-pk "$REPAIR_GAME_PK" \
             --reason "$REPAIR_REASON" \
             --requested-by "$REPAIR_OPERATOR" \
-            --apply > ../sync-pipeline-repair-request.json
+            --apply | tail -n 1 > ../sync-pipeline-repair-request.json
           python - <<'PY'
           from app import app
           from services.repair_orchestration import run_repair_worker_once

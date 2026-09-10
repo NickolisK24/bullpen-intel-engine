@@ -148,6 +148,13 @@ python scripts/run_sync_repair.py targeted --start-date 2026-09-09 --domain fina
 
 This dispatches SP-07 owner work. Follow the repair request, child jobs, SP-09 plan, SP-10 cohort, SP-11 publication, and SP-12 closure rather than editing rows.
 
+For a production terminal final-game obligation, the internal GitHub workflow
+also exposes `mode=repair_final`. It requires `backfill_date`, `repair_game_pk`,
+`recovery_reason`, and `confirm_recovery=RECOVER`. The workflow creates the same
+SP-13 request, explicitly gives its SP-07 owner job the first claim, drains only
+the non-publishing shadow allowlist, and uploads request, shadow, and health
+evidence. It never revives or edits the terminal job and cannot publish.
+
 ## Bounded backfill
 
 ```powershell
@@ -209,7 +216,15 @@ against the actual Render service rather than repository intent:
    authority, drain rather than grow the bounded queue, and leave
    `atomic_publication_current` unchanged.
 
-If the available control plane cannot repoint the existing service while
-preserving its environment wiring, stop. Do not create an unconfigured second
-cron, enable publication, or move readers. Record the deployment gate as
-blocked and leave legacy authority intact.
+The repoint gate was satisfied on 2026-09-10 for cron
+`crn-da98kclg1s2s739k0870`, deploy `dep-dahc5i15efls73dfnub0`, and SHA
+`63f87feb421eb446fae09d28ab86390ecbbbb8ed`. Operators must still run the full
+list above after every deploy. A recurring service on an older integration SHA
+does not prove later repair/publication code.
+
+Do not enable publication merely because recurrence passes. Confirm
+`blocking_dead_jobs=0`, `unreconciled_final_games=0`, 30/30 roster authority,
+bounded queue progress, a selected/revalidated current SP-10 cohort, and a
+deployed publication-bound consumer with a tested legacy rollback. A historical
+dead row may remain only when health records a later succeeded owner job and a
+current final version; otherwise it is still blocking.
