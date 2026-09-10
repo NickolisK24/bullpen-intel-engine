@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 import os
 from typing import Callable
 
 from flask import g, has_request_context
 
-from models.atomic_publication import AtomicPublicationArtifact
+from models.atomic_publication import AtomicPublication, AtomicPublicationArtifact
 from services.atomic_publication import (
     get_current_publication,
     read_current_publication_bundle,
     resolve_artifact_snapshot,
 )
 from services.mlb_club_directory import MLB_TEAM_IDS
+from utils.db import db
 
 
 ATOMIC_READS_FLAG = 'SYNC_PIPELINE_ATOMIC_READS_ENABLED'
@@ -26,6 +28,20 @@ class AtomicReadUnavailable(RuntimeError):
 
 
 def publication_reader_coverage(publication_id):
+    publication = db.session.get(AtomicPublication, int(publication_id))
+    if publication is None:
+        return {
+            'complete': False,
+            'publication_id': int(publication_id),
+            'reason': 'publication_missing',
+        }
+    return _cached_publication_reader_coverage(
+        str(db.engine.url), publication.id, publication.publication_fingerprint,
+    )
+
+
+@lru_cache(maxsize=32)
+def _cached_publication_reader_coverage(_database_identity, publication_id, _fingerprint):
     """Validate that one generation can serve every CR-04 reader family."""
     artifacts = AtomicPublicationArtifact.query.filter_by(
         publication_id=int(publication_id),
