@@ -1403,11 +1403,23 @@
       ]
     },
     "4": {
-      "measured_seconds": 508.64,
+      "measured_seconds": 511.49,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sync_pipeline_certification.py",
+          "measured_seconds": 1.2
+        },
+        {
+          "path": "tests/test_sync_certification_migration.py",
+          "measured_seconds": 0.05
+        },
+        {
+          "path": "tests/test_sync_pipeline_full_chain.py",
+          "measured_seconds": 1.6
         },
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",

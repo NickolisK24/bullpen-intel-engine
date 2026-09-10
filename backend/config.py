@@ -181,6 +181,32 @@ class Config:
     DEBUG = False
     TESTING = False
 
+    # SP-14 activation controls. Every new pipeline authority is dormant by
+    # default; production cutover requires explicit, independently validated
+    # configuration. The legacy switches describe current authority and make
+    # duplicate-writer combinations detectable before work starts.
+    SYNC_PIPELINE_ENABLED = os.environ.get('SYNC_PIPELINE_ENABLED', 'false').lower() in (
+        '1', 'true', 'yes', 'on',
+    )
+    SYNC_PIPELINE_SHADOW_MODE = os.environ.get(
+        'SYNC_PIPELINE_SHADOW_MODE', 'false',
+    ).lower() in ('1', 'true', 'yes', 'on')
+    SYNC_PIPELINE_PUBLICATION_ENABLED = os.environ.get(
+        'SYNC_PIPELINE_PUBLICATION_ENABLED', 'false',
+    ).lower() in ('1', 'true', 'yes', 'on')
+    SYNC_PIPELINE_MORNING_ENABLED = os.environ.get(
+        'SYNC_PIPELINE_MORNING_ENABLED', 'false',
+    ).lower() in ('1', 'true', 'yes', 'on')
+    SYNC_PIPELINE_CLOSURE_ENABLED = os.environ.get(
+        'SYNC_PIPELINE_CLOSURE_ENABLED', 'false',
+    ).lower() in ('1', 'true', 'yes', 'on')
+    BASEBALLOS_LEGACY_PUBLICATION_ENABLED = os.environ.get(
+        'BASEBALLOS_LEGACY_PUBLICATION_ENABLED', 'true',
+    ).lower() in ('1', 'true', 'yes', 'on')
+    BASEBALLOS_LEGACY_SCHEDULERS_ENABLED = os.environ.get(
+        'BASEBALLOS_LEGACY_SCHEDULERS_ENABLED', 'true',
+    ).lower() in ('1', 'true', 'yes', 'on')
+
     @staticmethod
     def init_app(app):
         """Per-environment validation/setup hook."""
