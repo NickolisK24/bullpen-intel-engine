@@ -225,12 +225,28 @@ def run_production_shadow_cycle(
         'seed_job_created': seed_created,
         'processed_job_ids': processed,
         'processed_jobs': [
-            {'id': row.id, 'job_type': row.job_name, 'status': row.status,
+            {'id': row.id, 'job_type': row.job_name, 'scope_key': row.scope_key,
+             'parent_job_id': row.parent_job_id, 'status': row.status,
              'sync_run_id': row.sync_run_id, 'result': row.result_json}
             for row in jobs
         ],
         'sync_run_ids': run_ids,
         'source_observation_ids': [row.id for row in observations],
+        'source_observations': [
+            {
+                'id': row.id,
+                'sync_job_id': row.sync_job_id,
+                'sync_run_id': row.sync_run_id,
+                'source_domain': row.subject.source_domain,
+                'subject_type': row.subject.subject_type,
+                'subject_key': row.subject.subject_key,
+                'version_number': row.version_number,
+                'outcome': row.outcome,
+                'completeness': row.completeness,
+                'observed_at': row.observed_at.isoformat(),
+            }
+            for row in observations
+        ],
         'source_fetch_attempt_ids': [
             row.id for row in SourceFetchAttempt.query.filter(
                 SourceFetchAttempt.sync_job_id.in_(processed or [-1])

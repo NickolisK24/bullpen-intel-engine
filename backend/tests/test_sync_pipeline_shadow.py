@@ -120,6 +120,19 @@ def test_shadow_cycle_creates_run_job_and_source_lineage_without_pointer_change(
     assert result['processed_job_ids'] == [result['seed_job_id']]
     assert result['sync_run_ids']
     assert result['source_observation_ids']
+    assert result['processed_jobs'][0]['scope_key'] == '2026-09-09'
+    assert result['source_observations'] == [{
+        'id': result['source_observation_ids'][0],
+        'sync_job_id': result['seed_job_id'],
+        'sync_run_id': result['sync_run_ids'][0],
+        'source_domain': 'schedule',
+        'subject_type': 'date_range',
+        'subject_key': '2026-09-09:2026-09-09',
+        'version_number': 1,
+        'outcome': 'new',
+        'completeness': 'complete',
+        'observed_at': result['source_observations'][0]['observed_at'],
+    }]
     assert SyncRun.query.filter(SyncRun.id.in_(result['sync_run_ids'])).count() == 1
     assert SourceObservation.query.filter(
         SourceObservation.id.in_(result['source_observation_ids'])
