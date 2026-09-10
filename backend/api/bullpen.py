@@ -22,6 +22,7 @@ from models.fatigue_score import FatigueScore
 from models.sync_run import SyncRun
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.atomic_publication_reads import (
+    ATOMIC_READS_FLAG,
     AtomicReadUnavailable,
     resolve_request_atomic_read_context,
 )
@@ -187,7 +188,9 @@ bullpen_bp = Blueprint('bullpen', __name__)
 
 
 def _atomic_read_context():
-    return resolve_request_atomic_read_context()
+    return resolve_request_atomic_read_context(env={
+        ATOMIC_READS_FLAG: current_app.config.get(ATOMIC_READS_FLAG, False),
+    })
 
 
 def _atomic_read_unavailable(exc):

@@ -34,6 +34,7 @@ class FrozenAtomicContext:
 def _app():
     app = Flask(__name__)
     app.config['TESTING'] = True
+    app.config['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = True
     return app
 
 

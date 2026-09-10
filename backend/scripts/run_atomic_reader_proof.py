@@ -82,7 +82,11 @@ def main():
     from models.source_observation import SourceObservation
     from utils.db import db
 
-    app = create_app(os.environ.get('APP_ENV', 'production'))
+    os.environ['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = 'false'
+    legacy_app = create_app(os.environ.get('APP_ENV', 'production'))
+    os.environ['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = 'true'
+    atomic_app = create_app(os.environ.get('APP_ENV', 'production'))
+    app = atomic_app
     with app.app_context():
         pointer = db.session.get(AtomicPublicationCurrent, 1)
         if pointer is None:
@@ -133,10 +137,10 @@ def main():
     # alternating flags request-by-request can therefore leak the legacy
     # resolver result into the following test-client request.
     atomic_results = {
-        name: _request(app.test_client(), path, True) for name, path in paths
+        name: _request(atomic_app.test_client(), path, True) for name, path in paths
     }
     legacy_results = {
-        name: _request(app.test_client(), path, False) for name, path in paths
+        name: _request(legacy_app.test_client(), path, False) for name, path in paths
     }
     cases = []
     atomic_payloads = {}
