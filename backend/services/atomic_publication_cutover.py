@@ -10,6 +10,9 @@ from models.atomic_publication import (
 )
 from models.canonical_impact import CanonicalImpactPlan
 from models.derived_intelligence import DerivedIntelligenceCohort
+from models.final_game_reconciliation import FinalGameMutation, FinalGameVersion
+from models.live_game_delta import LiveGameMutation, ProvisionalPitchingAppearanceState
+from models.source_observation import SourceObservation
 from models.sync_job import SyncJob
 from services.atomic_publication import (
     ALLOWED_AUTHORITIES,
@@ -112,6 +115,126 @@ def _prepublication_health():
         ),
         'atomic_pointer_consistent': signals['publication_pointer_inconsistencies'] == 0,
     }
+
+
+def _current_publication_report():
+    publication_id = _pointer_id()
+    publication = db.session.get(AtomicPublication, publication_id) if publication_id else None
+    if publication is None:
+        return None
+    cohort = db.session.get(DerivedIntelligenceCohort, publication.cohort_id)
+    plan = db.session.get(CanonicalImpactPlan, publication.impact_plan_id)
+    refs = list(plan.mutation_refs if plan is not None else ())
+    final_mutations = []
+    final_version_ids = set()
+    for ref in refs:
+        if ref.mutation_family != 'final_game':
+            continue
+        mutation = db.session.get(FinalGameMutation, ref.source_mutation_id)
+        if mutation is None:
+            continue
+        final_version_ids.add(mutation.final_game_version_id)
+        final_mutations.append({
+            'id': mutation.id,
+            'mutation_type': mutation.mutation_type,
+            'game_pk': mutation.game_pk,
+            'team_id': mutation.team_id,
+            'pitcher_id': mutation.pitcher_id,
+            'source_observation_id': mutation.source_observation_id,
+            'final_game_version_id': mutation.final_game_version_id,
+            'old_appearance_version_id': mutation.old_appearance_version_id,
+            'new_appearance_version_id': mutation.new_appearance_version_id,
+            'created_at': mutation.created_at.isoformat(),
+        })
+    final_versions = []
+    for version_id in sorted(final_version_ids):
+        version = db.session.get(FinalGameVersion, version_id)
+        if version is not None:
+            final_versions.append({
+                'id': version.id,
+                'game_pk': version.game_pk,
+                'version_number': version.version_number,
+                'is_current': version.is_current,
+                'finality_observation_id': version.finality_observation_id,
+                'boxscore_observation_id': version.boxscore_observation_id,
+                'play_by_play_observation_id': version.play_by_play_observation_id,
+                'observed_at': version.observed_at.isoformat(),
+            })
+    observation_ids = sorted(set(
+        (plan.source_observation_ids_json if plan else ()) or ()
+    ) | {
+        value for row in final_versions for value in (
+            row['finality_observation_id'], row['boxscore_observation_id'],
+            row['play_by_play_observation_id'],
+        ) if value is not None
+    })
+    observations = []
+    for observation_id in observation_ids:
+        observation = db.session.get(SourceObservation, observation_id)
+        if observation is not None:
+            observations.append({
+                'id': observation.id,
+                'source_subject_id': observation.source_subject_id,
+                'version_number': observation.version_number,
+                'outcome': observation.outcome,
+                'completeness': observation.completeness,
+                'is_authoritative': observation.is_authoritative,
+                'sync_run_id': observation.sync_run_id,
+                'sync_job_id': observation.sync_job_id,
+                'observed_at': observation.observed_at.isoformat(),
+            })
+    game_ids = list(publication.affected_game_ids_json or ())
+    provisional = ProvisionalPitchingAppearanceState.query.filter(
+        ProvisionalPitchingAppearanceState.game_pk.in_(game_ids),
+    ).order_by(ProvisionalPitchingAppearanceState.id).all() if game_ids else []
+    live_mutations = LiveGameMutation.query.filter(
+        LiveGameMutation.game_pk.in_(game_ids),
+    ).order_by(LiveGameMutation.id).all() if game_ids else []
+    artifacts = AtomicPublicationArtifact.query.filter_by(
+        publication_id=publication.id,
+    ).order_by(AtomicPublicationArtifact.id).all()
+    return {
+        'publication_id': publication.id,
+        'publication_fingerprint': publication.publication_fingerprint,
+        'publication_status': publication.status,
+        'predecessor_publication_id': publication.predecessor_publication_id,
+        'cohort_id': cohort.id if cohort else None,
+        'publication_job_id': cohort.publication_job_id if cohort else None,
+        'impact_plan_id': plan.id if plan else None,
+        'impact_plan_mutation_refs': [{
+            'id': ref.id,
+            'mutation_family': ref.mutation_family,
+            'source_mutation_id': ref.source_mutation_id,
+            'source_mutation_type': ref.source_mutation_type,
+            'source_observation_id': ref.source_observation_id,
+        } for ref in refs],
+        'final_game_versions': final_versions,
+        'final_game_mutations': final_mutations,
+        'source_observations': observations,
+        'artifact_ids': [row.id for row in artifacts],
+        'artifact_count': len(artifacts),
+        'artifact_created_count': publication.artifact_created_count,
+        'artifact_inherited_count': publication.artifact_inherited_count,
+        'source_data_through': publication.source_data_through.isoformat(),
+        'published_at': publication.published_at.isoformat(),
+        'provisional_appearances': [{
+            'id': row.id,
+            'game_pk': row.game_pk,
+            'pitcher_id': row.pitcher_id,
+            'latest_observation_id': row.latest_observation_id,
+            'is_current': row.is_current,
+            'superseded_by_final_game_version_id': row.superseded_by_final_game_version_id,
+            'superseded_at': row.superseded_at.isoformat() if row.superseded_at else None,
+        } for row in provisional],
+        'live_mutations': [{
+            'id': row.id,
+            'game_pk': row.game_pk,
+            'pitcher_id': row.pitcher_id,
+            'mutation_type': row.mutation_type,
+            'source_observation_id': row.source_observation_id,
+            'created_at': row.created_at.isoformat(),
+        } for row in live_mutations],
+    }
     return {
         'status': 'pass' if all(checks.values()) else 'fail',
         'checks': checks,
@@ -145,6 +268,7 @@ def inspect_publication_candidates(*, limit=20):
     return {
         'mode': 'read_only',
         'current_publication_id': _pointer_id(),
+        'current_publication': _current_publication_report(),
         'prepublication_health': _prepublication_health(),
         'eligible_candidates': [row for row in reports if row['eligible']],
         'reviewed_candidates': reports,

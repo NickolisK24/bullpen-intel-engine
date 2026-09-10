@@ -1,6 +1,7 @@
 from flask import Flask
 
 from api import bullpen
+from services import atomic_publication_reads, public_serving_authority
 
 
 class FrozenAtomicContext:
@@ -59,3 +60,19 @@ def test_atomic_route_boundaries_use_frozen_context(monkeypatch):
     assert [kind for kind, _value in context.calls] == [
         'team', 'pitcher', 'game', 'league', 'what_changed',
     ]
+
+
+def test_production_team_board_override_keeps_atomic_boundary(monkeypatch):
+    context = FrozenAtomicContext()
+    monkeypatch.setattr(
+        atomic_publication_reads,
+        'resolve_request_atomic_read_context',
+        lambda **_kwargs: context,
+    )
+    app = _app()
+
+    with app.test_request_context('/api/bullpen/teams/110/board'):
+        response = public_serving_authority.trusted_team_board_view(110)
+
+    assert response.get_json()['atomic_publication']['publication_id'] == 7
+    assert context.calls == [('team', 110)]

@@ -15,6 +15,7 @@ from services.atomic_publication import (
     read_current_publication_bundle,
     resolve_artifact_snapshot,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
 
 
 ATOMIC_READS_FLAG = 'SYNC_PIPELINE_ATOMIC_READS_ENABLED'
@@ -22,6 +23,67 @@ ATOMIC_READS_FLAG = 'SYNC_PIPELINE_ATOMIC_READS_ENABLED'
 
 class AtomicReadUnavailable(RuntimeError):
     pass
+
+
+def publication_reader_coverage(publication_id):
+    """Validate that one generation can serve every CR-04 reader family."""
+    artifacts = AtomicPublicationArtifact.query.filter_by(
+        publication_id=int(publication_id),
+    ).all()
+    present = {
+        'team_board': set(),
+        'team_board_v2': set(),
+        'league_row': set(),
+        'what_changed': set(),
+        'pitcher_current': set(),
+        'game_matchup': set(),
+    }
+    artifact_counts = {'team': 0, 'pitcher': 0, 'game': 0}
+    for artifact in artifacts:
+        if artifact.entity_type not in artifact_counts:
+            continue
+        artifact_counts[artifact.entity_type] += 1
+        snapshot = resolve_artifact_snapshot(artifact)
+        payload = snapshot.payload_json if isinstance(snapshot.payload_json, dict) else {}
+        read_models = payload.get('read_models')
+        read_models = read_models if isinstance(read_models, dict) else {}
+        key = str(artifact.entity_key)
+        if artifact.entity_type == 'team':
+            if isinstance(read_models.get('team_board'), dict):
+                present['team_board'].add(key)
+            if isinstance(read_models.get('team_board_v2'), dict):
+                present['team_board_v2'].add(key)
+            if isinstance(read_models.get('league_row'), dict):
+                present['league_row'].add(key)
+            if isinstance(payload.get('what_changed'), dict):
+                present['what_changed'].add(key)
+        elif artifact.entity_type == 'pitcher':
+            if isinstance(read_models.get('pitcher_current'), dict):
+                present['pitcher_current'].add(key)
+        elif artifact.entity_type == 'game':
+            if isinstance(read_models.get('matchup'), dict):
+                present['game_matchup'].add(key)
+
+    expected_teams = {str(value) for value in MLB_TEAM_IDS}
+    missing = {
+        family: sorted(expected_teams - keys, key=int)
+        for family, keys in present.items()
+        if family in {'team_board', 'team_board_v2', 'league_row', 'what_changed'}
+    }
+    complete = (
+        all(not values for values in missing.values())
+        and artifact_counts['pitcher'] > 0
+        and len(present['pitcher_current']) == artifact_counts['pitcher']
+        and artifact_counts['game'] > 0
+        and len(present['game_matchup']) == artifact_counts['game']
+    )
+    return {
+        'complete': complete,
+        'publication_id': int(publication_id),
+        'artifact_counts': artifact_counts,
+        'ready_counts': {key: len(values) for key, values in present.items()},
+        'missing_team_ids': missing,
+    }
 
 
 def atomic_reads_enabled(env=None):
@@ -95,8 +157,13 @@ class AtomicPublicationReadContext:
         return {**deepcopy(board), 'atomic_publication': self.metadata}
 
     def pitcher(self, pitcher_id):
-        artifact = self.artifact('pitcher', pitcher_id)
-        return {'data': artifact['payload'], 'atomic_publication': self.metadata}
+        payload = self.artifact('pitcher', pitcher_id).get('payload') or {}
+        current = (payload.get('read_models') or {}).get('pitcher_current')
+        if not isinstance(current, dict):
+            raise AtomicReadUnavailable(
+                f'atomic_pitcher_current_unavailable:{pitcher_id}'
+            )
+        return {**deepcopy(current), 'atomic_publication': self.metadata}
 
     def game(self, game_pk):
         payload = self.artifact('game', game_pk).get('payload') or {}
@@ -164,6 +231,9 @@ def resolve_database_atomic_read_context(*, env=None):
     publication = get_current_publication()
     if publication is None:
         raise AtomicReadUnavailable('atomic_current_publication_unavailable')
+    coverage = publication_reader_coverage(publication.id)
+    if not coverage['complete']:
+        raise AtomicReadUnavailable('atomic_publication_reader_coverage_incomplete')
     bundle = {
         'publication_id': publication.id,
         'publication_fingerprint': publication.publication_fingerprint,
@@ -196,5 +266,5 @@ __all__ = [
     'ATOMIC_READS_FLAG', 'AtomicPublicationReadContext', 'AtomicReadUnavailable',
     'atomic_reads_enabled', 'resolve_atomic_read_context',
     'resolve_database_atomic_read_context',
-    'resolve_request_atomic_read_context',
+    'resolve_request_atomic_read_context', 'publication_reader_coverage',
 ]

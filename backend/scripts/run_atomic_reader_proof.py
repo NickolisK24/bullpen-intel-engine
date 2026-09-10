@@ -80,6 +80,7 @@ def main():
     )
     from models.derived_intelligence import DerivedCohortSnapshot
     from models.source_observation import SourceObservation
+    from services.atomic_publication_reads import publication_reader_coverage
     from utils.db import db
 
     os.environ['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = 'false'
@@ -125,6 +126,7 @@ def main():
         }
         publication_id = publication.id
         publication_fingerprint = publication.publication_fingerprint
+        reader_coverage = publication_reader_coverage(publication.id)
 
     # Do not retain an application context across requests. Flask stores `g`
     # on that context, so doing so would incorrectly reuse the first legacy
@@ -173,6 +175,7 @@ def main():
             'mode': 'read_only',
             'publication_id': publication_id,
             'publication_fingerprint': publication_fingerprint,
+            'reader_coverage': reader_coverage,
             'samples': {
                 'team_ids': team_ids, 'pitcher_ids': pitcher_ids, 'game_ids': game_ids,
             },

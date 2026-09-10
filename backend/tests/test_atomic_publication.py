@@ -23,7 +23,10 @@ from services.atomic_publication import (
     read_current_publication_bundle,
     run_atomic_publication_worker_once,
 )
-from services.atomic_publication_reads import resolve_atomic_read_context
+from services.atomic_publication_reads import (
+    publication_reader_coverage,
+    resolve_atomic_read_context,
+)
 from services.sync_jobs import JobScopeType, JobType, enqueue_job
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
@@ -104,6 +107,18 @@ def test_first_publication_is_immutable_generation_and_advances_pointer(app):
     bundle = read_current_publication_bundle()
     assert bundle['publication_id'] == result.publication.id
     assert {row['publication_id'] for row in bundle['artifacts']} == {result.publication.id}
+
+
+def test_reader_coverage_rejects_internal_only_publication_artifacts(app):
+    _plan, cohort = _cohort(marker='z')
+    publication = publish_derived_cohort(cohort.id).publication
+
+    coverage = publication_reader_coverage(publication.id)
+
+    assert coverage['complete'] is False
+    assert coverage['ready_counts']['pitcher_current'] == 0
+    assert coverage['ready_counts']['team_board_v2'] == 0
+    assert coverage['ready_counts']['what_changed'] == 0
 
 
 def test_same_cohort_retry_is_idempotent(app):

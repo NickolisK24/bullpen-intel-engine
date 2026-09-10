@@ -29,7 +29,9 @@ def _bundle(publication_id, marker='one', team_ids=(110, 111)):
             'artifact_type': 'pitcher_intelligence',
             'entity_type': 'pitcher',
             'entity_key': '53',
-            'payload': {'workload': {'marker': marker}},
+            'payload': {'read_models': {
+                'pitcher_current': {'pitcher': {'pitcher_id': 53}, 'marker': marker},
+            }},
         },
         {
             'publication_id': publication_id,
