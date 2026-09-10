@@ -32,6 +32,9 @@ def test_report_is_read_only_and_exposes_exact_failure_evidence():
                 ),
             )
             db.session.add(run)
+            # SyncFailure intentionally has no ORM relationship to SyncRun, so
+            # make the parent durable before PostgreSQL enforces the FK.
+            db.session.flush()
             db.session.add(SyncFailure(
                 sync_run_id=6498,
                 job_name='continuous_cycle',
