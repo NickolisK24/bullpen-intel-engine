@@ -86,6 +86,10 @@ def main():
     legacy_app = create_app(os.environ.get('APP_ENV', 'production'))
     os.environ['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = 'true'
     atomic_app = create_app(os.environ.get('APP_ENV', 'production'))
+    # Config is imported once per process. Set the proof apps explicitly so
+    # each models the corresponding startup configuration.
+    legacy_app.config['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = False
+    atomic_app.config['SYNC_PIPELINE_ATOMIC_READS_ENABLED'] = True
     app = atomic_app
     with app.app_context():
         pointer = db.session.get(AtomicPublicationCurrent, 1)
