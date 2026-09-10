@@ -793,6 +793,10 @@
           "measured_seconds": 0.01
         },
         {
+          "path": "tests/test_atomic_publication_route_boundary.py",
+          "measured_seconds": 0.02
+        },
+        {
           "path": "tests/test_atomic_publication_migration.py",
           "measured_seconds": 0.31
         },

@@ -79,7 +79,7 @@ Exact Render commands, concurrency, and final UTC schedules require a separate r
 ## Current legacy decisions
 
 * Legacy daily, morning, postgame, continuous, incremental intelligence, and publication remain primary.
-* The configured shadow cron remains the legacy CU verifier and is not the certified SP shadow entrypoint.
+* Dedicated cron `crn-da98kclg1s2s739k0870` is the certified recurring SP shadow entrypoint; legacy production schedulers remain primary.
 * Request-time and independently resolved public reads remain a retirement blocker until they consume one SP-11 publication identity.
 * Manual intraday repair remains available; SP-13 is not activated automatically.
 * No legacy code is deleted in this package.
@@ -120,12 +120,17 @@ but was governed through SP-13 request `1` and replacement SP-07 job `996`, whic
 created current final version `192`. Health now distinguishes that resolved dead
 history from blocking dead work.
 
-Publication and consumer cutover still remain fail-closed. The recurring service
-does not yet deploy the CR-04 downstream-reservation commit. Candidate cohort
-`205` is identified, but the latest diagnostic cycle grew the derived backlog,
-there is no atomic current publication, and no public endpoint consumes the SP-11
-bundle. `SYNC_PIPELINE_ATOMIC_READS_ENABLED` defaults false; its request-local
-context resolves the bundle once and rejects mixed or incomplete generations.
-Legacy schedulers, publication, and readers remain authoritative. Exact evidence
-and remaining preconditions are recorded in
+The downstream reservation subsequently drained SP-10 pending work from 115 to
+15 while succeeded work increased from 224 to 327. Production cohort `330` was
+revalidated and controlled workflow run `34526501184` created the first atomic
+publication. Publication `1` contains 1,013 immutable artifacts (30 team, 790
+pitcher, and 193 game), and `atomic_publication_current` now points to it.
+
+That pointer is not public read authority. Generation-wide validation found no
+Team Board v2 payloads, no public What Changed payloads, and no governed public
+pitcher-current payloads. `SYNC_PIPELINE_ATOMIC_READS_ENABLED` therefore remains
+false by default and fails closed if enabled against this incomplete generation.
+Its request-local context resolves the pointer once and rejects mixed-generation
+artifacts. Legacy schedulers, publication, and readers remain authoritative.
+Exact lineage, rollback, and the remaining CR-04 blocker are recorded in
 `CR-04_INTEGRATION_DEPLOYMENT_ATOMIC_PUBLICATION_CUTOVER.md`.

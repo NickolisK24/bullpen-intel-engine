@@ -21,6 +21,11 @@ from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from models.sync_run import SyncRun
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.atomic_publication_reads import (
+    ATOMIC_READS_FLAG,
+    AtomicReadUnavailable,
+    resolve_request_atomic_read_context,
+)
 from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
@@ -102,6 +107,7 @@ from services.public_surface_projections import (
     select_trusted_publication,
 )
 from services.public_delivery import apply_public_delivery_headers
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.snapshot_read_guard import SnapshotReadUnavailable
 from services.tonight_intelligence_snapshot import serve_tonight_cached
 from services.narrative_memory import (
@@ -179,6 +185,20 @@ from services import slate_coverage
 from utils.auth import require_admin_token
 
 bullpen_bp = Blueprint('bullpen', __name__)
+
+
+def _atomic_read_context():
+    return resolve_request_atomic_read_context(env={
+        ATOMIC_READS_FLAG: current_app.config.get(ATOMIC_READS_FLAG, False),
+    })
+
+
+def _atomic_read_unavailable(exc):
+    return jsonify({
+        'status': 'unavailable',
+        'reason_code': str(exc),
+        'atomic_publication': None,
+    }), 503
 
 NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP = 5
 DASHBOARD_SNAPSHOT_BUILD_TOKEN_ENV = 'DASHBOARD_SNAPSHOT_BUILD_TOKEN'
@@ -755,6 +775,13 @@ def _unavailable_pitcher_deployment_context(freshness):
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])
 def get_pitcher_fatigue(pitcher_id):
     """Get detailed fatigue profile for a single pitcher."""
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.pitcher(pitcher_id))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
+
     pitcher = db.session.get(Pitcher, pitcher_id)
     if pitcher is None:
         abort(404)
@@ -2101,6 +2128,13 @@ def get_team_bullpen_board(team_id):
       - include_stale: include stale workload pitchers and roster-status
                        context. Default false.
     """
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.team_board(team_id))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
+
     include_stale = _truthy(request.args.get('include_stale'))
     return jsonify(_build_team_board(team_id, include_stale))
 
@@ -2115,6 +2149,13 @@ def get_team_changes(team_id):
     Raw availability status is not an Arm Read comparison source. Presentation
     only: no ranking, no selection, no recommendation, and no prediction.
     """
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.what_changed(team_id))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
+
     freshness = _board_freshness_block()
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))
 
@@ -2323,6 +2364,13 @@ def compare_team_bullpens():
 @bullpen_bp.route('/matchups/<int:game_pk>', methods=['GET'])
 def get_scheduled_game_matchup(game_pk):
     """Scheduled game identity plus the shared current bullpen comparison."""
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.game(game_pk))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
+
     from services.trusted_compare_authority import trusted_game_matchup_view
     return trusted_game_matchup_view(game_pk)
 
@@ -3497,6 +3545,13 @@ def get_public_trust_projection():
 @bullpen_bp.route('/team-states', methods=['GET'])
 def get_league_team_states():
     """Complete read-only Team State publication listing for active MLB clubs."""
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.league(MLB_TEAM_IDS))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
+
     try:
         return jsonify(build_league_team_state_listing())
     except SnapshotReadUnavailable:

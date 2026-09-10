@@ -19,7 +19,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Mapping
 
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 
 from api.query_params import parse_positive_int_param, query_param_error_response, QueryParamError
 from models.pitcher import Pitcher
@@ -806,6 +806,24 @@ def _unavailable_board(team_id, reason, *, snapshot):
 
 
 def trusted_team_board_view(team_id):
+    from services.atomic_publication_reads import (
+        ATOMIC_READS_FLAG,
+        AtomicReadUnavailable,
+        resolve_request_atomic_read_context,
+    )
+
+    try:
+        context = resolve_request_atomic_read_context(env={
+            ATOMIC_READS_FLAG: current_app.config.get(ATOMIC_READS_FLAG, False),
+        })
+        if context is not None:
+            return jsonify(context.team_board(team_id))
+    except AtomicReadUnavailable as exc:
+        return jsonify({
+            'status': 'unavailable',
+            'reason_code': str(exc),
+            'atomic_publication': None,
+        }), 503
     include_stale = _truthy(request.args.get('include_stale'))
     return jsonify(build_published_team_board(team_id, include_stale=include_stale))
 

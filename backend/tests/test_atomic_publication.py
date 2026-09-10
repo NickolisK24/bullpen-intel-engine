@@ -23,6 +23,10 @@ from services.atomic_publication import (
     read_current_publication_bundle,
     run_atomic_publication_worker_once,
 )
+from services.atomic_publication_reads import (
+    publication_reader_coverage,
+    resolve_atomic_read_context,
+)
 from services.sync_jobs import JobScopeType, JobType, enqueue_job
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
@@ -103,6 +107,18 @@ def test_first_publication_is_immutable_generation_and_advances_pointer(app):
     bundle = read_current_publication_bundle()
     assert bundle['publication_id'] == result.publication.id
     assert {row['publication_id'] for row in bundle['artifacts']} == {result.publication.id}
+
+
+def test_reader_coverage_rejects_internal_only_publication_artifacts(app):
+    _plan, cohort = _cohort(marker='z')
+    publication = publish_derived_cohort(cohort.id).publication
+
+    coverage = publication_reader_coverage(publication.id)
+
+    assert coverage['complete'] is False
+    assert coverage['ready_counts']['pitcher_current'] == 0
+    assert coverage['ready_counts']['team_board_v2'] == 0
+    assert coverage['ready_counts']['what_changed'] == 0
 
 
 def test_same_cohort_retry_is_idempotent(app):
@@ -356,3 +372,44 @@ def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(app):
         assert {row['publication_id'] for row in read_current_publication_bundle()['artifacts']} == {
             get_current_publication().id,
         }
+
+
+def test_team_board_request_stays_on_frozen_generation_postgresql(app):
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL request-generation race contract')
+    _plan, first_cohort = _cohort(
+        marker='x', teams=(110,), pitchers=(), games=(),
+        completed=('team_snapshot',),
+    )
+    first_snapshot = DerivedCohortSnapshot.query.filter_by(
+        cohort_id=first_cohort.id, entity_type='team', entity_key='110',
+    ).one()
+    first_snapshot.payload_json = {'read_models': {
+        'team_board': {'team': {'team_id': 110}, 'marker': 'N'},
+        'league_row': {'team_id': 110, 'marker': 'N'},
+    }}
+    db.session.commit()
+    first = publish_derived_cohort(first_cohort.id).publication
+    frozen = resolve_atomic_read_context(
+        env={'SYNC_PIPELINE_ATOMIC_READS_ENABLED': 'true'},
+    )
+
+    _plan, second_cohort = _cohort(
+        marker='y', teams=(110,), pitchers=(), games=(),
+        completed=('team_snapshot',),
+    )
+    second_snapshot = DerivedCohortSnapshot.query.filter_by(
+        cohort_id=second_cohort.id, entity_type='team', entity_key='110',
+    ).one()
+    second_snapshot.payload_json = {'read_models': {
+        'team_board': {'team': {'team_id': 110}, 'marker': 'N+1'},
+        'league_row': {'team_id': 110, 'marker': 'N+1'},
+    }}
+    db.session.commit()
+    second = publish_derived_cohort(second_cohort.id).publication
+
+    assert first.id != second.id
+    assert get_current_publication().id == second.id
+    assert frozen.publication_id == first.id
+    assert frozen.team_board(110)['marker'] == 'N'
+    assert frozen.league((110,))['teams'][0]['marker'] == 'N'
