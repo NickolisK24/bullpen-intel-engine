@@ -126,6 +126,9 @@ Publication `1` is linked to a natural official correction for game `823413`:
 * source observation `838`, authoritative and complete, version `2`, outcome
   `corrected`, observed at `2026-09-10T19:54:17.054683`;
 * source job `1974`, source SyncRun `8536`, source subject `655`;
+* current final-game version `196`, version number `2`, with boxscore
+  observation `831`, finality observation `837`, and play-by-play observation
+  `838`;
 * final mutation `1881`, subtype `final_play_by_play_corrected`;
 * impact plan `337`;
 * derived cohort `330`;
@@ -140,7 +143,8 @@ from timestamps.
 
 The same natural game has provisional appearance states `37`, `38`, `44`,
 `45`, `46`, `47`, and `48`. They are no longer current and were superseded at
-`2026-09-10T19:41:40.516606` by final-game version `195`. Natural live mutation
+`2026-09-10T19:41:40.516606` by initial final-game version `195`; official
+correction processing then produced current final-game version `196`. Natural live mutation
 evidence includes starter-exit/reliever-entry pairs `151`/`152`, `154`/`155`,
 `158`, and `162` from observations `810`, `812`, `818`, and `822`.
 
