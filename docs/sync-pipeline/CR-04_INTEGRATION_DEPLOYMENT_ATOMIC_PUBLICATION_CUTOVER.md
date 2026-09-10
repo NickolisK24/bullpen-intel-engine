@@ -1,270 +1,296 @@
-# CR-04 Controlled Integration Deployment and Atomic Publication Cutover
+# CR-04 Integration Deployment and Atomic Publication Cutover
 
-## 1. Objective
+## 1. Objective and verdict
 
-CR-04 deploys the reviewed integration branch into a controlled recurring Render
-path, proves production queue execution, and permits SP-11 publication and reader
-cutover only after every publication precondition passes. The resumed proof closed
-the original Render-control blocker, but found a finality defect and a publication
-readiness blocker. Publication and reader cutover remain fail-closed.
+CR-04 remains **BLOCKED**. The recurring Render and queue-fairness gates are
+closed, and the first governed production SP-11 publication now exists. The
+public-reader cutover is correctly withheld because publication 1 does not
+contain the public Team Board v2, What Changed, or public pitcher-current
+artifacts required for a complete generation.
 
-## 2. Starting Integration SHA
+This is a fail-closed result. Atomic reads remain disabled and the legacy
+publication/read path remains public authority. CR-05 has not started.
 
-`63f87feb421eb446fae09d28ab86390ecbbbb8ed`
+## 2. Starting integration SHA and branch
 
-## 3. Production Deployment Before
+The remediation branch `feat/cr04-publication-reader-proof` was created from
+`feat/sync-pipeline` at
+`fe24ad26c41552c9bbee06f0381087d7a566152a`. Main was neither checked out nor
+modified.
 
-The first CR-04 inspection found the API and all primary legacy cron services on
-`main`. The dedicated shadow cron also ran `main` with the legacy
-`shadow_full_chain` command, producing only `kill_switch_disabled` outcomes.
-Legacy scheduling, publication, and public reads were the sole authority.
+## 3. Recurring production execution
 
-## 4. Deployment Strategy and Identity
+The production evidence supplied for this remediation closes the recurrence,
+roster, observation-stability, finality-recovery, and queue-fairness gates:
 
-The existing isolated shadow cron was manually repointed. This preserved its
-production database/config wiring and avoided a second recurring shadow service.
-The API and all legacy primary services were left on `main`.
+* Render cron: `crn-da98kclg1s2s739k0870`
+* branch: `feat/sync-pipeline`
+* schedule: `*/3 * * * *`
+* command: `python backend/scripts/run_sync_pipeline_shadow.py --max-jobs 24 --include-morning --include-continuous-observation`
+* active-roster authority: 30/30
+* 40-man authority: 30/30
+* SP-10 pending: 115 to 15
+* SP-10 succeeded: 224 to 327
 
-Dedicated cron `crn-da98kclg1s2s739k0870` now has:
+CR-02 observation semantics remain healthy. Required historical-finality
+retry/dead work has governed recovery. SP-09 remains bounded. These facts are
+not re-proved by this branch.
 
-* branch `feat/sync-pipeline`;
-* schedule `*/3 * * * *`;
-* command `python backend/scripts/run_sync_pipeline_shadow.py --max-jobs 24 --include-morning --include-continuous-observation`;
-* integration commit `63f87feb421eb446fae09d28ab86390ecbbbb8ed`;
-* original repoint deploy `dep-dahc0pm1egvs73der6r0`;
-* live environment-control deploy `dep-dahc5i15efls73dfnub0`, completed at
-  `2026-09-10T14:46:56Z`.
+## 4. Candidate reselection
 
-Render independently reports the service as unsuspended, auto-deploying from the
-integration branch, and last successful at `2026-09-10T15:33:29Z` during this
-proof window.
+Production workflow run `34525980130` selected cohort `330`, rather than stale
+candidate `205`.
 
-## 5. Recurring Shadow Proof
+| Field | Value |
+| --- | --- |
+| Cohort | `330` |
+| Impact plan | `337` |
+| Authority | `corrected_final` |
+| Baseball date | `2026-09-10` |
+| gamePk | `823413` |
+| Teams | `117`, `143` |
+| Pitchers | `232`, `615` |
+| Source observations | `831`, `838` |
+| Cohort fingerprint | `368747854397d2b0e1272c1b3e5bfdb1039499dd5adcda82b604602e92c8fa2e` |
+| Input-manifest fingerprint | `cf18a04f5b24686723b7e02f3a504633d375c07a0dcc9f351bb12374da0e2188` |
 
-The first scheduled invocation at `14:45Z` failed closed because the runtime
-flags were false. Only the seven documented sync controls were then changed:
+The cohort was complete, current, non-live, had no withheld domains, and had
+five direct candidate snapshots. Its affected scope had no unresolved required
+queue blocker.
 
-* `SYNC_PIPELINE_ENABLED=true`;
-* `SYNC_PIPELINE_SHADOW_MODE=true`;
-* `SYNC_PIPELINE_PUBLICATION_ENABLED=false`;
-* `SYNC_PIPELINE_MORNING_ENABLED=false`;
-* `SYNC_PIPELINE_CLOSURE_ENABLED=false`;
-* `BASEBALLOS_LEGACY_PUBLICATION_ENABLED=true`;
-* `BASEBALLOS_LEGACY_SCHEDULERS_ENABLED=true`.
+## 5. Baseline bootstrap
 
-Subsequent scheduled, non-manual cycles reported entrypoint
-`production-shadow-v2`, code SHA `63f87feb421eb446fae09d28ab86390ecbbbb8ed`,
-configuration fingerprint
-`d8ad84b7cb39adce4fdb2222ca7e144614b3dea2cb7fb20c1af6385c9ce84be9`,
-and no `kill_switch_disabled` result. Qualifying successful completions include:
+SP-11 originally could not create a safe first generation because predecessor
+inheritance was unavailable. The baseline builder now materializes only
+existing, complete SP-10 candidate snapshots:
 
-| Completion UTC | Result | Representative SP-02 work |
-|---|---|---|
-| `2026-09-10T14:48:51Z` | success | jobs `568-579`, 12 final jobs settled |
-| `2026-09-10T14:54:53Z` | success | jobs `592-603`, 12 final jobs settled |
-| `2026-09-10T14:57:44Z` | success | jobs `604-615`, 12 final jobs settled |
-| `2026-09-10T15:00:45Z` | success | jobs `616-627`, 12 final jobs settled |
-| `2026-09-10T15:12:49Z` | success | jobs `676-687`, 12 final jobs settled |
-| `2026-09-10T15:33:26Z` | success | bounded downstream queue progress |
+* one team artifact for every MLB team;
+* one pitcher artifact for every available current pitcher snapshot;
+* one game artifact for every available current matchup snapshot.
 
-The entrypoint's fail-closed assertion proves the runtime flag combination and
-the single migration head `c9d4e6f8a1b2` from inside execution.
+It records each source snapshot/cohort identity, is deterministic and
+idempotent, does not recompute baseball intelligence, and rejects incomplete
+30-team coverage. It does not fabricate source history or mutate canonical
+facts.
 
-## 6. Queue Health and Steady State
+## 6. Pre-publication health
 
-Across the first three successful cycles, `reconcile_final_game` pending work
-fell from `129` to `81`, while each completed final job created its bounded SP-09
-successor. Later cycles continued that conversion. At `15:33Z`, total pending
-work in the visible families stayed constant across the cycle:
+Run `34526238360`, evaluated at `2026-09-10T20:26:52.813992`, passed every
+publication precondition:
 
-* before: pregame `7`, schedule `3`, impact `54`, derived `157`;
-* after: pregame `7`, schedule `3`, impact `66`, derived `145`;
-* retry-wait: `0` after governed repair;
-* stale leases: `0` in captured health;
-* the one durable dead row is resolved audit history, described below.
+| Check | Result |
+| --- | --- |
+| Active roster | 30/30 |
+| 40-man roster | 30/30 |
+| Unreconciled Finals | 0 |
+| Blocking dead work | 0 |
+| Required retry-wait work | 0 |
+| Stale leases | 0 |
+| Pending SP-09 work | 0 |
+| Pending SP-10 work | 0 |
+| Candidate current/complete | PASS |
+| Atomic pointer | null and consistent |
+| Atomic pointer owner | `services.atomic_publication.publish_derived_cohort` only |
 
-That earlier window showed bounded progress, but a later exact-head diagnostic
-cycle exposed a repeatable starvation case. With `max_jobs=24` and morning
-planning enabled, 12 claim slots were reserved for roster work and only the
-remaining 12 used global priority. Continuously replenished priority 10-25
-acquisition jobs could therefore prevent priority 60 derived jobs from being
-claimed. In workflow run `34511020193`, derived pending increased from `88` to
-`93` while derived succeeded remained `215`. Publication was stopped before any
-pointer change.
+## 7. First atomic publication
 
-The runner now retains the 12-slot roster reserve, uses six general slots, and
-guarantees six final downstream slots for `PROCESS_CANONICAL_IMPACT` or
-`PROCESS_DERIVED_INTELLIGENCE`. An empty restricted lane falls back to the full
-safe allowlist, so bounded capacity is not discarded. This correction is not
-production-proven until the recurring Render cron deploys the reviewed CR-04
-head and demonstrates stable consecutive cycles.
+After explicit confirmation, controlled workflow run `34526501184` published
+cohort `330` through SP-11.
 
-## 7. Roster and Observation Health
+| Field | Value |
+| --- | --- |
+| Publication job | `2030` (succeeded) |
+| Publication SyncRun | `8657` |
+| Publication | `1` |
+| Fingerprint | `45c5d0957c8296e9e5b1cd045fd6eb930a74f711ba3670cea67644a0482f27c2` |
+| Predecessor | null |
+| Pointer | null to `1` |
+| Artifact IDs | `1` through `1013` |
+| Newly materialized | 1,013 |
+| Inherited | 0 |
+| Team artifacts | 30 |
+| Pitcher artifacts | 790 |
+| Game artifacts | 193 |
+| Published at | `2026-09-10T20:28:47.981085` |
+| Source data-through | `2026-09-10T19:54:17.054683` |
 
-Every captured recurrent report retained active-roster authority `30/30` and
-40-man authority `30/30`, with no missing, partial, failed, stale, or suspicious
-empty team. Morning authority is rooted at SyncRun `6888` and source observations
-`84-212`.
+The pointer moved only after validation and artifact persistence. The legacy
+public API remained authoritative because atomic reads were false. The
+publication flag was enabled only for the explicitly confirmed controlled
+workflow.
 
-CR-02 semantics also remained intact. The `15:21Z` verification run recorded one
-stale, three duplicate, and three warning observations, with zero blocking
-ambiguities and zero source failures. Continuous SyncRun `7177` remained complete.
+## 8. Natural lineage
 
-## 8. Historical Retry Resolution
+Publication `1` is linked to a natural official correction for game `823413`:
 
-Production evidence identified three rescheduled games whose MLB schedule query
-returned both an original postponed row and a later Final row:
+* source observation `838`, authoritative and complete, version `2`, outcome
+  `corrected`, observed at `2026-09-10T19:54:17.054683`;
+* source job `1974`, source SyncRun `8536`, source subject `655`;
+* final mutation `1881`, subtype `final_play_by_play_corrected`;
+* impact plan `337`;
+* derived cohort `330`;
+* publication job `2030` and publication SyncRun `8657`;
+* publication `1`, now referenced by `atomic_publication_current`.
 
-| Original job | gamePk | Baseball date | Initial state |
-|---|---:|---|---|
-| `550` | `823539` | `2026-08-29` | retry-wait |
-| `584` | `824911` | `2026-08-31` | retry-wait |
-| `637` | `824424` | `2026-09-04` | retry-wait, then dead after attempt 3 |
+The production lineage inspector reports final-version and mutation
+associations directly from the impact-plan references. IDs are not inferred
+from timestamps.
 
-The SP-07 selector had filtered only by gamePk and rejected the two-row response.
-It now also requires the requested baseball date and safe Final classification.
-Workflow run `34494485601` proved jobs `550` and `584` succeeded through SP-07.
+## 9. Live-to-final evidence
 
-The terminal third job was not revived or edited. SP-13 targeted repair request
-`1` dispatched SP-07 job `996`; workflow run `34496255700` completed it at
-`2026-09-10T15:32Z`, creating current final-game version `192` for game `824424`.
-Health retains dead job `637` as immutable audit evidence and links it to
-`resolved_by_job_id=996`; `blocking=false`, `blocking_dead_jobs=0`, and
-`retry_wait_jobs=0`.
+The same natural game has provisional appearance states `37`, `38`, `44`,
+`45`, `46`, `47`, and `48`. They are no longer current and were superseded at
+`2026-09-10T19:41:40.516606` by final-game version `195`. Natural live mutation
+evidence includes starter-exit/reliever-entry pairs `151`/`152`, `154`/`155`,
+`158`, and `162` from observations `810`, `812`, `818`, and `822`.
 
-## 9. Publication Preconditions
+This proves authority supersession. A full production numerical comparison of
+live-derived versus final workload remains an evidence limitation; no production
+state was manufactured to close it.
 
-| Precondition | Verdict | Evidence |
-|---|---|---|
-| Recurring Render integration execution | PASS | dedicated cron and natural three-minute cycles |
-| Exact deployed SHA | PASS | runtime SHA `63f87f...8ed` |
-| At least three successful cycles | PASS | six examples above |
-| Stable bounded queue | PASS with backlog | stage-to-stage progress; no retry growth |
-| Active and 40-man rosters | PASS | `30/30`, no incomplete teams |
-| No dead required work | PASS | job `637` resolved by job `996` and final version `192` |
-| No unreconciled Final | PASS | health count `0` after repair |
-| Naturally complete SP-10 cohort selected for publication | PASS for candidate inspection | cohort `205`, impact plan `210`, game `824794`, source observation `587`; complete final authority with 12 candidate artifacts |
-| Duplicate-writer safety | PASS for pointer ownership | only SP-11 owns `atomic_publication_current`; legacy publication does not write it |
-| Publication-bound consumer and rollback code deployed | BLOCKED | one-lookup backend context exists behind a false-default flag, but the public API remains on `main`, no complete atomic baseline exists, and no current atomic generation exists |
+## 10. Atomic reader boundary
 
-The unstable derived queue and undeployed consumer remain critical failures, so
-publication activation is stopped as required.
+`SYNC_PIPELINE_ATOMIC_READS_ENABLED` defaults false and is frozen into Flask
+configuration at process startup. When enabled, the request boundary:
 
-## 10. First Atomic Publication and Natural Lineage
+1. resolves `atomic_publication_current` once;
+2. validates generation-wide reader coverage once;
+3. freezes the publication context in request-local state;
+4. loads only artifacts associated with that publication;
+5. rejects an artifact whose publication identity differs.
 
-Not attempted. `SYNC_PIPELINE_PUBLICATION_ENABLED` stayed false, every captured
-`publication_pointer_before` and `publication_pointer_after` was null, and health
-still has `current_publication_id=null`. There is no publication, artifact,
-predecessor, or pointer transition to claim.
+The production trusted Team Board override respects this boundary rather than
+silently replacing an atomic response with a legacy snapshot response.
 
-Natural production work reached source/canonical mutation, SP-09 plans, and SP-10
-shadow cohorts before and during CR-04. The required natural
-Final-to-SP-11-to-pointer chain remains blocked at the controlled publication
-checkpoint. Fixture evidence is not substituted for production proof.
+## 11. Reader coverage gate and blocker
 
-## 11. Consumer Audit and Reader Migration
+Production reader proof run `34528840066` inspected publication `1`:
 
-Team Board, Today, league/dashboard, Tonight/matchup, pitcher, What Changed, and
-share reads remain on their established legacy identities. A new
-`SYNC_PIPELINE_ATOMIC_READS_ENABLED` control defaults false. When explicitly
-enabled, `resolve_atomic_read_context()` invokes the SP-11 bundle reader once and
-returns one immutable request-local context for team, pitcher, game, and league
-artifacts. It rejects a mixed generation or a missing required entity instead of
-performing a second current/latest lookup or crossing into legacy state.
+| Requirement | Available |
+| --- | --- |
+| Team baseline artifacts | 30/30 |
+| League rows | 30/30 |
+| Game matchup artifacts | 193 |
+| Team Board v2 payloads | 0/30 |
+| What Changed payloads | 0/30 |
+| Public pitcher-current payloads | 0/790 |
 
-No public handler uses the new context yet. Route cutover remains gated on a
-complete production generation and dual-read parity; enabling a resolver against
-a partial first generation would reduce availability and would not prove league
-coherence.
+The SP-10 snapshots contain internal workload/rest and arm-read evidence, but
+not the governed public pitcher response. Likewise, `read_models.team_board`
+is the older team-board shape, not the public `board-v2` core/details contract,
+and `what_changed` contains summary identity rather than a public payload.
 
-## 12. One-Lookup, Team Board Race, and League Coherence
+Consequently every atomic reader request fails closed with HTTP 503 and
+`atomic_publication_reader_coverage_incomplete`. Coverage is cached only by
+database identity and immutable publication fingerprint, so it is not
+recomputed per artifact request and cannot become stale across a pointer
+transition.
 
-SP-11's internal bundle and the request-local read context are generation-bound.
-Local tests prove that a request bound to publication N continues returning N
-after the supplied current bundle changes to N+1, and that a league read fails
-closed when an expected team artifact is missing. Production consumer proofs
-were not attempted after the checkpoint failed. Therefore:
+## 12. One-lookup and race proof
 
-* the PostgreSQL N-to-N+1 request race remains unproven for public handlers;
-* 30-team atomic-generation coherence remains unproven;
-* production inheritance remains unproven;
-* team, pitcher, game, and league response publication IDs remain unavailable.
+PostgreSQL tests prove that a request bound to publication N continues reading
+N after another transaction advances the singleton pointer to N+1. Artifact
+lookups use the frozen publication ID, never another latest/current query.
 
-These are active CR-04 blockers, not deferred success claims.
+Those same tests prove 30-team league inheritance under one publication and
+reject mixed-publication artifacts. The production generation cannot yet pass
+the public Team Board v2, pitcher, or What Changed coverage gate, so an API
+cutover was not attempted.
 
-## 13. Parity, Request-Time Writes, Share, and Cache
+## 13. Legacy versus atomic comparison
 
-No production dual-read parity window was opened. Legacy responses remain the
-only request-visible baseline. No new request-time authority write was introduced;
-existing legacy builders and mutable compatibility reads remain in use. Existing
-share artifacts remain immutable under their legacy snapshot identity.
+Read-only production dual-read runs compared three teams, five pitchers, two
+games, the league listing, dashboard, and What Changed. Earlier diagnostic
+results showed structural-only game-matchup differences with additive atomic
+metadata and lower observed request time. They also exposed incompatible
+internal pitcher and league payload shapes. The final fail-closed run classifies
+all atomic cases as blockers instead of allowing a partial generation.
 
-No shared SP-11 cache adapter is configured. The governed state remains
-`not_configured`; no cache infrastructure was invented and no cache handoff ran.
+No semantic parity claim is made for the missing reader families. That is the
+precise remaining CR-04 blocker.
 
-## 14. Failure and Recovery Changes
+## 14. Request-time write audit
 
-CR-04 adds bounded health visibility for retry-wait/dead jobs without exposing
-payloads or secrets. A dead final job is operationally nonblocking only when a
-later succeeded SP-07 job for the same game/date exists and a current final
-version is present. The original dead record remains queryable.
+The proof script snapshots publication, artifact, pointer, source-observation,
+and derived-snapshot counts before and after reads. It reports no publication,
+artifact, or pointer writes. The atomic handlers do not create canonical facts,
+repair state, build snapshots, or publish on GET.
 
-The manual `repair_final` workflow creates an SP-13 request, dispatches the SP-07
-owner job, drains only the established non-publishing shadow allowlist, and
-captures read-only health. It requires explicit date, gamePk, reason, and
-`confirm_recovery=RECOVER`. It cannot publish.
+The proof calls the actual Team Board v2 and dashboard routes in addition to
+the v1 compatibility routes, preventing a false pass based only on unused
+surfaces.
 
-## 15. Rollback
+## 15. Public API and deployment decision
 
-The current non-public deployment can be rolled back without data deletion:
+No public API service was moved to this branch and atomic reads were not enabled
+publicly. Deploying the reader flag now would make core product routes return
+503 because the generation lacks required public artifacts. Legacy reads remain
+available and authoritative.
 
-1. Set `SYNC_PIPELINE_PUBLICATION_ENABLED=false` and leave atomic reads disabled.
-2. Set `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false` on the
-   dedicated cron, or repoint/suspend only that cron.
-3. Keep `BASEBALLOS_LEGACY_PUBLICATION_ENABLED=true` and
-   `BASEBALLOS_LEGACY_SCHEDULERS_ENABLED=true`.
-4. Verify the API still resolves the legacy snapshot identity.
-5. Retain all observations, versions, plans, cohorts, repairs, and job evidence.
+## 16. Publication safety and duplicate writers
 
-No migration downgrade, pointer edit, or evidence deletion is required.
+SP-11 is the sole owner of `atomic_publication_current`. Legacy publication may
+continue writing its existing snapshot system but cannot move the SP-11 pointer.
+With atomic reads false, a request uses legacy authority only; when atomic reads
+are eventually enabled, the resolver will not mix in legacy semantic fallbacks.
 
-## 16. Remaining Certification Blockers
+## 17. Second publication and inheritance
 
-1. Deploy the reviewed CR-04 head to the recurring Render cron and prove that the
-   downstream reservation drains rather than grows the impact/derived backlog.
-2. Revalidate selected cohort `205` after queue stability is proven.
-3. Produce the first natural SP-11 publication and atomic pointer transition.
-4. Deploy and enable the single atomic-read control only after a complete
-   generation and parity proof exist.
-5. Prove Team Board N-to-N+1 race safety, league inheritance/coherence, production
-   API publication identity, representative parity, performance, and rollback.
-6. Capture a natural live-to-final supersession if MLB timing provides one.
+No second natural publication was attempted. A second publication cannot fix
+the missing artifact families because the current SP-10 candidate schema does
+not produce them. PostgreSQL inheritance and N-to-N+1 race behavior remain
+covered by integration tests. Publication `1` remains immutable.
 
-These remain CR-04 work. They are not represented as CR-05 work.
+## 18. Performance
 
-## 17. Validation
+An early production diagnostic measured game/matchup atomic reads at roughly
+127-128 ms versus 430-434 ms for legacy reads. The incomplete league-shaped
+atomic response was roughly 1,753 ms versus 446 ms and is not an acceptable
+comparison because its schema was invalid. Team Board and pitcher performance
+cannot be certified until complete public artifacts exist. No misleading final
+median/p95 claim is made from these sparse samples.
 
-Local targeted validation after the finality and health changes:
+## 19. Rollback
 
-* `python -m pytest backend/tests/test_sync_pipeline_certification.py backend/tests/test_final_game_reconciliation.py -q`
-* result: `34 passed, 1 skipped`;
-* atomic reader, publication, certification, and shadow worker focused suite:
-  `45 passed, 2 skipped`;
-* shadow/publication/workflow focused suite after downstream reservation:
-  `182 passed`;
-* `git diff --check`: clean apart from expected Windows line-ending notices.
+Set:
 
-Production/read-only evidence includes Render service/deploy inspection, scheduled
-logs, workflow runs `34493590791`, `34494485601`, `34494945292`, `34495603375`,
-`34496018632`, and `34496255700`, and their retained artifacts. CI status belongs
-to the exact final branch SHA and is recorded in the PR.
+```text
+SYNC_PIPELINE_ATOMIC_READS_ENABLED=false
+SYNC_PIPELINE_PUBLICATION_ENABLED=false
+```
 
-## 18. Verdict
+Restart only the affected services. Reads remain on legacy authority and new
+SP-11 publication stops. Publication `1`, its 1,013 artifacts, the pointer
+history, observations, cohorts, and canonical evidence remain intact. No data
+deletion, migration downgrade, or direct pointer edit is required.
 
-`BLOCKED`. The original Render recurrence blocker is closed, roster and observation
-health remain sound, historical finality debt is governed and resolved, and a
-natural complete cohort is identified. The mandatory publication checkpoint now
-fails because the recurring deployed SHA does not contain the downstream fairness
-fix and its latest diagnostic cycle grew the derived backlog. The public API also
-does not deploy the false-default atomic reader context. Publication and pointer
-activation were correctly not attempted.
+## 20. Validation
+
+Focused local validation at the reader-coverage checkpoint:
+
+* atomic publication/reader/trusted-board suite: 59 passed, 3 skipped;
+* atomic route and reader suite: 26 passed, 3 skipped;
+* bounded coverage tests: 10 passed;
+* proof scripts compile successfully.
+
+Final branch CI must be recorded in the PR before this evidence is treated as a
+merge-ready remediation.
+
+## 21. Remaining blocker
+
+The blocker remains inside CR-04, not CR-05: SP-10/SP-11 must supply immutable,
+publication-bound public artifacts for Team Board v2, What Changed, and pitcher
+current-state responses. Until a first generation has complete public-reader
+coverage, parity and public API cutover cannot be proven safely.
+
+Scheduler retirement, legacy authority retirement, and final production
+authority cutover remain out of scope and belong to CR-05 only after CR-04
+passes.
+
+## 22. CR-04 verdict
+
+**BLOCKED**. Natural production SP-11 publication and atomic pointer transition
+are proven. Atomic request identity, N-to-N+1 freezing, rollback, and
+request-time write safety are implemented. Complete public-reader artifact
+coverage, production parity, and safe public API deployment are not yet proven,
+so atomic reads remain disabled and legacy remains public authority.

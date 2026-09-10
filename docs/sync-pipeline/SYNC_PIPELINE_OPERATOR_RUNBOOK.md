@@ -237,3 +237,36 @@ bounded queue progress, a selected/revalidated current SP-10 cohort, and a
 deployed publication-bound consumer with a tested legacy rollback. A historical
 dead row may remain only when health records a later succeeded owner job and a
 current final version; otherwise it is still blocking.
+
+## Atomic publication reader readiness
+
+Run the read-only atomic reader proof only after a current SP-11 publication
+exists:
+
+```powershell
+python backend/scripts/run_atomic_reader_proof.py
+```
+
+The command must report complete generation-wide coverage and bind every tested
+route to the current publication before `SYNC_PIPELINE_ATOMIC_READS_ENABLED` is
+enabled. Required coverage includes all 30 Team Board v2 and What Changed
+payloads, every published pitcher-current payload, game/matchup artifacts, and
+the 30-team league generation. A 503 with
+`atomic_publication_reader_coverage_incomplete` is a protective block, not a
+reason to add a mutable-latest or legacy fallback inside an atomic request.
+
+Publication `1` is valid immutable SP-11 evidence but is not reader-cutover
+ready: it has baseline team, pitcher, and game artifacts while the Team Board
+v2, What Changed, and public pitcher-current payload families are absent.
+Leave atomic reads false until a later reviewed CR-04 change produces and proves
+those artifacts.
+
+To roll back publication/read experimentation without deleting evidence:
+
+```text
+SYNC_PIPELINE_ATOMIC_READS_ENABLED=false
+SYNC_PIPELINE_PUBLICATION_ENABLED=false
+```
+
+Restart only affected services. Do not edit `atomic_publication_current`
+directly and do not remove publication history.

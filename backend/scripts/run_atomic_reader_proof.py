@@ -133,9 +133,11 @@ def main():
     # request's disabled resolver result for every later atomic request.
     paths = [
         *((f'team:{value}', f'/api/bullpen/teams/{value}/board') for value in team_ids),
+        *((f'team_v2:{value}', f'/api/bullpen/teams/{value}/board-v2') for value in team_ids),
         *((f'pitcher:{value}', f'/api/bullpen/fatigue/{value}') for value in pitcher_ids),
         *((f'game:{value}', f'/api/bullpen/matchups/{value}') for value in game_ids),
         ('league', '/api/bullpen/team-states'),
+        ('dashboard', '/api/bullpen/dashboard'),
         ('what_changed', f'/api/bullpen/teams/{team_ids[0]}/changes'),
     ]
     # Keep the two modes in separate request phases. Some legacy board helpers
