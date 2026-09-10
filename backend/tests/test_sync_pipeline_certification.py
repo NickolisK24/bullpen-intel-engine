@@ -180,6 +180,40 @@ def test_database_health_detects_stale_dead_and_blocked_obligations(app):
     assert health['signals']['current_publication_missing'] == 1
 
 
+def test_database_health_exposes_bounded_retry_job_identity_without_payload(app):
+    now = datetime(2026, 9, 9, 12)
+    job = SyncJob(
+        job_name='reconcile_final_game', job_family='final_game', lane='internal',
+        scope_type='game', scope_key='game:123', product_date=date(2026, 9, 8),
+        status='retry_wait', attempts=2, max_attempts=3, priority=100,
+        available_at=now + timedelta(minutes=5), error_type='ValueError',
+        error_message='authoritative finality response did not contain exactly one game',
+        details_json={'payload': 'not health evidence'},
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    health = collect_operational_health(now=now)
+
+    assert health['signals']['retry_wait_jobs'] == 1
+    assert health['signals']['retry_wait_job_details'] == [{
+        'id': job.id,
+        'job_name': 'reconcile_final_game',
+        'job_family': 'final_game',
+        'scope_type': 'game',
+        'scope_key': 'game:123',
+        'product_date': '2026-09-08',
+        'attempts': 2,
+        'max_attempts': 3,
+        'available_at': (now + timedelta(minutes=5)).isoformat(),
+        'error_type': 'ValueError',
+        'error_message': 'authoritative finality response did not contain exactly one game',
+        'sync_run_id': None,
+        'parent_job_id': None,
+    }]
+    assert 'details_json' not in health['signals']['retry_wait_job_details'][0]
+
+
 def test_legacy_map_covers_every_active_responsibility_and_defers_publication(app):
     rows = legacy_responsibility_map()
     keys = {row['responsibility_key'] for row in rows}

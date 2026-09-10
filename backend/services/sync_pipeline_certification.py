@@ -35,6 +35,7 @@ from utils.time import utc_now_naive
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
 EXPECTED_MIGRATION_HEAD = 'c9d4e6f8a1b2'
+HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {
     'A': 'Schema / Migration',
@@ -299,11 +300,32 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         job_family='sync_pipeline_shadow',
         status='succeeded',
     ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
+    retry_wait_job_details = [
+        {
+            'id': job.id,
+            'job_name': job.job_name,
+            'job_family': job.job_family,
+            'scope_type': job.scope_type,
+            'scope_key': job.scope_key,
+            'product_date': job.product_date.isoformat() if job.product_date else None,
+            'attempts': int(job.attempts or 0),
+            'max_attempts': int(job.max_attempts or 0),
+            'available_at': job.available_at.isoformat() if job.available_at else None,
+            'error_type': job.error_type,
+            'error_message': job.error_message,
+            'sync_run_id': job.sync_run_id,
+            'parent_job_id': job.parent_job_id,
+        }
+        for job in SyncJob.query.filter_by(status='retry_wait')
+        .order_by(SyncJob.available_at.asc(), SyncJob.id.asc())
+        .limit(HEALTH_JOB_DETAIL_LIMIT).all()
+    ]
     signals = {
         'queue_depth_by_status': queue_counts,
         'pending_jobs': queue_counts.get('pending', 0),
         'running_jobs': queue_counts.get('running', 0),
         'retry_wait_jobs': queue_counts.get('retry_wait', 0),
+        'retry_wait_job_details': retry_wait_job_details,
         'dead_jobs': queue_counts.get('dead', 0),
         'stale_leases': SyncJob.query.filter(
             SyncJob.status == 'running', SyncJob.lease_until < now,
