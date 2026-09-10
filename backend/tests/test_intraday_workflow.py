@@ -60,8 +60,12 @@ def test_command_prints_json_and_writes_output():
 
 
 def test_public_sync_job_excludes_intraday():
-    # The publish lane must not run for an intraday dispatch.
-    assert "!(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday')" in _text()
+    # The publish lane must not run for either non-public manual mode.
+    public_sync = _yaml_doc()['jobs']['public-sync']
+    condition = public_sync['if']
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "inputs.mode == 'intraday'" in condition
+    assert "inputs.mode == 'shadow_sp'" in condition
 
 
 def test_expected_cron_schedules_and_none_for_intraday():
