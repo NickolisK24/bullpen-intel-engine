@@ -210,8 +210,22 @@ def test_database_health_exposes_bounded_retry_job_identity_without_payload(app)
         'error_message': 'authoritative finality response did not contain exactly one game',
         'sync_run_id': None,
         'parent_job_id': None,
+        'current_final_version_id': None,
+        'current_final_observed_at': None,
     }]
     assert 'details_json' not in health['signals']['retry_wait_job_details'][0]
+
+    job.status = 'dead'
+    job.completed_at = now
+    db.session.commit()
+    health = collect_operational_health(now=now)
+    assert health['signals']['retry_wait_job_details'] == []
+    assert len(health['signals']['dead_job_details']) == 1
+    detail = health['signals']['dead_job_details'][0]
+    assert detail['id'] == job.id
+    assert detail['scope_key'] == 'game:123'
+    assert detail['current_final_version_id'] is None
+    assert 'details_json' not in detail
 
 
 def test_legacy_map_covers_every_active_responsibility_and_defers_publication(app):

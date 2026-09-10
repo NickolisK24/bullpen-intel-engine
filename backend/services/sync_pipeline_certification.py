@@ -300,8 +300,18 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         job_family='sync_pipeline_shadow',
         status='succeeded',
     ).order_by(SyncJob.completed_at.desc(), SyncJob.id.desc()).first()
-    retry_wait_job_details = [
-        {
+    def job_health_detail(job):
+        current_final = None
+        if job.job_name == 'reconcile_final_game':
+            try:
+                game_pk = int(job.scope_key)
+            except (TypeError, ValueError):
+                game_pk = None
+            if game_pk is not None:
+                current_final = FinalGameVersion.query.filter_by(
+                    game_pk=game_pk, is_current=True,
+                ).order_by(FinalGameVersion.id.desc()).first()
+        return {
             'id': job.id,
             'job_name': job.job_name,
             'job_family': job.job_family,
@@ -315,9 +325,22 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
             'error_message': job.error_message,
             'sync_run_id': job.sync_run_id,
             'parent_job_id': job.parent_job_id,
+            'current_final_version_id': current_final.id if current_final else None,
+            'current_final_observed_at': (
+                current_final.observed_at.isoformat() if current_final else None
+            ),
         }
+
+    retry_wait_job_details = [
+        job_health_detail(job)
         for job in SyncJob.query.filter_by(status='retry_wait')
         .order_by(SyncJob.available_at.asc(), SyncJob.id.asc())
+        .limit(HEALTH_JOB_DETAIL_LIMIT).all()
+    ]
+    dead_job_details = [
+        job_health_detail(job)
+        for job in SyncJob.query.filter_by(status='dead')
+        .order_by(SyncJob.completed_at.desc(), SyncJob.id.desc())
         .limit(HEALTH_JOB_DETAIL_LIMIT).all()
     ]
     signals = {
@@ -327,6 +350,7 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'retry_wait_jobs': queue_counts.get('retry_wait', 0),
         'retry_wait_job_details': retry_wait_job_details,
         'dead_jobs': queue_counts.get('dead', 0),
+        'dead_job_details': dead_job_details,
         'stale_leases': SyncJob.query.filter(
             SyncJob.status == 'running', SyncJob.lease_until < now,
         ).count(),
