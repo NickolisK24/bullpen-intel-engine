@@ -3,9 +3,11 @@ from services.atomic_publication_reads import (
     AtomicReadUnavailable,
     atomic_reads_enabled,
     resolve_atomic_read_context,
+    resolve_request_atomic_read_context,
 )
 
 import pytest
+from flask import Flask
 
 
 def _bundle(publication_id, marker='one', team_ids=(110, 111)):
@@ -34,7 +36,10 @@ def _bundle(publication_id, marker='one', team_ids=(110, 111)):
             'artifact_type': 'game_intelligence',
             'entity_type': 'game',
             'entity_key': '824794',
-            'payload': {'game_context': {'marker': marker}},
+            'payload': {
+                'game_context': {'marker': marker},
+                'read_models': {'matchup': {'game_pk': 824794, 'marker': marker}},
+            },
         },
     ))
     return {
@@ -81,6 +86,32 @@ def test_request_context_cannot_mix_when_current_pointer_changes():
     assert context.team_board(110)['marker'] == 'old'
     assert {row['marker'] for row in context.league((110, 111))['teams']} == {'old'}
     assert context.publication_id == 20
+
+
+def test_flask_request_resolves_current_publication_once():
+    app = Flask(__name__)
+    calls = []
+    current = {'bundle': _bundle(40, marker='old')}
+
+    def reader():
+        calls.append(current['bundle']['publication_id'])
+        return AtomicPublicationReadContext(current['bundle'])
+
+    with app.test_request_context('/api/bullpen/teams/110/board'):
+        first = resolve_request_atomic_read_context(
+            env={'SYNC_PIPELINE_ATOMIC_READS_ENABLED': 'true'},
+            context_reader=lambda **_kwargs: reader(),
+        )
+        current['bundle'] = _bundle(41, marker='new')
+        second = resolve_request_atomic_read_context(
+            env={'SYNC_PIPELINE_ATOMIC_READS_ENABLED': 'true'},
+            context_reader=lambda **_kwargs: reader(),
+        )
+
+        assert first is second
+        assert second.team_board(110)['marker'] == 'old'
+        assert second.game(824794)['marker'] == 'old'
+        assert calls == [40]
 
 
 def test_mixed_or_incomplete_generation_fails_closed():
