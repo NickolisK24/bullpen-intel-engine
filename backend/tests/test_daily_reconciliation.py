@@ -150,6 +150,17 @@ def test_morning_fails_closed_without_exact_team_denominator(app):
     assert SyncJob.query.count() == 0
 
 
+def test_morning_fails_closed_on_duplicate_team_identity(app):
+    client = TeamsClient()
+    client.get_all_teams = lambda: [
+        *[{'id': value} for value in range(101, 131)],
+        {'id': 101},
+    ]
+    with pytest.raises(RuntimeError, match='duplicate team IDs'):
+        plan_morning_reconciliation(DAY, client=client)
+    assert SyncJob.query.count() == 0
+
+
 @pytest.mark.parametrize('state', sorted(RESOLVED_STATES))
 def test_resolved_game_state_matrix(state, app):
     assert game_resolution_state(_game(800000 + len(state), state)) == 'resolved'

@@ -124,7 +124,7 @@ Recurring exact-SHA execution remains blocked until the dedicated Render service
 
 ## 21. Validation
 
-Focused PostgreSQL validation before production proof: `69 passed, 2 skipped` across shadow, SP-05, SP-12, roster-health, and certification tests.
+Focused PostgreSQL validation before production proof: `71 passed, 2 skipped` across shadow, SP-05, SP-12, roster-health, and certification tests.
 
 Final CI and production proof results are recorded after the branch is pushed.
 

@@ -88,7 +88,10 @@ def game_resolution_state(row):
 
 def _team_ids(client):
     teams = client.get_all_teams()
-    values = sorted({int(row['id']) for row in teams if row.get('id') is not None})
+    raw_values = [int(row['id']) for row in teams if row.get('id') is not None]
+    if len(raw_values) != len(set(raw_values)):
+        raise RuntimeError('Official MLB team coverage contains duplicate team IDs.')
+    values = sorted(set(raw_values))
     if len(values) != EXPECTED_MLB_TEAMS:
         raise RuntimeError(
             f'Official MLB team coverage expected {EXPECTED_MLB_TEAMS}, received {len(values)}.'

@@ -5,7 +5,7 @@ from flask import Flask
 
 from services.daily_reconciliation import plan_morning_reconciliation
 from services.roster_authority_health import roster_authority_coverage
-from services.roster_transaction_authority import reconcile_team_roster
+from services.roster_transaction_authority import current_memberships, reconcile_team_roster
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -40,8 +40,9 @@ class Collection:
 
 
 class RosterClient:
-    def __init__(self, partial_team_id=None):
+    def __init__(self, partial_team_id=None, partial_roster_type='active'):
         self.partial_team_id = partial_team_id
+        self.partial_roster_type = partial_roster_type
 
     def get_all_teams(self):
         return [{'id': value} for value in TEAM_IDS]
@@ -56,14 +57,18 @@ class RosterClient:
         }]
         completeness = (
             'partial'
-            if int(team_id) == self.partial_team_id and roster_type == 'active'
+            if int(team_id) == self.partial_team_id
+            and roster_type == self.partial_roster_type
             else 'complete'
         )
         return Collection(rows, completeness)
 
 
-def _seed(*, partial_team_id=None, through=30):
-    client = RosterClient(partial_team_id=partial_team_id)
+def _seed(*, partial_team_id=None, partial_roster_type='active', through=30):
+    client = RosterClient(
+        partial_team_id=partial_team_id,
+        partial_roster_type=partial_roster_type,
+    )
     plan = plan_morning_reconciliation(
         DAY,
         client=client,
@@ -109,7 +114,24 @@ def test_roster_authority_report_fails_closed_at_29_of_30(app):
 
 
 def test_partial_roster_does_not_count_or_clear_prior_authority(app):
+    reconcile_team_roster(
+        130,
+        date(2026, 9, 8),
+        client=RosterClient(),
+        timestamp=datetime(2026, 9, 8, 15),
+        enqueue_downstream=False,
+    )
     _seed(partial_team_id=130)
+    report = roster_authority_coverage(DAY, now=NOW)
+
+    assert report['status'] == 'incomplete'
+    assert report['active_roster_coverage_count'] == 29
+    assert report['partial_team_ids'] == [130]
+    assert len(current_memberships(130)) == 1
+
+
+def test_partial_forty_man_view_blocks_atomic_active_roster_authority(app):
+    _seed(partial_team_id=130, partial_roster_type='40Man')
     report = roster_authority_coverage(DAY, now=NOW)
 
     assert report['status'] == 'incomplete'

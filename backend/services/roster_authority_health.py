@@ -135,6 +135,7 @@ def roster_authority_coverage(
         forty_man = evidence['40Man']
         active_membership_covered = bool(
             active['authoritative']
+            and forty_man['authoritative']
             and (active['record_count'] or 0) > 0
             and current_active_count > 0
         )
@@ -142,11 +143,11 @@ def roster_authority_coverage(
             complete_active.append(team_id)
         elif active['authoritative'] and active['record_count'] == 0:
             suspicious_empty.append(team_id)
-        elif active['status'] == 'failed':
+        elif 'failed' in {active['status'], forty_man['status']}:
             failed.append(team_id)
-        elif active['completeness'] == 'partial':
+        elif 'partial' in {active['completeness'], forty_man['completeness']}:
             partial.append(team_id)
-        elif active['attempt_id'] is None:
+        elif active['attempt_id'] is None or forty_man['attempt_id'] is None:
             missing.append(team_id)
         else:
             stale.append(team_id)
