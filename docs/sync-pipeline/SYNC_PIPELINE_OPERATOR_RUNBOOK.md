@@ -33,6 +33,8 @@ python scripts/run_sync_pipeline_shadow.py --max-jobs 24
 
 The command fails closed unless the database is at the expected Alembic head and the exact shadow safety posture is valid. Its JSON output includes processed job, run, source observation, mutation, impact-plan, and cohort IDs plus publication-pointer before/after values. A nonzero exit indicates a partial or rejected cycle.
 
+Before a permanent Render service is reviewed, the same bounded path can be invoked against the production application database through the manual `shadow_sp` mode of `.github/workflows/baseballos-sync.yml`. That mode skips the public-sync and other legacy workflow jobs, applies additive migrations, runs the allowlisted worker, captures the read-only health report, and retains both JSON artifacts for 30 days. It is not a scheduler and must not be treated as recurrent activation.
+
 Rollback sets `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false`. Leave the two legacy controls true. Existing shadow evidence is retained.
 
 ## Inspect the durable queue

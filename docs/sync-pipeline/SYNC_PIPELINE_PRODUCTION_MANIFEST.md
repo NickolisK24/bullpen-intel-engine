@@ -60,6 +60,8 @@ Read-only Render inspection on 2026-09-09 found these repository-backed services
 
 GitHub Actions remains scheduled at 10:17, 14:23, and 02:11/04:11/06:11 UTC as fallback/reconciliation. No schedule is changed by SP-14 while the verdict is NO-GO.
 
+CR-01 adds a manual-only `shadow_sp` workflow mode. It is isolated from `public-sync` and all other legacy jobs, and it uses job-scoped safe shadow controls. It has no cron trigger. The existing three-minute Render shadow cron remains the legacy CU command and remains kill-switch disabled until a reviewed Render deployment can point to the completed SP entrypoint.
+
 ## Target architecture and cadence
 
 After all certification gates pass:

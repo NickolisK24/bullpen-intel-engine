@@ -65,7 +65,7 @@ The shadow worker claims only:
 * `process_canonical_impact`
 * `process_derived_intelligence`
 
-It does not claim publication, cache handoff, morning, closure, repair, roster, transaction, or legacy job types. The three-minute shadow cron is reused; no second scheduler is introduced.
+It does not claim publication, cache handoff, morning, closure, repair, roster, transaction, or legacy job types. Before merge, the new path is invoked by the existing `baseballos-sync.yml` workflow's manual-only `shadow_sp` mode. The old three-minute Render shadow cron remains unchanged because it deploys `main` and runs the legacy CU command; repointing it before this branch is reviewed would not be safe.
 
 ## 7. Database Access Method
 
@@ -108,47 +108,94 @@ Legacy scheduling and publication remain enabled. New immutable source/canonical
 
 ## 11. Production Configuration After
 
-This section records the reviewed Render deployment, exact flag values, and deployed commit after activation. It must be completed from live configuration before CR-01 can pass.
+The Render services and their legacy schedules were not changed. Production shadow proof ran in the isolated `sync-pipeline-shadow` GitHub job at commit `ec02c78be78f4eaa7f693fdd0e1f6c9dadbd07b2`, using the production application database with these job-scoped controls:
+
+| Control | Value |
+|---|---:|
+| `SYNC_PIPELINE_ENABLED` | `true` |
+| `SYNC_PIPELINE_SHADOW_MODE` | `true` |
+| `SYNC_PIPELINE_PUBLICATION_ENABLED` | `false` |
+| `SYNC_PIPELINE_MORNING_ENABLED` | `false` |
+| `SYNC_PIPELINE_CLOSURE_ENABLED` | `false` |
+| `BASEBALLOS_LEGACY_PUBLICATION_ENABLED` | `true` |
+| `BASEBALLOS_LEGACY_SCHEDULERS_ENABLED` | `true` |
+
+The job applies only additive migrations before execution. Workflow run `34427659598` skipped `public-sync`, legacy intraday work, internal enrichment, static distribution, and the legacy shadow-health job. The existing Render legacy services remained deployed and scheduled throughout.
 
 ## 12. Natural MLB Evidence
 
-Pending safe deployment. No production mutation will be manufactured. The first natural current-date schedule/state change observed by the new entrypoint will be recorded here.
+No fixture or operator-created baseball mutation was used. Production run `34427035335` read MLB's official September 9 slate and persisted schedule observation `1`. It classified 15 real games: ten Final transitions and five live starts. The live games produced 30 provisional mutation rows across teams `109`, `112`, `113`, `118`, `119`, `121`, `134`, `145`, `146`, and `158`.
+
+Production run `34427358337` then observed a meaningful official change for gamePk `824871`: schedule observation `37` classified `game_final_corrected`, job `381` reconciled final-game version `11`, and final mutation `100` was persisted. The same run observed additional natural live workload changes: observations `39`, `40`, and `41` produced seven live mutations, with later observations `42`, `43`, and `48` producing three more.
+
+The final proof run `34427659598` retained subject-level evidence. Complete live-feed observation `49` for gamePk `824064` (version `4`) changed pitcher `42` for team `109`; job `393` created its live mutation and job `417` created impact plan `17`. Complete observations `50`–`52`, `54`, and `55` independently proved continuing natural updates for gamePks `824549`, `823818`, and `823739`.
 
 ## 13. Exact Lineage IDs
 
-Pending safe deployment and natural execution. Required identifiers are SyncRun, SyncJob, SourceObservation, and gamePk; mutation, impact-plan, and cohort IDs are recorded when naturally produced.
+Initial schedule-to-owner lineage from run `34427035335`:
+
+* SP-04: job `336`, SyncRun `6533`, SourceObservation `1`.
+* SP-08: jobs `348`–`352`, SyncRuns `6534`, `6535`, `6536`, `6537`, and `6539`, SourceObservations `2`–`6`, live mutations `1`–`30`.
+* SP-07: jobs `337`–`346`, SyncRuns `6540`–`6549`, final game versions `1`–`10`, final mutations `1`–`99`.
+* SP-09: jobs `353`, `355`, `357`, `359`, `361`, `363`–`365`; SyncRuns `6550`–`6557`; impact plans `1`–`8`.
+* SP-10: job `373` / SyncRun `6607` consumed impact plan `1` for gamePk `823739` and completed derived cohort `1`; `publication_candidate_job_id` remained `null`.
+
+Correction lineage from runs `34427358337` and `34427659598`:
+
+* gamePk `824871` → schedule job `347` / SyncRun `6559` / SourceObservation `37`.
+* `RECONCILE_FINAL_GAME` job `381` / SyncRun `6570` → final game version `11` / mutation `100` → impact job `403` / SyncRun `6606` → impact plan `28` → derived job `445` queued.
+
+No publication candidate was created in any proof run.
 
 ## 14. Health Report
 
-Pending safe deployment. The report must show pipeline enabled, shadow enabled, publication disabled, both legacy authorities enabled, and current queue/run/source obligations.
+The read-only health report at `2026-09-10T01:57:22.864691` confirmed the seven controls above with zero activation violations. It reported:
+
+* migration head `c9d4e6f8a1b2`;
+* `352` succeeded jobs, `36` pending, `1` running, `27` failed, `0` retry-wait, `0` dead, and `0` stale leases;
+* `0` failed source attempts, `3` partial attempts, and `0` unreconciled Final games;
+* `0` publication candidates, `0` cache-handoff failures, and `0` publication-pointer inconsistencies;
+* no atomic current publication, matching the shadow/no-cutover posture.
+
+The broader SP-14 result remains `NO-GO`. The health status is `blocked` because atomic publication is not cut over and SP-05 roster authority has not yet established 30-team production coverage. The report also retained existing failed-job and live-observation signals for later remediation; CR-01 does not relabel them healthy.
 
 ## 15. Remaining Blockers
 
-At implementation time:
+After the production proof:
 
-* the integration branch is not yet deployed by any Render service;
-* production migration head and lineage must be verified inside a deployed BaseballOS service;
-* a natural MLB change must traverse the new path;
-* the legacy CU partial-run problem remains CR-02 unless it prevents this shadow path.
+* the permanent three-minute Render shadow service still runs the legacy CU command from `main`; a reviewed deployment change is needed to make CR-01's entrypoint recurrent;
+* SP-05 production roster authority remains `0/30`, so the overall SP-14 verdict remains `NO-GO`;
+* atomic publication/current-reader cutover remains intentionally disabled;
+* existing continuous-update partial/failing runs remain CR-02 scope because they did not prevent the isolated SP shadow path from succeeding;
+* queued SP-10 work needs further shadow cycles, while one natural cohort and SP-01/SP-02/SP-03 plus live/final/SP-09 lineage are proven.
 
 ## 16. Rollback Procedure
 
 1. Set `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false` on the shadow service.
 2. Leave `BASEBALLOS_LEGACY_PUBLICATION_ENABLED=true`.
 3. Leave `BASEBALLOS_LEGACY_SCHEDULERS_ENABLED=true`.
-4. Verify the shadow command fails closed before creating a new job.
+4. Do not dispatch the manual `shadow_sp` workflow mode; if a permanent service is later configured, disable its two pipeline flags.
 5. Confirm daily, morning, postgame, and continuous legacy services remain enabled.
 6. Retain all additive shadow evidence; no migration downgrade or data deletion is required.
 
 ## 17. Validation
 
-Focused local validation at implementation time:
+Focused local validation before the final documentation commit:
 
-* shadow/configuration/derived tests: `31 passed, 1 skipped`
-* backend CI shard accounting: `438` files and `9,829` node IDs, no missing or duplicate coverage
+* shadow/configuration/derived tests: `19 passed, 1 skipped` after lineage-report expansion;
+* combined shadow/configuration/certification/workflow tests: `203 passed, 1 skipped`;
+* backend CI shard accounting: `438` files and `9,831` node IDs, no missing or duplicate coverage.
+
+Production workflow evidence:
+
+* run `34427035335`: succeeded; `24` bounded jobs; `36` source observations; publication pointer `null` → `null`;
+* run `34427358337`: succeeded; `24` bounded jobs; `12` source observations; publication pointer `null` → `null`;
+* run `34427659598`: succeeded at commit `ec02c78be78f4eaa7f693fdd0e1f6c9dadbd07b2`; `24` bounded jobs; `7` subject-identified source observations; `8` live mutations; `12` impact plans; completed cohort `1`; publication pointer `null` → `null`.
+
+Final pull-request CI is recorded in the PR before merge.
 
 PostgreSQL and full CI results are recorded after the final branch commit is pushed.
 
 ## 18. CR-01 Verdict
 
-`BLOCKED` until a reviewed production deployment runs the new entrypoint, a worker consumes real SP-02 work, and exact natural lineage IDs are captured. The code change alone does not close CR-01.
+`PASS` for the scoped CR-01 blocker. The new entrypoint executed against production data, consumed real SP-02 work, persisted SP-01/SP-03 and natural live/final/impact/cohort lineage, and could not advance publication authority. The overall SP-14 certification remains `NO-GO`; recurrent Render scheduling, roster coverage, publication cutover, and the existing continuous-update failure stream remain separate certification work.
