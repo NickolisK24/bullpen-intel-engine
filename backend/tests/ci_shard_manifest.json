@@ -1403,7 +1403,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 511.49,
+      "measured_seconds": 512.49,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1412,6 +1412,10 @@
         {
           "path": "tests/test_sync_pipeline_certification.py",
           "measured_seconds": 1.2
+        },
+        {
+          "path": "tests/test_sync_pipeline_shadow.py",
+          "measured_seconds": 1.0
         },
         {
           "path": "tests/test_sync_certification_migration.py",

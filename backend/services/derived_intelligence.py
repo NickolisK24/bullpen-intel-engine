@@ -260,7 +260,7 @@ def method_version_manifest(domains):
 
 def execute_derived_intelligence_plan(
     plan_id, *, sync_run_id=None, domain_executor=None, before_revalidate=None,
-    lease_fence=None, commit=True,
+    lease_fence=None, publication_candidate_enabled=True, commit=True,
 ):
     plan = db.session.get(CanonicalImpactPlan, int(plan_id))
     if plan is None:
@@ -386,7 +386,11 @@ def execute_derived_intelligence_plan(
         )
         publication = (
             _enqueue_publication_candidate(cohort, plan)
-            if _publication_eligible(cohort) and getattr(plan, 'publication_mode', 'current') == 'current'
+            if (
+                publication_candidate_enabled
+                and _publication_eligible(cohort)
+                and getattr(plan, 'publication_mode', 'current') == 'current'
+            )
             else None
         )
         if publication is not None:
@@ -577,7 +581,7 @@ class _DefaultDomainExecutor:
         return {'pitcher': pitcher, 'team': team, 'game': game, 'summary': {'appearances': len(rows)}}
 
 
-def execute_derived_intelligence_job(job):
+def execute_derived_intelligence_job(job, *, publication_candidate_enabled=True):
     if job.payload_schema_version != DERIVED_INPUT_PAYLOAD_VERSION:
         raise ValueError(f'Unsupported derived intelligence payload version: {job.payload_schema_version!r}')
     payload = dict(job.details_json or {})
@@ -593,6 +597,7 @@ def execute_derived_intelligence_job(job):
         result = execute_derived_intelligence_plan(
             plan.id,
             sync_run_id=run.id,
+            publication_candidate_enabled=publication_candidate_enabled,
             lease_fence=lambda: heartbeat_job(
                 job.id, worker_id=job.worker_id,
                 claim_token=job.claim_token, commit=False,

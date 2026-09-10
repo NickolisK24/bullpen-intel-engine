@@ -170,6 +170,20 @@ def test_final_plan_creates_one_coherent_candidate_cohort(app):
     assert result.publication_job.details_json['input_manifest'] == result.cohort.input_manifest_json
 
 
+def test_shadow_execution_can_complete_cohort_without_publication_candidate(app):
+    plan = _plan()
+    result = execute_derived_intelligence_plan(
+        plan.id,
+        domain_executor=RecordingExecutor(),
+        publication_candidate_enabled=False,
+    )
+
+    assert result.cohort.status == CohortStatus.COMPLETE.value
+    assert result.publication_job is None
+    assert result.cohort.publication_job_id is None
+    assert SyncJob.query.filter_by(job_name='publish_derived_cohort').count() == 0
+
+
 def test_duplicate_exact_plan_input_and_methods_reuses_cohort_and_job(app):
     plan = _plan()
     first = execute_derived_intelligence_plan(plan.id, domain_executor=RecordingExecutor())

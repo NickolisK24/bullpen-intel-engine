@@ -55,6 +55,7 @@ on:
           - recovery_postgame
           - backfill
           - intraday
+          - shadow_sp
       backfill_date:
         description: >-
           Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
@@ -100,7 +101,7 @@ jobs:
     # The intraday mode is audit-only and never publishes; it runs in the
     # isolated intraday-audit job below and must not trigger any part of this
     # publish-oriented lane (including the always() ledger/snapshot steps).
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday') }}
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.mode == 'intraday' || inputs.mode == 'shadow_sp')) }}
     # Public freshness lane only: acquisition, public derived state, snapshot
     # publication, Tonight warm, appearance ledger audit, and dashboard cache
     # verification. 60 minutes covers the worst case of the step timeouts below
@@ -1415,6 +1416,87 @@ jobs:
         with:
           name: share-artifact-preview-pages-${{ github.run_id }}
           path: frontend/public/share
+          retention-days: 30
+          if-no-files-found: warn
+
+  # Manual-only production shadow execution for the completed sync pipeline.
+  # It upgrades only the additive pipeline schema, consumes the SP-04 through
+  # SP-10 allowlist, and cannot claim publication or legacy work.
+  sync-pipeline-shadow:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'shadow_sp' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run bounded production shadow cycle
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'true'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
+          SYNC_PIPELINE_MORNING_ENABLED: 'false'
+          SYNC_PIPELINE_CLOSURE_ENABLED: 'false'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          cd backend
+          python -m flask --app app db upgrade
+          python scripts/run_sync_pipeline_shadow.py \
+            --max-jobs 24 \
+            --output ../sync-pipeline-shadow-result.json
+
+      - name: Capture read-only pipeline health
+        if: ${{ always() }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'true'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
+          SYNC_PIPELINE_MORNING_ENABLED: 'false'
+          SYNC_PIPELINE_CLOSURE_ENABLED: 'false'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+        run: |
+          set +e
+          cd backend
+          python scripts/run_sync_pipeline_certification.py \
+            --environment production \
+            --expected-sha "$GITHUB_SHA" \
+            --output ../sync-pipeline-shadow-health.json
+          exit 0
+
+      - name: Upload shadow evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-pipeline-shadow-${{ github.run_id }}
+          path: |
+            sync-pipeline-shadow-result.json
+            sync-pipeline-shadow-health.json
           retention-days: 30
           if-no-files-found: warn
 

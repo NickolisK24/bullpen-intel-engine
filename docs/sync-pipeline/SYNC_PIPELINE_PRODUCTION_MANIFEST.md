@@ -9,7 +9,7 @@ This manifest describes the intended SP-00 through SP-14 production architecture
 | Runs | SP-01 | `sync_runs`, `sync_run_scopes` | all pipeline jobs |
 | Queue | SP-02 | `sync_jobs`, `sync_job_attempts` | durable claim, retry, lease, dead letter |
 | Source evidence | SP-03 | `source_subjects`, `source_observations`, `source_fetch_attempts`, `source_payload_artifacts` | source-owner fetch jobs |
-| Game state | SP-04 | `scheduled_games` game-state fields | `FETCH_GAME_STATE`, `RECONCILE_FINAL_GAME` |
+| Game state | SP-04 | `scheduled_games` game-state fields | `FETCH_SCHEDULE`, `RECONCILE_FINAL_GAME` |
 | Roster/transactions | SP-05 | roster intervals/mutations and transaction versions | `FETCH_ROSTER`, `FETCH_TRANSACTIONS` |
 | Pregame | SP-06 | current scheduled-game projection plus context versions/mutations | `FETCH_PREGAME_CONTEXT` |
 | Final game | SP-07 | final game and appearance versions/mutations; `game_logs` compatibility projection | `RECONCILE_FINAL_GAME` |
@@ -60,6 +60,8 @@ Read-only Render inspection on 2026-09-09 found these repository-backed services
 
 GitHub Actions remains scheduled at 10:17, 14:23, and 02:11/04:11/06:11 UTC as fallback/reconciliation. No schedule is changed by SP-14 while the verdict is NO-GO.
 
+CR-01 adds a manual-only `shadow_sp` workflow mode. It is isolated from `public-sync` and all other legacy jobs, and it uses job-scoped safe shadow controls. It has no cron trigger. The existing three-minute Render shadow cron remains the legacy CU command and remains kill-switch disabled until a reviewed Render deployment can point to the completed SP entrypoint.
+
 ## Target architecture and cadence
 
 After all certification gates pass:
@@ -80,6 +82,19 @@ Exact Render commands, concurrency, and final UTC schedules require a separate r
 * Request-time and independently resolved public reads remain a retirement blocker until they consume one SP-11 publication identity.
 * Manual intraday repair remains available; SP-13 is not activated automatically.
 * No legacy code is deleted in this package.
+
+## CR-01 shadow execution boundary
+
+`python backend/scripts/run_sync_pipeline_shadow.py` is the only production shadow entrypoint for the completed SP pipeline. It seeds current-date SP-04 work and drains a bounded SP-02 allowlist:
+
+* `FETCH_SCHEDULE`
+* `FETCH_PREGAME_CONTEXT`
+* `FETCH_LIVE_GAME_DELTA`
+* `RECONCILE_FINAL_GAME`
+* `PROCESS_CANONICAL_IMPACT`
+* `PROCESS_DERIVED_INTELLIGENCE`
+
+SP-10 receives `publication_candidate_enabled=false` in this path. The worker cannot claim `PUBLISH_DERIVED_COHORT`, `HANDOFF_PUBLICATION_CACHE`, morning, or closure jobs. The entrypoint snapshots the SP-11 current pointer before work and fails if it changes. Legacy publication and legacy scheduler controls must remain enabled, or the entrypoint rejects the configuration before planning work.
 
 ## Rollback
 
