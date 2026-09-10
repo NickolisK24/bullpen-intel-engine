@@ -121,9 +121,6 @@ def main():
     # Do not retain an application context across requests. Flask stores `g`
     # on that context, so doing so would incorrectly reuse the first legacy
     # request's disabled resolver result for every later atomic request.
-    client = app.test_client()
-    cases = []
-    atomic_payloads = {}
     paths = [
         *((f'team:{value}', f'/api/bullpen/teams/{value}/board') for value in team_ids),
         *((f'pitcher:{value}', f'/api/bullpen/fatigue/{value}') for value in pitcher_ids),
@@ -131,9 +128,21 @@ def main():
         ('league', '/api/bullpen/team-states'),
         ('what_changed', f'/api/bullpen/teams/{team_ids[0]}/changes'),
     ]
+    # Keep the two modes in separate request phases. Some legacy board helpers
+    # retain an application context while assembling their snapshot response;
+    # alternating flags request-by-request can therefore leak the legacy
+    # resolver result into the following test-client request.
+    legacy_results = {
+        name: _request(app.test_client(), path, False) for name, path in paths
+    }
+    atomic_results = {
+        name: _request(app.test_client(), path, True) for name, path in paths
+    }
+    cases = []
+    atomic_payloads = {}
     for name, path in paths:
-        legacy = _request(client, path, False)
-        atomic = _request(client, path, True)
+        legacy = legacy_results[name]
+        atomic = atomic_results[name]
         atomic_payloads[name] = atomic.get('_payload')
         cases.append({
             'case': name,
