@@ -57,6 +57,8 @@ on:
           - intraday
           - shadow_sp
           - repair_final
+          - inspect_atomic
+          - publish_atomic
       backfill_date:
         description: >-
           Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
@@ -87,6 +89,11 @@ on:
         required: false
         default: ''
         type: string
+      publication_cohort_id:
+        description: SP-10 cohort ID required when mode=publish_atomic.
+        required: false
+        default: ''
+        type: string
 
 # Never let scheduled + manual runs pile up on top of each other.
 concurrency:
@@ -107,7 +114,7 @@ jobs:
     # The intraday mode is audit-only and never publishes; it runs in the
     # isolated intraday-audit job below and must not trigger any part of this
     # publish-oriented lane (including the always() ledger/snapshot steps).
-    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.mode == 'intraday' || inputs.mode == 'shadow_sp' || inputs.mode == 'repair_final')) }}
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.mode == 'intraday' || inputs.mode == 'shadow_sp' || inputs.mode == 'repair_final' || inputs.mode == 'inspect_atomic' || inputs.mode == 'publish_atomic')) }}
     # Public freshness lane only: acquisition, public derived state, snapshot
     # publication, Tonight warm, appearance ledger audit, and dashboard cache
     # verification. 60 minutes covers the worst case of the step timeouts below
@@ -1506,6 +1513,103 @@ jobs:
           path: |
             sync-pipeline-shadow-result.json
             sync-pipeline-shadow-health.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  # Manual-only read of naturally completed SP-10 cohorts. This job cannot
+  # enqueue publication work or move the atomic pointer.
+  sync-pipeline-publication-inspect:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'inspect_atomic' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Inspect eligible publication cohorts
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'true'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+        run: |
+          set -euo pipefail
+          cd backend
+          python scripts/run_atomic_publication_cutover.py inspect \
+            --output ../atomic-publication-candidates.json
+
+      - name: Upload publication candidate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: atomic-publication-candidates-${{ github.run_id }}
+          path: atomic-publication-candidates.json
+          retention-days: 30
+
+  # Manual-only, explicitly confirmed publication of one reviewed cohort. The
+  # process-local legacy flag is off so activation validation cannot authorize
+  # two publication writers; deployed legacy services remain unchanged.
+  sync-pipeline-controlled-publication:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish_atomic' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Publish one reviewed cohort
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SYNC_PIPELINE_ENABLED: 'true'
+          SYNC_PIPELINE_SHADOW_MODE: 'false'
+          SYNC_PIPELINE_PUBLICATION_ENABLED: 'true'
+          BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'false'
+          BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+          PUBLICATION_COHORT_ID: ${{ inputs.publication_cohort_id }}
+          CONFIRM_PUBLICATION: ${{ inputs.confirm_recovery }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM_PUBLICATION" != "PUBLISH" ] || [ -z "$PUBLICATION_COHORT_ID" ]; then
+            echo "::error::publish_atomic requires confirm_recovery=PUBLISH and publication_cohort_id."
+            exit 1
+          fi
+          cd backend
+          python scripts/run_atomic_publication_cutover.py publish \
+            --cohort-id "$PUBLICATION_COHORT_ID" \
+            --confirm "$CONFIRM_PUBLICATION" \
+            --output ../atomic-publication-result.json
+
+      - name: Upload publication evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: atomic-publication-result-${{ github.run_id }}
+          path: atomic-publication-result.json
           retention-days: 30
           if-no-files-found: warn
 

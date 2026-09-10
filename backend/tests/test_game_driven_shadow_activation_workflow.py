@@ -120,15 +120,15 @@ def test_the_manual_modes_include_only_governed_recovery(workflow):
     options = workflow[True]['workflow_dispatch']['inputs']['mode']['options']
     assert options == [
         'recovery_daily', 'recovery_postgame', 'backfill', 'intraday', 'shadow_sp',
-        'repair_final',
+        'repair_final', 'inspect_atomic', 'publish_atomic',
     ]
 
 
 def test_the_manual_inputs_include_recovery_evidence(workflow):
     inputs = workflow[True]['workflow_dispatch']['inputs']
     assert sorted(inputs) == [
-        'backfill_date', 'confirm_recovery', 'mode', 'recovery_reason',
-        'repair_game_pk', 'scheduled_for',
+        'backfill_date', 'confirm_recovery', 'mode', 'publication_cohort_id',
+        'recovery_reason', 'repair_game_pk', 'scheduled_for',
     ]
 
 
@@ -819,7 +819,8 @@ def test_the_expected_jobs_exist(workflow):
     assert sorted(workflow['jobs']) == sorted([
         'public-sync', SHADOW_JOB, 'internal-enrichment',
         'static-team-story-preview', 'sync-pipeline-shadow', 'intraday-audit',
-        'sync-pipeline-final-repair', 'team-state-vnext-proof',
+        'sync-pipeline-final-repair', 'sync-pipeline-publication-inspect',
+        'sync-pipeline-controlled-publication', 'team-state-vnext-proof',
     ])
 
 
@@ -995,7 +996,7 @@ def test_the_mitigation_did_not_add_a_schedule(workflow):
 def test_the_mitigation_preserves_only_governed_manual_modes(workflow):
     assert workflow[True]['workflow_dispatch']['inputs']['mode']['options'] == [
         'recovery_daily', 'recovery_postgame', 'backfill', 'intraday', 'shadow_sp',
-        'repair_final',
+        'repair_final', 'inspect_atomic', 'publish_atomic',
     ]
 
 
