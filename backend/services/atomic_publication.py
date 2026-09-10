@@ -243,6 +243,15 @@ def first_publication_baseline_specs(cohort):
         key = (snapshot.snapshot_type, snapshot.entity_type, snapshot.entity_key)
         if key in selected:
             continue
+        payload = snapshot.payload_json if isinstance(snapshot.payload_json, dict) else {}
+        read_models = payload.get('read_models') if isinstance(payload.get('read_models'), dict) else {}
+        if snapshot.entity_type == 'team' and not (
+            isinstance(read_models.get('team_board'), dict)
+            and isinstance(read_models.get('league_row'), dict)
+        ):
+            continue
+        if snapshot.entity_type == 'game' and not isinstance(read_models.get('matchup'), dict):
+            continue
         source_cohort = cohort_cache.get(snapshot.cohort_id)
         if source_cohort is None:
             source_cohort = db.session.get(DerivedIntelligenceCohort, snapshot.cohort_id)
@@ -268,13 +277,40 @@ def first_publication_baseline_specs(cohort):
             'payload_fingerprint': _fingerprint(snapshot.payload_json),
         }
 
+    reader_ready = {}
+    for spec in selected.values():
+        snapshot = db.session.get(DerivedCohortSnapshot, spec['source_snapshot_id'])
+        payload = snapshot.payload_json if snapshot and isinstance(snapshot.payload_json, dict) else {}
+        read_models = payload.get('read_models') if isinstance(payload.get('read_models'), dict) else {}
+        reader_ready[spec['key']] = (
+            spec['key'][1] == 'pitcher'
+            or (
+                spec['key'][1] == 'team'
+                and isinstance(read_models.get('team_board'), dict)
+                and isinstance(read_models.get('league_row'), dict)
+            )
+            or (
+                spec['key'][1] == 'game'
+                and isinstance(read_models.get('matchup'), dict)
+            )
+        )
     team_ids = {
         int(spec['key'][2]) for spec in selected.values()
-        if spec['key'][1] == 'team' and str(spec['key'][2]).isdigit()
+        if (
+            spec['key'][1] == 'team'
+            and str(spec['key'][2]).isdigit()
+            and reader_ready[spec['key']]
+        )
     }
     missing_teams = sorted(set(MLB_TEAM_IDS) - team_ids)
-    pitcher_count = sum(spec['key'][1] == 'pitcher' for spec in selected.values())
-    game_count = sum(spec['key'][1] == 'game' for spec in selected.values())
+    pitcher_count = sum(
+        spec['key'][1] == 'pitcher' and reader_ready[spec['key']]
+        for spec in selected.values()
+    )
+    game_count = sum(
+        spec['key'][1] == 'game' and reader_ready[spec['key']]
+        for spec in selected.values()
+    )
     if missing_teams:
         raise PublicationValidationError(
             'first_publication_team_coverage_incomplete:'

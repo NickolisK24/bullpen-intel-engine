@@ -57,18 +57,31 @@ def _candidate(marker='a', status='complete'):
     db.session.add(cohort)
     db.session.flush()
     for kind, key in (('game', 777123), ('team', 110), ('pitcher', 10)):
+        payload = {f'{kind}_snapshot': {'marker': marker}}
+        if kind == 'team':
+            payload['read_models'] = {
+                'team_board': {'team_id': key}, 'league_row': {'team_id': key},
+            }
+        elif kind == 'game':
+            payload['read_models'] = {'matchup': {'game_pk': key}}
         db.session.add(DerivedCohortSnapshot(
             cohort_id=cohort.id, entity_type=kind, entity_key=str(key),
             snapshot_type=f'{kind}_intelligence', baseball_date=cohort.baseball_date,
             authority_class='final', payload_schema_version=1,
-            payload_json={f'{kind}_snapshot': {'marker': marker}},
+            payload_json=payload,
         ))
     for team_id in sorted(set(MLB_TEAM_IDS) - {110}):
         db.session.add(DerivedCohortSnapshot(
             cohort_id=cohort.id, entity_type='team', entity_key=str(team_id),
             snapshot_type='team_intelligence', baseball_date=cohort.baseball_date,
             authority_class='final', payload_schema_version=1,
-            payload_json={'team_snapshot': {'marker': marker, 'team_id': team_id}},
+            payload_json={
+                'team_snapshot': {'marker': marker, 'team_id': team_id},
+                'read_models': {
+                    'team_board': {'team_id': team_id},
+                    'league_row': {'team_id': team_id},
+                },
+            },
         ))
     db.session.commit()
     return cohort
