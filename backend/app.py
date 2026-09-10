@@ -211,6 +211,9 @@ def create_app(config_name=None):
     from models.repair_request import (
         RepairRequest, RepairRequestBlocker, RepairRequestChunk,
     )
+    from models.sync_certification import (
+        SyncCertificationCheck, SyncCertificationRun, SyncLegacyTransitionState,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

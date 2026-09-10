@@ -678,9 +678,15 @@ def _latest_comparable_cohort(plan):
     target_games = set(plan.affected_game_ids_json or ())
     target_teams = set(plan.affected_team_ids_json or ())
     target_pitchers = set(plan.affected_pitcher_ids_json or ())
-    rows = DerivedIntelligenceCohort.query.filter_by(
-        authority_class=plan.authority_class,
-    ).filter(
+    comparable_authorities = (
+        (AuthorityClass.FINAL.value, AuthorityClass.CORRECTED_FINAL.value)
+        if plan.authority_class in (
+            AuthorityClass.FINAL.value, AuthorityClass.CORRECTED_FINAL.value,
+        )
+        else (plan.authority_class,)
+    )
+    rows = DerivedIntelligenceCohort.query.filter(
+        DerivedIntelligenceCohort.authority_class.in_(comparable_authorities),
         DerivedIntelligenceCohort.status.in_((
             CohortStatus.COMPLETE.value, CohortStatus.PARTIAL.value,
         ))

@@ -359,8 +359,14 @@ def evaluate_date_closure(baseball_date):
         if cohort is None:
             blockers.append(_blocker('pending_derived_cohort', 'impact_plan', plan_id))
             continue
-        publication = AtomicPublication.query.filter_by(
-            cohort_id=cohort.id, status='published',
+        # A publication that was current and later superseded by a corrected
+        # generation remains valid immutable evidence that this plan completed
+        # its publication obligation. Requiring status=published here makes a
+        # normal correction invalidate the predecessor plan forever and blocks
+        # the date from reclosing even though SP-11 preserved its lineage.
+        publication = AtomicPublication.query.filter(
+            AtomicPublication.cohort_id == cohort.id,
+            AtomicPublication.status.in_(('published', 'superseded')),
         ).order_by(AtomicPublication.id.desc()).first()
         if publication is None:
             blockers.append(_blocker('pending_publication', 'cohort', cohort.id))
