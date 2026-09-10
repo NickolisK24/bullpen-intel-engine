@@ -20,11 +20,13 @@ from services.atomic_publication import (
     validate_publication_cohort,
 )
 from services.derived_intelligence import enqueue_publication_candidate
+from services.sync_pipeline_certification import collect_operational_health
 from services.sync_jobs import JobType
 from utils.db import db
 
 
 ACTIVE_JOB_STATUSES = ('pending', 'running', 'retry_wait')
+PREPUBLICATION_IMPACT_BACKLOG_LIMIT = 24
 
 
 def _pointer_id():
@@ -87,6 +89,46 @@ def _candidate_report(cohort, *, include_baseline=False):
     }
 
 
+def _prepublication_health():
+    health = collect_operational_health()
+    signals = health['signals']
+    roster = signals['roster_authority']
+    required_retry_wait = sum(
+        bool(row.get('blocking')) for row in signals['retry_wait_job_details']
+    )
+    pending_derived = SyncJob.query.filter_by(
+        job_name=JobType.PROCESS_DERIVED_INTELLIGENCE.value,
+        status='pending',
+    ).count()
+    checks = {
+        'active_roster_30_of_30': roster['active_roster_coverage_count'] == 30,
+        'forty_man_30_of_30': roster['forty_man_coverage_count'] == 30,
+        'unreconciled_finals_zero': signals['unreconciled_final_games'] == 0,
+        'blocking_dead_jobs_zero': signals['blocking_dead_jobs'] == 0,
+        'required_retry_wait_jobs_zero': required_retry_wait == 0,
+        'stale_leases_zero': signals['stale_leases'] == 0,
+        'impact_backlog_bounded': (
+            signals['pending_impact_plans'] <= PREPUBLICATION_IMPACT_BACKLOG_LIMIT
+        ),
+        'atomic_pointer_consistent': signals['publication_pointer_inconsistencies'] == 0,
+    }
+    return {
+        'status': 'pass' if all(checks.values()) else 'fail',
+        'checks': checks,
+        'active_roster_coverage_count': roster['active_roster_coverage_count'],
+        'forty_man_coverage_count': roster['forty_man_coverage_count'],
+        'unreconciled_final_games': signals['unreconciled_final_games'],
+        'blocking_dead_jobs': signals['blocking_dead_jobs'],
+        'required_retry_wait_jobs': required_retry_wait,
+        'stale_leases': signals['stale_leases'],
+        'pending_impact_plans': signals['pending_impact_plans'],
+        'pending_derived_jobs': pending_derived,
+        'current_publication_id': signals['current_publication_id'],
+        'pointer_writer': 'services.atomic_publication.publish_derived_cohort',
+        'measured_at': signals['measured_at'],
+    }
+
+
 def inspect_publication_candidates(*, limit=20):
     rows = DerivedIntelligenceCohort.query.filter(
         DerivedIntelligenceCohort.status == 'complete',
@@ -103,6 +145,7 @@ def inspect_publication_candidates(*, limit=20):
     return {
         'mode': 'read_only',
         'current_publication_id': _pointer_id(),
+        'prepublication_health': _prepublication_health(),
         'eligible_candidates': [row for row in reports if row['eligible']],
         'reviewed_candidates': reports,
     }
