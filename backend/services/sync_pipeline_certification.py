@@ -312,6 +312,7 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
                 current_final = FinalGameVersion.query.filter_by(
                     game_pk=game_pk, is_current=True,
                 ).order_by(FinalGameVersion.id.desc()).first()
+            if game_pk is not None and job.completed_at is not None:
                 resolved_by_job = SyncJob.query.filter(
                     SyncJob.job_name == job.job_name,
                     SyncJob.scope_type == job.scope_type,
