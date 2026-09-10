@@ -1569,9 +1569,22 @@ jobs:
           from services.repair_orchestration import run_repair_worker_once
 
           with app.app_context():
-              job = run_repair_worker_once('github-final-repair-dispatch')
+              run_repair_worker_once('github-final-repair-dispatch')
+          PY
+          python - <<'PY'
+          from app import app
+          from services.final_game_reconciliation import execute_final_game_job
+          from services.sync_jobs import JobType, run_next_job
+
+          with app.app_context():
+              job = run_next_job(
+                  'github-final-repair-owner',
+                  {JobType.RECONCILE_FINAL_GAME.value: execute_final_game_job},
+                  job_types=[JobType.RECONCILE_FINAL_GAME],
+                  lease_seconds=300,
+              )
               if job is None:
-                  raise SystemExit('No SP-13 repair planner job was available.')
+                  raise SystemExit('No governed SP-07 repair job was available.')
           PY
           python scripts/run_sync_pipeline_shadow.py \
             --max-jobs 24 \
