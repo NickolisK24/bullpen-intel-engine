@@ -1489,6 +1489,20 @@ jobs:
             --output ../sync-pipeline-shadow-health.json
           exit 0
 
+      - name: Capture continuous observation failure evidence
+        if: ${{ always() }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+        run: |
+          cd backend
+          python scripts/inspect_continuous_observation_runs.py \
+            6498 6499 6500 \
+            --output ../continuous-observation-run-audit.json
+
       - name: Upload shadow evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -1497,6 +1511,7 @@ jobs:
           path: |
             sync-pipeline-shadow-result.json
             sync-pipeline-shadow-health.json
+            continuous-observation-run-audit.json
           retention-days: 30
           if-no-files-found: warn
 
