@@ -101,3 +101,19 @@ SP-10 receives `publication_candidate_enabled=false` in this path. SP-12 morning
 ## Rollback
 
 Set every `SYNC_PIPELINE_*` control to false. Leave the additive evidence tables intact. Keep or restore `BASEBALLOS_LEGACY_PUBLICATION_ENABLED=true` and `BASEBALLOS_LEGACY_SCHEDULERS_ENABLED=true`. Confirm the established Render daily/morning/postgame/continuous services and GitHub fallback remain enabled. A rollback never deletes observations, canonical versions, cohorts, publications, closures, or repair history.
+
+## CR-04 deployment gate
+
+Read-only inspection on 2026-09-10 reconfirmed that the dedicated three-minute
+shadow cron (`crn-da98kclg1s2s739k0870`) deploys `main` and runs the legacy
+`shadow_full_chain` command. Ten observed invocations returned
+`kill_switch_disabled` with no SyncRun or source request. The connected Render
+API cannot change an existing service's branch/start command or attach the
+existing secret group to a newly created branch-specific cron, and browser
+control was unavailable. No replacement service was created.
+
+The publication and consumer cutover remains fail-closed. There is no atomic
+current publication in the latest production evidence, no public endpoint uses
+the SP-11 bundle, and all legacy schedulers/readers remain authoritative. The
+exact blocked evidence and next control-plane requirement are recorded in
+`CR-04_INTEGRATION_DEPLOYMENT_ATOMIC_PUBLICATION_CUTOVER.md`.

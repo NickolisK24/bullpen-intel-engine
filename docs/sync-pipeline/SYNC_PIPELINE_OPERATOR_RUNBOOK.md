@@ -191,3 +191,25 @@ For a Final, inspect SP-04 state, SP-07 version, mutation references, and active
 6. Record the incident and open a bounded repair if authority work was interrupted.
 
 SP-14 does not perform this cutover because the current certification verdict is NO-GO.
+
+## Controlled integration deployment preflight
+
+Before any atomic publication or reader cutover, verify all of the following
+against the actual Render service rather than repository intent:
+
+1. The dedicated shadow service reports `branch=feat/sync-pipeline` and the
+   reviewed exact commit in `RENDER_GIT_COMMIT`.
+2. Its command is
+   `python backend/scripts/run_sync_pipeline_shadow.py --max-jobs 24 --include-morning --include-continuous-observation`.
+3. Existing database and secret-group wiring remains attached without printing
+   values.
+4. Publication, morning, and closure controls remain false during the first
+   three recurring cycles; both legacy controls remain true.
+5. Those cycles create SyncRuns, consume SP-02 jobs, preserve 30/30 roster
+   authority, drain rather than grow the bounded queue, and leave
+   `atomic_publication_current` unchanged.
+
+If the available control plane cannot repoint the existing service while
+preserving its environment wiring, stop. Do not create an unconfigured second
+cron, enable publication, or move readers. Record the deployment gate as
+blocked and leave legacy authority intact.
