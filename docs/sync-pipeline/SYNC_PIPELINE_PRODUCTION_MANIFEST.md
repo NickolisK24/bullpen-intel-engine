@@ -36,6 +36,7 @@ All new controls default to false:
 * `SYNC_PIPELINE_ENABLED`
 * `SYNC_PIPELINE_SHADOW_MODE`
 * `SYNC_PIPELINE_PUBLICATION_ENABLED`
+* `SYNC_PIPELINE_ATOMIC_READS_ENABLED`
 * `SYNC_PIPELINE_MORNING_ENABLED`
 * `SYNC_PIPELINE_CLOSURE_ENABLED`
 
@@ -96,7 +97,7 @@ Exact Render commands, concurrency, and final UTC schedules require a separate r
 * `PROCESS_CANONICAL_IMPACT`
 * `PROCESS_DERIVED_INTELLIGENCE`
 
-SP-10 receives `publication_candidate_enabled=false` in this path. SP-12 morning planning explicitly records but suppresses publication and closure obligations. The worker cannot claim `PUBLISH_DERIVED_COHORT`, `HANDOFF_PUBLICATION_CACHE`, morning orchestration, or closure jobs. Twelve of the 24 default claim slots are reserved for roster/transaction work so the 30-team sweep drains across bounded cycles. The entrypoint snapshots the SP-11 current pointer before work and fails if it changes. Legacy publication and legacy scheduler controls must remain enabled, or the entrypoint rejects the configuration before planning work.
+SP-10 receives `publication_candidate_enabled=false` in this path. SP-12 morning planning explicitly records but suppresses publication and closure obligations. The worker cannot claim `PUBLISH_DERIVED_COHORT`, `HANDOFF_PUBLICATION_CACHE`, morning orchestration, or closure jobs. Twelve of the 24 default claim slots are reserved for roster/transaction work so the 30-team sweep drains across bounded cycles. Six of the remaining slots are reserved for canonical-impact/derived work so recurring higher-priority acquisition cannot starve SP-09/SP-10; an empty restricted lane falls back to the complete safe allowlist. The entrypoint snapshots the SP-11 current pointer before work and fails if it changes. Legacy publication and legacy scheduler controls must remain enabled, or the entrypoint rejects the configuration before planning work.
 
 ## Rollback
 
@@ -120,9 +121,11 @@ created current final version `192`. Health now distinguishes that resolved dead
 history from blocking dead work.
 
 Publication and consumer cutover still remain fail-closed. The recurring service
-does not yet deploy the CR-04 repair commit, its downstream backlog has not yielded
-a selected/revalidated first current cohort, there is no atomic current
-publication, and no public endpoint consumes the SP-11 bundle. Legacy schedulers,
-publication, and readers remain authoritative. Exact evidence and remaining
-preconditions are recorded in
+does not yet deploy the CR-04 downstream-reservation commit. Candidate cohort
+`205` is identified, but the latest diagnostic cycle grew the derived backlog,
+there is no atomic current publication, and no public endpoint consumes the SP-11
+bundle. `SYNC_PIPELINE_ATOMIC_READS_ENABLED` defaults false; its request-local
+context resolves the bundle once and rejects mixed or incomplete generations.
+Legacy schedulers, publication, and readers remain authoritative. Exact evidence
+and remaining preconditions are recorded in
 `CR-04_INTEGRATION_DEPLOYMENT_ATOMIC_PUBLICATION_CUTOVER.md`.

@@ -197,6 +197,11 @@ For a Final, inspect SP-04 state, SP-07 version, mutation references, and active
 5. Verify the public legacy publication identity and freshness endpoint.
 6. Record the incident and open a bounded repair if authority work was interrupted.
 
+For atomic-reader rollback, explicitly set both
+`SYNC_PIPELINE_ATOMIC_READS_ENABLED=false` and
+`SYNC_PIPELINE_PUBLICATION_ENABLED=false`. Existing SP-11 manifests and
+artifacts remain immutable; no database downgrade or evidence deletion is needed.
+
 SP-14 does not perform this cutover because the current certification verdict is NO-GO.
 
 ## Controlled integration deployment preflight
@@ -215,6 +220,10 @@ against the actual Render service rather than repository intent:
 5. Those cycles create SyncRuns, consume SP-02 jobs, preserve 30/30 roster
    authority, drain rather than grow the bounded queue, and leave
    `atomic_publication_current` unchanged.
+
+The queue proof must include SP-09/SP-10 progress. A cycle that drains live or
+pregame acquisition while `process_derived_intelligence` grows is not stable
+enough for publication, even when the overall worker result is `success`.
 
 The repoint gate was satisfied on 2026-09-10 for cron
 `crn-da98kclg1s2s739k0870`, deploy `dep-dahc5i15efls73dfnub0`, and SHA

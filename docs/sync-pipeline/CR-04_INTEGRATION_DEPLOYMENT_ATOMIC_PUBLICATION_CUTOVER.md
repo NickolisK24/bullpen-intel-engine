@@ -83,9 +83,21 @@ work in the visible families stayed constant across the cycle:
 * stale leases: `0` in captured health;
 * the one durable dead row is resolved audit history, described below.
 
-This is bounded progress rather than uncontrolled growth: 12 derived jobs were
-consumed while existing obligations advanced between stages. The queue is not
-yet drained, so production publication remains premature.
+That earlier window showed bounded progress, but a later exact-head diagnostic
+cycle exposed a repeatable starvation case. With `max_jobs=24` and morning
+planning enabled, 12 claim slots were reserved for roster work and only the
+remaining 12 used global priority. Continuously replenished priority 10-25
+acquisition jobs could therefore prevent priority 60 derived jobs from being
+claimed. In workflow run `34511020193`, derived pending increased from `88` to
+`93` while derived succeeded remained `215`. Publication was stopped before any
+pointer change.
+
+The runner now retains the 12-slot roster reserve, uses six general slots, and
+guarantees six final downstream slots for `PROCESS_CANONICAL_IMPACT` or
+`PROCESS_DERIVED_INTELLIGENCE`. An empty restricted lane falls back to the full
+safe allowlist, so bounded capacity is not discarded. This correction is not
+production-proven until the recurring Render cron deploys the reviewed CR-04
+head and demonstrates stable consecutive cycles.
 
 ## 7. Roster and Observation Health
 
@@ -131,11 +143,12 @@ Health retains dead job `637` as immutable audit evidence and links it to
 | Active and 40-man rosters | PASS | `30/30`, no incomplete teams |
 | No dead required work | PASS | job `637` resolved by job `996` and final version `192` |
 | No unreconciled Final | PASS | health count `0` after repair |
-| Naturally complete SP-10 cohort selected for publication | BLOCKED | downstream backlog remains; no current cohort was selected and revalidated as the first complete generation |
+| Naturally complete SP-10 cohort selected for publication | PASS for candidate inspection | cohort `205`, impact plan `210`, game `824794`, source observation `587`; complete final authority with 12 candidate artifacts |
 | Duplicate-writer safety | PASS for pointer ownership | only SP-11 owns `atomic_publication_current`; legacy publication does not write it |
-| Publication-bound consumer and rollback code deployed | BLOCKED | public API remains on `main` and legacy readers; no current atomic generation exists |
+| Publication-bound consumer and rollback code deployed | BLOCKED | one-lookup backend context exists behind a false-default flag, but the public API remains on `main`, no complete atomic baseline exists, and no current atomic generation exists |
 
-The two critical failures stopped publication activation as required.
+The unstable derived queue and undeployed consumer remain critical failures, so
+publication activation is stopped as required.
 
 ## 10. First Atomic Publication and Natural Lineage
 
@@ -152,18 +165,24 @@ checkpoint. Fixture evidence is not substituted for production proof.
 ## 11. Consumer Audit and Reader Migration
 
 Team Board, Today, league/dashboard, Tonight/matchup, pitcher, What Changed, and
-share reads remain on their established legacy identities. The SP-11
-`read_current_publication_bundle()` primitive resolves one pointer and generation,
-but no public handler uses it because no complete current atomic generation exists.
+share reads remain on their established legacy identities. A new
+`SYNC_PIPELINE_ATOMIC_READS_ENABLED` control defaults false. When explicitly
+enabled, `resolve_atomic_read_context()` invokes the SP-11 bundle reader once and
+returns one immutable request-local context for team, pitcher, game, and league
+artifacts. It rejects a mixed generation or a missing required entity instead of
+performing a second current/latest lookup or crossing into legacy state.
 
-`SYNC_PIPELINE_ATOMIC_READS_ENABLED` was intentionally not introduced or enabled.
-The required order is generation first, dual-read parity second, then the
-one-lookup reader and rollback control. Implementing a resolver against a null or
-unproven generation would weaken availability rather than prove coherence.
+No public handler uses the new context yet. Route cutover remains gated on a
+complete production generation and dual-read parity; enabling a resolver against
+a partial first generation would reduce availability and would not prove league
+coherence.
 
 ## 12. One-Lookup, Team Board Race, and League Coherence
 
-SP-11's internal bundle remains generation-bound, but production consumer proofs
+SP-11's internal bundle and the request-local read context are generation-bound.
+Local tests prove that a request bound to publication N continues returning N
+after the supplied current bundle changes to N+1, and that a league read fails
+closed when an expected team artifact is missing. Production consumer proofs
 were not attempted after the checkpoint failed. Therefore:
 
 * the PostgreSQL N-to-N+1 request race remains unproven for public handlers;
@@ -211,13 +230,12 @@ No migration downgrade, pointer edit, or evidence deletion is required.
 
 ## 16. Remaining Certification Blockers
 
-1. Merge/redeploy the reviewed rescheduled-final selector and terminal-job
-   observability into the recurring integration service.
-2. Drain/reconcile the bounded impact/derived backlog and select a naturally
-   complete current SP-10 cohort for the first controlled publication.
+1. Deploy the reviewed CR-04 head to the recurring Render cron and prove that the
+   downstream reservation drains rather than grows the impact/derived backlog.
+2. Revalidate selected cohort `205` after queue stability is proven.
 3. Produce the first natural SP-11 publication and atomic pointer transition.
-4. Implement and deploy the single atomic-read control only after that generation
-   exists.
+4. Deploy and enable the single atomic-read control only after a complete
+   generation and parity proof exist.
 5. Prove Team Board N-to-N+1 race safety, league inheritance/coherence, production
    API publication identity, representative parity, performance, and rollback.
 6. Capture a natural live-to-final supersession if MLB timing provides one.
@@ -230,6 +248,10 @@ Local targeted validation after the finality and health changes:
 
 * `python -m pytest backend/tests/test_sync_pipeline_certification.py backend/tests/test_final_game_reconciliation.py -q`
 * result: `34 passed, 1 skipped`;
+* atomic reader, publication, certification, and shadow worker focused suite:
+  `45 passed, 2 skipped`;
+* shadow/publication/workflow focused suite after downstream reservation:
+  `182 passed`;
 * `git diff --check`: clean apart from expected Windows line-ending notices.
 
 Production/read-only evidence includes Render service/deploy inspection, scheduled
@@ -240,8 +262,9 @@ to the exact final branch SHA and is recorded in the PR.
 ## 18. Verdict
 
 `BLOCKED`. The original Render recurrence blocker is closed, roster and observation
-health remain sound, and historical finality debt is governed and resolved. The
-mandatory publication checkpoint still fails because a complete natural current
-cohort has not been selected/revalidated and the public API has no deployed
-atomic-generation reader. Publication, pointer activation, and reader migration
-were correctly not attempted.
+health remain sound, historical finality debt is governed and resolved, and a
+natural complete cohort is identified. The mandatory publication checkpoint now
+fails because the recurring deployed SHA does not contain the downstream fairness
+fix and its latest diagnostic cycle grew the derived backlog. The public API also
+does not deploy the false-default atomic reader context. Publication and pointer
+activation were correctly not attempted.
