@@ -369,6 +369,10 @@
         {
           "path": "tests/test_adaptive_game_state.py",
           "measured_seconds": 1.6
+        },
+        {
+          "path": "tests/test_migration_authority.py",
+          "measured_seconds": 0.0
         }
       ]
     },

@@ -1468,6 +1468,7 @@ jobs:
           BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
           BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
           SYNC_PIPELINE_DEPLOY_SHA: ${{ github.sha }}
+          DATABASE_MIGRATION_MODE: verify_only
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -1475,7 +1476,7 @@ jobs:
             exit 1
           fi
           cd backend
-          python -m flask --app app db upgrade
+          python -m scripts.database_migrations verify
           python scripts/run_sync_pipeline_shadow.py \
             --max-jobs 24 \
             --include-morning \
@@ -1693,6 +1694,7 @@ jobs:
           BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
           BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
           SYNC_PIPELINE_DEPLOY_SHA: ${{ github.sha }}
+          DATABASE_MIGRATION_MODE: verify_only
           REPAIR_GAME_PK: ${{ inputs.repair_game_pk }}
           REPAIR_DATE: ${{ inputs.backfill_date }}
           REPAIR_REASON: ${{ inputs.recovery_reason }}
@@ -1705,7 +1707,7 @@ jobs:
             exit 1
           fi
           cd backend
-          python -m flask --app app db upgrade
+          python -m scripts.database_migrations verify
           python scripts/run_sync_repair.py targeted \
             --start-date "$REPAIR_DATE" \
             --domain final_game \

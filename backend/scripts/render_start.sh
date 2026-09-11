@@ -12,6 +12,9 @@
 #
 # Fail-closed contract
 # --------------------
+# Explicit DATABASE_MIGRATION_MODE is required unless exact emergency skip is active.
+# Only owner may upgrade; verify_only checks the head without schema mutation.
+# SKIP_STARTUP_MIGRATIONS=true remains an API-only emergency override.
 #   * `set -euo pipefail` + no error suppression means a failed migration exits
 #     this script non-zero and the server is NEVER started.
 #   * The migration error from Flask-Migrate / Alembic is written to stderr,
@@ -49,15 +52,14 @@ cd "${BACKEND_DIR}"
 # application factory.
 export FLASK_APP="${FLASK_APP:-app.py}"
 
-echo "[render_start] Applying database migrations: flask db upgrade"
-flask db upgrade
-echo "[render_start] Database migrations applied successfully."
+python -m scripts.database_migrations startup
 
 echo "[render_start] Preparing Daily Edition for the current trusted publication."
 python -m scripts.prepare_daily_edition_snapshot
 echo "[render_start] Daily Edition preparation completed successfully."
 
-# Start the production server only after migrations succeed. An explicit server
+# Start the server only after the schema authority decision and Daily Edition
+# succeed. An explicit server
 # command passed as arguments is exec'd verbatim; otherwise fall back to the
 # documented gunicorn invocation bound to Render's $PORT (default 10000). exec
 # replaces this shell so the server process receives signals directly.

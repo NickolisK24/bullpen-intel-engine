@@ -31,6 +31,7 @@ import models.prospect  # noqa: F401
 SLATE = date(2026, 9, 9)
 NOW = datetime(2026, 9, 9, 14, 0)
 SAFE_ENV = {
+    'DATABASE_MIGRATION_MODE': 'verify_only',
     'SYNC_PIPELINE_ENABLED': 'true',
     'SYNC_PIPELINE_SHADOW_MODE': 'true',
     'SYNC_PIPELINE_PUBLICATION_ENABLED': 'false',
@@ -259,7 +260,8 @@ def test_manual_production_workflow_isolated_from_public_and_legacy_jobs():
         'SYNC_PIPELINE_DEPLOY_SHA': '${{ github.sha }}',
         **SAFE_ENV,
     }
-    assert 'flask --app app db upgrade' in step['run']
+    assert 'db upgrade' not in step['run']
+    assert 'scripts.database_migrations verify' in step['run']
     assert 'run_sync_pipeline_shadow.py' in step['run']
     assert '--include-continuous-observation' in step['run']
     assert '--include-morning' in step['run']

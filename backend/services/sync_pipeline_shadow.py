@@ -12,7 +12,7 @@ from datetime import datetime
 import os
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 
 from models.atomic_publication import AtomicPublicationCurrent
 from models.canonical_impact import CanonicalImpactPlan
@@ -48,6 +48,9 @@ from services.sync_pipeline_certification import (
     ActivationControls,
     EXPECTED_MIGRATION_HEAD,
     validate_activation_controls,
+)
+from services.migration_authority import (
+    MigrationAuthorityError, read_current_heads, require_verify_only, verify_heads,
 )
 from utils.db import db
 from utils.time import utc_now_naive
@@ -87,12 +90,7 @@ class ShadowConfigurationError(RuntimeError):
 
 
 def current_migration_heads():
-    return tuple(
-        row[0]
-        for row in db.session.execute(
-            text('SELECT version_num FROM alembic_version ORDER BY version_num')
-        ).all()
-    )
+    return read_current_heads(db.engine)
 
 
 def validate_shadow_controls(controls):
@@ -114,15 +112,20 @@ def validate_shadow_controls(controls):
 
 
 def assert_shadow_ready(*, env=None, migration_head_reader=current_migration_heads):
-    controls = ActivationControls.from_environment(env or os.environ)
+    env = os.environ if env is None else env
+    try:
+        require_verify_only(env)
+    except MigrationAuthorityError as exc:
+        raise ShadowConfigurationError(str(exc)) from exc
+    controls = ActivationControls.from_environment(env)
     violations = validate_shadow_controls(controls)
     if violations:
         raise ShadowConfigurationError(','.join(violations))
-    heads = tuple(migration_head_reader())
-    if heads != (EXPECTED_MIGRATION_HEAD,):
-        raise ShadowConfigurationError(
-            f'expected_migration_head_{EXPECTED_MIGRATION_HEAD}_got_{heads!r}'
-        )
+    try:
+        heads = tuple(migration_head_reader())
+        verify_heads(heads, EXPECTED_MIGRATION_HEAD)
+    except MigrationAuthorityError as exc:
+        raise ShadowConfigurationError(str(exc)) from exc
     return controls
 
 

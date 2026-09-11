@@ -85,6 +85,11 @@ def main(argv=None):
         allow_large = args.confirm_broad_scope
 
     with app.app_context():
+        from services.migration_authority import require_verify_only, verify_heads
+        from services.sync_pipeline_shadow import current_migration_heads
+        from services.sync_pipeline_certification import EXPECTED_MIGRATION_HEAD
+        require_verify_only()
+        verify_heads(current_migration_heads(), EXPECTED_MIGRATION_HEAD)
         result = submit_repair_request(
             mode=mode, source_domain=domain,
             baseball_date_start=start_date, baseball_date_end=end_date,

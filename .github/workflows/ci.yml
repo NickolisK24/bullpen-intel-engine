@@ -38,6 +38,7 @@ jobs:
       APP_ENV: development
       AUTO_SYNC: 'false'
       FLASK_APP: app.py
+      DATABASE_MIGRATION_MODE: owner
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_migration_test
     steps:
       - uses: actions/checkout@v4
