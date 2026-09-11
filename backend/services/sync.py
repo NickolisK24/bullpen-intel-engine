@@ -1185,6 +1185,22 @@ def _upsert_game_log_from_authoritative_values(
 ):
     from services.semantic_write_fencing import lock_game, owns_final_projection
     from models.final_game_reconciliation import FinalGameVersion
+    # A clean prefetched row can prove that this attempt has no write to make.
+    # Even if another owner has since corrected it, doing nothing cannot restore
+    # the cached version. Any proposed mutation still re-reads under exclusion.
+    if (existing is not _OPTIONAL_INPUT_NOT_PROVIDED and existing is not None
+            and not db.session.is_modified(existing)
+            and not owns_final_projection(game_pk)):
+        cached_plan = game_log_reconciliation.plan_row(
+            existing=existing, values=values, stats=stats,
+            include_leverage_index=include_leverage_index,
+            appearance_team=appearance_team, game_pk=game_pk,
+            pitcher_mlb_id=getattr(pitcher, 'mlb_id', None),
+            local_pitcher_id=getattr(pitcher, 'id', None),
+        )
+        if cached_plan['action'] == game_log_reconciliation.ACTION_UNCHANGED:
+            return {'status': 'unchanged', 'log': existing,
+                    'changed_fields': [], 'plan': cached_plan}
     lock_game(game_pk)
     # Re-read after exclusion even when a caller supplied a cached ORM row.
     existing = GameLog.query.filter_by(

@@ -295,6 +295,14 @@ suppression alone does not block health; unresolved projection disagreement does
 
 ## 17. Remaining limitations
 
+The first completed full CI run on the live-handoff fix found one daily-ingestion
+query-budget regression: refreshing every unchanged prefetched appearance added
+per-row reads. Clean cached no-op plans now return without a write; any proposed
+mutation still refreshes and checks ownership under the game fence. The 64-test
+PostgreSQL daily/shared-writer suite passed after this correction. An additional
+PostgreSQL regression proved that a cached no-op cannot restore an older pitch
+count after another transaction commits a correction. Full CI must pass again.
+
 This document does not yet claim PASS. Full CI, exact deployment/migration
 verification, bounded governed correction of recurring roster projections, and
 natural post-deployment recurrence remain outstanding. Older binaries cannot
