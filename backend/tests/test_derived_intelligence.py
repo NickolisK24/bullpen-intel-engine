@@ -170,6 +170,50 @@ def test_final_plan_creates_one_coherent_candidate_cohort(app):
     assert result.publication_job.details_json['input_manifest'] == result.cohort.input_manifest_json
 
 
+def test_public_read_families_are_separate_immutable_candidate_artifacts(app):
+    plan = _plan(domains=(
+        'pitcher_snapshot', 'team_snapshot', 'read_models', 'what_changed',
+    ))
+
+    class PublicArtifactExecutor(RecordingExecutor):
+        def __call__(self, domain, snapshots):
+            self.calls.append(domain)
+            if domain == 'read_models':
+                return {
+                    'team': {'110': {'read_models': {
+                        'team_board': {'team_id': 110},
+                        'league_row': {'team_id': 110},
+                        'team_board_v2': {
+                            'full': {'active_bullpen': {'arms': [{'pitcher_id': 10}]}},
+                            'core': {}, 'details': {},
+                        },
+                    }}},
+                    'pitcher': {'10': {'read_models': {
+                        'pitcher_current': {'pitcher': {'id': 10}},
+                    }}},
+                    'summary': {},
+                }
+            if domain == 'what_changed':
+                return {
+                    'team': {'110': {'what_changed': {'team_id': 110}}},
+                    'summary': {},
+                }
+            return super().__call__(domain, snapshots)
+
+    result = execute_derived_intelligence_plan(
+        plan.id, domain_executor=PublicArtifactExecutor(),
+    )
+    rows = DerivedCohortSnapshot.query.filter_by(cohort_id=result.cohort.id).all()
+    by_type = {row.snapshot_type: row for row in rows}
+
+    assert 'team_board_v2_publication' in by_type
+    assert 'pitcher_current_publication' in by_type
+    assert 'what_changed_publication' in by_type
+    assert 'team_board_v2' not in by_type['team_intelligence'].payload_json['read_models']
+    assert 'pitcher_current' not in by_type['pitcher_intelligence'].payload_json['read_models']
+    assert 'what_changed' not in by_type['team_intelligence'].payload_json
+
+
 def test_shadow_execution_can_complete_cohort_without_publication_candidate(app):
     plan = _plan()
     result = execute_derived_intelligence_plan(

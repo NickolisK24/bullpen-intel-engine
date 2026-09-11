@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -126,8 +127,8 @@ METHOD_VERSIONS = {
     'team_snapshot': 'derived-candidate-v1',
     'game_context': 'sp06-context-v1',
     'matchup_context': 'existing-matchup-v1',
-    'read_models': 'cu06-shadow-v1',
-    'what_changed': '2026-06-19.v1',
+    'read_models': 'cu06-publication-artifacts-v2',
+    'what_changed': 'what-changed-publication-v1',
 }
 
 
@@ -453,10 +454,30 @@ class _DefaultDomainExecutor:
 
     def _read_result(self):
         if 'read_result' not in self.cache:
-            self.cache['read_result'] = rebuild_read_model_impact(self._team_result())
+            self.cache['read_result'] = rebuild_read_model_impact(
+                self._team_result(),
+                publication_artifact_baseline=self._publication_baseline_required(),
+                build_publication_artifacts=True,
+                predecessor_cohort_id=(
+                    self.cache.get('predecessor_cohort_id')
+                    or getattr(_latest_comparable_cohort(self.plan), 'id', None)
+                ),
+            )
             if self.cache['read_result'].status != 'complete':
                 raise RuntimeError(self.cache['read_result'].reason_code)
         return self.cache['read_result']
+
+    def _publication_baseline_required(self):
+        """Materialize full reader coverage until one complete generation exists."""
+        if 'publication_baseline_required' not in self.cache:
+            from services.atomic_publication import get_current_publication
+            from services.atomic_publication_reads import publication_reader_coverage
+
+            current = get_current_publication()
+            self.cache['publication_baseline_required'] = (
+                current is None or not publication_reader_coverage(current.id).get('complete')
+            )
+        return self.cache['publication_baseline_required']
 
     def _workload(self, domain):
         result = self._workload_result()
@@ -491,9 +512,18 @@ class _DefaultDomainExecutor:
                 'team': {
                     str(k): {domain: {
                         'team_board': result.team_board_results.get(k),
+                        'team_board_v2': result.team_board_v2_results.get(k),
                         'league_row': result.league_row_results.get(k),
                     }}
-                    for k in set(result.team_board_results) | set(result.league_row_results)
+                    for k in (
+                        set(result.team_board_results)
+                        | set(result.team_board_v2_results)
+                        | set(result.league_row_results)
+                    )
+                },
+                'pitcher': {
+                    str(k): {domain: {'pitcher_current': value}}
+                    for k, value in result.pitcher_current_results.items()
                 },
                 'game': {
                     str(k): {domain: {
@@ -508,6 +538,13 @@ class _DefaultDomainExecutor:
                 },
             }
         return {
+            'team': (
+                {
+                    str(k): {'what_changed': value}
+                    for k, value in result.what_changed_results.items()
+                }
+                if domain == 'what_changed' else {}
+            ),
             'summary': {
                 'domain': domain,
                 'derived_by': 'cu06_shadow_package',
@@ -774,12 +811,39 @@ def _merge_snapshots(target, result):
 def _persist_snapshots(cohort, snapshots):
     for entity_type, values in snapshots.items():
         for entity_key, payload in values.items():
+            payload = deepcopy(payload)
+            specialized = []
+            read_models = payload.get('read_models')
+            if isinstance(read_models, dict):
+                if entity_type == 'team' and isinstance(read_models.get('team_board_v2'), dict):
+                    specialized.append((
+                        'team_board_v2_publication',
+                        {'read_models': {'team_board_v2': read_models.pop('team_board_v2')}},
+                    ))
+                if entity_type == 'pitcher' and isinstance(read_models.get('pitcher_current'), dict):
+                    specialized.append((
+                        'pitcher_current_publication',
+                        {'read_models': {'pitcher_current': read_models.pop('pitcher_current')}},
+                    ))
+            if entity_type == 'team' and isinstance(payload.get('what_changed'), dict):
+                specialized.append((
+                    'what_changed_publication',
+                    {'what_changed': payload.pop('what_changed')},
+                ))
             db.session.add(DerivedCohortSnapshot(
                 cohort_id=cohort.id, entity_type=entity_type,
                 entity_key=str(entity_key), snapshot_type=f'{entity_type}_intelligence',
                 baseball_date=cohort.baseball_date, authority_class=cohort.authority_class,
                 payload_schema_version=1, payload_json=payload,
             ))
+            for snapshot_type, specialized_payload in specialized:
+                db.session.add(DerivedCohortSnapshot(
+                    cohort_id=cohort.id, entity_type=entity_type,
+                    entity_key=str(entity_key), snapshot_type=snapshot_type,
+                    baseball_date=cohort.baseball_date,
+                    authority_class=cohort.authority_class,
+                    payload_schema_version=1, payload_json=specialized_payload,
+                ))
 
 
 def _result_summary(result):

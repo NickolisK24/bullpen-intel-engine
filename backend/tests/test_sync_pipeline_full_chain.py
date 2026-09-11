@@ -15,6 +15,7 @@ from services.canonical_impact import plan_canonical_impact
 from services.daily_reconciliation import check_baseball_date_closure
 from services.derived_intelligence import execute_derived_intelligence_plan
 from services.final_game_reconciliation import reconcile_final_game
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.repair_orchestration import plan_repair_request, submit_repair_request
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.test_final_game_reconciliation import (
@@ -39,6 +40,47 @@ def app():
 
 def _domain_executor(plan):
     def execute(domain, _snapshots):
+        team_ids = (
+            MLB_TEAM_IDS
+            if domain in ('team_snapshot', 'read_models', 'what_changed')
+            else plan.affected_team_ids_json
+        )
+        if domain == 'read_models':
+            pitcher_id = plan.affected_pitcher_ids_json[0]
+            return {
+                'pitcher': {
+                    str(value): {'read_models': {'pitcher_current': {
+                        'pitcher': {'id': value},
+                    }}}
+                    for value in plan.affected_pitcher_ids_json
+                },
+                'team': {
+                    str(value): {'read_models': {
+                        'team_board': {'team_id': value},
+                        'league_row': {'team_id': value},
+                        'team_board_v2': {
+                            'full': {'active_bullpen': {'arms': [
+                                {'pitcher_id': pitcher_id},
+                            ]}},
+                            'core': {}, 'details': {},
+                        },
+                    }}
+                    for value in team_ids
+                },
+                'game': {
+                    str(value): {'read_models': {'matchup': {'game_pk': value}}}
+                    for value in plan.affected_game_ids_json
+                },
+                'summary': {'domain': domain},
+            }
+        if domain == 'what_changed':
+            return {
+                'team': {
+                    str(value): {'what_changed': {'team_id': value}}
+                    for value in team_ids
+                },
+                'summary': {'domain': domain},
+            }
         return {
             'pitcher': {
                 str(value): {domain: {'value': domain}}
@@ -46,7 +88,7 @@ def _domain_executor(plan):
             },
             'team': {
                 str(value): {domain: {'value': domain}}
-                for value in plan.affected_team_ids_json
+                for value in team_ids
             },
             'game': {
                 str(value): {domain: {'value': domain}}

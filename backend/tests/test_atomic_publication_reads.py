@@ -13,7 +13,7 @@ from flask import Flask
 def _bundle(publication_id, marker='one', team_ids=(110, 111)):
     artifacts = []
     for team_id in team_ids:
-        artifacts.append({
+        artifacts.extend(({
             'publication_id': publication_id,
             'artifact_type': 'team_intelligence',
             'entity_type': 'team',
@@ -22,11 +22,30 @@ def _bundle(publication_id, marker='one', team_ids=(110, 111)):
                 'team_board': {'team': {'team_id': team_id}, 'marker': marker},
                 'league_row': {'team_id': team_id, 'marker': marker},
             }},
-        })
+        }, {
+            'publication_id': publication_id,
+            'artifact_type': 'team_board_v2_publication',
+            'entity_type': 'team',
+            'entity_key': str(team_id),
+            'payload': {'read_models': {'team_board_v2': {
+                    'full': {
+                        'team': {'team_id': team_id}, 'marker': marker,
+                        'active_bullpen': {'arms': [{'pitcher_id': 53}]},
+                    },
+                    'core': {'team': {'team_id': team_id}, 'marker': marker},
+                    'details': {'team': {'team_id': team_id}, 'marker': marker},
+            }}},
+        }, {
+            'publication_id': publication_id,
+            'artifact_type': 'what_changed_publication',
+            'entity_type': 'team',
+            'entity_key': str(team_id),
+            'payload': {'what_changed': {'team_id': team_id, 'marker': marker}},
+        }))
     artifacts.extend((
         {
             'publication_id': publication_id,
-            'artifact_type': 'pitcher_intelligence',
+            'artifact_type': 'pitcher_current_publication',
             'entity_type': 'pitcher',
             'entity_key': '53',
             'payload': {'read_models': {
@@ -71,6 +90,7 @@ def test_atomic_reads_default_off_and_resolve_bundle_once():
 
     assert len(calls) == 1
     assert context.team_board(110)['atomic_publication']['publication_id'] == 10
+    assert context.team_board_v2(110)['atomic_publication']['publication_id'] == 10
     assert context.pitcher(53)['atomic_publication']['publication_id'] == 10
     assert context.game(824794)['atomic_publication']['publication_id'] == 10
     assert context.league((110, 111))['atomic_publication']['publication_id'] == 10
@@ -86,6 +106,8 @@ def test_request_context_cannot_mix_when_current_pointer_changes():
     current['bundle'] = _bundle(21, marker='new')
 
     assert context.team_board(110)['marker'] == 'old'
+    assert context.team_board_v2(110)['marker'] == 'old'
+    assert context.what_changed(110)['marker'] == 'old'
     assert {row['marker'] for row in context.league((110, 111))['teams']} == {'old'}
     assert context.publication_id == 20
 
@@ -112,6 +134,8 @@ def test_flask_request_resolves_current_publication_once():
 
         assert first is second
         assert second.team_board(110)['marker'] == 'old'
+        assert second.team_board_v2(110)['marker'] == 'old'
+        assert second.what_changed(110)['marker'] == 'old'
         assert second.game(824794)['marker'] == 'old'
         assert calls == [40]
 

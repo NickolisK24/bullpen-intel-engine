@@ -205,6 +205,17 @@ SP-10 does not publish, switch a current pointer, invalidate a cache/CDN, change
 
 SP-11 receives one complete non-live cohort with its fingerprint, impact plan, authority, baseball date, exact entity sets, completed/withheld domains, input manifest, method versions, and predecessor/supersession IDs. SP-11 must validate that evidence and publish atomically; it must not recompute baseball intelligence.
 
+### Publication-ready public reader artifacts
+
+The `read_models` stage freezes the existing public Team Board v2 and
+pitcher-current semantics into `team_board_v2_publication` and
+`pitcher_current_publication` candidate snapshots. The `what_changed` stage
+freezes `what_changed_publication` against its governed predecessor context.
+These are separate from the generic entity snapshots so SP-11 can replace or
+inherit each family independently. Until one complete reader generation exists,
+SP-10 performs one explicit 30-team baseline materialization from the immutable
+source snapshot; subsequent cohorts return to bounded SP-09 impact scope.
+
 ## 30. Acceptance Checklist
 
 * [x] One durable, authority-aware cohort contract.

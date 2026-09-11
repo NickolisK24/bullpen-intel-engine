@@ -27,6 +27,12 @@ from services.league_team_state_listing import (
     build_league_team_state_listing,
     build_league_team_state_row,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
+from services.publication_read_model_artifacts import (
+    build_public_pitcher_current_payload,
+    build_team_board_v2_candidate,
+    build_what_changed_candidate,
+)
 from services.trusted_compare_authority import build_scheduled_game_matchup_payload
 from utils.db import db
 
@@ -60,6 +66,9 @@ class IncrementalReadModelResult:
     pitcher_models_rebuilt: tuple = ()
     team_board_results: dict = field(default_factory=dict)
     team_package_results: dict = field(default_factory=dict)
+    team_board_v2_results: dict = field(default_factory=dict)
+    pitcher_current_results: dict = field(default_factory=dict)
+    what_changed_results: dict = field(default_factory=dict)
     league_row_results: dict = field(default_factory=dict)
     matchup_results: dict = field(default_factory=dict)
     tonight_results: dict = field(default_factory=dict)
@@ -98,6 +107,9 @@ def rebuild_read_model_impact(
     league_listing_builder=None,
     matchup_builder=None,
     tonight_builder=None,
+    publication_artifact_baseline=False,
+    predecessor_cohort_id=None,
+    build_publication_artifacts=False,
 ):
     """Rebuild only read models invalidated by a trusted CU-05 result."""
     pitcher_ids = tuple(sorted(set(_get(cu05_result, 'arm_reads_recomputed') or ())))
@@ -132,6 +144,19 @@ def rebuild_read_model_impact(
         )
 
     shadow_snapshot = build_shadow_snapshot(snapshot, cu05_result)
+    if publication_artifact_baseline:
+        team_ids = tuple(MLB_TEAM_IDS)
+        by_team = (
+            (shadow_snapshot.payload or {})
+            .get(public_serving_authority.TEAM_BOARD_PACKAGE_KEY, {})
+            .get('by_team_id', {})
+        )
+        pitcher_ids = tuple(sorted({
+            int(record['pitcher_id'])
+            for team_id in team_ids
+            for record in ((by_team.get(str(team_id)) or {}).get('records') or ())
+            if record.get('pitcher_id') is not None
+        }))
     state_overrides = _public_state_overrides(cu05_result)
     classified_overrides = _classified_overrides(cu05_result)
     board_builder = team_board_builder or _default_team_board_builder
@@ -141,6 +166,9 @@ def rebuild_read_model_impact(
     started = perf_counter()
     failures = []
     boards = {}
+    boards_v2 = {}
+    pitcher_current = {}
+    what_changed = {}
     league_rows = {}
     matchups = {}
     tonight = {}
@@ -158,6 +186,23 @@ def rebuild_read_model_impact(
                 team_id, shadow_snapshot, state_overrides.get(team_id),
             )
             boards[team_id] = board
+            if build_publication_artifacts:
+                changed = build_what_changed_candidate(
+                    team_id, board=board, snapshot=shadow_snapshot,
+                    predecessor_cohort_id=predecessor_cohort_id,
+                )
+                what_changed[team_id] = changed
+                boards_v2[team_id] = build_team_board_v2_candidate(
+                    team_id,
+                    board=board,
+                    snapshot=shadow_snapshot,
+                    what_changed=changed,
+                    publication_identity={
+                        'contract': 'derived-cohort-read-model-v1',
+                        'source_snapshot_id': getattr(shadow_snapshot, 'id', None),
+                        'represented_date': represented_date.isoformat(),
+                    },
+                )
             if compare_authoritative:
                 authoritative = board_builder(
                     team_id, shadow_snapshot, state_overrides.get(team_id),
@@ -223,6 +268,21 @@ def rebuild_read_model_impact(
         except Exception as exc:
             failures.append(_failure('tonight', game_pk, exc))
 
+    if build_publication_artifacts:
+        freshness = dict((shadow_snapshot.payload or {}).get('freshness') or {})
+        for pitcher_id in pitcher_ids:
+            pitcher = db.session.get(Pitcher, pitcher_id)
+            if pitcher is None or pitcher.position not in (None, 'P'):
+                continue
+            try:
+                pitcher_current[pitcher_id] = build_public_pitcher_current_payload(
+                    pitcher_id,
+                    freshness=freshness,
+                    score_cutoff=getattr(shadow_snapshot, 'snapshot_generated_at', None),
+                )
+            except Exception as exc:
+                failures.append(_failure('pitcher_current', pitcher_id, exc))
+
     mismatches = tuple(
         asdict(entry) for entry in parity if entry.status == PARITY_MISMATCH
     )
@@ -250,6 +310,7 @@ def rebuild_read_model_impact(
         league_rows_rebuilt=tuple(sorted(league_rows)),
         matchups_rebuilt=tuple(sorted(matchups)),
         tonight_entries_rebuilt=tuple(sorted(tonight)),
+        pitcher_models_rebuilt=tuple(sorted(pitcher_current)),
         team_board_results=boards,
         team_package_results={
             team_id: deepcopy(
@@ -262,6 +323,9 @@ def rebuild_read_model_impact(
             )
             for team_id in team_ids
         },
+        team_board_v2_results=boards_v2,
+        pitcher_current_results=pitcher_current,
+        what_changed_results=what_changed,
         league_row_results=league_rows,
         matchup_results=matchups,
         tonight_results=tonight,
@@ -269,7 +333,9 @@ def rebuild_read_model_impact(
         parity_entries=tuple(asdict(entry) for entry in parity),
         parity_mismatches=mismatches,
         failures=tuple(failures),
-        rebuild_performed=bool(boards or league_rows or matchups or tonight),
+        rebuild_performed=bool(
+            boards or boards_v2 or pitcher_current or league_rows or matchups or tonight
+        ),
         rebuild_ms=round((perf_counter() - started) * 1000.0, 3),
     )
 

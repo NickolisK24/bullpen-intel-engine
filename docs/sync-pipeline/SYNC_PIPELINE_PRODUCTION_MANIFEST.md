@@ -134,3 +134,13 @@ Its request-local context resolves the pointer once and rejects mixed-generation
 artifacts. Legacy schedulers, publication, and readers remain authoritative.
 Exact lineage, rollback, and the remaining CR-04 blocker are recorded in
 `CR-04_INTEGRATION_DEPLOYMENT_ATOMIC_PUBLICATION_CUTOVER.md`.
+
+The final CR-04 artifact contract adds three SP-10-owned snapshot and SP-11
+artifact types: `team_board_v2_publication`,
+`pitcher_current_publication`, and `what_changed_publication`. A reader-ready
+publication must contain all 30 team and Team Board/What Changed families, a
+pitcher-current artifact for every frozen active-bullpen pitcher, and governed
+game coverage. SP-11 validates this before pointer movement. Publication `1`
+is preserved unchanged; the first reader-ready successor must materialize the
+complete baseline, after which normal predecessor inheritance is bounded to
+affected artifacts.

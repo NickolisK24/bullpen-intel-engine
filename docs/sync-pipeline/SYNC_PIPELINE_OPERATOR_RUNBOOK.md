@@ -255,6 +255,24 @@ the 30-team league generation. A 503 with
 `atomic_publication_reader_coverage_incomplete` is a protective block, not a
 reason to add a mutable-latest or legacy fallback inside an atomic request.
 
+Reader-ready generations expose distinct artifact types for
+`team_board_v2_publication`, `pitcher_current_publication`, and
+`what_changed_publication`. Inspect their counts before controlled publication:
+
+```sql
+SELECT artifact_type, COUNT(*)
+FROM atomic_publication_artifacts
+WHERE publication_id = <publication-id>
+GROUP BY artifact_type
+ORDER BY artifact_type;
+```
+
+The expected team counts are 30 for Team Board v2 and What Changed. Pitcher
+coverage is measured against active-bullpen pitcher IDs frozen inside those 30
+Team Board artifacts, not every historical pitcher. Never repair a deficit by
+editing an artifact or pointer; allow SP-10 to create an immutable successor
+and publish it through SP-11.
+
 Publication `1` is valid immutable SP-11 evidence but is not reader-cutover
 ready: it has baseline team, pitcher, and game artifacts while the Team Board
 v2, What Changed, and public pitcher-current payload families are absent.

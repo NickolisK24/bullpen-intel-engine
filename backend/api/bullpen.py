@@ -126,6 +126,7 @@ from services.public_team_relief_work import (
     author_deployment_profile,
 )
 from services.public_recent_work import build_public_recent_work_payload
+from services.public_pitcher_current import build_public_pitcher_current_payload
 from services.reliever_finder import (
     FINDER_DEFAULT_LIMIT,
     FINDER_MAX_LIMIT,
@@ -782,128 +783,17 @@ def get_pitcher_fatigue(pitcher_id):
     except AtomicReadUnavailable as exc:
         return _atomic_read_unavailable(exc)
 
-    pitcher = db.session.get(Pitcher, pitcher_id)
-    if pitcher is None:
+    try:
+        payload = build_public_pitcher_current_payload(
+            pitcher_id, freshness=_board_freshness_block(),
+            score_cutoff=_served_score_cutoff(),
+            author_role_read_labels_fn=author_role_read_labels,
+            build_recent_work_fn=build_public_recent_work_payload,
+            author_deployment_profile_fn=author_deployment_profile,
+        )
+    except LookupError:
         abort(404)
-
-    score_cutoff = _served_score_cutoff()
-    latest_query = FatigueScore.query.filter_by(pitcher_id=pitcher_id)
-    if score_cutoff is not None:
-        latest_query = latest_query.filter(FatigueScore.calculated_at <= score_cutoff)
-    latest = latest_query.order_by(desc(FatigueScore.calculated_at)).first()
-
-    freshness = _board_freshness_block()
-    reference_date = _public_availability_reference_date(freshness)
-
-    # Anchor recent_logs / fatigue_trend on the pitcher's most recent game
-    # so historical (e.g. 2024-2025 seed) data still produces non-empty
-    # windows. Fall back to the product reference date if the pitcher has no
-    # logs at all.
-    last_game_date = (
-        db.session.query(db.func.max(GameLog.game_date))
-        .filter(GameLog.pitcher_id == pitcher_id)
-        .scalar()
-    )
-    anchor = last_game_date if last_game_date else reference_date
-
-    fourteen_days_ago = anchor - timedelta(days=14)
-    logs = (
-        GameLog.query
-        .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= fourteen_days_ago)
-        .order_by(desc(GameLog.game_date))
-        .all()
-    )
-
-    thirty_days_ago = anchor - timedelta(days=30)
-    history = (
-        FatigueScore.query
-        .filter(
-            FatigueScore.pitcher_id == pitcher_id,
-            FatigueScore.calculated_at >= thirty_days_ago
-        )
-        .order_by(FatigueScore.calculated_at)
-    )
-    if score_cutoff is not None:
-        history = history.filter(FatigueScore.calculated_at <= score_cutoff)
-    history = history.all()
-
-    workload_signal = _availability_for(pitcher_id, latest, reference_date=reference_date)
-    roster_status = classify_roster_status(pitcher)
-    roster_status = with_recent_inactive_roster_audit(roster_status, logs, reference_date)
-    availability = apply_roster_status_to_availability(workload_signal, roster_status)
-
-    last_workload_appearance = last_workload_appearance_from_logs(logs)
-
-    role_logs = role_logs_by_pitcher([pitcher_id], reference_date=reference_date)
-    population_contexts = eligible_bullpen_pitcher_contexts(
-        [pitcher],
-        include_stale=True,
-        include_inactive_context=True,
-        include_unknown_roster=True,
-        reference_date=reference_date,
-    )
-    eligibility = (
-        population_contexts[0].get('eligibility')
-        if population_contexts
-        else None
-    )
-    role, pitcher_labels, public_role_read = author_role_read_labels(
-        {
-            'pitcher': pitcher,
-            'availability': availability,
-            'eligibility': eligibility,
-            'roster_status': roster_status,
-        },
-        role_logs,
-        reference_date,
-    )
-
-    recent_work = None
-    recent_work_status = {'status': 'available'}
-    try:
-        recent_work = build_public_recent_work_payload(
-            pitcher_id,
-            pitcher=pitcher,
-            freshness=freshness,
-        )
-    except Exception:
-        current_app.logger.exception(
-            'Optional public recent-work carrier unavailable for pitcher %s',
-            pitcher_id,
-        )
-        recent_work_status = {'status': 'unavailable'}
-
-    try:
-        deployment_context = _pitcher_deployment_context(pitcher, freshness)
-    except Exception:
-        current_app.logger.exception(
-            'Optional observed-deployment carrier unavailable for pitcher %s',
-            pitcher_id,
-        )
-        deployment_context = _unavailable_pitcher_deployment_context(freshness)
-
-    return jsonify({
-        'pitcher':         pitcher.to_dict(),
-        # ``current_fatigue`` keeps its name because Pitcher Detail reads the
-        # workload facts under it, but it is now the narrowed public view model:
-        # counted workload, no composite, no sub-scores, no risk tier, no
-        # database keys.
-        'current_fatigue': public_workload_facts(latest),
-        'availability':    public_availability(availability),
-        'workload_signal': public_availability(workload_signal),
-        'roster_status':   roster_status,
-        'freshness':       freshness,
-        'last_appearance': last_workload_appearance,
-        'last_workload_appearance': last_workload_appearance,
-        'role':              role,
-        'pitcher_labels':    pitcher_labels,
-        'public_role_read':  public_role_read,
-        'recent_work':       recent_work,
-        'recent_work_status': recent_work_status,
-        'deployment_context': deployment_context,
-        'recent_logs':     [log.to_dict() for log in logs],
-        'fatigue_trend':   [public_workload_facts(s) for s in history],
-    })
+    return jsonify(payload)
 
 
 @bullpen_bp.route('/fatigue/recalculate', methods=['POST'])
