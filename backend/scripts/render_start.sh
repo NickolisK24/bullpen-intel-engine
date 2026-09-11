@@ -17,6 +17,10 @@
 #   * The migration error from Flask-Migrate / Alembic is written to stderr,
 #     which Render captures in the service logs, so the failure is visible.
 #   * Migration errors are never swallowed, ignored, or downgraded.
+#   * Emergency API recovery only: SKIP_STARTUP_MIGRATIONS=true bypasses the
+#     migration step explicitly. Default false; every other value runs it.
+#     Daily Edition preparation remains required. Remove the override once
+#     production schema ownership and the deployed migration lineage agree.
 #
 # Local development is unaffected: nothing runs this script unless it is set as
 # the explicit start command. See docs/current/SETUP.md -> "Deployment notes".
@@ -49,15 +53,20 @@ cd "${BACKEND_DIR}"
 # application factory.
 export FLASK_APP="${FLASK_APP:-app.py}"
 
-echo "[render_start] Applying database migrations: flask db upgrade"
-flask db upgrade
-echo "[render_start] Database migrations applied successfully."
+if [ "${SKIP_STARTUP_MIGRATIONS:-false}" = "true" ]; then
+  echo "[render_start] WARNING: startup database migrations explicitly skipped via SKIP_STARTUP_MIGRATIONS=true"
+else
+  echo "[render_start] Applying database migrations: flask db upgrade"
+  flask db upgrade
+  echo "[render_start] Database migrations applied successfully."
+fi
 
 echo "[render_start] Preparing Daily Edition for the current trusted publication."
 python -m scripts.prepare_daily_edition_snapshot
 echo "[render_start] Daily Edition preparation completed successfully."
 
-# Start the production server only after migrations succeed. An explicit server
+# Start the server after migrations succeed (or are explicitly skipped) and
+# Daily Edition preparation succeeds. An explicit server
 # command passed as arguments is exec'd verbatim; otherwise fall back to the
 # documented gunicorn invocation bound to Render's $PORT (default 10000). exec
 # replaces this shell so the server process receives signals directly.
