@@ -129,6 +129,37 @@ def test_historical_roster_cannot_replace_newer_current_pitcher_projection(guard
     assert current_memberships(134, 'forty_man_roster') == []
 
 
+def test_same_club_acquisition_is_ordered_without_blocking_other_clubs(guarded):
+    from services.roster_transaction_authority import _lock_team
+
+    same_started, same_fetched, other_fetched = Event(), Event(), Event()
+
+    class RecordingClient(RosterClient):
+        def get_team_roster_with_completeness(self, team_id, **kwargs):
+            (same_fetched if team_id == 134 else other_fetched).set()
+            return super().get_team_roster_with_completeness(team_id, **kwargs)
+
+    def reconcile(team):
+        with guarded.app_context():
+            if team == 134:
+                same_started.set()
+            return reconcile_team_roster(team, SLATE, client=RecordingClient())
+
+    _lock_team(134)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        same = pool.submit(reconcile, 134)
+        other = pool.submit(reconcile, 147)
+        try:
+            assert same_started.wait(5)
+            assert other_fetched.wait(5)
+            assert other.result(timeout=5)['authoritative']
+            assert not same_fetched.is_set()
+        finally:
+            db.session.rollback()
+        assert same.result(timeout=10)['authoritative']
+        assert same_fetched.is_set()
+
+
 def test_expected_suppression_does_not_hide_real_ownership_conflict(guarded):
     from services.compatibility_writer_health import compatibility_writer_health
 
@@ -309,6 +340,31 @@ def test_old_binary_game_row_lock_never_waits_in_reverse_order(guarded):
                 future.result(timeout=5)
         finally:
             db.session.rollback()
+
+
+def test_accepted_legacy_revision_cannot_keep_prior_source_identity(guarded):
+    from services import game_change_detection as detection
+    from models.game_observation_state import GameObservationState
+    from tests.test_game_change_detection import _feed, GAME_PK as observed_game
+
+    first = detection.observe_game_change(observed_game, payload=_feed())
+    changed = _feed(timestamp='20260826_010100', outs=2)
+    facts = detection.canonicalize_game_observation(changed, expected_game_pk=observed_game)
+    db.session.rollback()
+    with db.engine.begin() as connection:
+        connection.execute(text('''
+            UPDATE game_observation_states
+            SET previous_observation_fingerprint=observation_fingerprint,
+                observation_fingerprint=:fingerprint, observation=CAST(:facts AS json),
+                source_observed_at='2026-08-26 01:01:00'
+            WHERE mlb_game_pk=:game
+        '''), {'fingerprint': detection.observation_fingerprint(facts),
+               'facts': json.dumps(facts), 'game': observed_game})
+    assert GameObservationState.query.one().source_observation_id is None
+    replay = detection.observe_game_change(observed_game, payload=changed)
+    assert replay.classification == detection.UNCHANGED
+    assert replay.source_observation_id != first.source_observation_id
+    assert GameObservationState.query.one().source_observation_id == replay.source_observation_id
 
 
 def test_overlapping_transaction_windows_cannot_restore_stale_event(guarded):

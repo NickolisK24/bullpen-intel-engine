@@ -231,6 +231,13 @@ def reconcile_team_roster(
     team_id = int(team_id)
     roster_date = _date(roster_date)
     timestamp = timestamp or utc_now_naive()
+    # MLB roster endpoints expose no comparable upstream revision. Serialize
+    # the two-view acquisition and owner commit for this club, so a response
+    # fetched earlier cannot resume after a newer reconciliation commits.
+    # Affiliate evidence and unrelated MLB clubs remain independent.
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    if team_id in MLB_TEAM_IDS:
+        _lock_team(team_id)
     views = {
         roster_type: observe_team_roster(
             team_id,
@@ -265,7 +272,6 @@ def reconcile_team_roster(
             db.session.commit()
         return _roster_summary(team_id, roster_date, views, [], [], authoritative=True)
 
-    _lock_team(team_id)
     from models.source_observation import SourceObservation, SourceSubject
     from models.compatibility_write_event import CompatibilityWriteEvent
     superseded = any(

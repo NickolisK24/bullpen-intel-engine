@@ -127,8 +127,9 @@ def validate_activation_controls(controls):
 def legacy_responsibility_map():
     """Complete transition map. Every retirement remains evidence-gated."""
     common_rollback = (
-        'Disable all SYNC_PIPELINE_* controls; keep new additive evidence; '
-        'continue the established daily/postgame/continuous authority.'
+        'Disable pipeline activation through the governed rollback; preserve evidence '
+        'and persistent writer ownership. Legacy may continue on unowned resources; '
+        'SP-owned projections require an explicit owner recovery decision.'
     )
     rows = [
         ('schedule_game_state', 'Schedule and game-state discovery',

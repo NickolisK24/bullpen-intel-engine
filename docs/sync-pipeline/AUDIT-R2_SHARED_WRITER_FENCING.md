@@ -99,6 +99,11 @@ if authority changes during acquisition, differing input requires a fresh bounde
 reconciliation instead of assuming arrival order is source order. SP-08 repeats
 the Final-owner check at the actual projection mutation boundary.
 
+When an older detector accepts a newer upstream revision, the database guard
+clears its inherited SP-03 observation link. The SP detector can reattach that
+link only after retaining the exact matching fact set. A newer legacy projection
+therefore cannot falsely cite an older source observation.
+
 ## 9. Roster projection changes
 
 The governed population is official pitcher/two-way membership. R1's five non-pitching legacy records remain separate evidence: Tyler Callihan 802, Max Schuemann 999, Buddy Kennedy 992, César Salazar 984, Jake Meyers 997. This package does not assume those records should be deleted or reassigned merely because their table is named Pitcher.
@@ -107,6 +112,13 @@ SP-05 projects organization, registry-backed club labels and status only
 after its complete-source membership reconciliation. Legacy assignment refreshes
 prefetch the governed population once and leave those fields to SP-05. Database
 guards cover direct utilities and older deployed callers as well.
+
+Official MLB roster endpoints do not expose a comparable upstream revision.
+The existing club lock therefore covers this owner's active/40-man acquisition
+pair through commit. Same-club calls cannot fetch an earlier response and resume
+after a newer owner commits. This intentionally bounds parallelism within one
+club's two-request reconciliation; affiliate evidence and other MLB clubs remain
+independent. Game acquisition remains outside the game mutation lock.
 
 For one player/date, complete SP active/40-man evidence outranks a legacy
 snapshot. A receiving MLB club may correct a same-day SP snapshot after the prior
@@ -159,7 +171,7 @@ Cross-resource lock ordering and retry effects remain part of validation.
 
 Focused PostgreSQL results so far:
 
-- Twenty shared-writer tests cover delayed legacy GameLog update after
+- Twenty-two shared-writer tests cover delayed legacy GameLog update after
   corrected Final, delayed Final after corrected Final, delayed live after Final,
   unrelated-game parallelism, and reverse-order lock rejection.
 - The delayed legacy test reads 18 pitches, allows corrected Final to commit 19,
@@ -188,6 +200,9 @@ The broader queue/game/roster/transaction/cohort/repair run passed 402 PostgreSQ
 tests. A later focused roster/transaction run passed 120 tests. Shard verification
 reported zero missing or duplicated files/node IDs. These local results are
 reported separately from CI and deployment; they do not authorize publication.
+The detector/lineage group passed 117 PostgreSQL tests; the final shared-writer,
+roster, R1 isolation and certification group passed 73. Same-club acquisition
+ordering and unrelated-club parallelism are both exercised.
 
 ## 14. Natural regression proof
 
@@ -231,6 +246,17 @@ games and zero duplicate GameLog pitcher/game keys. Game 823413 retained seven
 GameLog rows, Final version 196/v2 current, predecessor 195/v1 non-current.
 Publication pointer 1 remained unchanged. None of these pre-change observations
 proves post-deployment recurrence safety.
+
+A second read-only census at 16:08 UTC found the same 19 projection conflicts,
+zero Final/GameLog numerical mismatches, and zero duplicate transaction keys.
+The exact roster-set report at 16:10 UTC remained 30/30 active and 30/30 40-man,
+with zero affiliate-owned interval violations. This distinguishes preserved R1
+membership truth from the recurrent legacy current-pitcher overwrite.
+
+The refreshed Render environment page at 16:13 UTC showed pipeline/shadow true;
+publication/morning/closure false; both legacy controls true. Atomic reads were
+absent from the complete service and linked-group key lists, retaining the
+checked false default. The deployed integration remained at the R1 base SHA.
 
 ## 16. Health/observability
 

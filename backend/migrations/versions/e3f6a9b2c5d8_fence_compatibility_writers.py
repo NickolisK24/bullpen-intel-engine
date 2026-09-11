@@ -160,6 +160,9 @@ BEGIN
         'incoming_observation_id',NEW.source_observation_id),clock_timestamp() AT TIME ZONE 'UTC');
     RETURN OLD;
   END IF;
+  -- Older accepted detectors do not know the SP-03 linkage column. Their
+  -- newer upstream facts must not retain the prior observation's identity.
+  IF NOT coalesce(validated_owner,false) THEN NEW.source_observation_id := NULL; END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER baseballos_game_observation_fence

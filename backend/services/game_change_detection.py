@@ -232,6 +232,10 @@ def observe_game_change(
             correction=False,
             sync_run_id=sync_run_id, sync_job_id=sync_job_id,
         )
+        # An older deployed detector can accept a newer upstream revision but
+        # cannot attach SP-03 lineage. Relink only this exact retained fact set.
+        if row.source_observation_id != source_result.observation.id:
+            row.source_observation_id = source_result.observation.id
         result = _result(
             game_pk=observation['game_pk'], classification=UNCHANGED, changed=False,
             previous=row.observation_fingerprint, current=fingerprint,
