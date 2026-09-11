@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -20,6 +21,7 @@ from models.sync_job import SyncJob
 from services.derived_intelligence import (
     COHORT_SCHEMA_VERSION,
     CohortStatus,
+    _DefaultDomainExecutor,
     dependency_closure,
     execute_derived_intelligence_plan,
     run_derived_intelligence_worker_once,
@@ -214,6 +216,52 @@ def test_public_read_families_are_separate_immutable_candidate_artifacts(app):
     assert 'what_changed' not in by_type['team_intelligence'].payload_json
 
 
+def test_first_reader_baseline_persists_public_artifacts_from_team_snapshot(app):
+    plan = _plan(domains=('team_snapshot',))
+    executor = _DefaultDomainExecutor(plan)
+    executor.cache['publication_baseline_required'] = True
+    executor.cache['read_result'] = SimpleNamespace(
+        team_package_results={110: {'team_id': 110}},
+        team_board_results={110: {'team_id': 110}},
+        team_board_v2_results={110: {'full': {'team_id': 110}}},
+        pitcher_current_results={10: {'pitcher': {'id': 10}}},
+        what_changed_results={110: {'team_id': 110, 'changes': []}},
+        league_row_results={110: {'team_id': 110}},
+        matchup_results={},
+        tonight_results={},
+    )
+
+    result = executor._read_models('team_snapshot')
+
+    assert result['team']['110']['read_models']['team_board_v2']['full']['team_id'] == 110
+    assert result['team']['110']['what_changed']['team_id'] == 110
+    assert result['pitcher']['10']['read_models']['pitcher_current']['pitcher']['id'] == 10
+
+    read_models = executor._read_models('read_models')
+    assert read_models['team']['110']['what_changed']['team_id'] == 110
+
+
+def test_post_baseline_team_snapshot_stays_bounded_to_requested_artifact(app):
+    plan = _plan(domains=('team_snapshot',))
+    executor = _DefaultDomainExecutor(plan)
+    executor.cache['publication_baseline_required'] = False
+    executor.cache['read_result'] = SimpleNamespace(
+        team_package_results={110: {'team_id': 110}},
+        team_board_results={110: {'team_id': 110}},
+        team_board_v2_results={110: {'full': {'team_id': 110}}},
+        pitcher_current_results={10: {'pitcher': {'id': 10}}},
+        what_changed_results={110: {'team_id': 110, 'changes': []}},
+        league_row_results={110: {'team_id': 110}},
+        matchup_results={},
+        tonight_results={},
+    )
+
+    result = executor._read_models('team_snapshot')
+
+    assert result['team'] == {'110': {'team_snapshot': {'team_id': 110}}}
+    assert 'pitcher' not in result
+
+
 def test_shadow_execution_can_complete_cohort_without_publication_candidate(app):
     plan = _plan()
     result = execute_derived_intelligence_plan(
@@ -347,13 +395,18 @@ def test_final_manifest_pins_current_versions_and_detects_real_version_drift(app
     plan.source_observation_ids_json = [observation_v1.id]
     db.session.commit()
 
+    corrected = {}
+
     def correct_final():
         game_v1.is_current = False
         appearance_v1.is_current = False
         observation_v2 = _observation('v2')
-        _final_authority(
+        game_v2, appearance_v2, _ = _final_authority(
             observation_v2, version=2,
             predecessor=(game_v1, appearance_v1),
+        )
+        corrected.update(
+            observation=observation_v2, game=game_v2, appearance=appearance_v2,
         )
 
     result = execute_derived_intelligence_plan(
@@ -367,6 +420,50 @@ def test_final_manifest_pins_current_versions_and_detects_real_version_drift(app
         ('final_appearance', str(appearance_v1.id)),
         ('source_observation', str(observation_v1.id)),
     }
+
+    replacement = _plan(
+        fingerprint='g' * 64, domains=('workload',), pitchers=(pitcher.id,),
+    )
+    replacement.source_observation_ids_json = [corrected['observation'].id]
+    db.session.commit()
+    replacement_result = execute_derived_intelligence_plan(
+        replacement.id, domain_executor=RecordingExecutor(),
+    )
+
+    assert replacement_result.cohort.status == 'complete'
+    replacement_inputs = DerivedCohortInput.query.filter_by(
+        cohort_id=replacement_result.cohort.id,
+    ).all()
+    assert {(row.input_type, row.input_version) for row in replacement_inputs} == {
+        ('final_game', str(corrected['game'].id)),
+        ('final_appearance', str(corrected['appearance'].id)),
+        ('source_observation', str(corrected['observation'].id)),
+    }
+
+
+def test_unrelated_source_advance_does_not_invalidate_bounded_manifest(app):
+    observation = _observation('bounded-v1')
+    game, appearance, pitcher = _final_authority(observation, version=1)
+    plan = _plan(
+        fingerprint='h' * 64, domains=('workload',), pitchers=(pitcher.id,),
+    )
+    plan.source_observation_ids_json = [observation.id]
+    db.session.commit()
+
+    def add_unrelated_evidence():
+        _observation('unrelated')
+        pitcher.full_name = 'Derived compatibility output changed'
+
+    result = execute_derived_intelligence_plan(
+        plan.id,
+        domain_executor=RecordingExecutor(),
+        before_revalidate=add_unrelated_evidence,
+    )
+
+    assert result.cohort.status == 'complete'
+    assert result.publication_job is not None
+    assert game.is_current is True
+    assert appearance.is_current is True
 
 
 def test_concurrent_exact_cohort_creates_one_candidate_and_job_postgresql(app):

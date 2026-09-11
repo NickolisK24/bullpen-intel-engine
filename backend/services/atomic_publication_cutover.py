@@ -8,10 +8,11 @@ from models.atomic_publication import (
     AtomicPublicationArtifact,
     AtomicPublicationCurrent,
 )
-from models.canonical_impact import CanonicalImpactPlan
-from models.derived_intelligence import DerivedIntelligenceCohort
+from models.canonical_impact import CanonicalImpactPlan, CanonicalImpactPlanMutation
+from models.derived_intelligence import DerivedCohortSnapshot, DerivedIntelligenceCohort
 from models.final_game_reconciliation import FinalGameMutation, FinalGameVersion
 from models.live_game_delta import LiveGameMutation, ProvisionalPitchingAppearanceState
+from models.roster_membership import RosterMembershipInterval, RosterMembershipMutation
 from models.source_observation import SourceObservation
 from models.sync_job import SyncJob
 from services.atomic_publication import (
@@ -22,7 +23,7 @@ from services.atomic_publication import (
     run_atomic_publication_worker_once,
     validate_publication_cohort,
 )
-from services.derived_intelligence import enqueue_publication_candidate
+from services.derived_intelligence import capture_input_manifest, enqueue_publication_candidate
 from services.sync_pipeline_certification import collect_operational_health
 from services.sync_jobs import JobType
 from utils.db import db
@@ -37,7 +38,126 @@ def _pointer_id():
     return pointer.publication_id if pointer else None
 
 
-def _candidate_report(cohort, *, include_baseline=False):
+def _manifest_fingerprint(manifest):
+    return sha256(json.dumps(
+        manifest, sort_keys=True, separators=(',', ':'),
+    ).encode('utf-8')).hexdigest()
+
+
+def _manifest_diff(original, current):
+    def keyed(rows):
+        return {
+            (str(row.get('input_type')), str(row.get('input_key'))): row
+            for row in rows
+        }
+
+    before = keyed(original)
+    after = keyed(current)
+    keys = sorted(set(before) | set(after))
+    return {
+        'added': [after[key] for key in keys if key not in before],
+        'removed': [before[key] for key in keys if key not in after],
+        'changed': [
+            {'before': before[key], 'after': after[key]}
+            for key in keys
+            if key in before and key in after and before[key] != after[key]
+        ],
+    }
+
+
+def _changed_input_details(difference):
+    details = []
+    for change in difference['changed']:
+        after = change['after']
+        if after.get('input_type') != 'roster_membership':
+            continue
+        interval_id = int(str(after['input_version']).split(':', 1)[0])
+        interval = db.session.get(RosterMembershipInterval, interval_id)
+        if interval is None:
+            continue
+        mutations = RosterMembershipMutation.query.filter_by(
+            interval_id=interval.id,
+        ).order_by(RosterMembershipMutation.id).all()
+        mutation_ids = [row.id for row in mutations]
+        refs = (
+            CanonicalImpactPlanMutation.query.filter(
+                CanonicalImpactPlanMutation.mutation_family == 'roster_membership',
+                CanonicalImpactPlanMutation.source_mutation_id.in_(mutation_ids),
+            ).order_by(CanonicalImpactPlanMutation.id).all()
+            if mutation_ids else []
+        )
+        plan_ids = sorted({row.impact_plan_id for row in refs})
+        cohorts = (
+            DerivedIntelligenceCohort.query.filter(
+                DerivedIntelligenceCohort.impact_plan_id.in_(plan_ids),
+            ).order_by(DerivedIntelligenceCohort.id).all()
+            if plan_ids else []
+        )
+        observation_ids = sorted({
+            value for value in (
+                interval.opened_by_observation_id,
+                interval.closed_by_observation_id,
+                *(row.source_observation_id for row in mutations),
+            ) if value is not None
+        })
+        observations = (
+            SourceObservation.query.filter(SourceObservation.id.in_(observation_ids))
+            .order_by(SourceObservation.id).all()
+            if observation_ids else []
+        )
+        details.append({
+            'input_type': after['input_type'],
+            'input_key': after['input_key'],
+            'interval': {
+                'id': interval.id,
+                'team_id': interval.team_id,
+                'pitcher_id': interval.pitcher_id,
+                'player_mlb_id': interval.player_mlb_id,
+                'membership_type': interval.membership_type,
+                'effective_start_date': interval.effective_start_date.isoformat(),
+                'effective_end_date': (
+                    interval.effective_end_date.isoformat()
+                    if interval.effective_end_date else None
+                ),
+                'opened_by_observation_id': interval.opened_by_observation_id,
+                'closed_by_observation_id': interval.closed_by_observation_id,
+                'is_current_version': interval.is_current_version,
+                'updated_at': interval.updated_at.isoformat(),
+            },
+            'mutations': [{
+                'id': row.id,
+                'mutation_type': row.mutation_type,
+                'baseball_date': row.baseball_date.isoformat(),
+                'source_observation_id': row.source_observation_id,
+                'sync_run_id': row.sync_run_id,
+                'created_at': row.created_at.isoformat(),
+            } for row in mutations],
+            'source_observations': [{
+                'id': row.id,
+                'source_subject_id': row.source_subject_id,
+                'version_number': row.version_number,
+                'outcome': row.outcome,
+                'completeness': row.completeness,
+                'is_authoritative': row.is_authoritative,
+                'sync_run_id': row.sync_run_id,
+                'sync_job_id': row.sync_job_id,
+                'observed_at': row.observed_at.isoformat(),
+                'created_at': row.created_at.isoformat(),
+            } for row in observations],
+            'impact_plan_ids': plan_ids,
+            'cohorts': [{
+                'id': row.id,
+                'impact_plan_id': row.impact_plan_id,
+                'status': row.status,
+                'cohort_fingerprint': row.cohort_fingerprint,
+                'started_at': row.started_at.isoformat(),
+                'completed_at': row.completed_at.isoformat() if row.completed_at else None,
+            } for row in cohorts],
+        })
+    return details
+
+
+def _candidate_report(cohort, *, include_baseline=False, include_revalidation=False):
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
     reason = None
     artifact_count = 0
@@ -52,6 +172,33 @@ def _candidate_report(cohort, *, include_baseline=False):
         if include_baseline and _pointer_id() is None else None
     )
     input_manifest = list(cohort.input_manifest_json or ())
+    snapshots = DerivedCohortSnapshot.query.filter_by(cohort_id=cohort.id).all()
+    snapshot_counts = {}
+    for snapshot in snapshots:
+        snapshot_counts[snapshot.snapshot_type] = (
+            snapshot_counts.get(snapshot.snapshot_type, 0) + 1
+        )
+    revalidation = None
+    if include_revalidation:
+        current_manifest = capture_input_manifest(plan) if plan is not None else []
+        difference = _manifest_diff(input_manifest, current_manifest)
+        revalidation = {
+            'captured_input_manifest': input_manifest,
+            'captured_input_fingerprint': _manifest_fingerprint(input_manifest),
+            # A complete cohort necessarily passed SP-10's completion-time
+            # equality check. The immutable captured manifest is therefore the
+            # exact completion-time watermark; later publication validation may
+            # compare it with a newer authority state.
+            'completion_input_manifest': input_manifest if cohort.status == 'complete' else None,
+            'completion_input_fingerprint': (
+                _manifest_fingerprint(input_manifest)
+                if cohort.status == 'complete' else None
+            ),
+            'current_input_manifest': current_manifest,
+            'current_input_fingerprint': _manifest_fingerprint(current_manifest),
+            'difference': difference,
+            'changed_input_details': _changed_input_details(difference),
+        }
     return {
         'cohort_id': cohort.id,
         'cohort_fingerprint': cohort.cohort_fingerprint,
@@ -73,9 +220,10 @@ def _candidate_report(cohort, *, include_baseline=False):
             if row.get('source_observation_id') is not None
         }),
         'input_manifest': input_manifest,
-        'input_manifest_fingerprint': sha256(json.dumps(
-            input_manifest, sort_keys=True, separators=(',', ':'),
-        ).encode('utf-8')).hexdigest(),
+        'input_manifest_fingerprint': _manifest_fingerprint(input_manifest),
+        'input_revalidation': revalidation,
+        'candidate_snapshot_count': len(snapshots),
+        'candidate_snapshot_counts': snapshot_counts,
         'candidate_artifact_count': artifact_count,
         'first_publication_baseline': baseline,
         'eligible': (
@@ -89,6 +237,11 @@ def _candidate_report(cohort, *, include_baseline=False):
         ),
         'publication_id': publication.id if publication else None,
         'completed_at': cohort.completed_at.isoformat() if cohort.completed_at else None,
+        'started_at': cohort.started_at.isoformat() if cohort.started_at else None,
+        'created_at': cohort.created_at.isoformat() if cohort.created_at else None,
+        # The SP-10 schema does not persist a stale timestamp when a completed
+        # cohort later fails SP-11 revalidation.
+        'stale_at': None,
     }
 
 
@@ -273,6 +426,18 @@ def inspect_publication_candidates(*, limit=20):
     }
 
 
+def inspect_publication_cohort(cohort_id):
+    """Read one cohort with row-level current-authority watermark comparison."""
+    cohort = db.session.get(DerivedIntelligenceCohort, int(cohort_id))
+    if cohort is None:
+        raise PublicationValidationError('cohort_missing')
+    return {
+        'mode': 'read_only',
+        'current_publication_id': _pointer_id(),
+        'cohort': _candidate_report(cohort, include_revalidation=True),
+    }
+
+
 def publish_selected_cohort(cohort_id):
     cohort = db.session.get(DerivedIntelligenceCohort, int(cohort_id))
     if cohort is None:
@@ -325,4 +490,7 @@ def publish_selected_cohort(cohort_id):
     }
 
 
-__all__ = ['inspect_publication_candidates', 'publish_selected_cohort']
+__all__ = [
+    'inspect_publication_candidates', 'inspect_publication_cohort',
+    'publish_selected_cohort',
+]

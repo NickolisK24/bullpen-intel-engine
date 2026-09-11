@@ -347,3 +347,61 @@ Production activation remains fail closed. The code is deployed with
 until a new natural cohort creates a complete publication, the read-only
 coverage report passes, dual-read semantic parity passes, and rollback is
 rechecked. Publication `1` remains historical evidence and is not modified.
+
+## 24. Cohort 484 watermark remediation
+
+Production cohort `484` (impact plan `491`, `roster_authoritative`, baseball
+date `2026-09-11`, Team `134`, pitchers `388` and `390`) started at
+`2026-09-11T04:03:27.216947`, was created at
+`2026-09-11T04:03:27.216957`, and completed at
+`2026-09-11T04:05:16.488412`. Its 38-row captured and completion manifests
+both fingerprinted to
+`c8a1083caf8fa602bbe9a26ab09cd65b952d555420b1c4e767874cac171fc3d3`.
+The current manifest retained the same 38 identities but fingerprinted to
+`d82f4dddf68db0b4625ff859e077c13a915bf3fdec2609d999afeb4eb923b9d5`.
+The schema has no `stale_at` field: the immutable cohort row remains complete,
+while SP-11 rejects it as `cohort_input_watermark_drifted`.
+
+Exactly four Team `134` forty-man membership versions changed:
+
+| Interval | Pitcher | MLB ID | Captured version | Current version | Close mutation |
+| --- | ---: | ---: | --- | --- | ---: |
+| `633` | `1017` | `668716` | `633:2026-09-10:open` | `633:2026-09-10:2026-09-11` | `1302` |
+| `622` | `396` | `681895` | `622:2026-09-10:open` | `622:2026-09-10:2026-09-11` | `1295` |
+| `624` | `398` | `682995` | `624:2026-09-10:open` | `624:2026-09-10:2026-09-11` | `1297` |
+| `635` | `405` | `802419` | `635:2026-09-10:open` | `635:2026-09-10:2026-09-11` | `1304` |
+
+All four intervals were closed at `2026-09-11T04:06:27.964806` by complete,
+authoritative roster observation `1112` (source subject `738`, SyncRun `10752`,
+SyncJob `3922`, observed `2026-09-11T04:06:29.449575`). This was legitimate
+new roster authority about 71 seconds after cohort completion, not a cohort
+self-write, live/final race, pregame drift, or global unrelated watermark.
+The roster-authoritative plan semantically depends on these exact Team `134`
+membership intervals, so retaining them in the manifest is required.
+
+The owner pipeline did not strand the advance. Close mutations `1295`, `1297`,
+`1302`, and `1304` produced replacement impact plan `496` and cohort `489`.
+Cohort `489` ran from `2026-09-11T04:18:02.655008` through
+`2026-09-11T04:20:00.042057`; its captured and current input fingerprints both
+equal `38129a6a1607c6abaa1b6754f664a1fe44dbd2b01067b3f25e24740680e84937`.
+It is therefore fresh, but it cannot be published: it contains 30 generic team
+snapshots, 30 What Changed artifacts, and four generic pitcher snapshots, while
+Team Board v2, pitcher-current, and a governed game artifact are absent.
+
+The missing specialized artifacts exposed a separate baseline packaging defect.
+The SP-10 read rebuild correctly computed the full reader baseline while the
+current publication is incomplete, but a roster plan without an explicit
+`read_models` domain discarded its already-computed Team Board v2 and
+pitcher-current results. SP-10 now retains Team Board v2, pitcher-current, and
+What Changed candidates whenever the one-time publication baseline is required,
+whether the plan reaches the rebuild through `team_snapshot` or `read_models`.
+After a reader-complete publication exists, this behavior switches off and
+ordinary bounded impact scope resumes.
+
+No watermark input was removed and completion-time revalidation is unchanged.
+Tests prove relevant final-authority advancement still makes a cohort stale,
+the new authority can produce a fresh replacement cohort, unrelated source or
+derived compatibility changes do not invalidate a bounded manifest, and
+post-baseline team snapshot work remains scoped. A new naturally triggered
+cohort under the deployed fix is still required before artifact coverage or
+publication can be certified; cohorts `484` and `489` must not be published.

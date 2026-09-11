@@ -1548,11 +1548,15 @@ jobs:
           SYNC_PIPELINE_PUBLICATION_ENABLED: 'false'
           BASEBALLOS_LEGACY_PUBLICATION_ENABLED: 'true'
           BASEBALLOS_LEGACY_SCHEDULERS_ENABLED: 'true'
+          INSPECT_COHORT_ID: ${{ inputs.publication_cohort_id }}
         run: |
           set -euo pipefail
           cd backend
-          python scripts/run_atomic_publication_cutover.py inspect \
-            --output ../atomic-publication-candidates.json
+          inspect_args=(inspect --output ../atomic-publication-candidates.json)
+          if [ -n "$INSPECT_COHORT_ID" ]; then
+            inspect_args+=(--cohort-id "$INSPECT_COHORT_ID")
+          fi
+          python scripts/run_atomic_publication_cutover.py "${inspect_args[@]}"
 
       - name: Upload publication candidate evidence
         uses: actions/upload-artifact@v4

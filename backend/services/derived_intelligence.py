@@ -500,25 +500,59 @@ class _DefaultDomainExecutor:
     def _read_models(self, domain):
         result = self._read_result()
         if domain == 'team_snapshot':
-            return {
+            output = {
                 'team': {
                     str(k): {domain: v}
                     for k, v in result.team_package_results.items()
                 },
                 'summary': {'teams': len(result.team_package_results)},
             }
+            # Before the first reader-complete publication exists, the read
+            # rebuild intentionally materializes a league-wide baseline.  A
+            # bounded roster/final plan does not necessarily request the
+            # ``read_models`` domain, so retain those already-built immutable
+            # publication candidates alongside the team snapshot.  This is a
+            # one-time baseline packaging concern; normal post-baseline plans
+            # remain bounded by their requested domains.
+            if self._publication_baseline_required():
+                for team_id, value in result.team_board_v2_results.items():
+                    output['team'].setdefault(str(team_id), {}).setdefault(
+                        'read_models', {}
+                    )['team_board_v2'] = value
+                for team_id, value in result.what_changed_results.items():
+                    output['team'].setdefault(str(team_id), {})['what_changed'] = value
+                output['pitcher'] = {
+                    str(pitcher_id): {
+                        'read_models': {'pitcher_current': value},
+                    }
+                    for pitcher_id, value in result.pitcher_current_results.items()
+                }
+                output['summary'].update({
+                    'team_board_v2_artifacts': len(result.team_board_v2_results),
+                    'pitcher_current_artifacts': len(result.pitcher_current_results),
+                    'what_changed_artifacts': len(result.what_changed_results),
+                })
+            return output
         if domain == 'read_models':
+            baseline = self._publication_baseline_required()
             return {
                 'team': {
-                    str(k): {domain: {
-                        'team_board': result.team_board_results.get(k),
-                        'team_board_v2': result.team_board_v2_results.get(k),
-                        'league_row': result.league_row_results.get(k),
-                    }}
+                    str(k): {
+                        domain: {
+                            'team_board': result.team_board_results.get(k),
+                            'team_board_v2': result.team_board_v2_results.get(k),
+                            'league_row': result.league_row_results.get(k),
+                        },
+                        **(
+                            {'what_changed': result.what_changed_results[k]}
+                            if baseline and k in result.what_changed_results else {}
+                        ),
+                    }
                     for k in (
                         set(result.team_board_results)
                         | set(result.team_board_v2_results)
                         | set(result.league_row_results)
+                        | (set(result.what_changed_results) if baseline else set())
                     )
                 },
                 'pitcher': {
