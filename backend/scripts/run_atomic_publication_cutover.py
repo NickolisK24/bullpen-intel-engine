@@ -33,6 +33,7 @@ def main(argv=None):
 
     from app import create_app
     from services.atomic_publication_cutover import (
+        inspect_publication_cohort,
         inspect_publication_candidates,
         publish_selected_cohort,
     )
@@ -40,7 +41,11 @@ def main(argv=None):
     app = create_app(os.environ.get('APP_ENV', 'production'))
     with app.app_context():
         result = (
-            inspect_publication_candidates(limit=args.limit)
+            (
+                inspect_publication_cohort(args.cohort_id)
+                if args.cohort_id
+                else inspect_publication_candidates(limit=args.limit)
+            )
             if args.mode == 'inspect'
             else publish_selected_cohort(args.cohort_id)
         )
