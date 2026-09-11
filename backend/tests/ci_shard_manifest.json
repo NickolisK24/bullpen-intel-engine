@@ -628,6 +628,10 @@
           "measured_seconds": 8.0
         },
         {
+          "path": "tests/test_shared_writer_fencing.py",
+          "measured_seconds": 19.82
+        },
+        {
           "path": "tests/test_roster_authority_health.py",
           "measured_seconds": 1.0
         },

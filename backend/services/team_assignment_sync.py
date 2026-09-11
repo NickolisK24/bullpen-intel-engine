@@ -286,8 +286,29 @@ def _assignment_fields(pitcher):
     }
 
 
-def _apply_assignment(pitcher, classification, timestamp):
+def _apply_assignment(pitcher, classification, timestamp, *, governed=None):
     before = _assignment_fields(pitcher)
+    from models.roster_membership import RosterMembershipInterval
+    from models.compatibility_write_event import CompatibilityWriteEvent
+
+    if governed is None:
+        governed = RosterMembershipInterval.query.filter_by(
+            pitcher_id=pitcher.id, is_current_version=True, is_void=False,
+            effective_end_date=None,
+        ).filter(RosterMembershipInterval.membership_type.in_(
+            ('active_roster', 'forty_man_roster'),
+        )).first() is not None
+    if governed:
+        if classification.get('team_id') != pitcher.team_id:
+            db.session.add(CompatibilityWriteEvent(
+                resource_type='pitcher_projection', resource_key=str(pitcher.id),
+                outcome='stale_suppressed', details_json={
+                    'retained_team_id': pitcher.team_id,
+                    'incoming_team_id': classification.get('team_id'),
+                    'incoming_source': classification.get('source'),
+                },
+            ))
+        return False, before
     status = classification['status']
     source = classification['source']
 
@@ -341,6 +362,13 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
     }
 
     pitchers = Pitcher.query.filter(Pitcher.mlb_id.isnot(None)).all()
+    from models.roster_membership import RosterMembershipInterval
+    governed_ids = {row[0] for row in db.session.query(RosterMembershipInterval.pitcher_id).filter(
+        RosterMembershipInterval.is_current_version.is_(True),
+        RosterMembershipInterval.is_void.is_(False),
+        RosterMembershipInterval.effective_end_date.is_(None),
+        RosterMembershipInterval.membership_type.in_(('active_roster', 'forty_man_roster')),
+    ).distinct().all()}
     by_status = Counter()
     refreshed = 0
     changed = 0
@@ -370,7 +398,9 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
 
         by_status[classification['status']] += 1
 
-        was_changed, before = _apply_assignment(pitcher, classification, timestamp)
+        was_changed, before = _apply_assignment(
+            pitcher, classification, timestamp, governed=pitcher.id in governed_ids,
+        )
         if was_changed:
             changed += 1
             if classification['status'] == TEAM_ASSIGNMENT_ASSIGNED and before.get('team_id') not in (None, classification.get('team_id')):

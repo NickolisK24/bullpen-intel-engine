@@ -94,6 +94,22 @@ def process_final_play_by_play_foundation(
         )
         return _result(None, 'skipped', reason='missing_game_pk')
 
+    from services.semantic_write_fencing import lock_game, owns_final_projection
+    from models.final_game_reconciliation import FinalGameVersion
+    lock_game(game_pk)
+    if not owns_final_projection(game_pk) and FinalGameVersion.query.filter_by(
+        game_pk=game_pk, is_current=True,
+    ).first() is not None:
+        marker = _existing_marker(game_pk)
+        result = (_result_from_marker(marker, skipped=True, reason='final_superseded')
+                  if marker is not None else _result(game_pk, 'skipped', reason='final_superseded'))
+        result['write_outcome'] = 'final_superseded'
+        result['corrected'] = False
+        result['pitch_rows'] = {'inserted': 0, 'updated': 0, 'unchanged': 0,
+                                'superseded': 0, 'current': marker.current_pitch_count if marker else 0,
+                                'affected_pitcher_mlb_ids': [], 'affected_team_ids': []}
+        return result
+
     finality = classify_game_finality(game, boxscore=boxscore, require_boxscore=True)
     if finality.state != FINAL_AND_USABLE:
         return _result(

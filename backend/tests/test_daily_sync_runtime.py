@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
-from sqlalchemy import event
+from sqlalchemy import event, text
 
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
@@ -165,6 +165,32 @@ def test_window_rows_are_prefetched_in_one_select(app, monkeypatch):
     assert result['lane_health'] == 'ok'
     assert _count_game_log_selects(statements) == 1
     assert _count_game_log_updates(statements) == 0
+
+
+def test_prefetched_noop_cannot_restore_a_concurrent_correction(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700149, 'Concurrent Correction')
+        _seed_final(824904, JULY_5)
+        _seed_row(pitcher, 824904, JULY_5)
+        db.session.commit()
+        monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs',
+                            lambda mlb_id, season=None: [_split(824904, JULY_5)])
+        original = sync_service._upsert_game_log_from_authoritative_values
+
+        def correct_after_prefetch(**kwargs):
+            assert kwargs['existing'].pitches_thrown == 15
+            with db.engine.begin() as connection:
+                connection.execute(text(
+                    'UPDATE game_logs SET pitches_thrown=19 WHERE mlb_game_pk=824904'
+                ))
+            return original(**kwargs)
+
+        monkeypatch.setattr(sync_service, '_upsert_game_log_from_authoritative_values',
+                            correct_after_prefetch)
+        result = sync_service.sync_recent_logs(days_back=7, reference_date=REFERENCE_DATE)
+        db.session.expire_all()
+        assert result['logs_unchanged'] == 1
+        assert GameLog.query.filter_by(mlb_game_pk=824904).one().pitches_thrown == 19
 
 
 def test_authoritative_zero_whip_inputs_are_unchanged(app, monkeypatch):

@@ -28,13 +28,14 @@ from models.sync_certification import (
 from models.sync_job import SyncJob
 from models.sync_run import SyncRun
 from services.roster_authority_health import roster_authority_coverage
+from services.compatibility_writer_health import compatibility_writer_health
 from utils.db import db
 from utils.time import utc_now_naive
 
 
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
-EXPECTED_MIGRATION_HEAD = 'd2e5f8a1b4c7'
+EXPECTED_MIGRATION_HEAD = 'e3f6a9b2c5d8'
 HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {
@@ -126,8 +127,9 @@ def validate_activation_controls(controls):
 def legacy_responsibility_map():
     """Complete transition map. Every retirement remains evidence-gated."""
     common_rollback = (
-        'Disable all SYNC_PIPELINE_* controls; keep new additive evidence; '
-        'continue the established daily/postgame/continuous authority.'
+        'Disable pipeline activation through the governed rollback; preserve evidence '
+        'and persistent writer ownership. Legacy may continue on unowned resources; '
+        'SP-owned projections require an explicit owner recovery decision.'
     )
     rows = [
         ('schedule_game_state', 'Schedule and game-state discovery',
@@ -208,6 +210,7 @@ def classify_operational_health(signals):
         'missing_roster_authority_teams': 'thirty_team_roster_authority_incomplete',
         'roster_membership_mismatch_teams': 'roster_source_canonical_mismatch',
         'roster_authority_violations': 'roster_authority_source_mismatch',
+        'unresolved_writer_ownership_conflicts': 'shared_writer_authority_conflict',
         'unreconciled_final_games': 'unreconciled_final_game',
         'current_publication_missing': 'atomic_current_publication_missing',
         'publication_pointer_inconsistencies': 'publication_pointer_inconsistent',
@@ -227,6 +230,7 @@ def classify_operational_health(signals):
         'cache_handoff_failures': 'cache_handoff_retrying',
         'active_repairs': 'repair_request_active',
         'continuous_unhealthy_runs': 'continuous_update_required_obligation_unresolved',
+        'repeated_writer_lock_contention': 'repeated_shared_writer_lock_contention',
     }
     for field, reason in blocking_fields.items():
         if int(signals.get(field) or 0) > 0:
@@ -289,6 +293,7 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         ZoneInfo('America/New_York')
     ).date()
     roster_authority = roster_authority_coverage(roster_date, now=now)
+    writer_health = compatibility_writer_health(now=now)
     roster_team_count = roster_authority['active_roster_coverage_count']
     continuous_runs = SyncRun.query.filter(
         SyncRun.job_name == 'continuous_cycle',
@@ -388,6 +393,9 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'roster_authority_team_count': int(roster_team_count),
         'missing_roster_authority_teams': max(0, 30 - int(roster_team_count)),
         'roster_authority': roster_authority,
+        'writer_ownership': writer_health,
+        'unresolved_writer_ownership_conflicts': writer_health['unresolved_ownership_conflicts'],
+        'repeated_writer_lock_contention': writer_health['repeated_lock_contention_jobs'],
         'roster_membership_mismatch_teams': sum(
             not row['active']['exact_match'] or not row['forty_man']['exact_match']
             for row in roster_authority['teams']

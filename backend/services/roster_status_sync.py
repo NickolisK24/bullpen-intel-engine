@@ -551,16 +551,58 @@ def _upsert_roster_status_snapshot(
     flush=True,
 ):
     timestamp = timestamp or utc_now_naive()
+    # Lock the compatibility parent before its dated snapshot. Cached caller
+    # objects cannot decide precedence after another owner has committed.
     existing = existing_snapshot
     if existing is _EXISTING_SNAPSHOT_NOT_PROVIDED:
+        Pitcher.query.filter_by(id=values['pitcher_id']).with_for_update().first()
         existing = (
             RosterStatusSnapshot.query
             .filter_by(
                 pitcher_id=values['pitcher_id'],
                 snapshot_date=values['snapshot_date'],
             )
-            .first()
+            .populate_existing().with_for_update().first()
         )
+
+    incoming_governed = all(values.get(field) is not None for field in (
+        'active_roster_observation_id', 'forty_man_roster_observation_id',
+    ))
+    existing_governed = existing is not None and all(getattr(existing, field) is not None for field in (
+        'active_roster_observation_id', 'forty_man_roster_observation_id',
+    ))
+    if existing_governed and not incoming_governed:
+        return existing, 'unchanged', False
+    if existing_governed and incoming_governed and existing.team_id == values['team_id']:
+        from models.source_observation import SourceObservation
+        for field in ('active_roster_observation_id', 'forty_man_roster_observation_id'):
+            prior = db.session.get(SourceObservation, getattr(existing, field))
+            incoming = db.session.get(SourceObservation, values[field])
+            if (incoming is None or prior is None
+                    or incoming.source_subject_id != prior.source_subject_id):
+                raise ValueError('Roster snapshot sources have incomparable authority')
+            if incoming.version_number < prior.version_number:
+                return existing, 'unchanged', False
+
+    team_corrected = False
+    if existing and existing.team_id != values['team_id'] and incoming_governed:
+        incoming_member = bool(values.get('active_roster') or values.get('forty_man_roster'))
+        if existing_governed and not incoming_member:
+            # A club's negative view cannot negate another club's positive
+            # player/date projection. Membership intervals retain both views.
+            return existing, 'unchanged', False
+        from models.roster_membership import RosterMembershipInterval
+        old_club_claim = RosterMembershipInterval.query.filter_by(
+            pitcher_id=values['pitcher_id'], team_id=existing.team_id,
+            effective_end_date=None, is_current_version=True, is_void=False,
+        ).filter(RosterMembershipInterval.membership_type.in_(
+            ('active_roster', 'forty_man_roster'),
+        )).first()
+        prior_removed = (not existing.active_roster and not existing.forty_man_roster
+                         and old_club_claim is None)
+        if incoming_member and (not existing_governed or prior_removed):
+            existing.team_id = values['team_id']
+            team_corrected = True
 
     if existing and existing.team_id != values['team_id']:
         failure = dead_letter.record_failure(
@@ -595,7 +637,7 @@ def _upsert_roster_status_snapshot(
     if not allow_correction:
         return existing, 'unchanged', False
 
-    changed = False
+    changed = team_corrected
     for field in _SNAPSHOT_FACT_FIELDS:
         if getattr(existing, field) != values[field]:
             setattr(existing, field, values[field])
@@ -659,11 +701,15 @@ def persist_missing_exact_roster_status_snapshots(
 
     pitcher_ids = {key[0] for key in deduped}
     snapshot_dates = {key[1] for key in deduped}
+    # Own all parent rows before taking the bounded snapshot read. This makes
+    # the explicit existing_snapshot argument safe without per-player reads.
+    Pitcher.query.filter(Pitcher.id.in_(pitcher_ids)).order_by(Pitcher.id).with_for_update().all()
     existing_rows = (
         RosterStatusSnapshot.query
         .filter(RosterStatusSnapshot.pitcher_id.in_(pitcher_ids))
         .filter(RosterStatusSnapshot.snapshot_date.in_(snapshot_dates))
-        .all()
+        .order_by(RosterStatusSnapshot.pitcher_id, RosterStatusSnapshot.snapshot_date)
+        .populate_existing().with_for_update().all()
     )
     existing_by_key = {
         (row.pitcher_id, row.snapshot_date): row

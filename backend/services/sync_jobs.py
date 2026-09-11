@@ -513,6 +513,7 @@ def _owned_job(job_id, *, worker_id, claim_token, now):
         SyncJob.query
         .filter(SyncJob.id == job_id)
         .with_for_update()
+        .populate_existing()
         .one_or_none()
     )
     if job is None:
@@ -798,7 +799,9 @@ def run_next_job(
         )
         raise error
     try:
-        result = handler(job)
+        from services.semantic_write_fencing import worker_claim
+        with worker_claim(job.id, worker_id, claim_token):
+            result = handler(job)
     except BaseException as error:
         db.session.rollback()
         try:

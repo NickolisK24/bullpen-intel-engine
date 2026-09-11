@@ -131,9 +131,32 @@ def observe_game_change(
         ((payload or {}).get('metaData') or {}).get('timeStamp')
     )
     payload_bytes = len(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode())
+    from services.semantic_write_fencing import lock_game
+    lock_game(observation['game_pk'])
     row = GameObservationState.query.filter_by(
         mlb_game_pk=observation['game_pk']
-    ).one_or_none()
+    ).populate_existing().with_for_update().one_or_none()
+    from models.final_game_reconciliation import FinalGameVersion
+    if observation['finality']['state'] != 'final_and_usable' and FinalGameVersion.query.filter_by(
+        game_pk=observation['game_pk'], is_current=True,
+    ).first() is not None:
+        retained = _record_live_source_observation(
+            observation=observation, source_observed_at=source_observed_at,
+            source_authority=source_authority, payload_bytes=payload_bytes,
+            correction=False, sync_run_id=sync_run_id, sync_job_id=sync_job_id,
+        )
+        _finish(commit)
+        return _result(
+            game_pk=observation['game_pk'], classification=AMBIGUOUS_OBSERVATION,
+            changed=False, previous=row.observation_fingerprint if row else None,
+            current=fingerprint, finality='final_and_usable',
+            source_authority=source_authority, source_observed_at=source_observed_at,
+            detected_at=detected_at, reason=FINAL_EVIDENCE_REGRESSION, accepted=False,
+            source_observation_id=retained.observation.id,
+            source_observation_outcome=retained.outcome,
+            current_authority_satisfied=True, payload_bytes=payload_bytes,
+            elapsed_ms=_elapsed(started),
+        )
     if (
         require_live_pitching
         and ((observation.get('live_pitching') or {}).get('completeness')
@@ -209,6 +232,10 @@ def observe_game_change(
             correction=False,
             sync_run_id=sync_run_id, sync_job_id=sync_job_id,
         )
+        # An older deployed detector can accept a newer upstream revision but
+        # cannot attach SP-03 lineage. Relink only this exact retained fact set.
+        if row.source_observation_id != source_result.observation.id:
+            row.source_observation_id = source_result.observation.id
         result = _result(
             game_pk=observation['game_pk'], classification=UNCHANGED, changed=False,
             previous=row.observation_fingerprint, current=fingerprint,
@@ -247,6 +274,13 @@ def observe_game_change(
     ):
         ordering = 'newer'
         reason = EQUAL_REVISION_FINAL_VERIFIED
+    if (
+        ordering == 'ambiguous'
+        and reason == 'equal_revision_with_different_material_content'
+        and _equal_revision_live_projection_is_verified(row.observation, observation)
+    ):
+        ordering = 'newer'
+        reason = 'equal_revision_live_projection_adopted'
     if ordering != 'newer':
         classification = (
             STALE_OBSERVATION if ordering in {'older', 'weaker'}
@@ -275,6 +309,8 @@ def observe_game_change(
         correction=classification == CORRECTED,
         sync_run_id=sync_run_id, sync_job_id=sync_job_id,
     )
+    from services.semantic_write_fencing import authorize_observation_projection
+    authorize_observation_projection(observation['game_pk'])
     row.previous_observation_fingerprint = previous
     row.observation_fingerprint = fingerprint
     row.observation = observation
@@ -354,7 +390,7 @@ def detect_active_slate_changes(
             commit=False,
             create_work_obligation=True,
         )
-        for pk in candidates
+        for pk in sorted(candidates)
     ]
     if commit:
         db.session.commit()
@@ -546,6 +582,20 @@ def _compare_order(*, accepted_authority, accepted_observed_at,
     if incoming_observed_at < accepted_observed_at:
         return 'older', 'older_upstream_observation'
     return 'ambiguous', 'equal_revision_with_different_material_content'
+
+
+def _equal_revision_live_projection_is_verified(previous, current):
+    """Adopt the SP live section without revising any accepted common fact."""
+    previous, current = previous or {}, current or {}
+    return (
+        previous.get('schema_version') == 1
+        and current.get('schema_version') == 2
+        and 'live_pitching' not in previous
+        and (current.get('finality') or {}).get('state') == game_finality.NOT_FINAL
+        and (current.get('live_pitching') or {}).get('completeness') == 'complete_for_observation'
+        and {key: value for key, value in previous.items() if key != 'schema_version'}
+        == {key: value for key, value in current.items() if key not in ('schema_version', 'live_pitching')}
+    )
 
 
 def _equal_revision_final_is_verified(*, previous, current, payload):

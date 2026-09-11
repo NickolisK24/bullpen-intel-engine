@@ -43,7 +43,36 @@ The report uses the canonical 30 MLB clubs. It fails nonzero unless complete act
 
 Before a permanent Render service is reviewed, the bounded path can be invoked against the production application database through the manual `shadow_sp` mode of `.github/workflows/baseballos-sync.yml`. That mode skips the public-sync and other legacy workflow jobs, applies additive migrations, runs the allowlisted worker, captures the read-only health report, and retains both JSON artifacts for 30 days. It is not a scheduler and must not be treated as recurrent activation.
 
-Rollback sets `SYNC_PIPELINE_SHADOW_MODE=false` or `SYNC_PIPELINE_ENABLED=false`. Leave the two legacy controls true. Existing shadow evidence is retained.
+Stopping acquisition does not release canonical ownership. After the AUDIT-R2
+writer-fencing migration, changing pipeline flags alone cannot return SP-owned
+compatibility records to legacy writers. Preserve evidence and use an explicit
+owner/recovery decision; do not remove the database guards to make a legacy write
+succeed. The R2 package itself changes no flags or schedules.
+
+## Shared writer ownership during coexistence
+
+The temporary authority map is
+[AUDIT-R2 shared writer fencing](AUDIT-R2_SHARED_WRITER_FENCING.md#5-new-ownership-model).
+Final GameLog/PBP projections use one game fence. MLB pitcher organization/status
+and exact-date snapshots use the SP-05 authority boundary. Transactions use a
+scoped event lock and a captured predecessor version. Expected suppression is an
+operational event, not a failed baseball source.
+
+Inspect `writer_ownership` in certification health and recent
+`compatibility_write_events` for `stale_suppressed` / `final_superseded`. A positive
+suppression count is not itself unhealthy. Current Final/provisional overlap,
+Final/GameLog disagreement, conflicting MLB claims, or governed pitcher team
+mismatch remain blockers. Repeated active-job lock contention needs investigation.
+
+R2 deployment must keep the integration entrypoint fail-closed until schema
+`e3f6a9b2c5d8` is present. Verify that earlier integration invocations have ended
+before applying the migration; an in-flight older SP owner lacks the scoped
+transaction markers. Do not manufacture a production race. After migration,
+verify the pointer and flags, inspect current conflicts read-only, and correct
+affected roster projections through bounded SP-13 → SP-05 work. Observe natural
+recurring cycles before claiming coexistence PASS. The migration refuses a
+downgrade that would discard suppression history, unattributed legacy transaction
+baselines, or repeated transaction fact versions.
 
 ## Inspect the durable queue
 

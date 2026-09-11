@@ -50,9 +50,9 @@ def _passing_evidence(*, warning_gate=None):
 
 
 def test_migration_head_parser_ignores_application_startup_noise():
-    output = '[scheduler] AUTO_SYNC disabled\nd2e5f8a1b4c7 (head)\n'
+    output = '[scheduler] AUTO_SYNC disabled\ne3f6a9b2c5d8 (head)\n'
 
-    assert _parse_migration_heads(output) == ['d2e5f8a1b4c7']
+    assert _parse_migration_heads(output) == ['e3f6a9b2c5d8']
 
 
 def test_activation_controls_default_fail_closed():
@@ -82,7 +82,7 @@ def test_disabled_parent_rejects_enabled_child_flags():
 
 def test_every_gate_is_represented_and_missing_proof_is_no_go():
     checks = certification_checks(
-        migration_heads=['d2e5f8a1b4c7'], integration_sha_matches=True,
+        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
         controls=ActivationControls(), evidence={},
     )
     result = evaluate_certification(checks)
@@ -94,7 +94,7 @@ def test_every_gate_is_represented_and_missing_proof_is_no_go():
 
 def test_warning_only_condition_can_remain_go_with_caveat():
     checks = certification_checks(
-        migration_heads=['d2e5f8a1b4c7'], integration_sha_matches=True,
+        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
         controls=ActivationControls(), evidence=_passing_evidence(warning_gate='J'),
     )
     result = evaluate_certification(checks)
@@ -110,7 +110,7 @@ def test_critical_failure_is_no_go():
         'summary': 'A mixed-generation reader remains.',
     }
     result = evaluate_certification(certification_checks(
-        migration_heads=['d2e5f8a1b4c7'], integration_sha_matches=True,
+        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
         controls=ActivationControls(), evidence=evidence,
     ))
     assert result['verdict'] == 'NO-GO'
@@ -252,15 +252,15 @@ def test_legacy_map_covers_every_active_responsibility_and_defers_publication(ap
 def test_certification_evidence_is_immutable_and_idempotent(app):
     controls = ActivationControls()
     report = evaluate_certification(certification_checks(
-        migration_heads=['d2e5f8a1b4c7'], integration_sha_matches=True,
+        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
         controls=controls, evidence=_passing_evidence(),
     ))
     first = persist_certification_report(
-        report, integration_commit_sha='a' * 40, migration_head='d2e5f8a1b4c7',
+        report, integration_commit_sha='a' * 40, migration_head='e3f6a9b2c5d8',
         environment='test', controls=controls,
     )
     second = persist_certification_report(
-        report, integration_commit_sha='a' * 40, migration_head='d2e5f8a1b4c7',
+        report, integration_commit_sha='a' * 40, migration_head='e3f6a9b2c5d8',
         environment='test', controls=controls,
     )
     assert first.id == second.id

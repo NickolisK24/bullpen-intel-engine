@@ -238,9 +238,12 @@ def test_requests_deduplicate_by_exact_team_and_date_and_retry_is_idempotent(app
         assert result['roster_gets_attempted'] == 4
         assert result['snapshots_created'] == 1
         assert result['transactions_corrected'] == 2
-        assert len(selects) <= 8
-        assert sum('from player_transactions' in value for value in selects) == 1
-        assert sum('from roster_status_snapshots' in value for value in selects) == 3
+        # Ownership adds fresh bounded transaction/snapshot reads, a pitcher
+        # row lock, and PostgreSQL advisory/owner-marker statements. Source
+        # acquisition remains deduplicated by the one team/date pair.
+        assert len(selects) <= 15
+        assert sum('from player_transactions' in value for value in selects) == 2
+        assert sum('from roster_status_snapshots' in value for value in selects) == 4
         assert RosterStatusSnapshot.query.count() == 1
         assert first.roster_snapshot_alignment == 'aligned'
         assert second.roster_snapshot_alignment == 'aligned'

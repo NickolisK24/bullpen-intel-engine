@@ -60,6 +60,64 @@ def _enqueue(
     )
 
 
+def test_semantic_commit_rejects_reclaimed_claim_despite_cached_job(app):
+    from sqlalchemy import text
+    from models.pitcher import Pitcher
+    from services.semantic_write_fencing import worker_claim
+
+    with app.app_context():
+        if db.engine.dialect.name != 'postgresql':
+            pytest.skip('PostgreSQL independent transaction fence')
+        _enqueue()
+        job = sync_jobs.claim_next_job('old-worker')
+        job_id, original_token = job.id, job.claim_token
+        # Keep the old object loaded while another transaction replaces it.
+        with db.engine.begin() as connection:
+            connection.execute(text(
+                "UPDATE sync_jobs SET worker_id='new-worker', claim_token='new-token' WHERE id=:id"
+            ), {'id': job_id})
+        assert job.claim_token == original_token
+        with worker_claim(job_id, 'old-worker', original_token):
+            db.session.add(Pitcher(mlb_id=999123, full_name='Uncommitted Pitcher'))
+            with pytest.raises(sync_jobs.LeaseOwnershipError):
+                db.session.commit()
+            db.session.rollback()
+        assert Pitcher.query.filter_by(mlb_id=999123).count() == 0
+        with pytest.raises(sync_jobs.LeaseOwnershipError):
+            sync_jobs.heartbeat_job(job_id, worker_id='old-worker', claim_token=original_token)
+        db.session.rollback()
+
+
+def test_expired_owner_cannot_commit_after_real_queue_reclaim(app):
+    from models.pitcher import Pitcher
+    from services.semantic_write_fencing import worker_claim
+
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL separate worker reclaim')
+    _enqueue()
+    old = sync_jobs.claim_next_job('expired-owner')
+    job_id, token, expiry = old.id, old.claim_token, old.lease_until
+    db.session.rollback()
+
+    def replacement():
+        with app.app_context():
+            row = sync_jobs.claim_next_job('replacement-owner', now=expiry + timedelta(seconds=1))
+            assert row.id == job_id
+            return row.claim_token
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        replacement_token = pool.submit(replacement).result(timeout=10)
+    assert replacement_token != token
+    with worker_claim(job_id, 'expired-owner', token):
+        db.session.add(Pitcher(mlb_id=999124, full_name='Expired Writer'))
+        with pytest.raises(sync_jobs.LeaseOwnershipError):
+            db.session.commit()
+        db.session.rollback()
+    assert Pitcher.query.filter_by(mlb_id=999124).count() == 0
+    attempt = SyncJobAttempt.query.filter_by(claim_token=token).one()
+    assert attempt.outcome == 'lease_expired'
+
+
 def _run():
     run = SyncRun(
         job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
