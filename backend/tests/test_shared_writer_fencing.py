@@ -365,6 +365,15 @@ def test_accepted_legacy_revision_cannot_keep_prior_source_identity(guarded):
     assert replay.classification == detection.UNCHANGED
     assert replay.source_observation_id != first.source_observation_id
     assert GameObservationState.query.one().source_observation_id == replay.source_observation_id
+    from services.compatibility_writer_health import compatibility_writer_health
+    assert compatibility_writer_health()['observation_lineage_conflicts'] == 0
+    # Pre-deployment rows can already contain the inherited wrong link.
+    row = GameObservationState.query.one()
+    row.source_observation_id = first.source_observation_id
+    db.session.commit()
+    assert compatibility_writer_health()['observation_lineage_conflict_game_pks'] == [observed_game]
+    detection.observe_game_change(observed_game, payload=changed)
+    assert compatibility_writer_health()['observation_lineage_conflicts'] == 0
 
 
 def test_overlapping_transaction_windows_cannot_restore_stale_event(guarded):

@@ -8,12 +8,14 @@ from sqlalchemy.orm import aliased
 from models.compatibility_write_event import CompatibilityWriteEvent
 from models.final_game_reconciliation import FinalGameVersion, FinalPitchingAppearanceVersion
 from models.game_log import GameLog
+from models.game_observation_state import GameObservationState
 from models.live_game_delta import ProvisionalPitchingAppearanceState
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction
 from models.roster_membership import PlayerTransactionVersion
 from models.roster_membership import RosterMembershipInterval
 from models.sync_job import SyncJob, SyncJobAttempt
+from models.source_observation import SourceObservation
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -39,6 +41,11 @@ def compatibility_writer_health(*, now=None):
             FinalGameVersion.is_current.is_(True),
         ),
     ).filter(ProvisionalPitchingAppearanceState.is_current.is_(True)).count()
+    lineage_conflicts = db.session.query(GameObservationState.mlb_game_pk).join(
+        SourceObservation, SourceObservation.id == GameObservationState.source_observation_id,
+    ).filter(GameObservationState.observation_fingerprint.is_distinct_from(
+        SourceObservation.fingerprint,
+    )).all()
     appearance = FinalPitchingAppearanceVersion
     mismatched_final = db.session.query(appearance.game_pk, appearance.pitcher_id).outerjoin(
         GameLog, and_(GameLog.mlb_game_pk == appearance.game_pk, GameLog.pitcher_id == appearance.pitcher_id),
@@ -97,6 +104,8 @@ def compatibility_writer_health(*, now=None):
             {'pitcher_id': pitcher_id, 'team_id': team_id} for pitcher_id, team_id in mismatched_pitchers
         ],
         'current_provisional_for_final': current_live,
+        'observation_lineage_conflicts': len(lineage_conflicts),
+        'observation_lineage_conflict_game_pks': [row[0] for row in lineage_conflicts],
         'final_projection_conflicts': len(mismatched_final),
         'extra_final_contributions': len(extra_final),
         'conflicting_mlb_memberships': len(conflicting_clubs),
@@ -112,5 +121,6 @@ def compatibility_writer_health(*, now=None):
         'unresolved_ownership_conflicts': (
             len(mismatched_pitchers) + current_live + len(mismatched_final)
             + len(extra_final) + len(conflicting_clubs) + len(transaction_conflicts)
+            + len(lineage_conflicts)
         ),
     }

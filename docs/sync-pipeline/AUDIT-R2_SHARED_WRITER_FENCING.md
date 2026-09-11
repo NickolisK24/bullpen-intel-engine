@@ -258,6 +258,13 @@ publication/morning/closure false; both legacy controls true. Atomic reads were
 absent from the complete service and linked-group key lists, retaining the
 checked false default. The deployed integration remained at the R1 base SHA.
 
+At 16:25 UTC the lineage census found eight current game-observation links whose
+retained fingerprints differ: 823088, 823413, 823499, 823739, 823818, 824064,
+824549 and 824550. These are pre-deployment projection-lineage conflicts, not
+Final/GameLog numerical disagreements. Normal exact-fact reacquisition repairs
+the link; ownership health reports any that remain. All 76 current versioned
+transaction rows matched their immutable versions in the 16:22 UTC census.
+
 ## 16. Health/observability
 
 Expected stale suppression must remain observable without becoming a SyncFailure. Unresolved authority conflicts must remain distinguishable from harmless suppression.
@@ -265,6 +272,7 @@ Expected stale suppression must remain observable without becoming a SyncFailure
 The proposed health reducer reports current provisional rows for Final games,
 governed pitcher/current-team disagreement, Final-vs-GameLog numerical mismatch,
 current transaction facts that disagree with their immutable event version,
+game-observation links that disagree with retained source fingerprints,
 recent suppression totals, and repeated active-job lock contention. Expected
 suppression alone does not block health; unresolved projection disagreement does.
 
