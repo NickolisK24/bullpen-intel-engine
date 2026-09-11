@@ -104,6 +104,20 @@ clears its inherited SP-03 observation link. The SP detector can reattach that
 link only after retaining the exact matching fact set. A newer legacy projection
 therefore cannot falsely cite an older source observation.
 
+The deployed legacy detector uses live schema v1, which omits SP-08's pitching
+section. The PostgreSQL handoff test reproduced rejection of the first SP v2
+observation at an equal MLB revision. Adoption now requires exactly the same
+shared baseball facts, v1-to-v2 schema progression, and a complete pitching view.
+Changed common facts at an equal revision remain ambiguous. A subsequent legacy
+live-schema write cannot remove the governed pitching section; Final supersession
+remains allowed. This is source/projection ownership, not a replay contract change.
+
+SP-08 also reconciles a complete, exact-match retained observation when another
+detector accepted it first. The cross-caller test reproduced zero provisional
+mutations despite three owed appearances. The live owner now applies those
+appearances under its game fence; a subsequent poll remains a fingerprint no-op.
+Stale, ambiguous and partial incoming evidence does not gain this admission.
+
 ## 9. Roster projection changes
 
 The governed population is official pitcher/two-way membership. R1's five non-pitching legacy records remain separate evidence: Tyler Callihan 802, Max Schuemann 999, Buddy Kennedy 992, César Salazar 984, Jake Meyers 997. This package does not assume those records should be deleted or reassigned merely because their table is named Pitcher.
@@ -171,7 +185,7 @@ Cross-resource lock ordering and retry effects remain part of validation.
 
 Focused PostgreSQL results so far:
 
-- Twenty-two shared-writer tests cover delayed legacy GameLog update after
+- Twenty-three shared-writer tests cover delayed legacy GameLog update after
   corrected Final, delayed Final after corrected Final, delayed live after Final,
   unrelated-game parallelism, and reverse-order lock rejection.
 - The delayed legacy test reads 18 pitches, allows corrected Final to commit 19,
@@ -203,6 +217,9 @@ reported separately from CI and deployment; they do not authorize publication.
 The detector/lineage group passed 117 PostgreSQL tests; the final shared-writer,
 roster, R1 isolation and certification group passed 73. Same-club acquisition
 ordering and unrelated-club parallelism are both exercised.
+After the deployed live-schema and cross-detector handoff corrections, all 129
+shared-writer/detector/live tests passed on PostgreSQL. The handoff test verifies
+three owed provisional appearances instead of the reproduced zero-mutation loss.
 
 ## 14. Natural regression proof
 

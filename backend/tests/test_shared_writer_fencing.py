@@ -376,6 +376,52 @@ def test_accepted_legacy_revision_cannot_keep_prior_source_identity(guarded):
     assert compatibility_writer_health()['observation_lineage_conflicts'] == 0
 
 
+def test_legacy_detector_handoff_preserves_live_pitching_authority(guarded, monkeypatch):
+    from services import game_change_detection as detection
+    from models.game_observation_state import GameObservationState
+    from tests.test_live_game_delta import _live_feed
+
+    root = Path(__file__).resolve().parents[2]
+    source = subprocess.run([
+        'git', 'show', 'aabe4b988fbfa4b5fedcf5da9dcecafa9142ed65:backend/services/game_change_detection.py',
+    ], cwd=root, check=True, capture_output=True, text=True, encoding='utf-8').stdout
+    legacy = ModuleType('deployed_legacy_detector')
+    monkeypatch.setitem(sys.modules, legacy.__name__, legacy)
+    exec(compile(source, 'deployed_legacy_detector.py', 'exec'), legacy.__dict__)
+    payload = _live_feed()
+    game_pk = payload['gamePk']
+    assert legacy.observe_game_change(game_pk, payload=payload).accepted
+    assert 'live_pitching' not in GameObservationState.query.one().observation
+    changed_common_facts = _live_feed()
+    changed_common_facts['liveData']['linescore']['outs'] = 2
+    ambiguous = detection.observe_game_change(
+        game_pk, payload=changed_common_facts, require_live_pitching=True,
+    )
+    assert not ambiguous.accepted  # Equal revision with different common facts.
+    adopted = detection.observe_game_change(game_pk, payload=payload, require_live_pitching=True)
+    assert adopted.accepted, adopted.reason
+    assert GameObservationState.query.one().observation['live_pitching']['completeness'] == 'complete_for_observation'
+    # A later old-binary observation may not erase the governed pitching view.
+    newer = _live_feed(timestamp='20260826_010100', reliever_pitches=9)
+    legacy.observe_game_change(game_pk, payload=newer)
+    db.session.expire_all()
+    assert 'live_pitching' in GameObservationState.query.one().observation
+    accepted = detection.observe_game_change(game_pk, payload=newer, require_live_pitching=True)
+    assert accepted.accepted
+    # Another detector accepted the source first; SP-08 still owes its own
+    # provisional projection even though its fetch is now an exact replay.
+    from tests.test_live_game_delta import _schedule, _run
+    from models.live_game_delta import ProvisionalPitchingAppearanceState
+    from services.semantic_write_fencing import authorize_schedule_projection
+    authorize_schedule_projection([game_pk])
+    _schedule()
+    job = _run(newer)
+    assert job.result_json['mutations'] == 3
+    assert ProvisionalPitchingAppearanceState.query.filter_by(
+        pitcher_mlb_id=303, is_current=True,
+    ).one().pitches_thrown == 9
+
+
 def test_overlapping_transaction_windows_cannot_restore_stale_event(guarded):
     transaction_pitcher()
     start, end = date(2026, 6, 27), date(2026, 7, 4)

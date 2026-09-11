@@ -274,6 +274,13 @@ def observe_game_change(
     ):
         ordering = 'newer'
         reason = EQUAL_REVISION_FINAL_VERIFIED
+    if (
+        ordering == 'ambiguous'
+        and reason == 'equal_revision_with_different_material_content'
+        and _equal_revision_live_projection_is_verified(row.observation, observation)
+    ):
+        ordering = 'newer'
+        reason = 'equal_revision_live_projection_adopted'
     if ordering != 'newer':
         classification = (
             STALE_OBSERVATION if ordering in {'older', 'weaker'}
@@ -575,6 +582,20 @@ def _compare_order(*, accepted_authority, accepted_observed_at,
     if incoming_observed_at < accepted_observed_at:
         return 'older', 'older_upstream_observation'
     return 'ambiguous', 'equal_revision_with_different_material_content'
+
+
+def _equal_revision_live_projection_is_verified(previous, current):
+    """Adopt the SP live section without revising any accepted common fact."""
+    previous, current = previous or {}, current or {}
+    return (
+        previous.get('schema_version') == 1
+        and current.get('schema_version') == 2
+        and 'live_pitching' not in previous
+        and (current.get('finality') or {}).get('state') == game_finality.NOT_FINAL
+        and (current.get('live_pitching') or {}).get('completeness') == 'complete_for_observation'
+        and {key: value for key, value in previous.items() if key != 'schema_version'}
+        == {key: value for key, value in current.items() if key not in ('schema_version', 'live_pitching')}
+    )
 
 
 def _equal_revision_final_is_verified(*, previous, current, payload):

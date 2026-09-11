@@ -147,6 +147,8 @@ BEGIN
   IF NEW.observation_fingerprint=OLD.observation_fingerprint THEN RETURN NEW; END IF;
   IF NEW.previous_observation_fingerprint IS DISTINCT FROM OLD.observation_fingerprint
     OR NEW.source_authority IS DISTINCT FROM OLD.source_authority
+    OR (NEW.finality_state='not_final' AND OLD.observation::jsonb ? 'live_pitching'
+        AND NOT (NEW.observation::jsonb ? 'live_pitching'))
     OR (OLD.finality_state='final_and_usable' AND NEW.finality_state<>'final_and_usable')
     OR (NEW.finality_state<>'final_and_usable' AND EXISTS (
       SELECT 1 FROM final_game_versions WHERE game_pk=NEW.mlb_game_pk AND is_current))

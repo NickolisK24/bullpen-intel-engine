@@ -146,7 +146,11 @@ def execute_live_game_delta(job, *, now=None, client=None):
         affected_pitchers, affected_teams = set(), set()
         downstream = None
         final_owns_game = FinalGameVersion.query.filter_by(game_pk=game_pk, is_current=True).first() is not None
-        if not final_owns_game and observed.accepted and observed.finality_state == 'not_final':
+        # Shared detection may accept the feed before this owner runs. An exact
+        # replay still owes any missing provisional projection; row fingerprints
+        # make already-applied appearances a no-op under the same game fence.
+        current_evidence = observed.accepted or observed.classification == game_change_detection.UNCHANGED
+        if not final_owns_game and current_evidence and observed.finality_state == 'not_final':
             state_row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one()
             projection = (state_row.observation or {}).get('live_pitching') or {}
             if projection.get('completeness') == 'complete_for_observation':
