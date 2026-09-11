@@ -263,6 +263,21 @@ def sync_transactions(
     window_ref = _window_ref(start_date, end_date)
     source_identity = _transaction_source_identity(start_date, end_date, team_id=team_id)
     fetch_started_at = utc_now_naive()
+    # Capture current event generations before the remote request. A response
+    # that resumes after another window changed the event must reacquire;
+    # unrelated request-window version numbers are not comparable revisions.
+    expected_event_versions = dict(db.session.query(
+        PlayerTransaction.transaction_key, PlayerTransaction.current_version_number,
+    ).all())
+    expected_legacy_fingerprints = {
+        row.transaction_key: _transaction_fact_fingerprint({
+            field: getattr(row, field) for field in _TRANSACTION_VERSION_FACT_FIELDS
+        })
+        for row in PlayerTransaction.query.filter(
+            (PlayerTransaction.current_version_number == 0)
+            | PlayerTransaction.current_version_number.is_(None),
+        ).all()
+    }
 
     counts = Counter()
     errors = []
@@ -449,7 +464,7 @@ def sync_transactions(
         pitcher_ids={pitcher.id for pitcher in pitchers_by_mlb_id.values()},
         snapshot_dates=transaction_dates,
     )
-    for transaction in transactions:
+    for transaction in sorted(transactions, key=lambda value: _transaction_key(value) if isinstance(value, dict) else ''):
         if not isinstance(transaction, dict):
             detail = {
                 'reason': 'shape_surprise',
@@ -520,6 +535,8 @@ def sync_transactions(
             sync_run_id=sync_run_id,
             timestamp=timestamp,
             source_observation_id=source_result.observation.id,
+            expected_version=int(expected_event_versions.get(values['transaction_key']) or 0),
+            expected_legacy_fingerprint=expected_legacy_fingerprints.get(values['transaction_key']),
         )
         if row is None:
             continue
@@ -537,6 +554,10 @@ def sync_transactions(
 
         counts['records_stored'] += 1
         counts[f'records_{action}'] += 1
+        if action == 'stale_suppressed':
+            versions = dict(counts.get('suppressed_event_versions') or {})
+            versions[row.transaction_key] = row.current_version_number
+            counts['suppressed_event_versions'] = versions
         if action in {'created', 'corrected'}:
             affected_players = set(counts.get('affected_player_mlb_ids') or ())
             affected_players.add(row.player_mlb_id)
@@ -748,11 +769,33 @@ def read_transaction_values(
 
 def _upsert_player_transaction(
     values, *, sync_run_id=None, timestamp=None, source_observation_id=None,
+    expected_version=None,
+    expected_legacy_fingerprint=None,
 ):
     timestamp = timestamp or utc_now_naive()
+    from services.semantic_write_fencing import lock_transaction, authorize_transaction_projection
+    lock_transaction(values['transaction_key'])
     existing = PlayerTransaction.query.filter_by(
         transaction_key=values['transaction_key'],
-    ).first()
+    ).populate_existing().with_for_update().first()
+    stale = existing is not None and expected_version is not None and (
+        int(existing.current_version_number or 0) != int(expected_version)
+        or (not existing.current_version_number and _transaction_fact_fingerprint({
+            field: getattr(existing, field) for field in _TRANSACTION_VERSION_FACT_FIELDS
+        }) != expected_legacy_fingerprint)
+    )
+    if stale:
+        from models.compatibility_write_event import CompatibilityWriteEvent
+        db.session.add(CompatibilityWriteEvent(
+            resource_type='transaction', resource_key=values['transaction_key'][:100],
+            outcome='stale_suppressed', details_json={
+                'expected_version': expected_version,
+                'current_version': existing.current_version_number,
+                'incoming_observation_id': source_observation_id,
+            },
+        ))
+        return existing, 'stale_suppressed'
+    authorize_transaction_projection(values['transaction_key'])
 
     if existing is None:
         row = PlayerTransaction(**values)
@@ -824,13 +867,18 @@ def _upsert_player_transaction(
     return existing, 'unchanged'
 
 
+def _transaction_fact_fingerprint(values):
+    facts = stable_json_value({field: values.get(field) for field in _TRANSACTION_VERSION_FACT_FIELDS})
+    return hashlib.sha256(stable_json_dumps(facts).encode('utf-8')).hexdigest()
+
+
 def _append_transaction_version(
     transaction, values, *, source_observation_id, timestamp,
 ):
     facts = stable_json_value({
         field: values.get(field) for field in _TRANSACTION_VERSION_FACT_FIELDS
     })
-    fingerprint = hashlib.sha256(stable_json_dumps(facts).encode('utf-8')).hexdigest()
+    fingerprint = _transaction_fact_fingerprint(values)
     prior = (
         PlayerTransactionVersion.query
         .filter_by(player_transaction_id=transaction.id)
@@ -878,7 +926,23 @@ def realign_stored_transactions_from_exact_roster(
     unchanged = 0
     still_blocked = 0
     corrected_rows = []
-    for row in transactions or ():
+    from services.semantic_write_fencing import lock_transaction, authorize_transaction_projection
+    ordered = sorted(transactions or (), key=lambda item: item.transaction_key)
+    for row in ordered:
+        lock_transaction(row.transaction_key)
+    if ordered:
+        # Refresh the bounded batch once after exclusion, including snapshots
+        # acquired before a competing owner could have completed a correction.
+        ordered = PlayerTransaction.query.filter(
+            PlayerTransaction.id.in_([row.id for row in ordered]),
+        ).order_by(PlayerTransaction.transaction_key).populate_existing().with_for_update().all()
+        snapshot_ids = {row.id for row in (roster_snapshots_by_pair or {}).values()}
+        if snapshot_ids:
+            RosterStatusSnapshot.query.filter(
+                RosterStatusSnapshot.id.in_(snapshot_ids),
+            ).populate_existing().all()
+    for row in ordered:
+        authorize_transaction_projection(row.transaction_key)
         snapshot = (roster_snapshots_by_pair or {}).get(
             (row.pitcher_id, row.transaction_date)
         )
@@ -900,6 +964,11 @@ def realign_stored_transactions_from_exact_roster(
             or bool(row.explanatory_linkage_eligible) != eligible
         )
         if changed:
+            if row.source_observation_id is not None and not row.current_version_number:
+                _append_transaction_version(
+                    row, {field: getattr(row, field) for field in _TRANSACTION_VERSION_FACT_FIELDS},
+                    source_observation_id=row.source_observation_id, timestamp=timestamp,
+                )
             row.roster_snapshot_alignment = alignment
             row.alignment_reason_code = reason
             row.explanatory_linkage_eligible = eligible
@@ -911,6 +980,12 @@ def realign_stored_transactions_from_exact_roster(
                 corrected_at=timestamp,
             )
             db.session.add(row)
+            if row.source_observation_id is not None:
+                _append_transaction_version(
+                    row, {field: getattr(row, field) for field in _TRANSACTION_VERSION_FACT_FIELDS},
+                    source_observation_id=row.source_observation_id, timestamp=timestamp,
+                )
+            db.session.flush()
             corrected += 1
             corrected_rows.append(row)
         else:
@@ -1129,6 +1204,8 @@ def _summary(start_date, end_date, counts, errors):
         'records_created': counts.get('records_created', 0),
         'records_corrected': counts.get('records_corrected', 0),
         'records_unchanged': counts.get('records_unchanged', 0),
+        'records_stale_suppressed': counts.get('records_stale_suppressed', 0),
+        'suppressed_event_versions': counts.get('suppressed_event_versions', {}),
         'unknown_type_count': counts.get('unknown_type_count', 0),
         'alignment_unknown_count': counts.get('alignment_unknown_count', 0),
         'alignment_misaligned_count': counts.get('alignment_misaligned_count', 0),

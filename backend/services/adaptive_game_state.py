@@ -408,6 +408,10 @@ def execute_game_state_poll(job, *, now=None, observer=observe_schedule):
     run = _start_or_attach_run(job, baseball_date)
     try:
         mark_stage(run, RunStage.ACQUIRE)
+        before_acquisition = {
+            row.game_pk: snapshot_from_scheduled_game(row).fingerprint
+            for row in _one_row_per_game_for_date(baseball_date)
+        }
         games, source_result = observer(
             baseball_date, baseball_date,
             sync_run_id=run.id, sync_job_id=job.id,
@@ -427,13 +431,38 @@ def execute_game_state_poll(job, *, now=None, observer=observe_schedule):
         canonical_games = 0
         downstream_jobs = []
         snapshots = [value for value in (snapshot_from_source_game(game) for game in games) if value]
+        stale_suppressed = False
 
+        if authoritative:
+            mark_stage(run, RunStage.CANONICALIZE)
+            from services.semantic_write_fencing import authorize_schedule_projection
+            authorize_schedule_projection(item.game_pk for item in snapshots)
+            current = {row.game_pk: snapshot_from_scheduled_game(row)
+                       for row in _one_row_per_game([item.game_pk for item in snapshots])}
+            from models.final_game_reconciliation import FinalGameVersion
+            final_games = {row[0] for row in db.session.query(FinalGameVersion.game_pk).filter(
+                FinalGameVersion.game_pk.in_([item.game_pk for item in snapshots]),
+                FinalGameVersion.is_current.is_(True),
+            ).all()}
+            stale_suppressed = any(
+                (item.game_pk in final_games and item.state != GameState.FINAL.value)
+                or (item.game_pk in current
+                    and current[item.game_pk].fingerprint != before_acquisition.get(item.game_pk)
+                    and current[item.game_pk].fingerprint != item.fingerprint)
+                for item in snapshots
+            )
+            if stale_suppressed:
+                authoritative = False
+                from models.compatibility_write_event import CompatibilityWriteEvent
+                db.session.add(CompatibilityWriteEvent(
+                    resource_type='schedule', resource_key=str(baseball_date),
+                    outcome='stale_suppressed', details_json={'source_observation_id': observation.id},
+                ))
         if authoritative and source_result.outcome != ObservationOutcome.UNCHANGED.value:
             previous = {
                 row.game_pk: snapshot_from_scheduled_game(row)
                 for row in _one_row_per_game([item.game_pk for item in snapshots])
             }
-            mark_stage(run, RunStage.CANONICALIZE)
             ingest_games(
                 games,
                 source='adaptive_game_state',
@@ -489,10 +518,11 @@ def execute_game_state_poll(job, *, now=None, observer=observe_schedule):
             canonical_mutations=canonical_games,
             affected_games=canonical_games,
             downstream_work_created=len(downstream_jobs),
-            warnings_count=int(not authoritative),
+            warnings_count=int(not authoritative and not stale_suppressed),
             outcome={
                 'source_observation_id': observation.id if observation else None,
                 'source_observation_outcome': source_result.outcome,
+                'write_outcome': 'stale_suppressed' if stale_suppressed else 'applied',
                 'completeness': completeness,
                 'transitions': transitions,
                 'next_poll_at': next_decision.next_poll_at,
@@ -635,7 +665,7 @@ def _next_date_poll(snapshots, baseball_date, *, now):
 def _one_row_per_game(game_pks):
     rows = ScheduledGame.query.filter(ScheduledGame.game_pk.in_(game_pks or [-1])).order_by(
         ScheduledGame.game_pk.asc(), ScheduledGame.id.asc()
-    ).all()
+    ).populate_existing().all()
     result = {}
     for row in rows:
         result.setdefault(row.game_pk, row)

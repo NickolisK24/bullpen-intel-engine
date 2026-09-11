@@ -138,6 +138,7 @@ def create_test_schema(app):
     import models.final_game_reconciliation  # noqa: F401
     import models.live_game_delta  # noqa: F401
     import models.canonical_impact  # noqa: F401
+    import models.compatibility_write_event  # noqa: F401
     import models.derived_intelligence  # noqa: F401
     import models.atomic_publication  # noqa: F401
     import models.daily_closure  # noqa: F401

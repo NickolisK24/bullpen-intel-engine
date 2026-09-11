@@ -16,6 +16,7 @@ from models.final_game_reconciliation import (
     FinalPitchingAppearanceVersion,
 )
 from models.game_log import GameLog
+from models.source_observation import SourceObservation
 from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import PlayByPlayProcessedGame
@@ -91,6 +92,8 @@ class FinalSourceBundle:
     play_by_play_changed: bool = False
     source_reads: int = 3
     source_change_count: int = 0
+    expected_final_version_id: int | None = None
+    has_acquisition_fence: bool = False
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,7 @@ class FinalReconciliationResult:
     affected_pitcher_mlb_ids: tuple[int, ...]
     removed_game_log_ids: tuple[int, ...]
     pbp_result: dict
+    write_outcome: str = 'applied'
 
 
 def finality_source_identity(game_pk, baseball_date):
@@ -159,6 +163,9 @@ def acquire_final_game_sources(
     game_pk = _positive_int(game_pk)
     baseball_date = _date(baseball_date)
     correction = FinalGameVersion.query.filter_by(game_pk=game_pk).first() is not None
+    expected_version = db.session.query(FinalGameVersion.id).filter_by(
+        game_pk=game_pk, is_current=True,
+    ).scalar()
 
     finality_identity = finality_source_identity(game_pk, baseball_date)
     started = utc_now_naive()
@@ -260,6 +267,8 @@ def acquire_final_game_sources(
         boxscore_observation=boxscore_result.observation,
         play_by_play_observation=pbp_observation,
         play_by_play_completeness=pbp_completeness,
+        expected_final_version_id=expected_version,
+        has_acquisition_fence=True,
         play_by_play_changed=bool(
             pbp_source_result is not None and pbp_source_result.changed
         ),
@@ -306,8 +315,22 @@ def reconcile_final_game(bundle, *, sync_run_id=None, commit=True, fail_after_co
 
     latest_game = (
         FinalGameVersion.query.filter_by(game_pk=game_pk, is_current=True)
-        .with_for_update().one_or_none()
+        .populate_existing().with_for_update().one_or_none()
     )
+    if latest_game is not None and _older_final_sources(bundle, latest_game):
+        from dataclasses import replace
+        return replace(
+            _unchanged_result(latest_game, game_pk),
+            write_outcome='corrected_final_superseded',
+        )
+    if bundle.has_acquisition_fence and (
+        (latest_game.id if latest_game else None) != bundle.expected_final_version_id
+    ) and (latest_game is None or latest_game.fact_fingerprint != game_fingerprint):
+        if latest_game is None:
+            raise ValueError('Final authority disappeared during source acquisition.')
+        from dataclasses import replace
+        return replace(_unchanged_result(latest_game, game_pk),
+                       write_outcome='source_reacquisition_required')
     current_appearances = {
         row.pitcher_mlb_id: row
         for row in FinalPitchingAppearanceVersion.query.filter_by(
@@ -328,6 +351,8 @@ def reconcile_final_game(bundle, *, sync_run_id=None, commit=True, fail_after_co
     if same_final_facts and not bundle.play_by_play_changed:
         return _unchanged_result(latest_game, game_pk)
 
+    from services.semantic_write_fencing import authorize_final_projection
+    authorize_final_projection(game_pk)
     if not same_final_facts:
         core = sync_service.process_completed_game_for_postgame_refresh(
             bundle.game,
@@ -578,6 +603,17 @@ def execute_final_game_job(job, *, acquirer=acquire_final_game_sources):
         mark_stage(run, failure_stage)
         result = reconcile_final_game(bundle, sync_run_id=run.id, commit=False)
         downstream = None
+        if result.write_outcome == 'source_reacquisition_required':
+            from datetime import timedelta
+            downstream = enqueue_job(
+                job_type=JobType.RECONCILE_FINAL_GAME, scope_type=JobScopeType.GAME,
+                scope_key=str(game_pk), product_date=baseball_date,
+                dedupe_key=f'FINAL_REVALIDATE:{game_pk}:current:{result.game_version.id}',
+                priority=PRIORITY_CANONICAL_IMPACT, sync_run_id=run.id, parent_job_id=job.id,
+                available_at=utc_now_naive() + timedelta(seconds=30),
+                payload={'game_pk': game_pk, 'baseball_date': baseball_date,
+                         'reason': 'authority_changed_during_acquisition'}, commit=False,
+            )
         if result.mutations:
             downstream = enqueue_job(
                 job_type=JobType.PROCESS_CANONICAL_IMPACT,
@@ -609,7 +645,9 @@ def execute_final_game_job(job, *, acquirer=acquire_final_game_sources):
             *((ScopeType.PITCHER, value) for value in result.affected_pitcher_ids),
         ], commit=False)
         optional_complete = bool(
-            bundle.play_by_play_completeness == 'complete'
+            (result.game_version.pbp_completeness
+             if result.write_outcome in ('corrected_final_superseded', 'source_reacquisition_required')
+             else bundle.play_by_play_completeness) == 'complete'
             and result.pbp_result.get('processing_status')
             == PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
         )
@@ -626,6 +664,7 @@ def execute_final_game_job(job, *, acquirer=acquire_final_game_sources):
             outcome={
                 'game_pk': game_pk,
                 'final_game_version_id': result.game_version.id,
+                'write_outcome': result.write_outcome,
                 'boxscore_observation_id': bundle.boxscore_observation.id,
                 'play_by_play_observation_id': (
                     bundle.play_by_play_observation.id
@@ -655,6 +694,7 @@ def execute_final_game_job(job, *, acquirer=acquire_final_game_sources):
             'sync_run_id': run.id,
             'game_pk': game_pk,
             'final_game_version_id': result.game_version.id,
+            'write_outcome': result.write_outcome,
             'mutation_ids': [row.id for row in result.mutations],
             'downstream_job_id': downstream.id if downstream else None,
             'partial': not optional_complete,
@@ -989,6 +1029,7 @@ def _unchanged_result(latest_game, game_pk, *, pbp_result=None):
     return FinalReconciliationResult(
         latest_game, (), (), False, (), (), (), (),
         {**result, 'unchanged': True},
+        write_outcome='unchanged',
     )
 
 
@@ -1012,11 +1053,27 @@ def _record_fetch_failure(identity, exc, started, sync_run_id, sync_job_id):
 
 
 def _lock_game(game_pk):
-    if db.session.get_bind().dialect.name == 'postgresql':
-        db.session.execute(
-            text('SELECT pg_advisory_xact_lock(:key)'),
-            {'key': 507000000000 + int(game_pk)},
-        )
+    from services.semantic_write_fencing import lock_game
+    lock_game(game_pk)
+
+
+def _older_final_sources(bundle, current):
+    """Retained subject versions order accepted evidence, not arrival time."""
+    for incoming, current_id in (
+        (bundle.finality_observation, current.finality_observation_id),
+        (bundle.boxscore_observation, current.boxscore_observation_id),
+        (bundle.play_by_play_observation, current.play_by_play_observation_id),
+    ):
+        if incoming is None or current_id is None:
+            continue
+        prior = db.session.get(SourceObservation, current_id)
+        if prior is None:
+            raise ValueError('current final source evidence is missing')
+        if incoming.source_subject_id != prior.source_subject_id:
+            raise ValueError('final source revisions have incomparable subject identities')
+        if incoming.version_number < prior.version_number:
+            return True
+    return False
 
 
 def _start_final_run(job, game_pk, baseball_date):

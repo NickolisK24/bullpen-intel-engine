@@ -131,9 +131,32 @@ def observe_game_change(
         ((payload or {}).get('metaData') or {}).get('timeStamp')
     )
     payload_bytes = len(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode())
+    from services.semantic_write_fencing import lock_game
+    lock_game(observation['game_pk'])
     row = GameObservationState.query.filter_by(
         mlb_game_pk=observation['game_pk']
-    ).one_or_none()
+    ).populate_existing().with_for_update().one_or_none()
+    from models.final_game_reconciliation import FinalGameVersion
+    if observation['finality']['state'] != 'final_and_usable' and FinalGameVersion.query.filter_by(
+        game_pk=observation['game_pk'], is_current=True,
+    ).first() is not None:
+        retained = _record_live_source_observation(
+            observation=observation, source_observed_at=source_observed_at,
+            source_authority=source_authority, payload_bytes=payload_bytes,
+            correction=False, sync_run_id=sync_run_id, sync_job_id=sync_job_id,
+        )
+        _finish(commit)
+        return _result(
+            game_pk=observation['game_pk'], classification=AMBIGUOUS_OBSERVATION,
+            changed=False, previous=row.observation_fingerprint if row else None,
+            current=fingerprint, finality='final_and_usable',
+            source_authority=source_authority, source_observed_at=source_observed_at,
+            detected_at=detected_at, reason=FINAL_EVIDENCE_REGRESSION, accepted=False,
+            source_observation_id=retained.observation.id,
+            source_observation_outcome=retained.outcome,
+            current_authority_satisfied=True, payload_bytes=payload_bytes,
+            elapsed_ms=_elapsed(started),
+        )
     if (
         require_live_pitching
         and ((observation.get('live_pitching') or {}).get('completeness')
@@ -275,6 +298,8 @@ def observe_game_change(
         correction=classification == CORRECTED,
         sync_run_id=sync_run_id, sync_job_id=sync_job_id,
     )
+    from services.semantic_write_fencing import authorize_observation_projection
+    authorize_observation_projection(observation['game_pk'])
     row.previous_observation_fingerprint = previous
     row.observation_fingerprint = fingerprint
     row.observation = observation
@@ -354,7 +379,7 @@ def detect_active_slate_changes(
             commit=False,
             create_work_obligation=True,
         )
-        for pk in candidates
+        for pk in sorted(candidates)
     ]
     if commit:
         db.session.commit()

@@ -21,6 +21,23 @@ This manifest describes the intended SP-00 through SP-14 production architecture
 | Repair | SP-13 | repair requests, chunks, blockers | repair planner/checker plus owner jobs |
 | Certification | SP-14 | certification runs/checks and legacy transition states | operator-invoked certification command |
 
+## AUDIT-R2 compatibility ownership transition
+
+The R2 code package introduces shared game/event fencing and database backstops
+for already-deployed legacy writers. Its authoritative temporary coexistence
+table is in [AUDIT-R2](AUDIT-R2_SHARED_WRITER_FENCING.md#5-new-ownership-model).
+The migration is `e3f6a9b2c5d8`, following R1 `d2e5f8a1b4c7`. It does not alter
+publication/read flags, Render service branches or schedules, or the atomic
+publication pointer. Production activation/proof is recorded separately in the
+R2 document; the presence of this manifest section is not deployment evidence.
+
+Mutable Team State/fatigue remains legacy-owned during coexistence. SP-10's
+incremental calculators and copied-snapshot serving builders produce candidate
+payloads. Shared canonical/compatibility roster and game writes are permitted in
+shadow only through their explicit owner boundaries. An SP-owned Final or MLB
+pitcher projection does not revert to legacy last-writer ownership when a
+pipeline process stops.
+
 ## Run types
 
 SP-01 owns the controlled vocabulary. Relevant top-level modes are morning reconciliation, nightly finalization, targeted repair, backfill, full reconciliation, and publication. Child work retains correlation and parent-run lineage.

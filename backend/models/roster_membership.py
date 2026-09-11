@@ -163,9 +163,9 @@ class PlayerTransactionVersion(db.Model):
             'player_transaction_id', 'version_number',
             name='uq_player_transaction_versions_transaction_version',
         ),
-        db.UniqueConstraint(
+        db.Index(
+            'ix_player_transaction_versions_transaction_fingerprint',
             'player_transaction_id', 'fact_fingerprint',
-            name='uq_player_transaction_versions_transaction_fingerprint',
         ),
         db.Index('ix_player_transaction_versions_observation', 'source_observation_id'),
         db.CheckConstraint('version_number > 0', name='ck_player_transaction_versions_number'),
@@ -185,7 +185,7 @@ class PlayerTransactionVersion(db.Model):
     source_observation_id = db.Column(
         db.Integer,
         db.ForeignKey('source_observations.id', ondelete='RESTRICT'),
-        nullable=False,
+        nullable=True,
     )
     fact_fingerprint = db.Column(db.String(64), nullable=False)
     fact_schema_version = db.Column(db.Integer, nullable=False, default=1)

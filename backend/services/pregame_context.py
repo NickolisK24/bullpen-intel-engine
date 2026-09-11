@@ -316,7 +316,7 @@ def persist_pregame_context(
     _lock_game(projection.game_pk)
     schedule_rows = (
         ScheduledGame.query.filter_by(game_pk=projection.game_pk)
-        .order_by(ScheduledGame.id.asc()).with_for_update().all()
+        .order_by(ScheduledGame.id.asc()).populate_existing().with_for_update().all()
     )
     if not schedule_rows:
         raise ValueError(f'scheduled game {projection.game_pk} does not exist')
@@ -325,7 +325,7 @@ def persist_pregame_context(
         GamePregameContextVersion.query
         .filter_by(game_pk=projection.game_pk)
         .order_by(GamePregameContextVersion.version_number.desc())
-        .with_for_update().first()
+        .populate_existing().with_for_update().first()
     )
     if (
         latest is not None
@@ -734,6 +734,8 @@ def _operational_state(row):
 
 
 def _apply_current_projection(rows, version, updated_at):
+    from services.semantic_write_fencing import authorize_schedule_projection
+    authorize_schedule_projection([version.game_pk])
     for row in rows:
         row.home_probable_pitcher_mlb_id = version.home_probable_pitcher_mlb_id
         row.away_probable_pitcher_mlb_id = version.away_probable_pitcher_mlb_id
@@ -788,11 +790,8 @@ def _roster_discrepancies(projection):
 
 
 def _lock_game(game_pk):
-    if db.session.get_bind().dialect.name == 'postgresql':
-        db.session.execute(
-            text('SELECT pg_advisory_xact_lock(:key)'),
-            {'key': 506000000000 + int(game_pk)},
-        )
+    from services.semantic_write_fencing import lock_game
+    lock_game(game_pk)
 
 
 def _team_id(side):

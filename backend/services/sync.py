@@ -1183,12 +1183,33 @@ def _upsert_game_log_from_authoritative_values(
     fallback_source=None,
     fallback_fields=(),
 ):
-    if existing is _OPTIONAL_INPUT_NOT_PROVIDED:
-        existing = GameLog.query.filter_by(
-            pitcher_id=pitcher.id,
-            mlb_game_pk=game_pk,
-        ).first()
-
+    from services.semantic_write_fencing import lock_game, owns_final_projection
+    from models.final_game_reconciliation import FinalGameVersion
+    lock_game(game_pk)
+    # Re-read after exclusion even when a caller supplied a cached ORM row.
+    existing = GameLog.query.filter_by(
+        pitcher_id=pitcher.id, mlb_game_pk=game_pk,
+    ).populate_existing().with_for_update().one_or_none()
+    if not owns_final_projection(game_pk) and FinalGameVersion.query.filter_by(
+        game_pk=game_pk, is_current=True,
+    ).first() is not None:
+        if existing is None:
+            raise ValueError('Final owner excludes this compatibility appearance.')
+        from models.compatibility_write_event import CompatibilityWriteEvent
+        changed = any(getattr(existing, key, None) != value for key, value in values.items()
+                      if key not in game_log_reconciliation.PROVENANCE_FIELDS)
+        if changed:
+            db.session.add(CompatibilityWriteEvent(
+                resource_type='game_log', resource_key=f'{game_pk}:{pitcher.id}',
+                outcome='final_superseded', details_json={'incoming_source': source},
+            ))
+        retained_plan = game_log_reconciliation.plan_row(
+            existing=existing, values={}, stats={}, game_pk=game_pk,
+            pitcher_mlb_id=pitcher.mlb_id, local_pitcher_id=pitcher.id,
+        )
+        retained_plan['write_outcome'] = 'final_superseded'
+        return {'status': 'unchanged', 'log': existing, 'changed_fields': [],
+                'write_outcome': 'final_superseded', 'plan': retained_plan}
     # ONE authority decides what happens to this row. The writer applies that
     # decision; the read-only projection reports it. Neither recalculates it,
     # which is what let shadow and write disagree before.

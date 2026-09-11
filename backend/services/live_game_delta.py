@@ -131,7 +131,6 @@ def execute_live_game_delta(job, *, now=None, client=None):
 
         mark_stage(run, RunStage.ACQUIRE, commit=False)
         client = client or game_change_detection.mlb_client
-        _lock_game(game_pk)
         observed = game_change_detection.observe_game_change(
             game_pk, client=client, commit=False, create_work_obligation=False,
             sync_run_id=run.id, sync_job_id=job.id, require_live_pitching=True,
@@ -146,7 +145,8 @@ def execute_live_game_delta(job, *, now=None, client=None):
         mutations = []
         affected_pitchers, affected_teams = set(), set()
         downstream = None
-        if observed.accepted and observed.finality_state == 'not_final':
+        final_owns_game = FinalGameVersion.query.filter_by(game_pk=game_pk, is_current=True).first() is not None
+        if not final_owns_game and observed.accepted and observed.finality_state == 'not_final':
             state_row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one()
             projection = (state_row.observation or {}).get('live_pitching') or {}
             if projection.get('completeness') == 'complete_for_observation':
@@ -165,7 +165,7 @@ def execute_live_game_delta(job, *, now=None, client=None):
         state_row = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
         operational = _operational_state(game_pk)
         next_job = None
-        decision = live_poll_decision(operational, now=now)
+        decision = None if final_owns_game else live_poll_decision(operational, now=now)
         if decision is not None:
             next_job = enqueue_live_poll(
                 game_pk, baseball_date, available_at=decision['next_poll_at'],
@@ -187,6 +187,7 @@ def execute_live_game_delta(job, *, now=None, client=None):
             affected_teams=len(affected_teams), affected_pitchers=len(affected_pitchers),
             downstream_work_created=int(downstream is not None),
             outcome={'authority_state': 'live', 'source_observation_id': observed.source_observation_id,
+                     'write_outcome': 'final_superseded' if final_owns_game else 'applied' if mutations else 'unchanged',
                      'classification': observed.classification, 'mutation_ids': [m.id for m in mutations],
                      'next_live_poll_at': decision['next_poll_at'] if decision else None,
                      'policy_version': LIVE_POLICY_VERSION}, commit=False,
@@ -234,6 +235,9 @@ def supersede_live_game_with_final(game_pk, final_game_version_id, *, now=None):
 
 
 def _reconcile_projection(state_row, appearances, baseball_date, observation_id, run_id, now):
+    _lock_game(state_row.mlb_game_pk)
+    if FinalGameVersion.query.filter_by(game_pk=state_row.mlb_game_pk, is_current=True).first():
+        return [], set(), set()
     current = {row.pitcher_mlb_id: row for row in ProvisionalPitchingAppearanceState.query.filter_by(
         game_pk=state_row.mlb_game_pk, is_current=True,
     ).with_for_update().all()}
@@ -367,8 +371,8 @@ def _game_has_started(state_row):
 
 
 def _lock_game(game_pk):
-    if db.session.get_bind().dialect.name == 'postgresql':
-        db.session.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': 508000000000 + int(game_pk)})
+    from services.semantic_write_fencing import lock_game
+    lock_game(game_pk)
 
 
 def _fingerprint(value):

@@ -352,6 +352,39 @@ def test_one_pitching_line_correction_versions_only_changed_pitcher(app):
         assert corrected.affected_pitcher_ids == (changed.pitcher_id,)
 
 
+def test_delayed_final_bundle_cannot_replace_corrected_final(app):
+    with app.app_context():
+        _seed_schedule()
+        delayed = _bundle()
+        reconcile_final_game(delayed)
+        corrected = reconcile_final_game(_bundle(
+            box=_boxscore(home_reliever_pitches=19), correction=True,
+        ))
+        delayed_result = reconcile_final_game(delayed)
+        assert delayed_result.write_outcome == 'corrected_final_superseded'
+        assert delayed_result.game_version.id == corrected.game_version.id
+        assert delayed_result.mutations == ()
+        assert FinalGameVersion.query.count() == 2
+        assert GameLog.query.join(Pitcher).filter(Pitcher.mlb_id == 303).one().pitches_thrown == 19
+
+
+def test_late_provisional_projection_cannot_reassert_after_final(app):
+    from types import SimpleNamespace
+    from services.live_game_delta import _reconcile_projection
+
+    with app.app_context():
+        _seed_schedule()
+        reconcile_final_game(_bundle())
+        # Deliberately malformed old live facts must never reach identity or
+        # appearance processing once this game is owned by Final.
+        result = _reconcile_projection(
+            SimpleNamespace(mlb_game_pk=GAME_PK), [{'pitcher_mlb_id': -1}],
+            GAME_DATE, None, None, utc_now_naive(),
+        )
+        assert result == ([], set(), set())
+        assert ProvisionalPitchingAppearanceState.query.filter_by(is_current=True).count() == 0
+
+
 def test_complete_correction_can_remove_phantom_projection_without_losing_history(app):
     with app.app_context():
         _seed_schedule()

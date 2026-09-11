@@ -34,6 +34,7 @@ from services.source_observations import (
     canonical_record_collection,
     record_source_fetch_failure,
     record_source_observation,
+    stable_json_dumps,
 )
 from services.sync_control_plane import (
     FailureClass,
@@ -265,6 +266,37 @@ def reconcile_team_roster(
         return _roster_summary(team_id, roster_date, views, [], [], authoritative=True)
 
     _lock_team(team_id)
+    from models.source_observation import SourceObservation, SourceSubject
+    from models.compatibility_write_event import CompatibilityWriteEvent
+    superseded = any(
+        SourceObservation.query.filter(
+            SourceObservation.source_subject_id == view.result.observation.source_subject_id,
+            SourceObservation.is_authoritative.is_(True),
+            SourceObservation.version_number > view.result.observation.version_number,
+        ).first() is not None
+        for view in views.values()
+    )
+    superseded = superseded or db.session.query(SourceObservation.id).join(
+        SourceSubject, SourceSubject.id == SourceObservation.source_subject_id,
+    ).filter(
+        SourceSubject.provider == 'mlb_stats_api', SourceSubject.source_domain == 'roster',
+        SourceSubject.subject_key.in_((f'{team_id}:active', f'{team_id}:40Man')),
+        SourceSubject.baseball_date > roster_date,
+        SourceObservation.is_authoritative.is_(True),
+    ).first() is not None
+    if superseded:
+        db.session.add(CompatibilityWriteEvent(
+            resource_type='roster', resource_key=f'{team_id}:{roster_date}',
+            outcome='stale_suppressed', details_json={
+                'source_observation_ids': [view.result.observation.id for view in views.values()],
+            },
+        ))
+        if commit:
+            db.session.commit()
+        return {**_roster_summary(team_id, roster_date, views, [], [], authoritative=True),
+                'write_outcome': 'stale_suppressed'}
+    from services.semantic_write_fencing import authorize_roster_projection
+    authorize_roster_projection(team_id)
     entries_by_type = {
         MembershipType.ACTIVE_ROSTER.value: _pitcher_entries(views['active'].entries),
         MembershipType.FORTY_MAN_ROSTER.value: _pitcher_entries(views['40Man'].entries),
@@ -658,6 +690,22 @@ def execute_transaction_job(job, *, client=None, timestamp=None):
         summary['roster_confirmation_team_ids'] = confirmation_teams
         summary['unresolved_roster_team_ids'] = unresolved_teams
         roster_jobs = []
+        revalidation_job = None
+        if summary.get('records_stale_suppressed'):
+            from datetime import timedelta
+            revision_key = hashlib.sha256(stable_json_dumps(
+                summary['suppressed_event_versions']
+            ).encode('utf-8')).hexdigest()
+            revalidation_job = enqueue_job(
+                job_type=JobType.FETCH_TRANSACTIONS, scope_type=JobScopeType.SOURCE_DOMAIN,
+                scope_key='transactions', product_date=end_date,
+                dedupe_key=f'TRANSACTION_REVALIDATE:{start_date}:{end_date}:{revision_key}',
+                priority=PRIORITY_TRANSACTION, sync_run_id=run.id, parent_job_id=job.id,
+                available_at=utc_now_naive() + timedelta(seconds=30),
+                payload={**payload, 'reason': 'authority_changed_during_acquisition'},
+                commit=False,
+            )
+        summary['revalidation_job_id'] = revalidation_job.id if revalidation_job else None
         if summary.get('records_created', 0) or summary.get('records_corrected', 0):
             for team_id in confirmation_teams:
                 roster_jobs.append(enqueue_roster_reconciliation(
@@ -678,7 +726,7 @@ def execute_transaction_job(job, *, client=None, timestamp=None):
             ),
             affected_teams=len(affected_teams),
             affected_pitchers=len(summary.get('affected_player_mlb_ids', [])),
-            downstream_work_created=len(roster_jobs),
+            downstream_work_created=len(roster_jobs) + int(revalidation_job is not None),
             warnings_count=summary.get('errors', 0),
             outcome={**summary, 'downstream_roster_job_ids': [row.id for row in roster_jobs]},
             commit=False,
@@ -744,12 +792,6 @@ def _get_or_create_pitcher(mlb_id, entry, team_id, timestamp):
         )
         db.session.add(pitcher)
         db.session.flush()
-    pitcher.team_id = team_id
-    pitcher.active = True
-    pitcher.team_assignment_status = 'assigned'
-    pitcher.team_assignment_source = AUTHORITY_OFFICIAL_MLB_ROSTER
-    pitcher.team_assignment_updated_at = timestamp
-    pitcher.updated_at = timestamp
     return pitcher
 
 
@@ -806,12 +848,19 @@ def _update_current_and_snapshots(
     all_ids = set(active) | set(forty) | set(affected_pitchers.values())
     pitchers = {
         row.mlb_id: row
-        for row in Pitcher.query.filter(Pitcher.mlb_id.in_(all_ids or [-1])).all()
+        for row in Pitcher.query.filter(Pitcher.mlb_id.in_(all_ids or [-1]))
+        .order_by(Pitcher.id).populate_existing().with_for_update().all()
     }
     for mlb_id in sorted(all_ids):
         pitcher = pitchers.get(mlb_id)
         if pitcher is None:
             continue
+        projection_fields = (
+            'team_id', 'team_name', 'team_abbreviation', 'active',
+            'team_assignment_status', 'team_assignment_source', 'roster_status',
+            'roster_status_source', 'roster_status_raw_code', 'roster_status_raw_description',
+        )
+        before_projection = {field: getattr(pitcher, field) for field in projection_fields}
         roster_types = set()
         entries = {}
         if mlb_id in active:
@@ -846,11 +895,45 @@ def _update_current_and_snapshots(
             timestamp=timestamp,
         )
         if snapshot is not None:
+            # Historical evidence may update its dated snapshot, but cannot
+            # replace the current projection established by a later MLB view.
+            newer = RosterStatusSnapshot.query.filter(
+                RosterStatusSnapshot.pitcher_id == pitcher.id,
+                RosterStatusSnapshot.snapshot_date > roster_date,
+                RosterStatusSnapshot.active_roster_observation_id.isnot(None),
+                RosterStatusSnapshot.forty_man_roster_observation_id.isnot(None),
+            ).first()
+            if newer is not None:
+                continue
+            if roster_types:
+                from services.mlb_club_directory import MLB_CLUBS
+                club = next(club for club in MLB_CLUBS if club.team_id == team_id)
+                pitcher.team_id = team_id
+                pitcher.team_name = club.team_name
+                pitcher.team_abbreviation = club.abbreviation
+                pitcher.active = True
+                pitcher.team_assignment_status = 'assigned'
+                pitcher.team_assignment_source = AUTHORITY_OFFICIAL_MLB_ROSTER
+                pitcher.team_assignment_updated_at = timestamp
+                pitcher.updated_at = timestamp
             pitcher.roster_status = snapshot.roster_status
             pitcher.roster_status_source = snapshot.source
             pitcher.roster_status_raw_code = snapshot.roster_status_raw_code
             pitcher.roster_status_raw_description = snapshot.roster_status_raw_description
             pitcher.roster_status_updated_at = timestamp
+            after_projection = {field: getattr(pitcher, field) for field in projection_fields}
+            if before_projection != after_projection:
+                from models.compatibility_write_event import CompatibilityWriteEvent
+                db.session.add(CompatibilityWriteEvent(
+                    resource_type='pitcher_projection', resource_key=str(pitcher.id),
+                    outcome='applied', details_json={
+                        'team_id': team_id, 'roster_date': roster_date.isoformat(),
+                        'previous_team_id': before_projection['team_id'],
+                        'source_observation_ids': [row.id for row in observations.values()],
+                        'changed_fields': sorted(field for field in projection_fields
+                                                 if before_projection[field] != after_projection[field]),
+                    },
+                ))
 
 
 def _enqueue_membership_impact(
