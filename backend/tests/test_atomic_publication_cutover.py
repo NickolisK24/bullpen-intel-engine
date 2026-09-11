@@ -6,6 +6,7 @@ from flask import Flask
 from models.atomic_publication import AtomicPublication, AtomicPublicationCurrent
 from models.canonical_impact import CanonicalImpactPlan
 from models.derived_intelligence import DerivedCohortSnapshot, DerivedIntelligenceCohort
+from models.pitcher import Pitcher
 from models.roster_membership import RosterMembershipInterval, RosterMembershipMutation
 from models.source_observation import SourceObservation, SourceSubject
 from services.atomic_publication import PublicationValidationError
@@ -137,6 +138,11 @@ def test_single_cohort_inspection_traces_changed_roster_input(app):
         observed_at=datetime(2026, 9, 9, 12, 1),
     )
     db.session.add(observation)
+    db.session.flush()
+    db.session.add(Pitcher(
+        id=10, mlb_id=10010, full_name='Roster Watermark Pitcher',
+        team_id=110, team_name='Test Team', team_abbreviation='TST', active=True,
+    ))
     db.session.flush()
     interval = RosterMembershipInterval(
         pitcher_id=10, player_mlb_id=10010, team_id=110,
