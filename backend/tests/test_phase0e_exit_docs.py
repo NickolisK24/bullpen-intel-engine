@@ -8,11 +8,9 @@ from services.evidence_classification import validate_evidence_classifications
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Moved from a6d4e8c1f2b7 by the continuous reliever ingestion foundation.
-# The current revisions add canonical reliever/pitch evidence and persisted PBP
-# observation ordering. The pin exists so a migration cannot enter unnoticed;
-# moving it deliberately acknowledges review and verifies one head remains.
-EXPECTED_ALEMBIC_HEAD = 'e8a4c2f9b1d6'
+# Production history promotion imports the immutable integration extension.
+# Keep an explicit pin so a new migration requires deliberate head review.
+EXPECTED_ALEMBIC_HEAD = 'e3f6a9b2c5d8'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',
