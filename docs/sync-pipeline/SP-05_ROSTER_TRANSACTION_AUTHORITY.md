@@ -1,4 +1,4 @@
-# SP-05 — Roster & Transaction Authority
+# SP-05 â€” Roster & Transaction Authority
 
 ## 1. Objective
 
@@ -30,7 +30,7 @@ No parallel roster snapshot, transaction queue, or source fingerprint system was
 4. **Current `Pitcher` fields:** compatibility projection. Positive complete roster inclusion may set team/active tracking fields. Absence from partial, unknown, or failed evidence never clears them. Transaction text alone never changes them.
 5. **Historical membership:** current-version membership intervals and their immutable source-observation boundary references, not today's `Pitcher.team_id` and not reconstructed transaction prose.
 
-Roster and transaction evidence answer different questions. A transaction proves an event; it does not necessarily prove the final roster after all related moves. When they disagree, complete dated roster membership owns current roster state. The transaction remains durable and triggers targeted confirmation for its `fromTeam` and `toTeam` only.
+Roster and transaction evidence answer different questions. A transaction proves an event; it does not necessarily prove the final roster after all related moves. When they disagree, complete dated roster membership owns current roster state. The transaction remains durable. MLB endpoints trigger their club's confirmation; affiliate endpoints resolve through official season team metadata to the parent MLB club. Unresolved parent identity stays explicit and cannot acquire MLB authority.
 
 ## 4. Roster Source Contract
 
@@ -93,12 +93,12 @@ Normal observation of departure closes the existing interval and preserves it. R
 
 The controlled storage vocabulary is:
 
-- `active_roster` — implemented from complete official active-roster views.
-- `forty_man_roster` — implemented from complete official 40-man views.
-- `organization` — representationally ready; population deferred until official assignment rules are proven.
-- `minor_assignment` — representationally ready; population deferred.
-- `public_inactive` — representationally ready for official public status evidence; not inferred here.
-- `rehab_assignment` — representationally ready; existing certified transaction subtype remains the current evidence contract.
+- `active_roster` â€” implemented from complete official active-roster views.
+- `forty_man_roster` â€” implemented from complete official 40-man views.
+- `organization` â€” representationally ready; population deferred until official assignment rules are proven.
+- `minor_assignment` â€” representationally ready; population deferred.
+- `public_inactive` â€” representationally ready for official public status evidence; not inferred here.
+- `rehab_assignment` â€” representationally ready; existing certified transaction subtype remains the current evidence contract.
 
 `bullpen member`, closer, setup, long relief, and other deployment roles are intentionally absent. Those are derived baseball semantics owned later.
 
@@ -162,27 +162,27 @@ Roster worker flow:
 
 ```text
 claimed fetch_roster job
-→ SP-01 roster_transactions run
-→ active and 40Man fetch attempts/observations
-→ lease revalidation
-→ complete + changed only
-→ interval/snapshot/current projection transaction
-→ append membership mutations
-→ enqueue one targeted rebuild_team handoff
-→ record counters and settle through SP-02
+â†’ SP-01 roster_transactions run
+â†’ active and 40Man fetch attempts/observations
+â†’ lease revalidation
+â†’ complete + changed only
+â†’ interval/snapshot/current projection transaction
+â†’ append membership mutations
+â†’ enqueue one targeted rebuild_team handoff
+â†’ record counters and settle through SP-02
 ```
 
 Transaction worker flow:
 
 ```text
 claimed fetch_transactions job
-→ SP-01 roster_transactions run
-→ bounded source attempt/observation
-→ completeness fence
-→ existing canonical ingestion + append-only versions
-→ affected from/to clubs only
-→ enqueue targeted roster confirmation jobs
-→ settle through SP-02
+â†’ SP-01 roster_transactions run
+â†’ bounded source attempt/observation
+â†’ completeness fence
+â†’ existing canonical ingestion + append-only versions
+â†’ affected from/to clubs only
+â†’ enqueue targeted roster confirmation jobs
+â†’ settle through SP-02
 ```
 
 Jobs remain distinct from runs and source attempts. Neither worker auto-executes downstream baseball intelligence.
@@ -200,7 +200,7 @@ Jobs remain distinct from runs and source attempts. Neither worker auto-executes
 
 PostgreSQL serializes only the team being reconciled with `pg_advisory_xact_lock(505000000 + team_id)`. Unrelated teams proceed independently. SP-03 independently serializes source-subject version creation.
 
-The database adds a partial unique index over `(pitcher_id, membership_type)` where the interval is open and current. This prevents duplicate or cross-team simultaneous open membership. Reconciliation locks existing candidate rows, closes prior-team membership and opens new membership in one transaction. The SP-02 partial unique active-dedupe index prevents duplicate impact jobs.
+AUDIT-R1 replaces global exclusivity with a partial unique index over `(pitcher_id, team_id, membership_type)` where the interval is open, current, and not void. Only a complete roster for that MLB club may remove its members. Another club's or affiliate's inclusion does not close it. Distinct MLB membership and affiliate assignment types may coexist. Reconciliation locks its club's rows and changes only that club's membership. The SP-02 partial unique active-dedupe index prevents duplicate impact jobs.
 
 PostgreSQL tests run two simultaneous same-team reconciliations and prove one creates two membership facts, the other is unchanged, only two intervals/two mutations remain, and only one downstream job exists.
 
@@ -269,7 +269,7 @@ SP-13 should later wrap its correction decisions with transaction-version and in
 - [x] Existing intraday repair remains unchanged.
 - [x] No scheduler, baseball semantic, publication, frontend, or `main` changes are part of SP-05.
 
-## Appendix A — Transaction Pagination / Completeness Proof
+## Appendix A â€” Transaction Pagination / Completeness Proof
 
 Accessed 2026-09-07.
 
@@ -279,7 +279,7 @@ Accessed 2026-09-07.
 
 Operational conclusion: use bounded date ranges with `limit=1000`. A structurally valid collection with fewer than 1000 rows is complete under this endpoint contract. A collection at the limit is `partial` because truncation cannot be disproven, and no canonical mutation occurs. This is conservative rather than a claim that MLB can never add pagination later.
 
-## Appendix B — Natural Read-Only MLB Proof
+## Appendix B â€” Natural Read-Only MLB Proof
 
 Accessed 2026-09-07; no production database writes were performed.
 
@@ -289,3 +289,13 @@ Accessed 2026-09-07; no production database writes were performed.
 - <https://statsapi.mlb.com/api/v1/teams/111/roster?rosterType=40Man&date=2026-09-07> returned 47 rows.
 
 These probes confirm separate active/40-man collection shapes and distinct game-independent team identity. Counts are observations from that access date, not permanent roster-size guarantees.
+
+## AUDIT-R1 authority correction
+
+The 30-club registry in `services/mlb_club_directory.py` is the single MLB denominator. `roster_authority_scope.py` distinguishes requested team, represented roster type, and official parent organization. Retained `parentTeamId` and official season `parentOrgId` may identify an affiliate's MLB parent; neither promotes an affiliate `40Man` response to parent MLB 40-man authority. Conflicting identity fails closed. Affiliate roster responses remain SP-03 evidence and cannot create intervals, change compatibility fields, or emit MLB impact. Assignment population remains deferred.
+
+SP-13 applied roster requests carry their request ID to SP-05. Unlike ordinary duplicate polling, that owner path compares canonical membership even when the source fingerprint is unchanged. It can append explicit void versions for affiliate claims and supersede false parent closures only with retained complete MLB inclusion on the disputed date. Later authoritative MLB removal is retained. Additional independent stints or missing historical evidence stop the correction for review. Prior rows and source observations remain intact; only the prior version's lifecycle marker changes.
+
+Migration `d2e5f8a1b4c7` adds `is_void=false` and replaces the uniqueness index without changing baseball facts. Void correction versions never enter current membership, pregame membership checks, or SP-10 roster watermarks. A downgrade refuses to erase void correction history. Correction impact uses the requested repair date and exact mutation IDs in dedupe, preserving interval boundary dates separately.
+
+Exact active/40-man source-set parity, boundary-source identity, organization identity, and unresolved affiliate claims are health requirements. Complete acquisition alone is insufficient. See [AUDIT-R1](AUDIT-R1_ROSTER_AUTHORITY_CORRECTION.md) for the census, repair lineage, and production verdict.

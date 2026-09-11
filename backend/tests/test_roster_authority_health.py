@@ -15,7 +15,8 @@ import models.prospect  # noqa: F401
 
 DAY = date(2026, 9, 9)
 NOW = datetime(2026, 9, 9, 15, 0)
-TEAM_IDS = tuple(range(101, 131))
+from services.mlb_club_directory import MLB_TEAM_IDS
+TEAM_IDS = MLB_TEAM_IDS
 
 
 @pytest.fixture
@@ -110,30 +111,30 @@ def test_roster_authority_report_fails_closed_at_29_of_30(app):
 
     assert report['status'] == 'incomplete'
     assert report['active_roster_coverage_count'] == 29
-    assert report['missing_team_ids'] == [130]
+    assert report['missing_team_ids'] == [158]
 
 
 def test_partial_roster_does_not_count_or_clear_prior_authority(app):
     reconcile_team_roster(
-        130,
+        158,
         date(2026, 9, 8),
         client=RosterClient(),
         timestamp=datetime(2026, 9, 8, 15),
         enqueue_downstream=False,
     )
-    _seed(partial_team_id=130)
+    _seed(partial_team_id=158)
     report = roster_authority_coverage(DAY, now=NOW)
 
     assert report['status'] == 'incomplete'
     assert report['active_roster_coverage_count'] == 29
-    assert report['partial_team_ids'] == [130]
-    assert len(current_memberships(130)) == 1
+    assert report['partial_team_ids'] == [158]
+    assert len(current_memberships(158)) == 1
 
 
 def test_partial_forty_man_view_blocks_atomic_active_roster_authority(app):
-    _seed(partial_team_id=130, partial_roster_type='40Man')
+    _seed(partial_team_id=158, partial_roster_type='40Man')
     report = roster_authority_coverage(DAY, now=NOW)
 
     assert report['status'] == 'incomplete'
     assert report['active_roster_coverage_count'] == 29
-    assert report['partial_team_ids'] == [130]
+    assert report['partial_team_ids'] == [158]

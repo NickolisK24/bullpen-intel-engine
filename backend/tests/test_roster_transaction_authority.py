@@ -181,6 +181,8 @@ def test_complete_team_move_closes_old_and_opens_new_without_overlap(app):
         reconcile_team_roster(110, date(2026, 9, 6), client=first)
         second = RosterClient({'active': [_entry(700001)], '40Man': [_entry(700001)]})
         reconcile_team_roster(111, SLATE, client=second)
+        assert len(current_memberships(110)) == 1
+        reconcile_team_roster(110, SLATE, client=RosterClient())
         for membership_type in ('active_roster', 'forty_man_roster'):
             rows = RosterMembershipInterval.query.filter_by(
                 membership_type=membership_type
@@ -427,7 +429,7 @@ def test_transaction_job_enqueues_only_two_affected_teams(app):
         )
         roster_jobs = SyncJob.query.filter_by(job_name='fetch_roster').all()
         assert job.status == 'succeeded'
-        assert {row.scope_key for row in roster_jobs} == {'111', '555'}
+        assert {row.scope_key for row in roster_jobs} == {'111'}
 
 
 def test_transaction_worker_preserves_failure_evidence_and_enters_job_retry(app):
@@ -492,7 +494,7 @@ def test_same_team_concurrent_contract_is_postgresql_enforced(app):
             'roster_membership_intervals'
         )}
         assert indexes[
-            'uq_roster_membership_intervals_current_open_player_type'
+            'uq_roster_membership_intervals_current_open_player_team_type'
         ]['unique'] is True
 
     barrier = Barrier(2)

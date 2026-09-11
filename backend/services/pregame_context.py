@@ -773,6 +773,7 @@ def _roster_discrepancies(projection):
             membership_type='active_roster',
             effective_end_date=None,
             is_current_version=True,
+            is_void=False,
         ).all()
         # An empty projection is not proof of absence. Only report a mismatch
         # when SP-05 has a current active-roster population for the club.

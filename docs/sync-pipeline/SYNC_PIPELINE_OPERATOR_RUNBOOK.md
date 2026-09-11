@@ -39,7 +39,7 @@ Inspect exact 30-team evidence without a source read or write:
 python scripts/report_roster_authority_coverage.py --baseball-date <yyyy-mm-dd>
 ```
 
-The report fails nonzero unless the latest shadow morning run enumerated exactly 30 teams and every team has a complete authoritative active-roster attempt plus current SP-05 pitcher membership. Forty-man coverage is reported separately. Partial, failed, missing, and suspicious empty active rosters remain explicit.
+The report uses the canonical 30 MLB clubs. It fails nonzero unless complete active and 40-man evidence exactly matches the corresponding current non-void membership sets and boundary authority is valid. It exposes source/interval member IDs, missing/extra members, exact-match counts, source mismatches, and affiliate-ownership violations. Partial, failed, and missing acquisition remain explicit; complete-empty evidence is evaluated as an exact empty set.
 
 Before a permanent Render service is reviewed, the bounded path can be invoked against the production application database through the manual `shadow_sp` mode of `.github/workflows/baseballos-sync.yml`. That mode skips the public-sync and other legacy workflow jobs, applies additive migrations, runs the allowlisted worker, captures the read-only health report, and retains both JSON artifacts for 30 days. It is not a scheduler and must not be treated as recurrent activation.
 
@@ -130,7 +130,7 @@ FROM baseball_date_closure_blockers
 WHERE closure_id = <closure-id>;
 ```
 
-A correction must produce closed → reopened → closed history; never overwrite the original closure evidence.
+A correction must produce closed â†’ reopened â†’ closed history; never overwrite the original closure evidence.
 
 ## Targeted repair dry run
 
@@ -288,3 +288,19 @@ SYNC_PIPELINE_PUBLICATION_ENABLED=false
 
 Restart only affected services. Do not edit `atomic_publication_current`
 directly and do not remove publication history.
+
+## AUDIT-R1 roster authority repair
+
+Keep publication and atomic reads disabled. Before applying repair, inspect the complete interval/source census and confirm the exact integration deployment and migration `d2e5f8a1b4c7`. Do not repair only the four original Pittsburgh examples without checking the rest of the ledger.
+
+Use SP-13 targeted roster repair with explicit MLB club IDs and the disputed baseball date:
+
+```powershell
+python scripts/run_sync_repair.py targeted --start-date YYYY-MM-DD --domain roster --team-id 134 --reason "AUDIT-R1 official MLB roster authority correction" --requested-by Nikko
+```
+
+Review the durable dry-run scope; add `--apply` only for the reviewed clubs. Dispatch its SP-13 planner through the repair worker. The ordinary non-publishing shadow worker consumes the resulting SP-05 owner jobs and SP-09/SP-10 descendants. Inspect/check the exact SP-13 request through its owner service; recurring shadow does not automatically consume SP-13 checker jobs. Do not enable publication or closure to finish roster repair.
+
+SP-05 revalidates complete official MLB sources and the applied request scope. It supersedes invalid affiliate claims with explicit void versions, restores false MLB closure boundaries only with retained dated source proof, and emits new correction mutations. It does not delete history or manually move a publication pointer. A conflicting later stint, missing historical roster, or unresolved affiliate parent blocks automatic correction and requires evidence review.
+
+Require 30/30 exact active and 30/30 exact 40-man sets, zero unresolved current affiliate claims, valid current MLB organization projections, correction-to-impact/cohort lineage, and naturally recurring cycles without new violations. Historical invalid versions remain visible as superseded evidence; zero means zero unresolved current claims, not deletion of old closures. Verify publication 1 is unchanged.

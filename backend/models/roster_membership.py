@@ -23,15 +23,16 @@ class RosterMembershipInterval(db.Model):
             name='ck_roster_membership_intervals_date_order',
         ),
         db.Index(
-            'uq_roster_membership_intervals_current_open_player_type',
+            'uq_roster_membership_intervals_current_open_player_team_type',
             'pitcher_id',
+            'team_id',
             'membership_type',
             unique=True,
             postgresql_where=db.text(
-                'effective_end_date IS NULL AND is_current_version = true'
+                'effective_end_date IS NULL AND is_current_version = true AND is_void = false'
             ),
             sqlite_where=db.text(
-                'effective_end_date IS NULL AND is_current_version = 1'
+                'effective_end_date IS NULL AND is_current_version = 1 AND is_void = 0'
             ),
         ),
         db.Index(
@@ -83,6 +84,7 @@ class RosterMembershipInterval(db.Model):
         db.ForeignKey('player_transactions.id', ondelete='SET NULL'),
     )
     is_current_version = db.Column(db.Boolean, nullable=False, default=True)
+    is_void = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     supersedes_interval_id = db.Column(
         db.Integer,
         db.ForeignKey('roster_membership_intervals.id', ondelete='RESTRICT'),

@@ -34,7 +34,7 @@ from utils.time import utc_now_naive
 
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
-EXPECTED_MIGRATION_HEAD = 'c9d4e6f8a1b2'
+EXPECTED_MIGRATION_HEAD = 'd2e5f8a1b4c7'
 HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {
@@ -206,6 +206,8 @@ def classify_operational_health(signals):
     blocking_fields = {
         'blocking_dead_jobs': 'dead_job_present',
         'missing_roster_authority_teams': 'thirty_team_roster_authority_incomplete',
+        'roster_membership_mismatch_teams': 'roster_source_canonical_mismatch',
+        'roster_authority_violations': 'roster_authority_source_mismatch',
         'unreconciled_final_games': 'unreconciled_final_game',
         'current_publication_missing': 'atomic_current_publication_missing',
         'publication_pointer_inconsistencies': 'publication_pointer_inconsistent',
@@ -386,6 +388,11 @@ def collect_operational_health(*, now=None, source_window_hours=24, live_stale_m
         'roster_authority_team_count': int(roster_team_count),
         'missing_roster_authority_teams': max(0, 30 - int(roster_team_count)),
         'roster_authority': roster_authority,
+        'roster_membership_mismatch_teams': sum(
+            not row['active']['exact_match'] or not row['forty_man']['exact_match']
+            for row in roster_authority['teams']
+        ),
+        'roster_authority_violations': roster_authority['affiliate_ownership_violation_count'],
         'last_recurring_shadow_job_id': last_shadow_job.id if last_shadow_job else None,
         'last_recurring_shadow_completed_at': (
             last_shadow_job.completed_at.isoformat()

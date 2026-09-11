@@ -398,6 +398,7 @@ def _dispatch_chunk(request, chunk, *, parent_job_id):
         return [enqueue_roster_reconciliation(
             team_id, value, priority=PRIORITY_REPAIR_SOURCE,
             sync_run_id=request.root_sync_run_id, parent_job_id=parent_job_id, commit=False,
+            repair_request_id=request.id,
         ) for team_id in teams]
     if domain == RepairDomain.TRANSACTIONS.value:
         return [enqueue_transaction_reconciliation(
