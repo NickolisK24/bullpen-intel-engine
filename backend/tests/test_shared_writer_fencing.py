@@ -2,6 +2,9 @@
 
 import importlib.util
 import json
+import subprocess
+import sys
+from types import ModuleType
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
@@ -408,6 +411,41 @@ def test_legacy_postgame_and_pbp_consume_sp_owner_without_false_correction(guard
     assert core['logs_corrected'] == 0
     assert core['correction_attempts_failed'] == 0
     assert pbp['write_outcome'] == 'final_superseded'
+    assert SyncFailure.query.count() == 0
+    assert FinalGameVersion.query.filter_by(is_current=True).one().version_number == 2
+    assert GameLog.query.join(Pitcher).filter(Pitcher.mlb_id == 303).one().pitches_thrown == 19
+
+
+def test_deployed_legacy_code_cannot_restore_prior_final(guarded, monkeypatch):
+    from models.final_game_reconciliation import FinalGameVersion
+    from models.sync_failure import SyncFailure
+
+    legacy_sha = 'aabe4b988fbfa4b5fedcf5da9dcecafa9142ed65'
+    root = Path(__file__).resolve().parents[2]
+
+    def load(relative, name):
+        source = subprocess.run(['git', 'show', f'{legacy_sha}:{relative}'], cwd=root,
+                                check=True, capture_output=True, text=True, encoding='utf-8').stdout
+        module = ModuleType(name)
+        module.__file__ = str(root / relative)
+        monkeypatch.setitem(sys.modules, name, module)
+        exec(compile(source, module.__file__, 'exec'), module.__dict__)
+        return module
+
+    legacy_sync = load('backend/services/sync.py', 'deployed_legacy_sync')
+    legacy_pbp = load('backend/services/play_by_play_foundation.py', 'deployed_legacy_pbp')
+    _seed_schedule()
+    reconcile_final_game(_bundle())
+    reconcile_final_game(_bundle(box=_boxscore(home_reliever_pitches=19),
+                                pbp=_pbp(pitch_speed=96), correction=True))
+    legacy_sync.process_completed_game_for_postgame_refresh(
+        _game(), schedule_date=GAME_DATE, boxscore=_boxscore(), force=True,
+    )
+    pbp = legacy_pbp.process_final_play_by_play_foundation(
+        _game(), boxscore=_boxscore(), play_by_play=_pbp(), game_date=GAME_DATE,
+    )
+    db.session.commit()
+    assert pbp['observation_rejected'] is True
     assert SyncFailure.query.count() == 0
     assert FinalGameVersion.query.filter_by(is_current=True).one().version_number == 2
     assert GameLog.query.join(Pitcher).filter(Pitcher.mlb_id == 303).one().pitches_thrown == 19

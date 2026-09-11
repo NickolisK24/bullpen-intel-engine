@@ -123,6 +123,9 @@ FOR EACH ROW EXECUTE FUNCTION baseballos_guard_final_compatibility();
 CREATE TRIGGER baseballos_final_compatibility_fence
 BEFORE INSERT OR UPDATE OR DELETE ON play_by_play_processed_games
 FOR EACH ROW EXECUTE FUNCTION baseballos_guard_final_compatibility();
+CREATE TRIGGER baseballos_final_compatibility_fence
+BEFORE INSERT OR UPDATE OR DELETE ON postgame_processed_games
+FOR EACH ROW EXECUTE FUNCTION baseballos_guard_final_compatibility();
 
 CREATE FUNCTION baseballos_guard_game_observation() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -259,7 +262,8 @@ def downgrade():
         op.execute('DROP FUNCTION baseballos_guard_transaction_projection()')
         op.execute('DROP TRIGGER baseballos_game_observation_fence ON game_observation_states')
         op.execute('DROP FUNCTION baseballos_guard_game_observation()')
-        for table in ('game_logs', 'game_play_by_play_events', 'game_pitch_events', 'play_by_play_processed_games'):
+        for table in ('game_logs', 'game_play_by_play_events', 'game_pitch_events', 'play_by_play_processed_games',
+                      'postgame_processed_games'):
             op.execute(f'DROP TRIGGER baseballos_final_compatibility_fence ON {table}')
         op.execute('DROP FUNCTION baseballos_guard_final_compatibility()')
         op.execute('DROP TRIGGER baseballos_roster_snapshot_fence ON roster_status_snapshots')

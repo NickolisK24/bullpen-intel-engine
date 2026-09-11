@@ -15,10 +15,13 @@ This is the pre-change inventory. Sharing a helper does not establish serializat
 | Semantic resource | Legacy writers | SP writers | Existing exclusion / authority | Conflict risk |
 |---|---|---|---|---|
 | ScheduledGame identity, dates, status, matchup | schedule_ingestion.ingest_games, daily/morning/CU | SP-04 via the same helper; SP-06 context fields | Team/game unique key; legacy orchestration guard; no shared source-order fence | An older schedule can replace newer status or context |
+| SlateGame schedule projection | schedule_ingestion.ingest_games | SP-04 through the same helper | Same acquisition lineage as ScheduledGame; separate row identity | Included in the common schedule/game database guard |
 | GameObservationState | game_change_detection via CU | SP-08 and shadow CU observation | Upstream timestamp and authority comparison against an unlocked ORM read | Concurrent observations can both pass against old accepted state |
 | ProvisionalPitchingAppearanceState | No direct legacy writer | SP-08 updates; SP-07 supersedes | Live advisory namespace 508000000000; final namespace 507000000000 | Late live work can pass its earlier state check after Final |
 | GameLog and final pitching lines | sync daily/postgame, game_driven_ingestion, historical/backfill wrappers, governed line correction utilities | SP-07 calls process_completed_game_for_postgame_refresh | Unique pitcher/game, shared correction helper; legacy public session lock differs from SP final transaction lock | Valid unique row can receive an older line; same helper is not a fence |
 | Final PBP/current appearance projections | play_by_play_foundation from legacy postgame/CU/repair | SP-07 calls foundation | Source-order checks and identities; caller lock differs | Cross-owner compare/write race needs mutation-time exclusion |
+| PostgameProcessedGame / PlayByPlayProcessedGame completion markers | Legacy completed-game/PBP writers | SP-07 through the same writers | Previously caller-local ordering | Guarded with the corresponding Final projection so stale work cannot regress completion |
+| CompletedGameContext and TeamGamePitchingSplit | completed_game_context_service and team_game_pitching_splits through legacy sync/repair | No direct SP writer | Legacy-derived context and aggregate contract; SP-07 does not call their persistence helpers | No shared mutable SP writer; legacy derivation freshness remains separate from atomic reader certification |
 | Pitcher MLB team, assignment and tracking | team_assignment_sync, roster_status_sync, authoritative-line identity resolution, intraday_identity_repair | SP-05 positive roster projection and R1 correction | SP-05 team lock only; legacy assignment overwrites every classified record | Affiliate assignment or older roster evidence can replace governed pitcher organization |
 | RosterStatusSnapshot | roster_status_sync and exact-date repair | SP-05 _update_current_and_snapshots | Pitcher/date identity and team-conflict check; no common lock/source winner | Same-day conflict and last-writer correction; old source can erase SP provenance |
 | PlayerTransaction/current alignment | transaction_ingestion and exact-roster realignment | SP-05 transaction wrapper | Event key; append-only versions in integration; unlocked read/update | Different windows can race and an old correction can win |
@@ -156,7 +159,7 @@ Cross-resource lock ordering and retry effects remain part of validation.
 
 Focused PostgreSQL results so far:
 
-- Eighteen shared-writer tests pass, including delayed legacy GameLog update after
+- Nineteen shared-writer tests pass, including delayed legacy GameLog update after
   corrected Final, delayed Final after corrected Final, delayed live after Final,
   unrelated-game parallelism, and reverse-order lock rejection.
 - The delayed legacy test reads 18 pitches, allows corrected Final to commit 19,
@@ -173,6 +176,13 @@ health conflicts distinct from expected suppressions. A whole legacy
 postgame/PBP call after SP Final reports no false correction or SyncFailure.
 SP-02 tests include a real queue reclaim and rejection of the expired owner's
 pending semantic commit. Full CI and production recurrence are separate gates.
+
+An additional whole-caller test loads `sync.py` and `play_by_play_foundation.py`
+from the actual deployed legacy commit `aabe4b988fbfa4b5fedcf5da9dcecafa9142ed65`.
+After corrected Final, its attempted earlier pitching line remains suppressed,
+its older PBP is rejected by the persisted source-order contract, and no
+SyncFailure is created. This directly checks older code rather than assuming all
+legacy processes already contain the new helper.
 
 The broader queue/game/roster/transaction/cohort/repair run passed 402 PostgreSQL
 tests. A later focused roster/transaction run passed 120 tests. Shard verification
