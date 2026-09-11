@@ -356,6 +356,25 @@ def test_old_binary_transaction_update_cannot_replace_owned_event(guarded):
     assert CompatibilityWriteEvent.query.filter_by(resource_type='transaction').count() == 1
 
 
+def test_health_detects_unique_transaction_with_wrong_current_facts(guarded):
+    from services.compatibility_writer_health import compatibility_writer_health
+    from services.semantic_write_fencing import lock_transaction, authorize_transaction_projection
+
+    transaction_pitcher()
+    sync_transactions(client=FakeTransactionClient([_tx()]),
+                      start_date=date(2026, 6, 27), end_date=date(2026, 7, 4))
+    assert compatibility_writer_health()['transaction_projection_conflicts'] == 0
+    transaction = PlayerTransaction.query.one()
+    lock_transaction(transaction.transaction_key)
+    authorize_transaction_projection(transaction.transaction_key)
+    # Model an owner defect: the row was changed without recording a version.
+    transaction.transaction_type_code = 'OPT'
+    db.session.commit()
+    report = compatibility_writer_health()
+    assert report['transaction_projection_conflict_ids'] == [transaction.id]
+    assert report['unresolved_ownership_conflicts'] == 1
+
+
 def test_legacy_event_change_during_first_sp_acquisition_is_not_overwritten(guarded):
     from services.transaction_ingestion import read_transaction_values
 

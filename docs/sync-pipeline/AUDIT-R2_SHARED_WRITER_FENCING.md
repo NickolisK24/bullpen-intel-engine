@@ -159,7 +159,7 @@ Cross-resource lock ordering and retry effects remain part of validation.
 
 Focused PostgreSQL results so far:
 
-- Nineteen shared-writer tests pass, including delayed legacy GameLog update after
+- Twenty shared-writer tests cover delayed legacy GameLog update after
   corrected Final, delayed Final after corrected Final, delayed live after Final,
   unrelated-game parallelism, and reverse-order lock rejection.
 - The delayed legacy test reads 18 pitches, allows corrected Final to commit 19,
@@ -238,6 +238,7 @@ Expected stale suppression must remain observable without becoming a SyncFailure
 
 The proposed health reducer reports current provisional rows for Final games,
 governed pitcher/current-team disagreement, Final-vs-GameLog numerical mismatch,
+current transaction facts that disagree with their immutable event version,
 recent suppression totals, and repeated active-job lock contention. Expected
 suppression alone does not block health; unresolved projection disagreement does.
 

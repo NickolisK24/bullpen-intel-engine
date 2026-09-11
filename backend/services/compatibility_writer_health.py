@@ -10,6 +10,8 @@ from models.final_game_reconciliation import FinalGameVersion, FinalPitchingAppe
 from models.game_log import GameLog
 from models.live_game_delta import ProvisionalPitchingAppearanceState
 from models.pitcher import Pitcher
+from models.player_transaction import PlayerTransaction
+from models.roster_membership import PlayerTransactionVersion
 from models.roster_membership import RosterMembershipInterval
 from models.sync_job import SyncJob, SyncJobAttempt
 from utils.db import db
@@ -65,6 +67,23 @@ def compatibility_writer_health(*, now=None):
     recent = dict(db.session.query(CompatibilityWriteEvent.outcome, func.count()).filter(
         CompatibilityWriteEvent.created_at >= now - timedelta(hours=24),
     ).group_by(CompatibilityWriteEvent.outcome).all())
+    from services.transaction_ingestion import (
+        _TRANSACTION_VERSION_FACT_FIELDS, _transaction_fact_fingerprint,
+    )
+    transaction_conflicts = []
+    # One joined scan compares the current projection with its immutable owner
+    # version. A nonduplicate row can still contain an incorrect correction.
+    for transaction, version in db.session.query(PlayerTransaction, PlayerTransactionVersion).outerjoin(
+        PlayerTransactionVersion, and_(
+            PlayerTransactionVersion.player_transaction_id == PlayerTransaction.id,
+            PlayerTransactionVersion.version_number == PlayerTransaction.current_version_number,
+        ),
+    ).filter(PlayerTransaction.current_version_number > 0).yield_per(250):
+        fingerprint = _transaction_fact_fingerprint({
+            field: getattr(transaction, field) for field in _TRANSACTION_VERSION_FACT_FIELDS
+        })
+        if version is None or fingerprint != version.fact_fingerprint:
+            transaction_conflicts.append(transaction.id)
     contention = db.session.query(SyncJobAttempt.sync_job_id, func.count()).join(
         SyncJob, SyncJob.id == SyncJobAttempt.sync_job_id,
     ).filter(
@@ -81,6 +100,8 @@ def compatibility_writer_health(*, now=None):
         'final_projection_conflicts': len(mismatched_final),
         'extra_final_contributions': len(extra_final),
         'conflicting_mlb_memberships': len(conflicting_clubs),
+        'transaction_projection_conflicts': len(transaction_conflicts),
+        'transaction_projection_conflict_ids': transaction_conflicts,
         'final_projection_conflict_details': [
             {'game_pk': game_pk, 'pitcher_id': pitcher_id} for game_pk, pitcher_id in mismatched_final
         ],
@@ -90,6 +111,6 @@ def compatibility_writer_health(*, now=None):
         'repeated_lock_contention_jobs': sum(count >= 3 for _, count in contention),
         'unresolved_ownership_conflicts': (
             len(mismatched_pitchers) + current_live + len(mismatched_final)
-            + len(extra_final) + len(conflicting_clubs)
+            + len(extra_final) + len(conflicting_clubs) + len(transaction_conflicts)
         ),
     }
