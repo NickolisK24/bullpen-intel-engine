@@ -356,6 +356,26 @@ def _existing_artifacts(publication_id):
     ).all()
 
 
+def _artifact_is_reader_ready(artifact):
+    snapshot = resolve_artifact_snapshot(artifact)
+    payload = snapshot.payload_json if isinstance(snapshot.payload_json, dict) else {}
+    read_models = payload.get('read_models')
+    read_models = read_models if isinstance(read_models, dict) else {}
+    if artifact.artifact_type == 'team_intelligence':
+        return isinstance(read_models.get('team_board'), dict) and isinstance(
+            read_models.get('league_row'), dict,
+        )
+    if artifact.artifact_type == 'team_board_v2_publication':
+        return isinstance(read_models.get('team_board_v2'), dict)
+    if artifact.artifact_type == 'what_changed_publication':
+        return isinstance(payload.get('what_changed'), dict)
+    if artifact.artifact_type == 'pitcher_current_publication':
+        return isinstance(read_models.get('pitcher_current'), dict)
+    if artifact.artifact_type == 'game_intelligence':
+        return isinstance(read_models.get('matchup'), dict)
+    return False
+
+
 def _manifest_material(cohort, specs, inherited):
     artifacts = [
         {
@@ -383,6 +403,62 @@ def _manifest_material(cohort, specs, inherited):
     }
 
 
+def _validate_reader_artifact_coverage(specs, inherited):
+    """Fail closed before a pointer can move to an incomplete reader generation."""
+    ready = {
+        'team_board': set(), 'team_board_v2': set(), 'league_row': set(),
+        'what_changed': set(), 'pitcher_current': set(), 'game_matchup': set(),
+    }
+    required_pitchers = set()
+    rows = []
+    for spec in specs:
+        rows.append((spec['key'][1], spec['key'][2], db.session.get(
+            DerivedCohortSnapshot, spec['source_snapshot_id'],
+        )))
+    for artifact in inherited:
+        rows.append((
+            artifact.entity_type, artifact.entity_key, resolve_artifact_snapshot(artifact),
+        ))
+    for entity_type, entity_key, snapshot in rows:
+        payload = snapshot.payload_json if snapshot and isinstance(snapshot.payload_json, dict) else {}
+        read_models = payload.get('read_models')
+        read_models = read_models if isinstance(read_models, dict) else {}
+        key = str(entity_key)
+        if entity_type == 'team':
+            for family in ('team_board', 'team_board_v2', 'league_row'):
+                if isinstance(read_models.get(family), dict):
+                    ready[family].add(key)
+            board_v2 = read_models.get('team_board_v2')
+            if isinstance(board_v2, dict):
+                for arm in ((board_v2.get('full') or {}).get('active_bullpen') or {}).get('arms') or ():
+                    if isinstance(arm, dict) and arm.get('pitcher_id') is not None:
+                        required_pitchers.add(str(arm['pitcher_id']))
+            if isinstance(payload.get('what_changed'), dict):
+                ready['what_changed'].add(key)
+        elif entity_type == 'pitcher':
+            if isinstance(read_models.get('pitcher_current'), dict):
+                ready['pitcher_current'].add(key)
+        elif entity_type == 'game':
+            if isinstance(read_models.get('matchup'), dict):
+                ready['game_matchup'].add(key)
+
+    expected_teams = {str(team_id) for team_id in MLB_TEAM_IDS}
+    missing = {
+        family: sorted(expected_teams - ready[family], key=int)
+        for family in ('team_board', 'team_board_v2', 'league_row', 'what_changed')
+        if expected_teams - ready[family]
+    }
+    if missing:
+        raise PublicationValidationError(
+            'publication_reader_team_coverage_incomplete:'
+            + json.dumps(missing, sort_keys=True, separators=(',', ':'))
+        )
+    if not required_pitchers or not required_pitchers.issubset(ready['pitcher_current']):
+        raise PublicationValidationError('publication_reader_pitcher_coverage_incomplete')
+    if not ready['game_matchup']:
+        raise PublicationValidationError('publication_reader_game_coverage_incomplete')
+
+
 def publish_derived_cohort(
     cohort_id,
     *,
@@ -407,6 +483,10 @@ def publish_derived_cohort(
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
     validate_publication_cohort(cohort, plan)
     candidate_specs = publication_candidate_specs(cohort)
+    require_reader_coverage = (
+        (cohort.method_versions_json or {}).get('read_models')
+        == 'cu06-publication-artifacts-v2'
+    )
     if lease_fence:
         lease_fence()
 
@@ -424,7 +504,10 @@ def publish_derived_cohort(
     inherited = [
         row for row in current_artifacts
         if (row.artifact_type, row.entity_type, row.entity_key) not in candidate_keys
+        and (not require_reader_coverage or _artifact_is_reader_ready(row))
     ]
+    if require_reader_coverage:
+        _validate_reader_artifact_coverage(candidate_specs, inherited)
 
     validate_publication_cohort(cohort, plan)
     if lease_fence:

@@ -4,6 +4,7 @@ from threading import Barrier
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 from models.atomic_publication import (
     AtomicPublication,
@@ -24,10 +25,12 @@ from services.atomic_publication import (
     run_atomic_publication_worker_once,
 )
 from services.atomic_publication_reads import (
+    _database_artifact_reader,
     publication_reader_coverage,
     resolve_atomic_read_context,
 )
 from services.sync_jobs import JobScopeType, JobType, enqueue_job
+from services.mlb_club_directory import MLB_TEAM_IDS
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -84,10 +87,10 @@ def _cohort(*, marker, authority='final', teams=(110,), pitchers=(10,), games=(7
     return plan, cohort
 
 
-def _snapshot(cohort, entity_type, entity_key, payload):
+def _snapshot(cohort, entity_type, entity_key, payload, *, snapshot_type=None):
     db.session.add(DerivedCohortSnapshot(
         cohort_id=cohort.id, entity_type=entity_type, entity_key=str(entity_key),
-        snapshot_type=f'{entity_type}_intelligence', baseball_date=GAME_DATE,
+        snapshot_type=snapshot_type or f'{entity_type}_intelligence', baseball_date=GAME_DATE,
         authority_class=cohort.authority_class, payload_schema_version=1,
         payload_json=payload,
     ))
@@ -119,6 +122,91 @@ def test_reader_coverage_rejects_internal_only_publication_artifacts(app):
     assert coverage['ready_counts']['pitcher_current'] == 0
     assert coverage['ready_counts']['team_board_v2'] == 0
     assert coverage['ready_counts']['what_changed'] == 0
+
+
+def _reader_payload(entity_type, entity_key, marker):
+    if entity_type == 'team':
+        return {
+            'read_models': {
+                'team_board': {'team_id': entity_key, 'marker': marker},
+                'team_board_v2': {
+                    'full': {
+                        'team_id': entity_key, 'marker': marker,
+                        'active_bullpen': {'arms': [{'pitcher_id': 10}]},
+                    },
+                    'core': {'team_id': entity_key, 'marker': marker},
+                    'details': {'team_id': entity_key, 'marker': marker},
+                },
+                'league_row': {'team_id': entity_key, 'marker': marker},
+            },
+            'what_changed': {'team_id': entity_key, 'marker': marker},
+        }
+    if entity_type == 'pitcher':
+        return {'read_models': {'pitcher_current': {'pitcher_id': entity_key, 'marker': marker}}}
+    return {'read_models': {'matchup': {'game_pk': entity_key, 'marker': marker}}}
+
+
+def test_reader_ready_method_requires_complete_coverage_before_pointer_switch(app):
+    _plan, incomplete = _cohort(marker='y')
+    incomplete.method_versions_json = {
+        **incomplete.method_versions_json,
+        'read_models': 'cu06-publication-artifacts-v2',
+    }
+    db.session.commit()
+
+    with pytest.raises(PublicationValidationError, match='team_coverage_incomplete'):
+        publish_derived_cohort(incomplete.id)
+    assert db.session.get(AtomicPublicationCurrent, 1) is None
+
+    _plan, complete = _cohort(
+        marker='x', teams=tuple(MLB_TEAM_IDS), pitchers=(10,), games=(777123,),
+    )
+    complete.method_versions_json = {
+        **complete.method_versions_json,
+        'read_models': 'cu06-publication-artifacts-v2',
+    }
+    for snapshot in DerivedCohortSnapshot.query.filter_by(cohort_id=complete.id):
+        payload = _reader_payload(snapshot.entity_type, int(snapshot.entity_key), 'x')
+        if snapshot.entity_type == 'team':
+            snapshot.payload_json = {'read_models': {
+                'team_board': payload['read_models']['team_board'],
+                'league_row': payload['read_models']['league_row'],
+            }}
+            _snapshot(complete, 'team', snapshot.entity_key, {
+                'read_models': {'team_board_v2': payload['read_models']['team_board_v2']},
+            }, snapshot_type='team_board_v2_publication')
+            _snapshot(complete, 'team', snapshot.entity_key, {
+                'what_changed': payload['what_changed'],
+            }, snapshot_type='what_changed_publication')
+        elif snapshot.entity_type == 'pitcher':
+            snapshot.payload_json = {'pitcher_snapshot': {'marker': 'x'}}
+            _snapshot(
+                complete, 'pitcher', snapshot.entity_key, payload,
+                snapshot_type='pitcher_current_publication',
+            )
+        else:
+            snapshot.payload_json = payload
+    db.session.commit()
+
+    result = publish_derived_cohort(complete.id)
+    coverage = publication_reader_coverage(result.publication.id)
+    assert result.pointer_advanced is True
+    assert coverage['complete'] is True
+    assert coverage['ready_counts']['team_board_v2'] == 30
+    assert coverage['ready_counts']['what_changed'] == 30
+    assert coverage['ready_counts']['pitcher_current'] == 1
+
+    statements = []
+    event.listen(
+        db.engine, 'before_cursor_execute',
+        lambda _conn, _cursor, statement, _params, _context, _many: statements.append(statement),
+    )
+    rows = _database_artifact_reader.read_many(
+        result.publication.id, 'team', tuple(map(str, MLB_TEAM_IDS)),
+        'team_intelligence',
+    )
+    assert len(rows) == 30
+    assert len(statements) == 2
 
 
 def test_same_cohort_retry_is_idempotent(app):
@@ -413,3 +501,48 @@ def test_team_board_request_stays_on_frozen_generation_postgresql(app):
     assert frozen.publication_id == first.id
     assert frozen.team_board(110)['marker'] == 'N'
     assert frozen.league((110,))['teams'][0]['marker'] == 'N'
+
+
+def test_public_reader_families_stay_on_frozen_generation_postgresql(app):
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL specialized reader-generation race contract')
+
+    def cohort_with_artifacts(marker):
+        _plan, cohort = _cohort(
+            marker=marker, teams=(110,), pitchers=(10,), games=(),
+            completed=('team_snapshot', 'pitcher_snapshot'),
+        )
+        team = DerivedCohortSnapshot.query.filter_by(
+            cohort_id=cohort.id, snapshot_type='team_intelligence',
+        ).one()
+        team.payload_json = {'read_models': {
+            'team_board': {'marker': marker}, 'league_row': {'marker': marker},
+        }}
+        pitcher = DerivedCohortSnapshot.query.filter_by(
+            cohort_id=cohort.id, snapshot_type='pitcher_intelligence',
+        ).one()
+        pitcher.payload_json = {'pitcher_snapshot': {'marker': marker}}
+        _snapshot(cohort, 'team', 110, {'read_models': {'team_board_v2': {
+            'full': {'marker': marker}, 'core': {}, 'details': {},
+        }}}, snapshot_type='team_board_v2_publication')
+        _snapshot(
+            cohort, 'team', 110, {'what_changed': {'marker': marker}},
+            snapshot_type='what_changed_publication',
+        )
+        _snapshot(cohort, 'pitcher', 10, {'read_models': {
+            'pitcher_current': {'marker': marker},
+        }}, snapshot_type='pitcher_current_publication')
+        db.session.commit()
+        return cohort
+
+    first = publish_derived_cohort(cohort_with_artifacts('r').id).publication
+    frozen = resolve_atomic_read_context(
+        env={'SYNC_PIPELINE_ATOMIC_READS_ENABLED': 'true'},
+    )
+    second = publish_derived_cohort(cohort_with_artifacts('s').id).publication
+
+    assert get_current_publication().id == second.id
+    assert frozen.publication_id == first.id
+    assert frozen.team_board_v2(110)['marker'] == 'r'
+    assert frozen.pitcher(10)['marker'] == 'r'
+    assert frozen.what_changed(110)['marker'] == 'r'

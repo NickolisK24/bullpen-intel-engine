@@ -298,3 +298,52 @@ are proven. Atomic request identity, N-to-N+1 freezing, rollback, and
 request-time write safety are implemented. Complete public-reader artifact
 coverage, production parity, and safe public API deployment are not yet proven,
 so atomic reads remain disabled and legacy remains public authority.
+
+## 23. Final artifact-coverage remediation
+
+The final CR-04 implementation moves the three missing public read families
+into SP-10 without changing their baseball semantics:
+
+* `team_board_v2_publication` freezes the existing Team Board v2 full, core,
+  and details payloads under one candidate identity;
+* `pitcher_current_publication` freezes the existing pitcher detail workload,
+  rest, availability, roster, role, recent-work, and deployment response;
+* `what_changed_publication` freezes the governed team comparison and records
+  whether it has a comparable predecessor cohort or is a no-predecessor
+  baseline.
+
+The generic `team_intelligence`, `pitcher_intelligence`, and
+`game_intelligence` candidates remain separate. SP-11 packages the specialized
+snapshots by their explicit artifact types and may inherit each independently.
+It does not query current baseball tables or derive these payloads.
+
+Because publication `1` is immutable and incomplete for atomic public reads,
+SP-10 detects that the current generation lacks reader coverage and performs
+one explicit baseline materialization from the current immutable Dashboard
+snapshot plus its governed candidate-time authorities. This baseline covers all
+30 team and Team Board artifacts and the pitcher set named by those frozen Team
+Boards. Once a complete publication becomes current, ordinary impact scope and
+artifact inheritance resume; a one-pitcher or one-team mutation does not repeat
+the league baseline.
+
+Before moving the pointer, SP-11 now requires all 30 generic team artifacts,
+all 30 Team Board v2 artifacts, all 30 What Changed artifacts, one league row
+per MLB club, a pitcher-current artifact for every pitcher in the frozen
+active-bullpen denominator, and at least one governed game/matchup artifact.
+An incomplete generation raises a validation error before the pointer
+transaction. Old incomplete artifacts are not inherited into a reader-ready
+generation. Published history is never edited.
+
+The real Team Board v2 full/core/details routes now use the same request-local
+atomic context as the team, pitcher, matchup, league, and What Changed routes.
+Each artifact lookup names its exact artifact type. The league reader batches
+30 direct team artifacts into one artifact query and one snapshot query,
+removing the earlier per-team lookup pattern. PostgreSQL coverage includes a
+pointer N to N+1 race for Team Board v2, pitcher-current, and What Changed; the
+frozen request remains on N for all three.
+
+Production activation remains fail closed. The code is deployed with
+`SYNC_PIPELINE_ATOMIC_READS_ENABLED=false`; no public API switch is authorized
+until a new natural cohort creates a complete publication, the read-only
+coverage report passes, dual-read semantic parity passes, and rollback is
+rechecked. Publication `1` remains historical evidence and is not modified.

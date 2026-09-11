@@ -347,6 +347,58 @@ def test_position_player_is_not_given_a_pitcher_read_model(app):
         assert position_player.position == '2B'
 
 
+def test_sp10_publication_artifact_builders_freeze_team_pitcher_and_changes(app, monkeypatch):
+    with app.app_context():
+        pitcher = Pitcher(
+            mlb_id=880100, full_name='Publication Arm', team_id=10,
+            team_name='Team 10', team_abbreviation='T10', position='P', active=True,
+        )
+        db.session.add(pitcher)
+        db.session.commit()
+        snapshot = _snapshot(team_ids=(10,))
+        snapshot.payload['trusted_team_boards']['by_team_id']['10']['records'] = [{
+            'pitcher_id': pitcher.id,
+        }]
+        snapshot.payload['trusted_team_boards']['by_team_id']['10']['default_pitcher_ids'] = [
+            pitcher.id,
+        ]
+        calls = []
+        builders = _builders(calls)
+        monkeypatch.setattr(
+            cu06, 'build_what_changed_candidate',
+            lambda team_id, **_kwargs: {'team_id': team_id, 'marker': 'frozen-change'},
+        )
+        monkeypatch.setattr(
+            cu06, 'build_team_board_v2_candidate',
+            lambda team_id, **_kwargs: {
+                'artifact_contract_version': 'team-board-v2-publication-v1',
+                'full': {'team_id': team_id}, 'core': {}, 'details': {},
+            },
+        )
+        monkeypatch.setattr(
+            cu06, 'build_public_pitcher_current_payload',
+            lambda pitcher_id, **_kwargs: {
+                'contract_version': 'pitcher-current-publication-v1',
+                'pitcher': {'id': pitcher_id},
+            },
+        )
+
+        result = cu06.rebuild_read_model_impact(
+            _cu05(teams=(10,), pitchers=(pitcher.id,)),
+            source_snapshot=snapshot,
+            team_board_builder=builders[0], league_listing_builder=builders[1],
+            build_publication_artifacts=True, predecessor_cohort_id=9,
+        )
+
+        assert result.status == 'complete'
+        assert result.team_board_v2_results[10]['full']['team_id'] == 10
+        assert result.pitcher_current_results[pitcher.id]['pitcher']['id'] == pitcher.id
+        assert result.what_changed_results[10]['marker'] == 'frozen-change'
+        frozen = deepcopy(result.team_board_v2_results)
+        snapshot.payload['trusted_team_boards']['by_team_id']['10']['records'][0]['pitcher_id'] = 999
+        assert result.team_board_v2_results == frozen
+
+
 def test_shadow_result_has_hard_stop_flags(app):
     with app.app_context():
         calls = []

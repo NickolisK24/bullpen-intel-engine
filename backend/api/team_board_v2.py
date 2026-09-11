@@ -3,6 +3,8 @@
 from flask import Blueprint, current_app, jsonify, request
 
 from api.bullpen import _freshness_reference_date
+from services.atomic_publication_reads import AtomicReadUnavailable
+from api.bullpen import _atomic_read_context, _atomic_read_unavailable
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services.game_context import build_team_game_context
 from services.public_serving_authority import build_published_team_board
@@ -150,6 +152,12 @@ def _build_deferred_sections(team_id, board, snapshot):
 
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2/core', methods=['GET'])
 def get_team_board_core(team_id):
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.team_board_v2(team_id, view='core'))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
     snapshot, board, identity = _select_core_board(team_id)
     if _team_missing(board):
         return jsonify({'error': 'team_not_found'}), 404
@@ -180,6 +188,12 @@ def get_team_board_core(team_id):
 
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2/details', methods=['GET'])
 def get_team_board_details(team_id):
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.team_board_v2(team_id, view='details'))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
     requested_identity = _identity_from_request()
     try:
         snapshot, normalized = resolve_team_board_snapshot(
@@ -226,6 +240,12 @@ def get_team_board_details(team_id):
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])
 def get_team_board_v2(team_id):
     """Compatibility composition using one selected publication identity."""
+    try:
+        atomic_context = _atomic_read_context()
+        if atomic_context is not None:
+            return jsonify(atomic_context.team_board_v2(team_id, view='full'))
+    except AtomicReadUnavailable as exc:
+        return _atomic_read_unavailable(exc)
     snapshot, board, identity = _select_core_board(team_id)
     if _team_missing(board):
         return jsonify({'error': 'team_not_found'}), 404

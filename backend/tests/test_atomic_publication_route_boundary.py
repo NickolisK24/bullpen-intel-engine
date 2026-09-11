@@ -1,6 +1,7 @@
 from flask import Flask
 
 from api import bullpen
+from api import team_board_v2
 from services import atomic_publication_reads, public_serving_authority
 
 
@@ -15,6 +16,13 @@ class FrozenAtomicContext:
     def pitcher(self, pitcher_id):
         self.calls.append(('pitcher', pitcher_id))
         return {'data': {'workload': {'pitches': 12}}, 'atomic_publication': {'publication_id': 7}}
+
+    def team_board_v2(self, team_id, *, view='full'):
+        self.calls.append((f'team_board_v2_{view}', team_id))
+        return {
+            'team': {'team_id': team_id}, 'view': view,
+            'atomic_publication': {'publication_id': 7},
+        }
 
     def game(self, game_pk):
         self.calls.append(('game', game_pk))
@@ -76,3 +84,26 @@ def test_production_team_board_override_keeps_atomic_boundary(monkeypatch):
 
     assert response.get_json()['atomic_publication']['publication_id'] == 7
     assert context.calls == [('team', 110)]
+
+
+def test_team_board_v2_routes_use_atomic_artifact_without_legacy_build(monkeypatch):
+    context = FrozenAtomicContext()
+    monkeypatch.setattr(team_board_v2, '_atomic_read_context', lambda: context)
+    app = _app()
+
+    for suffix, view in (('', 'full'), ('/core', 'core'), ('/details', 'details')):
+        with app.test_request_context(f'/api/bullpen/teams/110/board-v2{suffix}'):
+            handler = {
+                'full': team_board_v2.get_team_board_v2,
+                'core': team_board_v2.get_team_board_core,
+                'details': team_board_v2.get_team_board_details,
+            }[view]
+            payload = handler(110).get_json()
+            assert payload['view'] == view
+            assert payload['atomic_publication']['publication_id'] == 7
+
+    assert context.calls == [
+        ('team_board_v2_full', 110),
+        ('team_board_v2_core', 110),
+        ('team_board_v2_details', 110),
+    ]

@@ -171,6 +171,15 @@ SP-11 does not compute workload, Arm Read, Team State, roles, performance, snaps
 
 SP-12 can call `publish_derived_cohort` for one eligible morning/nightly cohort; it must not bypass eligibility or pointer locking. SP-14 must certify artifact parity, request-level single-generation reads, cache convergence, naturally produced cohorts, and each legacy-path retirement before production activation.
 
+### Public reader coverage gate
+
+For cohorts using `cu06-publication-artifacts-v2`, SP-11 validates the complete
+Team Board v2, pitcher-current, What Changed, team/league, and game denominator
+before the pointer transaction. It packages the SP-10 snapshots by explicit
+artifact type and never rebuilds their payload. An incomplete predecessor may
+remain immutable history, but its missing artifact families are not inherited
+into a reader-ready successor.
+
 ## 26. Acceptance Checklist
 
 * [x] One eligible cohort maps to one immutable publication manifest.
