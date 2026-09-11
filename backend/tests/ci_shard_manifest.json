@@ -1339,7 +1339,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 507.48,
+      "measured_seconds": 539.48,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1680,6 +1680,14 @@
         {
           "path": "tests/test_zero_out_game_log_ingestion_guard.py",
           "measured_seconds": 5.197
+        },
+        {
+          "path": "tests/test_migration_authority.py",
+          "measured_seconds": 7.0
+        },
+        {
+          "path": "tests/test_production_lineage.py",
+          "measured_seconds": 25.0
         }
       ]
     }

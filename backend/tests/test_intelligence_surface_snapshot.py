@@ -1045,7 +1045,23 @@ def startup(tmp_path):
     # application import, real migration, database, or server is involved.
     harness = '''
 flask() { echo "CALL flask $* FLASK_APP=$FLASK_APP"; return "${MIGRATION_EXIT:-0}"; }
-python() { echo "CALL python $*"; return "${PREPARATION_EXIT:-0}"; }
+python() {
+  if [ "$*" = '-m scripts.database_migrations startup' ]; then
+    "$RECOVERY_TEST_PYTHON" -c '
+import os, subprocess
+from scripts import database_migrations as m
+m.target_head = lambda: "fixture-head"
+m.current_heads = lambda: ("fixture-head",)
+def upgrade(target):
+    print("CALL flask db upgrade FLASK_APP=" + os.environ["FLASK_APP"])
+    if int(os.environ["MIGRATION_EXIT"]):
+        raise subprocess.CalledProcessError(int(os.environ["MIGRATION_EXIT"]), "flask")
+m.upgrade = upgrade
+raise SystemExit(m.main(["startup"]))'
+  else
+    echo "CALL python $*"; return "${PREPARATION_EXIT:-0}"
+  fi
+}
 export -f flask python
 export PATH="$PWD/bin:$PATH"
 exec bash backend/scripts/render_start.sh "$@"
@@ -1063,6 +1079,8 @@ exec bash backend/scripts/render_start.sh "$@"
                     'GUNICORN_WORKERS', 'GUNICORN_TIMEOUT', 'GUNICORN_GRACEFUL_TIMEOUT',
                     'BASH_ENV', 'ENV'):
             env.pop(key, None)
+        env.update(DATABASE_MIGRATION_MODE='owner', APP_ENV='test', SYNC_PIPELINE_SHADOW_MODE='false',
+                   RECOVERY_TEST_PYTHON=sys.executable, PYTHONPATH=str(SCRIPT.parents[1]))
         env.update(MIGRATION_EXIT=str(migration_exit), PREPARATION_EXIT=str(preparation_exit))
         if skip is not None:
             env['SKIP_STARTUP_MIGRATIONS'] = skip
@@ -1094,7 +1112,7 @@ def test_exact_true_skips_only_migrations(startup):
 @pytest.mark.parametrize('skip', [None, 'false', 'yes', 'TRUE', '1'])
 def test_migration_failure_prevents_preparation_and_server(startup, skip):
     result = startup(skip, migration_exit=17)
-    assert result.returncode == 17
+    assert result.returncode == 1
     assert 'CALL flask db upgrade' in result.stdout
     assert 'CALL python' not in result.stdout
     assert 'CALL server' not in result.stdout

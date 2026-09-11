@@ -1,0 +1,120 @@
+{
+  "main_base": "a56c4bf90197aaf96a021355f66ef544e8842044",
+  "integration_source": "0ce244420df6de3ab54f1d952d794b112b56deb7",
+  "common_revision": "e8a4c2f9b1d6",
+  "target_revision": "e3f6a9b2c5d8",
+  "migrations": [
+    {
+      "revision": "b5e7c1d9a4f2",
+      "down_revision": "e8a4c2f9b1d6",
+      "path": "backend/migrations/versions/b5e7c1d9a4f2_add_sync_control_plane.py",
+      "sha256": "8ae73ee7749c7647153ffe6d2edc513aa6f13c8262bd04546b30d268104fbdbe",
+      "introduced_commit": "e3a96eafc43a79ab5251f313214f74602cfbdd4e"
+    },
+    {
+      "revision": "c4f8a2d7e6b1",
+      "down_revision": "b5e7c1d9a4f2",
+      "path": "backend/migrations/versions/c4f8a2d7e6b1_add_durable_sync_job_queue.py",
+      "sha256": "284a4b4019e9de63ece2f1fdad029643de2ed6f5941f9d388cc3e1195c0e5b46",
+      "introduced_commit": "570ce255b59b0b99ea6335f26415e9ec9f916580"
+    },
+    {
+      "revision": "d7a3e9c1f5b2",
+      "down_revision": "c4f8a2d7e6b1",
+      "path": "backend/migrations/versions/d7a3e9c1f5b2_add_source_observation_evidence.py",
+      "sha256": "f3c3225aa6a8399a598ae18b81bf1cf2853eaebbc0a51cab41ab500afd1c77aa",
+      "introduced_commit": "6faccd7ba9ee6742a2c92057f24547452f56d77c"
+    },
+    {
+      "revision": "e8b4f1a2c6d9",
+      "down_revision": "d7a3e9c1f5b2",
+      "path": "backend/migrations/versions/e8b4f1a2c6d9_add_adaptive_game_state_fields.py",
+      "sha256": "ed47d82464aac0dcecf6be3c76a82537a7c6df6279e45ec3aca06d138a4606de",
+      "introduced_commit": "16d368339be9e3d1b2a828f1cbe9b32994e0beda"
+    },
+    {
+      "revision": "f3c7a1d9e5b2",
+      "down_revision": "e8b4f1a2c6d9",
+      "path": "backend/migrations/versions/f3c7a1d9e5b2_add_roster_transaction_authority.py",
+      "sha256": "1b01eb7483bc32efb050551ac6e9b39f1998bd4e2b06fc6afc39a30845e2c2b0",
+      "introduced_commit": "cc1ea7c05bd1227cc68f34b8c771e945649aa365"
+    },
+    {
+      "revision": "a6d2e8f4b1c7",
+      "down_revision": "f3c7a1d9e5b2",
+      "path": "backend/migrations/versions/a6d2e8f4b1c7_add_pregame_context_authority.py",
+      "sha256": "5ef02bf76cd40d57a8e896d87009320135e0caa8ffd56494265ac2b82f068a81",
+      "introduced_commit": "980aa99862829ac9c9cac04304e2bdf95df40ce9"
+    },
+    {
+      "revision": "e8b4c2d6f1a9",
+      "down_revision": "a6d2e8f4b1c7",
+      "path": "backend/migrations/versions/e8b4c2d6f1a9_add_final_game_reconciliation.py",
+      "sha256": "5ca4fb0481941405c63afa00c239b175a0557c105fdff9f67b11019eb83b61e6",
+      "introduced_commit": "6af93815bc8ed2282a5a04115bdc45c439e332ba"
+    },
+    {
+      "revision": "f9c2a7e4b1d6",
+      "down_revision": "e8b4c2d6f1a9",
+      "path": "backend/migrations/versions/f9c2a7e4b1d6_add_live_game_delta.py",
+      "sha256": "136bdc0af0ade697a114ba97a0ffec76ea4fadc748acd1d9799b45ac1a9d8555",
+      "introduced_commit": "9fdc5dd3d5993b939713b00ef87ca2a024570305"
+    },
+    {
+      "revision": "c1d4e7a9b2f6",
+      "down_revision": "f9c2a7e4b1d6",
+      "path": "backend/migrations/versions/c1d4e7a9b2f6_add_canonical_impact_plans.py",
+      "sha256": "fc714658b9e124a5554a80d80e7928259f045701df6c917c33c4b6480ed983ed",
+      "introduced_commit": "ffac609d32e54bb6dde4fc60120b0066f765dddd"
+    },
+    {
+      "revision": "d2e5f8a1c4b7",
+      "down_revision": "c1d4e7a9b2f6",
+      "path": "backend/migrations/versions/d2e5f8a1c4b7_add_derived_intelligence_cohorts.py",
+      "sha256": "27d1816082561818dfde81d0dbdb10c218a0a0e0bce99965025d3a0ae94d43fa",
+      "introduced_commit": "60429a7a4db546994bc73c2a9eb1b99e4379264f"
+    },
+    {
+      "revision": "e3f6a9b2d5c8",
+      "down_revision": "d2e5f8a1c4b7",
+      "path": "backend/migrations/versions/e3f6a9b2d5c8_add_atomic_publications.py",
+      "sha256": "f40b2f4c41853aa11778f0a5176925fd8838360e6043aea52d31c9172e159dd3",
+      "introduced_commit": "b0a1d360857e19221cc9d625bfde8b5f7be1c130"
+    },
+    {
+      "revision": "f1a4c8d2e6b9",
+      "down_revision": "e3f6a9b2d5c8",
+      "path": "backend/migrations/versions/f1a4c8d2e6b9_add_daily_closure.py",
+      "sha256": "c5be99b2478eadc062d9251ab3ef5402eb46e0fd960c7a92878a3c51a394cfa5",
+      "introduced_commit": "94e0ca0ac1e500b8d5ff2058a165b9c474a81156"
+    },
+    {
+      "revision": "b7d3e9f1a5c2",
+      "down_revision": "f1a4c8d2e6b9",
+      "path": "backend/migrations/versions/b7d3e9f1a5c2_add_repair_orchestration.py",
+      "sha256": "6892dd8b488019b039db66ad0b9a426c945b853242f6fbb7c1a22e3671c83157",
+      "introduced_commit": "ff49cd00ccbf0a9cc54b4b45f92102b4f8d95525"
+    },
+    {
+      "revision": "c9d4e6f8a1b2",
+      "down_revision": "b7d3e9f1a5c2",
+      "path": "backend/migrations/versions/c9d4e6f8a1b2_add_sync_certification.py",
+      "sha256": "bd384fe4403b231930720c498a64a758a1cac655821d38290c4debf91d626af0",
+      "introduced_commit": "0fad7f037e01f8771c316e12a2d8f6480fc551d3"
+    },
+    {
+      "revision": "d2e5f8a1b4c7",
+      "down_revision": "c9d4e6f8a1b2",
+      "path": "backend/migrations/versions/d2e5f8a1b4c7_isolate_roster_authority.py",
+      "sha256": "fecf2729b5dc300521749471c71b910fb0ba0d7ba4eb4a0c659c7fe1ed630d39",
+      "introduced_commit": "1917fefa7a3420e69580a46bfbeea58ce1183c67"
+    },
+    {
+      "revision": "e3f6a9b2c5d8",
+      "down_revision": "d2e5f8a1b4c7",
+      "path": "backend/migrations/versions/e3f6a9b2c5d8_fence_compatibility_writers.py",
+      "sha256": "a19bf29cc1b41de35e4efbbc3e7ddbf0485e6092ce960ee6a41f1091b464ef6a",
+      "introduced_commit": "ea79ca78865ddc72f8b3687c6b7c353dcfd33c72"
+    }
+  ]
+}
