@@ -9,7 +9,11 @@ from models.source_observation import (
     SourceFetchAttempt,
     SourceObservation,
     SourceSubject,
+    SourcePayloadArtifact,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
+from services.roster_authority_scope import classify_roster_team
+from services.roster_transaction_authority import _pitcher_entries
 from models.sync_run import SyncRun, SyncRunScope
 from utils.db import db
 from utils.time import utc_now_naive
@@ -52,13 +56,40 @@ def roster_authority_coverage(
 ):
     """Return exact, read-only active/40-man evidence for one baseball date."""
     now = now or utc_now_naive()
+    current_intervals = RosterMembershipInterval.query.filter_by(
+        is_current_version=True, is_void=False,
+    ).all()
+    boundary_ids = {
+        value for row in current_intervals
+        for value in (row.opened_by_observation_id, row.closed_by_observation_id)
+        if value is not None
+    }
+    retained = db.session.query(SourceObservation, SourceSubject, SourcePayloadArtifact).join(
+        SourceSubject, SourceSubject.id == SourceObservation.source_subject_id,
+    ).outerjoin(SourcePayloadArtifact, SourcePayloadArtifact.id == SourceObservation.payload_artifact_id).filter(
+        SourceSubject.source_domain == 'roster',
+        db.or_(SourceSubject.baseball_date == baseball_date, SourceObservation.id.in_(boundary_ids)),
+    ).all()
+    scope_cache = {}
+    for observation, subject, artifact in retained:
+        params = subject.request_parameters or {}
+        records = (artifact.payload_json or {}).get('records') if artifact else None
+        owner = None
+        if (isinstance(records, list) and len(records) == observation.record_count
+                and subject.provider == 'mlb_stats_api' and params.get('teamId') is not None
+                and subject.subject_key == f"{params['teamId']}:{params.get('rosterType')}"):
+            owner = classify_roster_team(params['teamId'], records=records)
+        scope_cache[observation.id] = (owner, subject, records or [])
+
+    def observation_scope(observation):
+        return scope_cache.get(observation.id, (None, None, [])) if observation else (None, None, [])
     morning_run = latest_shadow_morning_run(baseball_date)
     expected = tuple(sorted({
         int(value)
         for value in (
             expected_team_ids
             if expected_team_ids is not None
-            else expected_team_ids_from_run(morning_run)
+            else MLB_TEAM_IDS
         )
     }))
     teams = []
@@ -97,6 +128,35 @@ def roster_authority_coverage(
                     observation = db.session.get(
                         SourceObservation, attempt.source_observation_id,
                     )
+            authoritative_observation = (
+                SourceObservation.query.filter_by(
+                    source_subject_id=subject.id, is_authoritative=True, completeness='complete',
+                ).order_by(SourceObservation.id.desc()).first() if subject else None
+            )
+            source_members = set()
+            source_scope_valid = False
+            if authoritative_observation is not None:
+                ownership, represented, records = observation_scope(authoritative_observation)
+                source_scope_valid = bool(ownership and ownership['mlb_membership_authority']
+                                          and ownership['requested_team_id'] == team_id)
+                source_members = set(_pitcher_entries(records))
+            membership_type = 'active_roster' if roster_type == 'active' else 'forty_man_roster'
+            intervals = RosterMembershipInterval.query.filter_by(
+                team_id=team_id, membership_type=membership_type,
+                effective_end_date=None, is_current_version=True, is_void=False,
+            ).all()
+            canonical_members = {row.player_mlb_id for row in intervals}
+            authority_mismatches = []
+            for interval in intervals:
+                opening = db.session.get(SourceObservation, interval.opened_by_observation_id)
+                owner, represented, _ = observation_scope(opening)
+                if (not owner or not owner['mlb_membership_authority']
+                        or owner['requested_team_id'] != team_id
+                        or (represented.request_parameters or {}).get('rosterType') != roster_type
+                        or interval.organization_id != team_id):
+                    authority_mismatches.append(interval.id)
+            exact_match = bool(source_scope_valid and source_members == canonical_members
+                               and not authority_mismatches and len(intervals) == len(canonical_members))
             complete = bool(
                 attempt is not None
                 and attempt.status == 'succeeded'
@@ -123,6 +183,14 @@ def roster_authority_coverage(
                     if attempt else None
                 ),
                 'authoritative': complete,
+                'latest_complete_observation_id': authoritative_observation.id if authoritative_observation else None,
+                'source_member_ids': sorted(source_members),
+                'interval_member_ids': sorted(canonical_members),
+                'missing_canonical_member_ids': sorted(source_members - canonical_members),
+                'extra_canonical_member_ids': sorted(canonical_members - source_members),
+                'authority_source_mismatch_interval_ids': authority_mismatches,
+                'source_scope_valid': source_scope_valid,
+                'exact_match': exact_match,
             }
 
         current_active_count = RosterMembershipInterval.query.filter_by(
@@ -130,14 +198,14 @@ def roster_authority_coverage(
             membership_type='active_roster',
             effective_end_date=None,
             is_current_version=True,
+            is_void=False,
         ).count()
         active = evidence['active']
         forty_man = evidence['40Man']
         active_membership_covered = bool(
             active['authoritative']
             and forty_man['authoritative']
-            and (active['record_count'] or 0) > 0
-            and current_active_count > 0
+            and active['exact_match']
         )
         if active_membership_covered:
             complete_active.append(team_id)
@@ -151,7 +219,7 @@ def roster_authority_coverage(
             missing.append(team_id)
         else:
             stale.append(team_id)
-        if forty_man['authoritative']:
+        if forty_man['authoritative'] and forty_man['exact_match']:
             complete_forty_man.append(team_id)
         teams.append({
             'team_id': team_id,
@@ -161,12 +229,25 @@ def roster_authority_coverage(
             'forty_man': forty_man,
         })
 
-    expected_count_valid = len(expected) == EXPECTED_MLB_TEAMS
+    violations = []
+    for interval in current_intervals:
+        if interval.membership_type not in ('active_roster', 'forty_man_roster'):
+            continue
+        for boundary, observation_id in [('opening', interval.opened_by_observation_id),
+                                          ('closing', interval.closed_by_observation_id)]:
+            if observation_id is None:
+                continue
+            owner, subject, _ = observation_scope(db.session.get(SourceObservation, observation_id))
+            if (interval.team_id not in MLB_TEAM_IDS or not owner
+                    or not owner['mlb_membership_authority'] or owner['requested_team_id'] != interval.team_id):
+                violations.append({'interval_id': interval.id, 'boundary': boundary,
+                                   'team_id': interval.team_id, 'observation_id': observation_id})
+    expected_count_valid = set(expected) == set(MLB_TEAM_IDS)
     active_coverage_count = len(complete_active)
     status = (
         'complete'
         if expected_count_valid and active_coverage_count == EXPECTED_MLB_TEAMS
-        and not suspicious_empty
+        and len(complete_forty_man) == EXPECTED_MLB_TEAMS and not violations
         else 'incomplete'
     )
     return {
@@ -186,6 +267,10 @@ def roster_authority_coverage(
         'stale_team_ids': sorted(set(stale)),
         'suspicious_empty_active_team_ids': sorted(set(suspicious_empty)),
         'teams': teams,
+        'active_exact_match_count': sum(row['active']['exact_match'] for row in teams),
+        'forty_man_exact_match_count': sum(row['forty_man']['exact_match'] for row in teams),
+        'affiliate_ownership_violations': violations,
+        'affiliate_ownership_violation_count': len(violations),
     }
 
 

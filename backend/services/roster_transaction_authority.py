@@ -16,6 +16,7 @@ from models.roster_membership import (
 )
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services.mlb_api import mlb_client
+from services.roster_authority_scope import classify_roster_team, roster_confirmation_routes
 from services.roster_status_sync import (
     _snapshot_values,
     _upsert_roster_status_snapshot,
@@ -180,6 +181,13 @@ def observe_team_roster(
             completeness_value == ObservationCompleteness.COMPLETE
         ),
     })
+    scope = classify_roster_team(team_id, records=entries)
+    proof['roster_authority_scope'] = {**scope, 'represented_roster_type': roster_type}
+    proof['authoritative_for_mlb_membership'] = bool(
+        scope['mlb_membership_authority']
+        and roster_type in ('active', '40Man')
+        and completeness_value == ObservationCompleteness.COMPLETE
+    )
     result = record_source_observation(
         identity=identity,
         payload={'records': entries, 'completeness_proof': proof},
@@ -215,6 +223,7 @@ def reconcile_team_roster(
     sync_job_id=None,
     commit=True,
     enqueue_downstream=True,
+    repair_request_id=None,
 ):
     """Reconcile one team's active and 40-man pitcher membership atomically."""
     team_id = int(team_id)
@@ -236,13 +245,20 @@ def reconcile_team_roster(
         item.completeness == ObservationCompleteness.COMPLETE.value
         for item in views.values()
     )
-    if not complete:
+    authority_scope = classify_roster_team(
+        team_id, records=[entry for view in views.values() for entry in view.entries],
+    )
+    if not complete or not authority_scope['mlb_membership_authority']:
         if commit:
             db.session.commit()
-        return _roster_summary(team_id, roster_date, views, [], [], authoritative=False)
+        return {
+            **_roster_summary(team_id, roster_date, views, [], [], authoritative=False),
+            'authority_scope': authority_scope,
+            'evidence_only': complete and not authority_scope['authority_conflict'],
+        }
 
     changed = any(item.result.changed for item in views.values())
-    if not changed:
+    if not changed and repair_request_id is None:
         if commit:
             db.session.commit()
         return _roster_summary(team_id, roster_date, views, [], [], authoritative=True)
@@ -257,6 +273,13 @@ def reconcile_team_roster(
         MembershipType.FORTY_MAN_ROSTER.value: views['40Man'].result.observation,
     }
     mutations = []
+    if repair_request_id is not None:
+        from services.roster_authority_correction import correct_roster_authority
+        mutations.extend(correct_roster_authority(
+            team_id, roster_date, observations=observations,
+            entries_by_type=entries_by_type, repair_request_id=repair_request_id,
+            sync_run_id=sync_run_id, timestamp=timestamp,
+        ))
     affected_pitchers = {}
     for membership_type, incoming_entries in entries_by_type.items():
         observation = observations[membership_type]
@@ -267,6 +290,7 @@ def reconcile_team_roster(
                 membership_type=membership_type,
                 effective_end_date=None,
                 is_current_version=True,
+                is_void=False,
             )
             .with_for_update()
             .all()
@@ -289,25 +313,8 @@ def reconcile_team_roster(
             affected_pitchers.setdefault(pitcher.id, mlb_id)
             if mlb_id in current_by_mlb_id:
                 continue
-            prior_elsewhere = (
-                RosterMembershipInterval.query
-                .filter_by(
-                    pitcher_id=pitcher.id,
-                    membership_type=membership_type,
-                    effective_end_date=None,
-                    is_current_version=True,
-                )
-                .with_for_update()
-                .one_or_none()
-            )
-            if prior_elsewhere is not None:
-                mutations.append(_close_interval(
-                    prior_elsewhere,
-                    roster_date=roster_date,
-                    timestamp=timestamp,
-                    observation_id=observation.id,
-                    sync_run_id=sync_run_id,
-                ))
+            # Another endpoint's inclusion cannot prove this club's removal.
+            # Each complete MLB club view owns only its own membership set.
             interval = RosterMembershipInterval(
                 pitcher_id=pitcher.id,
                 player_mlb_id=mlb_id,
@@ -373,6 +380,7 @@ def current_memberships(team_id, membership_type=MembershipType.ACTIVE_ROSTER):
             membership_type=membership_type,
             effective_end_date=None,
             is_current_version=True,
+            is_void=False,
         )
         .order_by(RosterMembershipInterval.player_mlb_id.asc())
         .all()
@@ -389,6 +397,7 @@ def membership_on_date(pitcher_id, membership_date, membership_type=None):
             | (RosterMembershipInterval.effective_end_date > membership_date)
         ),
         RosterMembershipInterval.is_current_version.is_(True),
+        RosterMembershipInterval.is_void.is_(False),
     )
     if membership_type is not None:
         query = query.filter(
@@ -408,6 +417,9 @@ def supersede_membership_interval(
     sync_run_id=None,
     timestamp=None,
     commit=True,
+    reopen=False,
+    is_void=False,
+    organization_id=None,
 ):
     """Preserve a mistaken interval and install one corrected current version.
 
@@ -423,13 +435,25 @@ def supersede_membership_interval(
     )
     if not prior.is_current_version:
         raise ValueError('Only the current interval version may be superseded')
+    if prior.membership_type in ('active_roster', 'forty_man_roster') and not is_void:
+        from models.source_observation import SourceObservation
+        from services.roster_authority_correction import observation_scope
+        source = db.session.get(SourceObservation, source_observation_id)
+        owner, subject, _ = observation_scope(source) if source else (None, None, [])
+        expected_type = 'active' if prior.membership_type == 'active_roster' else '40Man'
+        if (not source or not source.is_authoritative or source.completeness != 'complete'
+                or not owner or not owner['mlb_membership_authority']
+                or owner['requested_team_id'] != (int(team_id) if team_id is not None else prior.team_id)
+                or (subject.request_parameters or {}).get('rosterType') != expected_type):
+            raise ValueError('MLB membership correction requires matching complete MLB club authority')
     prior.is_current_version = False
     prior.updated_at = timestamp
+    db.session.flush()
     corrected = RosterMembershipInterval(
         pitcher_id=prior.pitcher_id,
         player_mlb_id=prior.player_mlb_id,
         team_id=int(team_id) if team_id is not None else prior.team_id,
-        organization_id=prior.organization_id,
+        organization_id=organization_id if organization_id is not None else prior.organization_id,
         membership_type=prior.membership_type,
         effective_start_date=(
             _date(effective_start_date)
@@ -437,21 +461,24 @@ def supersede_membership_interval(
         ),
         effective_start_at=prior.effective_start_at,
         effective_end_date=(
-            _date(effective_end_date)
-            if effective_end_date is not None else prior.effective_end_date
+            None if reopen else (
+                _date(effective_end_date) if effective_end_date is not None else prior.effective_end_date
+            )
         ),
-        effective_end_at=prior.effective_end_at,
+        effective_end_at=None if reopen else prior.effective_end_at,
         start_precision=prior.start_precision,
-        end_precision=prior.end_precision,
+        end_precision=None if reopen else prior.end_precision,
         authority_type=prior.authority_type,
         opened_by_observation_id=source_observation_id,
         closed_by_observation_id=(
-            source_observation_id if effective_end_date is not None
-            else prior.closed_by_observation_id
+            None if reopen else (
+                source_observation_id if effective_end_date is not None else prior.closed_by_observation_id
+            )
         ),
         opened_by_transaction_id=prior.opened_by_transaction_id,
         closed_by_transaction_id=prior.closed_by_transaction_id,
         is_current_version=True,
+        is_void=is_void,
         supersedes_interval_id=prior.id,
         correction_reason=str(correction_reason),
         created_at=timestamp,
@@ -481,6 +508,7 @@ def enqueue_roster_reconciliation(
     sync_run_id=None,
     parent_job_id=None,
     commit=True,
+    repair_request_id=None,
 ):
     roster_date = _date(roster_date)
     return enqueue_job(
@@ -491,11 +519,13 @@ def enqueue_roster_reconciliation(
         dedupe_key=(
             f'ROSTER_RECONCILE:{int(team_id)}:{roster_date.isoformat()}:'
             f'contract-v{ROSTER_JOB_PAYLOAD_SCHEMA_VERSION}'
+            + (f':repair:{int(repair_request_id)}' if repair_request_id is not None else '')
         ),
         payload={
             'team_id': int(team_id),
             'roster_date': roster_date,
             'trigger': 'authoritative_roster_reconciliation',
+            'repair_request_id': repair_request_id,
         },
         payload_schema_version=ROSTER_JOB_PAYLOAD_SCHEMA_VERSION,
         priority=priority,
@@ -559,6 +589,7 @@ def execute_roster_job(job, *, client=None, timestamp=None):
             sync_run_id=run.id,
             sync_job_id=job.id,
             commit=False,
+            repair_request_id=payload.get('repair_request_id'),
         )
         heartbeat_job(
             job.id, worker_id=job.worker_id, claim_token=job.claim_token, commit=False,
@@ -577,7 +608,7 @@ def execute_roster_job(job, *, client=None, timestamp=None):
         )
         finalize_run(
             run,
-            RunStatus.SUCCEEDED if summary['authoritative'] else RunStatus.PARTIAL,
+            RunStatus.SUCCEEDED if summary['authoritative'] or summary.get('evidence_only') else RunStatus.PARTIAL,
             commit=False,
         )
         db.session.commit()
@@ -616,9 +647,18 @@ def execute_transaction_job(job, *, client=None, timestamp=None):
         affected_teams = sorted({
             int(value) for value in summary.get('affected_team_ids', []) if value is not None
         })
+        metadata = {}
+        if any(not classify_roster_team(value)['mlb_membership_authority'] for value in affected_teams):
+            try:
+                metadata = (client or mlb_client).get_team_metadata(end_date.year) or {}
+            except Exception:
+                logger.warning('Roster confirmation parent metadata unavailable; retaining unresolved team scopes')
+        confirmation_teams, unresolved_teams = roster_confirmation_routes(affected_teams, metadata=metadata)
+        summary['roster_confirmation_team_ids'] = confirmation_teams
+        summary['unresolved_roster_team_ids'] = unresolved_teams
         roster_jobs = []
         if summary.get('records_created', 0) or summary.get('records_corrected', 0):
-            for team_id in affected_teams:
+            for team_id in confirmation_teams:
                 roster_jobs.append(enqueue_roster_reconciliation(
                     team_id,
                     end_date,
@@ -627,7 +667,7 @@ def execute_transaction_job(job, *, client=None, timestamp=None):
                     parent_job_id=job.id,
                     commit=False,
                 ))
-        status = RunStatus.PARTIAL if summary.get('errors') else RunStatus.SUCCEEDED
+        status = RunStatus.PARTIAL if summary.get('errors') or unresolved_teams else RunStatus.SUCCEEDED
         record_outcome(
             run,
             source_reads=1,
@@ -833,6 +873,7 @@ def _enqueue_membership_impact(
         dedupe_key=(
             f'ROSTER_IMPACT:{team_id}:{roster_date.isoformat()}:'
             f'observations:{"-".join(map(str, observation_ids))}'
+            f':mutations:{"-".join(map(str, mutation_ids))}'
         ),
         priority=PRIORITY_CURRENT_ROSTER,
         sync_run_id=sync_run_id,
@@ -858,6 +899,9 @@ def _roster_summary(team_id, roster_date, views, mutations, downstream, *, autho
     return {
         'team_id': team_id,
         'roster_date': roster_date.isoformat(),
+        'authority_scope': classify_roster_team(
+            team_id, records=[entry for view in views.values() for entry in view.entries],
+        ),
         'authoritative': authoritative,
         'source_changes': sum(int(item.result.changed) for item in views.values()),
         'source_observation_ids': {

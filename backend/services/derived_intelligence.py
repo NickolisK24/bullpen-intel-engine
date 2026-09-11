@@ -217,6 +217,7 @@ def capture_input_manifest(plan):
     ):
         query = RosterMembershipInterval.query.filter(
             RosterMembershipInterval.is_current_version.is_(True),
+            RosterMembershipInterval.is_void.is_(False),
             RosterMembershipInterval.effective_start_date <= plan.baseball_date,
             db.or_(
                 RosterMembershipInterval.effective_end_date.is_(None),
