@@ -62,7 +62,7 @@ def _workload_signal(pitcher_id, score, reference_date):
     )
 
 
-def _deployment_context(pitcher, freshness):
+def _deployment_context(pitcher, freshness, *, author_deployment_profile_fn):
     data_through = (freshness or {}).get('data_through')
     if pitcher.team_id is None:
         return {
@@ -79,7 +79,9 @@ def _deployment_context(pitcher, freshness):
             'profile': None,
             'limitations': [],
         }
-    deployment = author_deployment_profile(pitcher.team_id, data_through=data_through)
+    deployment = author_deployment_profile_fn(
+        pitcher.team_id, data_through=data_through,
+    )
     profile = next(
         (row for row in deployment.get('profiles') or () if row.get('pitcher_id') == pitcher.id),
         None,
@@ -123,6 +125,9 @@ def _unavailable_deployment(freshness):
 
 def build_public_pitcher_current_payload(
     pitcher_id, *, freshness, score_cutoff=None,
+    author_role_read_labels_fn=author_role_read_labels,
+    build_recent_work_fn=build_public_recent_work_payload,
+    author_deployment_profile_fn=author_deployment_profile,
 ):
     """Build the exact public pitcher-detail payload for immutable capture."""
     pitcher = db.session.get(Pitcher, int(pitcher_id))
@@ -160,7 +165,7 @@ def build_public_pitcher_current_payload(
     )
     eligibility = contexts[0].get('eligibility') if contexts else None
     role_logs = role_logs_by_pitcher([pitcher.id], reference_date=reference_date)
-    role, labels, role_read = author_role_read_labels({
+    role, labels, role_read = author_role_read_labels_fn({
         'pitcher': pitcher,
         'availability': availability,
         'eligibility': eligibility,
@@ -169,14 +174,18 @@ def build_public_pitcher_current_payload(
 
     recent_status = {'status': 'available'}
     try:
-        recent_work = build_public_recent_work_payload(
+        recent_work = build_recent_work_fn(
             pitcher.id, pitcher=pitcher, freshness=freshness,
         )
     except Exception:
         recent_work = None
         recent_status = {'status': 'unavailable'}
     try:
-        deployment = _deployment_context(pitcher, freshness)
+        deployment = _deployment_context(
+            pitcher,
+            freshness,
+            author_deployment_profile_fn=author_deployment_profile_fn,
+        )
     except Exception:
         deployment = _unavailable_deployment(freshness)
 

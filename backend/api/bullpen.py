@@ -787,6 +787,9 @@ def get_pitcher_fatigue(pitcher_id):
         payload = build_public_pitcher_current_payload(
             pitcher_id, freshness=_board_freshness_block(),
             score_cutoff=_served_score_cutoff(),
+            author_role_read_labels_fn=author_role_read_labels,
+            build_recent_work_fn=build_public_recent_work_payload,
+            author_deployment_profile_fn=author_deployment_profile,
         )
     except LookupError:
         abort(404)
