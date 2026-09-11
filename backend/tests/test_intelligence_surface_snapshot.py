@@ -12,6 +12,7 @@ and read-only against COIN gates — no story data is invented.
 import hashlib
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -1023,3 +1024,93 @@ def test_read_failure_propagates_and_skips_synchronous_rebuild(app, monkeypatch)
             serve_today_lead_story(reference_date=_REF)
 
     assert built['called'] is False
+
+
+# Production startup shell contracts (isolated from application/database calls).
+SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'render_start.sh'
+GIT_BASH = Path('C:/Program Files/Git/bin/bash.exe')
+BASH = str(GIT_BASH) if os.name == 'nt' and GIT_BASH.exists() else shutil.which('bash')
+
+
+@pytest.fixture
+def startup(tmp_path):
+    if not BASH:
+        pytest.fail('Bash is required to validate the production startup contract')
+    backend = tmp_path / 'backend'
+    scripts = backend / 'scripts'
+    scripts.mkdir(parents=True)
+    script = scripts / 'render_start.sh'
+    script.write_text(SCRIPT.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+    # Exported shell functions intercept all external startup commands, so no
+    # application import, real migration, database, or server is involved.
+    harness = '''
+flask() { echo "CALL flask $* FLASK_APP=$FLASK_APP"; return "${MIGRATION_EXIT:-0}"; }
+python() { echo "CALL python $*"; return "${PREPARATION_EXIT:-0}"; }
+export -f flask python
+export PATH="$PWD/bin:$PATH"
+exec bash backend/scripts/render_start.sh "$@"
+'''
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    for name in ('gunicorn', 'custom-server'):
+        command = bin_dir / name
+        command.write_text('#!/usr/bin/env bash\nprintf "CALL server"\nprintf " <%s>" "$0" "$@"\nprintf "\\n"\n', encoding='utf-8', newline='\n')
+        command.chmod(0o755)
+
+    def run(skip=None, migration_exit=0, preparation_exit=0, args=()):
+        env = os.environ.copy()
+        for key in ('SKIP_STARTUP_MIGRATIONS', 'FLASK_APP', 'PORT',
+                    'GUNICORN_WORKERS', 'GUNICORN_TIMEOUT', 'GUNICORN_GRACEFUL_TIMEOUT',
+                    'BASH_ENV', 'ENV'):
+            env.pop(key, None)
+        env.update(MIGRATION_EXIT=str(migration_exit), PREPARATION_EXIT=str(preparation_exit))
+        if skip is not None:
+            env['SKIP_STARTUP_MIGRATIONS'] = skip
+        return subprocess.run([BASH, '-c', harness, 'startup-test', *args],
+                              cwd=tmp_path, env=env, capture_output=True,
+                              text=True, timeout=15)
+    return run
+
+
+@pytest.mark.parametrize('skip', [None, 'false', '', 'True', 'TRUE', 'yes', '1', 'whatever', ' true', 'true '])
+def test_default_and_non_true_values_run_migrations_before_preparation_and_server(startup, skip):
+    result = startup(skip)
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert output.index('CALL flask db upgrade FLASK_APP=app.py') < output.index('CALL python -m scripts.prepare_daily_edition_snapshot') < output.index('CALL server')
+    assert '<app:app> <--bind> <0.0.0.0:10000> <--workers> <2> <--timeout> <60> <--graceful-timeout> <30>' in output
+    assert 'WARNING' not in output
+
+
+def test_exact_true_skips_only_migrations(startup):
+    result = startup('true', migration_exit=17)
+    assert result.returncode == 0, result.stderr
+    assert 'CALL flask' not in result.stdout
+    assert 'Database migrations applied successfully' not in result.stdout
+    assert 'WARNING: startup database migrations explicitly skipped via SKIP_STARTUP_MIGRATIONS=true' in result.stdout
+    assert result.stdout.index('CALL python -m scripts.prepare_daily_edition_snapshot') < result.stdout.index('CALL server')
+
+
+@pytest.mark.parametrize('skip', [None, 'false', 'yes', 'TRUE', '1'])
+def test_migration_failure_prevents_preparation_and_server(startup, skip):
+    result = startup(skip, migration_exit=17)
+    assert result.returncode == 17
+    assert 'CALL flask db upgrade' in result.stdout
+    assert 'CALL python' not in result.stdout
+    assert 'CALL server' not in result.stdout
+
+
+@pytest.mark.parametrize('skip', [None, 'true'])
+def test_preparation_failure_still_prevents_server(startup, skip):
+    result = startup(skip, preparation_exit=23)
+    assert result.returncode == 23
+    assert 'CALL python -m scripts.prepare_daily_edition_snapshot' in result.stdout
+    assert 'CALL server' not in result.stdout
+
+
+@pytest.mark.parametrize('skip', [None, 'true'])
+def test_custom_server_arguments_are_preserved(startup, skip):
+    result = startup(skip, args=('custom-server', '--label', 'two words'))
+    assert result.returncode == 0, result.stderr
+    assert '<--label> <two words>' in result.stdout
+    assert result.stdout.index('CALL python') < result.stdout.index('CALL server')
