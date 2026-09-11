@@ -12,6 +12,10 @@ on:
           - ledger_backfill
           - phase0h_snapshot_audit
           - appearance_team_audit
+      migration_target_head:
+        description: Exact reviewed Alembic target head for migrate
+        required: false
+        type: string
       confirmation:
         description: Type the operation-specific production confirmation phrase
         required: true
@@ -77,6 +81,8 @@ jobs:
       ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -200,16 +206,20 @@ jobs:
       - name: Run production migration
         if: ${{ inputs.operation == 'migrate' }}
         working-directory: backend
+        env:
+          DATABASE_MIGRATION_MODE: owner
+          DATABASE_URL: ${{ secrets.DATABASE_MIGRATION_URL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          TARGET_HEAD: ${{ inputs.migration_target_head }}
         run: |
           set -euo pipefail
-          echo "=== Production migration starting ==="
-          echo "--- Current migration revision (before upgrade) ---"
-          flask db current
-          echo "--- Applying migrations ---"
-          flask db upgrade
-          echo "--- Current migration revision (after upgrade) ---"
-          flask db current
-          echo "=== Production migration completed ==="
+          if [ "$GITHUB_REF" != 'refs/heads/main' ] || [ -z "$DATABASE_URL" ]; then
+            echo "::error::Migration promotion requires main and the dedicated DATABASE_MIGRATION_URL secret."
+            exit 1
+          fi
+          python -m scripts.database_migrations promote \
+            --source-branch main --expected-commit "$EXPECTED_COMMIT" \
+            --target-head "$TARGET_HEAD"
 
       - name: Run production ledger backfill
         if: ${{ inputs.operation == 'ledger_backfill' }}
