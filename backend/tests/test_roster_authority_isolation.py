@@ -157,6 +157,20 @@ def test_correction_cannot_be_requested_outside_applied_sp13_scope(app):
     db.session.rollback()
 
 
+def test_large_correction_batch_keeps_bounded_dedupe_and_exact_payload(app):
+    from types import SimpleNamespace
+    from services.roster_transaction_authority import _enqueue_membership_impact
+    reconcile_team_roster(134, SLATE, client=_parent_client())
+    interval = current_memberships(134, 'forty_man_roster')[0]
+    mutations = [SimpleNamespace(id=100000 + n, pitcher_id=interval.pitcher_id) for n in range(100)]
+    job = _enqueue_membership_impact(
+        134, SLATE, mutations, {'40Man': SimpleNamespace(id=interval.opened_by_observation_id)},
+        sync_run_id=None, parent_job_id=None, commit=True,
+    )
+    assert len(job.dedupe_key) <= 255
+    assert job.details_json['membership_mutation_ids'] == [row.id for row in mutations]
+
+
 def test_postgresql_concurrent_parent_affiliate_and_scoped_invariant(app):
     if db.engine.dialect.name != 'postgresql':
         pytest.skip('PostgreSQL concurrency/invariant proof')

@@ -1,4 +1,4 @@
-# AUDIT-R1 — MLB Roster Authority Isolation & Governed Historical Correction
+# AUDIT-R1 â€” MLB Roster Authority Isolation & Governed Historical Correction
 
 Maintainer: Nikko
 
@@ -42,7 +42,7 @@ Raw transaction from/to IDs remain in retained/canonical transaction evidence. C
 
 The exact interval ledger and 150-player census appear below. There are 327 incorrect mutations: 277 affiliate membership openings and 50 parent closures. Counting all mutations attached to the affected intervals gives 377 because that includes 50 legitimate earlier parent openings. Those baseline openings must not be mislabeled corruption.
 
-Sixteen directly affected impact plans are 492–507, with cohorts 485–500. Eight older baseline plans (42, 44, 45, 58, 60, 61, 69, 86) are also linked to the original parent intervals; their association is historical lineage, not proof they were built from the later incorrect closure. No repair or closure directly descended from the incorrect plans at the census. Existing repair 1 is the unrelated final-game repair and remains outside this remediation.
+Sixteen directly affected impact plans are 492â€“507, with cohorts 485â€“500. Eight older baseline plans (42, 44, 45, 58, 60, 61, 69, 86) are also linked to the original parent intervals; their association is historical lineage, not proof they were built from the later incorrect closure. No repair or closure directly descended from the incorrect plans at the census. Existing repair 1 is the unrelated final-game repair and remains outside this remediation.
 
 
 | MLB parent | Affiliate | False parent closures | Invalid affiliate claims |
@@ -76,7 +76,7 @@ Colorado, Houston, Kansas City, Washington, Athletics, Minnesota, and New York Y
 
 ## 12. Governed repair
 
-Production repair has not yet been applied at this review checkpoint. Required sequence: reviewed integration merge → additive migration → exact deployed code verification → read-only refresh → bounded SP-13 request → SP-05 correction → SP-09 impact → SP-10 replacement cohorts → exact parity and natural recurrence proof. Publication and atomic reads remain disabled.
+Production repair has not yet been applied at this review checkpoint. Required sequence: reviewed integration merge â†’ additive migration â†’ exact deployed code verification â†’ read-only refresh â†’ bounded SP-13 request â†’ SP-05 correction â†’ SP-09 impact â†’ SP-10 replacement cohorts â†’ exact parity and natural recurrence proof. Publication and atomic reads remain disabled.
 
 The SP-05 correction primitive preserves original interval records, appends corrected versions, and records request identity in correction reason plus SyncRun/job ancestry. Affiliate claims become void versions. Current compatibility projections pointing to the affected affiliate use the retained official parent organization; valid MLB roster inclusion continues to own positive MLB roster projection. Active tracking flags retain their existing product contract. This does not redesign legacy assignment synchronization.
 
@@ -88,7 +88,7 @@ After: pending governed production repair. The complete before sets are recorded
 
 ## 14. Downstream impact
 
-Directly incorrect plans 492–507 and cohorts 485–500 remain untouched. Parent correction and affiliate void versions change their roster manifests through normal authoritative inputs. Focused tests verify the original parent manifest changes after correction and affiliate observation-only changes do not alter it. Current candidate revalidation must reject the old manifests after repair; stored historical status need not be rewritten.
+Directly incorrect plans 492â€“507 and cohorts 485â€“500 remain untouched. Parent correction and affiliate void versions change their roster manifests through normal authoritative inputs. Focused tests verify the original parent manifest changes after correction and affiliate observation-only changes do not alter it. Current candidate revalidation must reject the old manifests after repair; stored historical status need not be rewritten.
 
 Publication 1 (cohort 330, plan 337) remains immutable with fingerprint `45c5d0957c8296e9e5b1cd045fd6eb930a74f711ba3670cea67644a0482f27c2`. It predates the September 11 invalid claims and is not descended from the 16 incorrect plans. It is not reader-complete and cannot certify corrected current roster authority. No pointer movement is part of AUDIT-R1.
 
@@ -102,13 +102,13 @@ Affiliate active/40Man records remain source evidence; this package does not cer
 
 ## 17. Validation
 
-Initial focused PostgreSQL run: 36 passed. Expanded PostgreSQL run: 114 passed, including correction history, parent/affiliate concurrency, scoped uniqueness, transaction routing, interval lookup, migration preservation, and downgrade protection. A later final regression run and full PR CI are required for the final verdict. Tests used an isolated local PostgreSQL 16 container; production census connections enforced read-only transactions and a statement timeout.
+Initial focused PostgreSQL run: 36 passed. Expanded PostgreSQL run: 114 passed, including correction history, parent/affiliate concurrency, scoped uniqueness, transaction routing, interval lookup, migration preservation, and downgrade protection. The retained-production-source PostgreSQL rehearsal reproduced all 327 incorrect claims, applied bounded SP-13/SP-05 correction for all eight clubs, and reached 30/30 active, 30/30 40-man, zero unresolved authority violations, 327 correction mutations, and 277 void versions. It exposed and corrected a queue dedupe-key length issue; dedupe now hashes exact mutation IDs while preserving the IDs in the payload. Resuming the already-corrected Pittsburgh request produced zero mutations. Full PR CI remains required for the final verdict. Tests used an isolated local PostgreSQL 16 container; production census connections enforced read-only transactions and a statement timeout.
 
 ## 18. Verdict
 
-**PENDING — implementation review checkpoint, not AUDIT-R1 PASS.** Code and fixture proof do not substitute for governed production correction, 30/30 exact parity, natural recurrence, and green full CI. Main remains untouched.
+**PENDING â€” implementation review checkpoint, not AUDIT-R1 PASS.** Code and fixture proof do not substitute for governed production correction, 30/30 exact parity, natural recurrence, and green full CI. Main remains untouched.
 
-## Evidence appendix A — all affected players and intervals
+## Evidence appendix A â€” all affected players and intervals
 
 Each row is one retained prior interval. `A` means active roster; `40` means forty-man roster. The source subject records the requested endpoint team, independently of parent organization. Mutation IDs include all linked history; incorrect mutations are precisely those whose source observation is an affiliate. Plans/cohorts show lineage, including legitimate baseline openings.
 
@@ -163,7 +163,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1128 | Angel Chivilli / 683409 / 706 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1128,1324 | 86,498 / 81,491 |
 | 1129 | Bradley Hanner / 690440 / 1042 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1129,1326 | 86,498 / 81,491 |
 | 1130 | Brendan Beck / 694341 / 707 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1130,1328 | 86,498 / 81,491 |
-| 1136 | Elmer Rodríguez / 695684 / 715 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1136,1335 | 86,498 / 81,491 |
+| 1136 | Elmer RodrÃ­guez / 695684 / 715 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1136,1335 | 86,498 / 81,491 |
 | 1149 | Yerry De los Santos / 660787 / 727 | 147 / 147 | 40 | 2026-09-10 / 2026-09-11 | 210 (147:40Man); 1114 (531:40Man) | 518/6888; 3923/10752 | 1149,1344 | 86,498 / 81,491 |
 | 1190 | Andrew Baker / 687900 / 1098 | 342 / 342 | A | 2026-09-11 / open | 1107 (342:active); - (-) | 3920/10752; -/- | 1191 | 493 / 486 |
 | 1191 | Blake Adams / 687060 / 1067 | 342 / 342 | A | 2026-09-11 / open | 1107 (342:active); - (-) | 3920/10752; -/- | 1192 | 493 / 486 |
@@ -270,7 +270,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1292 | Chris Kean / 815454 / 1131 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1310 | 499 / 492 |
 | 1293 | Danny Watson / 702130 / 1132 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1311 | 499 / 492 |
 | 1294 | Eli Morgan / 669212 / 261 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1312 | 499 / 492 |
-| 1295 | Elmer Rodríguez / 695684 / 715 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1313 | 499 / 492 |
+| 1295 | Elmer RodrÃ­guez / 695684 / 715 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1313 | 499 / 492 |
 | 1296 | Eric Reyzelman / 801432 / 1133 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1314 | 499 / 492 |
 | 1297 | Hayden Merda / 675296 / 1134 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1315 | 499 / 492 |
 | 1298 | Justin Topa / 623437 / 967 | 531 / 531 | A | 2026-09-11 / open | 1113 (531:active); - (-) | 3923/10752; -/- | 1316 | 499 / 492 |
@@ -289,7 +289,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1311 | Chris Kean / 815454 / 1131 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1332 | 499 / 492 |
 | 1312 | Danny Watson / 702130 / 1132 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1333 | 499 / 492 |
 | 1313 | Eli Morgan / 669212 / 261 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1334 | 499 / 492 |
-| 1314 | Elmer Rodríguez / 695684 / 715 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1336 | 499 / 492 |
+| 1314 | Elmer RodrÃ­guez / 695684 / 715 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1336 | 499 / 492 |
 | 1315 | Eric Reyzelman / 801432 / 1133 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1337 | 499 / 492 |
 | 1316 | Hayden Merda / 675296 / 1134 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1338 | 499 / 492 |
 | 1317 | Justin Topa / 623437 / 967 | 531 / 531 | 40 | 2026-09-11 / open | 1114 (531:40Man); - (-) | 3923/10752; -/- | 1339 | 499 / 492 |
@@ -381,7 +381,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1403 | C.J. Culpepper / 690217 / 1162 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1445 | 505 / 498 |
 | 1404 | Eric Orze / 679358 / 588 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1446 | 505 / 498 |
 | 1405 | Garrett Acton / 670183 / 589 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1447 | 505 / 498 |
-| 1406 | Germán Márquez / 608566 / 414 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1448 | 505 / 498 |
+| 1406 | GermÃ¡n MÃ¡rquez / 608566 / 414 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1448 | 505 / 498 |
 | 1407 | Jack Anderson / 681252 / 86 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1449 | 505 / 498 |
 | 1408 | Julian Merryweather / 657240 / 1163 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1450 | 505 / 498 |
 | 1409 | Marco Raya / 694397 / 595 | 1960 / 1960 | A | 2026-09-11 / open | 1119 (1960:active); - (-) | 3926/10752; -/- | 1451 | 505 / 498 |
@@ -396,7 +396,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1418 | Cody Laweryson / 689520 / 584 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1460 | 505 / 498 |
 | 1419 | Eric Orze / 679358 / 588 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1462 | 505 / 498 |
 | 1420 | Garrett Acton / 670183 / 589 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1464 | 505 / 498 |
-| 1421 | Germán Márquez / 608566 / 414 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1465 | 505 / 498 |
+| 1421 | GermÃ¡n MÃ¡rquez / 608566 / 414 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1465 | 505 / 498 |
 | 1422 | Jack Anderson / 681252 / 86 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1467 | 505 / 498 |
 | 1423 | Julian Merryweather / 657240 / 1163 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1468 | 505 / 498 |
 | 1424 | Kendry Rojas / 696070 / 593 | 1960 / 1960 | 40 | 2026-09-11 / open | 1120 (1960:40Man); - (-) | 3926/10752; -/- | 1470 | 505 / 498 |
@@ -421,7 +421,7 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1443 | Logan VanWey / 701121 / 244 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1490 | 507 / 500 |
 | 1444 | Michael Knorr / 681077 / 1177 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1491 | 507 / 500 |
 | 1445 | Nic Swanson / 702462 / 1178 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1492 | 507 / 500 |
-| 1446 | Roddery Muñoz / 682610 / 1007 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1493 | 507 / 500 |
+| 1446 | Roddery MuÃ±oz / 682610 / 1007 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1493 | 507 / 500 |
 | 1447 | Ryan Weiss / 680802 / 1003 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1494 | 507 / 500 |
 | 1448 | Trey McLoughlin / 694381 / 1179 | 5434 / 5434 | A | 2026-09-11 / open | 1121 (5434:active); - (-) | 3927/10752; -/- | 1495 | 507 / 500 |
 | 1449 | Alex Santos II / 691012 / 1171 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1496 | 507 / 500 |
@@ -439,11 +439,11 @@ Each row is one retained prior interval. `A` means active roster; `40` means for
 | 1461 | Logan VanWey / 701121 / 244 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1512 | 507 / 500 |
 | 1462 | Michael Knorr / 681077 / 1177 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1513 | 507 / 500 |
 | 1463 | Nic Swanson / 702462 / 1178 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1514 | 507 / 500 |
-| 1464 | Roddery Muñoz / 682610 / 1007 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1515 | 507 / 500 |
+| 1464 | Roddery MuÃ±oz / 682610 / 1007 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1515 | 507 / 500 |
 | 1465 | Ryan Weiss / 680802 / 1003 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1516 | 507 / 500 |
 | 1466 | Trey McLoughlin / 694381 / 1179 | 5434 / 5434 | 40 | 2026-09-11 / open | 1122 (5434:40Man); - (-) | 3927/10752; -/- | 1517 | 507 / 500 |
 
-## Evidence appendix B — exact before source/canonical sets
+## Evidence appendix B â€” exact before source/canonical sets
 
 | MLB club | Type | Date / observation | Source MLB IDs | Current interval MLB IDs | Missing | Extra | Exact |
 |---|---|---|---|---|---|---|---|

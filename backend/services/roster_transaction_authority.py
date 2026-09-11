@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
+import hashlib
 import logging
 
 from sqlalchemy import text
@@ -865,6 +866,9 @@ def _enqueue_membership_impact(
     mutation_ids = sorted(row.id for row in mutations)
     pitcher_ids = sorted({row.pitcher_id for row in mutations})
     observation_ids = sorted({row.id for row in observations.values()})
+    mutation_fingerprint = hashlib.sha256(
+        ','.join(map(str, mutation_ids)).encode('ascii')
+    ).hexdigest()
     return enqueue_job(
         job_type=JobType.PROCESS_CANONICAL_IMPACT,
         scope_type=JobScopeType.TEAM,
@@ -873,7 +877,7 @@ def _enqueue_membership_impact(
         dedupe_key=(
             f'ROSTER_IMPACT:{team_id}:{roster_date.isoformat()}:'
             f'observations:{"-".join(map(str, observation_ids))}'
-            f':mutations:{"-".join(map(str, mutation_ids))}'
+            f':mutations:{mutation_fingerprint}'
         ),
         priority=PRIORITY_CURRENT_ROSTER,
         sync_run_id=sync_run_id,
