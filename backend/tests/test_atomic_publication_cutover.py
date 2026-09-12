@@ -87,6 +87,17 @@ def _candidate(marker='a', status='complete'):
                 },
             },
         ))
+    from tests.test_atomic_publication import _reader_payload, _snapshot
+    for team_id in MLB_TEAM_IDS:
+        payload = _reader_payload('team', team_id, marker)
+        _snapshot(cohort, 'team', team_id, {
+            'read_models': {'team_board_v2': payload['read_models']['team_board_v2']},
+        }, snapshot_type='team_board_v2_publication')
+        _snapshot(cohort, 'team', team_id, {
+            'what_changed': payload['what_changed'],
+        }, snapshot_type='what_changed_publication')
+    _snapshot(cohort, 'pitcher', 10, _reader_payload('pitcher', 10, marker),
+              snapshot_type='pitcher_current_publication')
     db.session.commit()
     return cohort
 
@@ -97,7 +108,7 @@ def test_inspection_is_read_only_and_reports_eligible_cohort(app):
     assert report['current_publication_id'] is None
     assert report['eligible_candidates'][0]['cohort_id'] == cohort.id
     assert report['eligible_candidates'][0]['first_publication_baseline']['complete'] is True
-    assert report['eligible_candidates'][0]['first_publication_baseline']['artifact_counts']['team'] == 30
+    assert report['eligible_candidates'][0]['first_publication_baseline']['artifact_counts']['team'] == 90
     assert report['prepublication_health']['status'] in ('pass', 'fail')
     assert AtomicPublication.query.count() == 0
 
@@ -111,7 +122,7 @@ def test_single_cohort_inspection_reports_exact_watermark_revalidation(app):
     assert revalidation['current_input_manifest'] == []
     assert revalidation['captured_input_fingerprint'] == revalidation['current_input_fingerprint']
     assert revalidation['difference'] == {'added': [], 'removed': [], 'changed': []}
-    assert report['cohort']['candidate_snapshot_count'] == 32
+    assert report['cohort']['candidate_snapshot_count'] == 93
     assert AtomicPublication.query.count() == 0
 
 
@@ -188,7 +199,8 @@ def test_inspection_blocks_incomplete_first_generation(app):
     report = inspect_publication_candidates()
     candidate = report['reviewed_candidates'][0]
     assert candidate['eligible'] is False
-    assert candidate['ineligible_reason'] == 'first_publication_team_coverage_incomplete:108'
+    assert 'team_coverage_incomplete' in candidate['ineligible_reason']
+    assert '108' in candidate['ineligible_reason']
     assert db.session.get(AtomicPublicationCurrent, 1) is None
 
 
@@ -198,8 +210,8 @@ def test_controlled_publication_uses_sp11_job_and_advances_once(app):
     assert result['pointer_before'] is None
     assert result['pointer_after'] == result['publication_id']
     assert result['publication_job_status'] == 'succeeded'
-    assert len(result['artifact_ids']) == 32
-    assert result['artifact_created_count'] == 32
+    assert len(result['artifact_ids']) == 93
+    assert result['artifact_created_count'] == 93
     assert result['artifact_inherited_count'] == 0
     assert db.session.get(AtomicPublicationCurrent, 1).publication_id == result['publication_id']
 

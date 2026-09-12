@@ -109,11 +109,15 @@ def _cached_publication_reader_coverage(_database_identity, publication_id, _fin
         for family, keys in present.items()
         if family in {'team_board', 'team_board_v2', 'league_row', 'what_changed'}
     }
+    publication = db.session.get(AtomicPublication, int(publication_id))
+    required_games = {str(value) for value in publication.affected_game_ids_json or ()}
+    missing_games = sorted(required_games - present['game_matchup'], key=int)
     complete = (
         all(not values for values in missing.values())
         and bool(required_pitchers)
         and required_pitchers.issubset(present['pitcher_current'])
         and bool(present['game_matchup'])
+        and not missing_games
     )
     return {
         'complete': complete,
@@ -122,13 +126,14 @@ def _cached_publication_reader_coverage(_database_identity, publication_id, _fin
         'required_counts': {
             'teams': len(expected_teams),
             'pitchers': len(required_pitchers),
-            'games': len(present['game_matchup']),
+            'games': len(required_games),
         },
         'ready_counts': {key: len(values) for key, values in present.items()},
         'covered_required_pitchers': len(
             required_pitchers.intersection(present['pitcher_current'])
         ),
         'missing_team_ids': missing,
+        'missing_game_ids': missing_games,
     }
 
 

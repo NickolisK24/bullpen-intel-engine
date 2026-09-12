@@ -52,6 +52,20 @@ def app():
             drop_test_schema(flask_app)
 
 
+@pytest.fixture
+def storage_app(app, monkeypatch):
+    """Isolate legacy SP-11 storage/race unit fixtures from reader admission.
+
+    These deliberately contain internal-only payloads. The real admission path
+    is exercised without this stub by reader-ready, R3, and full-chain tests.
+    """
+    monkeypatch.setattr(
+        'services.atomic_publication._validate_reader_artifact_coverage',
+        lambda *_args, **_kwargs: None,
+    )
+    return app
+
+
 def _cohort(*, marker, authority='final', teams=(110,), pitchers=(10,), games=(777123,),
             completed=('game_context', 'pitcher_snapshot', 'team_snapshot'), status='complete'):
     plan = CanonicalImpactPlan(
@@ -96,7 +110,7 @@ def _snapshot(cohort, entity_type, entity_key, payload, *, snapshot_type=None):
     ))
 
 
-def test_first_publication_is_immutable_generation_and_advances_pointer(app):
+def test_first_publication_is_immutable_generation_and_advances_pointer(storage_app):
     _plan, cohort = _cohort(marker='a')
     result = publish_derived_cohort(cohort.id)
     assert result.created is True
@@ -112,7 +126,7 @@ def test_first_publication_is_immutable_generation_and_advances_pointer(app):
     assert {row['publication_id'] for row in bundle['artifacts']} == {result.publication.id}
 
 
-def test_reader_coverage_rejects_internal_only_publication_artifacts(app):
+def test_reader_coverage_rejects_internal_only_publication_artifacts(storage_app):
     _plan, cohort = _cohort(marker='z')
     publication = publish_derived_cohort(cohort.id).publication
 
@@ -209,7 +223,7 @@ def test_reader_ready_method_requires_complete_coverage_before_pointer_switch(ap
     assert len(statements) == 2
 
 
-def test_same_cohort_retry_is_idempotent(app):
+def test_same_cohort_retry_is_idempotent(storage_app):
     _plan, cohort = _cohort(marker='b')
     first = publish_derived_cohort(cohort.id)
     second = publish_derived_cohort(cohort.id)
@@ -219,7 +233,7 @@ def test_same_cohort_retry_is_idempotent(app):
     assert AtomicPublicationArtifact.query.count() == 3
 
 
-def test_corrected_generation_replaces_affected_and_inherits_unaffected(app):
+def test_corrected_generation_replaces_affected_and_inherits_unaffected(storage_app):
     _plan, first_cohort = _cohort(marker='c', teams=(110, 111), pitchers=(), games=(), completed=('team_snapshot',))
     first = publish_derived_cohort(first_cohort.id)
     _plan, corrected = _cohort(
@@ -241,7 +255,7 @@ def test_corrected_generation_replaces_affected_and_inherits_unaffected(app):
     assert {row['payload']['team_snapshot']['marker'] for row in bundle['artifacts']} == {'c', 'd'}
 
 
-def test_roster_and_pregame_publications_keep_bounded_artifact_scope(app):
+def test_roster_and_pregame_publications_keep_bounded_artifact_scope(storage_app):
     _plan, roster = _cohort(
         marker='v', authority='roster_authoritative', teams=(110,),
         pitchers=(), games=(), completed=('team_snapshot',),
@@ -266,7 +280,7 @@ def test_roster_and_pregame_publications_keep_bounded_artifact_scope(app):
 
 
 @pytest.mark.parametrize(('status', 'reason'), (('partial', 'cohort_not_complete'), ('stale', 'cohort_not_complete')))
-def test_ineligible_cohort_cannot_move_pointer(app, status, reason):
+def test_ineligible_cohort_cannot_move_pointer(storage_app, status, reason):
     _plan, current = _cohort(marker='e')
     current_publication = publish_derived_cohort(current.id).publication
     _plan, invalid = _cohort(marker=status[0], status=status)
@@ -275,7 +289,7 @@ def test_ineligible_cohort_cannot_move_pointer(app, status, reason):
     assert get_current_publication().id == current_publication.id
 
 
-def test_input_drift_or_superseded_plan_cannot_publish(app):
+def test_input_drift_or_superseded_plan_cannot_publish(storage_app):
     plan, cohort = _cohort(marker='f')
     plan.status = 'superseded'
     db.session.commit()
@@ -284,7 +298,7 @@ def test_input_drift_or_superseded_plan_cannot_publish(app):
     assert get_current_publication() is None
 
 
-def test_older_overlapping_cohort_cannot_regress_newer_artifact(app):
+def test_older_overlapping_cohort_cannot_regress_newer_artifact(storage_app):
     _old_plan, old = _cohort(marker='g', teams=(110,), pitchers=(), games=(), completed=('team_snapshot',))
     _new_plan, new = _cohort(marker='h', teams=(110,), pitchers=(), games=(), completed=('team_snapshot',))
     publish_derived_cohort(new.id)
@@ -293,7 +307,7 @@ def test_older_overlapping_cohort_cannot_regress_newer_artifact(app):
     assert get_current_publication().cohort_id == new.id
 
 
-def test_failure_before_pointer_commit_rolls_back_generation(app):
+def test_failure_before_pointer_commit_rolls_back_generation(storage_app):
     _plan, first = _cohort(marker='i')
     current = publish_derived_cohort(first.id).publication
     _plan, candidate = _cohort(marker='j')
@@ -309,7 +323,7 @@ def test_failure_before_pointer_commit_rolls_back_generation(app):
     assert AtomicPublication.query.count() == 1
 
 
-def test_artifact_validation_failure_does_not_switch_pointer(app):
+def test_artifact_validation_failure_does_not_switch_pointer(storage_app):
     _plan, current_cohort = _cohort(marker='r')
     current = publish_derived_cohort(current_cohort.id).publication
     _plan, invalid = _cohort(marker='s')
@@ -321,7 +335,7 @@ def test_artifact_validation_failure_does_not_switch_pointer(app):
     assert get_current_publication().id == current.id
 
 
-def test_invalid_current_artifact_falls_back_to_one_predecessor_generation(app):
+def test_invalid_current_artifact_falls_back_to_one_predecessor_generation(storage_app):
     _plan, first_cohort = _cohort(marker='t')
     first = publish_derived_cohort(first_cohort.id).publication
     _plan, second_cohort = _cohort(marker='u')
@@ -350,7 +364,7 @@ class RecordingCache:
             raise RuntimeError('cache unavailable')
 
 
-def test_cache_failure_does_not_rollback_publication_and_retry_converges(app):
+def test_cache_failure_does_not_rollback_publication_and_retry_converges(storage_app):
     _plan, cohort = _cohort(marker='k')
     published = publish_derived_cohort(cohort.id, cache_configured=True)
     assert get_current_publication().id == published.publication.id
@@ -366,7 +380,7 @@ def test_cache_failure_does_not_rollback_publication_and_retry_converges(app):
     assert handoff.attempt_count == 2
 
 
-def test_cache_handoff_job_is_versioned_and_retryable(app):
+def test_cache_handoff_job_is_versioned_and_retryable(storage_app):
     _plan, cohort = _cohort(marker='n')
     published = publish_derived_cohort(cohort.id, cache_configured=True)
     cache_job = SyncJob.query.filter_by(job_name='handoff_publication_cache').one()
@@ -377,7 +391,7 @@ def test_cache_handoff_job_is_versioned_and_retryable(app):
     assert settled.result_json['cache_handoff_status'] == 'complete'
 
 
-def test_stale_worker_fence_prevents_pointer_transition(app):
+def test_stale_worker_fence_prevents_pointer_transition(storage_app):
     _plan, cohort = _cohort(marker='o')
     calls = {'count': 0}
 
@@ -393,7 +407,7 @@ def test_stale_worker_fence_prevents_pointer_transition(app):
     assert AtomicPublication.query.count() == 0
 
 
-def test_one_shot_worker_consumes_sp10_handoff_without_recompute(app):
+def test_one_shot_worker_consumes_sp10_handoff_without_recompute(storage_app):
     _plan, cohort = _cohort(marker='l')
     enqueue_job(
         job_type=JobType.PUBLISH_DERIVED_COHORT,
@@ -408,7 +422,7 @@ def test_one_shot_worker_consumes_sp10_handoff_without_recompute(app):
     assert get_current_publication().sync_run_id is not None
 
 
-def test_concurrent_same_cohort_creates_one_publication_postgresql(app):
+def test_concurrent_same_cohort_creates_one_publication_postgresql(storage_app):
     if db.engine.dialect.name != 'postgresql':
         pytest.skip('PostgreSQL publication concurrency contract')
     _plan, cohort = _cohort(marker='m')
@@ -416,7 +430,7 @@ def test_concurrent_same_cohort_creates_one_publication_postgresql(app):
     barrier = Barrier(2)
 
     def publish(_index):
-        with app.app_context():
+        with storage_app.app_context():
             barrier.wait(timeout=10)
             result = publish_derived_cohort(cohort_id)
             publication_id = result.publication.id
@@ -425,14 +439,14 @@ def test_concurrent_same_cohort_creates_one_publication_postgresql(app):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         ids = list(pool.map(publish, (0, 1)))
-    with app.app_context():
+    with storage_app.app_context():
         assert ids[0] == ids[1]
         assert AtomicPublication.query.count() == 1
         assert AtomicPublicationCurrent.query.count() == 1
         assert {row['publication_id'] for row in read_current_publication_bundle()['artifacts']} == {ids[0]}
 
 
-def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(app):
+def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(storage_app):
     if db.engine.dialect.name != 'postgresql':
         pytest.skip('PostgreSQL pointer-ordering contract')
     _plan, older = _cohort(marker='p', teams=(110,), pitchers=(), games=(), completed=('team_snapshot',))
@@ -441,7 +455,7 @@ def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(app):
     barrier = Barrier(2)
 
     def publish(cohort_id):
-        with app.app_context():
+        with storage_app.app_context():
             barrier.wait(timeout=10)
             try:
                 result = publish_derived_cohort(cohort_id)
@@ -454,7 +468,7 @@ def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(app):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(publish, ids))
-    with app.app_context():
+    with storage_app.app_context():
         assert get_current_publication().cohort_id == newer.id
         assert sum(outcome[0] == 'published' for outcome in outcomes) >= 1
         assert {row['publication_id'] for row in read_current_publication_bundle()['artifacts']} == {
@@ -462,7 +476,7 @@ def test_concurrent_distinct_cohorts_serialize_and_newer_wins_postgresql(app):
         }
 
 
-def test_team_board_request_stays_on_frozen_generation_postgresql(app):
+def test_team_board_request_stays_on_frozen_generation_postgresql(storage_app):
     if db.engine.dialect.name != 'postgresql':
         pytest.skip('PostgreSQL request-generation race contract')
     _plan, first_cohort = _cohort(
@@ -503,7 +517,7 @@ def test_team_board_request_stays_on_frozen_generation_postgresql(app):
     assert frozen.league((110,))['teams'][0]['marker'] == 'N'
 
 
-def test_public_reader_families_stay_on_frozen_generation_postgresql(app):
+def test_public_reader_families_stay_on_frozen_generation_postgresql(storage_app):
     if db.engine.dialect.name != 'postgresql':
         pytest.skip('PostgreSQL specialized reader-generation race contract')
 
@@ -546,3 +560,166 @@ def test_public_reader_families_stay_on_frozen_generation_postgresql(app):
     assert frozen.team_board_v2(110)['marker'] == 'r'
     assert frozen.pitcher(10)['marker'] == 'r'
     assert frozen.what_changed(110)['marker'] == 'r'
+
+
+@pytest.mark.parametrize('method', [None, 'depth-v1', 'cu06-publication-artifacts-v2'])
+def test_r3_incomplete_candidate_never_bypasses_reader_gate(app, method):
+    _plan, cohort = _cohort(marker='r3-invalid')
+    if method:
+        cohort.method_versions_json = {**cohort.method_versions_json, 'read_models': method}
+        db.session.commit()
+    for _attempt in range(2):
+        with pytest.raises(PublicationValidationError, match='team_coverage_incomplete'):
+            publish_derived_cohort(cohort.id)
+        assert AtomicPublication.query.count() == 0
+        assert db.session.get(AtomicPublicationCurrent, 1) is None
+
+
+def test_r3_candidate_report_rejects_internal_only_without_writes(app):
+    from services.atomic_publication_cutover import inspect_publication_cohort
+    _plan, cohort = _cohort(marker='r3-report')
+    report = inspect_publication_cohort(cohort.id)['cohort']
+    assert report['eligible'] is False
+    assert 'team_coverage_incomplete' in report['ineligible_reason']
+    assert AtomicPublication.query.count() == 0
+    assert db.session.get(AtomicPublicationCurrent, 1) is None
+
+
+def test_r3_affected_game_requires_its_own_matchup(app):
+    _plan, cohort = _cohort(marker='r3-game', teams=tuple(MLB_TEAM_IDS), games=(1, 2))
+    for snapshot in DerivedCohortSnapshot.query.filter_by(cohort_id=cohort.id):
+        snapshot.payload_json = _reader_payload(snapshot.entity_type, int(snapshot.entity_key), 'ready')
+        if snapshot.entity_type == 'game' and snapshot.entity_key == '2':
+            snapshot.payload_json = {'read_models': {'context_version_id': 20,
+                'home_probable_pitcher_id': None, 'away_probable_pitcher_id': None}}
+    db.session.commit()
+    with pytest.raises(PublicationValidationError, match='game_coverage_incomplete'):
+        publish_derived_cohort(cohort.id)
+    assert db.session.get(AtomicPublicationCurrent, 1) is None
+
+
+def _reader_ready_cohort(marker, *, games=(777123,)):
+    _plan, cohort = _cohort(marker=marker, teams=tuple(MLB_TEAM_IDS), games=games)
+    for snapshot in DerivedCohortSnapshot.query.filter_by(cohort_id=cohort.id).all():
+        payload = _reader_payload(snapshot.entity_type, int(snapshot.entity_key), marker)
+        if snapshot.entity_type == 'team':
+            snapshot.payload_json = {'read_models': {
+                'team_board': payload['read_models']['team_board'],
+                'league_row': payload['read_models']['league_row'],
+            }}
+            _snapshot(cohort, 'team', snapshot.entity_key, {
+                'read_models': {'team_board_v2': payload['read_models']['team_board_v2']},
+            }, snapshot_type='team_board_v2_publication')
+            _snapshot(cohort, 'team', snapshot.entity_key, {
+                'what_changed': payload['what_changed'],
+            }, snapshot_type='what_changed_publication')
+        elif snapshot.entity_type == 'pitcher':
+            _snapshot(cohort, 'pitcher', snapshot.entity_key, payload,
+                      snapshot_type='pitcher_current_publication')
+        else:
+            snapshot.payload_json = payload
+    db.session.commit()
+    return cohort
+
+
+def test_r3_complete_generation_without_marker_and_retry_are_valid(app):
+    from services.atomic_publication_cutover import inspect_publication_cohort
+    cohort = _reader_ready_cohort('r3-valid')
+    assert inspect_publication_cohort(cohort.id)['cohort']['eligible'] is True
+    first = publish_derived_cohort(cohort.id)
+    retry = publish_derived_cohort(cohort.id)
+    assert first.pointer_advanced is True
+    assert retry.created is False
+    assert retry.publication.id == first.publication.id
+    assert publication_reader_coverage(first.publication.id)['complete'] is True
+    assert AtomicPublication.query.count() == 1
+
+
+def test_r3_inherited_other_game_cannot_hide_partial_pregame_contract(app):
+    from services.atomic_publication_cutover import inspect_publication_cohort
+    first = publish_derived_cohort(_reader_ready_cohort('r3-parent').id)
+    _plan, candidate = _cohort(marker='r3-pregame', authority='pregame_authoritative',
+                              teams=(), pitchers=(), games=(888,), completed=('game_context',))
+    snapshot = DerivedCohortSnapshot.query.filter_by(cohort_id=candidate.id).one()
+    snapshot.payload_json = {'read_models': {'context_version_id': 20,
+        'home_probable_pitcher_id': None, 'away_probable_pitcher_id': None}}
+    db.session.commit()
+    report = inspect_publication_cohort(candidate.id)['cohort']
+    assert report['eligible'] is False
+    assert report['ineligible_reason'] == 'publication_reader_game_coverage_incomplete'
+    for _attempt in range(2):
+        with pytest.raises(PublicationValidationError, match='game_coverage_incomplete'):
+            publish_derived_cohort(candidate.id)
+        assert get_current_publication().id == first.publication.id
+        assert AtomicPublication.query.count() == 1
+    assert snapshot.payload_json['read_models']['home_probable_pitcher_id'] is None
+
+
+def test_r3_historical_incomplete_game_coverage_is_rejected_on_read(storage_app):
+    # Deliberately model an immutable generation admitted by the pre-R3 gate.
+    cohort = _reader_ready_cohort('r3-historical', games=(1, 2))
+    bad = DerivedCohortSnapshot.query.filter_by(cohort_id=cohort.id,
+                                               entity_type='game', entity_key='2').one()
+    bad.payload_json = {'read_models': {'context_version_id': 20}}
+    db.session.commit()
+    publication = publish_derived_cohort(cohort.id).publication
+    coverage = publication_reader_coverage(publication.id)
+    assert coverage['complete'] is False
+    assert coverage['required_counts']['games'] == 2
+    assert coverage['missing_game_ids'] == ['2']
+    assert bad.payload_json == {'read_models': {'context_version_id': 20}}
+
+
+def test_r3_real_admission_concurrent_retry_and_request_freeze_postgresql(app):
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL pointer serialization')
+    first = publish_derived_cohort(_reader_ready_cohort('r3-race-first').id)
+    frozen = resolve_atomic_read_context(env={'SYNC_PIPELINE_ATOMIC_READS_ENABLED': 'true'})
+    candidate_id = _reader_ready_cohort('r3-race-next').id
+    barrier = Barrier(2)
+    def publish():
+        with app.app_context():
+            try:
+                barrier.wait(timeout=10)
+                return publish_derived_cohort(candidate_id).publication.id
+            finally:
+                db.session.remove()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _value: publish(), range(2)))
+    db.session.expire_all()
+    assert len(set(results)) == 1
+    assert AtomicPublication.query.count() == 2
+    assert get_current_publication().id == results[0]
+    assert frozen.publication_id == first.publication.id
+    assert frozen.team_board_v2(110)['marker'] == 'r3-race-first'
+    assert frozen.what_changed(110)['marker'] == 'r3-race-first'
+
+
+def test_r3_candidate_coverage_batches_direct_snapshots(app):
+    from services.atomic_publication import validated_publication_artifacts
+    cohort = _reader_ready_cohort('r3-batch')
+    statements = []
+    def capture(_conn, _cursor, statement, _params, _context, _many):
+        if 'FROM derived_cohort_snapshots' in statement:
+            statements.append(statement)
+    event.listen(db.engine, 'before_cursor_execute', capture)
+    try:
+        specs, inherited = validated_publication_artifacts(cohort)
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture)
+    assert len(specs) == 93
+    assert inherited == []
+    assert len(statements) == 2
+
+
+def test_r3_first_baseline_report_requires_public_pitcher_family(app):
+    from services.atomic_publication import first_publication_baseline_report
+    cohort = _reader_ready_cohort('r3-baseline')
+    DerivedCohortSnapshot.query.filter_by(
+        cohort_id=cohort.id, snapshot_type='pitcher_current_publication',
+    ).delete()
+    db.session.commit()
+    report = first_publication_baseline_report(cohort)
+    assert report['complete'] is False
+    assert report['reason'] == 'publication_reader_pitcher_coverage_incomplete'
+    assert db.session.get(AtomicPublicationCurrent, 1) is None

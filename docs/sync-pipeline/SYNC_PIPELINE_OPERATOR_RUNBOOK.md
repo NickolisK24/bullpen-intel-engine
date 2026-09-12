@@ -269,6 +269,16 @@ current final version; otherwise it is still blocking.
 
 ## Atomic publication reader readiness
 
+AUDIT-R3-A removes method-version exceptions from candidate admission. Both
+inspection and the locked SP-11 pointer path require the existing reader-family
+coverage and a matchup for every affected game. An unrelated inherited matchup
+cannot satisfy a missing affected game. Inspection is a point-in-time assessment;
+publication repeats validation after acquiring the pointer lock. A rejection is
+not permission to enable publication or to substitute a legacy payload. Actual
+input closure, independent roster/slate denominators, full contract validation,
+and What Changed comparison authority remain separate R3 blockers; see
+[AUDIT-R3 publication integrity](AUDIT-R3_PUBLICATION_INTEGRITY.md).
+
 Run the read-only atomic reader proof only after a current SP-11 publication
 exists:
 
