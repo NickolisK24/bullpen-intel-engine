@@ -40,6 +40,14 @@ The detailed table, commands, schedule, and rollback are in `SYNC_PIPELINE_PRODU
 
 Any critical failed, blocked, or not-run check yields `NO-GO`. A noncritical warning may coexist with GO only when every critical check passes.
 
+September 11 AUDIT-R3 revalidation: Gate G remains blocked by F03's incomplete
+actual input manifest. Gate H remains blocked by F04/F05. R3-A makes reader
+admission unconditional and affected-game-specific, but does not certify full
+reader contracts, population denominators, comparison semantics, or activation.
+The exact recovered findings and ordered remaining work are recorded in
+[AUDIT-R3 publication integrity](AUDIT-R3_PUBLICATION_INTEGRITY.md). Historical
+gate evidence below is not a current deployment attestation.
+
 ## 6. Certification Evidence
 
 `sync_certification_runs` stores exact SHA, migration head, environment, configuration fingerprint, gate statuses, proof identifiers, failures, warnings, and verdict. `sync_certification_checks` stores one immutable measured check per gate. Identical evidence reuses the same certification run; it is not silently rewritten.

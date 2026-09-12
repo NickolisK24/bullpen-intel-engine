@@ -18,7 +18,8 @@ from models.sync_job import SyncJob
 from services.atomic_publication import (
     ALLOWED_AUTHORITIES,
     PublicationValidationError,
-    publication_candidate_specs,
+    validated_publication_artifacts,
+    get_current_publication,
     first_publication_baseline_report,
     run_atomic_publication_worker_once,
     validate_publication_cohort,
@@ -163,7 +164,11 @@ def _candidate_report(cohort, *, include_baseline=False, include_revalidation=Fa
     artifact_count = 0
     try:
         validate_publication_cohort(cohort, plan)
-        artifact_count = len(publication_candidate_specs(cohort))
+        specs, _inherited = validated_publication_artifacts(
+            cohort, predecessor=get_current_publication(),
+            bootstrap_first_publication=include_baseline,
+        )
+        artifact_count = len(specs)
     except PublicationValidationError as exc:
         reason = exc.reason
     publication = AtomicPublication.query.filter_by(cohort_id=cohort.id).one_or_none()

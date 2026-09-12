@@ -326,7 +326,9 @@ def first_publication_baseline_specs(cohort):
 def first_publication_baseline_report(cohort):
     """Return read-only first-generation coverage for controlled cutover."""
     try:
-        specs = first_publication_baseline_specs(cohort)
+        specs, _inherited = validated_publication_artifacts(
+            cohort, bootstrap_first_publication=True,
+        )
         reason = None
     except PublicationValidationError as exc:
         specs = []
@@ -403,22 +405,29 @@ def _manifest_material(cohort, specs, inherited):
     }
 
 
-def _validate_reader_artifact_coverage(specs, inherited):
+def _validate_reader_artifact_coverage(specs, inherited, *, required_game_ids=()):
     """Fail closed before a pointer can move to an incomplete reader generation."""
     ready = {
         'team_board': set(), 'team_board_v2': set(), 'league_row': set(),
         'what_changed': set(), 'pitcher_current': set(), 'game_matchup': set(),
     }
     required_pitchers = set()
-    rows = []
-    for spec in specs:
-        rows.append((spec['key'][1], spec['key'][2], db.session.get(
-            DerivedCohortSnapshot, spec['source_snapshot_id'],
-        )))
+    snapshot_ids = {spec['source_snapshot_id'] for spec in specs}
+    snapshot_ids.update(row.source_snapshot_id for row in inherited if row.source_snapshot_id)
+    snapshots = {
+        row.id: row for row in DerivedCohortSnapshot.query.filter(
+            DerivedCohortSnapshot.id.in_(snapshot_ids),
+        ).all()
+    } if snapshot_ids else {}
+    rows = [
+        (spec['key'][1], spec['key'][2], snapshots.get(spec['source_snapshot_id']))
+        for spec in specs
+    ]
     for artifact in inherited:
-        rows.append((
-            artifact.entity_type, artifact.entity_key, resolve_artifact_snapshot(artifact),
-        ))
+        snapshot = snapshots.get(artifact.source_snapshot_id)
+        if snapshot is None:
+            snapshot = resolve_artifact_snapshot(artifact)
+        rows.append((artifact.entity_type, artifact.entity_key, snapshot))
     for entity_type, entity_key, snapshot in rows:
         payload = snapshot.payload_json if snapshot and isinstance(snapshot.payload_json, dict) else {}
         read_models = payload.get('read_models')
@@ -455,8 +464,41 @@ def _validate_reader_artifact_coverage(specs, inherited):
         )
     if not required_pitchers or not required_pitchers.issubset(ready['pitcher_current']):
         raise PublicationValidationError('publication_reader_pitcher_coverage_incomplete')
-    if not ready['game_matchup']:
+    required_games = {str(value) for value in required_game_ids}
+    if not ready['game_matchup'] or not required_games.issubset(ready['game_matchup']):
         raise PublicationValidationError('publication_reader_game_coverage_incomplete')
+
+
+def validated_publication_artifacts(cohort, *, predecessor=None, bootstrap_first_publication=False):
+    """Apply identical admission rules to reporting and the locked pointer path.
+
+    Read-only callers get a point-in-time assessment. Publication must call this
+    again after locking the current pointer; a prior report never authorizes it.
+    Domain method labels are provenance, not permission to skip reader coverage.
+    """
+    plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
+    validate_publication_cohort(cohort, plan)
+    specs = (
+        first_publication_baseline_specs(cohort)
+        if predecessor is None and bootstrap_first_publication
+        else publication_candidate_specs(cohort)
+    )
+    current_artifacts = _existing_artifacts(predecessor.id if predecessor else None)
+    candidate_keys = {spec['key'] for spec in specs}
+    for row in current_artifacts:
+        key = (row.artifact_type, row.entity_type, row.entity_key)
+        if key in candidate_keys and row.source_cohort_id > cohort.id:
+            raise PublicationStaleError('candidate_older_than_current_artifact')
+    inherited = [
+        row for row in current_artifacts
+        if (row.artifact_type, row.entity_type, row.entity_key) not in candidate_keys
+    ]
+    _validate_reader_artifact_coverage(
+        specs, inherited,
+        required_game_ids=set(cohort.affected_game_ids_json or ())
+        | set(plan.affected_game_ids_json or ()),
+    )
+    return specs, inherited
 
 
 def publish_derived_cohort(
@@ -482,32 +524,16 @@ def publish_derived_cohort(
 
     plan = db.session.get(CanonicalImpactPlan, cohort.impact_plan_id)
     validate_publication_cohort(cohort, plan)
-    candidate_specs = publication_candidate_specs(cohort)
-    require_reader_coverage = (
-        (cohort.method_versions_json or {}).get('read_models')
-        == 'cu06-publication-artifacts-v2'
-    )
     if lease_fence:
         lease_fence()
 
     _acquire_publication_lock()
     pointer = _current_pointer_locked()
     predecessor = db.session.get(AtomicPublication, pointer.publication_id) if pointer else None
-    if predecessor is None and bootstrap_first_publication:
-        candidate_specs = first_publication_baseline_specs(cohort)
-    current_artifacts = _existing_artifacts(predecessor.id if predecessor else None)
-    candidate_keys = {spec['key'] for spec in candidate_specs}
-    for row in current_artifacts:
-        key = (row.artifact_type, row.entity_type, row.entity_key)
-        if key in candidate_keys and row.source_cohort_id > cohort.id:
-            raise PublicationStaleError('candidate_older_than_current_artifact')
-    inherited = [
-        row for row in current_artifacts
-        if (row.artifact_type, row.entity_type, row.entity_key) not in candidate_keys
-        and (not require_reader_coverage or _artifact_is_reader_ready(row))
-    ]
-    if require_reader_coverage:
-        _validate_reader_artifact_coverage(candidate_specs, inherited)
+    candidate_specs, inherited = validated_publication_artifacts(
+        cohort, predecessor=predecessor,
+        bootstrap_first_publication=bootstrap_first_publication,
+    )
 
     validate_publication_cohort(cohort, plan)
     if lease_fence:
