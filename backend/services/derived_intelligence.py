@@ -11,6 +11,8 @@ import json
 from types import SimpleNamespace
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import cast, or_
+from sqlalchemy.dialects.postgresql import JSONB
 
 from models.canonical_impact import CanonicalImpactPlan
 from models.derived_intelligence import (
@@ -283,6 +285,28 @@ def execute_derived_intelligence_plan(
     if any(not str(value).strip() for value in overrides.values()):
         raise ValueError('Method-version overrides must be non-empty strings.')
     versions.update({key: str(value) for key, value in overrides.items()})
+    if domain_executor is None:
+        # Reuse a current attempt before selecting its predecessor again. The
+        # attempt itself is not its own predecessor, but older attempts retain
+        # the existing comparable-cohort authority rules.
+        attempts = DerivedIntelligenceCohort.query.filter_by(
+            impact_plan_id=plan.id,
+        ).order_by(DerivedIntelligenceCohort.id.desc()).all()
+        for attempt in attempts:
+            recorded = attempt.input_manifest_json or []
+            if (
+                any(item.get('input_type') == 'build_context' for item in recorded)
+                and [item for item in recorded if item.get('input_type') != 'build_context'] == manifest
+                and attempt.method_versions_json == versions
+                and attempt.execution_domains_json == list(execution)
+                and cohort_inputs_are_current(attempt, plan)
+            ):
+                publication = (db.session.get(SyncJob, attempt.publication_job_id)
+                               if attempt.publication_job_id else None)
+                return CohortExecutionResult(attempt, False, publication)
+    context = _capture_cohort_context(plan) if domain_executor is None else None
+    if context is not None:
+        manifest.append(context.manifest_entry(plan.authority_class))
     fingerprint = cohort_fingerprint(plan, manifest, execution, versions)
     existing = DerivedIntelligenceCohort.query.filter_by(
         cohort_fingerprint=fingerprint
@@ -291,7 +315,11 @@ def execute_derived_intelligence_plan(
         publication = db.session.get(SyncJob, existing.publication_job_id) if existing.publication_job_id else None
         return CohortExecutionResult(existing, False, publication)
 
-    predecessor = _latest_comparable_cohort(plan)
+    predecessor = (
+        db.session.get(DerivedIntelligenceCohort, context.predecessor_cohort_id)
+        if context is not None and context.predecessor_cohort_id is not None
+        else None if context is not None else _latest_comparable_cohort(plan)
+    )
     supersedes = None
     if plan.authority_class in (AuthorityClass.FINAL.value, AuthorityClass.CORRECTED_FINAL.value):
         supersedes = _latest_live_cohort(plan.affected_game_ids_json or ())
@@ -329,7 +357,11 @@ def execute_derived_intelligence_plan(
         publication = db.session.get(SyncJob, cohort.publication_job_id) if cohort.publication_job_id else None
         return CohortExecutionResult(cohort, False, publication)
 
-    executor = domain_executor or _DefaultDomainExecutor(plan)
+    executor = domain_executor or _DefaultDomainExecutor(
+        plan, predecessor_cohort_id=cohort.predecessor_cohort_id,
+    )
+    if context is not None:
+        executor.build_context = context
     failed = set()
     completed = []
     withheld = []
@@ -368,16 +400,43 @@ def execute_derived_intelligence_plan(
         db.session.flush()
     if lease_fence is not None:
         lease_fence()
+    db.session.flush()
+    # Discard cached source projections before querying current selectors.
+    # Flush first so this cannot discard the domain/lease evidence just written.
+    from services.selector_generation_fencing import (
+        acquire_completion_fences, assert_completion_transaction,
+    )
+    completion_transaction = (
+        acquire_completion_fences(context, plan.authority_class) if context else None
+    )
+    db.session.expire_all()
     db.session.refresh(plan)
-    current_manifest = capture_input_manifest(plan)
-    if current_manifest != manifest or plan.status == 'superseded':
+    current = cohort_inputs_are_current(cohort, plan)
+    if completion_transaction is not None:
+        assert_completion_transaction(completion_transaction)
+    from services.semantic_write_fencing import validate_worker_claim
+    validate_worker_claim(db.session())
+    if not current or plan.status == 'superseded':
         cohort.status = CohortStatus.STALE.value
         cohort.completed_domains_json = completed
         cohort.withheld_domains_json = sorted(set(withheld) | set(execution))
         for row in DerivedIntelligenceCohortDomain.query.filter_by(cohort_id=cohort.id).all():
             row.status = DomainStatus.STALE.value
+            row.error_class = 'CohortInputDrift'
+            row.error_message = 'Captured input or selector changed before completion.'
         publication = None
     else:
+        from services.selector_generation_fencing import (
+            acquire_selector_fences, predecessor_resources,
+        )
+        # This completion also advances the predecessor selector for future
+        # builds. Upgrade without waiting; two shared completions must never
+        # deadlock while each tries to become the other's newer predecessor.
+        acquire_selector_fences(predecessor_resources(
+            cohort.authority_class, games=cohort.affected_game_ids_json,
+            teams=cohort.affected_team_ids_json,
+            pitchers=cohort.affected_pitcher_ids_json,
+        ))
         _persist_snapshots(cohort, snapshots)
         cohort.completed_domains_json = completed
         cohort.withheld_domains_json = withheld
@@ -398,6 +457,8 @@ def execute_derived_intelligence_plan(
         if publication is not None:
             cohort.publication_job_id = publication.id
     cohort.completed_at = utc_now_naive()
+    if completion_transaction is not None:
+        assert_completion_transaction(completion_transaction)
     if commit:
         db.session.commit()
     else:
@@ -405,14 +466,45 @@ def execute_derived_intelligence_plan(
     return CohortExecutionResult(cohort, True, publication)
 
 
+def _capture_cohort_context(plan, *, exclude_cohort_id=None):
+    predecessor = _latest_comparable_cohort(plan, exclude_cohort_id=exclude_cohort_id)
+    executor = _DefaultDomainExecutor(
+        plan, predecessor_cohort_id=predecessor.id if predecessor else None,
+    )
+    return executor._capture_read_context()
+
+
+def cohort_inputs_are_current(cohort, plan):
+    """Check recorded authorities without rewriting historical manifests."""
+    return recapture_cohort_input_manifest(cohort, plan) == (cohort.input_manifest_json or [])
+
+
+def recapture_cohort_input_manifest(cohort, plan):
+    """Use the recorded manifest contract for validation and operator reports."""
+    manifest = cohort.input_manifest_json or []
+    contexts = [item for item in manifest if item.get('input_type') == 'build_context']
+    current = capture_input_manifest(plan)
+    if contexts:
+        current.append(_capture_cohort_context(
+            plan, exclude_cohort_id=cohort.id,
+        ).manifest_entry(plan.authority_class))
+    # Historical/custom-executor manifests retain their previous contract.
+    # This is not full input-closure certification.
+    return current
+
+
 class _DefaultDomainExecutor:
     """Adapter over the proven CU calculators; all outputs remain candidates."""
 
-    def __init__(self, plan):
+    def __init__(self, plan, *, predecessor_cohort_id=None):
         self.plan = plan
+        self.predecessor_cohort_id = predecessor_cohort_id
         self.cache = {}
+        self.build_context = None
 
     def __call__(self, domain, snapshots):
+        if self._uses_read_models():
+            self._capture_read_context()
         if self.plan.authority_class == AuthorityClass.LIVE.value:
             return self._live(domain)
         if domain in ('roster_composition', 'organizational_depth', 'bullpen_churn'):
@@ -455,28 +547,73 @@ class _DefaultDomainExecutor:
 
     def _read_result(self):
         if 'read_result' not in self.cache:
+            context = self._capture_read_context()
             self.cache['read_result'] = rebuild_read_model_impact(
                 self._team_result(),
-                publication_artifact_baseline=self._publication_baseline_required(),
                 build_publication_artifacts=True,
-                predecessor_cohort_id=(
-                    self.cache.get('predecessor_cohort_id')
-                    or getattr(_latest_comparable_cohort(self.plan), 'id', None)
-                ),
+                build_context=context,
             )
             if self.cache['read_result'].status != 'complete':
                 raise RuntimeError(self.cache['read_result'].reason_code)
         return self.cache['read_result']
 
+    def _uses_read_models(self):
+        if self.plan.authority_class == AuthorityClass.LIVE.value:
+            return False
+        direct = {
+            'roster_composition', 'organizational_depth', 'bullpen_churn',
+            'workload', 'rest', 'concentration', 'arm_read', 'clean_options',
+            'team_state', 'game_context',
+        }
+        if self.plan.authority_class == AuthorityClass.PREGAME_AUTHORITATIVE.value:
+            direct.update(('matchup_context', 'read_models'))
+        return bool(set(self.plan.affected_domains_json or ()) - direct)
+
+    def _capture_read_context(self):
+        if self.build_context is None:
+            from services.cohort_build_context import CohortBuildContext
+            from services.dashboard_snapshot import get_latest_valid_dashboard_snapshot
+
+            uses_reads = self._uses_read_models()
+            source = get_latest_valid_dashboard_snapshot() if uses_reads else None
+            baseline = self._publication_baseline_required() if uses_reads else False
+            comparisons = {}
+            if source is not None:
+                from services.mlb_club_directory import MLB_TEAM_IDS
+                from services.team_board_delta_substrate import resolve_latest_team_state_comparison
+
+                teams = MLB_TEAM_IDS if baseline else self.plan.affected_team_ids_json or ()
+                comparisons = {
+                    str(team_id): resolve_latest_team_state_comparison(
+                        team_id=team_id, current_source_snapshot_id=source.id,
+                    )
+                    for team_id in sorted(set(teams))
+                }
+            self.build_context = CohortBuildContext.capture(
+                self.plan,
+                source_snapshot=source,
+                publication_artifact_baseline=baseline,
+                predecessor_cohort_id=self.predecessor_cohort_id,
+                baseline_publication_id=self.cache.get('publication_baseline_id'),
+                comparisons=comparisons,
+                read_model_selectors=uses_reads,
+            )
+        return self.build_context
+
     def _publication_baseline_required(self):
         """Materialize full reader coverage until one complete generation exists."""
+        if self.build_context is not None:
+            return self.build_context.publication_artifact_baseline
         if 'publication_baseline_required' not in self.cache:
             from services.atomic_publication import get_current_publication
-            from services.atomic_publication_reads import publication_reader_coverage
+            from services.atomic_publication_reads import _cached_publication_reader_coverage
 
             current = get_current_publication()
+            self.cache['publication_baseline_id'] = current.id if current else None
             self.cache['publication_baseline_required'] = (
-                current is None or not publication_reader_coverage(current.id).get('complete')
+                current is None or not _cached_publication_reader_coverage.__wrapped__(
+                    str(db.engine.url), current.id, current.publication_fingerprint,
+                ).get('complete')
             )
         return self.cache['publication_baseline_required']
 
@@ -751,7 +888,7 @@ def _publication_eligible(cohort):
     )
 
 
-def _latest_comparable_cohort(plan):
+def _latest_comparable_cohort(plan, *, exclude_cohort_id=None):
     target_games = set(plan.affected_game_ids_json or ())
     target_teams = set(plan.affected_team_ids_json or ())
     target_pitchers = set(plan.affected_pitcher_ids_json or ())
@@ -762,12 +899,30 @@ def _latest_comparable_cohort(plan):
         )
         else (plan.authority_class,)
     )
-    rows = DerivedIntelligenceCohort.query.filter(
+    query = DerivedIntelligenceCohort.query.filter(
         DerivedIntelligenceCohort.authority_class.in_(comparable_authorities),
         DerivedIntelligenceCohort.status.in_((
             CohortStatus.COMPLETE.value, CohortStatus.PARTIAL.value,
         ))
-    ).order_by(DerivedIntelligenceCohort.id.desc()).limit(100).all()
+    )
+    if exclude_cohort_id is not None:
+        query = query.filter(DerivedIntelligenceCohort.id != exclude_cohort_id)
+    if not (target_games or target_teams or target_pitchers):
+        return None
+    if db.session.get_bind().dialect.name == 'postgresql':
+        # Scope BEFORE ordering/limiting: unrelated cohorts cannot evict a
+        # predecessor. JSONB containment is typed, not a substring ID match.
+        query = query.filter(or_(*(
+            cast(column, JSONB).contains([subject])
+            for column, subjects in (
+                (DerivedIntelligenceCohort.affected_game_ids_json, target_games),
+                (DerivedIntelligenceCohort.affected_team_ids_json, target_teams),
+                (DerivedIntelligenceCohort.affected_pitcher_ids_json, target_pitchers),
+            ) for subject in sorted(subjects)
+        )))
+        return query.order_by(DerivedIntelligenceCohort.id.desc()).first()
+    # SQLite is a compatibility fixture only; no global cutoff before matching.
+    rows = query.order_by(DerivedIntelligenceCohort.id.desc()).all()
     for row in rows:
         if (
             target_games.intersection(row.affected_game_ids_json or ())
@@ -832,7 +987,10 @@ def _entry(input_type, key, version, fingerprint, authority, observation_id):
 
 def _persist_inputs(cohort, manifest):
     for item in manifest:
-        db.session.add(DerivedCohortInput(cohort_id=cohort.id, **item))
+        # Context's structured receipt stays on the immutable manifest. Its
+        # indexed identity uses the same governed input table as other entries.
+        identity = {key: value for key, value in item.items() if key != 'context'}
+        db.session.add(DerivedCohortInput(cohort_id=cohort.id, **identity))
 
 
 def _merge_snapshots(target, result):
@@ -891,6 +1049,7 @@ __all__ = [
     'COHORT_SCHEMA_VERSION', 'CohortExecutionResult', 'CohortStatus',
     'DOMAIN_DEPENDENCIES', 'DOMAIN_EXECUTION_ORDER', 'DomainStatus',
     'METHOD_VERSIONS', 'capture_input_manifest', 'cohort_fingerprint',
+    'cohort_inputs_are_current', 'recapture_cohort_input_manifest',
     'dependency_closure', 'execute_derived_intelligence_job',
     'execute_derived_intelligence_plan', 'method_version_manifest',
     'enqueue_publication_candidate', 'run_derived_intelligence_worker_once',

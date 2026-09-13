@@ -493,7 +493,10 @@ def _real_listing_query_count(artifact_count):
     return len(statements)
 
 
-def test_real_database_query_count_does_not_grow_with_artifact_population():
+def test_real_database_query_count_does_not_grow_with_artifact_population(monkeypatch):
+    # This query-count fixture represents August 15, not the machine's date.
+    monkeypatch.setattr(listing.dashboard_snapshot_service, 'product_current_date',
+                        lambda: date(2026, 8, 15))
     flask_app = Flask(__name__)
     configure_test_database(flask_app)
     flask_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

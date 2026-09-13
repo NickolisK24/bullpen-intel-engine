@@ -172,6 +172,200 @@ def _seed_game():
     return game
 
 
+def _captured_context(snapshot, *, represented_date=date(2026, 7, 14)):
+    from services.cohort_build_context import CohortBuildContext
+
+    return CohortBuildContext.capture(
+        SimpleNamespace(
+            baseball_date=represented_date,
+            affected_team_ids_json=[20, 10, 20],
+            affected_pitcher_ids_json=[2, 1, 2],
+            affected_game_ids_json=[777001],
+        ),
+        source_snapshot=snapshot,
+        publication_artifact_baseline=False,
+        predecessor_cohort_id=17,
+    )
+
+
+def test_captured_source_is_immutable_and_canonical():
+    from dataclasses import FrozenInstanceError
+
+    source = _snapshot()
+    context = _captured_context(source)
+    reversed_source = deepcopy(source)
+    reversed_source.payload = dict(reversed(list(source.payload.items())))
+    assert _captured_context(reversed_source) == context
+    assert context.requested_team_ids == (10, 20)
+    assert context.requested_pitcher_ids == (1, 2)
+    with pytest.raises(FrozenInstanceError):
+        context.predecessor_cohort_id = 18
+
+    copy_for_builder = context.source_snapshot()
+    copy_for_builder.payload['freshness']['data_through'] = '2026-07-15'
+    assert context.source_snapshot().payload['freshness']['data_through'] == '2026-07-14'
+    source.payload['freshness']['data_through'] = '2026-07-16'
+    assert not context.matches_source(source)
+    assert context.source_snapshot().payload['freshness']['data_through'] == '2026-07-14'
+
+
+def test_what_changed_uses_captured_comparison_without_latest_fallback(app, monkeypatch):
+    from services import team_changes
+    from services.publication_read_model_artifacts import build_what_changed_candidate
+    from services.team_board_delta_substrate import compare_snapshots
+
+    frozen = compare_snapshots(None, None)
+    expected_window = deepcopy(frozen['comparison'])
+
+    def unexpected_latest(**_kwargs):
+        pytest.fail('What Changed selected a newer comparison after capture')
+
+    monkeypatch.setattr(team_changes, 'resolve_latest_team_state_comparison', unexpected_latest)
+    with app.app_context():
+        payload = build_what_changed_candidate(
+            10, board={'freshness': {'data_through': '2026-07-14'}},
+            snapshot=_snapshot(), predecessor_cohort_id=17,
+            comparison_resolver=lambda: deepcopy(frozen),
+        )
+        assert payload['predecessor_cohort_id'] == 17
+        assert frozen['comparison'] == expected_window
+
+
+def test_captured_missing_source_never_falls_through_to_latest(app, monkeypatch):
+    def unexpected_latest():
+        pytest.fail('A captured missing source must not resolve another generation')
+
+    monkeypatch.setattr(
+        cu06.public_serving_authority.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot', unexpected_latest,
+    )
+    with app.app_context():
+        result = cu06.rebuild_read_model_impact(
+            _cu05(), build_context=_captured_context(None),
+        )
+        assert result.status == cu06.STATUS_PARTIAL
+        assert result.rebuild_performed is False
+        assert result.failures[0]['error'] == 'TrustedSnapshotUnavailable'
+
+
+@pytest.mark.parametrize('conflict', ['source', 'date'])
+def test_captured_source_rejects_ambiguous_authority(app, conflict):
+    context = _captured_context(
+        _snapshot(), represented_date=(date(2026, 7, 13) if conflict == 'date'
+                                     else date(2026, 7, 14)),
+    )
+    kwargs = {'source_snapshot': _snapshot()} if conflict == 'source' else {}
+    with app.app_context(), pytest.raises(ValueError, match='captured'):
+        cu06.rebuild_read_model_impact(_cu05(), build_context=context, **kwargs)
+
+
+def test_postgres_snapshot_advance_keeps_cu06_consumers_on_captured_source(app, monkeypatch):
+    """Source-selection race proof only; current-row input closure is separate."""
+    from models.dashboard_snapshot import DashboardSnapshot
+
+    with app.app_context():
+        if db.engine.dialect.name != 'postgresql':
+            pytest.skip('Requires separate PostgreSQL connections')
+        _seed_game()
+        source = _snapshot()
+        first = DashboardSnapshot(
+            snapshot_type='bullpen_dashboard', status='ready', is_published=False,
+            payload=source.payload, data_through=source.data_through,
+            availability_reference_date=source.availability_reference_date,
+            snapshot_generated_at=source.snapshot_generated_at,
+        )
+        db.session.add(first)
+        db.session.commit()
+        first_id = first.id
+        context = _captured_context(first)
+        original_capture = context.source_snapshot_json
+
+        # A second writer advances the source population after capture. These
+        # are local candidate rows; this test does not certify public selection.
+        with db.engine.begin() as writer:
+            second_id = writer.execute(
+                DashboardSnapshot.__table__.insert().values(
+                    snapshot_type='bullpen_dashboard', status='ready',
+                    is_published=False, payload=source.payload,
+                    data_through=source.data_through,
+                    availability_reference_date=source.availability_reference_date,
+                    snapshot_generated_at=datetime(2026, 7, 15, 5),
+                    source='sync', payload_version=1,
+                ).returning(DashboardSnapshot.id)
+            ).scalar_one()
+
+        def unexpected_latest():
+            pytest.fail('CU-06 reselected latest after context capture')
+
+        monkeypatch.setattr(
+            cu06.public_serving_authority.dashboard_snapshot_service,
+            'get_latest_valid_dashboard_snapshot', unexpected_latest,
+        )
+        builders = _builders([])
+        seen = []
+
+        def pinned_builder(index, snapshot_index):
+            def build(*args):
+                seen.append((index, args[snapshot_index].id))
+                return builders[index](*args)
+            return build
+
+        def build(captured):
+            return cu06.rebuild_read_model_impact(
+                _cu05(), build_context=captured,
+                team_board_builder=pinned_builder(0, 1),
+                league_listing_builder=pinned_builder(1, 0),
+                matchup_builder=pinned_builder(2, 1),
+                tonight_builder=pinned_builder(3, 1),
+            )
+
+        assert build(context).status == cu06.STATUS_COMPLETE
+        assert {family for family, _ in seen} == {0, 1, 2, 3}
+        assert {identity for _, identity in seen} == {first_id}
+        assert context.source_snapshot_json == original_capture
+        second = db.session.get(DashboardSnapshot, second_id)
+        assert not context.matches_source(second)
+        seen.clear()
+        assert build(_captured_context(second)).status == cu06.STATUS_COMPLETE
+        assert {identity for _, identity in seen} == {second_id}
+
+
+def test_tonight_all_snapshot_sidecars_use_the_supplied_source(app, monkeypatch):
+    from services import published_team_rotation_listing as rotation
+    from services import published_team_rest_status_listing as rest
+    from services import published_team_workload_listing as workload
+    from services import schedule_context, tonight_intelligence_service
+
+    seen = []
+    for module, name in (
+        (rotation, 'build_published_team_rotation_listing'),
+        (rest, 'build_published_team_rest_status_listing'),
+        (workload, 'build_published_team_workload_listing'),
+    ):
+        original = getattr(module, name)
+
+        def selected(*, snapshot_resolver, original=original, name=name):
+            snapshot, reason = snapshot_resolver()
+            seen.append((name, snapshot.id, reason))
+            return original(snapshot_resolver=lambda: (snapshot, reason))
+
+        monkeypatch.setattr(module, name, selected)
+
+    def serve(_date, **kwargs):
+        for name in ('workload_listing_builder', 'rest_status_listing_builder',
+                     'rotation_listing_builder'):
+            kwargs[name]()
+        return {'games': []}
+
+    monkeypatch.setattr(tonight_intelligence_service, 'serve_tonight', serve)
+    monkeypatch.setattr(schedule_context, 'build_schedule_contexts_for_date', lambda _: [])
+    with app.app_context():
+        cu06._default_tonight_builder(_seed_game(), _snapshot(), {}, {}, {})
+    assert len(seen) == 3
+    assert {identity for _, identity, _ in seen} == {44}
+    assert all(reason is None for _, _, reason in seen)
+
+
 def test_untrusted_or_noop_cu05_performs_zero_cu06_work(app):
     with app.app_context():
         calls = []

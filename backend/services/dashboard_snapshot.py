@@ -291,6 +291,8 @@ def store_dashboard_snapshot(
     )
 
     write_started = perf_counter()
+    from services.selector_generation_fencing import fence_dashboard_writer
+    fence_dashboard_writer(snapshot_type, source=source)
     logger.info(
         'Dashboard snapshot DB write starting source=%s publish=%s sync_run_id=%s payload_keys=%s.',
         source,
@@ -329,6 +331,8 @@ def store_dashboard_snapshot(
 def publish_dashboard_snapshot(snapshot, *, commit=True):
     if snapshot is None:
         return None
+    from services.selector_generation_fencing import fence_dashboard_writer
+    fence_dashboard_writer(snapshot.snapshot_type, source=snapshot.source or '')
     if snapshot.id is None:
         db.session.flush()
     if snapshot.sync_run_id is None:
@@ -591,6 +595,8 @@ def mark_dashboard_snapshot_failed(
     snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
 ):
     message = str(error or 'Dashboard snapshot build failed.')
+    from services.selector_generation_fencing import fence_dashboard_writer
+    fence_dashboard_writer(snapshot_type, source=source)
     snapshot = DashboardSnapshot(
         snapshot_type=snapshot_type,
         sync_run_id=sync_run_id,

@@ -343,7 +343,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            'aad00171d280696b9a49ee316c3eb8e34ca31ca90574ab6c819b7638be4ca8d3',
+            '633584e5f4f6e90d3f36c7e4a3034541a0bddff294eb5297879cf1949491e82f',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -366,7 +366,10 @@ PACKAGE_MODIFIED_MODULES = {
             'projection a prerequisite of publication, preventing a trusted '
             'snapshot from becoming public before its Daily Edition is prepared; '
             'trusted snapshot selection and other publication eligibility '
-            'semantics remain unchanged'
+            'semantics remain unchanged. AUDIT-R3-B1.1 adds transaction-scoped '
+            'selector writer fences so snapshot generation cannot advance '
+            'during protected cohort completion; source selection and baseball '
+            'payload semantics remain unchanged'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and

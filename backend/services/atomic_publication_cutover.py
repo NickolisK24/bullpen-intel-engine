@@ -24,7 +24,7 @@ from services.atomic_publication import (
     run_atomic_publication_worker_once,
     validate_publication_cohort,
 )
-from services.derived_intelligence import capture_input_manifest, enqueue_publication_candidate
+from services.derived_intelligence import recapture_cohort_input_manifest, enqueue_publication_candidate
 from services.sync_pipeline_certification import collect_operational_health
 from services.sync_jobs import JobType
 from utils.db import db
@@ -185,7 +185,7 @@ def _candidate_report(cohort, *, include_baseline=False, include_revalidation=Fa
         )
     revalidation = None
     if include_revalidation:
-        current_manifest = capture_input_manifest(plan) if plan is not None else []
+        current_manifest = recapture_cohort_input_manifest(cohort, plan) if plan is not None else []
         difference = _manifest_diff(input_manifest, current_manifest)
         revalidation = {
             'captured_input_manifest': input_manifest,
