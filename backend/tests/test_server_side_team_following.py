@@ -27,6 +27,8 @@ INVALID_TEAM = 999
 
 def test_mlb_directory_excludes_active_affiliates_without_filling_missing_clubs(app):
     from services.team_directory import valid_team_ids, valid_team_directory, is_valid_team_id
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_state_vnext_production_proof import require_transactional_publication_proof
 
     for team_id in (484, 531, 534, 5434):
         db.session.add(Pitcher(
@@ -40,6 +42,21 @@ def test_mlb_directory_excludes_active_affiliates_without_filling_missing_clubs(
     assert not is_valid_team_id(531)
     assert not is_valid_team_id(108)  # A canonical club without evidence stays missing.
     assert Pitcher.query.filter_by(team_id=531).one().active is True
+    with pytest.raises(ValueError, match='requires_exactly_30_teams'):
+        require_transactional_publication_proof(None)
+
+    # Reproduce the production 30-club plus four-affiliate population.
+    for team_id in set(MLB_TEAM_IDS) - set(VALID_TEAMS):
+        db.session.add(Pitcher(
+            mlb_id=920000 + team_id, full_name=f'MLB arm {team_id}',
+            team_id=team_id, team_name=f'Club {team_id}', active=True,
+        ))
+    db.session.commit()
+    assert valid_team_ids() == set(MLB_TEAM_IDS)
+    assert set(valid_team_directory()) == set(MLB_TEAM_IDS)
+    response = app.test_client().get('/api/bullpen/teams')
+    assert response.status_code == 200
+    assert {team['team_id'] for team in response.get_json()} == set(MLB_TEAM_IDS)
 
 
 @pytest.fixture
