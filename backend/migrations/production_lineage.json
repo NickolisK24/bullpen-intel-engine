@@ -116,5 +116,13 @@
       "sha256": "a19bf29cc1b41de35e4efbbc3e7ddbf0485e6092ce960ee6a41f1091b464ef6a",
       "introduced_commit": "ea79ca78865ddc72f8b3687c6b7c353dcfd33c72"
     }
-  ]
+  ],
+  "selector_fence_promotion": {
+    "main_base": "4f386da7f6539fadd3976860fed1e98fe1693d07",
+    "integration_source": "b152076008810cd0e669137e7f6b8caaa6e4eca7",
+    "revision": "f4a7b0c3d6e9",
+    "down_revision": "e3f6a9b2c5d8",
+    "path": "backend/migrations/versions/f4a7b0c3d6e9_fence_selector_generations.py",
+    "sha256": "a981dce1b8d97cc674bec243ad1e576109cf7773603d16c6a5d42d8044be2280"
+  }
 }

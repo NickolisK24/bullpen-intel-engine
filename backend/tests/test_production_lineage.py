@@ -25,6 +25,8 @@ BACKEND = Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
 MANIFEST = json.loads((BACKEND / 'migrations/production_lineage.json').read_text())
 TARGET = MANIFEST['target_revision']
+SELECTOR_PROMOTION = MANIFEST['selector_fence_promotion']
+CURRENT_TARGET = SELECTOR_PROMOTION['revision']
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -39,7 +41,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
                 assert revision not in revisions, (revision, path, revisions.get(revision))
                 revisions[revision] = path.name
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    assert script.get_heads() == [TARGET]
+    assert script.get_heads() == [CURRENT_TARGET]
     assert script.get_bases() == ['3b06397ddc6b']
     assert not any(revision.is_merge_point or revision.is_branch_point
                    for revision in script.walk_revisions())
@@ -53,9 +55,26 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     original = tmp_path / 'main_graph'
     (original / 'versions').mkdir(parents=True)
     for revision, name in revisions.items():
-        if revision not in promoted:
+        if revision not in promoted | {CURRENT_TARGET}:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
+
+
+def test_selector_guard_is_one_reviewed_standalone_transition():
+    script = ScriptDirectory(str(BACKEND / 'migrations'))
+    extension = list(script.iterate_revisions(CURRENT_TARGET, TARGET))
+    assert [revision.revision for revision in extension] == [CURRENT_TARGET]
+    assert extension[0].down_revision == TARGET == SELECTOR_PROMOTION['down_revision']
+    path = SELECTOR_PROMOTION['path']
+    content = (ROOT / path).read_text(encoding='utf-8')
+    assert hashlib.sha256(content.encode()).hexdigest() == SELECTOR_PROMOTION['sha256']
+    reviewed = subprocess.check_output(
+        ['git', 'show', SELECTOR_PROMOTION['integration_source'] + ':' + path], cwd=ROOT,
+    )
+    assert content.encode() == reviewed
+    imports = [ast.unparse(node) for node in ast.parse(content).body
+               if isinstance(node, (ast.Import, ast.ImportFrom))]
+    assert imports == ['from alembic import op', 'import sqlalchemy as sa']
 
 
 def test_promoted_historical_definitions_are_immutable_and_standalone():
@@ -197,15 +216,28 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
         'sync_runs', 'sync_failures', 'sync_run_scopes', 'source_payload_artifacts',
         'compatibility_write_events'))
     current = _flask(existing, 'current')
-    assert TARGET + ' (head)' in current.stdout
+    assert TARGET in current.stdout
+    # Exactly one new guard transition; retained data and columns are preserved.
+    result = _flask(existing, 'upgrade')
+    transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
+    assert len(transitions) == 1, result.stderr
+    assert TARGET + ' -> ' + CURRENT_TARGET in transitions[0]
+    after = _fingerprint(existing)
+    assert {k: v for k, v in after[0].items() if k != 'alembic_version'} == {
+        k: v for k, v in before[0].items() if k != 'alembic_version'}
+    assert after[1] == before[1]
+    assert len(after[2]) == len(before[2]) + 2
+    assert len(after[4]) == len(before[4]) + 2
+    assert len(after[5]) == len(before[5]) + 14
+    before = after
     for _ in range(2):
         result = _flask(existing, 'upgrade')
         assert 'Running upgrade' not in result.stderr
         assert _fingerprint(existing) == before
     result = _flask(fresh, 'upgrade')
     assert 'Running upgrade' in result.stderr
-    assert _flask(fresh, 'heads').stdout.strip().endswith(TARGET + ' (head)')
-    assert TARGET + ' (head)' in _flask(fresh, 'current').stdout
+    assert _flask(fresh, 'heads').stdout.strip().endswith(CURRENT_TARGET + ' (head)')
+    assert CURRENT_TARGET + ' (head)' in _flask(fresh, 'current').stdout
     assert _flask(fresh, 'history').returncode == 0
     # Production main runtime, real migrations and real Daily Edition helper.
     # The custom server probe exits instead of leaving a background web process.

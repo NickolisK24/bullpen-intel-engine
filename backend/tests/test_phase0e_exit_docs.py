@@ -10,7 +10,7 @@ from services.evidence_classification import validate_evidence_classifications
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Production history promotion imports the immutable integration extension.
 # Keep an explicit pin so a new migration requires deliberate head review.
-EXPECTED_ALEMBIC_HEAD = 'e3f6a9b2c5d8'
+EXPECTED_ALEMBIC_HEAD = 'f4a7b0c3d6e9'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',
