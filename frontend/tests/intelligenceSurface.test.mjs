@@ -2836,7 +2836,7 @@ test('Since Yesterday snapshot-chain gap explains the wait for two consecutive v
   assert.equal(htmlIncludes(html, 'No meaningful bullpen movement was found'), false)
 })
 
-test('Since Yesterday non-adjacent views explain a league off-day gap', () => {
+test('Since Yesterday non-adjacent views disclose the comparison gap', () => {
   const dashboardOffDayGap = {
     ...dashboard,
     what_changed_since_yesterday: {
@@ -2861,8 +2861,10 @@ test('Since Yesterday non-adjacent views explain a league off-day gap', () => {
     landscape,
     teams,
   }))
-  assert.ok(htmlIncludes(html, 'The two most recent complete daily views are not adjacent days — a league off-day gap.'))
-  assert.ok(htmlIncludes(html, 'resumes automatically after the next comparable game-day view'))
+  assert.ok(htmlIncludes(html, 'Available views'))
+  assert.ok(htmlIncludes(html, 'The two most recent complete daily views are not adjacent, so BaseballOS is withholding movement rather than comparing across a gap.'))
+  assert.ok(htmlIncludes(html, 'resumes automatically after the next adjacent pair'))
+  assert.equal(htmlIncludes(html, 'league off-day'), false)
   assert.equal(htmlIncludes(html, 'No meaningful bullpen movement was found'), false)
 })
 

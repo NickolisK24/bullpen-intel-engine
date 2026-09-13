@@ -125,6 +125,7 @@ ERROR_GAME_FETCH_FAILED = 'game_fetch_failed'
 ERROR_PAYLOAD_INVALID = 'payload_invalid'
 ERROR_STARTER_IDENTITY_UNRESOLVED = 'starter_identity_unresolved'
 ERROR_APPEARANCE_EXTRACTION_FAILED = 'appearance_extraction_failed'
+ERROR_COMPLETED_GAME_CONTEXT_FAILED = 'completed_game_context_failed'
 ERROR_PERSISTENCE_FAILED = 'persistence_failed'
 ERROR_RECONCILIATION_FAILED = 'reconciliation_failed'
 ERROR_CORRECTION_CONFLICT = 'correction_conflict'
@@ -148,6 +149,9 @@ FAILURE_SEMANTICS = {
         'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
     },
     ERROR_APPEARANCE_EXTRACTION_FAILED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_COMPLETED_GAME_CONTEXT_FAILED: {
         'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
     },
     ERROR_PERSISTENCE_FAILED: {
@@ -463,6 +467,10 @@ def _process_one_game(
                 'status': 'not_requested',
                 'publication_affected': False,
             },
+            'completed_game_context': {
+                'status': 'not_requested',
+                'publication_affected': True,
+            },
         },
         'elapsed_seconds': 0.0,
         'error_class': None,
@@ -554,6 +562,20 @@ def _process_one_game(
                     job_name=job_name,
                 )
             )
+            try:
+                outcome['optional_source_domains']['completed_game_context'] = (
+                    handlers['process_completed_game_context'](
+                        item,
+                        game_payload,
+                        boxscore,
+                        optional_payload,
+                    )
+                )
+            except Exception as exc:
+                raise _IngestionFailure(
+                    ERROR_COMPLETED_GAME_CONTEXT_FAILED,
+                    'completed-game editorial context did not reconcile',
+                ) from exc
 
         _apply_plan_outcome(outcome, report, persisted)
         pitch_mutations = (
@@ -1170,6 +1192,43 @@ def _resolve_handlers(
         return result
 
     handlers_map['process_optional'] = _process_optional
+
+    def _process_completed_game_context(
+        item,
+        game_payload,
+        boxscore,
+        optional_payload,
+    ):
+        result = sync_service.generate_completed_game_context(
+            game_payload,
+            boxscore=boxscore,
+            game_date=item.game_date or item.represented_date,
+            # Reuse the already-fetched final play-by-play. The context builder
+            # may still fetch the smaller linescore input, but never requests
+            # final play-by-play a second time.
+            play_by_play=optional_payload.get('play_by_play'),
+        )
+        expected_team_ids = {
+            team_id
+            for team_id in (item.home_team_id, item.away_team_id)
+            if team_id is not None
+        }
+        if len(expected_team_ids) != 2 or result.get('contexts_upserted') != 2:
+            raise RuntimeError(
+                result.get('reason') or 'completed_game_context_incomplete'
+            )
+        return {
+            'status': 'complete',
+            'contexts_upserted': result['contexts_upserted'],
+            'confidences': result.get('confidences') or [],
+            'reason': None,
+            # This context is a direct input to the public Daily Edition.
+            'publication_affected': True,
+        }
+
+    handlers_map['process_completed_game_context'] = (
+        _process_completed_game_context
+    )
 
     handlers_map['extract'] = _default_extract
     return handlers_map

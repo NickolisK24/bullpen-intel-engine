@@ -75,7 +75,7 @@ const SINCE_YESTERDAY_UNAVAILABLE_COPY =
 const SINCE_YESTERDAY_WAITING_FOR_PAIR_COPY =
   'Movement comparison is paused while BaseballOS waits for two consecutive complete daily views. It resumes automatically when two consecutive complete game-day views are available — no movement is being hidden or assumed.'
 const SINCE_YESTERDAY_OFF_DAY_GAP_COPY =
-  'The two most recent complete daily views are not adjacent days — a league off-day gap. Movement comparison resumes automatically after the next comparable game-day view.'
+  'The two most recent complete daily views are not adjacent, so BaseballOS is withholding movement rather than comparing across a gap. Movement comparison resumes automatically after the next adjacent pair.'
 const SINCE_YESTERDAY_WAITING_REASONS = new Set([
   'no_prior_snapshot',
   'prior_snapshot_unpublished',
@@ -660,6 +660,12 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     ? comparison.identity
     : null
   const itemCountValue = numberValue(block.item_count)
+  const reasonCodes = new Set(
+    []
+      .concat(Array.isArray(block?.reason_codes) ? block.reason_codes : [])
+      .concat(Array.isArray(comparison?.reason_codes) ? comparison.reason_codes : [])
+      .map(value => String(value || '').toLowerCase()),
+  )
   const baseView = {
     state,
     comparisonAvailable: comparison.comparison_available === true,
@@ -667,6 +673,9 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     currentDate,
     previousDateLabel: formatComparisonDate(previousDate, 'the previous view'),
     currentDateLabel: formatComparisonDate(currentDate, 'the current view'),
+    datePairLabel: reasonCodes.has(SINCE_YESTERDAY_OFF_DAY_GAP_REASON)
+      ? 'Available views'
+      : 'Adjacent views',
   }
 
   const summary = normalizeSinceYesterdaySummary(block.summary)
@@ -2156,7 +2165,7 @@ function SinceYesterdaySection({ dashboard, teams, loading = false }) {
     >
       {view && (view.previousDate || view.currentDate) && (
         <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          Adjacent views · {view.previousDateLabel} → {view.currentDateLabel}
+          {view.datePairLabel} · {view.previousDateLabel} → {view.currentDateLabel}
         </p>
       )}
       {!view ? (
