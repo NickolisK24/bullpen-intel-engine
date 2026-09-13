@@ -1,21 +1,24 @@
 """Valid team-id directory (Phase D1D).
 
 Team following needs to validate a team_id without inventing a teams table.
-The valid set is exactly the teams the public GET /api/bullpen/teams surface is
-built from: distinct active pitchers with a team. This keeps the follow API
-honest against the same team universe the rest of the product shows.
+The valid set is active MLB clubs represented by stored active pitchers.
+Affiliate assignments can coexist in the pitcher table, but cannot expand the
+MLB publication or following universe. Missing MLB clubs remain missing so the
+publication completeness gate can reject an incomplete directory.
 """
 
 from models.pitcher import Pitcher
+from services.mlb_club_directory import MLB_TEAM_IDS
 from utils.db import db
 
 
 def valid_team_ids():
-    """Return the set of team ids that currently have active pitchers."""
+    """Return MLB club ids that currently have active pitchers."""
     rows = (
         db.session.query(Pitcher.team_id)
         .filter(Pitcher.active == True)
         .filter(Pitcher.team_id.isnot(None))
+        .filter(Pitcher.team_id.in_(MLB_TEAM_IDS))
         .distinct()
         .all()
     )
@@ -45,6 +48,7 @@ def valid_team_directory():
         )
         .filter(Pitcher.active == True)
         .filter(Pitcher.team_id.isnot(None))
+        .filter(Pitcher.team_id.in_(MLB_TEAM_IDS))
         .order_by(Pitcher.team_id.asc(), Pitcher.id.asc())
         .all()
     )

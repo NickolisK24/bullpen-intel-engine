@@ -1233,7 +1233,9 @@ def get_pitcher_logs(pitcher_id):
 
 @bullpen_bp.route('/teams', methods=['GET'])
 def get_teams():
-    """Get all teams that have pitchers in the DB."""
+    """Get represented MLB clubs, excluding stored affiliate assignments."""
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
     teams = (
         db.session.query(
             Pitcher.team_id,
@@ -1243,6 +1245,7 @@ def get_teams():
         )
         .filter(Pitcher.active == True)
         .filter(Pitcher.team_id.isnot(None))
+        .filter(Pitcher.team_id.in_(MLB_TEAM_IDS))
         .group_by(Pitcher.team_id, Pitcher.team_name, Pitcher.team_abbreviation)
         .order_by(Pitcher.team_name)
         .all()

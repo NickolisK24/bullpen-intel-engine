@@ -210,7 +210,7 @@ def _attach_workload_carrier(snapshot, team_id):
         'starter_avg_outs': 15.0,
         'bullpen_outs_required': 18,
         'short_start_count': 1,
-        'short_start_rate': 0.33,
+        'short_start_rate': 0.110,
         'summary': 'Rotation burden summary.',
         'limitations': [],
     }
@@ -299,17 +299,17 @@ def _attach_workload_carrier(snapshot, team_id):
 
 def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monkeypatch):
     _install_trusted_snapshot(monkeypatch)
-    _seed_team(31, usable=8, total=8)
+    _seed_team(108, usable=8, total=8)
     _sync_run()
     seed_roster_readiness_snapshots()
 
-    result = _publish(31)
+    result = _publish(108)
     assert result.outcome == OUTCOME_PUBLISHED
     assert result.eligible is True and result.created_new is True
     artifact = result.artifact
     assert artifact is not None and artifact.public_id
     assert artifact.lifecycle_state == 'published'
-    assert artifact.team_id == 31
+    assert artifact.team_id == 108
     assert artifact.source_snapshot_id == SNAPSHOT_ID
     assert artifact.artifact_type == TEAM_STATE_ARTIFACT_TYPE
     assert artifact.render_version == TEAM_STATE_LATEST
@@ -330,10 +330,10 @@ def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monke
     assert sidecar.payload['domains']['arm_read']['public_contract_version']
     frozen_arm_reads = sidecar.payload['values']['arm_read']['records']
     assert len(frozen_arm_reads) == 8
-    assert all(record['team_id'] == 31 for record in frozen_arm_reads)
+    assert all(record['team_id'] == 108 for record in frozen_arm_reads)
 
     # Idempotent reuse.
-    rerun = _publish(31)
+    rerun = _publish(108)
     assert rerun.outcome == OUTCOME_REUSED and rerun.reused_existing is True
     assert rerun.public_id == result.public_id
     assert db.session.query(ShareArtifact).filter_by(lifecycle_state='published').count() == 1
@@ -345,7 +345,7 @@ def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monke
     view = build_share_card_compatibility_view(artifact)
     assert view['source'] == COMPATIBILITY_SOURCE
     assert view['public_id'] == artifact.public_id
-    assert view['team']['team_id'] == 31
+    assert view['team']['team_id'] == 108
     assert view['status_code'] in SUPPORTED
     assert view['trust']['confidence'] == 'high'
 
@@ -355,12 +355,12 @@ def test_new_publication_copies_frozen_workload_windows_into_delta_sidecar(
     monkeypatch,
 ):
     snapshot = _install_trusted_snapshot(monkeypatch)
-    _seed_team(31, usable=8, total=8)
+    _seed_team(108, usable=8, total=8)
     _sync_run()
     seed_roster_readiness_snapshots()
-    carrier, rotation, member_ids = _attach_workload_carrier(snapshot, 31)
+    carrier, rotation, member_ids = _attach_workload_carrier(snapshot, 108)
 
-    result = generate_team_state_artifact(31, snapshot=snapshot)
+    result = generate_team_state_artifact(108, snapshot=snapshot)
 
     assert result.outcome == OUTCOME_PUBLISHED
     sidecar = DashboardSnapshot.query.filter_by(
@@ -381,11 +381,11 @@ def test_new_publication_copies_frozen_workload_windows_into_delta_sidecar(
 
 def test_fixture_b_medium_confidence_publishes_with_limitation(app, monkeypatch):
     _install_trusted_snapshot(monkeypatch)
-    _seed_team(32, usable=6, total=8)
+    _seed_team(109, usable=6, total=8)
     _sync_run()
     seed_roster_readiness_snapshots()
 
-    result = _publish(32)
+    result = _publish(109)
     assert result.outcome == OUTCOME_PUBLISHED
     artifact = result.artifact
     doc = artifact.payload
@@ -402,7 +402,7 @@ def test_fixture_b_medium_confidence_publishes_with_limitation(app, monkeypatch)
     audit = db.session.get(ShareArtifactGenerationAudit, result.audit_id)
     assert audit.outcome == OUTCOME_PUBLISHED
 
-    rerun = _publish(32)
+    rerun = _publish(109)
     assert rerun.outcome == OUTCOME_REUSED and rerun.public_id == result.public_id
     assert db.session.query(ShareArtifact).filter_by(lifecycle_state='published').count() == 1
 
@@ -416,11 +416,11 @@ def test_fixture_b_medium_confidence_publishes_with_limitation(app, monkeypatch)
 
 def test_fixture_c_low_confidence_is_refused(app, monkeypatch):
     _install_trusted_snapshot(monkeypatch)
-    _seed_team(33, usable=5, total=8)
+    _seed_team(110, usable=5, total=8)
     _sync_run()
     seed_roster_readiness_snapshots()
 
-    result = _publish(33)
+    result = _publish(110)
     assert result.outcome == OUTCOME_REFUSED
     assert result.eligible is False and result.public_id is None
     assert db.session.query(ShareArtifact).count() == 0
@@ -442,18 +442,18 @@ def test_fixture_c_low_confidence_is_refused(app, monkeypatch):
 
 def test_fixture_d_mixed_real_resolver_batch(app, monkeypatch):
     _install_trusted_snapshot(monkeypatch)
-    _seed_team(41, usable=8, total=8)   # high
-    _seed_team(42, usable=6, total=8)   # medium
-    _seed_team(43, usable=5, total=8)   # low
+    _seed_team(108, usable=8, total=8)   # high
+    _seed_team(109, usable=6, total=8)   # medium
+    _seed_team(110, usable=5, total=8)   # low
     _sync_run()
     seed_roster_readiness_snapshots()
 
     result = generate_team_state_artifacts_batch(
-        source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, team_ids=[41, 42, 43],
+        source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, team_ids=[108, 109, 110],
     )
     by_team = {r.team_id: r.outcome for r in result.results}
     assert by_team == {
-        41: BATCH_OUTCOME_GENERATED, 42: BATCH_OUTCOME_GENERATED, 43: BATCH_OUTCOME_REFUSED,
+        108: BATCH_OUTCOME_GENERATED, 109: BATCH_OUTCOME_GENERATED, 110: BATCH_OUTCOME_REFUSED,
     }
     # Accounting invariant + missing.
     assert result.attempted_count == (
@@ -465,11 +465,11 @@ def test_fixture_d_mixed_real_resolver_batch(app, monkeypatch):
 
     # Idempotent rerun: generated -> reused, refused stays refused, no duplicates.
     rerun = generate_team_state_artifacts_batch(
-        source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, team_ids=[41, 42, 43],
+        source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, team_ids=[108, 109, 110],
     )
     rerun_by_team = {r.team_id: r.outcome for r in rerun.results}
     assert rerun_by_team == {
-        41: BATCH_OUTCOME_REUSED, 42: BATCH_OUTCOME_REUSED, 43: BATCH_OUTCOME_REFUSED,
+        108: BATCH_OUTCOME_REUSED, 109: BATCH_OUTCOME_REUSED, 110: BATCH_OUTCOME_REFUSED,
     }
     assert db.session.query(ShareArtifact).filter_by(lifecycle_state='published').count() == 2
 
@@ -483,11 +483,11 @@ def test_role_authority_scopes_active_bullpen(app, monkeypatch):
     starter records still resolves high (they do not collapse the read)."""
     _install_trusted_snapshot(monkeypatch)
     # 8 usable active relievers + 1 IL reliever + 1 active starter on the same team.
-    _seed_team(51, usable=8, total=8, extra_inactive=True)
+    _seed_team(108, usable=8, total=8, extra_inactive=True)
     _sync_run()
     seed_roster_readiness_snapshots()
 
-    result = _publish(51)
+    result = _publish(108)
     assert result.outcome == OUTCOME_PUBLISHED
     # High: the IL reliever and the starter neither counted toward nor collapsed the
     # active-bullpen coverage (else confidence would not be high with 8/8 usable arms).
@@ -498,11 +498,11 @@ def test_unknown_roster_assignment_fails_closed(app, monkeypatch):
     """A team whose relievers have no authoritative active-roster status (no roster
     snapshots seeded) resolves to unknown -> data_limited -> refused, never eligible."""
     _install_trusted_snapshot(monkeypatch)
-    _seed_team(52, usable=8, total=8, extra_inactive=False)
+    _seed_team(109, usable=8, total=8, extra_inactive=False)
     _sync_run()
     # Intentionally do NOT seed roster readiness snapshots -> no active-bullpen authority.
 
-    result = _publish(52)
+    result = _publish(109)
     assert result.outcome == OUTCOME_REFUSED
     assert result.eligible is False
     assert 'unsupported_team_state' in result.blocking_conditions
