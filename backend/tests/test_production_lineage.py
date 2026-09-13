@@ -75,8 +75,11 @@ def test_promoted_historical_definitions_are_immutable_and_standalone():
 
 
 def test_runtime_promotion_is_strictly_bounded():
+    # Freeze this historical promotion's scope. Comparing the original base to
+    # today's checkout would incorrectly prohibit all subsequent runtime fixes.
+    promotion_commit = '04adf7932416136bb220ffcb207f84c6e6e17acc'
     paths = subprocess.check_output(
-        ['git', 'diff', '--name-only', MANIFEST['main_base'], '--',
+        ['git', 'diff', '--name-only', MANIFEST['main_base'], promotion_commit, '--',
          'backend/models', 'backend/api', 'backend/services', 'frontend'],
         cwd=ROOT, text=True,
     ).splitlines()

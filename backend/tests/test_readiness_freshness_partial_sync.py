@@ -47,7 +47,7 @@ from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 from utils.db import db
 
 
-TEAM_ID = 7
+TEAM_ID = 108
 TODAY = date.today()
 # Relievers rested: latest appearance older than the 14-day active window, so the
 # live global max(GameLog.game_date) recompute is stale.
