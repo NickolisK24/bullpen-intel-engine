@@ -25,6 +25,23 @@ VALID_TEAMS = (118, 147, 121)
 INVALID_TEAM = 999
 
 
+def test_mlb_directory_excludes_active_affiliates_without_filling_missing_clubs(app):
+    from services.team_directory import valid_team_ids, valid_team_directory, is_valid_team_id
+
+    for team_id in (484, 531, 534, 5434):
+        db.session.add(Pitcher(
+            mlb_id=910000 + team_id, full_name=f'Affiliate arm {team_id}',
+            team_id=team_id, team_name='New York Yankees', active=True,
+        ))
+    db.session.commit()
+
+    assert valid_team_ids() == set(VALID_TEAMS)
+    assert set(valid_team_directory()) == set(VALID_TEAMS)
+    assert not is_valid_team_id(531)
+    assert not is_valid_team_id(108)  # A canonical club without evidence stays missing.
+    assert Pitcher.query.filter_by(team_id=531).one().active is True
+
+
 @pytest.fixture
 def app():
     app = Flask(__name__)

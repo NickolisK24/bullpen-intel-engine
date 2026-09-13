@@ -48,7 +48,7 @@ from utils.db import db
 
 SNAPSHOT_ID = 7001
 PRODUCT_DATE = date(2026, 7, 20)
-TEAM_IDS = (101, 102, 103)
+TEAM_IDS = (108, 109, 110)
 
 
 @pytest.fixture
@@ -206,9 +206,9 @@ def test_mixed_outcomes_reported_separately(app, monkeypatch):
     _install_snapshot(monkeypatch)
 
     def _gen(team_id, **kwargs):
-        if team_id == 101:
-            return _fixed_result(team_id, OUTCOME_PUBLISHED, public_id='pub-101')
-        if team_id == 102:
+        if team_id == 108:
+            return _fixed_result(team_id, OUTCOME_PUBLISHED, public_id='pub-108')
+        if team_id == 109:
             return _fixed_result(team_id, OUTCOME_REFUSED, blocking=('insufficient_trust',))
         return _fixed_result(team_id, OUTCOME_FAILED_CLOSED, failure_code='publication_error')
 
@@ -221,10 +221,10 @@ def test_mixed_outcomes_reported_separately(app, monkeypatch):
     assert result.failed_count == 1
     assert result.reused_count == 0
     by_team = {r.team_id: r for r in result.results}
-    assert by_team[102].outcome == BATCH_OUTCOME_REFUSED
-    assert by_team[102].reason_code == 'insufficient_trust'
-    assert by_team[103].outcome == BATCH_OUTCOME_FAILED
-    assert by_team[103].failure_code == 'publication_error'
+    assert by_team[109].outcome == BATCH_OUTCOME_REFUSED
+    assert by_team[109].reason_code == 'insufficient_trust'
+    assert by_team[110].outcome == BATCH_OUTCOME_FAILED
+    assert by_team[110].failure_code == 'publication_error'
 
 
 # 11 — one refusal does not stop other teams
@@ -233,7 +233,7 @@ def test_refusal_does_not_stop_other_teams(app, monkeypatch):
     _install_snapshot(monkeypatch)
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, actor='admin_batch_api',
-        generator=_real_generator({102: 'data_limited'}),  # 102 refuses
+        generator=_real_generator({109: 'data_limited'}),  # 109 refuses
     )
     assert result.attempted_count == len(TEAM_IDS)
     assert result.refused_count == 1
@@ -247,7 +247,7 @@ def test_unexpected_team_error_does_not_skip_later_teams(app, monkeypatch):
     _install_snapshot(monkeypatch)
 
     def _gen(team_id, **kwargs):
-        if team_id == 102:
+        if team_id == 109:
             raise RuntimeError('boom')
         return _fixed_result(team_id, OUTCOME_PUBLISHED, public_id=f'pub-{team_id}')
 
@@ -258,10 +258,10 @@ def test_unexpected_team_error_does_not_skip_later_teams(app, monkeypatch):
     assert result.attempted_count == len(TEAM_IDS)
     assert {r.team_id for r in result.results} == set(TEAM_IDS)
     failed = [r for r in result.results if r.outcome == BATCH_OUTCOME_FAILED]
-    assert [r.team_id for r in failed] == [102]
+    assert [r.team_id for r in failed] == [109]
     assert failed[0].failure_code == 'batch_team_error'
-    # 103 still attempted and generated after 102 raised.
-    assert any(r.team_id == 103 and r.outcome == BATCH_OUTCOME_GENERATED for r in result.results)
+    # 110 still attempted and generated after 109 raised.
+    assert any(r.team_id == 110 and r.outcome == BATCH_OUTCOME_GENERATED for r in result.results)
 
 
 # 13 — a globally invalid snapshot fails the whole batch before any team
@@ -314,14 +314,14 @@ def test_missing_snapshot_fails_closed(app, monkeypatch):
 
 # 14 — results are in deterministic (stable ascending) team order
 def test_results_are_in_deterministic_team_order(app, monkeypatch):
-    _seed_teams(team_ids=(103, 101, 102))  # insert out of order
+    _seed_teams(team_ids=(110, 108, 109))  # insert out of order
     _install_snapshot(monkeypatch)
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE,
         actor='admin_batch_api', generator=_real_generator(),
     )
-    assert [r.team_id for r in result.results] == [101, 102, 103]
-    assert result.expected_team_ids == (101, 102, 103)
+    assert [r.team_id for r in result.results] == [108, 109, 110]
+    assert result.expected_team_ids == (108, 109, 110)
 
 
 # 15 — an explicit subset works and stays deterministic
@@ -330,9 +330,9 @@ def test_explicit_subset_is_used_and_deterministic(app, monkeypatch):
     _install_snapshot(monkeypatch)
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, actor='admin_batch_api',
-        team_ids=[103, 101], generator=_real_generator(),
+        team_ids=[110, 108], generator=_real_generator(),
     )
-    assert [r.team_id for r in result.results] == [101, 103]
+    assert [r.team_id for r in result.results] == [108, 110]
     assert result.attempted_count == 2
     assert result.canonical_team_count == len(TEAM_IDS)  # full-league size still reported
     assert result.missing_count == 0  # subset fully accounted
@@ -346,9 +346,9 @@ def test_duplicate_and_unknown_subset_ids_handled(app, monkeypatch):
     # governed-refused by the single-team path (still accounted, never missing).
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE, actor='admin_batch_api',
-        team_ids=[101, 101, 999999], generator=_real_generator(),
+        team_ids=[108, 108, 999999], generator=_real_generator(),
     )
-    assert [r.team_id for r in result.results] == [101, 999999]  # deduped, sorted
+    assert [r.team_id for r in result.results] == [108, 999999]  # deduped, sorted
     unknown = next(r for r in result.results if r.team_id == 999999)
     assert unknown.outcome == BATCH_OUTCOME_REFUSED  # unknown team is refused, accounted
     assert result.missing_count == 0
@@ -366,7 +366,7 @@ def test_accounting_invariant_holds(app, monkeypatch):
     _install_snapshot(monkeypatch)
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE,
-        actor='admin_batch_api', generator=_real_generator({102: 'data_limited'}),
+        actor='admin_batch_api', generator=_real_generator({109: 'data_limited'}),
     )
     assert result.attempted_count == (
         result.generated_count + result.reused_count
@@ -392,10 +392,10 @@ def test_full_league_run_detects_unaccounted_team(app, monkeypatch):
     # to force a "missing" team we construct the result directly with a gap.
     partial = BatchGenerationResult(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE,
-        results=(BatchTeamResult(team_id=101, outcome=BATCH_OUTCOME_GENERATED, public_id='p'),),
-        canonical_team_count=3, expected_team_ids=(101, 102, 103),
+        results=(BatchTeamResult(team_id=108, outcome=BATCH_OUTCOME_GENERATED, public_id='p'),),
+        canonical_team_count=3, expected_team_ids=(108, 109, 110),
     )
-    assert partial.missing_team_ids == (102, 103)
+    assert partial.missing_team_ids == (109, 110)
     assert partial.missing_count == 2
     assert partial.is_complete is False
     # And the real batch never leaves a canonical team unaccounted.
@@ -412,7 +412,7 @@ def test_refused_team_is_not_missing(app, monkeypatch):
     _install_snapshot(monkeypatch)
     result = generate_team_state_artifacts_batch(
         source_snapshot_id=SNAPSHOT_ID, product_date=PRODUCT_DATE,
-        actor='admin_batch_api', generator=_real_generator({101: 'data_limited', 102: 'refused'}),
+        actor='admin_batch_api', generator=_real_generator({108: 'data_limited', 109: 'refused'}),
     )
     assert result.refused_count == 2
     assert result.missing_count == 0
