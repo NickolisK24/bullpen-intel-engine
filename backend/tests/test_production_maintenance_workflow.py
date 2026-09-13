@@ -9,6 +9,10 @@ WORKFLOW = (
     Path(__file__).resolve().parents[2]
     / '.github/workflows/baseballos-production-maintenance.yml'
 )
+REPAIR_SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / 'scripts/repair_daily_edition_context.py'
+)
 
 
 def _validator_source():
@@ -299,6 +303,61 @@ def test_workflow_has_read_only_phase0h_snapshot_audit_operation():
     assert 'AUDIT_RECENT_ROW_LIMIT: ${{ inputs.audit_recent_row_limit }}' in text
     assert 'DATABASE_URL: ${{ secrets.DATABASE_URL }}' in text
     assert 'ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}' in text
+
+
+def test_workflow_has_bounded_daily_edition_context_repair():
+    text = WORKFLOW.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    assert 'daily_edition_context_repair' in text
+    assert 'daily_edition_date must use YYYY-MM-DD format.' in text
+    assert "expected_confirmation='REPAIR_DAILY_EDITION_CONTEXT'" in text
+    assert 'python -m scripts.repair_daily_edition_context \\' in text
+    assert '--date "$DAILY_EDITION_DATE"' in text
+    assert '--confirm REPAIR_DAILY_EDITION_CONTEXT' in text
+
+
+def test_daily_edition_context_repair_refuses_without_exact_confirmation():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPAIR_SCRIPT),
+            '--date',
+            '2026-09-12',
+            '--confirm',
+            'REPAIR',
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout) == {
+        'status': 'refused',
+        'reason': 'confirmation_required',
+    }
+
+
+def test_daily_edition_context_repair_refuses_invalid_date_before_app_import():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPAIR_SCRIPT),
+            '--date',
+            '09-12-2026',
+            '--confirm',
+            'REPAIR_DAILY_EDITION_CONTEXT',
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout) == {
+        'status': 'refused',
+        'reason': 'invalid_date',
+    }
 
 
 def test_phase0h_audit_validator_accepts_full_bounded_summary(tmp_path):

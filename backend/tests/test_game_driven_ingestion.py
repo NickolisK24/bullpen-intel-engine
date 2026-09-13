@@ -16,6 +16,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
+from models.completed_game_context import CompletedGameContext
 from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
@@ -125,6 +126,14 @@ def test_first_processing_inserts_rows_and_completes_the_work_item(app, stub_cli
         assert report['games_completed'] == 1
         assert report['rows_inserted'] == 2
         assert GameLog.query.filter_by(mlb_game_pk=910002).count() == 2
+        assert CompletedGameContext.query.filter_by(game_pk=910002).count() == 2
+
+        context = report['games'][0]['optional_source_domains'][
+            'completed_game_context'
+        ]
+        assert context['status'] == 'complete'
+        assert context['contexts_upserted'] == 2
+        assert context['publication_affected'] is True
 
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910002).one()
         assert item.status == GameIngestionWorkItem.STATUS_COMPLETED
@@ -133,6 +142,36 @@ def test_first_processing_inserts_rows_and_completes_the_work_item(app, stub_cli
         assert item.relief_rows_reconciled == 1
         assert item.completed_at is not None
         assert item.source_revision
+
+
+def test_missing_completed_game_context_blocks_checkpoint_and_rolls_back(
+    app, stub_client, monkeypatch,
+):
+    with app.app_context():
+        _schedule(910102)
+        _pitcher(5101)
+        db.session.commit()
+        stub_client(_one_reliever(910102, 5101))
+        monkeypatch.setattr(
+            sync_service,
+            'generate_completed_game_context',
+            lambda *args, **kwargs: {
+                'contexts_upserted': 0,
+                'confidences': [],
+                'reason': 'no_payload',
+            },
+        )
+
+        report = _run()
+
+        assert report['games_completed'] == 0
+        assert report['games_failed'] == 1
+        assert report['failure_classes'] == {
+            game_driven_ingestion.ERROR_COMPLETED_GAME_CONTEXT_FAILED: 1,
+        }
+        assert GameLog.query.filter_by(mlb_game_pk=910102).count() == 0
+        item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910102).one()
+        assert item.status != GameIngestionWorkItem.STATUS_COMPLETED
 
 
 def test_replaying_an_unchanged_game_creates_no_duplicates_and_no_changes(
