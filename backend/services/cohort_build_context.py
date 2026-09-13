@@ -20,6 +20,7 @@ SNAPSHOT_FIELDS = (
 DATE_FIELDS = frozenset(('data_through', 'availability_reference_date'))
 DATETIME_FIELDS = frozenset(('published_at', 'snapshot_generated_at'))
 BUILD_CONTEXT_VERSION = 'cohort-build-context-v1'
+REFERENCE_CONTEXT_VERSION = 'cohort-build-context-v2'
 
 
 def _json(value):
@@ -52,13 +53,28 @@ class CohortBuildContext:
     baseline_publication_id: int | None = None
     comparisons_json: str = '{}'
     read_model_selectors: bool = True
+    reference_json: str | None = None
+    canonical_json: str | None = None
+
+    @property
+    def schema_version(self):
+        return REFERENCE_CONTEXT_VERSION if self.reference_json is not None else BUILD_CONTEXT_VERSION
+
+    @property
+    def product_date(self):
+        if self.reference_json is None:
+            return None
+        return date.fromisoformat(json.loads(self.reference_json)['product_date'])
+
+    def canonical_versions(self):
+        return json.loads(self.canonical_json) if self.canonical_json is not None else None
 
     def manifest_value(self):
         """Auditable selector identity; deliberately not a closed-input claim."""
         snapshot = json.loads(self.source_snapshot_json)
         comparisons = json.loads(self.comparisons_json)
-        return {
-            'schema_version': BUILD_CONTEXT_VERSION,
+        value = {
+            'schema_version': self.schema_version,
             'scope': {
                 'represented_date': self.represented_date.isoformat(),
                 'team_ids': list(self.requested_team_ids),
@@ -84,6 +100,10 @@ class CohortBuildContext:
                 ).hexdigest(),
             },
         }
+        if self.reference_json is not None:
+            value['reference'] = json.loads(self.reference_json)
+            value['selectors']['canonical_versions'] = self.canonical_versions()
+        return value
 
     @property
     def fingerprint(self):
@@ -92,7 +112,7 @@ class CohortBuildContext:
     def manifest_entry(self, authority_class):
         return {
             'input_type': 'build_context', 'input_key': 'cohort',
-            'input_version': BUILD_CONTEXT_VERSION,
+            'input_version': self.schema_version,
             'input_fingerprint': self.fingerprint,
             'authority_class': authority_class, 'source_observation_id': None,
             'context': self.manifest_value(),
@@ -101,7 +121,7 @@ class CohortBuildContext:
     @classmethod
     def capture(cls, plan, *, source_snapshot, publication_artifact_baseline,
                 predecessor_cohort_id, baseline_publication_id=None, comparisons=None,
-                read_model_selectors=True):
+                read_model_selectors=True, reference=None, canonical_versions=None):
         source = None
         if source_snapshot is not None:
             source = {
@@ -122,6 +142,8 @@ class CohortBuildContext:
             baseline_publication_id=baseline_publication_id,
             comparisons_json=_json(comparisons or {}),
             read_model_selectors=bool(read_model_selectors),
+            reference_json=_json(reference) if reference is not None else None,
+            canonical_json=_json(canonical_versions) if reference is not None else None,
         )
 
     def comparison_for(self, team_id):

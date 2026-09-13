@@ -61,13 +61,14 @@ def build_what_changed_candidate(team_id, *, board, snapshot, predecessor_cohort
 
 
 def build_team_board_v2_candidate(
-    team_id, *, board, snapshot, what_changed, publication_identity,
+    team_id, *, board, snapshot, what_changed, publication_identity, semantic_reference_date=None,
 ):
     """Freeze the existing Team Board v2 composition under one candidate identity."""
     freshness = board.get('freshness') or {}
     represented_date = getattr(snapshot, 'data_through', None)
     reference_date = (
-        parse_reference_date(freshness.get('reference_date')) or product_current_date()
+        parse_reference_date(freshness.get('reference_date'))
+        or semantic_reference_date or product_current_date()
     )
     errors = {}
     relief, error = _optional(

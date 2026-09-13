@@ -34,6 +34,453 @@ from utils.db import db
 GAME_DATE = date(2026, 9, 8)
 
 
+def _canonical_pair():
+    """Persist V1 and a noncurrent correction without changing V1 history."""
+    first, _, pitcher = _final_authority(_observation('reference-version'), version=1)
+    db.session.commit()
+    values = {column.name: getattr(first, column.name)
+              for column in FinalGameVersion.__table__.columns if column.name != 'id'}
+    values.update(version_number=2, predecessor_version_id=first.id,
+                  is_current=False, fact_fingerprint='correction'.ljust(64, '0'))
+    with db.engine.begin() as writer:
+        second = writer.execute(FinalGameVersion.__table__.insert().values(**values)
+                                .returning(FinalGameVersion.id)).scalar_one()
+    return first.id, second, pitcher.id
+
+
+def _advance_final(connection, first, second):
+    connection.execute(FinalGameVersion.__table__.update()
+                       .where(FinalGameVersion.id == first).values(is_current=False))
+    connection.execute(FinalGameVersion.__table__.update()
+                       .where(FinalGameVersion.id == second).values(is_current=True))
+
+
+def test_canonical_reader_first_orders_correction_after_completion(app, monkeypatch):
+    from threading import Event
+    from sqlalchemy import text
+    from services import derived_intelligence as derived
+    from services.semantic_write_fencing import GAME_LOCK_NAMESPACE
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL cross-session canonical fence')
+    first, second, pitcher = _canonical_pair()
+    plan = _plan(domains=('game_context',), pitchers=(pitcher,))
+    engine = db.engine
+    entered, committed = Event(), Event()
+
+    def correct():
+        with engine.begin() as writer:
+            entered.set()
+            writer.execute(text('SELECT pg_advisory_xact_lock(:key)'),
+                           {'key': GAME_LOCK_NAMESPACE + 777123})
+            _advance_final(writer, first, second)
+        committed.set()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = None
+        persist = derived._persist_snapshots
+
+        def boundary(cohort, snapshots):
+            nonlocal future
+            assert snapshots['game']['777123']['game_context']['final_game_version_id'] == first
+            future = pool.submit(correct)
+            assert entered.wait(5)
+            assert not committed.wait(0.1)
+            persist(cohort, snapshots)
+
+        monkeypatch.setattr(derived, '_persist_snapshots', boundary)
+        try:
+            result = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False,
+                                                      commit=False)
+            assert not committed.is_set()
+            db.session.commit()
+        finally:
+            db.session.rollback()
+        future.result(timeout=5)
+    assert result.cohort.status == 'complete'
+    manifest = result.cohort.input_manifest_json
+    assert manifest[-1]['context']['selectors']['canonical_versions']['final']['777123']['id'] == first
+    assert not derived.cohort_inputs_are_current(result.cohort, plan)
+    assert result.cohort.status == 'complete'
+    assert result.cohort.input_manifest_json == manifest
+
+
+def test_canonical_writer_first_stales_and_retry_uses_correction(app):
+    from services import derived_intelligence as derived
+    first, second, pitcher = _canonical_pair()
+    cached = db.session.get(FinalGameVersion, first)
+    plan = _plan(domains=('game_context',), pitchers=(pitcher,))
+
+    def correct():
+        with db.engine.begin() as writer:
+            _advance_final(writer, first, second)
+        assert cached.is_current  # Deliberately stale identity-map instance.
+
+    stale = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False,
+                                             before_revalidate=correct).cohort
+    assert stale.status == 'stale'
+    old = stale.input_manifest_json
+    rebuilt = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False).cohort
+    assert rebuilt.id != stale.id and rebuilt.status == 'complete'
+    assert rebuilt.input_manifest_json[-1]['context']['selectors']['canonical_versions']['final']['777123']['id'] == second
+    assert derived.cohort_inputs_are_current(rebuilt, plan)
+    assert stale.input_manifest_json == old
+
+
+def test_canonical_direct_writer_cannot_bypass_shared_completion(app):
+    from sqlalchemy.exc import DBAPIError
+    from services.derived_intelligence import _capture_cohort_context
+    from services.selector_generation_fencing import acquire_completion_fences
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL direct writer guard')
+    first, second, pitcher = _canonical_pair()
+    context = _capture_cohort_context(_plan(domains=('game_context',), pitchers=(pitcher,)))
+    acquire_completion_fences(context, 'final')
+    with pytest.raises(DBAPIError) as rejected:
+        with db.engine.begin() as writer:
+            _advance_final(writer, first, second)
+    assert rejected.value.orig.pgcode == '40001'
+    db.session.rollback()
+    with db.engine.begin() as writer:
+        _advance_final(writer, first, second)
+
+
+def test_reference_midnight_is_frozen_and_new_capture_advances(app, monkeypatch):
+    from datetime import timezone
+    from services import availability_reference_date as dates, derived_intelligence as derived
+    from services.public_pitcher_current import _reference_date
+    resolve = dates.resolve_product_day
+    monkeypatch.setattr(dates, 'resolve_product_day', lambda: resolve(
+        datetime(2026, 9, 9, 3, 59, 59, tzinfo=timezone.utc)))
+    plan = _plan(domains=('game_context',))
+    first = derived._capture_cohort_context(plan)
+    assert first.product_date == date(2026, 9, 8)
+    monkeypatch.setattr(dates, 'resolve_product_day', lambda: resolve(
+        datetime(2026, 9, 9, 4, 0, 1, tzinfo=timezone.utc)))
+    assert _reference_date({}, first.product_date) == date(2026, 9, 8)
+    revalidated = derived._capture_cohort_context(plan, recorded_context=first.manifest_value())
+    assert revalidated.fingerprint == first.fingerprint
+    second = derived._capture_cohort_context(plan)
+    assert second.product_date == date(2026, 9, 9)
+    assert second.fingerprint != first.fingerprint
+
+
+def test_canonical_capture_is_copy_safe_and_scoped(app):
+    from services.derived_intelligence import _capture_cohort_context, _DefaultDomainExecutor
+    first, second, pitcher = _canonical_pair()
+    plan = _plan(domains=('game_context',), games=(777123, 777124), pitchers=(pitcher,))
+    context = _capture_cohort_context(plan)
+    original = context.fingerprint
+    private_copy = context.canonical_versions()
+    private_copy['final']['777123']['id'] = -1
+    assert context.fingerprint == original
+    assert context.canonical_versions()['final']['777124'] is None
+    with db.engine.begin() as writer:
+        _advance_final(writer, first, second)
+    # The builder consumes the selected V1 value even before final revalidation.
+    executor = _DefaultDomainExecutor(plan)
+    executor.build_context = context
+    with pytest.raises(RuntimeError, match='final_game_context_unavailable:777124'):
+        executor._final_context('game_context')
+    changed = _capture_cohort_context(plan)
+    assert changed.canonical_versions()['final']['777123']['id'] == second
+    assert changed.canonical_versions()['final']['777124'] is None
+    assert context.canonical_versions()['final']['777123']['id'] == first
+
+
+def test_canonical_unrelated_game_does_not_contend(app):
+    from time import perf_counter
+    from sqlalchemy import text
+    from services.derived_intelligence import _capture_cohort_context
+    from services.selector_generation_fencing import acquire_completion_fences
+    from services.semantic_write_fencing import GAME_LOCK_NAMESPACE
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL semantic key independence')
+    first, second, pitcher = _canonical_pair()
+    plan = _plan(domains=('game_context',), pitchers=(pitcher,))
+    context = _capture_cohort_context(plan)
+    acquire_completion_fences(context, 'final')
+    with db.engine.begin() as writer:
+        started = perf_counter()
+        assert writer.execute(text('SELECT pg_try_advisory_xact_lock(:key)'),
+                              {'key': GAME_LOCK_NAMESPACE + 777124}).scalar_one()
+        elapsed = (perf_counter() - started) * 1000
+    assert elapsed < 1000
+    print(f'unrelated canonical game lock: {elapsed:.3f} ms')
+
+
+def test_reference_midnight_does_not_stale_completed_generation(app, monkeypatch):
+    from datetime import timezone
+    from services import availability_reference_date as dates, derived_intelligence as derived
+    resolve = dates.resolve_product_day
+    first, _, pitcher = _canonical_pair()
+    plan = _plan(domains=('game_context',), pitchers=(pitcher,))
+    monkeypatch.setattr(dates, 'resolve_product_day', lambda: resolve(
+        datetime(2026, 9, 9, 3, 59, 59, tzinfo=timezone.utc)))
+
+    def midnight():
+        monkeypatch.setattr(dates, 'resolve_product_day', lambda: resolve(
+            datetime(2026, 9, 9, 4, 0, 1, tzinfo=timezone.utc)))
+
+    result = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False,
+                                              before_revalidate=midnight)
+    assert result.cohort.status == 'complete'
+    assert derived.cohort_inputs_are_current(result.cohort, plan)
+    receipt = result.cohort.input_manifest_json[-1]['context']
+    assert receipt['reference']['product_date'] == '2026-09-08'
+    assert receipt['selectors']['canonical_versions']['final']['777123']['id'] == first
+
+
+def test_context_v1_receipt_remains_v1(app):
+    from services.derived_intelligence import _capture_cohort_context
+    plan = _plan(domains=('game_context',))
+    legacy = _capture_cohort_context(plan, recorded_context={'schema_version': 'cohort-build-context-v1'})
+    assert legacy.manifest_value()['schema_version'] == 'cohort-build-context-v1'
+    assert 'reference' not in legacy.manifest_value()
+    assert 'canonical_versions' not in legacy.manifest_value()['selectors']
+    assert legacy.product_date is None
+
+
+def test_canonical_capture_query_bound_and_determinism(app):
+    import json
+    from time import perf_counter
+    from sqlalchemy import event
+    from services.cohort_canonical_selectors import capture_canonical_selectors
+    from services.cohort_build_context import _json
+    first, second, pitcher = _canonical_pair()
+    first_row = db.session.get(FinalGameVersion, first)
+    values = {column.name: getattr(first_row, column.name)
+              for column in FinalGameVersion.__table__.columns if column.name != 'id'}
+    with db.engine.begin() as writer:
+        writer.execute(FinalGameVersion.__table__.insert(), [
+            {**values, 'game_pk': game} for game in range(777124, 777138)
+        ])
+    plan = _plan(domains=('game_context',), games=tuple(range(777123, 777138)), pitchers=(pitcher,))
+    # Resolve ORM plan state before measuring collector-only SQL.
+    games = list(plan.affected_game_ids_json)
+    statements = []
+    def record(*args):
+        statements.append(args[2])
+    event.listen(db.engine, 'before_cursor_execute', record)
+    try:
+        started = perf_counter()
+        captured = capture_canonical_selectors(plan)
+        elapsed = (perf_counter() - started) * 1000
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', record)
+    assert len(statements) == 2
+    assert len(captured['final']) == 15
+    assert all(captured['final'].values())
+    plan.affected_game_ids_json = list(reversed(games))
+    assert _json(capture_canonical_selectors(plan)) == _json(captured)
+    print(json.dumps({'canonical_games': 15, 'queries': len(statements),
+                      'capture_ms': round(elapsed, 3), 'selector_bytes': len(_json(captured).encode())}))
+    db.session.rollback()
+    from services.derived_intelligence import _capture_cohort_context
+    statements.clear()
+    event.listen(db.engine, 'before_cursor_execute', record)
+    try:
+        started = perf_counter()
+        context = _capture_cohort_context(plan)
+        context_ms = (perf_counter() - started) * 1000
+        context_queries = len(statements)
+        statements.clear()
+        started = perf_counter()
+        result = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False)
+        build_ms = (perf_counter() - started) * 1000
+        build_queries = len(statements)
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', record)
+    assert result.cohort.status == 'complete'
+    print(json.dumps({'fixture': '15 current Final games; game_context domain',
+                      'context_queries': context_queries, 'context_ms': round(context_ms, 3),
+                      'context_bytes': len(_json(context.manifest_value()).encode()),
+                      'canonical_completion_locks': 15,
+                      'cohort_queries': build_queries, 'cohort_ms': round(build_ms, 3)}))
+
+
+def test_two_current_games_advance_only_one_canonical_identity(app):
+    from services.derived_intelligence import _capture_cohort_context
+    first, second, pitcher = _canonical_pair()
+    row = db.session.get(FinalGameVersion, first)
+    values = {column.name: getattr(row, column.name)
+              for column in FinalGameVersion.__table__.columns if column.name != 'id'}
+    with db.engine.begin() as writer:
+        other = writer.execute(FinalGameVersion.__table__.insert().values(
+            **{**values, 'game_pk': 777124, 'version_number': 4}
+        ).returning(FinalGameVersion.id)).scalar_one()
+    plan = _plan(domains=('game_context',), games=(777124, 777123), pitchers=(pitcher,))
+    captured = _capture_cohort_context(plan)
+    with db.engine.begin() as writer:
+        _advance_final(writer, first, second)
+    changed = _capture_cohort_context(plan)
+    before = captured.canonical_versions()['final']
+    after = changed.canonical_versions()['final']
+    assert before['777124'] == after['777124']
+    assert after['777124']['id'] == other
+    assert before['777123']['id'] == first and after['777123']['id'] == second
+    assert after['777123']['predecessor_version_id'] == first
+
+
+def test_canonical_guard_upgrade_downgrade_preserves_versions(app):
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import text
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL guard migration')
+    first, second, _ = _canonical_pair()
+    db.session.rollback()
+    path = Path(__file__).resolve().parents[1] / 'migrations/versions/a5b8c1d4e7f0_fence_canonical_game_selectors.py'
+    spec = importlib.util.spec_from_file_location('canonical_guard_roundtrip', path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with db.engine.begin() as connection:
+        migration.op = Operations(MigrationContext.configure(connection))
+        before = connection.execute(text('SELECT * FROM final_game_versions ORDER BY id')).all()
+        migration.downgrade()
+        migration.upgrade()
+        after = connection.execute(text('SELECT * FROM final_game_versions ORDER BY id')).all()
+        assert before == after
+        count = connection.execute(text("SELECT count(*) FROM pg_trigger WHERE tgname='canonical_selector_write' AND tgenabled='O'" )).scalar_one()
+        assert count == 5
+
+
+def test_live_selector_cannot_override_captured_final(app):
+    from services.derived_intelligence import _capture_cohort_context
+    first, second, pitcher = _canonical_pair()
+    plan = _plan(authority='live', domains=('game_context',), pitchers=(pitcher,))
+    executor = _DefaultDomainExecutor(plan)
+    executor.build_context = _capture_cohort_context(plan)
+    assert executor.build_context.canonical_versions()['final']['777123']['id'] == first
+    with pytest.raises(RuntimeError, match='superseded_by_final'):
+        executor._live('game_context')
+
+
+def test_captured_reference_drives_roster_snapshot_age_check(app, monkeypatch):
+    from api import bullpen
+    from services import dashboard_snapshot
+    calls = []
+    def selected(**kwargs):
+        calls.append(kwargs['reference_date'])
+        return SimpleNamespace(snapshot_generated_at=datetime(2026, 9, 8))
+    monkeypatch.setattr(dashboard_snapshot, 'get_latest_valid_dashboard_snapshot', selected)
+    cutoff = bullpen._served_score_cutoff(semantic_reference_date=GAME_DATE)
+    assert cutoff == datetime(2026, 9, 8)
+    assert calls == [GAME_DATE]
+
+
+def test_pregame_insert_cannot_replace_captured_version_during_completion(app):
+    from sqlalchemy.exc import DBAPIError
+    from services.derived_intelligence import _capture_cohort_context
+    from services.selector_generation_fencing import acquire_completion_fences
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL insert selector guard')
+    first_source, second_source = _observation('pregame-v1'), _observation('pregame-v2')
+    first = GamePregameContextVersion(
+        game_pk=777123, version_number=1, baseball_date=GAME_DATE,
+        home_team_id=110, away_team_id=111, scheduled_at=datetime(2026, 9, 8, 20),
+        context_fingerprint='pregame-v1'.ljust(64, '0'), fingerprint_version='test-v1',
+        source_observation_id=first_source.id, completeness='complete',
+        observed_at=first_source.observed_at,
+    )
+    db.session.add(first)
+    db.session.commit()
+    values = {column.name: getattr(first, column.name)
+              for column in GamePregameContextVersion.__table__.columns if column.name != 'id'}
+    values.update(version_number=2, predecessor_version_id=first.id,
+                  source_observation_id=second_source.id, scheduled_at=datetime(2026, 9, 8, 21),
+                  context_fingerprint='pregame-v2'.ljust(64, '0'))
+    plan = _plan(authority='pregame_authoritative', domains=('game_context',), pitchers=())
+    captured = _capture_cohort_context(plan)
+    acquire_completion_fences(captured, plan.authority_class)
+    with pytest.raises(DBAPIError) as rejected:
+        with db.engine.begin() as writer:
+            writer.execute(GamePregameContextVersion.__table__.insert().values(**values))
+    assert rejected.value.orig.pgcode == '40001'
+    db.session.rollback()
+
+    def advance():
+        with db.engine.begin() as writer:
+            writer.execute(GamePregameContextVersion.__table__.insert().values(**values))
+    stale = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False,
+                                             before_revalidate=advance).cohort
+    assert stale.status == 'stale'
+    executor = _DefaultDomainExecutor(plan)
+    executor.build_context = captured
+    assert executor._pregame('game_context')['game']['777123']['game_context']['scheduled_at'] == '2026-09-08T20:00:00'
+    rebuilt = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False).cohort
+    assert rebuilt.status == 'complete'
+    assert rebuilt.input_manifest_json[-1]['context']['selectors']['canonical_versions']['pregame']['777123']['version_number'] == 2
+
+
+@pytest.mark.parametrize('scope', ['team', 'pitcher'])
+def test_roster_version_predicate_is_fenced_and_revalidated(app, monkeypatch, scope):
+    from models.roster_membership import RosterMembershipInterval
+    from sqlalchemy.exc import DBAPIError
+    from services import derived_intelligence as derived
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL canonical roster selector fence')
+    first, _, pitcher = _canonical_pair()
+    observation_id = db.session.get(FinalGameVersion, first).boxscore_observation_id
+    plan = _plan(authority='roster_authoritative', domains=('roster_composition',), games=(),
+                 teams=(110,) if scope == 'team' else (), pitchers=(pitcher,))
+    values = dict(pitcher_id=pitcher, player_mlb_id=9001, team_id=110, organization_id=110,
+                  membership_type='forty_man_roster', effective_start_date=GAME_DATE,
+                  authority_type='mlb_roster_endpoint', opened_by_observation_id=observation_id)
+    # Isolate the real manifest/completion owner from the deferred compatibility
+    # population recipe. No roster-status content closure is asserted here.
+    monkeypatch.setattr(_DefaultDomainExecutor, '_roster', lambda self, domain: {'summary': {}})
+    persist = derived._persist_snapshots
+    def boundary(cohort, snapshots):
+        with pytest.raises(DBAPIError) as rejected:
+            with db.engine.begin() as writer:
+                writer.execute(RosterMembershipInterval.__table__.insert().values(**values))
+        assert rejected.value.orig.pgcode == '40001'
+        persist(cohort, snapshots)
+    monkeypatch.setattr(derived, '_persist_snapshots', boundary)
+    completed = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False).cohort
+    assert completed.status == 'complete'
+    old = completed.input_manifest_json
+    with db.engine.begin() as writer:
+        writer.execute(RosterMembershipInterval.__table__.insert().values(**values))
+    assert not derived.cohort_inputs_are_current(completed, plan)
+    assert completed.input_manifest_json == old
+    monkeypatch.setattr(derived, '_persist_snapshots', persist)
+    rebuilt = execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False).cohort
+    assert rebuilt.status == 'complete'
+    assert rebuilt.input_manifest_json[-1]['context']['selectors']['canonical_versions']['roster_versions']
+
+
+def test_unbounded_canonical_predicates_fail_closed(app):
+    from services.derived_intelligence import _capture_cohort_context
+    plan = _plan(domains=('game_context',), games=(), teams=(), pitchers=())
+    with pytest.raises(ValueError, match='requires_bounded_scope'):
+        _capture_cohort_context(plan)
+    with pytest.raises(ValueError, match='requires_bounded_scope'):
+        execute_derived_intelligence_plan(plan.id, publication_candidate_enabled=False)
+
+
+def test_pitcher_only_final_appearance_selector_blocks_new_generation(app):
+    from sqlalchemy.exc import DBAPIError
+    from services.derived_intelligence import _capture_cohort_context
+    from services.selector_generation_fencing import acquire_completion_fences
+    if db.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL bounded appearance predicate')
+    _, _, pitcher = _canonical_pair()
+    plan = _plan(domains=('game_context',), games=(), pitchers=(pitcher,))
+    captured = _capture_cohort_context(plan)
+    assert captured.canonical_versions()['appearance_versions']
+    acquire_completion_fences(captured, 'final')
+    with pytest.raises(DBAPIError) as rejected:
+        with db.engine.begin() as writer:
+            writer.execute(FinalPitchingAppearanceVersion.__table__.update()
+                           .where(FinalPitchingAppearanceVersion.pitcher_id == pitcher)
+                           .values(is_current=False))
+    assert rejected.value.orig.pgcode == '40001'
+    db.session.rollback()
+
+
 @pytest.fixture
 def app():
     flask_app = Flask(__name__)
@@ -96,7 +543,7 @@ def test_default_executor_captures_selection_before_first_domain_and_reuses_it(a
         source = SimpleNamespace(id=41, payload={'generation': 'first'})
         selected = []
 
-        def select_source():
+        def select_source(**kwargs):
             selected.append(source.id)
             return source
 
@@ -160,7 +607,7 @@ def test_persisted_selector_lifecycle_rejects_drift_and_retries_postgresql(app, 
         db.session.commit()
         monkeypatch.setattr(
             dashboard_snapshot, 'get_latest_valid_dashboard_snapshot',
-            lambda: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
+            lambda **kwargs: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
                 .order_by(DashboardSnapshot.id.desc()).first(),
         )
         monkeypatch.setattr(atomic_publication_reads, 'publication_reader_coverage',
@@ -208,7 +655,7 @@ def test_persisted_selector_lifecycle_rejects_drift_and_retries_postgresql(app, 
         context_input = DerivedCohortInput.query.filter_by(
             cohort_id=first.id, input_type='build_context',
         ).one()
-        assert context_input.input_version == 'cohort-build-context-v1'
+        assert context_input.input_version == 'cohort-build-context-v2'
         assert context_input.input_fingerprint == first.input_manifest_json[-1]['input_fingerprint']
         assert first.input_manifest_json[-1]['context'] == consumed[0]
         if advance == 'none':
@@ -255,7 +702,7 @@ def test_two_workers_with_different_snapshot_generations_cannot_both_complete(ap
     captured_a, release_a = Event(), Event()
     monkeypatch.setattr(
         dashboard_snapshot, 'get_latest_valid_dashboard_snapshot',
-        lambda: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
+        lambda **kwargs: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
             .order_by(DashboardSnapshot.id.desc()).first(),
     )
 
@@ -744,7 +1191,7 @@ def _fenced_selector_fixture(monkeypatch):
     db.session.add(source)
     db.session.commit()
     monkeypatch.setattr(dashboard_snapshot, 'get_latest_valid_dashboard_snapshot',
-                        lambda: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
+                        lambda **kwargs: DashboardSnapshot.query.filter_by(snapshot_type='bullpen_dashboard')
                         .order_by(DashboardSnapshot.id.desc()).first())
     monkeypatch.setattr(_DefaultDomainExecutor, '__call__',
                         lambda executor, domain, snapshots: {'team': {'110': {
