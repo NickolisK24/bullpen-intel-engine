@@ -214,7 +214,7 @@ def _low(active, usable, unresolved, reason_code, data_state) -> TeamCoverageAss
 # ---------------------------------------------------------------------------
 
 
-def resolve_active_bullpen_membership(team_id, reference_date):
+def resolve_active_bullpen_membership(team_id, reference_date, *, semantic_reference_date=None):
     """Return ``(member_pitcher_ids, authority_complete)`` for a team.
 
     Reuses the Canonical Roster Authority (active roster + Role Authority, gated
@@ -231,7 +231,10 @@ def resolve_active_bullpen_membership(team_id, reference_date):
         # this module's siblings.
         from api.bullpen import build_team_roster_authority
 
-        authority = build_team_roster_authority(team_id, reference_date=reference_date)
+        authority = build_team_roster_authority(team_id, reference_date=reference_date, **(
+            {'semantic_reference_date': semantic_reference_date}
+            if semantic_reference_date is not None else {}
+        ))
         arms = (authority.get('evidence') or {}).get('bullpen_arms') or []
         ids = frozenset(
             arm.get('pitcher_id') for arm in arms if arm.get('pitcher_id') is not None

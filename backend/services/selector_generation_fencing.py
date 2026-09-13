@@ -91,6 +91,39 @@ def acquire_completion_fences(context, authority, *, session=None):
             raise SelectorFenceConflict('Selector generation database guard is not installed.')
         if isolation not in ('read committed', 'read uncommitted'):
             raise SelectorFenceConflict('Completion requires fresh READ COMMITTED selector reads.')
+        canonical = context.canonical_versions()
+        if canonical:
+            from services.semantic_write_fencing import GAME_LOCK_NAMESPACE
+
+            if not connection.execute(text(
+                "SELECT to_regprocedure('baseballos_guard_canonical_selector()') IS NOT NULL"
+            )).scalar_one():
+                raise SelectorFenceConflict('Canonical selector database guard is not installed.')
+            # Reuse the R2 writer key. Never wait while holding other owner/row
+            # locks: contention rejects this owner transaction for retry.
+            roster_scope = canonical.get('roster_scope') or {}
+            for team in sorted(roster_scope.get('teams') or ()):
+                if not connection.execute(text(
+                    'SELECT pg_try_advisory_xact_lock_shared(:key)'
+                ), {'key': 505000000 + int(team)}).scalar_one():
+                    raise SelectorFenceConflict(f'Canonical roster selector busy: {team}')
+            canonical_player_resources = {
+                (510000004, int(pitcher)) for pitcher in roster_scope.get('pitchers') or ()
+            }
+            appearance_scope = canonical.get('appearance_scope') or {}
+            if not appearance_scope.get('games'):
+                canonical_player_resources.update(
+                    (510000005, int(pitcher)) for pitcher in appearance_scope.get('pitchers') or ()
+                )
+            acquire_selector_fences(canonical_player_resources, shared=True, session=session)
+            games = set(appearance_scope.get('games') or ())
+            games.update(int(game) for name in ('final', 'pregame', 'live')
+                         for game in canonical.get(name, {}))
+            for game in sorted(games):
+                if not connection.execute(text(
+                    'SELECT pg_try_advisory_xact_lock_shared(:key)'
+                ), {'key': GAME_LOCK_NAMESPACE + game}).scalar_one():
+                    raise SelectorFenceConflict(f'Canonical game selector busy: {game}')
     return acquire_selector_fences(captured_resources(context, authority),
                                    shared=True, session=session)
 

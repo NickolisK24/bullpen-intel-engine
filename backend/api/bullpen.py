@@ -322,8 +322,10 @@ def _reliever_population_rows(rows, reference_date=None):
     return [row for row in rows if row[1].id in eligible_ids]
 
 
-def _served_score_cutoff():
-    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+def _served_score_cutoff(*, semantic_reference_date=None):
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot(**(
+        {'reference_date': semantic_reference_date} if semantic_reference_date is not None else {}
+    ))
     if snapshot is None:
         return None
     return snapshot.snapshot_generated_at
@@ -1787,7 +1789,7 @@ def _roster_authority_records(rows, availability_by_pitcher, reference_date):
     return records
 
 
-def build_team_roster_authority(team_id, reference_date=None):
+def build_team_roster_authority(team_id, reference_date=None, *, semantic_reference_date=None):
     """Canonical Roster Authority snapshot for a team (CRC entrypoint).
 
     Assembles the full bullpen-eligible population ONCE — active, off-roster, and
@@ -1805,7 +1807,7 @@ def build_team_roster_authority(team_id, reference_date=None):
         team_id,
         include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
         reference_date=ref,
-        calculated_at_lte=_served_score_cutoff(),
+        calculated_at_lte=_served_score_cutoff(semantic_reference_date=semantic_reference_date),
     )
     team_info = _team_info_lookup(team_id)
     authority = build_roster_authority(

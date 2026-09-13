@@ -209,6 +209,7 @@ def resolve_team_readiness_payload(
     arm_reads_out: Optional[dict] = None,
     classified_record_overrides: Optional[Mapping[int, Mapping[str, Any]]] = None,
     represented_date_override: Optional[date] = None,
+    semantic_reference_date: Optional[date] = None,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -269,10 +270,18 @@ def resolve_team_readiness_payload(
     )
     from team_operations import assemble_bullpen_readiness
 
-    sync_status = _sync_status_payload()
+    sync_status = _sync_status_payload(**(
+        {'reference_date': semantic_reference_date} if semantic_reference_date is not None else {}
+    ))
     # Resolved once and shared: the reference-date split and the freshness anchor
     # below both need this verdict, and it is not free to compute per team.
-    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
+    from services.dashboard_snapshot import snapshot_unavailable_reason
+    snapshot_freshness = serving_snapshot_freshness_authority(
+        source_snapshot, reference_date=semantic_reference_date,
+        unavailable_reason=(lambda snapshot: snapshot_unavailable_reason(
+            snapshot, reference_date=semantic_reference_date,
+        )) if semantic_reference_date is not None else None,
+    )
     if represented_date_override is not None:
         membership_reference_date, availability_reference_date = (
             trusted_slate_reference_dates(represented_date_override)
@@ -323,6 +332,8 @@ def resolve_team_readiness_payload(
     # shared with the trust classifier so the roster authority runs once.
     readiness_records, membership = resolve_readiness_population(
         records, team_id=team_id, reference_date=membership_reference_date,
+        **({'semantic_reference_date': semantic_reference_date}
+           if semantic_reference_date is not None else {}),
     )
     if isinstance(arm_reads_out, dict):
         try:

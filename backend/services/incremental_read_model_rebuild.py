@@ -209,6 +209,7 @@ def rebuild_read_model_impact(
                     board=board,
                     snapshot=shadow_snapshot,
                     what_changed=changed,
+                    semantic_reference_date=build_context.product_date if build_context else None,
                     publication_identity={
                         'contract': 'derived-cohort-read-model-v1',
                         'source_snapshot_id': getattr(shadow_snapshot, 'id', None),
@@ -291,6 +292,7 @@ def rebuild_read_model_impact(
                     pitcher_id,
                     freshness=freshness,
                     score_cutoff=getattr(shadow_snapshot, 'snapshot_generated_at', None),
+                    semantic_reference_date=build_context.product_date if build_context else None,
                 )
             except Exception as exc:
                 failures.append(_failure('pitcher_current', pitcher_id, exc))

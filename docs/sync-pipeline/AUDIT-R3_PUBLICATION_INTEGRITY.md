@@ -1195,3 +1195,393 @@ The migration definition and selector-fence implementation are unchanged.
 These are assertion corrections, not timeout retries. Hosted rerun, merge,
 controlled owner migration and natural recurrence remain separate rollout
 gates. F03 remains unresolved, SP-14 G/H remain blocked, and B1.2 has not begun.
+
+## 18. R3-B1.2 — Selector Capture Completion investigation, September 13
+
+**BLOCKED. No B1.2 runtime implementation or selector-completeness guarantee is
+established by this checkpoint.** The branch is `fix/audit-r3-selector-capture`,
+created in a clean separate worktree from exactly
+`51711beb5f43ff75dc31743cb8c42a7937e562ca`. The fetched integration branch matched
+that SHA. Older worktrees and all earlier diagnostics were preserved. The
+integration migration chain has one head, `f4a7b0c3d6e9`; no migration, deployment,
+production access, configuration change, commit, or PR was performed here.
+
+This investigation verifies the remaining boundary instead of treating the
+operational B1.1 PASS as selector completeness. The installed database guard's
+seven-table inventory does not contain fatigue, transaction-window, failure,
+roster, or canonical-version tables. The B1.1 resource helper and its existing
+commit-boundary protection remain unchanged.
+
+### 18.1 Reachable selection inventory and consumer boundaries
+
+The inventory below distinguishes direct generation from helper definitions
+that are not reached with SP-10's explicit arguments. It is a traced inventory,
+not a claim that the full dynamic helper/writer graph is certified complete.
+An unresolved row cannot be omitted from the eventual completeness assertion.
+
+| Family / selector | Actual selection point | Semantic scope and identity needed | Consumer / current capture |
+| --- | --- | --- | --- |
+| Dashboard | `_capture_read_context` -> `get_latest_valid_dashboard_snapshot` | Existing dashboard resource; selected ID, captured source copy, explicit miss | CU-06 snapshot and sidecar overrides already pinned by v1 |
+| Publication baseline | `_publication_baseline_required` -> `get_current_publication`, reader coverage | Existing publication resource; pointer and baseline decision | Already captured; do not change admission or authority |
+| Comparable predecessor | `_latest_comparable_cohort` | Authority group plus overlapping game/team/pitcher resources; selected cohort ID | Already scoped before selection/limit and fenced |
+| Live predecessor for Final lineage | `_latest_live_cohort` in executor setup | Live authority / affected games; selected superseded-cohort ID | Independently selected outside the captured predecessor entry; still needs capture |
+| Legacy comparison sidecars | `resolve_latest_team_state_comparison` during capture | Existing per-team comparison resources; captured selected receipts/results | Pinned; F05 authority deliberately unchanged |
+| Comparison appearance window | `team_changes._team_game_dates`, `_appearance_changes` | Team plus represented upper bound; selected distinct dates, comparison anchor, appearance IDs | Still independently queried even when sidecar resolver is captured |
+| CU-04 appearance windows | `_compute_pitcher_workload_rest` | Pitcher; explicit represented date, next-day availability date; 14-day row set, bounded latest-game date | Explicit dates already supplied, row selection not captured |
+| CU-04 team workload | `author_workload_windows` -> public team relief queries | Historical appearance-team scope and window; selected GameLog/ScheduledGame/ledger rows | Not equivalent to affected pitchers or affected game alone |
+| CU-05 fatigue population | `resolve_team_readiness_payload` -> `latest_fatigue_rows(team_id, limit)` | Team, existing limit and ordering, selected fatigue/Pitcher pairs at maximum calculated_at | Uncaptured; equal-time maximum currently returns a set, not one invented winner |
+| Pitcher-current fatigue | `build_public_pitcher_current_payload` | Pitcher and captured dashboard score cutoff; selected latest ID and ordered trend IDs | Different cutoff from CU-05, still independently selected |
+| Pitcher-current appearance anchor | `_workload_signal`, current payload builder | Pitcher; unbounded latest GameLog date plus each actual window | Cannot substitute CU-04's bounded latest date without changing behavior |
+| Role / eligibility / recent work | `usage_logs_by_pitcher`, `role_logs_by_pitcher`, `build_public_recent_work_payload` | Included pitcher IDs, each consumer's window, ordering and fallback anchor | Multiple row-set selectors, not a single current workload row |
+| Legacy active population | `resolve_active_bullpen_membership` -> `api.bullpen.build_team_roster_authority` | Team/date; selected compatibility pitchers, role inputs and roster-readiness evidence | Governed interval IDs do not capture this separately selected population |
+| Governed membership | `capture_input_manifest`, SP-05 current/date-effective intervals | MLB team/pitcher/type/date; current nonvoid interval IDs | Existing manifest partly enumerates; consumer population still differs; preserve R1 |
+| Workload failures | `availability_snapshot._unresolved_workload_fetch_failure_refs` | Included pitcher MLB IDs, entity_type=pitcher_game_logs, unresolved predicate | Absence is also a selection; inserts/resolution must fence the same resource |
+| Public sync readiness | CU-05 -> `_sync_status_payload` -> `build_sync_status_payload` | Actual public-job latest/successful/running selectors, daily/postgame IDs, global workload and fatigue anchors | Independently recomputed per readiness call; global consumption cannot be mislabeled team-local |
+| Roster readiness | `source_readiness._roster_status_snapshot_readiness` and roster authority | Latest roster snapshot/date; active-team and covered-team selections; applicable failure IDs | Not one persisted readiness generation; fallback scope remains unresolved |
+| Appearance-ledger trust | `_appearance_ledger_complete` -> `build_appearance_ledger` | Actual league/date window; scheduled Final games, postgame marker IDs, stored appearance selection | Used even for one team's rested-arm coverage; cannot omit league dependency |
+| Slate trust | `build_sync_status_payload` -> `compute_slate_coverage` | Selected slate date; schedule/processed-game/failure sets | Actual dependencies extend beyond a single affected game |
+| Transaction window | `build_public_recent_transactions` -> `latest_transaction_sync_window` | Currently global source window ordered by attempted_at then ID; exact selected ID and source dates | Independently selected for each team; reference_date does not pin the window |
+| Transaction events | Public recent transactions query and participant qualification | Team touching from/to, selected window bounds and represented cutoff; ordered event/current-version and participant IDs | Window identity alone does not pin events; correction predicates can alter selection |
+| Published Team State | `_published_team_state`, league listing artifact loader and selection | Captured source snapshot + team + artifact type/subject/lifecycle predicates; selected artifact IDs | Snapshot ID is pinned, artifact lookup is not; existing comparison fences cover some writes but not all capture scopes |
+| CU-06 Tonight sidecars | `_default_tonight_builder` passes a captured snapshot resolver to workload/rest/rotation listings | Same captured dashboard source | Snapshot selection already pinned; do not double-count payload-derived sidecars as independent snapshots |
+| Tonight bullpen/context | `build_team_bullpen_context`, current comparison helpers | Teams/date; fatigue, eligibility/role, Team State artifact selections | Snapshot overrides do not eliminate these current row selections |
+| Game/slate row | CU-06 `SlateGame.query`, `game_context.build_team_game_context` | Game identity or team/date; actual selected SlateGame, latest stored game and representative row | Independently selected; latter uses current Pitcher team join and bounded latest date |
+| Performance/deployment | Public team relief/performance, starter-assignment and season-ledger helpers | Team/pitcher, season/window, historical appearance ownership and coverage-row selection | Must retain separate selectors rather than rename all as immutable Final input |
+| Current canonical Final | `_final_context`, `capture_input_manifest` | Game; current FinalGameVersion and current appearance version IDs | Captured in original manifest, but consumer reselects; B1.1 completion locks do not include R2 game resource |
+| Current provisional | `_live` | All current provisional rows for affected games, including current/Final supersession predicate | Consumer lacks collector's optional pitcher filter; identities and exact consumed set must agree |
+| Pregame version | `_pregame` | Game; highest version number and explicit missing selection | Consumer repeats latest query after manifest capture |
+| Team directory identity | `valid_team_directory`, game/team helper `first()` queries | Actual candidate directory population and selected identity rows | Current Pitcher projections still affect which identity is selected |
+| Semantic clock fallback | Candidate reference_date, pitcher `_reference_date`, readiness freshness, ledger/role/date fallbacks | One captured product-time authority, with per-consumer represented-date precedence | v1 has represented_date but no common fallback context; midnight counterexample reproduced |
+| Runtime measurement time | Domain start/completion timestamps, perf_counter, display-only generated_at | Not a source generation when used only as diagnostics | Do not add nanosecond noise to semantic fingerprints; inspect any value also used as a cutoff separately |
+
+CU-05 currently receives no `source_snapshot` from `_team_result`, even though
+CU-06 later receives the captured source. Readiness's explicit represented-date
+override pins membership/availability dates but does not pin its global sync
+freshness or fatigue selection. Baseline capture uses all 30 comparisons while
+CU-05 can also expand teams from current Pitcher assignment. Each actual consumer
+scope must be represented; requested scope alone is insufficient.
+
+### 18.2 Writer/fence inventory and proposed build contract
+
+| Selection resource | Production-capable writer paths inspected | Existing protection / remaining obligation |
+| --- | --- | --- |
+| Fatigue per pitcher/cutoff | `sync.recalculate_all_fatigue`, `fatigue.recalculate_all_fatigue`, CLI recalculation and post-backfill recalculation, seed utility | No B1 selector guard on fatigue_scores; application-only changes would leave old/direct writers outside protocol |
+| GameLog window/anchor | Legacy/SP final compatibility paths via shared R2 game owner; repair/backfill owners | R2 serializes writers but current B1 readers do not acquire that semantic resource; must coordinate completion too |
+| Failure selection | `dead_letter.record_failure` / resolution, `sync_control_plane.record_failure`, repair/retry paths | No B1 selector guard on sync_failures; insert and resolved-predicate changes both matter |
+| Public run readiness | `sync_metadata` start/finalize/progress, control-plane owner | No selector-generation guard on sync_runs; must avoid fencing internal SP-10 bookkeeping as public evidence |
+| Roster population/readiness | SP-05 `_update_current_and_snapshots`; legacy roster/assignment synchronization and `_upsert_roster_status_snapshot` | R1/R2 protect baseball authority, not this cohort reader selection; team movement needs old/new resource keys |
+| Transaction windows/current events | SP-05 transaction job -> `transaction_ingestion.sync_transactions` / `_record_sync_window`; legacy ingestion and correction paths | R2 event writer fence exists; global latest-window selector is a different resource and is unguarded |
+| Final/live/pregame current versions | SP-07 `reconcile_final_game`, SP-08 owner, SP-06 owner and governed repairs | R2 game ownership retained; completion must coordinate on current-version selection without inventing arrival ordering |
+| Public artifact/snapshot selections | Dashboard publisher; share lifecycle; comparison sidecars; atomic publisher | B1.1 DB guards exist; missing captured artifact selections and effective resource sets remain |
+| Schedule/ledger readiness | Schedule/slate writers, postgame processing, appearance ledger coverage/split owners | Per-game/date selector and older-binary guard mapping still required; not certified by existing seven-table trigger |
+
+The future context should explicitly be `cohort-build-context-v2`, not a silent
+reinterpretation of v1. Each entry needs **consumer + predicate/window + effective
+subjects + ordered selected IDs/version IDs + explicit missing/partial state**.
+A single domain-wide `latest_fatigue_id` is incorrect: CU-05 and pitcher-current
+use different cutoffs. Immutable copies/ID-bounded reader arguments must reach
+the actual helper; merely recording the IDs while calling its latest query again
+does not establish capture. Clock is captured once; the fingerprint records
+semantic dates/cutoffs, not irrelevant wall-clock precision.
+
+No v2 type or new lock namespace is introduced at this checkpoint. The existing
+shared-reader/exclusive-writer protocol remains the intended mechanism. The
+new resources need OLD/NEW predicate-aware writer mapping and a reviewed DB
+backstop for deployed older/direct writers. Existing tables/JSON can store the
+context, but extending database guards would require a new additive migration;
+editing f4a7b0c3d6e9 or installing DDL at runtime is prohibited. A global table
+hash or one global pipeline lock is not an acceptable substitute.
+
+The complete bounded writer/predicate mapping and explicit downstream reader
+interfaces are **not yet established**. Consequently it would be false to add
+`selector_context_complete=true` or permit v2-certified completion. This is the
+implementation blocker; it is not a claim that the problem is impossible.
+
+### 18.3 PostgreSQL negative evidence
+
+`backend/reports/r3b12_selector_capture_probe.py` retains six explicit diagnostic
+assertions. They pass by reproducing the missing guarantees, not by proving a
+fix. The first three use the actual executor/persistence/completion guard with
+an injected domain that isolates the real selection helper. Separate PostgreSQL
+connections commit while the executor is after validation and before snapshot
+persistence/outer commit:
+
+| Diagnostic | Before -> after | Persisted consequence |
+| --- | --- | --- |
+| Fatigue selector | score ID 1 -> 2 | Complete cohort; same context fingerprint |
+| Transaction window | window ID 1 -> 2 | Complete cohort; same context fingerprint |
+| Workload failure selection | empty -> MLB ID 9001 unresolved | Complete cohort; same context fingerprint |
+| Clock fallback | September 8 -> September 9 | Pitcher reference helper changes date; recaptured context identity unchanged |
+| Canonical Final | V1 -> V2 under the existing R2 game lock | Real default game-context domain persists V1 complete after V2 committed; later currentness check is false |
+| Cost diagnostic | Sparse v1 baseline only | 34 capture SQL statements, 29.883 ms, 5,257 JSON bytes, 35 completion resources |
+
+The Final diagnostic stages version fixtures and changes the current-version
+selection under R2's game resource; it is not a manufactured production
+correction or a claim of full SP-07 source ingestion proof. All six run only on
+disposable local PostgreSQL. Writer commits in the first three measured
+2.397–2.826 ms. No v2 performance claim is made. The original
+`Pitcher.roster_status NULL -> injured_list` diagnostic is untouched.
+
+### 18.4 Validation and checkpoint boundary
+
+The unchanged base's B1.1 smoke suite passed 31 PostgreSQL cases. An earlier
+Windows `localhost` run had 27 passes and four latency assertions at roughly
+2,060 ms for fresh connections. Explicit loopback (`PGHOSTADDR=127.0.0.1`) removed
+that connection delay: 31 passed in 31.92 seconds without changing assertions or
+runtime code. The six new diagnostic assertions passed in 6.83 seconds.
+
+Final receipt `r3b12-regressions.xml`: **296 passed in 216.18 seconds**, comprising
+287 existing regression cases and nine negative-evidence assertions. These
+groups must not be conflated: the latter reproduce unresolved defects. Counts:
+
+| Suite | Passed |
+| --- | ---: |
+| SP-09 | 10 |
+| SP-10 including B1.1 | 51 |
+| SP-11 / R3-A publication, reads, cutover, route boundary | 45 |
+| R1 isolation, health, roster/transaction authority | 39 |
+| R2 shared writer fencing | 23 |
+| Queue and job/claim suites | 24 |
+| Migration authority | 77 |
+| SP-14 certification / full chain | 17 / 1 |
+| Preserved F03/F05 diagnostic | 3 |
+| New B1.2 negative-evidence diagnostic | 6 |
+
+A final six-case rerun added an explicit assertion that the persisted candidate
+still contains the old selected identity after the independent writer commits:
+**6 passed in 6.89 seconds**. No runtime code or test threshold changed.
+Accounting passed: **447 files / 10,066 nodes**, zero missing, extra or duplicate
+assignments. Reports are explicitly invoked diagnostics outside hosted `tests/`
+collection; they are not silently represented as new hosted regression coverage.
+`git diff --check` passed. The graph remains at `f4a7b0c3d6e9`.
+
+There is no B1.2 reader-first/writer-first success matrix, midnight fix, v2
+determinism proof, completeness assertion, or full writer-bypass proof yet.
+Historical contexts are unchanged. F03 remains CONFIRMED and UNFIXED; SP-14
+G/H remain blocked. The next work remains B1.2, not B2, R3-C, or R3-D. No commit
+or PR is eligible under the requested local PASS gate.
+
+## 19. R3-B1.2-A — Reference Time and Canonical Version Capture
+
+This section records the subsequent bounded implementation, based on
+`51711beb5f43ff75dc31743cb8c42a7937e562ca` on
+`fix/audit-r3-selector-capture`. Section 18 and its probe are retained unchanged
+as the pre-fix investigation. B1.2 is split into A (reference/canonical), B
+(workload/readiness selectors), and C (transactions/artifacts/completeness).
+This slice does not certify F03 or implement B/C.
+
+### 19.1 Original counterexamples and clock inventory
+
+The retained PostgreSQL diagnostic inserted Final V2 after the final selector
+check, while a cohort still committed complete from V1. It also demonstrated
+that a product-date fallback could move from September 8 to September 9 without
+changing the v1 context. The original report remains a reproduction for the
+base revision; its synchronous blocking writer must not be run inside the new
+shared fence. Permanent separate-connection tests now exercise both orderings.
+
+| Reachable call site | Clock/authority | Effect and handling |
+| --- | --- | --- |
+| `_capture_read_context` → dashboard `snapshot_unavailable_reason` | Product calendar date | Snapshot age can change selection; receives captured date |
+| CU-05 `resolve_team_readiness_payload` → sync metadata | Product calendar date | Freshness and empty-data slate fallback receive captured date |
+| CU-05 serving-snapshot freshness/trust | Product calendar date | Both the age check and nested trust check receive captured date |
+| CU-05 and direct roster population → `_served_score_cutoff` | Product calendar date | Dashboard freshness may remove a fatigue cutoff; captured date propagated through both membership paths |
+| Team Board v2 candidate reference fallback | Product calendar date | Explicit source freshness date wins; otherwise captured date |
+| Pitcher-current reference fallback | Product calendar date | Explicit source availability date wins; otherwise captured date |
+| Recent transactions and team game-context helpers | Caller reference date | Candidate builder supplies resolved reference; no new wall-clock selection |
+| CU-04 fatigue/rest windows | Represented date and governed next-day availability | Already explicit; no clock replacement |
+| CU-06 Tonight, schedule, bullpen context | Selected game's baseball date | Already explicit; sidecars retain B1.1 snapshot resolver |
+| Role, appearance-ledger and roster-readiness helpers | Caller baseball date | Passed explicitly along the cohort path |
+| Published board/league freshness | Captured snapshot payload | Runtime overlay disabled on this cohort path |
+| Public-serving package construction fallback | Product date | Package construction is upstream of the captured dashboard, not rerun by CU-06's published-board reader |
+| Cohort started/completed, generated-at fallbacks | Operational timestamp | Metadata only; unchanged |
+| Worker lease expiry and sync writer recovery | Live UTC clock | Ownership/liveness, not a frozen baseball reference; unchanged |
+
+`build_sync_status_payload` also computes an active-writer summary with a live
+clock. The cohort readiness recipe does not consume that summary. It consumes
+the explicitly dated freshness/coverage and retained sync/failure evidence;
+capture of the latter generations remains B1.2-B. Remaining standalone public
+helpers retain their existing live-clock defaults when no cohort reference is
+supplied. The cohort-specific call chain supplies the reference explicitly.
+
+### 19.2 Reference and canonical context
+
+New default builds use `cohort-build-context-v2`. The frozen context adds:
+
+* `reference`: product date, resolved timezone and timezone-fallback limitations;
+* `selectors.canonical_versions`: bounded game identities and copied canonical
+  values needed by the direct domain builders.
+
+The represented plan date stays a separate baseball authority. Source freshness
+dates retain precedence over a fallback date. The reference is captured once,
+without process identifiers, random IDs or a wall-clock instant in its
+fingerprint. Revalidation uses the recorded reference: midnight alone does not
+make an already captured cohort stale. A new capture resolves the new product
+day. No lease clock is frozen.
+
+| Canonical source | Selector/identity | Consumer and writer boundary |
+| --- | --- | --- |
+| `FinalGameVersion` | Current ID, version number, predecessor, fingerprint, observation and completeness | Final game-context values copied once; SP-07/correction uses R2 game lock |
+| `GamePregameContextVersion` | Maximum version per affected game, ID/fingerprint/source observation | Pregame builder consumes captured values; SP-06 uses R2 game lock |
+| `ProvisionalPitchingAppearanceState` | Current rows per affected game, observation/fingerprint/completeness and consumed values | Live builder consumes copies; SP-08 uses R2 game lock |
+| `FinalPitchingAppearanceVersion` | Current version IDs/fingerprints, parent Final ID and predecessor, with explicit game/pitcher predicate | Captured into v2 as well as the existing manifest; game-scoped fence or pitcher predicate fence |
+| Source observations | Explicit IDs from plan/canonical versions | Immutable references; no independent current-observation lookup added |
+| Roster membership intervals | Current nonvoid interval IDs, effective dates, source observations and predecessor, with explicit team/pitcher predicate | Captured and fenced as declared canonical inputs. Actual bullpen population still consumes legacy compatibility projections; this does not replace that population or close its content |
+| GameLog, ScheduledGame/SlateGame, Pitcher, FatigueScore | Mutable compatibility state | Not relabeled as canonical versions. Their unresolved selector/content work remains documented in B1.2-B/C and B2/B3 |
+
+Final and pregame misses are stored as explicit null identities and their
+required direct domain fails closed. Missing live rows fail the live domain;
+captured Final authority supersedes a live candidate. Corrections retain exact
+predecessor IDs; old contexts and artifacts are not rewritten. The game list is
+normalized for canonical selection. The existing requested-game order remains
+in the outer context because CU-06's first-game behavior makes that order
+semantically relevant; this slice does not change that behavior.
+
+### 19.3 Completion fence and migration
+
+Canonical completion acquires nonblocking shared transaction advisory locks on
+the **existing SP-05 team key `505000000 + team_id`**, applicable pitcher
+predicate keys, and the **existing R2 game key `507000000000 + game_pk`**.
+Each resource set is sorted and deduplicated. Two-integer namespaces
+`510000004` (roster pitcher predicate) and `510000005` (Final-appearance pitcher
+predicate) protect pitcher-only selectors, including insertions in a previously
+unrepresented team/game. Their writers participate through the database guard.
+Completion then uses B1.1's existing selector locks, fresh database revalidation, worker
+claim check, candidate persistence and outer commit. Conflicts require owner
+transaction retry; no reverse-order blocking wait is introduced. The source
+collector uses `populate_existing` so cached ORM instances cannot stand in for
+fresh database authority. Builders read context copies, not current queries.
+
+SP-05, SP-06, SP-07 and SP-08 already acquire the matching exclusive team/game
+lock before mutation. Additive migration `a5b8c1d4e7f0`, descending only from
+`f4a7b0c3d6e9`, adds INSERT/UPDATE/DELETE guards on the four canonical game tables
+and roster membership intervals. Direct/older writers acquire the same exclusive keys or receive retryable
+SQLSTATE 40001. Old and new subject keys are guarded if an update changes a
+key. Ungoverned TRUNCATE is rejected. There is no global game or roster lock. Downgrade
+removes only this guard function/triggers; it does not alter retained versions.
+
+Final review found that protecting only the direct game builders would omit
+canonical interval and appearance predicates already declared by the manifest.
+Those receipts are authority inputs too. The final implementation captures and
+fences their selection, including pitcher-only scopes. It does not hash or
+replace legacy roster/workload projection content. New default builds reject
+unbounded canonical predicates before the manifest query; no global exclusion
+lock or silent league-wide selection is substituted. Separate PostgreSQL tests
+cover team and pitcher roster predicates and pitcher-only Final appearances.
+
+The migration is **local and unapplied to production**. Operational adoption
+will require reviewed migration-definition promotion to the main owner before
+integration verify-only execution can accept the new head. No historical
+migration was edited. Local fresh PostgreSQL upgrade through `f4a7b0c3d6e9`
+followed by exactly `f4a7b0c3d6e9 → a5b8c1d4e7f0` succeeded. The resulting graph
+has one head. A guard downgrade/upgrade test preserves every Final row.
+
+### 19.4 Proof and measured bounds
+
+Permanent PostgreSQL tests cover reader-first correction blocking until the
+outer completion commit, writer-first stale detection despite a cached V1 ORM
+object, retry on V2, direct-writer rejection, unrelated game concurrency,
+post-commit historical immutability, corrected predecessor identity, two-game
+scope isolation, and rejection of live selection when Final is present.
+Deterministic clock injection covers midnight during a complete cohort build,
+new capture after midnight, and continued validation using the old reference.
+Historical v1 receipts retain v1 semantics; they do not gain v2 certification.
+
+Measured on disposable PostgreSQL, not production:
+
+| Fixture/operation | SQL | Time / size |
+| --- | ---: | --- |
+| Canonical collector, 15 populated Final games and appearance receipts | 2 | 4.261 ms; 5,358 selector bytes |
+| Full context, same 15 games | 4 | 6.306 ms; 6,092 context bytes |
+| Full game-context cohort, same 15 games | 75 | 54.740 ms; 15 canonical completion locks |
+| Completion fence, existing sparse reader baseline fixture | 38 | 16.437 ms |
+| Uncontended existing selector exclusive lock | 1 | 0.759 ms |
+| Unrelated canonical game lock | 1 | 0.949 ms |
+
+The 15-game measurement is a Final game-context fixture, not a full 30-team
+public payload benchmark. Canonical collection is set based; pregame selection
+uses a grouped maximum joined back to the version table rather than returning
+all historical versions. Requested-scope order reversal leaves the canonical
+selection serialization unchanged.
+
+### 19.5 Boundaries and remaining work
+
+F03 remains **CONFIRMED and UNFIXED**:
+“Cohort manifest does not cover the mutable inputs actually used to build frozen
+public payloads”. The preserved `Pitcher.roster_status` diagnostic remains
+required negative evidence. This slice does not close roster/workload semantic
+content, fatigue/readiness generation, transaction windows, remaining artifact
+selection, or full selector completeness. It does not change What Changed
+comparison authority.
+
+SP-14 only learns the local schema target for Gate A. Gates G/H remain blocked;
+no activation stage, publication pointer, public reader authority, migration
+configuration, Render setting or production database was changed. Next after
+this slice's validated local closeout is B1.2-B, then B1.2-C, B2/B3/B4 and R3-C/D.
+
+### 19.6 Local closeout receipts
+
+**PASS — R3-B1.2-A COMPLETE; R3-B1.2-B MAY BEGIN** is a local implementation
+verdict only. No push, merge, deployment, migration promotion or B work occurred.
+
+The final broad PostgreSQL run passed **461 tests**, with one existing Phase 0E
+branch-specific check skipped because no Phase 0E document branch diff exists.
+The final complete SP-10/canonical run passed **69 tests**, including the
+additional pitcher-only appearance case. Pregame insertion cannot cross the
+shared completion boundary; writer-first insertion makes the old cohort stale,
+the old builder retains its captured schedule, and retry uses V2.
+The dashboard/readiness compatibility run passed **91 tests**. Together these
+are **553 distinct passing cases**, including three deliberately preserved
+negative F03/F05 diagnostics. Those negative assertions are not closure proof.
+
+| Regression group | Passing cases |
+| --- | ---: |
+| SP-10, B1.1 and A | 69 (51 existing + 18 new A cases) |
+| SP-07 / SP-08 / pregame authority | 21 / 10 / 32 |
+| SP-09 | 10 |
+| SP-11 / R3-A publication, read, boundary, cutover | 45 |
+| CU-05 / CU-06 / share generation | 22 / 21 / 45 |
+| R1 isolation / health / roster-transaction | 10 / 4 / 25 |
+| R2 writer fencing | 23 |
+| Queue / jobs | 18 / 6 |
+| Migration authority | 77 |
+| SP-14 / full chain | 17 / 1 |
+| Graph/document checks | 3; one unrelated branch-specific skip |
+| Preserved F03/F05 diagnostic | 3 |
+| Additional dashboard/readiness compatibility | 91 |
+
+The initial broad run had loaded the old expected migration-head constant
+before its local update and failed that single graph assertion. The final run
+used the new target and passed; no graph or safety assertion was loosened.
+Final receipt filenames are `r3b12a-authority-regressions.xml`,
+`r3b12a-compatibility.xml`, and `r3b12a-final-canonical.xml` in the local
+validation receipt directory. Earlier game-only receipts remain diagnostic
+history and are not substituted for the final authority-inclusive run.
+
+Final accounting **passed: 447 files / 10,084 nodes**, with zero missing, extra
+or duplicate assignments after the eighteen new cases. `git diff --check`
+passed. Historical migration definitions and the original untracked selector
+probe were preserved. F03 remains CONFIRMED and UNFIXED; the next implementation
+slice is B1.2-B, not B2.
+
+Files in this local slice (all paths relative to the repository):
+
+* Context/canonical capture: `backend/services/cohort_build_context.py`,
+  `backend/services/cohort_canonical_selectors.py`,
+  `backend/services/derived_intelligence.py`.
+* Date propagation: `backend/api/bullpen.py`, `backend/api/team_operations.py`,
+  `backend/services/dashboard_snapshot.py`,
+  `backend/services/incremental_arm_read_team_state.py`,
+  `backend/services/incremental_read_model_rebuild.py`,
+  `backend/services/public_pitcher_current.py`,
+  `backend/services/publication_read_model_artifacts.py`,
+  `backend/services/share_artifact_generation.py`,
+  `backend/services/team_readiness_coverage.py`.
+* Fences/schema target: `backend/services/selector_generation_fencing.py`,
+  `backend/services/sync_pipeline_certification.py`,
+  `backend/migrations/versions/a5b8c1d4e7f0_fence_canonical_game_selectors.py`.
+* Tests: `backend/tests/db_config.py`,
+  `backend/tests/test_derived_intelligence.py`,
+  `backend/tests/test_phase0e_exit_docs.py`.
+* Preserved investigation and continued report:
+  `backend/reports/r3b12_selector_capture_probe.py`,
+  `docs/sync-pipeline/AUDIT-R3_PUBLICATION_INTEGRITY.md`.

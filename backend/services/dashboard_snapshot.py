@@ -220,7 +220,7 @@ def payload_version_valid(snapshot):
     )
 
 
-def snapshot_unavailable_reason(snapshot, sync_status=None):
+def snapshot_unavailable_reason(snapshot, sync_status=None, *, reference_date=None):
     if snapshot is None:
         return 'dashboard_snapshot_missing'
     if snapshot.status != SNAPSHOT_STATUS_READY:
@@ -239,7 +239,7 @@ def snapshot_unavailable_reason(snapshot, sync_status=None):
 
     payload_freshness = _payload_freshness(snapshot.payload)
     data_age_days = (
-        (product_current_date() - snapshot.data_through).days
+        ((reference_date or product_current_date()) - snapshot.data_through).days
         if snapshot.data_through is not None
         else None
     )
@@ -255,8 +255,8 @@ def snapshot_unavailable_reason(snapshot, sync_status=None):
     return None
 
 
-def snapshot_current_enough(snapshot, sync_status=None):
-    if snapshot_unavailable_reason(snapshot, sync_status=sync_status) is not None:
+def snapshot_current_enough(snapshot, sync_status=None, *, reference_date=None):
+    if snapshot_unavailable_reason(snapshot, sync_status=sync_status, reference_date=reference_date) is not None:
         return False
     return True
 
@@ -1087,9 +1087,9 @@ def latest_dashboard_snapshot_unavailable_reason(
     return snapshot_unavailable_reason(latest_record)
 
 
-def get_latest_valid_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):
+def get_latest_valid_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD, *, reference_date=None):
     snapshot = get_latest_dashboard_snapshot(snapshot_type=snapshot_type)
-    if snapshot_current_enough(snapshot):
+    if snapshot_current_enough(snapshot, reference_date=reference_date):
         return snapshot
     return None
 

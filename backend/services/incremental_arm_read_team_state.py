@@ -98,6 +98,7 @@ def recompute_arm_reads_team_state(
     readiness_provider=None,
     authoritative_readiness_provider=None,
     membership_provider=None,
+    semantic_reference_date=None,
 ):
     """Recompute only Arm Reads and Team States invalidated by CU-04 work."""
     pitcher_ids = tuple(sorted(set(_get(cu04_result, 'pitchers_recomputed') or ())))
@@ -142,7 +143,11 @@ def recompute_arm_reads_team_state(
             })
     arm_ms = (perf_counter() - pitcher_started) * 1000.0
 
-    membership_resolver = membership_provider or resolve_active_bullpen_membership
+    membership_resolver = membership_provider or (
+        (lambda team, represented: resolve_active_bullpen_membership(
+            team, represented, semantic_reference_date=semantic_reference_date,
+        )) if semantic_reference_date is not None else resolve_active_bullpen_membership
+    )
     team_ids = set(input_team_ids)
     active_affected_ids = set()
     for team_id in sorted(team_ids):
@@ -175,6 +180,7 @@ def recompute_arm_reads_team_state(
                 overrides=overrides,
                 source_snapshot=source_snapshot,
                 represented_date=data_through,
+                semantic_reference_date=semantic_reference_date,
             )
             if incremental is None:
                 failures.append({
@@ -194,6 +200,7 @@ def recompute_arm_reads_team_state(
                     overrides=overrides,
                     source_snapshot=source_snapshot,
                     represented_date=data_through,
+                    semantic_reference_date=semantic_reference_date,
                 )
                 if authoritative is None:
                     failures.append({
@@ -301,7 +308,7 @@ def _classified_override(pitcher_id, workload_result, *, availability_date):
 
 
 def _resolve_team(
-    provider, team_id, *, overrides, source_snapshot, represented_date,
+    provider, team_id, *, overrides, source_snapshot, represented_date, semantic_reference_date=None,
 ):
     arm_reads = {}
     references = {}
@@ -312,6 +319,8 @@ def _resolve_team(
         arm_reads_out=arm_reads,
         classified_record_overrides=overrides,
         represented_date_override=represented_date,
+        **({'semantic_reference_date': semantic_reference_date}
+           if semantic_reference_date is not None else {}),
     )
     if payload is None:
         return None

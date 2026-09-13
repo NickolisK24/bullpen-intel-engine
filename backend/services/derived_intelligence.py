@@ -276,6 +276,9 @@ def execute_derived_intelligence_plan(
         return CohortExecutionResult(None, False, None, zero_work=True)
 
     execution = dependency_closure(requested)
+    if domain_executor is None:
+        from services.cohort_canonical_selectors import require_bounded_canonical_scope
+        require_bounded_canonical_scope(plan)
     manifest = capture_input_manifest(plan)
     versions = method_version_manifest(execution)
     overrides = dict(getattr(plan, 'method_versions_override_json', None) or {})
@@ -466,11 +469,12 @@ def execute_derived_intelligence_plan(
     return CohortExecutionResult(cohort, True, publication)
 
 
-def _capture_cohort_context(plan, *, exclude_cohort_id=None):
+def _capture_cohort_context(plan, *, exclude_cohort_id=None, recorded_context=None):
     predecessor = _latest_comparable_cohort(plan, exclude_cohort_id=exclude_cohort_id)
     executor = _DefaultDomainExecutor(
         plan, predecessor_cohort_id=predecessor.id if predecessor else None,
     )
+    executor.recorded_context = recorded_context
     return executor._capture_read_context()
 
 
@@ -486,7 +490,7 @@ def recapture_cohort_input_manifest(cohort, plan):
     current = capture_input_manifest(plan)
     if contexts:
         current.append(_capture_cohort_context(
-            plan, exclude_cohort_id=cohort.id,
+            plan, exclude_cohort_id=cohort.id, recorded_context=contexts[0].get('context'),
         ).manifest_entry(plan.authority_class))
     # Historical/custom-executor manifests retain their previous contract.
     # This is not full input-closure certification.
@@ -501,10 +505,10 @@ class _DefaultDomainExecutor:
         self.predecessor_cohort_id = predecessor_cohort_id
         self.cache = {}
         self.build_context = None
+        self.recorded_context = None
 
     def __call__(self, domain, snapshots):
-        if self._uses_read_models():
-            self._capture_read_context()
+        self._capture_read_context()
         if self.plan.authority_class == AuthorityClass.LIVE.value:
             return self._live(domain)
         if domain in ('roster_composition', 'organizational_depth', 'bullpen_churn'):
@@ -540,7 +544,10 @@ class _DefaultDomainExecutor:
 
     def _team_result(self):
         if 'team_result' not in self.cache:
-            self.cache['team_result'] = recompute_arm_reads_team_state(self._workload_result())
+            context = self._capture_read_context()
+            self.cache['team_result'] = recompute_arm_reads_team_state(
+                self._workload_result(), semantic_reference_date=context.product_date,
+            )
             if self.cache['team_result'].status != 'complete':
                 raise RuntimeError(self.cache['team_result'].reason_code)
         return self.cache['team_result']
@@ -573,9 +580,22 @@ class _DefaultDomainExecutor:
         if self.build_context is None:
             from services.cohort_build_context import CohortBuildContext
             from services.dashboard_snapshot import get_latest_valid_dashboard_snapshot
+            from services.cohort_canonical_selectors import (
+                capture_canonical_selectors, capture_reference,
+            )
 
             uses_reads = self._uses_read_models()
-            source = get_latest_valid_dashboard_snapshot() if uses_reads else None
+            # Historical v1 validation retains v1 semantics. A v2 reference is
+            # intentionally frozen; midnight does not invalidate that authority.
+            reference = (
+                self.recorded_context.get('reference') if self.recorded_context is not None
+                else capture_reference()
+            )
+            canonical = capture_canonical_selectors(self.plan) if reference is not None else None
+            source = get_latest_valid_dashboard_snapshot(**(
+                {'reference_date': date.fromisoformat(reference['product_date'])}
+                if reference is not None else {}
+            )) if uses_reads else None
             baseline = self._publication_baseline_required() if uses_reads else False
             comparisons = {}
             if source is not None:
@@ -597,6 +617,7 @@ class _DefaultDomainExecutor:
                 baseline_publication_id=self.cache.get('publication_baseline_id'),
                 comparisons=comparisons,
                 read_model_selectors=uses_reads,
+                reference=reference, canonical_versions=canonical,
             )
         return self.build_context
 
@@ -727,7 +748,10 @@ class _DefaultDomainExecutor:
     def _roster(self, domain):
         values = {}
         for team_id in self.plan.affected_team_ids_json or ():
-            ids, complete = resolve_active_bullpen_membership(team_id, self.plan.baseball_date)
+            ids, complete = resolve_active_bullpen_membership(
+                team_id, self.plan.baseball_date,
+                semantic_reference_date=self._capture_read_context().product_date,
+            )
             if not complete:
                 raise RuntimeError(f'roster_authority_incomplete:{team_id}')
             values[str(team_id)] = {domain: {'pitcher_ids': sorted(ids), 'authority_complete': True}}
@@ -735,24 +759,26 @@ class _DefaultDomainExecutor:
 
     def _pregame(self, domain):
         values = {}
+        captured = self._capture_read_context().canonical_versions()
         for game_pk in self.plan.affected_game_ids_json or ():
-            row = GamePregameContextVersion.query.filter_by(game_pk=game_pk).order_by(
-                GamePregameContextVersion.version_number.desc()
-            ).first()
+            selected = captured['pregame'][str(game_pk)] if captured is not None else None
+            row = SimpleNamespace(**selected) if selected is not None else None
             if row is None:
                 raise RuntimeError(f'pregame_context_unavailable:{game_pk}')
             values[str(game_pk)] = {domain: {
                 'context_version_id': row.id,
                 'home_probable_pitcher_id': row.home_probable_pitcher_id,
                 'away_probable_pitcher_id': row.away_probable_pitcher_id,
-                'scheduled_at': row.scheduled_at.isoformat() if row.scheduled_at else None,
+                'scheduled_at': row.scheduled_at,
             }}
         return {'game': values, 'summary': {'games': len(values)}}
 
     def _final_context(self, domain):
         values = {}
+        captured = self._capture_read_context().canonical_versions()
         for game_pk in self.plan.affected_game_ids_json or ():
-            row = FinalGameVersion.query.filter_by(game_pk=game_pk, is_current=True).one_or_none()
+            selected = (captured or {}).get('final', {}).get(str(game_pk))
+            row = SimpleNamespace(**selected) if selected is not None else None
             if row is None:
                 raise RuntimeError(f'final_game_context_unavailable:{game_pk}')
             values[str(game_pk)] = {domain: {
@@ -766,11 +792,13 @@ class _DefaultDomainExecutor:
     def _live(self, domain):
         if domain not in ('workload_current', 'team_workload_current', 'game_context'):
             raise RuntimeError(f'live_domain_not_authorized:{domain}')
-        query = ProvisionalPitchingAppearanceState.query.filter(
-            ProvisionalPitchingAppearanceState.is_current.is_(True),
-            ProvisionalPitchingAppearanceState.game_pk.in_(self.plan.affected_game_ids_json or [-1]),
-        )
-        rows = query.order_by(ProvisionalPitchingAppearanceState.pitcher_id).all()
+        captured = self._capture_read_context().canonical_versions() or {}
+        if any((captured.get('final') or {}).values()):
+            raise RuntimeError('live_selector_superseded_by_final')
+        if any(not values for values in (captured.get('live') or {}).values()):
+            raise RuntimeError('live_selector_unavailable')
+        rows = [SimpleNamespace(**value) for values in (captured.get('live') or {}).values()
+                for value in values]
         pitcher = {}
         team = {}
         game = {}

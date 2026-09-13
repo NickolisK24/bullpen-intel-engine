@@ -257,9 +257,11 @@ def _route_payload(payload):
     return route_payload
 
 
-def _sync_status_payload():
+def _sync_status_payload(*, reference_date=None):
     try:
-        return sync_metadata.build_sync_status_payload()
+        return sync_metadata.build_sync_status_payload(**(
+            {'reference_date': reference_date} if reference_date is not None else {}
+        ))
     except Exception:
         return {
             'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
@@ -383,7 +385,7 @@ def _workload_category(record):
     return 'low'
 
 
-def resolve_readiness_population(records, *, team_id, reference_date):
+def resolve_readiness_population(records, *, team_id, reference_date, semantic_reference_date=None):
     """Resolve the canonical active-bullpen population for a readiness read.
 
     Returns ``(readiness_records, membership)``. ``readiness_records`` are the
@@ -398,7 +400,10 @@ def resolve_readiness_population(records, *, team_id, reference_date):
     which the status resolver turns into ``data_limited`` before any
     distribution is consulted.
     """
-    membership = resolve_active_bullpen_membership(team_id, reference_date)
+    membership = resolve_active_bullpen_membership(team_id, reference_date, **(
+        {'semantic_reference_date': semantic_reference_date}
+        if semantic_reference_date is not None else {}
+    ))
     return select_active_bullpen_records(records, membership[0]), membership
 
 

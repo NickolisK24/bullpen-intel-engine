@@ -182,6 +182,13 @@ def create_test_schema(app):
             connection.execute(text('DROP FUNCTION IF EXISTS baseballos_guard_selector_generation() CASCADE'))
             connection.execute(text('DROP FUNCTION IF EXISTS baseballos_selector_resources(text,jsonb)'))
             migration.install(connection)
+        path = Path(__file__).resolve().parents[1] / 'migrations/versions/a5b8c1d4e7f0_fence_canonical_game_selectors.py'
+        spec = importlib.util.spec_from_file_location('canonical_selector_guard_fixture', path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        with db.engine.begin() as connection:
+            connection.execute(text('DROP FUNCTION IF EXISTS baseballos_guard_canonical_selector() CASCADE'))
+            migration.install(connection)
 
 
 def _test_app_engines(app):

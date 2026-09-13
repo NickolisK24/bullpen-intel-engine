@@ -37,10 +37,10 @@ CONTRACT_VERSION = 'pitcher-current-publication-v1'
 DEPLOYMENT_CONTRACT = 'pitcher_observed_deployment_context_v1'
 
 
-def _reference_date(freshness):
+def _reference_date(freshness, fallback_date=None):
     return (
         parse_reference_date((freshness or {}).get('availability_reference_date'))
-        or product_current_date()
+        or fallback_date or product_current_date()
     )
 
 
@@ -124,7 +124,7 @@ def _unavailable_deployment(freshness):
 
 
 def build_public_pitcher_current_payload(
-    pitcher_id, *, freshness, score_cutoff=None,
+    pitcher_id, *, freshness, score_cutoff=None, semantic_reference_date=None,
     author_role_read_labels_fn=author_role_read_labels,
     build_recent_work_fn=build_public_recent_work_payload,
     author_deployment_profile_fn=author_deployment_profile,
@@ -138,7 +138,7 @@ def build_public_pitcher_current_payload(
     if score_cutoff is not None:
         latest_query = latest_query.filter(FatigueScore.calculated_at <= score_cutoff)
     latest = latest_query.order_by(desc(FatigueScore.calculated_at)).first()
-    reference_date = _reference_date(freshness)
+    reference_date = _reference_date(freshness, semantic_reference_date)
     last_game_date = db.session.query(db.func.max(GameLog.game_date)).filter(
         GameLog.pitcher_id == pitcher.id,
     ).scalar()
