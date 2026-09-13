@@ -124,5 +124,13 @@
     "down_revision": "e3f6a9b2c5d8",
     "path": "backend/migrations/versions/f4a7b0c3d6e9_fence_selector_generations.py",
     "sha256": "a981dce1b8d97cc674bec243ad1e576109cf7773603d16c6a5d42d8044be2280"
+  },
+  "canonical_selector_promotion": {
+    "main_base": "064d60c043c1051b7e5723ddfb12d0f8f609b162",
+    "integration_source": "a4dacc19e09f1dd9dccc15b3838176c3f8921899",
+    "revision": "a5b8c1d4e7f0",
+    "down_revision": "f4a7b0c3d6e9",
+    "path": "backend/migrations/versions/a5b8c1d4e7f0_fence_canonical_game_selectors.py",
+    "sha256": "552134290869cf48eea416ea786b2d8e43a8719fd2b8da0d855a35cae5959ff3"
   }
 }
