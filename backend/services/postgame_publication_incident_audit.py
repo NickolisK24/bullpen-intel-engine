@@ -343,7 +343,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '633584e5f4f6e90d3f36c7e4a3034541a0bddff294eb5297879cf1949491e82f',
+            '352e2016dd6d9a6ca7ff8c335b010f1829b5c2ca6da1636ff1ede5efa31f7d67',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -369,7 +369,9 @@ PACKAGE_MODIFIED_MODULES = {
             'semantics remain unchanged. AUDIT-R3-B1.1 adds transaction-scoped '
             'selector writer fences so snapshot generation cannot advance '
             'during protected cohort completion; source selection and baseball '
-            'payload semantics remain unchanged'
+            'payload semantics remain unchanged. AUDIT-R3-B1.2-A accepts the '
+            'captured cohort reference date for snapshot freshness selection; '
+            'legacy callers retain their existing product-date default'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and
