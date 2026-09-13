@@ -24,7 +24,7 @@ from models.canonical_impact import CanonicalImpactPlan
 from models.derived_intelligence import DerivedCohortSnapshot, DerivedIntelligenceCohort
 from models.source_observation import SourceObservation
 from models.sync_run import SyncRun
-from services.derived_intelligence import capture_input_manifest
+from services.derived_intelligence import cohort_inputs_are_current
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync_control_plane import (
     FailureClass,
@@ -168,7 +168,7 @@ def validate_publication_cohort(cohort, plan):
         raise PublicationValidationError('impact_plan_missing')
     if plan.status == 'superseded':
         raise PublicationStaleError('impact_plan_superseded')
-    if capture_input_manifest(plan) != (cohort.input_manifest_json or []):
+    if not cohort_inputs_are_current(cohort, plan):
         raise PublicationStaleError('cohort_input_watermark_drifted')
 
 
@@ -527,7 +527,9 @@ def publish_derived_cohort(
     if lease_fence:
         lease_fence()
 
+    from services.selector_generation_fencing import acquire_selector_fences, PUBLICATION
     _acquire_publication_lock()
+    acquire_selector_fences(((PUBLICATION, 0),))
     pointer = _current_pointer_locked()
     predecessor = db.session.get(AtomicPublication, pointer.publication_id) if pointer else None
     candidate_specs, inherited = validated_publication_artifacts(

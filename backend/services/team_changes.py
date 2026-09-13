@@ -261,7 +261,8 @@ def _appearance_changes(team_id, anchor_date, current_date, pitcher_ids):
 
 
 def _team_state_lane(team_id, frozen=None):
-    frozen = frozen or resolve_latest_team_state_comparison(team_id=team_id)
+    if frozen is None:
+        frozen = resolve_latest_team_state_comparison(team_id=team_id)
     window = frozen.get('comparison') or {}
     domain = (frozen.get('domains') or {}).get('team_state') or {}
     status = domain.get('status')
@@ -485,6 +486,7 @@ def build_team_changes_payload(
     team_id, freshness=None, generated_at=None, *,
     comparison_source_snapshot_id=None, through_date=None,
     comparison_identity=None,
+    comparison_resolver=None,
 ):
     """
     Build the team-scoped "What Changed Since Last Game" payload.
@@ -496,7 +498,7 @@ def build_team_changes_payload(
     """
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
-    frozen = resolve_latest_team_state_comparison(
+    frozen = comparison_resolver() if comparison_resolver is not None else resolve_latest_team_state_comparison(
         team_id=team_id,
         current_source_snapshot_id=comparison_source_snapshot_id,
     )

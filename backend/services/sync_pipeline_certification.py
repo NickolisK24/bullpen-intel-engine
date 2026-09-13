@@ -35,7 +35,7 @@ from utils.time import utc_now_naive
 
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
-EXPECTED_MIGRATION_HEAD = 'e3f6a9b2c5d8'
+EXPECTED_MIGRATION_HEAD = 'f4a7b0c3d6e9'
 HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {

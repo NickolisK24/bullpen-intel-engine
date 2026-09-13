@@ -31,7 +31,8 @@ def _optional(reason, callback):
         return None, unavailable_section(reason)
 
 
-def build_what_changed_candidate(team_id, *, board, snapshot, predecessor_cohort_id=None):
+def build_what_changed_candidate(team_id, *, board, snapshot, predecessor_cohort_id=None,
+                                comparison_resolver=None):
     """Freeze the governed comparison read; never resolve it again at request time."""
     freshness = board.get('freshness') or {}
     comparison_identity = comparison_identity_from_payload(
@@ -42,6 +43,7 @@ def build_what_changed_candidate(team_id, *, board, snapshot, predecessor_cohort
         comparison_source_snapshot_id=getattr(snapshot, 'id', None),
         through_date=getattr(snapshot, 'data_through', None),
         comparison_identity=comparison_identity,
+        **({'comparison_resolver': comparison_resolver} if comparison_resolver is not None else {}),
     )
     payload['artifact_contract_version'] = WHAT_CHANGED_VERSION
     payload['predecessor_cohort_id'] = predecessor_cohort_id
