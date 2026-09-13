@@ -343,7 +343,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '352e2016dd6d9a6ca7ff8c335b010f1829b5c2ca6da1636ff1ede5efa31f7d67',
+            '23edb8cc35883804e2ba10b9c3db7c7bb8ba4c3a5141c95a9ba7b34a820e98a0',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
@@ -371,7 +371,10 @@ PACKAGE_MODIFIED_MODULES = {
             'during protected cohort completion; source selection and baseball '
             'payload semantics remain unchanged. AUDIT-R3-B1.2-A accepts the '
             'captured cohort reference date for snapshot freshness selection; '
-            'legacy callers retain their existing product-date default'
+            'legacy callers retain their existing product-date default. '
+            'Supabase egress P0 persists an internal build dependency signature '
+            'with the candidate for durable rejection admission; the final '
+            'publication gates and trusted selector remain unchanged'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and
