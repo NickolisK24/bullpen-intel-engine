@@ -26,7 +26,9 @@ ROOT = BACKEND.parent
 MANIFEST = json.loads((BACKEND / 'migrations/production_lineage.json').read_text())
 TARGET = MANIFEST['target_revision']
 SELECTOR_PROMOTION = MANIFEST['selector_fence_promotion']
-CURRENT_TARGET = SELECTOR_PROMOTION['revision']
+CANONICAL_PROMOTION = MANIFEST['canonical_selector_promotion']
+PREVIOUS_TARGET = SELECTOR_PROMOTION['revision']
+CURRENT_TARGET = CANONICAL_PROMOTION['revision']
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -55,21 +57,22 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     original = tmp_path / 'main_graph'
     (original / 'versions').mkdir(parents=True)
     for revision, name in revisions.items():
-        if revision not in promoted | {CURRENT_TARGET}:
+        if revision not in promoted | {PREVIOUS_TARGET, CURRENT_TARGET}:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
 
 
-def test_selector_guard_is_one_reviewed_standalone_transition():
+@pytest.mark.parametrize('promotion', [SELECTOR_PROMOTION, CANONICAL_PROMOTION])
+def test_selector_guard_is_one_reviewed_standalone_transition(promotion):
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    extension = list(script.iterate_revisions(CURRENT_TARGET, TARGET))
-    assert [revision.revision for revision in extension] == [CURRENT_TARGET]
-    assert extension[0].down_revision == TARGET == SELECTOR_PROMOTION['down_revision']
-    path = SELECTOR_PROMOTION['path']
+    extension = list(script.iterate_revisions(promotion['revision'], promotion['down_revision']))
+    assert [revision.revision for revision in extension] == [promotion['revision']]
+    assert extension[0].down_revision == promotion['down_revision']
+    path = promotion['path']
     content = (ROOT / path).read_text(encoding='utf-8')
-    assert hashlib.sha256(content.encode()).hexdigest() == SELECTOR_PROMOTION['sha256']
+    assert hashlib.sha256(content.encode()).hexdigest() == promotion['sha256']
     reviewed = subprocess.check_output(
-        ['git', 'show', SELECTOR_PROMOTION['integration_source'] + ':' + path], cwd=ROOT,
+        ['git', 'show', promotion['integration_source'] + ':' + path], cwd=ROOT,
     )
     assert content.encode() == reviewed
     imports = [ast.unparse(node) for node in ast.parse(content).body
@@ -207,7 +210,7 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     # never by assigning a revision to pre-created model tables.
     historical = tmp_path / 'historical_migrations'
     shutil.copytree(BACKEND / 'migrations', historical, ignore=shutil.ignore_patterns('__pycache__'))
-    old = _flask(existing, 'upgrade', '--directory', str(historical), TARGET)
+    old = _flask(existing, 'upgrade', '--directory', str(historical), PREVIOUS_TARGET)
     assert 'Running upgrade' in old.stderr
     _seed(existing)
     before = _fingerprint(existing)
@@ -216,19 +219,25 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
         'sync_runs', 'sync_failures', 'sync_run_scopes', 'source_payload_artifacts',
         'compatibility_write_events'))
     current = _flask(existing, 'current')
-    assert TARGET in current.stdout
+    assert PREVIOUS_TARGET in current.stdout
     # Exactly one new guard transition; retained data and columns are preserved.
     result = _flask(existing, 'upgrade')
     transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
     assert len(transitions) == 1, result.stderr
-    assert TARGET + ' -> ' + CURRENT_TARGET in transitions[0]
+    assert PREVIOUS_TARGET + ' -> ' + CURRENT_TARGET in transitions[0]
     after = _fingerprint(existing)
     assert {k: v for k, v in after[0].items() if k != 'alembic_version'} == {
         k: v for k, v in before[0].items() if k != 'alembic_version'}
     assert after[1] == before[1]
-    assert len(after[2]) == len(before[2]) + 2
-    assert len(after[4]) == len(before[4]) + 2
-    assert len(after[5]) == len(before[5]) + 14
+    assert after[2] == before[2]
+    assert after[3] == before[3]
+    assert len(after[4]) == len(before[4]) + 1
+    assert len(after[5]) == len(before[5]) + 10
+    assert set(before[4]) <= set(after[4])
+    assert set(before[5]) <= set(after[5])
+    assert {row[0] for row in set(after[4]) - set(before[4])} == {
+        'baseballos_guard_canonical_selector',
+    }
     before = after
     for _ in range(2):
         result = _flask(existing, 'upgrade')
