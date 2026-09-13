@@ -168,6 +168,20 @@ def create_test_schema(app):
     import models.traffic_page_view  # noqa: F401
     from utils.db import db
     db.create_all()
+    if db.engine.dialect.name == 'postgresql':
+        # create_all does not install migration-owned guards. Mirror the
+        # selector migration explicitly in disposable PostgreSQL fixtures.
+        import importlib.util
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[1] / 'migrations/versions/f4a7b0c3d6e9_fence_selector_generations.py'
+        spec = importlib.util.spec_from_file_location('selector_guard_fixture', path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        with db.engine.begin() as connection:
+            from sqlalchemy import text
+            connection.execute(text('DROP FUNCTION IF EXISTS baseballos_guard_selector_generation() CASCADE'))
+            connection.execute(text('DROP FUNCTION IF EXISTS baseballos_selector_resources(text,jsonb)'))
+            migration.install(connection)
 
 
 def _test_app_engines(app):

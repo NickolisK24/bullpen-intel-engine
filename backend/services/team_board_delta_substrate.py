@@ -1050,6 +1050,8 @@ def stamp_prospective_snapshot(
     )
     represented_date = _as_date(envelope.get('represented_date'))
     source_key = f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}'
+    from services.selector_generation_fencing import fence_comparison_writer
+    fence_comparison_writer((envelope['team_id'],), session=session)
     candidates = (
         session.query(DashboardSnapshot)
         .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)

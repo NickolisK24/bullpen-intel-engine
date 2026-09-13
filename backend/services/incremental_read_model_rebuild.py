@@ -110,6 +110,7 @@ def rebuild_read_model_impact(
     publication_artifact_baseline=False,
     predecessor_cohort_id=None,
     build_publication_artifacts=False,
+    build_context=None,
 ):
     """Rebuild only read models invalidated by a trusted CU-05 result."""
     pitcher_ids = tuple(sorted(set(_get(cu05_result, 'arm_reads_recomputed') or ())))
@@ -133,10 +134,19 @@ def rebuild_read_model_impact(
     if represented_date is None:
         raise ValueError('CU-06 requires CU-05 explicit represented date')
 
-    snapshot = source_snapshot or (
-        public_serving_authority.dashboard_snapshot_service
-        .get_latest_valid_dashboard_snapshot()
-    )
+    if build_context is not None:
+        if source_snapshot is not None:
+            raise ValueError('CU-06 requires one captured snapshot authority')
+        if represented_date != build_context.represented_date:
+            raise ValueError('CU-06 represented date differs from captured context')
+        snapshot = build_context.source_snapshot()
+        publication_artifact_baseline = build_context.publication_artifact_baseline
+        predecessor_cohort_id = build_context.predecessor_cohort_id
+    else:
+        snapshot = source_snapshot or (
+            public_serving_authority.dashboard_snapshot_service
+            .get_latest_valid_dashboard_snapshot()
+        )
     if snapshot is None:
         return _partial(
             game_pk, represented_date, pitcher_ids, team_ids,
@@ -190,6 +200,8 @@ def rebuild_read_model_impact(
                 changed = build_what_changed_candidate(
                     team_id, board=board, snapshot=shadow_snapshot,
                     predecessor_cohort_id=predecessor_cohort_id,
+                    **({'comparison_resolver': lambda team_id=team_id:
+                        build_context.comparison_for(team_id)} if build_context is not None else {}),
                 )
                 what_changed[team_id] = changed
                 boards_v2[team_id] = build_team_board_v2_candidate(
@@ -460,6 +472,9 @@ def _default_tonight_builder(
     from services.published_team_workload_listing import (
         build_published_team_workload_listing,
     )
+    from services.published_team_rotation_listing import (
+        build_published_team_rotation_listing,
+    )
     from services.schedule_context import build_schedule_contexts_for_date
     from services.tonight_intelligence_service import serve_tonight
 
@@ -486,6 +501,9 @@ def _default_tonight_builder(
             snapshot_resolver=resolver,
         ),
         rest_status_listing_builder=lambda: build_published_team_rest_status_listing(
+            snapshot_resolver=resolver,
+        ),
+        rotation_listing_builder=lambda: build_published_team_rotation_listing(
             snapshot_resolver=resolver,
         ),
     )

@@ -11,7 +11,7 @@ from models.sync_certification import (
 from models.sync_job import SyncJob
 from scripts.run_sync_pipeline_certification import _parse_migration_heads
 from services.sync_pipeline_certification import (
-    ActivationControls, GATES, certification_checks, classify_operational_health,
+    ActivationControls, EXPECTED_MIGRATION_HEAD, GATES, certification_checks, classify_operational_health,
     collect_operational_health, evaluate_certification, legacy_responsibility_map,
     persist_certification_report, persist_legacy_responsibility_map,
     validate_activation_controls,
@@ -82,7 +82,7 @@ def test_disabled_parent_rejects_enabled_child_flags():
 
 def test_every_gate_is_represented_and_missing_proof_is_no_go():
     checks = certification_checks(
-        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
+        migration_heads=[EXPECTED_MIGRATION_HEAD], integration_sha_matches=True,
         controls=ActivationControls(), evidence={},
     )
     result = evaluate_certification(checks)
@@ -94,7 +94,7 @@ def test_every_gate_is_represented_and_missing_proof_is_no_go():
 
 def test_warning_only_condition_can_remain_go_with_caveat():
     checks = certification_checks(
-        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
+        migration_heads=[EXPECTED_MIGRATION_HEAD], integration_sha_matches=True,
         controls=ActivationControls(), evidence=_passing_evidence(warning_gate='J'),
     )
     result = evaluate_certification(checks)
@@ -110,7 +110,7 @@ def test_critical_failure_is_no_go():
         'summary': 'A mixed-generation reader remains.',
     }
     result = evaluate_certification(certification_checks(
-        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
+        migration_heads=[EXPECTED_MIGRATION_HEAD], integration_sha_matches=True,
         controls=ActivationControls(), evidence=evidence,
     ))
     assert result['verdict'] == 'NO-GO'
@@ -252,18 +252,33 @@ def test_legacy_map_covers_every_active_responsibility_and_defers_publication(ap
 def test_certification_evidence_is_immutable_and_idempotent(app):
     controls = ActivationControls()
     report = evaluate_certification(certification_checks(
-        migration_heads=['e3f6a9b2c5d8'], integration_sha_matches=True,
+        migration_heads=[EXPECTED_MIGRATION_HEAD], integration_sha_matches=True,
         controls=controls, evidence=_passing_evidence(),
     ))
     first = persist_certification_report(
-        report, integration_commit_sha='a' * 40, migration_head='e3f6a9b2c5d8',
+        report, integration_commit_sha='a' * 40, migration_head=EXPECTED_MIGRATION_HEAD,
         environment='test', controls=controls,
     )
     second = persist_certification_report(
-        report, integration_commit_sha='a' * 40, migration_head='e3f6a9b2c5d8',
+        report, integration_commit_sha='a' * 40, migration_head=EXPECTED_MIGRATION_HEAD,
         environment='test', controls=controls,
     )
     assert first.id == second.id
     assert first.verdict == 'GO'
     assert SyncCertificationRun.query.count() == 1
     assert SyncCertificationCheck.query.filter_by(certification_run_id=first.id).count() == len(report['checks'])
+
+
+def test_selector_guard_head_matches_graph_without_advancing_g_or_h():
+    from pathlib import Path
+    from alembic.script import ScriptDirectory
+    scripts = ScriptDirectory(str(Path(__file__).resolve().parents[1] / 'migrations'))
+    assert scripts.get_heads() == [EXPECTED_MIGRATION_HEAD]
+    for head, expected in [('e3f6a9b2c5d8', 'failed'), (EXPECTED_MIGRATION_HEAD, 'passing')]:
+        result = evaluate_certification(certification_checks(
+            migration_heads=[head], integration_sha_matches=True,
+            controls=ActivationControls(), evidence={},
+        ))
+        assert result['gate_statuses']['A'] == expected
+        assert result['gate_statuses']['G'] == result['gate_statuses']['H'] == 'blocked'
+        assert result['verdict'] == 'NO-GO'

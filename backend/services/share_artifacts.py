@@ -389,6 +389,8 @@ def publish_share_artifact(
             f'cannot publish artifact in state {artifact.lifecycle_state!r}'
         )
 
+    from services.selector_generation_fencing import fence_comparison_writer
+    fence_comparison_writer((artifact.team_id,), session=session)
     if dedup:
         existing = find_published_equivalent(artifact.equivalence_key, session=session)
         if existing is not None and existing.id != artifact.id:
@@ -531,6 +533,8 @@ def supersede_share_artifact(
     if replacement.id == previous.id:
         raise ShareArtifactLifecycleError('an artifact cannot supersede itself')
 
+    from services.selector_generation_fencing import fence_comparison_writer
+    fence_comparison_writer((previous.team_id, replacement.team_id), session=session)
     previous.lifecycle_state = LIFECYCLE_SUPERSEDED
     previous.superseded_at = superseded_at or utc_now_naive()
 
@@ -566,6 +570,8 @@ def withdraw_share_artifact(
             f'cannot withdraw artifact in state {artifact.lifecycle_state!r}'
         )
 
+    from services.selector_generation_fencing import fence_comparison_writer
+    fence_comparison_writer((artifact.team_id,), session=session)
     artifact.lifecycle_state = LIFECYCLE_WITHDRAWN
     artifact.withdrawn_at = withdrawn_at or utc_now_naive()
     if reason is not None:
