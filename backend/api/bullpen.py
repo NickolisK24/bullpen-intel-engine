@@ -1,5 +1,6 @@
 import hmac
 import json
+import logging
 import os
 from functools import wraps
 
@@ -326,6 +327,10 @@ def _served_score_cutoff(*, semantic_reference_date=None):
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot(**(
         {'reference_date': semantic_reference_date} if semantic_reference_date is not None else {}
     ))
+    logging.getLogger(__name__).info(
+        'source_score_cutoff source_snapshot_id=%s source_snapshot_lookup_count=1',
+        getattr(snapshot, 'id', None),
+    )
     if snapshot is None:
         return None
     return snapshot.snapshot_generated_at
@@ -1344,7 +1349,12 @@ def _bullpen_environment_for_reads(
     )
 
 
-def _dashboard_capacity_payload(reference_date):
+_UNRESOLVED_SCORE_CUTOFF = object()
+
+
+def _dashboard_capacity_payload(reference_date, *, score_cutoff=_UNRESOLVED_SCORE_CUTOFF):
+    if score_cutoff is _UNRESOLVED_SCORE_CUTOFF:
+        score_cutoff = _served_score_cutoff()
     team_ids = [
         row[0]
         for row in (
@@ -1362,7 +1372,7 @@ def _dashboard_capacity_payload(reference_date):
             team_id,
             include_stale=True,
             reference_date=reference_date,
-            calculated_at_lte=_served_score_cutoff(),
+            calculated_at_lte=score_cutoff,
         )
         context_records = _eligible_records_for_rows(
             context_rows,
@@ -1401,7 +1411,9 @@ def _dashboard_rotation_support_payload(reference_date):
     return build_league_rotation_support_payload(team_items)
 
 
-def _dashboard_bullpen_stability_payload(reference_date):
+def _dashboard_bullpen_stability_payload(reference_date, *, score_cutoff=_UNRESOLVED_SCORE_CUTOFF):
+    if score_cutoff is _UNRESOLVED_SCORE_CUTOFF:
+        score_cutoff = _served_score_cutoff()
     team_ids = [
         row[0]
         for row in (
@@ -1419,7 +1431,7 @@ def _dashboard_bullpen_stability_payload(reference_date):
             team_id,
             include_stale=True,
             reference_date=reference_date,
-            calculated_at_lte=_served_score_cutoff(),
+            calculated_at_lte=score_cutoff,
         )
         context_records = _eligible_records_for_rows(
             context_rows,
@@ -2889,7 +2901,10 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         availability_records,
         reference_date=reference_date,
     )
-    capacity_intelligence = _dashboard_capacity_payload(reference_date)
+    # Retain the existing validated selector and its currentness semantics, but
+    # resolve it once for both loops, including when no trusted cutoff exists.
+    source_score_cutoff = _served_score_cutoff()
+    capacity_intelligence = _dashboard_capacity_payload(reference_date, score_cutoff=source_score_cutoff)
     capacity_by_team = {
         int(team_id): item
         for team_id, item in (capacity_intelligence.get('by_team_id') or {}).items()
@@ -2899,7 +2914,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         int(team_id): item
         for team_id, item in (rotation_support_pressure.get('by_team_id') or {}).items()
     }
-    bullpen_stability = _dashboard_bullpen_stability_payload(reference_date)
+    bullpen_stability = _dashboard_bullpen_stability_payload(reference_date, score_cutoff=source_score_cutoff)
     bullpen_stability_by_team = {
         int(team_id): item
         for team_id, item in (bullpen_stability.get('by_team_id') or {}).items()
@@ -3006,15 +3021,21 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     # Canonical story feed (additive). Wraps Story Intelligence V1 per team into
     # the forward-facing canonical contract, with continuity keyed to the prior
     # snapshot's canonical stories. Legacy story fields above are untouched.
-    payload['stories'] = build_canonical_story_feed(
-        _canonical_story_team_descriptors(landscape),
-        as_of_date=reference_date,
-        story_builder=build_story_intelligence_team_story,
-        freshness=freshness,
-        league_signal=_canonical_league_signal(landscape, availability_records),
-        prior_stories=_canonical_prior_story_items(previous_payload),
-        prior_league_context=_canonical_prior_league_context(previous_payload),
-    )
+    from functools import partial
+    from services.bullpen_context import LeagueBaselineBuild
+    with LeagueBaselineBuild(reference_date) as baseline_build:
+        payload['stories'] = build_canonical_story_feed(
+            _canonical_story_team_descriptors(landscape),
+            as_of_date=reference_date,
+            story_builder=partial(
+                build_story_intelligence_team_story,
+                league_baseline_build=baseline_build,
+            ),
+            freshness=freshness,
+            league_signal=_canonical_league_signal(landscape, availability_records),
+            prior_stories=_canonical_prior_story_items(previous_payload),
+            prior_league_context=_canonical_prior_league_context(previous_payload),
+        )
     payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
         data_through,
         what_changed_previous_data_through,

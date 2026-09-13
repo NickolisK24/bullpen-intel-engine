@@ -372,6 +372,148 @@ def _minimal_dashboard_payload():
     }
 
 
+def test_continuous_admission_survives_restart_and_reopens_on_dependencies(app, monkeypatch):
+    from services import continuous_production_publication as publication
+    from services import continuous_publication_admission as admission
+    represented = date(2026, 9, 13)
+    builds = []
+    refreshes = []
+    monkeypatch.setattr(admission, 'product_current_date', lambda: represented)
+    monkeypatch.setattr(publication, 'product_current_date', lambda: represented)
+    monkeypatch.setattr(dashboard_snapshot, '_refresh_stale_non_final_slate_games',
+                        lambda *args, **kwargs: refreshes.append(args) or {})
+    monkeypatch.setattr(bullpen_api, 'build_bullpen_dashboard_payload',
+                        lambda **kwargs: builds.append(True) or _payload_requiring_slate_recheck(represented))
+    # Payload construction is stubbed; the real persistence and final slate gate run.
+    monkeypatch.setattr(dashboard_snapshot, '_compute_payload_slate_coverage',
+                        lambda *args, **kwargs: _payload_requiring_slate_recheck(represented)['freshness']['slate_coverage'])
+    with app.app_context():
+        run = SyncRun(job_name='admission_test', status='running')
+        db.session.add(run)
+        db.session.commit()
+        run_id = run.id
+
+        def attempt():
+            return publication.publish_continuous_update(
+                {}, source_identity='final', source_order=1,
+                sync_run_id=run_id, expected_current_id=None,
+            )
+
+        first = attempt()
+        assert first.status == 'deferred'
+        assert first.reason_code == dashboard_snapshot.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+        assert not first.committed and not first.heavy_build_skipped
+        assert DashboardSnapshot.query.one().build_dependency_signature == first.dependency_signature
+        for _ in range(6):
+            db.session.remove()  # A fresh session sees the durable rejection receipt.
+            retried = attempt()
+            assert retried.heavy_build_skipped and not retried.committed
+        assert len(builds) == DashboardSnapshot.query.count() == 1
+        assert len(refreshes) == 6
+
+        pitcher = Pitcher(mlb_id=987, full_name='Admission Pitcher', team_id=116, active=True)
+        db.session.add(pitcher)
+        db.session.commit()
+        assert not attempt().heavy_build_skipped
+        assert attempt().heavy_build_skipped
+        assert len(builds) == 2
+        # Updating an existing row without changing count/max(id) must reopen.
+        pitcher.roster_status = STATUS_ACTIVE
+        db.session.commit()
+        assert not attempt().heavy_build_skipped
+        assert attempt().heavy_build_skipped
+        assert len(builds) == 3
+        # A candidate transaction lost before commit is not durable suppression.
+        newest = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
+        newest.build_dependency_signature = None
+        db.session.commit()
+        assert not attempt().heavy_build_skipped
+        assert attempt().heavy_build_skipped
+        assert len(builds) == 4
+        assert DashboardSnapshot.query.filter_by(is_published=True).count() == 0
+
+
+@pytest.mark.parametrize('committed_before_crash', [False, True])
+def test_continuous_admission_crash_has_only_durable_rejection_receipts(
+    app, monkeypatch, committed_before_crash,
+):
+    from services import continuous_production_publication as publication
+    represented = date(2026, 9, 13)
+    builds = []
+    monkeypatch.setattr(dashboard_snapshot, '_refresh_stale_non_final_slate_games', lambda *a, **kw: {})
+    monkeypatch.setattr(dashboard_snapshot, '_compute_payload_slate_coverage',
+                        lambda *a, **kw: _payload_requiring_slate_recheck(represented)['freshness']['slate_coverage'])
+    monkeypatch.setattr(bullpen_api, 'build_bullpen_dashboard_payload',
+                        lambda **kw: builds.append(True) or _payload_requiring_slate_recheck(represented))
+    real_build = dashboard_snapshot.build_bullpen_dashboard_snapshot
+
+    def interrupted_build(**kwargs):
+        kwargs['commit'] = committed_before_crash
+        real_build(**kwargs)
+        raise RuntimeError('simulated worker exit')
+
+    monkeypatch.setattr(dashboard_snapshot, 'build_bullpen_dashboard_snapshot', interrupted_build)
+    with app.app_context():
+        run = _create_sync_run()
+        db.session.commit()  # The worker's parent run predates the candidate transaction.
+        run_id = run.id
+        arguments = dict(source_identity='final', source_order=1, sync_run_id=run_id,
+                         expected_current_id=None)
+        with pytest.raises(RuntimeError, match='simulated worker exit'):
+            publication.publish_continuous_update({}, **arguments)
+        db.session.rollback()
+        db.session.remove()
+        monkeypatch.setattr(dashboard_snapshot, 'build_bullpen_dashboard_snapshot', real_build)
+        retry = publication.publish_continuous_update({}, **arguments)
+        assert retry.heavy_build_skipped is committed_before_crash
+        assert retry.status == 'deferred' and not retry.committed
+        assert len(builds) == (1 if committed_before_crash else 2)
+        assert DashboardSnapshot.query.filter_by(is_published=True).count() == 0
+
+
+def test_admission_signature_tracks_corrections_finality_authority_and_ignores_polls(app):
+    from services.continuous_publication_admission import dependency_signature
+    represented = date(2026, 9, 13)
+    with app.app_context():
+        def signature(publication_id=41, ref=represented):
+            return dependency_signature(current_publication_id=publication_id, represented_date=ref)
+
+        empty = signature()
+        assert signature(42) != empty
+        assert signature(ref=represented - timedelta(days=1)) != empty
+        row = ScheduledGame(team_id=116, game_pk=987, game_date=represented, status_state='scheduled')
+        db.session.add(row)
+        db.session.commit()
+        scheduled = signature()
+        assert scheduled != empty
+        row.next_poll_at = utc_now_naive()
+        db.session.commit()
+        assert signature() == scheduled
+        row.status_state = 'final'
+        db.session.commit()
+        final = signature()
+        assert final != scheduled
+        pitcher = Pitcher(mlb_id=987, full_name='Correction Pitcher', team_id=116, active=True)
+        db.session.add(pitcher)
+        db.session.commit()
+        roster_before = signature()
+        pitcher.roster_status_updated_at = utc_now_naive()
+        db.session.commit()
+        assert signature() != roster_before
+        log = GameLog(pitcher_id=pitcher.id, mlb_game_pk=987, game_date=represented,
+                      innings_pitched=1.0, innings_pitched_outs=3, pitches_thrown=12)
+        db.session.add(log)
+        db.session.commit()
+        appeared = signature()
+        assert appeared != final
+        log.pitches_thrown = 13
+        db.session.commit()
+        assert signature() != appeared
+        db.session.delete(log)
+        db.session.commit()
+        assert signature() != appeared
+
+
 class TestDashboardSnapshotService:
     def test_daily_edition_is_prepared_before_publication_pointer_advances(
         self,
