@@ -1177,3 +1177,21 @@ The package remains on `fix/audit-r3-input-closure`, based exactly on
 captured-context/fence slice and its accumulated diagnostic history. No push,
 PR, merge, deployment, Render change, production database operation, or public
 authority activation is part of this completion. B1.2 has not begun.
+
+### 17.1 Hosted rollout validation follow-up
+
+Integration PR #839 began from tested commit
+`b152076008810cd0e669137e7f6b8caaa6e4eca7`. Push run 34758305996 shard 3
+reported three assertions after 3,496 passes. Two were the incident audit's
+governed Dashboard source-digest receipt, which now explicitly records the
+B1.1 writer fence. The third was a query-count fixture dated August 15 using
+the real clock. It also failed on untouched integration base
+`f6d493aacb95fd62ff064c14e810ab1d45186d20`; its test clock is now pinned to
+the fixture date without changing production freshness behavior.
+
+The two affected suites pass together: **59 PostgreSQL tests**, using an LF
+checkout for the byte-hash contracts, matching hosted checkout semantics.
+The migration definition and selector-fence implementation are unchanged.
+These are assertion corrections, not timeout retries. Hosted rerun, merge,
+controlled owner migration and natural recurrence remain separate rollout
+gates. F03 remains unresolved, SP-14 G/H remain blocked, and B1.2 has not begun.
