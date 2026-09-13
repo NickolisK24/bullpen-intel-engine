@@ -35,7 +35,9 @@ from utils.time import utc_now_naive
 
 CERTIFICATION_VERSION = 'sync-pipeline-certification-v1'
 CERTIFICATION_SCHEMA_VERSION = 'sync-certification-v1'
-EXPECTED_MIGRATION_HEAD = 'a5b8c1d4e7f0'
+# Schema-only advancement for the nullable Dashboard admission receipt. This
+# does not satisfy impact/derived or publication certification evidence.
+EXPECTED_MIGRATION_HEAD = 'b6c9d2e5f8a1'
 HEALTH_JOB_DETAIL_LIMIT = 25
 
 GATES = {
