@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # The current revisions add canonical reliever/pitch evidence and persisted PBP
 # observation ordering. The pin exists so a migration cannot enter unnoticed;
 # moving it deliberately acknowledges review and verifies one head remains.
-# R3-B1.1 adds the reviewed selector-generation writer backstop after R2.
-EXPECTED_ALEMBIC_HEAD = 'a5b8c1d4e7f0'
+# The egress remediation adds the atomic Dashboard admission receipt after R3-B1.1.
+EXPECTED_ALEMBIC_HEAD = 'b6c9d2e5f8a1'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',

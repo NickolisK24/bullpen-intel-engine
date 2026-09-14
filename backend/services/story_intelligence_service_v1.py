@@ -951,7 +951,7 @@ def _base_payload(team_id, as_of_date, team_context, observation_payload, constr
     }
 
 
-def build_team_story(team_id, as_of_date=None, *, team_context=None):
+def build_team_story(team_id, as_of_date=None, *, team_context=None, league_baseline_build=None):
     """
     Build one deterministic BaseballOS story contract for a team and date.
 
@@ -962,7 +962,10 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
     context = (
         deepcopy(team_context)
         if context_supplied
-        else build_team_bullpen_context(team_id, reference_date=as_of_date)
+        else build_team_bullpen_context(team_id, reference_date=as_of_date, **(
+            {'league_baseline_build': league_baseline_build}
+            if league_baseline_build is not None else {}
+        ))
     )
     observation_payload = build_team_story_observation_payload(context)
     construction_payload = construct_team_story_frames(

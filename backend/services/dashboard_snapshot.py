@@ -270,6 +270,7 @@ def store_dashboard_snapshot(
     publish=True,
     commit=True,
     publication_critical_complete=None,
+    build_dependency_signature=None,
 ):
     serialize_started = perf_counter()
     logger.info(
@@ -311,6 +312,7 @@ def store_dashboard_snapshot(
         availability_reference_date=_availability_reference_date_from_payload(stored_payload),
         snapshot_generated_at=utc_now_naive(),
         source=source or 'sync',
+        build_dependency_signature=build_dependency_signature,
     )
     db.session.add(snapshot)
     db.session.flush()
@@ -627,6 +629,7 @@ def build_dashboard_snapshot(
     commit=True,
     raise_errors=False,
     publication_critical_complete=None,
+    build_dependency_signature=None,
 ):
     try:
         payload_started = perf_counter()
@@ -650,6 +653,7 @@ def build_dashboard_snapshot(
             publish=publish,
             commit=commit,
             publication_critical_complete=publication_critical_complete,
+            build_dependency_signature=build_dependency_signature,
         )
     except Exception as exc:
         db.session.rollback()
@@ -671,6 +675,7 @@ def build_bullpen_dashboard_snapshot(
     commit=True,
     raise_errors=False,
     publication_critical_complete=None,
+    build_dependency_signature=None,
 ):
     from api.bullpen import build_bullpen_dashboard_payload
 
@@ -699,6 +704,7 @@ def build_bullpen_dashboard_snapshot(
         commit=commit,
         raise_errors=raise_errors,
         publication_critical_complete=publication_critical_complete,
+        build_dependency_signature=build_dependency_signature,
     )
 
 
