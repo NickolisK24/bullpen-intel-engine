@@ -115,7 +115,9 @@ jobs:
   backend-postgres-tests:
     name: backend-postgres-tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Full PostgreSQL schema fixtures can exceed the old hosted-runner budget.
+    # Keep every assertion and allow the slowest shard to finish.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

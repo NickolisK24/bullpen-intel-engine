@@ -1468,6 +1468,11 @@ def _execute_cycle(**kwargs):
                     game_result, counters, proof=False,
                     sync_run_id=publication_sync_run_id,
                 )
+                if publication.get('status') == 'deferred':
+                    # Admission/slate dependency waits are not failed attempts.
+                    # Keep every cohort obligation pending at its existing stage.
+                    publication_attempted = False
+                    publication_deferral_reason = publication.get('reason_code')
                 authority_committed = _publication_authority_satisfied(publication)
                 cycle_publication_committed = (
                     authority_committed

@@ -332,8 +332,9 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            'aad00171d280696b9a49ee316c3eb8e34ca31ca90574ab6c819b7638be4ca8d3',
+            'f041ddaa4b418acf248e241bdb204052a0ea5e1d52aba87e0da48420bc5966bd',
         'change': (
+            'Supabase egress P0 adds the nullable atomic candidate admission receipt. '
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
             'database-read failure from a legitimate missing snapshot; the '

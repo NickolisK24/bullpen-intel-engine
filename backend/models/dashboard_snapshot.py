@@ -37,6 +37,9 @@ class DashboardSnapshot(db.Model):
         onupdate=utc_now_naive,
     )
     error_message = db.Column(db.Text)
+    # Internal admission receipt, committed with the rejected candidate. Never
+    # part of the public payload or a substitute for publication validation.
+    build_dependency_signature = db.Column(db.String(64), nullable=True)
 
     def to_dict(self):
         return {
