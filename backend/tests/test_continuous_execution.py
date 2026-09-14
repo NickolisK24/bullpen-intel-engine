@@ -1022,6 +1022,42 @@ def test_limited_live_without_publisher_fails_closed(app, monkeypatch):
     assert result.failures[0]['error'] == 'production_publisher_unavailable'
 
 
+def test_blocked_publication_deferral_preserves_obligation_without_exhaustion(app, monkeypatch):
+    cfg = config(continuous.ActivationMode.LIMITED_LIVE,
+                 production_publication_enabled=True, allowlist_game_pks=(GAME_PK,))
+    with app.app_context():
+        seed_accepted_observation()
+    for index in range(7):
+        result, _ = run(
+            app, monkeypatch, cfg,
+            results=[change()] if index == 0 else [change(classification='unchanged', changed=False)],
+            production_publisher=lambda *_args, **_kwargs: {
+                'status': 'deferred', 'committed': False,
+                'reason_code': 'dashboard_snapshot_slate_coverage_incomplete',
+                'heavy_build_skipped': True,
+            },
+            production_current_id_provider=lambda: 44,
+        )
+        assert result.work_obligations_failed == 0
+        assert result.work_obligations_completed == 0
+        assert result.live_publications == 0
+        with app.app_context():
+            job = durable_jobs()[0]
+            assert job.status == sync_jobs.STATUS_PENDING
+            assert job.attempts == 0
+            assert job.details_json['stage'] == continuous_game_work.STAGE_PUBLICATION_PENDING
+    result, _ = run(
+        app, monkeypatch, cfg, results=[change(classification='unchanged', changed=False)],
+        production_publisher=lambda *_args, **_kwargs: {
+            'status': 'committed', 'committed': True, 'cache_handoff_status': 'complete',
+        },
+        production_current_id_provider=lambda: 44,
+    )
+    assert result.work_obligations_completed == 1
+    with app.app_context():
+        assert durable_jobs()[0].status == sync_jobs.STATUS_SUCCEEDED
+
+
 def test_live_dashboard_commit_with_tonight_retry_is_visible_as_partial(
     app, monkeypatch,
 ):

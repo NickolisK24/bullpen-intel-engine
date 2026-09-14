@@ -153,6 +153,36 @@ def _seed_team_game_split(team_id, game_pk, game_date, starter, *, starter_outs,
 
 
 class TestDashboardEndpoint:
+    @pytest.mark.parametrize('cutoff', [None, datetime(2026, 9, 13, 1)])
+    def test_capacity_stability_share_one_validated_cutoff(self, client, monkeypatch, cutoff):
+        calls = []
+        captured = []
+        for team in range(100, 130):
+            _seed_pitcher(f'Pitcher {team}', team, team)
+        def resolve_cutoff():
+            import inspect
+            calls.append(inspect.currentframe().f_back.f_code.co_name)
+            return cutoff
+
+        monkeypatch.setattr(bullpen_api, '_served_score_cutoff', resolve_cutoff)
+        original_rows = bullpen_api._team_bullpen_rows
+
+        def rows(*args, **kwargs):
+            import inspect
+            if inspect.currentframe().f_back.f_code.co_name in {
+                '_dashboard_capacity_payload', '_dashboard_bullpen_stability_payload',
+            }:
+                captured.append(kwargs['calculated_at_lte'])
+            return original_rows(*args, **kwargs)
+
+        monkeypatch.setattr(bullpen_api, '_team_bullpen_rows', rows)
+        # The full candidate entry point supplies one value to both real loops.
+        bullpen_api.build_bullpen_dashboard_payload()
+        assert calls.count('build_bullpen_dashboard_payload') == 1
+        assert '_dashboard_capacity_payload' not in calls
+        assert '_dashboard_bullpen_stability_payload' not in calls
+        assert captured == [cutoff] * 60
+
     def test_empty_system_returns_stable_shape(self, client):
         body = client.get('/api/bullpen/dashboard').get_json()
         assert body['capability'] == 'bullpen_dashboard'
@@ -387,7 +417,7 @@ class TestDashboardEndpoint:
             'source_engine', 'quality_status',
         }
 
-        def fake_story_builder(team_id, as_of_date=None):
+        def fake_story_builder(team_id, as_of_date=None, *, league_baseline_build=None):
             if team_id == 1:
                 return {
                     'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1',

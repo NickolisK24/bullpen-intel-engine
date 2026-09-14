@@ -240,6 +240,101 @@ def _seed_team_identity(team_id, mlb_id):
     return _seed_pitcher(team_id, f'Team {team_id} Pitcher', mlb_id)
 
 
+def test_stale_history_is_ranked_in_sql_and_preserves_population(client):
+    from sqlalchemy import event
+    from services.bullpen_population import usage_logs_by_pitcher, population_diagnostic
+
+    with client.application.app_context():
+        pitchers = [
+            _seed_pitcher(116, f'History {i}', 90000 + i, roster_status=STATUS_ACTIVE)
+            for i in range(4)
+        ]
+        # Future evidence remains supported; doubleheaders are distinct rows;
+        # old-only pitchers have no artificial date cutoff; empty history stays empty.
+        offsets = [[-1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 400], [500, 501], [2, 3], []]
+        for i, (pitcher, days) in enumerate(zip(pitchers, offsets)):
+            for j, day in enumerate(days):
+                _seed_log(pitcher, day, 99000 + i * 100 + j, 1.0,
+                          games_started=None if i == 2 else 0)
+        ids = [pitcher.id for pitcher in pitchers]
+        legacy = {}
+        for row in GameLog.query.filter(GameLog.pitcher_id.in_(ids)).order_by(
+            GameLog.pitcher_id, GameLog.game_date.desc(), GameLog.id,
+        ).all():
+            bucket = legacy.setdefault(row.pitcher_id, [])
+            if len(bucket) < 10:
+                bucket.append(row)
+        returned = []
+        statements = []
+
+        def capture(connection, cursor, statement, parameters, context, executemany):
+            if 'appearance_rank' in statement:
+                statements.append(statement)
+                # PostgreSQL reports the server result count before ORM processing.
+                returned.append(cursor.rowcount)
+
+        event.listen(db.engine, 'after_cursor_execute', capture)
+        try:
+            actual = usage_logs_by_pitcher(ids, include_stale=True, reference_date=REF)
+        finally:
+            event.remove(db.engine, 'after_cursor_execute', capture)
+        assert actual == legacy
+        assert [len(actual.get(pid, [])) for pid in ids] == [10, 2, 2, 0]
+        assert sum(map(len, actual.values())) <= 10 * len(ids)
+        assert len(statements) == 1
+        assert 'row_number() OVER' in statements[0]
+        if db.engine.dialect.name == 'postgresql':
+            assert returned == [14]
+        assert usage_logs_by_pitcher(ids, include_stale=True, reference_date=REF) == actual
+        assert actual[ids[0]][0].game_date > REF
+        assert population_diagnostic(pitchers, include_stale=True, reference_date=REF,
+                                    logs_by_pitcher=actual) == population_diagnostic(
+            pitchers, include_stale=True, reference_date=REF, logs_by_pitcher=legacy,
+        )
+        assert usage_logs_by_pitcher([], include_stale=True) == {}
+
+
+def test_build_scoped_baseline_keeps_thirty_team_outputs(client, monkeypatch):
+    import services.bullpen_context as service
+    with client.application.app_context():
+        for team_id in range(100, 130):
+            pitcher = _seed_pitcher(team_id, f'Reliever {team_id}', team_id,
+                                    roster_status=STATUS_ACTIVE)
+            _seed_log(pitcher, 1, team_id, 1.0)
+            _seed_score(pitcher)
+        expected = [build_team_bullpen_context(team, REF) for team in range(100, 130)]
+        original = service._league_clean_options_baseline
+        calls = []
+
+        def acquire(*args, **kwargs):
+            calls.append(args)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(service, '_league_clean_options_baseline', acquire)
+        with service.LeagueBaselineBuild(REF) as scope:
+            actual = [build_team_bullpen_context(team, REF, league_baseline_build=scope)
+                      for team in range(100, 130)]
+            assert actual == expected
+            assert len(calls) == scope.acquisitions == 1
+            scope.resolve(REF - timedelta(days=1))
+            scope.resolve(REF, {pitcher.id: {'status': 'unavailable'}})
+            monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'false')
+            scope.resolve(REF)
+            monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'true')
+            from services import bullpen_optionality_context
+            monkeypatch.setattr(bullpen_optionality_context, 'VERSION', 'different-method')
+            scope.resolve(REF)
+        # Every candidate/publication owns a new scope, including same-date builds.
+        with service.LeagueBaselineBuild(REF) as next_build:
+            next_build.resolve(REF)
+        # A retained object cannot leak its value into another build.
+        scope.resolve(REF)
+        with pytest.raises(ValueError):
+            with scope:
+                pass
+        assert len(calls) == 7
+
+
 def _assert_normalized_context_shapes(result):
     assert set(result['rotation_context']) == ROTATION_CONTEXT_KEYS
     assert set(result['usage_demand_context']) == USAGE_DEMAND_CONTEXT_KEYS

@@ -1,6 +1,7 @@
 from datetime import timedelta
+import logging
 
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
@@ -40,15 +41,34 @@ def usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=Fals
 
     ref = reference_date or product_current_date()
     query = GameLog.query.filter(GameLog.pitcher_id.in_(pitcher_ids))
-    if not include_stale:
+    if include_stale:
+        # Rank before loading ORM rows: a date window would lose old role
+        # evidence. The primary key breaks previously unspecified same-day ties.
+        ranked = query.with_entities(
+            GameLog.id.label('id'),
+            func.row_number().over(
+                partition_by=GameLog.pitcher_id,
+                order_by=(desc(GameLog.game_date), GameLog.id),
+            ).label('appearance_rank'),
+        ).subquery()
+        query = GameLog.query.join(ranked, ranked.c.id == GameLog.id).filter(
+            ranked.c.appearance_rank <= 10,
+        )
+    else:
         query = query.filter(GameLog.game_date >= ref - timedelta(days=days))
 
-    logs = query.order_by(GameLog.pitcher_id, desc(GameLog.game_date)).all()
+    ordering = [GameLog.pitcher_id, desc(GameLog.game_date)]
+    if include_stale:
+        ordering.append(GameLog.id)
+    logs = query.order_by(*ordering).all()
+    if include_stale:
+        logging.getLogger(__name__).info(
+            'stale_history requested_pitchers=%s returned_rows=%s',
+            len(set(pitcher_ids)), len(logs),
+        )
     grouped = {}
     for log in logs:
         bucket = grouped.setdefault(log.pitcher_id, [])
-        if include_stale and len(bucket) >= 10:
-            continue
         bucket.append(log)
     return grouped
 

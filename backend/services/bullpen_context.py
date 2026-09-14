@@ -7,6 +7,8 @@ select stories, rank teams, alter observations, or infer causality.
 
 from collections import defaultdict
 from datetime import date, timedelta
+from copy import deepcopy
+import logging
 
 from sqlalchemy.orm import joinedload
 
@@ -449,6 +451,60 @@ def _merge_classified_override(record, overrides):
     return {**record, **override} if isinstance(override, dict) else record
 
 
+class LeagueBaselineBuild:
+    """Lazy baseline owned by exactly one live candidate's story pass.
+
+    Construct a fresh instance for each build, even for the same publication.
+    Overrides and different dates/role authority never consume its shared value.
+    Frozen/supplied team contexts do not use this live acquisition object.
+    """
+
+    def __init__(self, reference_date):
+        self.reference_date = reference_date
+        self.authority = self._authority()
+        self.acquisitions = 0
+        self._baseline = None
+        self._loaded = False
+        self._active = False
+        self._closed = False
+
+    @staticmethod
+    def _authority():
+        from services import role_authority, bullpen_optionality_context
+        return (
+            role_authority.role_authority_enabled(),
+            role_authority.AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD,
+            role_authority.AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES,
+            bullpen_optionality_context.VERSION,
+        )
+
+    def __enter__(self):
+        if self._active or self._closed:
+            raise ValueError('A league baseline scope belongs to exactly one build')
+        self._active = True
+        return self
+
+    def __exit__(self, *_args):
+        self._active = False
+        self._closed = True
+        self._baseline = None
+
+    def resolve(self, reference_date, classified_record_overrides=None):
+        if (not self._active or reference_date != self.reference_date or classified_record_overrides
+                or self._authority() != self.authority):
+            return _league_clean_options_baseline(reference_date, classified_record_overrides)
+        if not self._loaded:
+            self._baseline = _league_clean_options_baseline(reference_date)
+            self._loaded = True
+            self.acquisitions += 1
+            logging.getLogger(__name__).info(
+                'league_baseline represented_date=%s acquisition_count=%s',
+                reference_date, self.acquisitions,
+            )
+        # Consumers must not mutate the value seen by a later team.
+        return deepcopy(self._baseline)
+
+
 def _league_clean_options_baseline(reference_date, classified_record_overrides=None):
     records = current_availability_records(
         latest_fatigue_rows(),
@@ -478,7 +534,7 @@ def _league_clean_options_baseline(reference_date, classified_record_overrides=N
 
 
 def _bullpen_optionality_context(
-    team_id, reference_date, classified_record_overrides=None,
+    team_id, reference_date, classified_record_overrides=None, league_baseline_build=None,
 ):
     records = _optionality_records(
         team_id, reference_date, classified_record_overrides,
@@ -494,7 +550,11 @@ def _bullpen_optionality_context(
         include_stale=False,
         reference_date=reference_date,
     )
-    league_baseline = _league_clean_options_baseline(
+    baseline_provider = (
+        league_baseline_build.resolve if league_baseline_build is not None
+        else _league_clean_options_baseline
+    )
+    league_baseline = baseline_provider(
         reference_date, classified_record_overrides,
     )
     return build_bullpen_optionality_context(
@@ -563,6 +623,7 @@ def _context_limitations(last_logs, prev_logs):
 
 def build_team_bullpen_context(
     team_id, reference_date=None, *, classified_record_overrides=None,
+    league_baseline_build=None,
 ):
     """
     Evidence contract for one team.
@@ -601,7 +662,7 @@ def build_team_bullpen_context(
         'usage_demand_context': _usage_demand_context(last_logs, prev_logs, windows),
         'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
         'bullpen_optionality_context': _bullpen_optionality_context(
-            team_id, ref, classified_record_overrides,
+            team_id, ref, classified_record_overrides, league_baseline_build,
         ),
         'role_stability_context': _role_stability_context(team_id, ref),
         'injury_context': _injury_context(team_id, ref),
