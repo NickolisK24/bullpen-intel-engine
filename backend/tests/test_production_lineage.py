@@ -29,6 +29,7 @@ SELECTOR_PROMOTION = MANIFEST['selector_fence_promotion']
 CANONICAL_PROMOTION = MANIFEST['canonical_selector_promotion']
 PREVIOUS_TARGET = SELECTOR_PROMOTION['revision']
 CURRENT_TARGET = CANONICAL_PROMOTION['revision']
+RECEIPT_TARGET = 'b6c9d2e5f8a1'
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -43,7 +44,10 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
                 assert revision not in revisions, (revision, path, revisions.get(revision))
                 revisions[revision] = path.name
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    assert script.get_heads() == [CURRENT_TARGET]
+    assert script.get_heads() == [RECEIPT_TARGET]
+    receipt_extension = list(script.iterate_revisions(RECEIPT_TARGET, CURRENT_TARGET))
+    assert [revision.revision for revision in receipt_extension] == [RECEIPT_TARGET]
+    assert receipt_extension[0].down_revision == CURRENT_TARGET
     assert script.get_bases() == ['3b06397ddc6b']
     assert not any(revision.is_merge_point or revision.is_branch_point
                    for revision in script.walk_revisions())
@@ -57,7 +61,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     original = tmp_path / 'main_graph'
     (original / 'versions').mkdir(parents=True)
     for revision, name in revisions.items():
-        if revision not in promoted | {PREVIOUS_TARGET, CURRENT_TARGET}:
+        if revision not in promoted | {PREVIOUS_TARGET, CURRENT_TARGET, RECEIPT_TARGET}:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
 
@@ -221,7 +225,7 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     current = _flask(existing, 'current')
     assert PREVIOUS_TARGET in current.stdout
     # Exactly one new guard transition; retained data and columns are preserved.
-    result = _flask(existing, 'upgrade')
+    result = _flask(existing, 'upgrade', CURRENT_TARGET)
     transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
     assert len(transitions) == 1, result.stderr
     assert PREVIOUS_TARGET + ' -> ' + CURRENT_TARGET in transitions[0]
@@ -239,14 +243,28 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
         'baseballos_guard_canonical_selector',
     }
     before = after
+    # The receipt is a separate additive transition after the frozen guard.
+    result = _flask(existing, 'upgrade')
+    transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
+    assert len(transitions) == 1, result.stderr
+    assert CURRENT_TARGET + ' -> ' + RECEIPT_TARGET in transitions[0]
+    after = _fingerprint(existing)
+    assert {k: v for k, v in after[0].items() if k != 'alembic_version'} == {
+        k: v for k, v in before[0].items() if k != 'alembic_version'}
+    assert set(after[1]) - set(before[1]) == {
+        ('dashboard_snapshots', 'build_dependency_signature', 'varchar', 'YES', None),
+    }
+    assert set(before[1]) <= set(after[1])
+    assert after[2:] == before[2:]
+    before = after
     for _ in range(2):
         result = _flask(existing, 'upgrade')
         assert 'Running upgrade' not in result.stderr
         assert _fingerprint(existing) == before
     result = _flask(fresh, 'upgrade')
     assert 'Running upgrade' in result.stderr
-    assert _flask(fresh, 'heads').stdout.strip().endswith(CURRENT_TARGET + ' (head)')
-    assert CURRENT_TARGET + ' (head)' in _flask(fresh, 'current').stdout
+    assert _flask(fresh, 'heads').stdout.strip().endswith(RECEIPT_TARGET + ' (head)')
+    assert RECEIPT_TARGET + ' (head)' in _flask(fresh, 'current').stdout
     assert _flask(fresh, 'history').returncode == 0
     # Production main runtime, real migrations and real Daily Edition helper.
     # The custom server probe exits instead of leaving a background web process.
