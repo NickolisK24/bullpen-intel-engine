@@ -288,7 +288,15 @@ def execute_derived_intelligence_plan(
     if any(not str(value).strip() for value in overrides.values()):
         raise ValueError('Method-version overrides must be non-empty strings.')
     versions.update({key: str(value) for key, value in overrides.items()})
+    historical_payload_reuse = None
     if domain_executor is None:
+        from services.team_board_delta_substrate import HistoricalDashboardPayloadReuse
+
+        historical_payload_reuse = HistoricalDashboardPayloadReuse(
+            run_id=sync_run_id,
+            operation_id=plan.id,
+            context_identity=(plan.id, plan.baseball_date, plan.authority_class),
+        )
         # Reuse a current attempt before selecting its predecessor again. The
         # attempt itself is not its own predecessor, but older attempts retain
         # the existing comparable-cohort authority rules.
@@ -302,12 +310,21 @@ def execute_derived_intelligence_plan(
                 and [item for item in recorded if item.get('input_type') != 'build_context'] == manifest
                 and attempt.method_versions_json == versions
                 and attempt.execution_domains_json == list(execution)
-                and cohort_inputs_are_current(attempt, plan)
+                and cohort_inputs_are_current(
+                    attempt,
+                    plan,
+                    historical_payload_reuse=historical_payload_reuse,
+                    capture_identifier=f'existing_attempt_revalidation:{attempt.id}',
+                )
             ):
                 publication = (db.session.get(SyncJob, attempt.publication_job_id)
                                if attempt.publication_job_id else None)
                 return CohortExecutionResult(attempt, False, publication)
-    context = _capture_cohort_context(plan) if domain_executor is None else None
+    context = _capture_cohort_context(
+        plan,
+        historical_payload_reuse=historical_payload_reuse,
+        capture_identifier='baseline_capture',
+    ) if domain_executor is None else None
     if context is not None:
         manifest.append(context.manifest_entry(plan.authority_class))
     fingerprint = cohort_fingerprint(plan, manifest, execution, versions)
@@ -362,6 +379,7 @@ def execute_derived_intelligence_plan(
 
     executor = domain_executor or _DefaultDomainExecutor(
         plan, predecessor_cohort_id=cohort.predecessor_cohort_id,
+        historical_payload_reuse=historical_payload_reuse,
     )
     if context is not None:
         executor.build_context = context
@@ -414,7 +432,12 @@ def execute_derived_intelligence_plan(
     )
     db.session.expire_all()
     db.session.refresh(plan)
-    current = cohort_inputs_are_current(cohort, plan)
+    current = cohort_inputs_are_current(
+        cohort,
+        plan,
+        historical_payload_reuse=historical_payload_reuse,
+        capture_identifier='completion_revalidation',
+    )
     if completion_transaction is not None:
         assert_completion_transaction(completion_transaction)
     from services.semantic_write_fencing import validate_worker_claim
@@ -469,21 +492,39 @@ def execute_derived_intelligence_plan(
     return CohortExecutionResult(cohort, True, publication)
 
 
-def _capture_cohort_context(plan, *, exclude_cohort_id=None, recorded_context=None):
+def _capture_cohort_context(
+    plan, *, exclude_cohort_id=None, recorded_context=None,
+    historical_payload_reuse=None, capture_identifier='context_capture',
+    revalidation=False,
+):
     predecessor = _latest_comparable_cohort(plan, exclude_cohort_id=exclude_cohort_id)
     executor = _DefaultDomainExecutor(
         plan, predecessor_cohort_id=predecessor.id if predecessor else None,
+        historical_payload_reuse=historical_payload_reuse,
+        capture_identifier=capture_identifier,
+        revalidation=revalidation,
     )
     executor.recorded_context = recorded_context
     return executor._capture_read_context()
 
 
-def cohort_inputs_are_current(cohort, plan):
+def cohort_inputs_are_current(
+    cohort, plan, *, historical_payload_reuse=None,
+    capture_identifier='cohort_revalidation',
+):
     """Check recorded authorities without rewriting historical manifests."""
-    return recapture_cohort_input_manifest(cohort, plan) == (cohort.input_manifest_json or [])
+    return recapture_cohort_input_manifest(
+        cohort,
+        plan,
+        historical_payload_reuse=historical_payload_reuse,
+        capture_identifier=capture_identifier,
+    ) == (cohort.input_manifest_json or [])
 
 
-def recapture_cohort_input_manifest(cohort, plan):
+def recapture_cohort_input_manifest(
+    cohort, plan, *, historical_payload_reuse=None,
+    capture_identifier='cohort_revalidation',
+):
     """Use the recorded manifest contract for validation and operator reports."""
     manifest = cohort.input_manifest_json or []
     contexts = [item for item in manifest if item.get('input_type') == 'build_context']
@@ -491,6 +532,9 @@ def recapture_cohort_input_manifest(cohort, plan):
     if contexts:
         current.append(_capture_cohort_context(
             plan, exclude_cohort_id=cohort.id, recorded_context=contexts[0].get('context'),
+            historical_payload_reuse=historical_payload_reuse,
+            capture_identifier=capture_identifier,
+            revalidation=True,
         ).manifest_entry(plan.authority_class))
     # Historical/custom-executor manifests retain their previous contract.
     # This is not full input-closure certification.
@@ -500,12 +544,19 @@ def recapture_cohort_input_manifest(cohort, plan):
 class _DefaultDomainExecutor:
     """Adapter over the proven CU calculators; all outputs remain candidates."""
 
-    def __init__(self, plan, *, predecessor_cohort_id=None):
+    def __init__(
+        self, plan, *, predecessor_cohort_id=None,
+        historical_payload_reuse=None, capture_identifier='context_capture',
+        revalidation=False,
+    ):
         self.plan = plan
         self.predecessor_cohort_id = predecessor_cohort_id
         self.cache = {}
         self.build_context = None
         self.recorded_context = None
+        self.historical_payload_reuse = historical_payload_reuse
+        self.capture_identifier = capture_identifier
+        self.revalidation = revalidation
 
     def __call__(self, domain, snapshots):
         self._capture_read_context()
@@ -600,15 +651,38 @@ class _DefaultDomainExecutor:
             comparisons = {}
             if source is not None:
                 from services.mlb_club_directory import MLB_TEAM_IDS
-                from services.team_board_delta_substrate import resolve_latest_team_state_comparison
+                from services.team_board_delta_substrate import (
+                    HistoricalDashboardPayloadReuse,
+                    resolve_latest_team_state_comparison,
+                )
 
                 teams = MLB_TEAM_IDS if baseline else self.plan.affected_team_ids_json or ()
-                comparisons = {
-                    str(team_id): resolve_latest_team_state_comparison(
-                        team_id=team_id, current_source_snapshot_id=source.id,
-                    )
-                    for team_id in sorted(set(teams))
-                }
+                reuse = self.historical_payload_reuse or HistoricalDashboardPayloadReuse(
+                    operation_id=self.plan.id,
+                )
+                reuse.require_compatible((
+                    self.plan.id, self.plan.baseball_date, self.plan.authority_class,
+                ))
+                reuse_pass = reuse.begin_pass(
+                    self.capture_identifier,
+                    payload_context=(
+                        (reference or {}).get('product_date'),
+                        source.id,
+                        getattr(source, 'payload_version', None),
+                    ),
+                    revalidation=self.revalidation,
+                )
+                try:
+                    comparisons = {
+                        str(team_id): resolve_latest_team_state_comparison(
+                            team_id=team_id,
+                            current_source_snapshot_id=source.id,
+                            historical_payload_reuse=reuse_pass,
+                        )
+                        for team_id in sorted(set(teams))
+                    }
+                finally:
+                    reuse_pass.finish()
             self.build_context = CohortBuildContext.capture(
                 self.plan,
                 source_snapshot=source,

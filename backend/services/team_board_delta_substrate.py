@@ -11,10 +11,14 @@ never modified or backfilled.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import date, timedelta
+import json
 import logging
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, Mapping
+
+from sqlalchemy import Text, cast, func
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
@@ -126,6 +130,118 @@ DOMAIN_READINESS = MappingProxyType({
 })
 
 FROZEN_TEAM_BOARD_SOURCE_AUTHORITY = 'trusted_team_board_publication'
+
+
+@dataclass
+class HistoricalDashboardPayloadReusePass:
+    """One measured consumer pass over an operation-local immutable row cache."""
+
+    cache: 'HistoricalDashboardPayloadReuse'
+    capture_identifier: str
+    payload_context: tuple = ()
+    revalidation: bool = False
+    requested_snapshot_ids: set[int] = field(default_factory=set)
+    payload_db_fetch_count: int = 0
+    reuse_hit_count: int = 0
+    total_payload_bytes_loaded_from_db: int = 0
+    team_consumers: set[int] = field(default_factory=set)
+    validation_count: int = 0
+
+    def load(self, source_ids, *, session):
+        requested = {int(value) for value in source_ids}
+        self.requested_snapshot_ids.update(requested)
+        cached = {
+            snapshot_id for snapshot_id in requested
+            if (self.payload_context, snapshot_id) in self.cache._snapshots_by_key
+        }
+        self.reuse_hit_count += len(cached)
+        missing = requested.difference(cached)
+        if missing:
+            payload_byte_count = (
+                func.octet_length(cast(DashboardSnapshot.payload, Text))
+                if session.get_bind().dialect.name == 'postgresql'
+                else func.length(cast(DashboardSnapshot.payload, Text))
+            )
+            rows = (
+                session.query(DashboardSnapshot, payload_byte_count)
+                .filter(DashboardSnapshot.id.in_(sorted(missing)))
+                .all()
+            )
+            for row, payload_bytes in rows:
+                snapshot = SimpleNamespace(
+                    id=row.id,
+                    snapshot_type=row.snapshot_type,
+                    sync_run_id=row.sync_run_id,
+                    status=row.status,
+                    is_published=row.is_published,
+                    published_at=row.published_at,
+                    payload=deepcopy(row.payload),
+                    payload_version=row.payload_version,
+                    data_through=row.data_through,
+                    availability_reference_date=row.availability_reference_date,
+                    source=row.source,
+                )
+                self.cache._snapshots_by_key[(self.payload_context, row.id)] = snapshot
+                self.payload_db_fetch_count += 1
+                self.total_payload_bytes_loaded_from_db += int(payload_bytes or 0)
+        return {
+            snapshot_id: self.cache._snapshots_by_key[(self.payload_context, snapshot_id)]
+            for snapshot_id in requested
+            if (self.payload_context, snapshot_id) in self.cache._snapshots_by_key
+        }
+
+    def record_team_consumer(self, team_id):
+        self.team_consumers.add(int(team_id))
+
+    def record_validation(self):
+        self.validation_count += 1
+
+    def finish(self):
+        value = {
+            'event': 'historical_dashboard_payload_reuse',
+            'run_id': self.cache.run_id,
+            'operation_id': self.cache.operation_id,
+            'pass_identifier': self.capture_identifier,
+            'historical_snapshot_ids': sorted(self.requested_snapshot_ids),
+            'payload_db_fetch_count': self.payload_db_fetch_count,
+            'reuse_hit_count': self.reuse_hit_count,
+            'total_payload_bytes_loaded_from_db': self.total_payload_bytes_loaded_from_db,
+            'team_consumers': len(self.team_consumers),
+            'revalidation_fetch_count': (
+                self.payload_db_fetch_count if self.revalidation else 0
+            ),
+            'validation_count': self.validation_count,
+        }
+        self.cache.pass_metrics.append(value)
+        logger.info(json.dumps(value, sort_keys=True))
+        return value
+
+
+class HistoricalDashboardPayloadReuse:
+    """Payload reuse bounded to one compatible capture/revalidation operation."""
+
+    def __init__(self, *, run_id=None, operation_id=None, context_identity=None):
+        self.run_id = run_id
+        self.operation_id = operation_id
+        self.context_identity = context_identity
+        self._snapshots_by_key = {}
+        self.pass_metrics = []
+
+    def require_compatible(self, context_identity):
+        if self.context_identity is None:
+            self.context_identity = context_identity
+        elif self.context_identity != context_identity:
+            raise ValueError('historical_dashboard_reuse_context_mismatch')
+
+    def begin_pass(
+        self, capture_identifier, *, payload_context=(), revalidation=False,
+    ):
+        return HistoricalDashboardPayloadReusePass(
+            cache=self,
+            capture_identifier=str(capture_identifier),
+            payload_context=tuple(payload_context),
+            revalidation=bool(revalidation),
+        )
 
 
 def _canonical_rotation_population_basis():
@@ -1966,7 +2082,9 @@ def compare_snapshots(previous, current) -> dict:
     }
 
 
-def _project_frozen_rest_status(sidecars, *, team_id, session):
+def _project_frozen_rest_status(
+    sidecars, *, team_id, session, historical_payload_reuse=None,
+):
     """Read legacy D-055 carriers from their immutable source snapshots.
 
     This is a read-only bridge for natural publications created after the D-055
@@ -1983,19 +2101,25 @@ def _project_frozen_rest_status(sidecars, *, team_id, session):
     source_ids.discard(None)
     if not source_ids:
         return list(sidecars)
-    source_snapshots = {
-        snapshot.id: snapshot
-        for snapshot in (
-            session.query(DashboardSnapshot)
-            .filter(DashboardSnapshot.id.in_(source_ids))
-            .all()
-        )
-    }
+    if historical_payload_reuse is None:
+        source_snapshots = {
+            snapshot.id: snapshot
+            for snapshot in (
+                session.query(DashboardSnapshot)
+                .filter(DashboardSnapshot.id.in_(source_ids))
+                .all()
+            )
+        }
+    else:
+        historical_payload_reuse.record_team_consumer(team_id)
+        source_snapshots = historical_payload_reuse.load(source_ids, session=session)
     projected = []
     for sidecar in sidecars:
         payload = deepcopy(dict(_payload(sidecar)))
         if not _domain_metadata(payload, 'rest_status'):
             source_id = _mapping(payload.get('source')).get('snapshot_id')
+            if historical_payload_reuse is not None:
+                historical_payload_reuse.record_validation()
             capture = try_build_rest_status_capture(
                 snapshot=source_snapshots.get(source_id),
                 team_id=team_id,
@@ -2026,6 +2150,7 @@ def _project_frozen_rest_status(sidecars, *, team_id, session):
 
 def resolve_latest_team_state_comparison(
     *, team_id, session=None, current_source_snapshot_id=None,
+    historical_payload_reuse=None,
 ) -> dict:
     """Compare the latest publication with its nearest compatible predecessor.
 
@@ -2074,6 +2199,7 @@ def resolve_latest_team_state_comparison(
         active_snapshots,
         team_id=int(team_id),
         session=session,
+        historical_payload_reuse=historical_payload_reuse,
     )
     if current_source_snapshot_id is not None:
         current = next((

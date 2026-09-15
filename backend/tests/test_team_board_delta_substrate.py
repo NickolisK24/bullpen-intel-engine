@@ -11,6 +11,7 @@ from sqlalchemy import event
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.share_artifact import ShareArtifact
+from models.sync_run import SyncRun
 from services import team_board_delta_substrate as delta
 from services import public_team_relief_work
 from services import public_serving_authority
@@ -526,6 +527,65 @@ def _rest_status_carrier_snapshot(represented_date, rested_arm_count=5):
             },
         },
     )
+
+
+def _historical_dashboard_source(run_id, represented_date, team_ids, *, payload_version=1):
+    reference_date = represented_date + timedelta(days=1)
+    by_team_id = {}
+    for team_id in team_ids:
+        value = deepcopy(_rest_status_capture(represented_date, 5)['value'])
+        by_team_id[str(team_id)] = {
+            'team': {'team_id': team_id},
+            'rest_status': value,
+            'rest_status_authority': {
+                'method_version': delta.REST_STATUS_METHOD_VERSION,
+                'public_contract_version': delta.REST_STATUS_PUBLIC_CONTRACT_VERSION,
+                'team_board_package_contract': delta.TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': delta._canonical_rest_status_population_basis(),
+                'reference_date_policy': delta.REST_STATUS_REFERENCE_DATE_POLICY,
+                'availability_reference_date': reference_date.isoformat(),
+            },
+        }
+    row = DashboardSnapshot(
+        snapshot_type='bullpen_dashboard',
+        sync_run_id=run_id,
+        status='ready',
+        is_published=True,
+        published_at=datetime.combine(represented_date, datetime.min.time()),
+        payload={
+            'trusted_team_boards': {
+                'contract': delta.TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': represented_date.isoformat(),
+                'availability_reference_date': reference_date.isoformat(),
+                'by_team_id': by_team_id,
+            },
+        },
+        payload_version=payload_version,
+        data_through=represented_date,
+        availability_reference_date=reference_date,
+        source='test',
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+def _legacy_rest_sidecars(source_rows):
+    return [
+        SimpleNamespace(
+            id=10_000 + source.id,
+            data_through=source.data_through,
+            payload={
+                'source': {
+                    'snapshot_id': source.id,
+                    'snapshot_authority': 'dashboard_snapshot',
+                },
+                'domains': {},
+                'values': {},
+            },
+        )
+        for source in source_rows
+    ]
 
 
 def test_prospective_envelope_uses_canonical_team_state_method_owner():
@@ -2333,6 +2393,212 @@ def test_latest_team_state_resolver_uses_one_bounded_source_select_for_legacy_re
     assert result['domains']['team_state']['status'] == delta.COMPARABLE
     assert len(statements) == 3
     assert sum('FROM dashboard_snapshots' in statement for statement in statements) == 2
+
+
+def test_historical_dashboard_payloads_are_loaded_once_across_thirty_teams(app):
+    team_ids = tuple(range(101, 131))
+    run = SyncRun(job_name='historical-dashboard-reuse-test')
+    db.session.add(run)
+    db.session.flush()
+    sources = [
+        _historical_dashboard_source(
+            run.id, date(2026, 8, 10) + timedelta(days=offset), team_ids,
+        )
+        for offset in range(8)
+    ]
+    sidecars = _legacy_rest_sidecars(sources)
+    db.session.commit()
+    reuse = delta.HistoricalDashboardPayloadReuse(
+        run_id=run.id,
+        operation_id='cohort-1',
+        context_identity=('cohort-1', date(2026, 8, 18), 'final'),
+    )
+    reuse_pass = reuse.begin_pass('baseline_capture')
+    source_selects = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith('SELECT') and 'FROM dashboard_snapshots' in statement:
+            source_selects.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', capture)
+    try:
+        outputs = {
+            team_id: delta._project_frozen_rest_status(
+                sidecars,
+                team_id=team_id,
+                session=db.session,
+                historical_payload_reuse=reuse_pass,
+            )
+            for team_id in team_ids
+        }
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture)
+    metrics = reuse_pass.finish()
+
+    assert len(source_selects) == 1
+    assert metrics['historical_snapshot_ids'] == sorted(source.id for source in sources)
+    assert metrics['payload_db_fetch_count'] == 8
+    assert metrics['reuse_hit_count'] == 29 * 8
+    assert metrics['team_consumers'] == 30
+    assert metrics['validation_count'] == 30 * 8
+    assert metrics['total_payload_bytes_loaded_from_db'] > 0
+    assert all(
+        all(sidecar.payload['domains']['rest_status']['trusted'] is True for sidecar in rows)
+        for rows in outputs.values()
+    )
+
+    expected = delta._project_frozen_rest_status(
+        sidecars, team_id=team_ids[0], session=db.session,
+    )
+    assert [row.payload for row in outputs[team_ids[0]]] == [
+        row.payload for row in expected
+    ]
+
+
+def test_historical_dashboard_revalidation_reuses_unchanged_ids_and_loads_changed_id(app):
+    team_ids = (101, 102)
+    run = SyncRun(job_name='historical-dashboard-revalidation-test')
+    db.session.add(run)
+    db.session.flush()
+    sources = [
+        _historical_dashboard_source(
+            run.id, date(2026, 8, 10) + timedelta(days=offset), team_ids,
+        )
+        for offset in range(2)
+    ]
+    db.session.commit()
+    reuse = delta.HistoricalDashboardPayloadReuse(
+        run_id=run.id,
+        operation_id='cohort-2',
+        context_identity=('cohort-2', date(2026, 8, 18), 'final'),
+    )
+    compatible_context = ('2026-08-18', 88, 1)
+    baseline = reuse.begin_pass(
+        'baseline_capture', payload_context=compatible_context,
+    )
+    baseline_outputs = {
+        team_id: delta._project_frozen_rest_status(
+            _legacy_rest_sidecars(sources),
+            team_id=team_id,
+            session=db.session,
+            historical_payload_reuse=baseline,
+        )
+        for team_id in team_ids
+    }
+    assert baseline.finish()['payload_db_fetch_count'] == 2
+    db.session.expire_all()
+
+    revalidation = reuse.begin_pass(
+        'completion_revalidation',
+        payload_context=compatible_context,
+        revalidation=True,
+    )
+    same_outputs = {
+        team_id: delta._project_frozen_rest_status(
+            _legacy_rest_sidecars(sources),
+            team_id=team_id,
+            session=db.session,
+            historical_payload_reuse=revalidation,
+        )
+        for team_id in team_ids
+    }
+    same_metrics = revalidation.finish()
+    assert same_metrics['payload_db_fetch_count'] == 0
+    assert same_metrics['revalidation_fetch_count'] == 0
+    assert same_metrics['reuse_hit_count'] == 2 * 2
+    assert {
+        team_id: [row.payload for row in rows]
+        for team_id, rows in same_outputs.items()
+    } == {
+        team_id: [row.payload for row in rows]
+        for team_id, rows in baseline_outputs.items()
+    }
+
+    changed = _historical_dashboard_source(
+        run.id, date(2026, 8, 12), team_ids, payload_version=2,
+    )
+    db.session.commit()
+    changed_pass = reuse.begin_pass(
+        'changed_id_revalidation',
+        payload_context=compatible_context,
+        revalidation=True,
+    )
+    delta._project_frozen_rest_status(
+        _legacy_rest_sidecars([*sources, changed]),
+        team_id=team_ids[0],
+        session=db.session,
+        historical_payload_reuse=changed_pass,
+    )
+    changed_metrics = changed_pass.finish()
+    assert changed_metrics['payload_db_fetch_count'] == 1
+    assert changed_metrics['revalidation_fetch_count'] == 1
+    assert changed_metrics['reuse_hit_count'] == 2
+
+    different_date = reuse.begin_pass(
+        'different_date', payload_context=('2026-08-19', 88, 1),
+    )
+    delta._project_frozen_rest_status(
+        _legacy_rest_sidecars([sources[0]]),
+        team_id=team_ids[0],
+        session=db.session,
+        historical_payload_reuse=different_date,
+    )
+    assert different_date.finish()['payload_db_fetch_count'] == 1
+
+    different_publication = reuse.begin_pass(
+        'different_publication', payload_context=('2026-08-18', 89, 1),
+    )
+    delta._project_frozen_rest_status(
+        _legacy_rest_sidecars([sources[0]]),
+        team_id=team_ids[0],
+        session=db.session,
+        historical_payload_reuse=different_publication,
+    )
+    assert different_publication.finish()['payload_db_fetch_count'] == 1
+
+
+def test_historical_dashboard_reuse_is_fail_closed_and_context_scoped(app):
+    team_ids = (101,)
+    run = SyncRun(job_name='historical-dashboard-invalid-test')
+    db.session.add(run)
+    db.session.flush()
+    invalid = _historical_dashboard_source(run.id, date(2026, 8, 17), team_ids)
+    invalid_payload = deepcopy(invalid.payload)
+    invalid_payload['trusted_team_boards']['contract'] = 'invalid-contract'
+    invalid.payload = invalid_payload
+    db.session.commit()
+    reuse = delta.HistoricalDashboardPayloadReuse(
+        operation_id='cohort-3',
+        context_identity=('cohort-3', date(2026, 8, 18), 'final'),
+    )
+    reuse_pass = reuse.begin_pass('baseline_capture')
+    projected = delta._project_frozen_rest_status(
+        _legacy_rest_sidecars([invalid]) + [
+            SimpleNamespace(
+                id=99_999,
+                data_through=date(2026, 8, 16),
+                payload={
+                    'source': {
+                        'snapshot_id': 999_999,
+                        'snapshot_authority': 'dashboard_snapshot',
+                    },
+                    'domains': {},
+                    'values': {},
+                },
+            ),
+        ],
+        team_id=team_ids[0],
+        session=db.session,
+        historical_payload_reuse=reuse_pass,
+    )
+    metrics = reuse_pass.finish()
+    assert metrics['payload_db_fetch_count'] == 1
+    assert metrics['validation_count'] == 2
+    assert all('rest_status' not in row.payload['domains'] for row in projected)
+    with pytest.raises(ValueError, match='historical_dashboard_reuse_context_mismatch'):
+        reuse.require_compatible(('cohort-3', date(2026, 8, 19), 'final'))
+    with pytest.raises(ValueError, match='historical_dashboard_reuse_context_mismatch'):
+        reuse.require_compatible(('cohort-3', date(2026, 8, 18), 'corrected_final'))
 
 
 @pytest.mark.parametrize(('previous_count', 'current_count'), ((5, 7), (7, 5)))

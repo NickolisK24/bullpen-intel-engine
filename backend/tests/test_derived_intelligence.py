@@ -578,6 +578,60 @@ def test_default_executor_captures_selection_before_first_domain_and_reuses_it(a
         assert captured.publication_artifact_baseline is False
 
 
+def test_plan_capture_and_completion_revalidation_share_one_historical_payload_scope(
+    app, monkeypatch,
+):
+    from services import dashboard_snapshot, team_board_delta_substrate as delta
+
+    plan = _plan(domains=('read_models',))
+    source = SimpleNamespace(id=41, payload={'generation': 'stable'})
+    monkeypatch.setattr(
+        dashboard_snapshot, 'get_latest_valid_dashboard_snapshot', lambda **_kwargs: source,
+    )
+    monkeypatch.setattr(
+        _DefaultDomainExecutor,
+        '__call__',
+        lambda _executor, _domain, _snapshots: {'team': {}},
+    )
+    created_scopes = []
+    real_scope = delta.HistoricalDashboardPayloadReuse
+
+    def capture_scope(**kwargs):
+        scope = real_scope(**kwargs)
+        created_scopes.append(scope)
+        return scope
+
+    seen = []
+
+    def resolve(*, team_id, current_source_snapshot_id, historical_payload_reuse, **_kwargs):
+        seen.append((
+            historical_payload_reuse.capture_identifier,
+            id(historical_payload_reuse.cache),
+            team_id,
+            current_source_snapshot_id,
+        ))
+        return delta.compare_snapshots(None, None)
+
+    monkeypatch.setattr(delta, 'HistoricalDashboardPayloadReuse', capture_scope)
+    monkeypatch.setattr(delta, 'resolve_latest_team_state_comparison', resolve)
+
+    result = execute_derived_intelligence_plan(
+        plan.id, publication_candidate_enabled=False,
+    )
+
+    assert result.cohort.status == 'complete'
+    assert len(created_scopes) == 1
+    scope = created_scopes[0]
+    assert [row['pass_identifier'] for row in scope.pass_metrics] == [
+        'baseline_capture', 'completion_revalidation',
+    ]
+    assert {cache_id for _capture, cache_id, _team, _source in seen} == {id(scope)}
+    assert {capture for capture, _cache, _team, _source in seen} == {
+        'baseline_capture', 'completion_revalidation',
+    }
+    assert {source_id for _capture, _cache, _team, source_id in seen} == {41}
+
+
 @pytest.mark.parametrize('advance', ['none', 'dashboard', 'baseline', 'predecessor'])
 def test_persisted_selector_lifecycle_rejects_drift_and_retries_postgresql(app, monkeypatch, advance):
     """Exercise the real completion guard with separate selector writer commits.
@@ -1419,8 +1473,8 @@ def test_completion_rejects_hidden_transaction_restart(app, monkeypatch):
     plan = _plan(domains=('read_models',))
     original = derived.cohort_inputs_are_current
 
-    def restarted(cohort, plan):
-        answer = original(cohort, plan)
+    def restarted(cohort, plan, **kwargs):
+        answer = original(cohort, plan, **kwargs)
         db.session.rollback()  # Simulate a reader helper swallowing a DB error.
         return answer
 
