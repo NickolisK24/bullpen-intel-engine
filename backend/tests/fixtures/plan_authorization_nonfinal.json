@@ -1,0 +1,297 @@
+{
+  "provenance": "Captured stored observations from the read-only run 32803 audit; incoming v1 shapes are reconstructed, not original production payloads.",
+  "observations": [
+    {
+      "schema_version": 2,
+      "game_pk": 822683,
+      "identity": {
+        "official_date": "2026-09-15",
+        "game_datetime": "2026-09-15T22:45:00Z",
+        "game_type": "R",
+        "double_header": "N",
+        "game_number": 1,
+        "home_team_id": 120,
+        "away_team_id": 143,
+        "home_probable_pitcher_id": 800600,
+        "away_probable_pitcher_id": 650911
+      },
+      "status": {
+        "abstract": "Preview",
+        "coded": "S",
+        "detailed": "Scheduled",
+        "status_code": "S",
+        "reason": null
+      },
+      "finality": {
+        "state": "not_final",
+        "reason": "scheduled_status",
+        "status_state": "scheduled",
+        "final_status": false
+      },
+      "pitching_evidence": {
+        "source_authority": "completed_game_boxscore_pitching_section",
+        "appearance_set_fingerprint": null
+      },
+      "linescore": {
+        "inning": null,
+        "inning_ordinal": null,
+        "inning_state": null,
+        "inning_half": null,
+        "is_top": null,
+        "scheduled_innings": 9,
+        "balls": null,
+        "strikes": null,
+        "outs": null,
+        "away": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "home": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "pitcher_id": null,
+        "batter_id": null
+      },
+      "play": {
+        "all_play_count": 0,
+        "pitch_event_count": 0,
+        "current_at_bat_index": null,
+        "current_pitcher_id": null,
+        "current_batter_id": null,
+        "current_is_complete": null,
+        "current_event_type": null,
+        "last_play_at_bat_index": null,
+        "last_play_event_type": null,
+        "last_event_identity": null,
+        "last_event_type": null,
+        "last_event_code": null
+      },
+      "live_pitching": {
+        "completeness": "complete_for_observation",
+        "appearances": []
+      }
+    },
+    {
+      "schema_version": 2,
+      "game_pk": 822762,
+      "identity": {
+        "official_date": "2026-09-15",
+        "game_datetime": "2026-09-15T23:07:00Z",
+        "game_type": "R",
+        "double_header": "N",
+        "game_number": 1,
+        "home_team_id": 141,
+        "away_team_id": 116,
+        "home_probable_pitcher_id": null,
+        "away_probable_pitcher_id": 623454
+      },
+      "status": {
+        "abstract": "Preview",
+        "coded": "S",
+        "detailed": "Scheduled",
+        "status_code": "S",
+        "reason": null
+      },
+      "finality": {
+        "state": "not_final",
+        "reason": "scheduled_status",
+        "status_state": "scheduled",
+        "final_status": false
+      },
+      "pitching_evidence": {
+        "source_authority": "completed_game_boxscore_pitching_section",
+        "appearance_set_fingerprint": null
+      },
+      "linescore": {
+        "inning": null,
+        "inning_ordinal": null,
+        "inning_state": null,
+        "inning_half": null,
+        "is_top": null,
+        "scheduled_innings": 9,
+        "balls": null,
+        "strikes": null,
+        "outs": null,
+        "away": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "home": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "pitcher_id": null,
+        "batter_id": null
+      },
+      "play": {
+        "all_play_count": 0,
+        "pitch_event_count": 0,
+        "current_at_bat_index": null,
+        "current_pitcher_id": null,
+        "current_batter_id": null,
+        "current_is_complete": null,
+        "current_event_type": null,
+        "last_play_at_bat_index": null,
+        "last_play_event_type": null,
+        "last_event_identity": null,
+        "last_event_type": null,
+        "last_event_code": null
+      },
+      "live_pitching": {
+        "completeness": "complete_for_observation",
+        "appearances": []
+      }
+    },
+    {
+      "schema_version": 2,
+      "game_pk": 822849,
+      "identity": {
+        "official_date": "2026-09-15",
+        "game_datetime": "2026-09-16T00:05:00Z",
+        "game_type": "R",
+        "double_header": "N",
+        "game_number": 1,
+        "home_team_id": 140,
+        "away_team_id": 111,
+        "home_probable_pitcher_id": null,
+        "away_probable_pitcher_id": 663776
+      },
+      "status": {
+        "abstract": "Preview",
+        "coded": "S",
+        "detailed": "Scheduled",
+        "status_code": "S",
+        "reason": null
+      },
+      "finality": {
+        "state": "not_final",
+        "reason": "scheduled_status",
+        "status_state": "scheduled",
+        "final_status": false
+      },
+      "pitching_evidence": {
+        "source_authority": "completed_game_boxscore_pitching_section",
+        "appearance_set_fingerprint": null
+      },
+      "linescore": {
+        "inning": null,
+        "inning_ordinal": null,
+        "inning_state": null,
+        "inning_half": null,
+        "is_top": null,
+        "scheduled_innings": 9,
+        "balls": null,
+        "strikes": null,
+        "outs": null,
+        "away": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "home": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "pitcher_id": null,
+        "batter_id": null
+      },
+      "play": {
+        "all_play_count": 0,
+        "pitch_event_count": 0,
+        "current_at_bat_index": null,
+        "current_pitcher_id": null,
+        "current_batter_id": null,
+        "current_is_complete": null,
+        "current_event_type": null,
+        "last_play_at_bat_index": null,
+        "last_play_event_type": null,
+        "last_event_identity": null,
+        "last_event_type": null,
+        "last_event_code": null
+      },
+      "live_pitching": {
+        "completeness": "complete_for_observation",
+        "appearances": []
+      }
+    },
+    {
+      "schema_version": 2,
+      "game_pk": 822925,
+      "identity": {
+        "official_date": "2026-09-15",
+        "game_datetime": "2026-09-15T22:40:00Z",
+        "game_type": "R",
+        "double_header": "N",
+        "game_number": 1,
+        "home_team_id": 139,
+        "away_team_id": 133,
+        "home_probable_pitcher_id": 643377,
+        "away_probable_pitcher_id": 678022
+      },
+      "status": {
+        "abstract": "Preview",
+        "coded": "S",
+        "detailed": "Scheduled",
+        "status_code": "S",
+        "reason": null
+      },
+      "finality": {
+        "state": "not_final",
+        "reason": "scheduled_status",
+        "status_state": "scheduled",
+        "final_status": false
+      },
+      "pitching_evidence": {
+        "source_authority": "completed_game_boxscore_pitching_section",
+        "appearance_set_fingerprint": null
+      },
+      "linescore": {
+        "inning": null,
+        "inning_ordinal": null,
+        "inning_state": null,
+        "inning_half": null,
+        "is_top": null,
+        "scheduled_innings": 9,
+        "balls": null,
+        "strikes": null,
+        "outs": null,
+        "away": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "home": {
+          "runs": null,
+          "hits": null,
+          "errors": null
+        },
+        "pitcher_id": null,
+        "batter_id": null
+      },
+      "play": {
+        "all_play_count": 0,
+        "pitch_event_count": 0,
+        "current_at_bat_index": null,
+        "current_pitcher_id": null,
+        "current_batter_id": null,
+        "current_is_complete": null,
+        "current_event_type": null,
+        "last_play_at_bat_index": null,
+        "last_play_event_type": null,
+        "last_event_identity": null,
+        "last_event_type": null,
+        "last_event_code": null
+      },
+      "live_pitching": {
+        "completeness": "complete_for_observation",
+        "appearances": []
+      }
+    }
+  ]
+}

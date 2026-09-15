@@ -131,6 +131,7 @@ def orchestrate_game_change(
     source_client=None,
 ):
     """Apply the CU-03 decision and optionally invoke one reviewed CU-01 write."""
+    scope = final_reconciliation_scope(change)
     decision, status, reason = decide_game_change(change)
     base = {
         'game_pk': _get(change, 'game_pk'),
@@ -143,7 +144,7 @@ def orchestrate_game_change(
         'cu01_invocations': 0,
         'finality_state': _get(change, 'finality_state'),
     }
-    if decision not in {INGEST_FINAL_GAME, INSPECT_POST_FINAL_CORRECTION}:
+    if scope is None:
         return ChangeImpactResult(**base)
     if not allow_canonical_write:
         return ChangeImpactResult(**base)
@@ -165,6 +166,31 @@ def orchestrate_game_change(
     return _from_cu01_report(base, report)
 
 
+def final_reconciliation_scope(change):
+    """Resolve CU-03 eligibility before any final-plan read or authorization.
+
+    CU-02 v1 and v2 both carry the shared game_finality state. Live projection
+    fields, observation digests and schema-only differences are not evidence
+    of finality and never expand CU-01's exact-one-game scope. Unknown/missing
+    finality on a changed accepted observation is unavailable, not non-final.
+    """
+    if _get(change, 'changed') and _get(change, 'accepted') is not False:
+        finality = _get(change, 'finality_state')
+        if finality not in {
+            *_FINALITY_STATES, game_finality.NOT_FINAL,
+            game_finality.POSTPONED, game_finality.SUSPENDED,
+            game_finality.CANCELLED,
+        }:
+            raise ValueError('final_reconciliation_finality_unavailable')
+    decision, _, _ = decide_game_change(change)
+    if decision not in {INGEST_FINAL_GAME, INSPECT_POST_FINAL_CORRECTION}:
+        return None
+    game_pk = _get(change, 'game_pk')
+    if type(game_pk) is not int or game_pk <= 0:
+        raise ValueError('final_reconciliation_scope_invalid')
+    return (game_pk,)
+
+
 def derive_current_plan_fingerprint(
     change, *, source_client=None, official_date_fallback=None,
 ):
@@ -175,7 +201,10 @@ def derive_current_plan_fingerprint(
     an explicitly activated continuous-production cycle without weakening the
     plan mismatch guard itself.
     """
-    game_pk = _get(change, 'game_pk')
+    scope = final_reconciliation_scope(change)
+    if scope is None:
+        raise ValueError('final_reconciliation_ineligible')
+    game_pk, = scope
     state = GameObservationState.query.filter_by(mlb_game_pk=game_pk).one_or_none()
     official_date = (
         ((state.observation or {}).get('identity') or {}).get('official_date')
@@ -192,7 +221,7 @@ def derive_current_plan_fingerprint(
     report = cu01.run_game_driven_ingestion(
         date.fromisoformat(official_date),
         mode=cu01.MODE_SHADOW,
-        only_game_pks=[game_pk],
+        only_game_pks=list(scope),
         source_client=source_client,
     )
     fingerprint = report.get('complete_reconciliation_fingerprint')

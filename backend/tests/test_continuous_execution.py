@@ -1,4 +1,6 @@
 from copy import deepcopy
+import json
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 import pytest
 from flask import Flask
@@ -846,14 +848,25 @@ def test_plan_derivation_failure_is_partial_and_consumes_retry_attempt(
     )
 
     assert result.status == continuous.RESULT_PARTIAL
-    assert result.failures == ({
+    assert len(result.failures) == 1
+    failure = dict(result.failures[0])
+    site = failure.pop('exception_site')
+    assert site['file'] == 'test_continuous_execution.py'
+    assert site['line'] > 0
+    assert failure == {
         'scope': 'plan_authorization',
+        'sync_run_id': 91,
         'game_pk': GAME_PK,
         'error': 'RuntimeError',
         'work_job_id': job_id,
         'stage': continuous_game_work.STAGE_CANONICAL_PENDING,
         'reason': 'plan_fingerprint_derivation_failed',
-    },)
+        'failure_reason': 'unclassified_exception',
+        'finality_state': 'final_and_usable',
+        'classification': 'finalized',
+        'eligibility': 'eligible',
+        'normalized_scope': [GAME_PK],
+    }
     assert result.work_obligations_claimed == 1
     assert result.work_obligations_failed == 1
     assert result.work_obligations_pending == 1
@@ -1961,11 +1974,12 @@ def test_missing_plan_authorization_does_not_consume_durable_work(
         job = durable_jobs()[0]
         assert job.status == sync_jobs.STATUS_PENDING
         assert job.attempts == 0
-    assert result.failures == ({
-        'scope': 'plan_authorization',
-        'game_pk': GAME_PK,
-        'error': 'reviewed_plan_fingerprint_unavailable',
-    },)
+    assert len(result.failures) == 1
+    assert result.failures[0]['reason'] == 'reviewed_plan_fingerprint_unavailable'
+    assert result.failures[0]['failure_reason'] == 'reviewed_fingerprint_unavailable'
+    assert result.failures[0]['work_job_id'] == job.id
+    assert result.failures[0]['normalized_scope'] == [GAME_PK]
+    assert result.failures[0]['eligibility'] == 'eligible'
     assert result.work_obligations_pending == 1
     assert calls == []
 
@@ -3783,3 +3797,120 @@ def test_strongest_real_shape_cycle_reaches_only_cu07_proof(app, monkeypatch):
             snapshot_type=cu07.PROOF_SNAPSHOT_TYPE,
         ).count() == correction_proof_count
         assert len(cache.calls) == 2
+
+
+_CAPTURED_NONFINAL = json.loads(
+    (Path(__file__).parent / 'fixtures' / 'plan_authorization_nonfinal.json').read_text()
+)['observations']
+
+
+@pytest.mark.parametrize('observation', _CAPTURED_NONFINAL, ids=lambda x: str(x['game_pk']))
+@pytest.mark.parametrize('direction', ['main_v1', 'shadow_v2'])
+def test_captured_nonfinal_schema_changes_stop_before_authorization(
+    app, monkeypatch, observation, direction,
+):
+    # Reconstructed v1 is explicitly distinct from the retained v2 payload.
+    v1 = deepcopy(observation)
+    v1['schema_version'] = 1
+    v1.pop('live_pitching')
+    previous, current = (observation, v1) if direction == 'main_v1' else (v1, observation)
+    differences = detection.observation_diff(previous, current)
+    assert set(differences) == {
+        'schema_version', 'live_pitching.appearances', 'live_pitching.completeness',
+    }
+    item = change(classification='changed', game_pk=observation['game_pk'])
+    item.update(finality_state=current['finality']['state'], differences=differences)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('ineligible observation entered final authorization or mutation work')
+
+    monkeypatch.setattr(continuous.cu03, 'derive_current_plan_fingerprint', forbidden)
+    monkeypatch.setattr(continuous.cu03, 'persist_accepted_final_schedule_authority', forbidden)
+    monkeypatch.setattr(continuous_game_work, 'claim', forbidden)
+    monkeypatch.setattr(continuous, '_canonical_source_reserve', forbidden)
+    # Replay twice: no durable work or retry amplification from schema changes.
+    for _ in range(2):
+        result, calls = run(
+            app, monkeypatch,
+            config(continuous.ActivationMode.FULL_LIVE,
+                   production_publication_enabled=True, full_live_acknowledged=True,
+                   expected_plan_fingerprints={}),
+            results=[item], orchestrator=forbidden, production_publisher=forbidden,
+            production_current_id_provider=lambda: 2777,
+        )
+        assert result.status == continuous.RESULT_COMPLETE
+        assert result.failures == ()
+        assert result.canonical_actions == result.canonical_mutation_games == 0
+        assert result.live_publications == result.work_obligations_claimed == 0
+        assert result.downstream_results[0]['cu03']['reason_code'] == 'no_final_canonical_action'
+        assert calls == []
+    with app.app_context():
+        assert durable_jobs() == []
+        assert GameLog.query.count() == GamePitchEvent.query.count() == 0
+        assert DashboardSnapshot.query.count() == 0
+
+
+@pytest.mark.parametrize('finality', [None, 'unknown', 'final'])
+def test_unavailable_finality_is_failure_before_authorization(app, monkeypatch, finality):
+    item = change()
+    item['finality_state'] = finality
+    monkeypatch.setattr(continuous.cu03, 'derive_current_plan_fingerprint',
+                        lambda *a, **k: pytest.fail('unavailable finality reached plan'))
+    result, calls = run(
+        app, monkeypatch,
+        config(continuous.ActivationMode.FULL_LIVE,
+               production_publication_enabled=True, full_live_acknowledged=True,
+               expected_plan_fingerprints={}), results=[item],
+    )
+    assert result.status == continuous.RESULT_PARTIAL
+    assert result.failures[0]['failure_reason'] == 'finality_unavailable'
+    assert result.failures[0]['eligibility'] == 'unavailable'
+    assert result.canonical_mutation_games == result.live_publications == 0
+    assert calls == []
+
+
+def test_authorization_failure_context_is_bounded_and_keeps_throw_site(caplog):
+    try:
+        raise RuntimeError('postgresql://secret-user:secret-password@private/large-plan')
+    except RuntimeError as exc:
+        result = continuous._plan_authorization_failure(
+            change(), None, 32803, 'canonical_pending', exc,
+            eligibility='eligible', final_scope=(GAME_PK,),
+            reason='plan_fingerprint_derivation_failed',
+        )
+    assert result['exception_site']['function'] == 'test_authorization_failure_context_is_bounded_and_keeps_throw_site'
+    assert result['sync_run_id'] == 32803
+    assert result['normalized_scope'] == [GAME_PK]
+    assert result['failure_reason'] == 'unclassified_exception'
+    assert 'secret-password' not in caplog.text
+    assert 'large-plan' not in json.dumps(result)
+
+
+
+@pytest.mark.parametrize('mode', [
+    continuous.ActivationMode.SHADOW_DETECT,
+    continuous.ActivationMode.SHADOW_FULL_CHAIN,
+    continuous.ActivationMode.PROOF_PUBLICATION,
+    continuous.ActivationMode.LIMITED_LIVE,
+    continuous.ActivationMode.FULL_LIVE,
+])
+def test_nonfinal_scope_is_ineligible_in_every_runtime_mode(app, monkeypatch, mode):
+    item = change(classification='changed')
+    item['finality_state'] = 'not_final'
+    item['differences'] = {'play.pitch_event_count': {'previous': 1, 'current': 2}}
+    def forbidden(*args, **kwargs):
+        pytest.fail('nonfinal game reached final plan or writer')
+    monkeypatch.setattr(continuous.cu03, 'derive_current_plan_fingerprint', forbidden)
+    result, calls = run(
+        app, monkeypatch,
+        config(mode, production_publication_enabled=True, full_live_acknowledged=True,
+               allowlist_game_pks=(GAME_PK,)),
+        results=[item], orchestrator=forbidden, production_publisher=forbidden,
+        production_current_id_provider=lambda: 2777,
+    )
+    assert result.status == continuous.RESULT_COMPLETE
+    assert result.canonical_actions == result.canonical_mutation_games == 0
+    assert result.live_publications == result.work_obligations_claimed == 0
+    assert calls == []
+    if mode != continuous.ActivationMode.SHADOW_DETECT:
+        assert result.downstream_results[0]['cu03']['decision'] == 'defer_live_canonical'

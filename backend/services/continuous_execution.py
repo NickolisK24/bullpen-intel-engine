@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import threading
+import traceback
 from time import monotonic
 
 from sqlalchemy import text
@@ -652,6 +653,33 @@ def _execute_cycle(**kwargs):
 
     for change, work_job in pipeline_changes:
         replay_result = change.get('_replay_result')
+        preclaim_stage = (
+            continuous_game_work.stage_for(work_job)
+            if work_job is not None
+            else continuous_game_work.STAGE_CANONICAL_PENDING
+        )
+        final_scope = None
+        if (
+            change.get('changed')
+            and preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING
+        ):
+            try:
+                final_scope = cu03.final_reconciliation_scope(change)
+            except ValueError as exc:
+                failures.append(_plan_authorization_failure(
+                    change, work_job, kwargs['sync_run_id'], preclaim_stage,
+                    exc, eligibility='unavailable',
+                    reason='final_reconciliation_eligibility_unavailable',
+                ))
+                continue
+            if final_scope is None and config.mode != ActivationMode.SHADOW_DETECT:
+                # Resolve the existing no-action/deferred decision without a
+                # plan, claim, schedule write, retry rotation or action slot.
+                downstream.append({
+                    'game_pk': change.get('game_pk'),
+                    'cu03': cu03.orchestrate_game_change(change).to_dict(),
+                })
+                continue
         if config.mode == ActivationMode.SHADOW_DETECT:
             counters['skipped_by_mode'] += int(bool(change.get('changed')))
             continue
@@ -659,11 +687,6 @@ def _execute_cycle(**kwargs):
             # CU-02 has already classified unchanged/rejected/failed evidence;
             # no later service can turn it into canonical work safely.
             continue
-        preclaim_stage = (
-            continuous_game_work.stage_for(work_job)
-            if work_job is not None
-            else continuous_game_work.STAGE_CANONICAL_PENDING
-        )
         if preclaim_stage == continuous_game_work.STAGE_CANONICAL_PENDING:
             current_metrics = _metrics(client)
             observed_source_attempts = max(
@@ -809,14 +832,11 @@ def _execute_cycle(**kwargs):
                         ),
                     )
                 except Exception as exc:
-                    failures.append({
-                        'scope': 'plan_authorization',
-                        'game_pk': change.get('game_pk'),
-                        'error': type(exc).__name__,
-                        'work_job_id': getattr(work_job, 'id', None),
-                        'stage': preclaim_stage,
-                        'reason': 'plan_fingerprint_derivation_failed',
-                    })
+                    failures.append(_plan_authorization_failure(
+                        change, work_job, kwargs['sync_run_id'], preclaim_stage,
+                        exc, eligibility='eligible', final_scope=final_scope,
+                        reason='plan_fingerprint_derivation_failed',
+                    ))
                     if work_job is not None:
                         _record_work_failure(
                             work_job,
@@ -828,11 +848,13 @@ def _execute_cycle(**kwargs):
                     continue
             if work_job is not None and not fingerprint:
                 error = RuntimeError('reviewed_plan_fingerprint_unavailable')
-                failures.append({
-                    'scope': 'plan_authorization',
-                    'game_pk': change.get('game_pk'),
-                    'error': 'reviewed_plan_fingerprint_unavailable',
-                })
+                failure = _plan_authorization_failure(
+                    change, work_job, kwargs['sync_run_id'], preclaim_stage,
+                    error, eligibility='eligible', final_scope=final_scope,
+                    reason='reviewed_plan_fingerprint_unavailable',
+                )
+                failure['error'] = 'reviewed_plan_fingerprint_unavailable'
+                failures.append(failure)
                 if work_claimed:
                     _record_work_failure(
                         work_job,
@@ -1928,6 +1950,49 @@ def _canonical_source_reserve(config, change):
     if config.mode in PRODUCTION_MODES:
         return CANONICAL_WRITE_SOURCE_REQUESTS + AUTOMATIC_PLAN_SOURCE_REQUESTS
     return 0
+
+
+def _plan_authorization_failure(
+    change, work_job, sync_run_id, stage, exc, *, eligibility, reason,
+    final_scope=None,
+):
+    # Retain the actual throw site without serializing source/plan payloads or
+    # arbitrary exception messages (which can contain SQL or credentials).
+    frames = traceback.extract_tb(exc.__traceback__)
+    site = frames[-1] if frames else None
+    known_reasons = {
+        'current reconciliation plan unavailable: scope_mismatch': 'scope_mismatch',
+        'accepted final observation is missing official_date': 'missing_official_date',
+        'accepted final observation authority unavailable': 'accepted_authority_unavailable',
+        'accepted final result identity unavailable': 'final_result_identity_unavailable',
+        'accepted final evidence unavailable': 'final_evidence_unavailable',
+        'accepted final schedule identity mismatch': 'schedule_identity_mismatch',
+        'accepted final schedule state conflict': 'schedule_state_conflict',
+        'final_reconciliation_finality_unavailable': 'finality_unavailable',
+        'final_reconciliation_scope_invalid': 'invalid_scope',
+        'reviewed_plan_fingerprint_unavailable': 'reviewed_fingerprint_unavailable',
+    }
+    value = {
+        'scope': 'plan_authorization',
+        'sync_run_id': sync_run_id,
+        'game_pk': change.get('game_pk'),
+        'work_job_id': getattr(work_job, 'id', None),
+        'stage': stage,
+        'finality_state': str(change.get('finality_state'))[:48],
+        'classification': str(change.get('classification'))[:48],
+        'eligibility': eligibility,
+        'normalized_scope': list(final_scope) if final_scope else None,
+        'error': type(exc).__name__,
+        'reason': reason,
+        'failure_reason': known_reasons.get(str(exc), 'unclassified_exception'),
+        'exception_site': (
+            {'file': os.path.basename(site.filename),
+             'function': site.name, 'line': site.lineno}
+            if site else None
+        ),
+    }
+    logger.error(json.dumps({'event': 'plan_authorization_failure', **value}, sort_keys=True))
+    return value
 
 
 def _record_work_failure(job, error, *, stage, counters, results):
