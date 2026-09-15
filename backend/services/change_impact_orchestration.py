@@ -176,7 +176,7 @@ def final_reconciliation_scope(change):
     """
     if _get(change, 'changed') and _get(change, 'accepted') is not False:
         finality = _get(change, 'finality_state')
-        if finality not in {
+        if not isinstance(finality, str) or finality not in {
             *_FINALITY_STATES, game_finality.NOT_FINAL,
             game_finality.POSTPONED, game_finality.SUSPENDED,
             game_finality.CANCELLED,

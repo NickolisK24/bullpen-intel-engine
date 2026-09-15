@@ -3884,6 +3884,17 @@ def test_authorization_failure_context_is_bounded_and_keeps_throw_site(caplog):
     assert result['failure_reason'] == 'unclassified_exception'
     assert 'secret-password' not in caplog.text
     assert 'large-plan' not in json.dumps(result)
+    malformed = continuous._plan_authorization_failure(
+        {'game_pk': {'payload': 'secret-password'},
+         'finality_state': {'payload': 'secret-password'},
+         'classification': 'secret-password'},
+        None, 32803, 'canonical_pending', ValueError('secret-password'),
+        eligibility='unavailable', reason='final_reconciliation_eligibility_unavailable',
+    )
+    assert malformed['game_pk'] is None
+    assert malformed['finality_state'] is None
+    assert malformed['classification'] is None
+    assert 'secret-password' not in caplog.text
 
 
 

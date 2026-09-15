@@ -1972,14 +1972,27 @@ def _plan_authorization_failure(
         'final_reconciliation_scope_invalid': 'invalid_scope',
         'reviewed_plan_fingerprint_unavailable': 'reviewed_fingerprint_unavailable',
     }
+    game_pk = change.get('game_pk')
+    finality = change.get('finality_state')
+    classification = change.get('classification')
+    known_finality = (
+        game_finality.NOT_FINAL, game_finality.FINAL_PENDING_DATA,
+        game_finality.FINAL_AND_USABLE, game_finality.POSTPONED,
+        game_finality.SUSPENDED, game_finality.CANCELLED, game_finality.UNKNOWN,
+    )
+    known_classification = (
+        cu02.NEW_GAME, cu02.CHANGED, cu02.UNCHANGED, cu02.FINALIZED,
+        cu02.CORRECTED, cu02.STALE_OBSERVATION, cu02.AMBIGUOUS_OBSERVATION,
+        cu02.SOURCE_FAILURE,
+    )
     value = {
         'scope': 'plan_authorization',
         'sync_run_id': sync_run_id,
-        'game_pk': change.get('game_pk'),
+        'game_pk': game_pk if type(game_pk) is int and game_pk > 0 else None,
         'work_job_id': getattr(work_job, 'id', None),
         'stage': stage,
-        'finality_state': str(change.get('finality_state'))[:48],
-        'classification': str(change.get('classification'))[:48],
+        'finality_state': finality if finality in known_finality else None,
+        'classification': classification if classification in known_classification else None,
         'eligibility': eligibility,
         'normalized_scope': list(final_scope) if final_scope else None,
         'error': type(exc).__name__,

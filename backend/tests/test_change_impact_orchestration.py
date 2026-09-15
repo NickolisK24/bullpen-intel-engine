@@ -792,3 +792,12 @@ def test_final_correction_recheck_keeps_real_plan_fingerprint_and_scope(app, mon
         assert not noop.canonical_mutation_performed
         assert noop.game_log_unchanged > 0
         assert DashboardSnapshot.query.count() == 0
+
+
+
+@pytest.mark.parametrize('finality', [{}, []])
+def test_malformed_finality_is_unavailable_before_plan_reads(finality):
+    item = _change(detection.FINALIZED).to_dict()
+    item['finality_state'] = finality
+    with pytest.raises(ValueError, match='final_reconciliation_finality_unavailable'):
+        orchestration.derive_current_plan_fingerprint(item)

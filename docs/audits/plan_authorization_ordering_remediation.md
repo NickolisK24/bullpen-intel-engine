@@ -60,7 +60,7 @@ The existing failure list persisted with cycle metadata now includes run/job/gam
 
 ## Validation and release boundary
 
-Focused backend plus egress/finality/reconciliation/parity run: 321 passed, 2 skipped before the final observability/mode assertions. Final authorization/continuous run: 152 passed, 1 skipped. CI shard collection accounting passed; no new test module or migration is required. Full backend and exact PR-head CI results are reported with the PR checks and delivery report; passing focused tests alone does not certify release readiness. There is no configured Python lint/type-check tool in this repository; whitespace and Python compilation are checked, alongside the repository's CI jobs.
+Final focused backend plus egress/finality/reconciliation/parity run: 328 passed, 2 skipped. Earlier authorization/continuous run: 152 passed, 1 skipped. Full local Windows/SQLite run recorded 9,909 passed, 163 skipped and 51 failures; all 51 failing IDs reproduce on the unchanged integration base. CI shard collection accounting passed; no new test module or migration is required. Exact final PR-head CI results are reported with the PR checks and delivery report; passing focused tests alone does not certify release readiness. There is no configured Python lint/type-check tool in this repository; whitespace and Python compilation are checked, alongside the repository's CI jobs.
 
 No egress production implementation, query selector, admission receipt, migration, frontend contract, ownership fence or publication gate is changed. The original unrelated workspace drift is preserved.
 
