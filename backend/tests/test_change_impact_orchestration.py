@@ -286,7 +286,7 @@ def test_plan_fingerprint_uses_durable_job_date_for_legacy_observation(
 
         monkeypatch.setattr(orchestration.cu01, 'run_game_driven_ingestion', plan)
         fingerprint = orchestration.derive_current_plan_fingerprint(
-            _change(detection.FINALIZED),
+            _change(detection.FINALIZED, finality=game_finality.FINAL_AND_USABLE),
             official_date_fallback=GAME_DATE,
         )
 
@@ -658,3 +658,146 @@ def test_script_is_non_scheduled_and_disables_auto_sync_before_app_import():
     assert 'while True' not in source
     assert 'apscheduler' not in source.lower()
     assert 'threading' not in source.lower()
+
+
+
+@pytest.mark.parametrize(('status', 'code', 'expected'), [
+    ('Scheduled', 'S', game_finality.NOT_FINAL),
+    ('In Progress', 'I', game_finality.NOT_FINAL),
+    ('Delayed Start', 'S', game_finality.NOT_FINAL),
+    ('Suspended', 'U', game_finality.SUSPENDED),
+    ('Postponed', 'D', game_finality.POSTPONED),
+    ('Cancelled', 'C', game_finality.CANCELLED),
+])
+def test_status_matrix_cannot_derive_or_authorize_final_plan(status, code, expected, monkeypatch):
+    payload = _feed(status=status, code=code)
+    observation = detection.canonicalize_game_observation(payload)
+    assert observation['finality']['state'] == expected
+    item = _change(detection.CHANGED, finality=expected,
+                   differences={'play.pitch_event_count': {}})
+    def forbidden(*args, **kwargs):
+        pytest.fail('non-final status reached CU-01')
+    monkeypatch.setattr(orchestration.cu01, 'run_game_driven_ingestion', forbidden)
+    assert orchestration.final_reconciliation_scope(item) is None
+    result = orchestration.orchestrate_game_change(
+        item, allow_canonical_write=True, expected_plan_fingerprint='unused',
+        canonical_ingestor=forbidden,
+    )
+    assert not result.canonical_action_attempted
+    with pytest.raises(ValueError, match='final_reconciliation_ineligible'):
+        orchestration.derive_current_plan_fingerprint(item)
+
+
+@pytest.mark.parametrize('classification', [detection.FINALIZED, detection.CORRECTED])
+@pytest.mark.parametrize('finality', [game_finality.FINAL_AND_USABLE, game_finality.FINAL_PENDING_DATA])
+def test_main_shadow_projection_has_one_final_scope(classification, finality):
+    # v2 adds non-final live evidence; it cannot change canonical scope. Both
+    # paths consume the shared finality enum, never schema version or a digest.
+    common = _change(classification, finality=finality).to_dict()
+    main = {**common, 'schema_version': 1}
+    shadow = {**common, 'schema_version': 2, 'live_pitching': {
+        'appearances': [], 'completeness': None,
+    }, 'source_observation_id': None}
+    assert orchestration.final_reconciliation_scope(main) == (GAME_PK,)
+    assert orchestration.final_reconciliation_scope(shadow) == (GAME_PK,)
+    assert orchestration.decide_game_change(main) == orchestration.decide_game_change(shadow)
+
+
+@pytest.mark.parametrize('scope_pk', [None, 0, -1, True, '777001'])
+def test_invalid_final_scope_still_fails(scope_pk):
+    item = _change(detection.CORRECTED, finality=game_finality.FINAL_AND_USABLE).to_dict()
+    item['game_pk'] = scope_pk
+    with pytest.raises(ValueError, match='final_reconciliation_scope_invalid'):
+        orchestration.derive_current_plan_fingerprint(item)
+
+
+def test_eligible_final_with_true_scope_mismatch_fails_closed(app, monkeypatch):
+    with app.app_context():
+        db.session.add(GameObservationState(
+            mlb_game_pk=GAME_PK, observation_fingerprint='a' * 64,
+            observation={'identity': {'official_date': GAME_DATE.isoformat()}},
+            source_authority=detection.SOURCE_AUTHORITY, source_endpoint='fixture',
+            finality_state=game_finality.FINAL_AND_USABLE,
+            last_classification=detection.CORRECTED,
+        ))
+        # Actual final-only planner receives scheduled ledger rows: eligibility
+        # does not bypass schedule authority or coerce scope_mismatch to success.
+        for team, opponent, side in [(HOME_TEAM, AWAY_TEAM, 'home'), (AWAY_TEAM, HOME_TEAM, 'away')]:
+            db.session.add(ScheduledGame(team_id=team, opponent_team_id=opponent,
+                home_away=side, game_pk=GAME_PK, game_date=GAME_DATE,
+                status_code='S', status_state=ScheduledGame.STATE_SCHEDULED))
+        db.session.commit()
+        class NoNetwork:
+            def get_game_boxscore(self, *args):
+                pytest.fail('scope preflight must stop before fetch')
+        with pytest.raises(RuntimeError, match='current reconciliation plan unavailable: scope_mismatch'):
+            orchestration.derive_current_plan_fingerprint(
+                _change(detection.FINALIZED, finality=game_finality.FINAL_AND_USABLE),
+                source_client=NoNetwork(),
+            )
+        assert GameLog.query.count() == GamePitchEvent.query.count() == 0
+
+
+def test_missing_final_date_remains_unavailable(app):
+    with app.app_context():
+        with pytest.raises(ValueError, match='missing official_date'):
+            orchestration.derive_current_plan_fingerprint(
+                _change(detection.CORRECTED, finality=game_finality.FINAL_AND_USABLE),
+            )
+        assert GameLog.query.count() == 0
+
+
+def test_final_correction_recheck_keeps_real_plan_fingerprint_and_scope(app, monkeypatch):
+    # Equivalent to successful run 32702 correction checks: an accepted final,
+    # governed exact-game plan and a subsequent canonical no-op reconciliation.
+    class Client:
+        def get_game_boxscore(self, game_pk):
+            assert game_pk == GAME_PK
+            return deepcopy(_boxscore())
+        def get_game_play_by_play(self, game_pk):
+            assert game_pk == GAME_PK
+            return deepcopy(_play_by_play())
+    client = Client()
+    with app.app_context():
+        _seed_pitchers()
+        schedule_final_game(GAME_PK, game_date=GAME_DATE)
+        db.session.add(GameObservationState(
+            mlb_game_pk=GAME_PK, observation_fingerprint='a' * 64,
+            observation={'identity': {'official_date': GAME_DATE.isoformat()}},
+            source_authority=detection.SOURCE_AUTHORITY, source_endpoint='fixture',
+            finality_state=game_finality.FINAL_AND_USABLE,
+            last_classification=detection.CORRECTED,
+        ))
+        db.session.commit()
+        item = _change(detection.CORRECTED, finality=game_finality.FINAL_AND_USABLE)
+        direct = game_driven_ingestion.run_game_driven_ingestion(
+            GAME_DATE, mode=game_driven_ingestion.MODE_SHADOW,
+            only_game_pks=[GAME_PK], source_client=client,
+        )
+        first = orchestration.derive_current_plan_fingerprint(item, source_client=client)
+        assert first == direct['complete_reconciliation_fingerprint']
+        assert orchestration.derive_current_plan_fingerprint(item, source_client=client) == first
+        result = orchestration.orchestrate_game_change(
+            item, allow_canonical_write=True, expected_plan_fingerprint=first,
+            source_client=client,
+        )
+        assert result.orchestration_status == orchestration.STATUS_RECONCILED
+        assert result.decision == orchestration.INSPECT_POST_FINAL_CORRECTION
+        again = orchestration.derive_current_plan_fingerprint(item, source_client=client)
+        noop = orchestration.orchestrate_game_change(
+            item, allow_canonical_write=True, expected_plan_fingerprint=again,
+            source_client=client,
+        )
+        assert noop.orchestration_status == orchestration.STATUS_RECONCILED
+        assert not noop.canonical_mutation_performed
+        assert noop.game_log_unchanged > 0
+        assert DashboardSnapshot.query.count() == 0
+
+
+
+@pytest.mark.parametrize('finality', [{}, []])
+def test_malformed_finality_is_unavailable_before_plan_reads(finality):
+    item = _change(detection.FINALIZED).to_dict()
+    item['finality_state'] = finality
+    with pytest.raises(ValueError, match='final_reconciliation_finality_unavailable'):
+        orchestration.derive_current_plan_fingerprint(item)
