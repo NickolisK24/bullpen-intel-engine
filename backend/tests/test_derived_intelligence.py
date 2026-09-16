@@ -1,7 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor
+import gc
 from datetime import date, datetime
 from threading import Barrier
 from types import SimpleNamespace
+import weakref
 
 import pytest
 from flask import Flask
@@ -1137,6 +1139,54 @@ def test_stale_live_plan_is_superseded_before_cohort_creation(app, caplog):
     assert all('"cohort_created": false' in message for message in telemetry)
     assert all('"selector_error_emitted": false' in message for message in telemetry)
     assert all('live_selector_superseded_by_final' not in message for message in telemetry)
+
+
+def test_default_executor_releases_plan_local_calculator_graphs_before_revalidation():
+    class RetainedGraph:
+        pass
+
+    plan = SimpleNamespace(authority_class='final')
+    executor = _DefaultDomainExecutor(plan)
+    retained = RetainedGraph()
+    retained_ref = weakref.ref(retained)
+    context = object()
+    executor.cache['read_result'] = retained
+    executor.build_context = context
+    del retained
+
+    executor.release_transient_results()
+    gc.collect()
+
+    assert executor.cache == {}
+    assert executor.build_context is context
+    assert retained_ref() is None
+
+
+def test_memory_telemetry_is_bounded_and_contains_no_payload(caplog, monkeypatch):
+    from services import derived_intelligence as derived
+
+    plan = SimpleNamespace(id=41, authority_class='final')
+    reuse = SimpleNamespace(
+        _snapshots_by_key={(('context',), 7): object()},
+        pass_metrics=[{'total_payload_bytes_loaded_from_db': 1024}],
+    )
+    monkeypatch.setattr(derived, 'current_process_rss_mib', lambda: 321.5)
+
+    with caplog.at_level('INFO', logger='services.derived_intelligence'):
+        derived._emit_memory_telemetry(
+            'revalidation_start',
+            plan=plan,
+            run_id=91,
+            cohort_id=92,
+            historical_payload_reuse=reuse,
+        )
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].message
+    assert '"rss_mib": 321.5' in message
+    assert '"unique_historical_snapshot_count": 1' in message
+    assert '"historical_payload_bytes_loaded": 1024' in message
+    assert 'payload_json' not in message
 
 
 def test_corrected_final_plan_still_executes_with_current_final_authority(app):

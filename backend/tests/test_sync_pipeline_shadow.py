@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import logging
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from models.source_observation import SourceObservation
 from models.sync_job import SyncJob
 from models.sync_run import SyncRun
 from services import adaptive_game_state
+from scripts import run_sync_pipeline_shadow as shadow_script
 from services.sync_pipeline_certification import ActivationControls, EXPECTED_MIGRATION_HEAD
 from services.sync_pipeline_shadow import (
     DOWNSTREAM_JOB_RESERVE,
@@ -269,3 +271,33 @@ def test_manual_production_workflow_isolated_from_public_and_legacy_jobs():
     assert 'publish' not in step['run'].lower()
     public_condition = workflow['jobs']['public-sync']['if']
     assert "inputs.mode == 'shadow_sp'" in public_condition
+
+
+def test_shadow_entrypoint_enables_info_structured_events_once(monkeypatch, capsys):
+    root = logging.getLogger()
+    previous_handlers = list(root.handlers)
+    previous_level = root.level
+    for handler in previous_handlers:
+        root.removeHandler(handler)
+    monkeypatch.delenv('LOG_LEVEL', raising=False)
+    try:
+        shadow_script._configure_logging()
+        logger = logging.getLogger('services.derived_intelligence')
+        logger.info('{"event":"stale_live_derived_work"}')
+        logger.info('{"event":"historical_dashboard_payload_reuse"}')
+        logger.warning('warning-preserved')
+        logger.error('error-preserved')
+        output = capsys.readouterr().err
+    finally:
+        created_handlers = list(root.handlers)
+        for handler in created_handlers:
+            root.removeHandler(handler)
+            handler.close()
+        for handler in previous_handlers:
+            root.addHandler(handler)
+        root.setLevel(previous_level)
+
+    assert output.count('stale_live_derived_work') == 1
+    assert output.count('historical_dashboard_payload_reuse') == 1
+    assert output.count('warning-preserved') == 1
+    assert output.count('error-preserved') == 1

@@ -79,6 +79,7 @@ from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
 from services.team_state_payload import TEAM_STATE_V1_2
 from team_operations import TEAM_STATE_METHOD_VERSION
 from utils.db import db
+from utils.process_memory import current_process_rss_mib
 from utils.time import utc_now_naive
 
 
@@ -132,6 +133,32 @@ DOMAIN_READINESS = MappingProxyType({
 FROZEN_TEAM_BOARD_SOURCE_AUTHORITY = 'trusted_team_board_publication'
 
 
+def _project_historical_rest_status_payload(payload):
+    """Retain only the immutable carrier needed by the legacy D-055 bridge."""
+    payload = payload if isinstance(payload, Mapping) else {}
+    package = payload.get('trusted_team_boards')
+    package = package if isinstance(package, Mapping) else {}
+    by_team = package.get('by_team_id')
+    by_team = by_team if isinstance(by_team, Mapping) else {}
+    projected_teams = {}
+    for team_key, raw_team in by_team.items():
+        team = raw_team if isinstance(raw_team, Mapping) else {}
+        identity = team.get('team')
+        identity = identity if isinstance(identity, Mapping) else {}
+        projected_teams[str(team_key)] = MappingProxyType({
+            'team': MappingProxyType({'team_id': identity.get('team_id')}),
+            'rest_status': team.get('rest_status'),
+            'rest_status_authority': team.get('rest_status_authority'),
+        })
+    projected_package = MappingProxyType({
+        'contract': package.get('contract'),
+        'data_through': package.get('data_through'),
+        'availability_reference_date': package.get('availability_reference_date'),
+        'by_team_id': MappingProxyType(projected_teams),
+    })
+    return MappingProxyType({'trusted_team_boards': projected_package})
+
+
 @dataclass
 class HistoricalDashboardPayloadReusePass:
     """One measured consumer pass over an operation-local immutable row cache."""
@@ -163,11 +190,31 @@ class HistoricalDashboardPayloadReusePass:
                 else func.length(cast(DashboardSnapshot.payload, Text))
             )
             rows = (
-                session.query(DashboardSnapshot, payload_byte_count)
+                session.query(
+                    DashboardSnapshot.id,
+                    DashboardSnapshot.snapshot_type,
+                    DashboardSnapshot.sync_run_id,
+                    DashboardSnapshot.status,
+                    DashboardSnapshot.is_published,
+                    DashboardSnapshot.published_at,
+                    DashboardSnapshot.payload,
+                    DashboardSnapshot.payload_version,
+                    DashboardSnapshot.data_through,
+                    DashboardSnapshot.availability_reference_date,
+                    DashboardSnapshot.source,
+                    payload_byte_count.label('payload_byte_count'),
+                )
                 .filter(DashboardSnapshot.id.in_(sorted(missing)))
-                .all()
+                .order_by(DashboardSnapshot.id)
+                .yield_per(1)
             )
-            for row, payload_bytes in rows:
+            loaded_snapshot_ids = []
+            for row in rows:
+                # The historical bridge reads only the already-published Team
+                # Board rest-status carrier. Keep its small nested values by
+                # reference and let unrelated Dashboard domains die with this
+                # streamed row. Downstream validation remains read-only.
+                projected_payload = _project_historical_rest_status_payload(row.payload)
                 snapshot = SimpleNamespace(
                     id=row.id,
                     snapshot_type=row.snapshot_type,
@@ -175,7 +222,7 @@ class HistoricalDashboardPayloadReusePass:
                     status=row.status,
                     is_published=row.is_published,
                     published_at=row.published_at,
-                    payload=deepcopy(row.payload),
+                    payload=projected_payload,
                     payload_version=row.payload_version,
                     data_through=row.data_through,
                     availability_reference_date=row.availability_reference_date,
@@ -183,7 +230,19 @@ class HistoricalDashboardPayloadReusePass:
                 )
                 self.cache._snapshots_by_key[(self.payload_context, row.id)] = snapshot
                 self.payload_db_fetch_count += 1
-                self.total_payload_bytes_loaded_from_db += int(payload_bytes or 0)
+                self.total_payload_bytes_loaded_from_db += int(row.payload_byte_count or 0)
+                loaded_snapshot_ids.append(int(row.id))
+            if loaded_snapshot_ids:
+                logger.info(json.dumps({
+                    'event': 'derived_intelligence_memory',
+                    'phase': 'historical_payload_load_complete',
+                    'run_id': self.cache.run_id,
+                    'operation_id': self.cache.operation_id,
+                    'historical_snapshot_ids': sorted(loaded_snapshot_ids),
+                    'unique_historical_snapshot_count': len(loaded_snapshot_ids),
+                    'historical_payload_bytes_loaded': self.total_payload_bytes_loaded_from_db,
+                    'rss_mib': current_process_rss_mib(),
+                }, sort_keys=True))
         return {
             snapshot_id: self.cache._snapshots_by_key[(self.payload_context, snapshot_id)]
             for snapshot_id in requested
@@ -242,6 +301,10 @@ class HistoricalDashboardPayloadReuse:
             payload_context=tuple(payload_context),
             revalidation=bool(revalidation),
         )
+
+    def clear(self):
+        """Release operation-owned historical payloads after revalidation."""
+        self._snapshots_by_key.clear()
 
 
 def _canonical_rotation_population_basis():

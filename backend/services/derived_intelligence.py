@@ -57,6 +57,7 @@ from services.sync_jobs import (
 )
 from services.team_readiness_coverage import resolve_active_bullpen_membership
 from utils.db import db
+from utils.process_memory import current_process_rss_mib
 from utils.time import utc_now_naive
 
 
@@ -66,6 +67,30 @@ PUBLICATION_PAYLOAD_VERSION = 1
 PRIORITY_PUBLICATION_CANDIDATE = 70
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_memory_telemetry(
+    phase, *, plan, run_id=None, cohort_id=None, historical_payload_reuse=None,
+):
+    historical_snapshot_count = 0
+    historical_payload_bytes = 0
+    if historical_payload_reuse is not None:
+        historical_snapshot_count = len(historical_payload_reuse._snapshots_by_key)
+        historical_payload_bytes = sum(
+            int(item.get('total_payload_bytes_loaded_from_db') or 0)
+            for item in historical_payload_reuse.pass_metrics
+        )
+    logger.info(json.dumps({
+        'event': 'derived_intelligence_memory',
+        'phase': str(phase),
+        'run_id': run_id,
+        'plan_id': plan.id,
+        'cohort_id': cohort_id,
+        'authority_class': plan.authority_class,
+        'unique_historical_snapshot_count': historical_snapshot_count,
+        'historical_payload_bytes_loaded': historical_payload_bytes,
+        'rss_mib': current_process_rss_mib(),
+    }, sort_keys=True))
 
 
 class CohortStatus(str, Enum):
@@ -354,6 +379,12 @@ def execute_derived_intelligence_plan(
             operation_id=plan.id,
             context_identity=(plan.id, plan.baseball_date, plan.authority_class),
         )
+        _emit_memory_telemetry(
+            'derived_plan_start',
+            plan=plan,
+            run_id=sync_run_id,
+            historical_payload_reuse=historical_payload_reuse,
+        )
         # Reuse a current attempt before selecting its predecessor again. The
         # attempt itself is not its own predecessor, but older attempts retain
         # the existing comparable-cohort authority rules.
@@ -384,6 +415,12 @@ def execute_derived_intelligence_plan(
     ) if domain_executor is None else None
     if context is not None:
         manifest.append(context.manifest_entry(plan.authority_class))
+        _emit_memory_telemetry(
+            'baseline_capture_complete',
+            plan=plan,
+            run_id=sync_run_id,
+            historical_payload_reuse=historical_payload_reuse,
+        )
     fingerprint = cohort_fingerprint(plan, manifest, execution, versions)
     existing = DerivedIntelligenceCohort.query.filter_by(
         cohort_fingerprint=fingerprint
@@ -473,6 +510,18 @@ def execute_derived_intelligence_plan(
                 failed.add(domain)
         row.completed_at = utc_now_naive()
 
+    result = None
+    release_transient_results = getattr(executor, 'release_transient_results', None)
+    if callable(release_transient_results):
+        release_transient_results()
+    _emit_memory_telemetry(
+        'domain_capture_complete',
+        plan=plan,
+        run_id=sync_run_id,
+        cohort_id=cohort.id,
+        historical_payload_reuse=historical_payload_reuse,
+    )
+
     if before_revalidate is not None:
         before_revalidate()
         db.session.flush()
@@ -489,12 +538,28 @@ def execute_derived_intelligence_plan(
     )
     db.session.expire_all()
     db.session.refresh(plan)
+    _emit_memory_telemetry(
+        'revalidation_start',
+        plan=plan,
+        run_id=sync_run_id,
+        cohort_id=cohort.id,
+        historical_payload_reuse=historical_payload_reuse,
+    )
     current = cohort_inputs_are_current(
         cohort,
         plan,
         historical_payload_reuse=historical_payload_reuse,
         capture_identifier='completion_revalidation',
     )
+    _emit_memory_telemetry(
+        'revalidation_complete',
+        plan=plan,
+        run_id=sync_run_id,
+        cohort_id=cohort.id,
+        historical_payload_reuse=historical_payload_reuse,
+    )
+    if historical_payload_reuse is not None:
+        historical_payload_reuse.clear()
     if completion_transaction is not None:
         assert_completion_transaction(completion_transaction)
     from services.semantic_write_fencing import validate_worker_claim
@@ -546,6 +611,17 @@ def execute_derived_intelligence_plan(
         db.session.commit()
     else:
         db.session.flush()
+    snapshots.clear()
+    if hasattr(executor, 'build_context'):
+        executor.build_context = None
+    context = None
+    _emit_memory_telemetry(
+        'derived_plan_cleanup_complete',
+        plan=plan,
+        run_id=sync_run_id,
+        cohort_id=cohort.id,
+        historical_payload_reuse=historical_payload_reuse,
+    )
     return CohortExecutionResult(cohort, True, publication)
 
 
@@ -632,6 +708,10 @@ class _DefaultDomainExecutor:
         if domain == 'game_context':
             return self._final_context(domain)
         return self._read_models(domain)
+
+    def release_transient_results(self):
+        """Drop plan-local calculator graphs before selector revalidation."""
+        self.cache.clear()
 
     def _impact(self):
         return SimpleNamespace(

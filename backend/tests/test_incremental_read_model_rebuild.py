@@ -521,6 +521,21 @@ def test_shadow_snapshot_overlays_only_affected_team_and_pitcher(app):
         )
 
 
+def test_shadow_snapshot_can_take_ownership_of_private_context_payload(app):
+    with app.app_context():
+        snapshot = _snapshot()
+        source = _cu05(teams=(), pitchers=())
+        private_payload = snapshot.payload
+
+        shadow = cu06.build_shadow_snapshot(
+            snapshot,
+            source,
+            take_payload_ownership=True,
+        )
+
+        assert shadow.payload is private_payload
+
+
 def test_position_player_is_not_given_a_pitcher_read_model(app):
     with app.app_context():
         position_player = Pitcher(
