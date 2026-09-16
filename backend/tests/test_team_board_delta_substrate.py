@@ -2455,6 +2455,62 @@ def test_historical_dashboard_payloads_are_loaded_once_across_thirty_teams(app):
     ]
 
 
+def test_historical_reuse_streams_one_read_only_projection_without_deepcopy(app, monkeypatch):
+    run = SyncRun(job_name='historical-dashboard-ownership-test')
+    db.session.add(run)
+    db.session.flush()
+    source = _historical_dashboard_source(run.id, date(2026, 8, 10), (101,))
+    source.payload = {
+        **source.payload,
+        'unrelated_large_domain': {'values': list(range(100))},
+    }
+    source.payload['trusted_team_boards']['by_team_id']['101']['records'] = [
+        {'pitcher_id': value, 'unused': 'x' * 100} for value in range(10)
+    ]
+    db.session.commit()
+    reuse = delta.HistoricalDashboardPayloadReuse(operation_id='ownership-test')
+    reuse_pass = reuse.begin_pass('baseline_capture')
+
+    monkeypatch.setattr(
+        delta,
+        'deepcopy',
+        lambda _value: pytest.fail('historical payload loader deep-copied a full graph'),
+    )
+    first = reuse_pass.load((source.id,), session=db.session)[source.id]
+    second = reuse_pass.load((source.id,), session=db.session)[source.id]
+
+    assert first is second
+    assert set(first.payload) == {'trusted_team_boards'}
+    assert 'unrelated_large_domain' not in first.payload
+    assert set(
+        first.payload['trusted_team_boards']['by_team_id']['101']
+    ) == {'team', 'rest_status', 'rest_status_authority'}
+    with pytest.raises(TypeError):
+        first.payload['trusted_team_boards'] = {}
+    assert reuse_pass.payload_db_fetch_count == 1
+    assert reuse_pass.reuse_hit_count == 1
+
+
+def test_historical_reuse_release_is_plan_local(app):
+    run = SyncRun(job_name='historical-dashboard-release-test')
+    db.session.add(run)
+    db.session.flush()
+    source = _historical_dashboard_source(run.id, date(2026, 8, 10), (101,))
+    db.session.commit()
+    first = delta.HistoricalDashboardPayloadReuse(operation_id='plan-a')
+    first_pass = first.begin_pass('baseline_capture')
+    first_snapshot = first_pass.load((source.id,), session=db.session)[source.id]
+
+    first.clear()
+    second = delta.HistoricalDashboardPayloadReuse(operation_id='plan-b')
+    second_pass = second.begin_pass('baseline_capture')
+    second_snapshot = second_pass.load((source.id,), session=db.session)[source.id]
+
+    assert first._snapshots_by_key == {}
+    assert second_snapshot is not first_snapshot
+    assert second_pass.payload_db_fetch_count == 1
+
+
 def test_historical_dashboard_revalidation_reuses_unchanged_ids_and_loads_changed_id(app):
     team_ids = (101, 102)
     run = SyncRun(job_name='historical-dashboard-revalidation-test')

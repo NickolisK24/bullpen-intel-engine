@@ -134,6 +134,7 @@ def rebuild_read_model_impact(
     if represented_date is None:
         raise ValueError('CU-06 requires CU-05 explicit represented date')
 
+    captured_source_is_private = build_context is not None
     if build_context is not None:
         if source_snapshot is not None:
             raise ValueError('CU-06 requires one captured snapshot authority')
@@ -153,7 +154,11 @@ def rebuild_read_model_impact(
             failure={'scope': 'snapshot', 'error': 'TrustedSnapshotUnavailable'},
         )
 
-    shadow_snapshot = build_shadow_snapshot(snapshot, cu05_result)
+    shadow_snapshot = build_shadow_snapshot(
+        snapshot,
+        cu05_result,
+        take_payload_ownership=captured_source_is_private,
+    )
     if publication_artifact_baseline:
         team_ids = tuple(MLB_TEAM_IDS)
         by_team = (
@@ -354,10 +359,17 @@ def rebuild_read_model_impact(
     )
 
 
-def build_shadow_snapshot(snapshot, cu05_result):
+def build_shadow_snapshot(snapshot, cu05_result, *, take_payload_ownership=False):
     """Return an in-memory trusted-snapshot copy with affected inputs overlaid."""
     shadow = copy(snapshot)
-    payload = deepcopy(getattr(snapshot, 'payload', None) or {})
+    # CohortBuildContext.source_snapshot() returns a newly parsed private graph.
+    # Transfer that graph into the overlay instead of immediately cloning the
+    # entire multi-megabyte Dashboard again. Other callers keep copy-on-write.
+    payload = (
+        getattr(snapshot, 'payload', None) or {}
+        if take_payload_ownership
+        else deepcopy(getattr(snapshot, 'payload', None) or {})
+    )
     package = payload.get(public_serving_authority.TEAM_BOARD_PACKAGE_KEY) or {}
     by_team = package.get('by_team_id') or {}
     availability = dict(_get(cu05_result, 'availability_results') or {})

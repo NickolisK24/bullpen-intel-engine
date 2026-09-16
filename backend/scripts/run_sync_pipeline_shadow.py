@@ -3,6 +3,7 @@
 import argparse
 from datetime import date
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -33,8 +34,16 @@ def _args(argv=None):
     return parser.parse_args(argv)
 
 
+def _configure_logging():
+    logging.basicConfig(
+        level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
+        format='%(asctime)s %(levelname)s %(name)s %(message)s',
+    )
+
+
 def main(argv=None):
     args = _args(argv)
+    _configure_logging()
     from app import create_app
     from services.continuous_execution import (
         ActivationMode,
