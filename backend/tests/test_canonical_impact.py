@@ -248,6 +248,59 @@ def test_live_plan_is_narrow_and_final_supersedes_it(app):
     assert late_result.downstream_job is None
 
 
+def test_final_plan_supersedes_all_overlapping_active_live_plans(app):
+    live_observation = _observation('live_feed', 'many-live')
+    pitcher = _pitcher(40, 110)
+    live_results = []
+    for index in range(3):
+        live = _live_mutation(live_observation, pitcher, f'live-{index}')
+        live_results.append(plan_canonical_impact(_payload(
+            [live], family='live_appearance', authority='live',
+        )))
+    assert [result.plan.status for result in live_results] == ['dispatched'] * 3
+    unrelated = CanonicalImpactPlan(
+        plan_fingerprint='6' * 64,
+        rules_version=IMPACT_RULES_VERSION,
+        authority_class='live',
+        baseball_date=GAME_DATE,
+        affected_game_ids_json=[999999],
+        affected_team_ids_json=[120, 121],
+        affected_pitcher_ids_json=[],
+        affected_domains_json=['game_context'],
+        source_observation_ids_json=[],
+        status='dispatched',
+        supersedes_live=False,
+    )
+    db.session.add(unrelated)
+    db.session.flush()
+    db.session.add(CanonicalImpactPlanEntity(
+        impact_plan_id=unrelated.id,
+        entity_type='game',
+        entity_key='999999',
+    ))
+    db.session.flush()
+
+    final_observation = _observation('boxscore', 'many-live-final')
+    game = _final_game(final_observation)
+    final = _final_mutation(
+        final_observation, game, pitcher, 'pitching_line_corrected', 'many-live-final',
+    )
+    final_result = plan_canonical_impact(_payload(
+        [final], family='final_appearance', authority='corrected_final',
+    ))
+
+    assert final_result.plan.supersedes_live is True
+    assert final_result.plan.supersedes_plan_id == live_results[-1].plan.id
+    assert [result.plan.status for result in live_results] == ['superseded'] * 3
+    assert unrelated.status == 'dispatched'
+
+    repeated = plan_canonical_impact(_payload(
+        [final], family='final_appearance', authority='corrected_final',
+    ))
+    assert repeated.created is False
+    assert [result.plan.status for result in live_results] == ['superseded'] * 3
+
+
 def test_roster_and_pregame_rules_remain_bounded(app):
     roster_observation = _observation('roster', 'active')
     pitcher = _pitcher(5, 110)

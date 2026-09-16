@@ -20,6 +20,7 @@ from models.player_transaction import PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.scheduled_game import ScheduledGame
 from models.sync_job import SyncJob
+from services.canonical_impact import derived_intelligence_dedupe_key
 from services.mlb_api import mlb_client
 from services.pregame_context import plan_pregame_context_polls
 from services.roster_transaction_authority import (
@@ -183,18 +184,27 @@ def _repair_orphaned_pipeline(
             parent_job_id=parent_job_id,
             commit=False,
         ))
-    plans = CanonicalImpactPlan.query.filter_by(baseball_date=target_date).all()
+    plans = CanonicalImpactPlan.query.filter(
+        CanonicalImpactPlan.baseball_date == target_date,
+        CanonicalImpactPlan.status != 'superseded',
+    ).all()
     for plan in plans:
         cohort = DerivedIntelligenceCohort.query.filter_by(impact_plan_id=plan.id).order_by(
             DerivedIntelligenceCohort.id.desc(),
         ).first()
         if cohort is None and plan.affected_domains_json:
+            dispatched = (
+                db.session.get(SyncJob, plan.dispatched_job_id)
+                if plan.dispatched_job_id is not None else None
+            )
+            if dispatched is not None and dispatched.status in CANONICAL_ACTIVE_STATUSES:
+                continue
             jobs.append(enqueue_job(
                 job_type=JobType.PROCESS_DERIVED_INTELLIGENCE,
                 scope_type=JobScopeType.BASEBALL_DATE,
                 scope_key=target_date.isoformat(),
                 product_date=target_date,
-                dedupe_key=f'DERIVED_INTELLIGENCE:{plan.plan_fingerprint}',
+                dedupe_key=derived_intelligence_dedupe_key(plan.plan_fingerprint),
                 payload={
                     'impact_plan_id': plan.id,
                     'rules_version': plan.rules_version,
