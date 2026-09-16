@@ -8,6 +8,7 @@ from datetime import date
 from enum import Enum
 import hashlib
 import json
+import logging
 from types import SimpleNamespace
 
 from sqlalchemy.exc import IntegrityError
@@ -63,6 +64,8 @@ COHORT_SCHEMA_VERSION = 'derived-cohort-v1'
 DERIVED_INPUT_PAYLOAD_VERSION = 1
 PUBLICATION_PAYLOAD_VERSION = 1
 PRIORITY_PUBLICATION_CANDIDATE = 70
+
+logger = logging.getLogger(__name__)
 
 
 class CohortStatus(str, Enum):
@@ -140,6 +143,8 @@ class CohortExecutionResult:
     created: bool
     publication_job: SyncJob | None
     zero_work: bool = False
+    zero_work_reason: str | None = None
+    authority_owner: dict | None = None
 
 
 def dependency_closure(requested_domains):
@@ -262,13 +267,65 @@ def method_version_manifest(domains):
     return {domain: METHOD_VERSIONS[domain] for domain in sorted(domains)}
 
 
+def _current_final_authority_owner(plan):
+    """Return current final owners that make a live plan stale."""
+    if plan.authority_class != AuthorityClass.LIVE.value:
+        return None
+    game_ids = sorted({int(value) for value in plan.affected_game_ids_json or ()})
+    if not game_ids:
+        return None
+    rows = FinalGameVersion.query.filter(
+        FinalGameVersion.game_pk.in_(game_ids),
+        FinalGameVersion.is_current.is_(True),
+    ).order_by(FinalGameVersion.game_pk).all()
+    if not rows:
+        return None
+    return {
+        str(row.game_pk): {
+            'final_game_version_id': row.id,
+            'version_number': row.version_number,
+        }
+        for row in rows
+    }
+
+
 def execute_derived_intelligence_plan(
     plan_id, *, sync_run_id=None, domain_executor=None, before_revalidate=None,
-    lease_fence=None, publication_candidate_enabled=True, commit=True,
+    lease_fence=None, publication_candidate_enabled=True, commit=True, job_id=None,
 ):
     plan = db.session.get(CanonicalImpactPlan, int(plan_id))
     if plan is None:
         raise ValueError(f'Impact plan {plan_id} does not exist.')
+    final_authority_owner = _current_final_authority_owner(plan)
+    if final_authority_owner:
+        action = 'skipped' if plan.status == 'superseded' else 'superseded'
+        plan.status = 'superseded'
+        event = {
+            'event': 'stale_live_derived_work',
+            'action': action,
+            'plan_id': plan.id,
+            'job_id': job_id,
+            'authority_class': plan.authority_class,
+            'affected_game_ids': sorted(
+                int(value) for value in plan.affected_game_ids_json or ()
+            ),
+            'current_final_authority_owner': final_authority_owner,
+            'cohort_created': False,
+            'selector_error_emitted': False,
+        }
+        logger.info(json.dumps(event, sort_keys=True))
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+        return CohortExecutionResult(
+            None,
+            False,
+            None,
+            zero_work=True,
+            zero_work_reason='live_authority_superseded_by_final',
+            authority_owner=final_authority_owner,
+        )
     requested = tuple(sorted(set(plan.affected_domains_json or ())))
     if not requested:
         return CohortExecutionResult(None, False, None, zero_work=True)
@@ -914,6 +971,7 @@ def execute_derived_intelligence_job(job, *, publication_candidate_enabled=True)
                 claim_token=job.claim_token, commit=False,
             ),
             commit=False,
+            job_id=job.id,
         )
         if result.cohort is not None:
             add_scopes(run, [
@@ -936,6 +994,8 @@ def execute_derived_intelligence_job(job, *, publication_candidate_enabled=True)
                 'publication_candidate_job_id': result.publication_job.id if result.publication_job else None,
                 'publication_mode': getattr(plan, 'publication_mode', 'current'),
                 'replay_kind': getattr(plan, 'replay_kind', None),
+                'zero_work_reason': result.zero_work_reason,
+                'authority_owner': result.authority_owner,
             },
             commit=False,
         )
@@ -948,6 +1008,7 @@ def execute_derived_intelligence_job(job, *, publication_candidate_enabled=True)
             'cohort_status': result.cohort.status if result.cohort else 'no_work',
             'publication_candidate_job_id': result.publication_job.id if result.publication_job else None,
             'publication_mode': getattr(plan, 'publication_mode', 'current'),
+            'zero_work_reason': result.zero_work_reason,
         }
     except Exception as exc:
         db.session.rollback()

@@ -13,10 +13,13 @@ from models.scheduled_game import ScheduledGame
 from models.source_observation import SourceObservation, SourceSubject
 from models.sync_job import SyncJob
 from models.atomic_publication import AtomicPublication
+from models.canonical_impact import CanonicalImpactPlan
 from services.daily_reconciliation import (
     EXPECTED_MLB_TEAMS, RESOLVED_STATES, check_baseball_date_closure,
-    game_resolution_state, plan_morning_reconciliation,
+    _repair_orphaned_pipeline, game_resolution_state, plan_morning_reconciliation,
 )
+from services.canonical_impact import derived_intelligence_dedupe_key
+from services.sync_jobs import JobScopeType, JobType, enqueue_job
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -140,6 +143,48 @@ def test_shadow_morning_plans_acquisition_but_suppresses_closure_and_publication
         row['job_type'] == 'check_baseball_date_closure'
         for row in plan.suppressed_obligations
     )
+
+
+def test_morning_orphan_repair_reuses_canonical_job_identity_and_skips_superseded(app):
+    plan = CanonicalImpactPlan(
+        plan_fingerprint='1' * 64,
+        rules_version='canonical-impact-v1',
+        authority_class='live',
+        baseball_date=DAY,
+        affected_game_ids_json=[820001],
+        affected_team_ids_json=[110, 111],
+        affected_pitcher_ids_json=[],
+        affected_domains_json=['game_context'],
+        source_observation_ids_json=[],
+        status='dispatched',
+        supersedes_live=False,
+    )
+    db.session.add(plan)
+    db.session.flush()
+    original = enqueue_job(
+        job_type=JobType.PROCESS_DERIVED_INTELLIGENCE,
+        scope_type=JobScopeType.GAME,
+        scope_key='820001',
+        product_date=DAY,
+        dedupe_key=derived_intelligence_dedupe_key(plan.plan_fingerprint),
+        payload={
+            'impact_plan_id': plan.id,
+            'rules_version': plan.rules_version,
+            'authority_class': plan.authority_class,
+        },
+        commit=False,
+    )
+    plan.dispatched_job_id = original.id
+    db.session.commit()
+
+    assert _repair_orphaned_pipeline(DAY, run_id=None) == []
+    assert SyncJob.query.filter_by(job_name='process_derived_intelligence').count() == 1
+
+    plan.status = 'superseded'
+    plan.dispatched_job_id = None
+    db.session.commit()
+    assert _repair_orphaned_pipeline(DAY, run_id=None) == []
+    assert SyncJob.query.filter_by(job_name='process_derived_intelligence').count() == 1
 
 
 def test_morning_fails_closed_without_exact_team_denominator(app):

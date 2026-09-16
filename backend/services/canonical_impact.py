@@ -55,6 +55,11 @@ DERIVED_JOB_PAYLOAD_VERSION = 1
 PRIORITY_DERIVED_INTELLIGENCE = 60
 
 
+def derived_intelligence_dedupe_key(plan_fingerprint):
+    """Return the canonical queue identity for one impact plan."""
+    return f'DERIVED_INTELLIGENCE:impact-plan:{plan_fingerprint}'
+
+
 class AuthorityClass(str, Enum):
     LIVE = 'live'
     FINAL = 'final'
@@ -241,14 +246,25 @@ def plan_canonical_impact(payload, *, sync_run_id=None, correlation_id=None, com
         mutations, authority=authority, games=games, teams=teams,
         pitchers=pitchers, domains=domains,
     )
+    superseded_live_plans = _active_live_plans(games) if authority in {
+        AuthorityClass.FINAL.value, AuthorityClass.CORRECTED_FINAL.value,
+    } else []
+    superseded_live_plan = superseded_live_plans[0] if superseded_live_plans else None
     existing = CanonicalImpactPlan.query.filter_by(plan_fingerprint=fingerprint).one_or_none()
     if existing is not None:
+        for live_plan in superseded_live_plans:
+            live_plan.status = ImpactPlanStatus.SUPERSEDED.value
+        if superseded_live_plan is not None:
+            existing.supersedes_live = True
+            if existing.supersedes_plan_id is None:
+                existing.supersedes_plan_id = superseded_live_plan.id
+            if commit:
+                db.session.commit()
+            else:
+                db.session.flush()
         downstream = db.session.get(SyncJob, existing.dispatched_job_id) if existing.dispatched_job_id else None
         return ImpactPlanningResult(existing, False, downstream, stale_live)
 
-    superseded_live_plan = _latest_live_plan(games) if authority in {
-        AuthorityClass.FINAL.value, AuthorityClass.CORRECTED_FINAL.value,
-    } else None
     plan = CanonicalImpactPlan(
         plan_fingerprint=fingerprint,
         rules_version=IMPACT_RULES_VERSION,
@@ -276,8 +292,8 @@ def plan_canonical_impact(payload, *, sync_run_id=None, correlation_id=None, com
         downstream = db.session.get(SyncJob, plan.dispatched_job_id) if plan.dispatched_job_id else None
         return ImpactPlanningResult(plan, False, downstream, stale_live)
 
-    if superseded_live_plan is not None:
-        superseded_live_plan.status = ImpactPlanStatus.SUPERSEDED.value
+    for live_plan in superseded_live_plans:
+        live_plan.status = ImpactPlanStatus.SUPERSEDED.value
 
     downstream = None
     if domains and not stale_live:
@@ -286,7 +302,7 @@ def plan_canonical_impact(payload, *, sync_run_id=None, correlation_id=None, com
             scope_type=(JobScopeType.GAME if len(games) == 1 else JobScopeType.BASEBALL_DATE),
             scope_key=(str(games[0]) if len(games) == 1 else baseball_date.isoformat()),
             product_date=baseball_date,
-            dedupe_key=f'DERIVED_INTELLIGENCE:impact-plan:{fingerprint}',
+            dedupe_key=derived_intelligence_dedupe_key(fingerprint),
             priority=PRIORITY_DERIVED_INTELLIGENCE,
             sync_run_id=sync_run_id,
             payload_schema_version=DERIVED_JOB_PAYLOAD_VERSION,
@@ -615,19 +631,29 @@ def _final_authority_exists(game_ids):
     return count == len(game_ids)
 
 
-def _latest_live_plan(game_ids):
+def _active_live_plans(game_ids):
     if not game_ids:
-        return None
-    return (
-        CanonicalImpactPlan.query
-        .join(CanonicalImpactPlanEntity)
+        return []
+    matching_plan_ids = (
+        db.session.query(CanonicalImpactPlanEntity.impact_plan_id)
         .filter(
-            CanonicalImpactPlan.authority_class == AuthorityClass.LIVE.value,
             CanonicalImpactPlanEntity.entity_type == 'game',
             CanonicalImpactPlanEntity.entity_key.in_([str(value) for value in game_ids]),
         )
+        .distinct()
+    )
+    return (
+        CanonicalImpactPlan.query
+        .filter(
+            CanonicalImpactPlan.authority_class == AuthorityClass.LIVE.value,
+            CanonicalImpactPlan.status.in_((
+                ImpactPlanStatus.PLANNED.value,
+                ImpactPlanStatus.DISPATCHED.value,
+            )),
+            CanonicalImpactPlan.id.in_(matching_plan_ids),
+        )
         .order_by(CanonicalImpactPlan.id.desc())
-        .first()
+        .all()
     )
 
 
@@ -647,7 +673,7 @@ __all__ = [
     'AuthorityClass', 'DERIVED_JOB_PAYLOAD_VERSION', 'IMPACT_INPUT_PAYLOAD_VERSION',
     'IMPACT_RULES_VERSION', 'ImpactDomain', 'ImpactPlanStatus',
     'ImpactPlanningResult', 'MutationFamily', 'NormalizedMutation',
-    'execute_canonical_impact_job', 'impact_domains_for',
+    'derived_intelligence_dedupe_key', 'execute_canonical_impact_job', 'impact_domains_for',
     'impact_plan_fingerprint', 'normalize_mutation_cohort',
     'plan_canonical_impact', 'run_canonical_impact_worker_once',
 ]

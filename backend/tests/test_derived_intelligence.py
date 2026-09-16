@@ -1084,6 +1084,80 @@ def test_zero_work_and_superseded_plan_are_successful_no_ops(app):
     assert DerivedIntelligenceCohort.query.count() == 0
 
 
+def test_live_plan_executes_before_final_authority(app):
+    plan = _plan(authority='live', domains=('game_context',))
+    executor = RecordingExecutor()
+
+    result = execute_derived_intelligence_plan(plan.id, domain_executor=executor)
+
+    assert result.cohort.status == CohortStatus.COMPLETE.value
+    assert result.zero_work is False
+    assert executor.calls == ['game_context']
+
+
+def test_stale_live_plan_is_superseded_before_cohort_creation(app, caplog):
+    observation = _observation('stale-live-final')
+    final, _appearance, _pitcher = _final_authority(observation, version=1)
+    plan = _plan(
+        fingerprint='9' * 64,
+        authority='live',
+        domains=('game_context',),
+    )
+
+    with caplog.at_level('INFO', logger='services.derived_intelligence'):
+        first = execute_derived_intelligence_plan(
+            plan.id,
+            domain_executor=RecordingExecutor(),
+            job_id=4321,
+        )
+        second = execute_derived_intelligence_plan(
+            plan.id,
+            domain_executor=RecordingExecutor(),
+            job_id=4321,
+        )
+
+    assert first.zero_work is True
+    assert first.zero_work_reason == 'live_authority_superseded_by_final'
+    assert first.authority_owner == {
+        '777123': {
+            'final_game_version_id': final.id,
+            'version_number': final.version_number,
+        },
+    }
+    assert second.zero_work is True
+    assert plan.status == 'superseded'
+    assert DerivedIntelligenceCohort.query.count() == 0
+    telemetry = [
+        record.message for record in caplog.records
+        if 'stale_live_derived_work' in record.message
+    ]
+    assert len(telemetry) == 2
+    assert '"action": "superseded"' in telemetry[0]
+    assert '"action": "skipped"' in telemetry[1]
+    assert all('"cohort_created": false' in message for message in telemetry)
+    assert all('"selector_error_emitted": false' in message for message in telemetry)
+    assert all('live_selector_superseded_by_final' not in message for message in telemetry)
+
+
+def test_corrected_final_plan_still_executes_with_current_final_authority(app):
+    observation = _observation('corrected-final-execution')
+    _final_authority(observation, version=2)
+    plan = _plan(
+        fingerprint='8' * 64,
+        authority='corrected_final',
+        domains=('game_context',),
+    )
+
+    result = execute_derived_intelligence_plan(
+        plan.id,
+        domain_executor=RecordingExecutor(),
+    )
+
+    assert result.cohort.status == CohortStatus.COMPLETE.value
+    assert result.zero_work is False
+    assert plan.status == 'dispatched'
+
+
 def test_manifest_rows_are_queryable_and_scope_stays_bounded(app):
     plan = _plan(teams=(110,), pitchers=(10,))
     result = execute_derived_intelligence_plan(plan.id, domain_executor=RecordingExecutor())
@@ -1232,6 +1306,41 @@ def test_one_shot_worker_consumes_sp09_job_and_only_enqueues_sp11_handoff(app):
     assert cohort.sync_run_id is not None
     assert cohort.publication_job_id is not None
     assert SyncJob.query.filter_by(job_name='publish_derived_cohort').count() == 1
+
+
+def test_worker_terminalizes_stale_live_job_as_successful_no_work(app):
+    plan = _plan(
+        fingerprint='7' * 64,
+        authority='live',
+        domains=('game_context',),
+    )
+    queued = enqueue_job(
+        job_type=JobType.PROCESS_DERIVED_INTELLIGENCE,
+        scope_type=JobScopeType.GAME,
+        scope_key='777123',
+        product_date=GAME_DATE,
+        dedupe_key='stale-live-worker-test',
+        payload_schema_version=1,
+        payload={
+            'impact_plan_id': plan.id,
+            'rules_version': plan.rules_version,
+            'authority_class': plan.authority_class,
+            'baseball_date': GAME_DATE.isoformat(),
+        },
+    )
+    plan.dispatched_job_id = queued.id
+    _final_authority(_observation('stale-live-worker-final'), version=1)
+    db.session.commit()
+
+    settled = run_derived_intelligence_worker_once('stale-live-worker')
+
+    assert settled.status == 'succeeded'
+    assert settled.result_json['cohort_id'] is None
+    assert settled.result_json['cohort_status'] == 'no_work'
+    assert settled.result_json['zero_work_reason'] == 'live_authority_superseded_by_final'
+    assert plan.status == 'superseded'
+    assert DerivedIntelligenceCohort.query.count() == 0
+    assert SyncJob.query.filter_by(job_name='publish_derived_cohort').count() == 0
 
 
 def _fenced_selector_fixture(monkeypatch):
