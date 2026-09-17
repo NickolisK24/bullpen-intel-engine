@@ -16,6 +16,19 @@ const identityFields = [
   'rotation_impact_method_version',
 ]
 
+export function teamBoardIdentityKey(identity) {
+  if (!identity) return null
+  return JSON.stringify(identityFields.map(field => identity[field] ?? null))
+}
+
+export function getTeamBoardDetailsIdentity(corePayload, teamId) {
+  if (!isTeamBoardCorePayload(corePayload)) return null
+  const requestedTeamId = Number(teamId)
+  const identity = corePayload.publication_identity
+  if (!Number.isSafeInteger(requestedTeamId) || requestedTeamId <= 0) return null
+  return identity.team_id === requestedTeamId ? identity : null
+}
+
 export function teamBoardIdentitiesMatch(left, right) {
   if (!left || !right) return false
   return identityFields.every(field => left[field] === right[field])

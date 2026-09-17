@@ -9,9 +9,11 @@ import {
   TEAM_BOARD_CORE_CONTRACT_VERSION,
   TEAM_BOARD_DETAILS_CAPABILITY,
   TEAM_BOARD_DETAILS_CONTRACT_VERSION,
+  getTeamBoardDetailsIdentity,
   isTeamBoardV2Payload,
   readTeamBoardDelivery,
   readTeamBoardV2,
+  teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
 
 
@@ -194,6 +196,27 @@ test('deferred sections attach only when every publication identity field matche
 })
 
 
+test('deferred requests require a core identity for the currently selected team', () => {
+  assert.equal(getTeamBoardDetailsIdentity(corePayload, 1), identity)
+  assert.equal(getTeamBoardDetailsIdentity(corePayload, 2), null)
+  assert.equal(getTeamBoardDetailsIdentity({ ...corePayload, publication_identity: null }, 1), null)
+  assert.equal(getTeamBoardDetailsIdentity(corePayload, null), null)
+})
+
+
+test('the deferred request key covers every exact publication identity field', () => {
+  const baseline = teamBoardIdentityKey(identity)
+  assert.ok(baseline)
+  for (const field of Object.keys(identity)) {
+    assert.notEqual(
+      teamBoardIdentityKey({ ...identity, [field]: `${identity[field]}-changed` }),
+      baseline,
+      field,
+    )
+  }
+})
+
+
 test('Team Board loads the answer core first and defers identified depth', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
@@ -207,6 +230,8 @@ test('Team Board loads the answer core first and defers identified depth', async
 
   assert.equal(boardSource.includes('getTeamBoardCore(selectedTeam, options)'), true)
   assert.equal(boardSource.includes('getTeamBoardDetails(selectedTeam, coreIdentity, options)'), true)
+  assert.equal(boardSource.includes('getTeamBoardDetailsIdentity(teamBoardV2State.data, selectedTeam)'), true)
+  assert.equal(boardSource.includes('teamBoardIdentityKey(coreIdentity)'), true)
   assert.equal(boardSource.includes('<TeamBoardAnswerBlock'), true)
   assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
   assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)

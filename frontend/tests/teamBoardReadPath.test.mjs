@@ -61,6 +61,7 @@ test('creating the share loader is inert and invocation preserves the artifact o
 
 test('team switches cannot render the prior team response', () => {
   assert.ok(board.includes('teamBoardV2State.loading'))
-  assert.ok(board.includes('coreIdentity?.snapshot_id'))
+  assert.ok(board.includes('teamBoardIdentityKey(coreIdentity)'))
+  assert.ok(board.includes('getTeamBoardDetailsIdentity(teamBoardV2State.data, selectedTeam)'))
   assert.ok(board.includes('<div key={selectedTeam}'))
 })

@@ -27,6 +27,7 @@ const leagueTeams = {
 
 async function installApiFixtures(page, {
   detailsFailure = false,
+  detailsIdentityMismatch = false,
   deferDetails = false,
   corruptTeams = false,
   finderNoResults = false,
@@ -55,7 +56,13 @@ async function installApiFixtures(page, {
       if (detailsGate) await detailsGate
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
-        : json(teamBoardDetails)
+        : json(detailsIdentityMismatch ? {
+            ...teamBoardDetails,
+            publication_identity: {
+              ...teamBoardDetails.publication_identity,
+              snapshot_id: teamBoardDetails.publication_identity.snapshot_id + 1,
+            },
+          } : teamBoardDetails)
     }
     if (path === '/api/share-cards/team-state/111') return json(teamShareProjection)
     if (path === '/api/bullpen/matchups/999') return json(matchupPayload)
@@ -194,6 +201,26 @@ test('Team Board detail failure preserves the core answer', async ({ page }) => 
   await page.goto('/bullpen?team=BOS')
   await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
   await expect(page.getByRole('heading', { name: 'Recent Usage unavailable' })).toBeVisible()
+})
+
+test('Team Board rejects mismatched details without replacing the core answer', async ({ page }) => {
+  await installApiFixtures(page, { detailsIdentityMismatch: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  await expect(page.getByRole('heading', { name: 'Recent Usage unavailable' })).toBeVisible()
+  await expect(page.getByText('Fixture Reliever').first()).toBeVisible()
+})
+
+test('Team Board keeps the answer and active bullpen readable at product breakpoints', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/bullpen?team=BOS')
+    await expect(page.getByTestId('team-board-answer-block')).toContainText('Boston Red Sox')
+    await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+    await expect(page.getByTestId('team-board-active-bullpen')).toContainText('Fixture Reliever')
+    await expectNoPageOverflow(page)
+  }
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {
