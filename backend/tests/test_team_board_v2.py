@@ -1600,6 +1600,30 @@ def test_core_is_semantically_equal_to_compatibility_board_for_same_publication(
         assert core[field] == full[field]
 
 
+def test_core_active_bullpen_count_matches_every_authoritative_visible_arm():
+    snapshot = _snapshot()
+    board = _board()
+    second = deepcopy(ARM)
+    second['pitcher_id'] = 8
+    second['name'] = 'Second Active Arm'
+    hidden = deepcopy(ARM)
+    hidden['pitcher_id'] = 9
+    hidden['name'] = 'Off Active Arm'
+    hidden['visibility'] = {'is_visible_by_default': False}
+    board['groups'][1]['pitchers'] = [ARM, second, hidden]
+    board['groups'][1]['count'] = 3
+    board['total_pitchers'] = 2
+
+    core = build_team_board_core_payload(
+        board,
+        publication_identity=build_team_board_identity(snapshot, board),
+    )
+
+    assert core['active_bullpen']['arm_count'] == 2
+    assert [arm['pitcher_id'] for arm in core['active_bullpen']['arms']] == [7, 8]
+    assert core['active_bullpen']['arm_count'] == len(core['active_bullpen']['arms'])
+
+
 def test_team_board_identity_rejects_date_method_and_team_mismatch():
     snapshot = _snapshot()
     board = _board()

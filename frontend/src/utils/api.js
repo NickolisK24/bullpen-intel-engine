@@ -562,8 +562,10 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/board${q ? `?${q}` : ''}`)
 }
-// Additive Team Board v2 composition contract. Production Team Board adoption
-// remains in later packages; this helper only exposes the versioned read.
+// Compatibility Team Board composition plus the public answer-first delivery.
+// Deferred detail requests carry the complete immutable core identity; the
+// backend rejects any request that cannot be reconstructed from that exact
+// trusted Dashboard publication.
 export const getTeamBoardV2 = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2`)
 export const getTeamBoardCore = (teamId, options = {}) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2/core`, {
   timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,

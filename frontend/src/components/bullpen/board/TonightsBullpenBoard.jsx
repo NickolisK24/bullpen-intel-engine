@@ -1,6 +1,11 @@
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
-import { readTeamBoardDelivery, readTeamBoardV2 } from '../../../adapters/teamBoardV2'
+import {
+  getTeamBoardDetailsIdentity,
+  readTeamBoardDelivery,
+  readTeamBoardV2,
+  teamBoardIdentityKey,
+} from '../../../adapters/teamBoardV2'
 import { getTeamBoardCore, getTeamBoardDetails, getTeamShareCard } from '../../../utils/api'
 import { TeamBoardSkeleton, ErrorState, EmptyState, SectionPair } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
@@ -74,16 +79,17 @@ export default function TonightsBullpenBoard({
   const legacyTeamBoardRead = hasTeamBoardV2Override
     ? readTeamBoardV2(teamBoardV2State.data)
     : null
-  const coreIdentity = legacyTeamBoardRead?.publicationIdentity
-    || teamBoardV2State.data?.publication_identity
-    || null
+  const coreIdentity = hasTeamBoardV2Override
+    ? legacyTeamBoardRead?.publicationIdentity || null
+    : getTeamBoardDetailsIdentity(teamBoardV2State.data, selectedTeam)
+  const coreIdentityKey = teamBoardIdentityKey(coreIdentity)
   const teamBoardDetails = useFetch(
     options => (
       selectedTeam == null || !coreIdentity || hasTeamBoardV2Override
         ? Promise.resolve(null)
         : getTeamBoardDetails(selectedTeam, coreIdentity, options)
     ),
-    [selectedTeam, coreIdentity?.snapshot_id, hasTeamBoardV2Override],
+    [selectedTeam, coreIdentityKey, hasTeamBoardV2Override],
   )
   const teamBoardRead = hasTeamBoardV2Override
     ? legacyTeamBoardRead
