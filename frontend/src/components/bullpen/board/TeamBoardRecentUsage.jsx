@@ -1,30 +1,32 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
 import { formatDateOnly } from '../../../utils/dateDisplay'
-import { getRecentUsageView } from './recentUsageView'
 
-const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
-function firstLimitation(status) {
-  const values = [
-    ...(Array.isArray(status?.limitations) ? status.limitations : []),
-  ]
-  return values.find(value => textValue(value))?.trim() || null
-}
+const PATTERN_FIELDS = Object.freeze([
+  ['pitchedYesterday', 'Pitched yesterday'],
+  ['backToBack', 'Back-to-back'],
+  ['threeInFour', '3 appearances in 4 days'],
+  ['fourInSix', '4 appearances in 6 days'],
+  ['recentMultiInning', 'Multi-inning outing'],
+  ['highPitchOuting', '25+ pitch outing'],
+])
 
-const publishedValue = value => Number.isInteger(value) && value >= 0 ? value : '—'
+const numericValue = fact => (
+  Number.isInteger(fact?.value) && fact.value >= 0 ? fact.value : null
+)
 
 function RecentUsageSkeleton() {
   return (
     <section className="min-w-0" aria-labelledby="recent-usage-title" aria-busy="true" data-testid="recent-usage-skeleton">
       <h2 id="recent-usage-title" className="type-section-title">Recent Usage</h2>
-      <span className="sr-only">Loading recent usage.</span>
-      <div className="mt-panel rounded-sm border border-line-subtle bg-surface-raised/35 p-panel">
-        {[0, 1].map(index => (
-          <div key={index} className="grid min-w-0 gap-row border-b border-line-subtle py-row first:pt-0 last:border-b-0 last:pb-0 tablet:grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))]">
-            <SkeletonBlock className="h-5 w-40 max-w-full" />
-            <SkeletonBlock className="h-4 w-24 max-w-full" />
-            <SkeletonBlock className="h-4 w-28 max-w-full" />
-            <SkeletonBlock className="h-4 w-20 max-w-full" />
+      <span className="sr-only">Loading recent usage and rest patterns.</span>
+      <div className="mt-panel space-y-row rounded-sm border border-line-subtle bg-surface-raised/35 p-panel">
+        {[0, 1, 2].map(index => (
+          <div key={index} className="grid min-w-0 gap-row border-b border-line-subtle pb-row last:border-b-0 last:pb-0 desktop:grid-cols-[minmax(12rem,1fr)_minmax(0,3fr)]">
+            <SkeletonBlock className="h-5 w-44 max-w-full" />
+            <div className="grid grid-cols-3 gap-row">
+              {[0, 1, 2].map(cell => <SkeletonBlock key={cell} className="h-14 w-full" />)}
+            </div>
           </div>
         ))}
       </div>
@@ -32,67 +34,105 @@ function RecentUsageSkeleton() {
   )
 }
 
-function UsageWindowRow({ row }) {
+function PublishedNumber({ fact, label }) {
+  const value = numericValue(fact)
+  const withheld = value == null
   return (
-    <article role="listitem" className="min-w-0 border-b border-line-subtle py-panel first:pt-row last:border-b-0 last:pb-row">
-      <div className="grid min-w-0 grid-cols-3 gap-panel tablet:grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))] tablet:items-center">
-        <div className="col-span-3 min-w-0 tablet:col-span-1">
-          <h3 className="font-board text-board-body font-semibold text-text-primary">Last {row.days} days</h3>
-          <p className="type-metadata mt-meta text-text-tertiary">
-            Through <time dateTime={row.through}>{formatDateOnly(row.through, { month: 'short' })}</time>
+    <div className="min-w-0" aria-label={`${label}: ${withheld ? fact?.status || 'unavailable' : value}`}>
+      <dt className="type-overline text-text-tertiary">{label}</dt>
+      <dd className={`mt-meta font-board text-board-body font-semibold tabular-nums ${withheld ? 'text-text-withheld' : 'text-text-primary'}`}>
+        {withheld ? '—' : value}
+      </dd>
+    </div>
+  )
+}
+
+function UsageWindow({ window }) {
+  return (
+    <div className="min-w-0 border-l border-line-subtle pl-row first:border-l-0 first:pl-0">
+      <h4 className="font-board text-board-label font-semibold uppercase text-text-secondary">{window?.label || 'Window'}</h4>
+      <dl className="mt-row grid min-w-0 gap-meta">
+        <PublishedNumber fact={window?.appearances} label="Appearances" />
+        <PublishedNumber fact={window?.pitches} label="Pitches" />
+        <PublishedNumber fact={window?.outs} label="Outs" />
+      </dl>
+    </div>
+  )
+}
+
+function PatternList({ pitcher }) {
+  const published = PATTERN_FIELDS.filter(([key]) => pitcher?.[key]?.value === true)
+  const limited = PATTERN_FIELDS.filter(([key]) => pitcher?.[key]?.status !== 'complete')
+
+  return (
+    <div className="mt-row border-t border-line-subtle pt-row" aria-label={`Rest and usage patterns for ${pitcher.pitcherName || 'reliever'}`}>
+      <div className="type-overline">Rest / Usage Patterns</div>
+      <div className="mt-meta flex min-w-0 flex-wrap gap-meta">
+        {published.map(([key, label]) => (
+          <span key={key} className="inline-flex min-h-7 items-center rounded-sm border border-line-default bg-surface-raised px-2 py-1 font-board text-board-metadata font-medium text-text-secondary">
+            {label}
+          </span>
+        ))}
+        {published.length === 0 && limited.length === 0 && (
+          <span className="type-metadata">No listed usage pattern in the published window.</span>
+        )}
+      </div>
+      {limited.length > 0 && (
+        <p className="type-metadata mt-meta text-text-withheld">
+          Evidence incomplete: {limited.map(([, label]) => label).join(', ')}.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
+  const daysSince = numericValue(pitcher.daysSinceLastAppearance)
+  const canOpen = pitcher.pitcherId != null && typeof onSelectPitcher === 'function'
+  return (
+    <article className={`min-w-0 border-b border-line-subtle py-panel first:pt-row last:border-b-0 last:pb-row ${subdued ? 'opacity-80' : ''}`}>
+      <div className="grid min-w-0 gap-panel desktop:grid-cols-[minmax(12rem,1fr)_minmax(0,3fr)] desktop:items-start">
+        <div className="min-w-0">
+          {canOpen ? (
+            <button
+              type="button"
+              className="min-h-11 max-w-full text-left font-board text-board-body font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
+              onClick={event => onSelectPitcher(pitcher.pitcherId, event.currentTarget)}
+              aria-label={`Open pitcher context for ${pitcher.pitcherName || 'reliever'}`}
+            >
+              {pitcher.pitcherName || 'Reliever'}
+            </button>
+          ) : (
+            <h3 className="font-board text-board-body font-semibold text-text-primary">{pitcher.pitcherName || 'Reliever'}</h3>
+          )}
+          <p className={`type-metadata ${canOpen ? '' : 'mt-meta'}`}>
+            Days since last appearance:{' '}
+            <span className={daysSince == null ? 'text-text-withheld' : 'font-semibold text-text-secondary'}>
+              {daysSince == null ? '—' : daysSince}
+            </span>
           </p>
         </div>
-        {[
-          ['Appearances', publishedValue(row.reliefAppearances)],
-          ['Arms', publishedValue(row.pitchersInRelief)],
-          ['Pitches', publishedValue(row.pitchesTotal)],
-        ].map(([label, value]) => (
-          <div key={label} className="min-w-0 tablet:text-right">
-            <div className="type-overline tablet:hidden">{label}</div>
-            <div className={`mt-meta font-board text-lg font-semibold tabular-nums ${value === '—' ? 'text-text-withheld' : 'text-text-primary'}`}>{value}</div>
-          </div>
-        ))}
+        <div className="grid min-w-0 grid-cols-3 gap-row" aria-label={`Published usage windows for ${pitcher.pitcherName || 'reliever'}`}>
+          {pitcher.windows.map((window, index) => <UsageWindow key={window?.key || `window-${index}`} window={window} />)}
+        </div>
       </div>
-      <p className="type-compact mt-row max-w-[48rem] text-text-secondary">{row.sentence}</p>
-      {row.limitations.map((limitation, index) => (
-        <p key={`${row.key}-limitation-${index}`} className="type-metadata mt-meta max-w-[48rem] text-text-withheld">{limitation}</p>
-      ))}
+      <PatternList pitcher={pitcher} />
     </article>
   )
 }
 
-function LatestPublishedUsage({ group, onSelectPitcher }) {
-  if (!group) return null
-  const dateLabel = formatDateOnly(group.gameDate, { month: 'short' })
-
+function PitcherGroup({ pitchers, label, onSelectPitcher, subdued = false }) {
+  if (pitchers.length === 0) return null
   return (
-    <div className="rounded-sm border border-line-default bg-surface-raised/55 p-panel tablet:p-section">
-      <div className="type-overline text-brand-gold">Most recent published date</div>
-      <div className="mt-meta flex min-w-0 flex-wrap items-baseline gap-x-panel gap-y-meta">
-        <h3 className="font-board text-xl font-semibold text-text-primary tablet:text-2xl">
-          <time dateTime={group.gameDate}>{dateLabel}</time>
-        </h3>
-        <p className="type-compact max-w-[48rem] text-text-secondary">{group.sentence}</p>
-      </div>
-      {group.arms.length > 0 && (
-        <div className="mt-panel border-t border-line-subtle pt-row" aria-label={`Arms used on ${dateLabel}`}>
-          <div className="type-overline">Arms used</div>
-          <div className="mt-meta flex min-w-0 flex-wrap gap-x-panel gap-y-meta">
-            {group.arms.map(arm => arm.pitcherId != null && typeof onSelectPitcher === 'function' ? (
-              <button
-                key={arm.key}
-                type="button"
-                className="min-h-11 rounded-sm font-board text-board-body font-medium text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
-                onClick={event => onSelectPitcher(arm.pitcherId, event.currentTarget)}
-              >
-                {arm.name}
-              </button>
-            ) : (
-              <span key={arm.key} className="inline-flex min-h-11 items-center font-board text-board-body font-medium text-text-secondary">{arm.name}</span>
-            ))}
+    <div className={`min-w-0 rounded-sm border px-panel ${subdued ? 'mt-panel border-line-subtle bg-surface-base/50' : 'border-line-default bg-surface-raised/25'}`}>
+      {label && <h3 className="border-b border-line-subtle py-row font-board text-board-body font-semibold text-text-secondary">{label}</h3>}
+      <div role="list" aria-label={label || 'Current active bullpen recent usage'}>
+        {pitchers.map((pitcher, index) => (
+          <div key={pitcher.pitcherId ?? `${pitcher.pitcherName}-${index}`} role="listitem">
+            <PitcherUsageRow pitcher={pitcher} onSelectPitcher={onSelectPitcher} subdued={subdued} />
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   )
 }
@@ -100,49 +140,46 @@ function LatestPublishedUsage({ group, onSelectPitcher }) {
 export default function TeamBoardRecentUsage({ read, loading = false, error = null, onRetry, onSelectPitcher }) {
   if (loading) return <RecentUsageSkeleton />
 
-  const reliefWork = read?.recentReliefWork?.read
-  const status = read?.sectionStatus?.recent_usage
-  const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
-    ? status.status
-    : 'unavailable'
-  const view = getRecentUsageView(reliefWork)
-  const rows = view.available ? view.windows : []
-  const limitation = firstLimitation(status)
+  const carrier = read?.recentUsageRest
+  const rejected = read?.recentUsageRestRejected === true
+  const available = carrier && carrier.status !== 'unavailable'
 
   return (
     <section className="min-w-0" aria-labelledby="recent-usage-title" data-testid="team-board-recent-usage">
       <header className="mb-panel flex min-w-0 flex-wrap items-end justify-between gap-meta border-b border-line-subtle pb-row">
         <div className="min-w-0">
-          <div className="type-overline text-brand-gold">Who just worked</div>
+          <div className="type-overline text-brand-gold">Named-arm workload</div>
           <h2 id="recent-usage-title" className="mt-meta font-board text-xl font-semibold text-text-primary">Recent Usage</h2>
+          <p className="type-compact mt-meta max-w-reading">Published workload across yesterday, three days, and seven days, followed by factual usage patterns.</p>
         </div>
-        {reliefWork?.data_through && <p className="type-metadata">Published through {formatDateOnly(reliefWork.data_through, { month: 'short' })}</p>}
+        {carrier?.dataThrough && <p className="type-metadata">Published through {formatDateOnly(carrier.dataThrough, { month: 'short' })}</p>}
       </header>
 
       {error ? (
-        <SectionState status="error" title="Recent Usage unavailable" message="Recent usage could not be loaded." onRetry={onRetry} />
-      ) : !read || !view.available ? (
-        <SectionState status="unavailable" title="Recent Usage unavailable" message="A recent usage read is not available." onRetry={onRetry} />
+        <SectionState status="error" title="Recent Usage unavailable" message="Recent usage and rest patterns could not be loaded." onRetry={onRetry} />
+      ) : rejected ? (
+        <SectionState status="unavailable" title="Recent Usage unavailable" message="Recent usage does not match this Team Board publication." />
+      ) : !read || !available ? (
+        <SectionState status="unavailable" title="Recent Usage unavailable" message="A publication-bound recent usage and rest read is not available." onRetry={onRetry} />
       ) : (
         <>
-          <LatestPublishedUsage group={view.latestGroup} onSelectPitcher={onSelectPitcher} />
-          {rows.length > 0 && (
-            <div className="mt-panel min-w-0 rounded-sm border border-line-subtle bg-surface-base px-panel" role="list" aria-label="Published recent relief usage windows">
-              <div className="hidden grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))] gap-panel border-b border-line-default py-row font-board text-board-label font-medium uppercase text-text-tertiary tablet:grid">
-                <div>Window</div>
-                <div className="text-right">Appearances</div>
-                <div className="text-right">Arms</div>
-                <div className="text-right">Pitches</div>
-              </div>
-              {rows.map(row => <UsageWindowRow key={row.key} row={row} />)}
-            </div>
+          <PitcherGroup pitchers={carrier.activePitchers} onSelectPitcher={onSelectPitcher} />
+          {carrier.activePitchers.length === 0 && (
+            <SectionState status="unavailable" title="No active bullpen usage rows" message="The publication contains no active-pitcher usage rows." />
           )}
-
-          {statusName === 'partial' && (
-            <SectionState status="partial" title="Recent Usage is partially available" message={limitation || 'Some recent appearance evidence is unavailable.'} className={rows.length > 0 ? 'mt-row' : ''} />
-          )}
-          {statusName === 'unavailable' && (
-            <SectionState status="unavailable" title="Recent Usage unavailable" message="Recent usage evidence is unavailable." className={rows.length > 0 ? 'mt-row' : ''} />
+          <PitcherGroup
+            pitchers={carrier.offActiveHistoricalContributors}
+            label="Recent workload from pitchers no longer active"
+            onSelectPitcher={onSelectPitcher}
+            subdued
+          />
+          {carrier.status === 'partial' && (
+            <SectionState
+              status="partial"
+              title="Recent Usage is partially available"
+              message="Some usage or rest evidence is incomplete; unpublished values remain withheld."
+              className="mt-row"
+            />
           )}
         </>
       )}

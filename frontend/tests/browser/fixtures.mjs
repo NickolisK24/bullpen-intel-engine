@@ -1,6 +1,8 @@
 export const teams = [
   { team_id: 111, team_name: 'Boston Red Sox', team_abbreviation: 'BOS' },
   { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+  { team_id: 110, team_name: 'Baltimore Orioles', team_abbreviation: 'BAL' },
+  { team_id: 119, team_name: 'Los Angeles Dodgers', team_abbreviation: 'LAD' },
 ]
 
 export const dailyEditionPayload = {
@@ -72,6 +74,7 @@ const arm = {
 const sectionStatus = {
   team_state: { status: 'available' }, active_bullpen: { status: 'available' },
   recent_usage: { status: 'available' }, recently_used_arms: { status: 'available' },
+  recent_usage_rest: { status: 'available' },
   rest_status: { status: 'available' }, workload_overview: { status: 'available' },
   roles_deployment: { status: 'available' }, rotation_impact: { status: 'available' },
   recent_transactions: { status: 'available' }, recent_relief_work: { status: 'available' },
@@ -100,6 +103,29 @@ export const teamBoardDetails = {
   capability: 'team_board_deferred_details', contract_version: 'team_board_deferred_details_v1',
   publication_identity: identity, represented_date: '2026-09-02',
   recent_usage: { appearances: [], limitations: [] },
+  recent_usage_rest: {
+    contract: 'team_board_recent_usage_rest_v1', status: 'complete', reason_code: null,
+    data_through: '2026-09-02', reference_date: '2026-09-03',
+    window_policy: 'calendar_day_inclusive_through_date_v1',
+    population_basis: 'official_appearance_team_relief_appearances_and_frozen_active_bullpen',
+    thresholds: { multi_inning_minimum_outs: 4, high_pitch_outing_minimum_pitches: 25 },
+    active_pitchers: [{
+      pitcher_id: 101, pitcher_name: 'Fixture Reliever', roster_state: 'active',
+      windows: {
+        yesterday: { window_days: 1, start_date: '2026-09-02', through_date: '2026-09-02', appearances: { value: 1, status: 'complete', reason_codes: [] }, pitches: { value: 25, status: 'complete', reason_codes: [] }, outs: { value: 3, status: 'complete', reason_codes: [] } },
+        last_3_days: { window_days: 3, start_date: '2026-08-31', through_date: '2026-09-02', appearances: { value: 2, status: 'complete', reason_codes: [] }, pitches: { value: 39, status: 'complete', reason_codes: [] }, outs: { value: 6, status: 'complete', reason_codes: [] } },
+        last_7_days: { window_days: 7, start_date: '2026-08-27', through_date: '2026-09-02', appearances: { value: 3, status: 'complete', reason_codes: [] }, pitches: { value: 57, status: 'complete', reason_codes: [] }, outs: { value: 10, status: 'complete', reason_codes: [] } },
+      },
+      days_since_last_appearance: { value: 1, status: 'complete', reason_codes: [] },
+      pitched_yesterday: { value: true, status: 'complete', reason_codes: [] },
+      back_to_back: { value: true, status: 'complete', reason_codes: [] },
+      three_in_four: { value: false, status: 'complete', reason_codes: [] },
+      four_in_six: { value: false, status: 'complete', reason_codes: [] },
+      recent_multi_inning: { value: true, status: 'complete', reason_codes: [], threshold: 4 },
+      high_pitch_outing: { value: true, status: 'complete', reason_codes: [], threshold: 25 },
+    }],
+    off_active_historical_contributors: [],
+  },
   recently_used_arms: { status: 'available', value: 0, summary: 'No recent appearances.' },
   workload_overview: { windows: [], limitations: [] }, roles_deployment: teamBoardCore.roles_deployment,
   recent_transactions: { status: 'available', events: [] }, recent_relief_work: { read: { relief_by_date: [] } },

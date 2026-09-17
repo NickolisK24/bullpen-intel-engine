@@ -236,24 +236,60 @@ test('meaningful structured changes are promoted while absent game context stays
   assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Relief Work'))
 })
 
-test('Recent Usage owns governed window summaries and the latest published arm list', () => {
-  const teamReliefWorkPayload = {
-    ...reliefWorkPayload,
-    relief_by_date: [{
-      ...reliefWorkPayload.relief_by_date[0],
-      appearances: [{ pitcher_id: 91, pitcher_full_name: 'Chronology Reliever' }],
-    }],
+test('Recent Usage owns publication-bound named-arm windows and patterns', () => {
+  const evidenceFact = value => ({ value, status: 'complete', reason_codes: [] })
+  const usageWindow = (days, appearances, pitches, outs) => ({
+    window_days: days,
+    start_date: days === 1 ? '2026-06-04' : days === 3 ? '2026-06-02' : '2026-05-29',
+    through_date: '2026-06-04',
+    appearances: evidenceFact(appearances),
+    pitches: evidenceFact(pitches),
+    outs: evidenceFact(outs),
+  })
+  const base = teamBoardV2Fixture(populatedBoard)
+  const teamBoardV2Payload = {
+    ...base,
+    publication_identity: {
+      represented_date: '2026-06-04',
+      availability_reference_date: '2026-06-05',
+    },
+    recent_usage_rest: {
+      contract: 'team_board_recent_usage_rest_v1',
+      status: 'complete',
+      reason_code: null,
+      data_through: '2026-06-04',
+      reference_date: '2026-06-05',
+      active_pitchers: [{
+        pitcher_id: 91,
+        pitcher_name: 'Chronology Reliever',
+        roster_state: 'active',
+        windows: {
+          yesterday: usageWindow(1, 1, 18, 3),
+          last_3_days: usageWindow(3, 2, 30, 6),
+          last_7_days: usageWindow(7, 3, 42, 9),
+        },
+        days_since_last_appearance: evidenceFact(1),
+        pitched_yesterday: evidenceFact(true),
+        back_to_back: evidenceFact(true),
+        three_in_four: evidenceFact(false),
+        four_in_six: evidenceFact(false),
+        recent_multi_inning: evidenceFact(false),
+        high_pitch_outing: evidenceFact(false),
+      }],
+      off_active_historical_contributors: [],
+    },
   }
-  const html = renderBoard(populatedBoard, { teamReliefWorkPayload })
+  const html = renderBoard(populatedBoard, { teamBoardV2Payload })
   const recentStart = html.indexOf('Recent Usage')
   const detailStart = html.indexOf('Recent Relief Work')
   const recentSection = html.slice(recentStart, detailStart)
 
   assert.ok(htmlIncludes(recentSection, 'Chronology Reliever'))
-  assert.ok(htmlIncludes(recentSection, 'Jun 4, 2026'))
-  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence))
-  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_14.sentence))
-  assert.equal(htmlIncludes(recentSection, 'Yesterday'), false)
+  assert.ok(htmlIncludes(recentSection, 'Published through Jun 4, 2026'))
+  assert.ok(htmlIncludes(recentSection, 'Yesterday'))
+  assert.ok(htmlIncludes(recentSection, '3 Days'))
+  assert.ok(htmlIncludes(recentSection, '7 Days'))
+  assert.ok(htmlIncludes(recentSection, 'Back-to-back'))
   for (const group of populatedBoard.groups) {
     for (const card of group.pitchers) {
       assert.equal(htmlIncludes(recentSection, card.name), false)

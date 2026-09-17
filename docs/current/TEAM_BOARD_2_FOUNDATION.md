@@ -177,9 +177,46 @@ serialization (0.070-0.165 ms), and an 18,044-byte compact payload. Publication
 also resolves the six prior league-date coverage decisions once and shares
 them across all teams; the admitted through-date decision is reused.
 
+## TB-03 user-visible delivery
+
+Recent Usage presents each active reliever's publication-bound Yesterday,
+3 Days, and 7 Days appearances, pitches, and outs without recalculating those
+windows in the browser. Rest / Usage Patterns renders only the carrier's
+factual observations: Pitched yesterday, Back-to-back, 3 appearances in 4
+days, 4 appearances in 6 days, Multi-inning outing, and 25+ pitch outing. It
+does not present workload as an availability, fatigue, health, or manager-intent
+prediction.
+
+Field-level `complete`, `partial`, `unknown`, and `unavailable` states remain
+visible at the smallest affected scope. Null facts render as unavailable
+evidence rather than zero or false, while other supported facts for the same
+pitcher remain visible. Active relievers remain the primary list; recent work
+from pitchers outside the frozen active population appears in a separate,
+subdued historical-contributor group.
+
+TB-03 attaches only after the existing core/details identity fence succeeds.
+The adapter also requires the carrier's `data_through` and `reference_date` to
+match the core identity dates. A generation, date, or team mismatch rejects
+TB-03 locally and preserves TB-01 and TB-02. Team switching clears the prior
+carrier before the next team's details request can attach.
+
+At 390px, each pitcher uses a stacked three-window comparison with wrapping
+pattern labels; 768px and 1440px use progressively denser grids. Primary
+information does not require horizontal scrolling. The deferred-wrapper mobile
+overhang was removed with a local container-margin correction.
+
+With immediate fixture responses in a local compiled preview, five warm runs
+measured core DOM readiness at 164.4 ms median (161.1-198.0 ms), details
+response at 147.0 ms median (142.8-151.4 ms), and TB-03 DOM readiness at
+166.2 ms median (162.7-200.1 ms). TB-03 rendered 20.0 ms median after the
+details response (17.7-53.1 ms). These measurements isolate browser rendering;
+they are not production network measurements. TB-03 still arrives with the
+full details response, whose existing production baseline is approximately
+7.9 seconds. No production latency improvement is claimed.
+
 ## Deferred packages
 
-TB-03 through TB-10 attach only through the same exact identity contract. This
+TB-04 through TB-10 attach only through the same exact identity contract. This
 package does not expand their semantics. Optional detail failure leaves TB-01
 and TB-02 intact.
 

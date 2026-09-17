@@ -12,6 +12,7 @@ import {
   getTeamBoardDetailsIdentity,
   isTeamBoardV2Payload,
   readTeamBoardDelivery,
+  readTeamBoardRecentUsageRest,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -119,12 +120,42 @@ const corePayload = {
   publication_identity: identity,
 }
 
+const recentUsageRest = {
+  contract: 'team_board_recent_usage_rest_v1',
+  status: 'complete',
+  reason_code: null,
+  data_through: identity.represented_date,
+  reference_date: identity.availability_reference_date,
+  window_policy: 'calendar_day_inclusive_through_date_v1',
+  population_basis: 'official_appearance_team_relief_appearances_and_frozen_active_bullpen',
+  thresholds: { high_pitch_outing_minimum_pitches: 25 },
+  active_pitchers: [{
+    pitcher_id: 7,
+    pitcher_name: 'Exact Source Name',
+    roster_state: 'active',
+    windows: {
+      yesterday: { window_days: 1, start_date: '2026-08-16', through_date: '2026-08-16', appearances: { value: 1, status: 'complete', reason_codes: [] }, pitches: { value: 25, status: 'complete', reason_codes: [] }, outs: { value: 3, status: 'complete', reason_codes: [] } },
+      last_3_days: { window_days: 3, start_date: '2026-08-14', through_date: '2026-08-16', appearances: { value: 2, status: 'complete', reason_codes: [] }, pitches: { value: 40, status: 'complete', reason_codes: [] }, outs: { value: 6, status: 'complete', reason_codes: [] } },
+      last_7_days: { window_days: 7, start_date: '2026-08-10', through_date: '2026-08-16', appearances: { value: 3, status: 'complete', reason_codes: [] }, pitches: { value: 58, status: 'complete', reason_codes: [] }, outs: { value: 10, status: 'complete', reason_codes: [] } },
+    },
+    days_since_last_appearance: { value: 1, status: 'complete', reason_codes: [] },
+    pitched_yesterday: { value: true, status: 'complete', reason_codes: [] },
+    back_to_back: { value: true, status: 'complete', reason_codes: [] },
+    three_in_four: { value: false, status: 'complete', reason_codes: [] },
+    four_in_six: { value: false, status: 'complete', reason_codes: [] },
+    recent_multi_inning: { value: true, status: 'complete', reason_codes: [], threshold: 4 },
+    high_pitch_outing: { value: true, status: 'complete', reason_codes: [], threshold: 25 },
+  }],
+  off_active_historical_contributors: [],
+}
+
 const detailsPayload = {
   capability: TEAM_BOARD_DETAILS_CAPABILITY,
   contract_version: TEAM_BOARD_DETAILS_CONTRACT_VERSION,
   publication_identity: identity,
   represented_date: payload.represented_date,
   recent_usage: payload.recent_usage,
+  recent_usage_rest: recentUsageRest,
   recently_used_arms: payload.recently_used_arms,
   workload_overview: payload.workload_overview,
   roles_deployment: payload.roles_deployment,
@@ -183,6 +214,8 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(attached.detailsAttached, true)
   assert.equal(attached.performance, detailsPayload.performance)
   assert.equal(attached.whatChanged, detailsPayload.what_changed)
+  assert.equal(attached.recentUsageRest.activePitchers[0].windows[0].label, 'Yesterday')
+  assert.equal(attached.recentUsageRest.activePitchers[0].highPitchOuting.value, true)
 
   const mismatched = readTeamBoardDelivery(corePayload, {
     ...detailsPayload,
@@ -192,7 +225,43 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(mismatched.detailsRejected, true)
   assert.equal(mismatched.performance, null)
   assert.equal(mismatched.whatChanged, null)
+  assert.equal(mismatched.recentUsageRest, null)
   assert.equal(mismatched.teamState, payload.team_state)
+})
+
+
+test('recent usage carrier dates must match the exact core identity', () => {
+  const valid = readTeamBoardRecentUsageRest(recentUsageRest, identity)
+  assert.equal(valid.dataThrough, identity.represented_date)
+  assert.equal(valid.referenceDate, identity.availability_reference_date)
+  assert.equal(valid.activePitchers[0].windows[1].appearances.value, 2)
+
+  const staleCarrier = readTeamBoardDelivery(corePayload, {
+    ...detailsPayload,
+    recent_usage_rest: { ...recentUsageRest, data_through: '2026-08-15' },
+  })
+  assert.equal(staleCarrier.detailsAttached, true)
+  assert.equal(staleCarrier.recentUsageRest, null)
+  assert.equal(staleCarrier.recentUsageRestRejected, true)
+  assert.equal(staleCarrier.teamState, payload.team_state)
+  assert.equal(staleCarrier.activeBullpen, payload.active_bullpen)
+})
+
+
+test('details retained from a prior team cannot attach after team switching', () => {
+  const nextIdentity = { ...identity, team_id: 2, team_abbreviation: 'NX' }
+  const nextCore = {
+    ...corePayload,
+    team: { team_id: 2, team_name: 'Next Club', team_abbreviation: 'NX' },
+    publication_identity: nextIdentity,
+  }
+  const switched = readTeamBoardDelivery(nextCore, detailsPayload)
+
+  assert.equal(getTeamBoardDetailsIdentity(nextCore, 2), nextIdentity)
+  assert.equal(switched.detailsAttached, false)
+  assert.equal(switched.detailsRejected, true)
+  assert.equal(switched.recentUsageRest, null)
+  assert.equal(switched.team.team_id, 2)
 })
 
 

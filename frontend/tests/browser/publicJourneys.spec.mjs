@@ -25,10 +25,40 @@ const leagueTeams = {
   })),
 }
 
+function teamBoardFixtureFor(teamId) {
+  const team = teams.find(item => Number(item.team_id) === Number(teamId)) || teams[0]
+  const nextIdentity = {
+    ...teamBoardCore.publication_identity,
+    team_id: team.team_id,
+    team_abbreviation: team.team_abbreviation,
+  }
+  const pitcherId = team.team_id === 111 ? 101 : team.team_id * 1000 + 1
+  const pitcherName = team.team_id === 111
+    ? 'Fixture Reliever'
+    : `${team.team_abbreviation} Fixture Reliever`
+  const core = structuredClone(teamBoardCore)
+  core.team = team
+  core.publication_identity = nextIdentity
+  if (team.team_id !== 111) {
+    core.summary = `${team.team_name} has a current published bullpen read.`
+    core.team_state.summary = core.summary
+  }
+  core.active_bullpen.arms[0].pitcher_id = pitcherId
+  core.active_bullpen.arms[0].name = pitcherName
+  core.operating_state.team = team
+
+  const details = structuredClone(teamBoardDetails)
+  details.publication_identity = nextIdentity
+  details.recent_usage_rest.active_pitchers[0].pitcher_id = pitcherId
+  details.recent_usage_rest.active_pitchers[0].pitcher_name = pitcherName
+  return { core, details, pitcherName }
+}
+
 async function installApiFixtures(page, {
   detailsFailure = false,
   detailsIdentityMismatch = false,
   deferDetails = false,
+  partialCarrier = false,
   corruptTeams = false,
   finderNoResults = false,
 } = {}) {
@@ -51,18 +81,29 @@ async function installApiFixtures(page, {
     }
     if (path === '/api/bullpen/fatigue/101') return json(pitcherPayload)
     if (path === '/api/bullpen/pitchers/101/recent-work') return json({ status: 'available', appearances: [] })
-    if (path === '/api/bullpen/teams/111/board-v2/core') return json(teamBoardCore)
-    if (path === '/api/bullpen/teams/111/board-v2/details') {
-      if (detailsGate) await detailsGate
+    const coreMatch = path.match(/^\/api\/bullpen\/teams\/(\d+)\/board-v2\/core$/)
+    if (coreMatch) return json(teamBoardFixtureFor(Number(coreMatch[1])).core)
+    const detailsMatch = path.match(/^\/api\/bullpen\/teams\/(\d+)\/board-v2\/details$/)
+    if (detailsMatch) {
+      const teamId = Number(detailsMatch[1])
+      if (detailsGate && teamId === 111) await detailsGate
+      const details = teamBoardFixtureFor(teamId).details
+      if (partialCarrier) {
+        details.recent_usage_rest.status = 'partial'
+        details.recent_usage_rest.reason_code = 'some_usage_rest_fields_incomplete'
+        details.recent_usage_rest.active_pitchers[0].high_pitch_outing = {
+          value: null, status: 'unknown', reason_codes: ['appearance_pitch_count_unknown'], threshold: 25,
+        }
+      }
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
         : json(detailsIdentityMismatch ? {
-            ...teamBoardDetails,
+            ...details,
             publication_identity: {
-              ...teamBoardDetails.publication_identity,
-              snapshot_id: teamBoardDetails.publication_identity.snapshot_id + 1,
+              ...details.publication_identity,
+              snapshot_id: details.publication_identity.snapshot_id + 1,
             },
-          } : teamBoardDetails)
+          } : details)
     }
     if (path === '/api/share-cards/team-state/111') return json(teamShareProjection)
     if (path === '/api/bullpen/matchups/999') return json(matchupPayload)
@@ -193,7 +234,7 @@ test('Team Board renders its core answer before deferred details', async ({ page
   await expect(page.getByText('Boston has several rested bullpen options.').first()).toBeVisible()
   await expect(page.getByText(/loading recent usage/i).first()).toBeVisible()
   fixtures.releaseDetails()
-  await expect(page.getByRole('heading', { name: 'No recent relief work' })).toBeVisible()
+  await expect(page.getByTestId('team-board-recent-usage')).toContainText('25+ pitch outing')
 })
 
 test('Team Board detail failure preserves the core answer', async ({ page }) => {
@@ -219,8 +260,47 @@ test('Team Board keeps the answer and active bullpen readable at product breakpo
     await expect(page.getByTestId('team-board-answer-block')).toContainText('Boston Red Sox')
     await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
     await expect(page.getByTestId('team-board-active-bullpen')).toContainText('Fixture Reliever')
+    await expect(page.getByTestId('team-board-recent-usage')).toContainText('Yesterday')
+    await expect(page.getByTestId('team-board-recent-usage')).toContainText('3 Days')
+    await expect(page.getByTestId('team-board-recent-usage')).toContainText('7 Days')
     await expectNoPageOverflow(page)
   }
+})
+
+test('Team Board recent usage journeys render BAL, LAD, and NYY publication-bound carriers', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+    await page.goto(`/bullpen?team=${abbreviation}`)
+    await expect(page.getByTestId('team-board-answer-block')).toContainText(
+      teams.find(team => team.team_abbreviation === abbreviation).team_name,
+    )
+    const recent = page.getByTestId('team-board-recent-usage')
+    await expect(recent).toContainText(`${abbreviation} Fixture Reliever`)
+    await expect(recent).toContainText('Back-to-back')
+    await expect(recent).toContainText('25+ pitch outing')
+    await expectNoPageOverflow(page)
+  }
+})
+
+test('Team Board recent usage keeps a partial carrier fail-closed', async ({ page }) => {
+  await installApiFixtures(page, { partialCarrier: true })
+  await page.goto('/bullpen?team=BOS')
+  const recent = page.getByTestId('team-board-recent-usage')
+  await expect(recent).toContainText('Recent Usage is partially available')
+  await expect(recent).toContainText('Evidence incomplete: 25+ pitch outing.')
+  await expect(recent).not.toContainText('pitch spike')
+})
+
+test('switching teams cannot attach a delayed carrier from the prior team', async ({ page }) => {
+  const fixtures = await installApiFixtures(page, { deferDetails: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByText(/loading recent usage/i).first()).toBeVisible()
+  await page.getByLabel('Select team for Team Board').selectOption('147')
+  const recent = page.getByTestId('team-board-recent-usage')
+  await expect(recent).toContainText('NYY Fixture Reliever')
+  fixtures.releaseDetails()
+  await expect(recent).toContainText('NYY Fixture Reliever')
+  await expect(recent.getByText('Fixture Reliever', { exact: true })).toHaveCount(0)
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {

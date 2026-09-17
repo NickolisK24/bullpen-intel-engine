@@ -129,7 +129,7 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
 
   return (
     <section className="foundation-section" aria-labelledby="what-changed-title" data-testid="team-board-what-changed">
-      <div className="relative left-1/2 w-screen -translate-x-1/2 border-y border-line-default bg-surface-nav/30 px-4 py-section tablet:left-auto tablet:w-auto tablet:translate-x-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg">
+      <div className="-mx-4 border-y border-line-default bg-surface-nav/30 px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg">
         <header className="border-b border-line-default pb-panel">
           <div className="type-overline text-brand-gold">Since the last completed game</div>
           <div className="mt-meta flex min-w-0 flex-wrap items-end justify-between gap-panel">
