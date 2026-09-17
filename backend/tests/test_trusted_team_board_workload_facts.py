@@ -543,6 +543,119 @@ def test_workload_windows_are_authored_once_and_frozen_with_publication_authorit
         }
 
 
+def test_recent_usage_rest_is_frozen_with_the_trusted_team_board_publication(
+    trusted_app,
+):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    team = package['by_team_id'][str(TEAM_ID)]
+    carrier = team['recent_usage_rest']
+    authority = team['recent_usage_rest_authority']
+
+    assert carrier['contract'] == public_team_relief_work.RECENT_USAGE_REST_CONTRACT
+    assert carrier['data_through'] == snapshot.data_through.isoformat()
+    assert carrier['reference_date'] == snapshot.availability_reference_date.isoformat()
+    assert authority == {
+        'method_version': public_team_relief_work.RECENT_USAGE_REST_METHOD_VERSION,
+        'public_contract_version': (
+            public_team_relief_work.RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION
+        ),
+        'carrier_contract_version': public_team_relief_work.RECENT_USAGE_REST_CONTRACT,
+        'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+        'population_basis': {
+            'basis': public_team_relief_work.RECENT_USAGE_REST_POPULATION_BASIS,
+            'population_authority': (
+                public_team_relief_work.RECENT_USAGE_REST_POPULATION_AUTHORITY
+            ),
+            'membership_authority': (
+                public_team_relief_work.RECENT_USAGE_REST_MEMBERSHIP_AUTHORITY
+            ),
+        },
+        'reference_date_policy': (
+            public_team_relief_work.RECENT_USAGE_REST_REFERENCE_DATE_POLICY
+        ),
+        'data_through': snapshot.data_through.isoformat(),
+        'reference_date': snapshot.availability_reference_date.isoformat(),
+    }
+
+    frozen = deepcopy(carrier)
+    row = GameLog.query.filter_by(pitcher_id=trusted_app['pitcher'].id).first()
+    row.pitches_thrown = 99
+    db.session.commit()
+
+    board = public_serving_authority.build_published_team_board(
+        TEAM_ID,
+        snapshot_override=snapshot,
+        include_delivery_identity=True,
+        include_recent_usage_rest=True,
+    )
+    assert board['recent_usage_rest'] == frozen
+    assert board['publication_authority']['snapshot_id'] == snapshot.id
+    assert board['publication_method_versions']['recent_usage_rest'] == (
+        public_team_relief_work.RECENT_USAGE_REST_METHOD_VERSION
+    )
+
+
+def test_recent_usage_rest_rejects_snapshot_date_mismatch(trusted_app):
+    snapshot = trusted_app['snapshot']
+    mismatched = _snapshot_copy(
+        snapshot,
+        data_through=snapshot.data_through - timedelta(days=1),
+    )
+    team = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(TEAM_ID)]
+
+    assert public_serving_authority._frozen_recent_usage_rest_for_view(
+        snapshot, team,
+    ) is not None
+    assert public_serving_authority._frozen_recent_usage_rest_for_view(
+        mismatched, team,
+    ) is None
+
+
+def test_recent_usage_rest_composition_reuses_one_set_based_team_query(trusted_app):
+    snapshot = trusted_app['snapshot']
+    coverage = {
+        (snapshot.data_through - timedelta(days=offset)).isoformat(): (
+            _complete_slate_coverage(snapshot.data_through - timedelta(days=offset))
+        )
+        for offset in range(7)
+    }
+    pitcher_id = trusted_app['pitcher'].id
+    pitcher_name = trusted_app['pitcher'].full_name
+    statements = []
+
+    def capture(_conn, _cursor, statement, _params, _context, _executemany):
+        if statement.lstrip().upper().startswith('SELECT'):
+            statements.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', capture)
+    try:
+        result = public_team_relief_work.author_public_team_relief_authority(
+            TEAM_ID,
+            data_through=snapshot.data_through,
+            reference_date=snapshot.availability_reference_date,
+            active_pitchers={
+                pitcher_id: {
+                    'name': pitcher_name,
+                    'days_since_last_appearance': 2,
+                    'back_to_back': False,
+                },
+            },
+            coverage_by_date=coverage,
+        )
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture)
+
+    assert len(statements) == 1
+    assert 'game_logs' in statements[0]
+    assert result['recent_usage_rest']['contract'] == (
+        public_team_relief_work.RECENT_USAGE_REST_CONTRACT
+    )
+    assert len(json.dumps(result['recent_usage_rest']).encode('utf-8')) < 100_000
+
+
 def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):
     snapshot = trusted_app['snapshot']
     package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]

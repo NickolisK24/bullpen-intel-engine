@@ -2,8 +2,9 @@ import ast
 import json
 import re
 import subprocess
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -104,6 +105,388 @@ def client(monkeypatch):
         finally:
             db.session.remove()
             drop_test_schema(app)
+
+
+def _carrier_coverage(anchor, *, incomplete_days=()):
+    incomplete = set(incomplete_days)
+    return {
+        (anchor - timedelta(days=offset)).isoformat(): {
+            'slate_date': (anchor - timedelta(days=offset)).isoformat(),
+            'complete_enough_to_publish': (anchor - timedelta(days=offset)) not in incomplete,
+            'coverage_known': True,
+            'reason_codes': (
+                ['slate_complete']
+                if (anchor - timedelta(days=offset)) not in incomplete
+                else ['final_games_not_fully_ingested']
+            ),
+        }
+        for offset in range(7)
+    }
+
+
+def _carrier_row(
+    pitcher, game_date, *, pitches=12, outs=3, games_started=0, game_pk=1,
+):
+    return (
+        SimpleNamespace(
+            id=game_pk,
+            pitcher_id=pitcher.id,
+            mlb_game_pk=game_pk,
+            game_date=game_date,
+            games_started=games_started,
+            pitches_thrown=pitches,
+            innings_pitched_outs=outs,
+        ),
+        pitcher,
+    )
+
+
+def _fact_value(item, key):
+    return item[key]['value']
+
+
+def test_recent_usage_rest_carrier_uses_full_rows_before_five_date_truncation():
+    anchor = date(2026, 7, 7)
+    active = SimpleNamespace(id=1, full_name='Active Arm')
+    former = SimpleNamespace(id=2, full_name='Former Arm')
+    rows = [
+        _carrier_row(
+            active,
+            anchor - timedelta(days=offset),
+            pitches=25 if offset == 0 else 12,
+            outs=4 if offset == 1 else 3,
+            game_pk=100 + offset,
+        )
+        for offset in range(7)
+    ]
+    rows.append(_carrier_row(former, anchor - timedelta(days=2), game_pk=200))
+
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        rows,
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={
+            active.id: {
+                'name': active.full_name,
+                'days_since_last_appearance': 1,
+                'back_to_back': True,
+            },
+        },
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+
+    item = carrier['active_pitchers'][0]
+    assert carrier['contract'] == 'team_board_recent_usage_rest_v1'
+    assert carrier['status'] == 'complete'
+    assert item['windows']['yesterday']['appearances']['value'] == 1
+    assert item['windows']['last_3_days']['appearances']['value'] == 3
+    assert item['windows']['last_7_days']['appearances']['value'] == 7
+    assert item['windows']['last_7_days']['pitches']['value'] == 97
+    assert item['windows']['last_7_days']['outs']['value'] == 22
+    assert _fact_value(item, 'days_since_last_appearance') == 1
+    assert _fact_value(item, 'pitched_yesterday') is True
+    assert _fact_value(item, 'back_to_back') is True
+    assert _fact_value(item, 'three_in_four') is True
+    assert _fact_value(item, 'four_in_six') is True
+    assert _fact_value(item, 'recent_multi_inning') is True
+    assert item['recent_multi_inning']['most_recent_date'] == '2026-07-06'
+    assert _fact_value(item, 'high_pitch_outing') is True
+    assert item['high_pitch_outing']['threshold'] == 25
+    assert len({log.game_date for log, _pitcher in rows if _pitcher.id == active.id}) == 7
+    assert public_team_relief_work.RECENT_GAME_DATES_MAX == 5
+    assert carrier['off_active_historical_contributors'][0]['pitcher_id'] == former.id
+    assert carrier['off_active_historical_contributors'][0]['roster_state'] == (
+        'off_active_historical'
+    )
+    assert 'pitch_spike' not in json.dumps(carrier)
+
+
+def test_recent_usage_rest_windows_use_inclusive_calendar_boundaries():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=3, full_name='Boundary Arm')
+    rows = [
+        _carrier_row(pitcher, anchor, pitches=10, outs=1, game_pk=301),
+        _carrier_row(pitcher, anchor - timedelta(days=2), pitches=20, outs=2, game_pk=302),
+        _carrier_row(pitcher, anchor - timedelta(days=3), pitches=30, outs=3, game_pk=303),
+        _carrier_row(pitcher, anchor - timedelta(days=6), pitches=40, outs=4, game_pk=304),
+        _carrier_row(pitcher, anchor - timedelta(days=7), pitches=50, outs=5, game_pk=305),
+    ]
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        rows,
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={pitcher.id: {'name': pitcher.full_name}},
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+    windows = carrier['active_pitchers'][0]['windows']
+
+    assert windows['yesterday']['start_date'] == anchor.isoformat()
+    assert windows['yesterday']['appearances']['value'] == 1
+    assert windows['last_3_days']['start_date'] == '2026-07-05'
+    assert windows['last_3_days']['appearances']['value'] == 2
+    assert windows['last_3_days']['pitches']['value'] == 30
+    assert windows['last_3_days']['outs']['value'] == 3
+    assert windows['last_7_days']['start_date'] == '2026-07-01'
+    assert windows['last_7_days']['appearances']['value'] == 4
+    assert windows['last_7_days']['pitches']['value'] == 100
+    assert windows['last_7_days']['outs']['value'] == 10
+
+
+def test_recent_usage_rest_complete_absence_is_zero_and_false():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=4, full_name='Unused Active Arm')
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        [],
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={pitcher.id: {'name': pitcher.full_name}},
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+    item = carrier['active_pitchers'][0]
+
+    for window in item['windows'].values():
+        assert window['appearances'] == {
+            'value': 0, 'status': 'complete', 'reason_codes': [],
+        }
+        assert window['pitches']['value'] == 0
+        assert window['outs']['value'] == 0
+    assert _fact_value(item, 'pitched_yesterday') is False
+    assert _fact_value(item, 'back_to_back') is False
+    assert _fact_value(item, 'three_in_four') is False
+    assert _fact_value(item, 'four_in_six') is False
+    assert _fact_value(item, 'recent_multi_inning') is False
+    assert _fact_value(item, 'high_pitch_outing') is False
+    assert _fact_value(item, 'days_since_last_appearance') is None
+    assert item['days_since_last_appearance']['status'] == 'unknown'
+
+
+def test_recent_usage_rest_incomplete_evidence_never_becomes_zero_or_false():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=5, full_name='Partial Arm')
+    incomplete_day = anchor - timedelta(days=1)
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        [],
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={
+            pitcher.id: {
+                'name': pitcher.full_name,
+                'back_to_back': False,
+            },
+        },
+        coverage_by_date=_carrier_coverage(
+            anchor, incomplete_days=(incomplete_day,),
+        ),
+    )
+    item = carrier['active_pitchers'][0]
+
+    assert carrier['status'] == 'partial'
+    for fact_name in (
+        'back_to_back', 'three_in_four', 'four_in_six',
+        'recent_multi_inning', 'high_pitch_outing',
+    ):
+        assert item[fact_name]['value'] is None
+        assert item[fact_name]['status'] == 'partial'
+    assert item['windows']['last_3_days']['appearances']['value'] is None
+    assert item['windows']['last_3_days']['pitches']['value'] is None
+    assert item['windows']['last_3_days']['outs']['value'] is None
+
+
+def test_recent_usage_rest_missing_pitch_and_out_values_remain_unknown():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=6, full_name='Unknown Totals Arm')
+    rows = [
+        _carrier_row(
+            pitcher, anchor, pitches=None, outs=None, game_pk=601,
+        ),
+    ]
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        rows,
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={pitcher.id: {'name': pitcher.full_name}},
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+    item = carrier['active_pitchers'][0]
+
+    assert item['windows']['yesterday']['appearances']['value'] == 1
+    assert item['windows']['yesterday']['pitches']['value'] is None
+    assert item['windows']['yesterday']['pitches']['status'] == 'unknown'
+    assert item['windows']['yesterday']['outs']['value'] is None
+    assert item['windows']['yesterday']['outs']['status'] == 'unknown'
+    assert item['recent_multi_inning']['value'] is None
+    assert item['high_pitch_outing']['value'] is None
+
+
+def test_recent_usage_rest_counts_multiple_same_day_outings_and_uses_25_pitch_boundary():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=7, full_name='Doubleheader Arm')
+    rows = [
+        _carrier_row(pitcher, anchor, pitches=24, outs=3, game_pk=701),
+        _carrier_row(pitcher, anchor, pitches=8, outs=2, game_pk=702),
+    ]
+    kwargs = {
+        'data_through': anchor,
+        'reference_date': anchor + timedelta(days=1),
+        'active_pitchers': {pitcher.id: {'name': pitcher.full_name}},
+        'coverage_by_date': _carrier_coverage(anchor),
+    }
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(rows, **kwargs)
+    item = carrier['active_pitchers'][0]
+
+    assert item['windows']['yesterday']['appearances']['value'] == 2
+    assert item['windows']['yesterday']['pitches']['value'] == 32
+    assert item['windows']['yesterday']['outs']['value'] == 5
+    assert item['high_pitch_outing']['value'] is False
+    assert item['high_pitch_outing']['threshold'] == 25
+
+    rows[0][0].pitches_thrown = 25
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(rows, **kwargs)
+    assert carrier['active_pitchers'][0]['high_pitch_outing']['value'] is True
+
+
+def test_recent_usage_rest_reference_mismatch_is_unavailable():
+    anchor = date(2026, 7, 7)
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        [],
+        data_through=anchor,
+        reference_date=anchor,
+        active_pitchers={},
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+
+    assert carrier['status'] == 'unavailable'
+    assert carrier['reason_code'] == 'reference_date_invalid'
+    assert carrier['active_pitchers'] == []
+
+
+def test_recent_usage_rest_coverage_failure_degrades_without_blocking_publication(
+    monkeypatch,
+):
+    anchor = date(2026, 7, 7)
+
+    def coverage_for(day):
+        if day == anchor - timedelta(days=2):
+            raise RuntimeError('coverage lookup failed')
+        return {
+            'slate_date': day.isoformat(),
+            'complete_enough_to_publish': True,
+            'coverage_known': True,
+            'reason_codes': ['slate_complete'],
+        }
+
+    monkeypatch.setattr(
+        public_team_relief_work.slate_coverage,
+        'compute_slate_coverage',
+        coverage_for,
+    )
+
+    coverage = public_team_relief_work.build_recent_usage_rest_coverage(
+        anchor,
+        anchor_coverage=coverage_for(anchor),
+    )
+
+    failed = coverage[(anchor - timedelta(days=2)).isoformat()]
+    assert failed == {
+        'slate_date': '2026-07-05',
+        'complete_enough_to_publish': False,
+        'coverage_known': False,
+        'reason_codes': ['slate_coverage_unavailable'],
+    }
+
+
+def test_recent_usage_rest_public_contract_is_descriptive_only():
+    anchor = date(2026, 7, 7)
+    pitcher = SimpleNamespace(id=8, full_name='Observed Arm')
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        [_carrier_row(pitcher, anchor, pitches=25, outs=4, game_pk=801)],
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={pitcher.id: {'name': pitcher.full_name}},
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+    serialized = json.dumps(carrier).lower()
+
+    for forbidden in (
+        'pitch_spike', 'tired', 'overworked', 'likely unavailable',
+        'should be rested', 'manager intent', 'injury',
+    ):
+        assert forbidden not in serialized
+
+
+def test_recent_usage_rest_active_pitcher_keeps_recent_prior_team_workload():
+    anchor = date(2026, 7, 7)
+    active = SimpleNamespace(id=9, full_name='Recently Acquired Arm')
+    former = SimpleNamespace(id=10, full_name='Former Team Contributor')
+    prior_team_log = _carrier_row(
+        active, anchor - timedelta(days=1), pitches=21, outs=3, game_pk=901,
+    )[0]
+    rows = [
+        (prior_team_log, active),
+        _carrier_row(former, anchor, pitches=17, outs=3, game_pk=902),
+    ]
+
+    carrier = public_team_relief_work.build_recent_usage_rest_carrier(
+        rows,
+        data_through=anchor,
+        reference_date=anchor + timedelta(days=1),
+        active_pitchers={
+            active.id: {
+                'name': active.full_name,
+                'days_since_last_appearance': 2,
+            },
+        },
+        coverage_by_date=_carrier_coverage(anchor),
+    )
+
+    active_item = carrier['active_pitchers'][0]
+    assert active_item['pitcher_id'] == active.id
+    assert active_item['windows']['last_3_days']['appearances']['value'] == 1
+    assert active_item['windows']['last_3_days']['pitches']['value'] == 21
+    assert [
+        item['pitcher_id']
+        for item in carrier['off_active_historical_contributors']
+    ] == [former.id]
+
+
+def test_recent_usage_rest_set_query_keeps_acquired_work_separate_from_team_totals(
+    client,
+):
+    anchor = date(2026, 7, 7)
+    with client.application.app_context():
+        pitcher = _pitcher(name='Acquired Reliever', mlb_id=90009)
+        db.session.add(pitcher)
+        db.session.flush()
+        db.session.add(_log(
+            pitcher.id,
+            903,
+            anchor - timedelta(days=1),
+            appearance_team_id=111,
+            pitches=21,
+            outs=3,
+        ))
+        db.session.commit()
+
+        result = public_team_relief_work.author_public_team_relief_authority(
+            TEAM_ID,
+            data_through=anchor,
+            reference_date=anchor + timedelta(days=1),
+            active_pitchers={
+                pitcher.id: {
+                    'name': pitcher.full_name,
+                    'days_since_last_appearance': 2,
+                },
+            },
+            coverage_by_date=_carrier_coverage(anchor),
+        )
+
+    item = result['recent_usage_rest']['active_pitchers'][0]
+    assert item['windows']['last_7_days']['appearances']['value'] == 1
+    assert item['windows']['last_7_days']['pitches']['value'] == 21
+    assert result['workload_windows']['windows']['window_7'][
+        'relief_appearances'
+    ] == 0
+    assert result['deployment_profile']['profiles'] == []
 
 
 def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client):

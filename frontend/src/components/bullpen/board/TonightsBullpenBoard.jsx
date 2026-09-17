@@ -200,14 +200,14 @@ export default function TonightsBullpenBoard({
             />
 
             <div
-              className="relative left-1/2 mt-section-lg w-screen -translate-x-1/2 border-y border-line-subtle bg-surface-nav/35 px-4 py-section tablet:left-auto tablet:w-auto tablet:translate-x-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
+              className="-mx-4 mt-section-lg border-y border-line-subtle bg-surface-nav/35 px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
               role="group"
               aria-label="Current workload picture"
             >
               <div className="mb-section border-b border-line-default pb-panel">
                 <div className="type-overline text-brand-gold">Current workload picture</div>
                 <p className="type-compact mt-meta max-w-reading text-text-tertiary">
-                  Recent use, recovery runway, and the bullpen&apos;s accumulated group burden.
+                  Recent use and published workload patterns by named arm.
                 </p>
               </div>
 
@@ -272,7 +272,7 @@ export default function TonightsBullpenBoard({
             />
 
             <div
-              className="relative left-1/2 mt-section-lg w-screen -translate-x-1/2 border-y border-line-default bg-surface-base px-4 py-section tablet:left-auto tablet:w-auto tablet:translate-x-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
+              className="-mx-4 mt-section-lg border-y border-line-default bg-surface-base px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
               role="group"
               aria-label="Relief work receipts"
             >

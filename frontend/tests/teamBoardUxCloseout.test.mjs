@@ -33,7 +33,8 @@ test('Team Board chapter bands remain mobile-first and do not create paired tabl
   const boardSource = await readSource('../src/components/bullpen/board/TonightsBullpenBoard.jsx')
   const pairSource = await readSource('../src/components/UI/SectionPair.jsx')
 
-  assert.ok(boardSource.includes('w-screen -translate-x-1/2'))
+  assert.ok(boardSource.includes('-mx-4'))
+  assert.equal(boardSource.includes('w-screen -translate-x-1/2'), false)
   assert.ok(boardSource.includes('aria-label="Current workload picture"'))
   assert.ok(boardSource.includes('aria-label="Relief work receipts"'))
 

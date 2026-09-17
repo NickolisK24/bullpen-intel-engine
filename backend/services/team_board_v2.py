@@ -342,6 +342,21 @@ def _recent_usage_status(relief_work, error, represented_date):
     )
 
 
+def _recent_usage_rest_status(board, represented_date):
+    carrier = board.get('recent_usage_rest')
+    if not isinstance(carrier, dict):
+        return unavailable_section('recent_usage_rest_unavailable')
+    status = carrier.get('status')
+    if status not in (STATUS_AVAILABLE, STATUS_PARTIAL, STATUS_UNAVAILABLE, 'complete'):
+        return unavailable_section('recent_usage_rest_unavailable')
+    public_status = STATUS_AVAILABLE if status == 'complete' else status
+    return _section_status(
+        public_status,
+        reason_code=carrier.get('reason_code'),
+        represented_date=carrier.get('data_through') or represented_date,
+    )
+
+
 def _date_value(value):
     if isinstance(value, date):
         return value
@@ -826,6 +841,7 @@ def build_team_board_v2_payload(
             errors.get('recent_relief_work'),
             represented_date,
         ),
+        'recent_usage_rest': _recent_usage_rest_status(board, represented_date),
         'recently_used_arms': _section_status(
             recently_used_arms['status'],
             reason_code=recently_used_arms['reason_code'],
@@ -881,6 +897,7 @@ def build_team_board_v2_payload(
         },
         'rest_status': deepcopy(board.get('rest_status') or {}),
         'recent_usage': _recent_usage(relief_work),
+        'recent_usage_rest': deepcopy(board.get('recent_usage_rest')),
         'recently_used_arms': recently_used_arms,
         'off_active_count': off_active_count,
         'workload_overview': _workload_overview(board, relief_work),
@@ -906,8 +923,10 @@ def build_team_board_v2_payload(
 
 def build_team_board_core_payload(board, *, publication_identity):
     """Project the trusted answer without executing optional deep reads."""
+    core_board = dict(board)
+    core_board.pop('recent_usage_rest', None)
     full = build_team_board_v2_payload(
-        board,
+        core_board,
         publication_identity=publication_identity,
     )
     core_sections = (
@@ -968,7 +987,7 @@ def build_team_board_details_payload(
         publication_identity=publication_identity,
     )
     detail_sections = (
-        'recent_usage', 'recently_used_arms', 'workload_overview',
+        'recent_usage', 'recent_usage_rest', 'recently_used_arms', 'workload_overview',
         'roles_deployment', 'recent_transactions', 'recent_relief_work',
         'game_context', 'performance', 'what_changed',
     )
@@ -979,6 +998,7 @@ def build_team_board_details_payload(
         'team': full['team'],
         'represented_date': full['represented_date'],
         'recent_usage': full['recent_usage'],
+        'recent_usage_rest': full['recent_usage_rest'],
         'recently_used_arms': full['recently_used_arms'],
         'workload_overview': full['workload_overview'],
         'roles_deployment': full['roles_deployment'],

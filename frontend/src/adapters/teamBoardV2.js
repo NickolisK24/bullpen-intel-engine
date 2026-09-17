@@ -4,6 +4,9 @@ export const TEAM_BOARD_CORE_CAPABILITY = 'team_board_answer_core'
 export const TEAM_BOARD_CORE_CONTRACT_VERSION = 'team_board_answer_core_v1'
 export const TEAM_BOARD_DETAILS_CAPABILITY = 'team_board_deferred_details'
 export const TEAM_BOARD_DETAILS_CONTRACT_VERSION = 'team_board_deferred_details_v1'
+export const TEAM_BOARD_RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_rest_v1'
+
+const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 
 const identityFields = [
   'contract', 'team_id', 'team_abbreviation', 'snapshot_id', 'sync_run_id',
@@ -34,6 +37,86 @@ export function teamBoardIdentitiesMatch(left, right) {
   return identityFields.every(field => left[field] === right[field])
 }
 
+function readEvidenceFact(fact) {
+  if (!fact || typeof fact !== 'object' || Array.isArray(fact)) return null
+  if (!recentUsageRestStates.has(fact.status)) return null
+  return {
+    value: Object.prototype.hasOwnProperty.call(fact, 'value') ? fact.value : null,
+    status: fact.status,
+    reasonCodes: Array.isArray(fact.reason_codes) ? [...fact.reason_codes] : [],
+    mostRecentDate: fact.most_recent_date ?? null,
+    threshold: fact.threshold ?? null,
+  }
+}
+
+function readUsageWindow(window, key, label) {
+  if (!window || typeof window !== 'object' || Array.isArray(window)) return null
+  return {
+    key,
+    label,
+    windowDays: window.window_days ?? null,
+    startDate: window.start_date ?? null,
+    throughDate: window.through_date ?? null,
+    appearances: readEvidenceFact(window.appearances),
+    pitches: readEvidenceFact(window.pitches),
+    outs: readEvidenceFact(window.outs),
+  }
+}
+
+function readUsagePitcher(pitcher) {
+  if (!pitcher || typeof pitcher !== 'object' || Array.isArray(pitcher)) return null
+  const windows = pitcher.windows || {}
+  return {
+    pitcherId: pitcher.pitcher_id ?? null,
+    pitcherName: pitcher.pitcher_name ?? null,
+    rosterState: pitcher.roster_state ?? null,
+    windows: [
+      readUsageWindow(windows.yesterday, 'yesterday', 'Yesterday'),
+      readUsageWindow(windows.last_3_days, 'last_3_days', '3 Days'),
+      readUsageWindow(windows.last_7_days, 'last_7_days', '7 Days'),
+    ],
+    daysSinceLastAppearance: readEvidenceFact(pitcher.days_since_last_appearance),
+    pitchedYesterday: readEvidenceFact(pitcher.pitched_yesterday),
+    backToBack: readEvidenceFact(pitcher.back_to_back),
+    threeInFour: readEvidenceFact(pitcher.three_in_four),
+    fourInSix: readEvidenceFact(pitcher.four_in_six),
+    recentMultiInning: readEvidenceFact(pitcher.recent_multi_inning),
+    highPitchOuting: readEvidenceFact(pitcher.high_pitch_outing),
+  }
+}
+
+export function readTeamBoardRecentUsageRest(carrier, publicationIdentity) {
+  if (
+    !carrier
+    || typeof carrier !== 'object'
+    || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_RECENT_USAGE_REST_CONTRACT
+    || !recentUsageRestStates.has(carrier.status)
+    || !publicationIdentity
+    || carrier.data_through !== publicationIdentity.represented_date
+    || carrier.reference_date !== publicationIdentity.availability_reference_date
+    || !Array.isArray(carrier.active_pitchers)
+    || !Array.isArray(carrier.off_active_historical_contributors)
+  ) return null
+
+  return {
+    contract: carrier.contract,
+    status: carrier.status,
+    reasonCode: carrier.reason_code ?? null,
+    dataThrough: carrier.data_through,
+    referenceDate: carrier.reference_date,
+    windowPolicy: carrier.window_policy ?? null,
+    populationBasis: carrier.population_basis ?? null,
+    thresholds: carrier.thresholds && typeof carrier.thresholds === 'object'
+      ? { ...carrier.thresholds }
+      : {},
+    activePitchers: carrier.active_pitchers.map(readUsagePitcher).filter(Boolean),
+    offActiveHistoricalContributors: carrier.off_active_historical_contributors
+      .map(readUsagePitcher)
+      .filter(Boolean),
+  }
+}
+
 export function isTeamBoardV2Payload(payload) {
   return Boolean(
     payload
@@ -53,6 +136,10 @@ export function isTeamBoardV2Payload(payload) {
 export function readTeamBoardV2(payload) {
   if (!isTeamBoardV2Payload(payload)) return null
 
+  const recentUsageRest = readTeamBoardRecentUsageRest(
+    payload.recent_usage_rest,
+    payload.publication_identity,
+  )
   return {
     capability: payload.capability,
     contractVersion: payload.contract_version,
@@ -64,6 +151,7 @@ export function readTeamBoardV2(payload) {
     summary: payload.summary,
     activeBullpen: payload.active_bullpen,
     recentUsage: payload.recent_usage,
+    recentUsageRest,
     recentlyUsedArms: payload.recently_used_arms,
     offActiveCount: payload.off_active_count,
     restStatus: payload.rest_status,
@@ -111,6 +199,12 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
       detailsPayload.publication_identity,
     )
   const details = detailsValid ? detailsPayload : {}
+  const recentUsageRest = detailsValid
+    ? readTeamBoardRecentUsageRest(
+        details.recent_usage_rest,
+        corePayload.publication_identity,
+      )
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -122,6 +216,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     summary: corePayload.summary,
     activeBullpen: corePayload.active_bullpen,
     recentUsage: details.recent_usage || null,
+    recentUsageRest,
     recentlyUsedArms: details.recently_used_arms || null,
     offActiveCount: corePayload.off_active_count,
     restStatus: corePayload.rest_status,
@@ -141,6 +236,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     },
     detailsAttached: detailsValid,
     detailsRejected: Boolean(detailsPayload) && !detailsValid,
+    recentUsageRestRejected: Boolean(details.recent_usage_rest) && !recentUsageRest,
     limitations: corePayload.limitations,
   }
 }

@@ -55,6 +55,13 @@ from services.public_team_relief_work import (
     DEPLOYMENT_PROFILE_POPULATION_BASIS,
     DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
     DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+    RECENT_USAGE_REST_CONTRACT,
+    RECENT_USAGE_REST_MEMBERSHIP_AUTHORITY,
+    RECENT_USAGE_REST_METHOD_VERSION,
+    RECENT_USAGE_REST_POPULATION_AUTHORITY,
+    RECENT_USAGE_REST_POPULATION_BASIS,
+    RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION,
+    RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
     WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY,
     WORKLOAD_WINDOWS_METHOD_VERSION,
     WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
@@ -62,6 +69,7 @@ from services.public_team_relief_work import (
     WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
     WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
     author_public_team_relief_authority,
+    build_recent_usage_rest_coverage,
 )
 from services.roster_authority import build_roster_authority
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
@@ -302,6 +310,17 @@ def build_frozen_team_board_package(dashboard_payload):
         })
 
     freshness = payload.get('freshness') if isinstance(payload.get('freshness'), Mapping) else {}
+    represented_data_through = (
+        freshness.get('data_through') or freshness.get('latest_workload_date')
+    )
+    recent_usage_rest_coverage = build_recent_usage_rest_coverage(
+        represented_data_through,
+        anchor_coverage=(
+            freshness.get('slate_coverage')
+            if isinstance(freshness.get('slate_coverage'), Mapping)
+            else None
+        ),
+    )
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -340,13 +359,24 @@ def build_frozen_team_board_package(dashboard_payload):
         )
         relief_authority = author_public_team_relief_authority(
             team_id,
-            data_through=(
-                freshness.get('data_through')
-                or freshness.get('latest_workload_date')
-            ),
+            data_through=represented_data_through,
+            reference_date=reference_date,
+            active_pitchers={
+                record['pitcher_id']: {
+                    'name': record.get('name'),
+                    'days_since_last_appearance': _mapping_value(
+                        record.get('workload_facts') or {},
+                        'days_since_last_appearance',
+                    ),
+                }
+                for record in selected_records
+                if type(record.get('pitcher_id')) is int
+            },
+            coverage_by_date=recent_usage_rest_coverage,
         )
         workload_windows = relief_authority['workload_windows']
         deployment_profile = relief_authority['deployment_profile']
+        recent_usage_rest = relief_authority['recent_usage_rest']
         rotation_support_pressure = _support_for_team(
             payload, 'rotation_support_pressure', team_id
         )
@@ -408,6 +438,29 @@ def build_frozen_team_board_package(dashboard_payload):
                 },
                 'reference_date_policy': DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
                 'data_through': deployment_profile.get('data_through'),
+            },
+            'recent_usage_rest': deepcopy(recent_usage_rest),
+            'recent_usage_rest_authority': {
+                'method_version': RECENT_USAGE_REST_METHOD_VERSION,
+                'public_contract_version': (
+                    RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION
+                ),
+                'carrier_contract_version': RECENT_USAGE_REST_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': RECENT_USAGE_REST_POPULATION_BASIS,
+                    'population_authority': (
+                        RECENT_USAGE_REST_POPULATION_AUTHORITY
+                    ),
+                    'membership_authority': (
+                        RECENT_USAGE_REST_MEMBERSHIP_AUTHORITY
+                    ),
+                },
+                'reference_date_policy': (
+                    RECENT_USAGE_REST_REFERENCE_DATE_POLICY
+                ),
+                'data_through': recent_usage_rest.get('data_through'),
+                'reference_date': recent_usage_rest.get('reference_date'),
             },
             'rest_status': deepcopy(rest_status),
             'rest_status_authority': {
@@ -719,9 +772,36 @@ def _frozen_rest_status_for_view(snapshot, team_package):
     return deepcopy(team_package.get('rest_status'))
 
 
+def _frozen_recent_usage_rest_for_view(snapshot, team_package):
+    """Return only a carrier frozen under this exact trusted team package."""
+    carrier = team_package.get('recent_usage_rest')
+    authority = team_package.get('recent_usage_rest_authority')
+    if not isinstance(carrier, Mapping) or not isinstance(authority, Mapping):
+        return None
+    if (
+        carrier.get('contract') != RECENT_USAGE_REST_CONTRACT
+        or authority.get('method_version') != RECENT_USAGE_REST_METHOD_VERSION
+        or authority.get('public_contract_version')
+        != RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION
+        or authority.get('carrier_contract_version') != RECENT_USAGE_REST_CONTRACT
+        or authority.get('team_board_package_contract')
+        != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('reference_date_policy')
+        != RECENT_USAGE_REST_REFERENCE_DATE_POLICY
+        or carrier.get('data_through') != _iso(getattr(snapshot, 'data_through', None))
+        or carrier.get('reference_date')
+        != _iso(getattr(snapshot, 'availability_reference_date', None))
+        or authority.get('data_through') != carrier.get('data_through')
+        or authority.get('reference_date') != carrier.get('reference_date')
+    ):
+        return None
+    return deepcopy(carrier)
+
+
 def build_published_team_board(
     team_id, *, include_stale=False, snapshot_override=_SNAPSHOT_NOT_PROVIDED,
     team_state_override=None, include_delivery_identity=False,
+    include_recent_usage_rest=False,
 ):
     snapshot = (
         snapshot_override
@@ -757,6 +837,10 @@ def build_published_team_board(
         if team_state_override is not None
         else _published_team_state(snapshot, team_id)
     )
+    if include_recent_usage_rest:
+        payload['recent_usage_rest'] = _frozen_recent_usage_rest_for_view(
+            snapshot, team_package
+        )
     payload['publication_authority'] = publication_authority(snapshot)
     if include_delivery_identity:
         payload['publication_method_versions'] = {
@@ -771,6 +855,9 @@ def build_published_team_board(
             ),
             'deployment_profile': _mapping_value(
                 team_package.get('deployment_profile_authority'), 'method_version'
+            ),
+            'recent_usage_rest': _mapping_value(
+                team_package.get('recent_usage_rest_authority'), 'method_version'
             ),
             'rotation_impact': _mapping_value(
                 team_package.get('rotation_support_pressure_authority'), 'method_version'

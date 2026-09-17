@@ -1683,6 +1683,15 @@ def test_deferred_endpoint_attaches_only_the_exact_requested_identity(
 ):
     snapshot = _snapshot()
     board = _board()
+    board['recent_usage_rest'] = {
+        'contract': 'team_board_recent_usage_rest_v1',
+        'status': 'complete',
+        'reason_code': None,
+        'data_through': '2026-08-16',
+        'reference_date': '2026-08-17',
+        'active_pitchers': [{'pitcher_id': 7}],
+        'off_active_historical_contributors': [],
+    }
     identity = build_team_board_identity(snapshot, board)
     monkeypatch.setattr(
         team_board_v2_api, 'resolve_team_board_snapshot',
@@ -1714,6 +1723,7 @@ def test_deferred_endpoint_attaches_only_the_exact_requested_identity(
     assert response.status_code == 200
     payload = response.get_json()
     assert payload['publication_identity'] == identity
+    assert payload['recent_usage_rest'] == board['recent_usage_rest']
     assert payload['performance'] == _performance()
     assert payload['what_changed'] == _what_changed()
     assert response.headers['Cache-Control'] == 'public, max-age=0, must-revalidate'
@@ -1781,6 +1791,16 @@ def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
 
 def test_core_and_deferred_envelopes_keep_semantics_separate():
     board = _board()
+    carrier = {
+        'contract': 'team_board_recent_usage_rest_v1',
+        'status': 'complete',
+        'reason_code': None,
+        'data_through': '2026-08-16',
+        'reference_date': '2026-08-17',
+        'active_pitchers': [{'pitcher_id': 7}],
+        'off_active_historical_contributors': [],
+    }
+    board['recent_usage_rest'] = carrier
     identity = build_team_board_identity(_snapshot(), board)
     core = build_team_board_core_payload(board, publication_identity=identity)
     details = build_team_board_details_payload(
@@ -1796,5 +1816,8 @@ def test_core_and_deferred_envelopes_keep_semantics_separate():
     assert core['active_bullpen']['arms'][0]['pitcher_id'] == 7
     assert 'performance' not in core
     assert 'what_changed' not in core
+    assert 'recent_usage_rest' not in core
+    assert details['recent_usage_rest'] == carrier
+    assert details['section_status']['recent_usage_rest']['status'] == 'available'
     assert details['performance'] == _performance()
     assert details['what_changed'] == _what_changed()

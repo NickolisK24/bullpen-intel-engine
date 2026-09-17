@@ -17,55 +17,82 @@ after(async () => server.close())
 const { default: TeamBoardRecentUsage } = await server.ssrLoadModule(
   '/src/components/bullpen/board/TeamBoardRecentUsage.jsx',
 )
-const { getRecentUsageView } = await server.ssrLoadModule(
-  '/src/components/bullpen/board/recentUsageView.js',
-)
 const { default: TeamBoardRestStatus } = await server.ssrLoadModule(
   '/src/components/bullpen/board/TeamBoardRestStatus.jsx',
 )
+const { readTeamBoardRecentUsageRest } = await server.ssrLoadModule(
+  '/src/adapters/teamBoardV2.js',
+)
 
-const reliefWork = {
-  data_through: '2026-08-16',
-  windows: {
-    window_7: {
-      through: '2026-08-16',
-      relief_appearances: 3,
-      pitchers_in_relief: 2,
-      pitches_total: null,
-      appearances_with_pitches: 2,
-      start_relief_unknown: 0,
-      sentence: '3 relief appearances in the 7 days through Aug 16.',
-      pitchers_sentence: '2 pitchers appeared in relief in the 7 days through Aug 16.',
-      pitches_sentence: 'Pitch count unavailable for 1 of 3 relief appearances; 41 pitches across the other 2.',
-    },
-    window_14: {
-      through: '2026-08-16',
-      relief_appearances: 0,
-      pitchers_in_relief: 0,
-      pitches_total: 0,
-      appearances_with_pitches: 0,
-      start_relief_unknown: 0,
-      sentence: '0 relief appearances in the 14 days through Aug 16.',
-      pitchers_sentence: '0 pitchers appeared in relief in the 14 days through Aug 16.',
-      pitches_sentence: '0 pitches across those 0 relief appearances.',
-    },
+const identity = {
+  represented_date: '2026-08-16',
+  availability_reference_date: '2026-08-17',
+}
+
+const fact = (value, status = 'complete', extras = {}) => ({
+  value,
+  status,
+  reason_codes: status === 'complete' ? [] : ['fixture_incomplete'],
+  ...extras,
+})
+
+const window = (days, appearances, pitches, outs, states = {}) => ({
+  window_days: days,
+  start_date: days === 1 ? '2026-08-16' : days === 3 ? '2026-08-14' : '2026-08-10',
+  through_date: '2026-08-16',
+  appearances: fact(appearances, states.appearances || 'complete'),
+  pitches: fact(pitches, states.pitches || 'complete'),
+  outs: fact(outs, states.outs || 'complete'),
+})
+
+const pitcher = ({ id, name, partial = false }) => ({
+  pitcher_id: id,
+  pitcher_name: name,
+  roster_state: 'active',
+  windows: partial ? {
+    yesterday: window(1, 0, 0, 0),
+    last_3_days: window(3, null, null, null, { appearances: 'partial', pitches: 'partial', outs: 'partial' }),
+    last_7_days: window(7, null, null, null, { appearances: 'unknown', pitches: 'unknown', outs: 'unavailable' }),
+  } : {
+    yesterday: window(1, 1, 28, 3),
+    last_3_days: window(3, 2, 45, 6),
+    last_7_days: window(7, 4, 88, 13),
   },
-  relief_by_date: [{
-    game_date: '2026-08-16',
-    available: true,
-    sentence: 'Aug 16 — 2 relief appearances, 2.0 IP, 41 published pitches.',
-    appearances: [
-      { pitcher_id: 8, pitcher_full_name: 'Zachary Very Long Reliever Name' },
-      { pitcher_id: 2, pitcher_full_name: 'Aaron Second' },
-    ],
+  days_since_last_appearance: partial ? fact(null, 'unknown') : fact(1),
+  pitched_yesterday: partial ? fact(false) : fact(true),
+  back_to_back: partial ? fact(null, 'partial') : fact(true),
+  three_in_four: partial ? fact(null, 'unknown') : fact(true),
+  four_in_six: partial ? fact(null, 'unavailable') : fact(true),
+  recent_multi_inning: partial ? fact(false) : fact(true, 'complete', { threshold: 4 }),
+  high_pitch_outing: partial ? fact(null, 'unknown', { threshold: 25 }) : fact(true, 'complete', { threshold: 25 }),
+})
+
+const carrier = {
+  contract: 'team_board_recent_usage_rest_v1',
+  status: 'partial',
+  reason_code: 'some_usage_rest_fields_incomplete',
+  data_through: identity.represented_date,
+  reference_date: identity.availability_reference_date,
+  window_policy: 'calendar_day_inclusive_through_date_v1',
+  population_basis: 'official_appearance_team_relief_appearances_and_frozen_active_bullpen',
+  thresholds: {
+    multi_inning_minimum_outs: 4,
+    high_pitch_outing_minimum_pitches: 25,
+  },
+  active_pitchers: [
+    pitcher({ id: 7, name: 'Alpha Reliever' }),
+    pitcher({ id: 8, name: 'Bravo Reliever', partial: true }),
+  ],
+  off_active_historical_contributors: [{
+    ...pitcher({ id: 9, name: 'Former Reliever' }),
+    roster_state: 'off_active_historical',
   }],
 }
 
+const recentUsageRest = readTeamBoardRecentUsageRest(carrier, identity)
 const read = {
-  recentReliefWork: {
-    population_basis: 'official_appearance_team_relief_appearances',
-    read: reliefWork,
-  },
+  recentUsageRest,
+  recentUsageRestRejected: false,
   restStatus: {
     available: true,
     active_arm_count: 8,
@@ -75,7 +102,6 @@ const read = {
     summary: '5 of 8 active bullpen arms have at least one full day of rest; 2 arms worked yesterday and 1 arm worked back-to-back.',
   },
   sectionStatus: {
-    recent_usage: { status: 'available', limitations: [] },
     rest_status: { status: 'available', limitations: [] },
   },
 }
@@ -83,107 +109,91 @@ const read = {
 const renderRecent = props => renderToStaticMarkup(React.createElement(TeamBoardRecentUsage, props))
 const renderRest = props => renderToStaticMarkup(React.createElement(TeamBoardRestStatus, props))
 
-test('Recent Usage renders governed windows and preserves latest-date arm order', () => {
-  const view = getRecentUsageView(reliefWork)
+test('Recent Usage renders named-arm yesterday, three-day, and seven-day facts', () => {
   const html = renderRecent({ read, onSelectPitcher: () => {} })
+  const alpha = html.slice(html.indexOf('Alpha Reliever'), html.indexOf('Bravo Reliever'))
 
-  assert.deepEqual(view.windows.map(row => row.days), [7, 14])
-  assert.deepEqual(view.latestGroup.arms.map(arm => arm.name), [
-    'Zachary Very Long Reliever Name',
-    'Aaron Second',
-  ])
-  assert.ok(html.includes(reliefWork.windows.window_7.sentence))
-  assert.ok(html.includes(reliefWork.windows.window_14.sentence))
-  assert.ok(html.indexOf('Zachary Very Long Reliever Name') < html.indexOf('Aaron Second'))
-  assert.ok(html.includes('<time dateTime="2026-08-16">Aug 16, 2026</time>'))
-  assert.equal(html.includes('Yesterday'), false)
+  for (const label of ['Yesterday', '3 Days', '7 Days']) assert.ok(alpha.includes(label), label)
+  for (const value of ['>1<', '>28<', '>3<', '>2<', '>45<', '>6<', '>4<', '>88<', '>13<']) {
+    assert.ok(alpha.includes(value), value)
+  }
+  assert.ok(html.includes('Published through Aug 16, 2026'))
 })
 
-test('Recent Usage keeps withheld pitches distinct from a published zero', () => {
+test('Rest and usage patterns render backend facts with factual wording', () => {
   const html = renderRecent({ read })
-  const sevenDay = html.slice(html.indexOf('Last 7 days'), html.indexOf('Last 14 days'))
-  const fourteenDay = html.slice(html.indexOf('Last 14 days'))
+  const alpha = html.slice(html.indexOf('Alpha Reliever'), html.indexOf('Bravo Reliever'))
 
-  assert.ok(sevenDay.includes('>—<'))
-  assert.ok(sevenDay.includes(reliefWork.windows.window_7.pitches_sentence))
-  assert.equal(sevenDay.includes('>0<'), false)
-  assert.ok(fourteenDay.includes('>0<'))
-  assert.equal(html.includes('null'), false)
+  for (const label of [
+    'Pitched yesterday',
+    'Back-to-back',
+    '3 appearances in 4 days',
+    '4 appearances in 6 days',
+    'Multi-inning outing',
+    '25+ pitch outing',
+  ]) assert.ok(alpha.includes(label), label)
+
+  for (const forbidden of ['pitch spike', 'gassed', 'needs rest', 'likely out', 'should not pitch']) {
+    assert.equal(html.toLowerCase().includes(forbidden), false, forbidden)
+  }
 })
 
-test('Recent Usage distinguishes loading, partial, unavailable, and empty states', () => {
+test('partial, unknown, and unavailable facts stay withheld instead of becoming zero or false', () => {
+  const html = renderRecent({ read })
+  const bravo = html.slice(html.indexOf('Bravo Reliever'), html.indexOf('Recent workload from pitchers no longer active'))
+
+  assert.ok(bravo.includes('aria-label="Appearances: partial"'))
+  assert.ok(bravo.includes('aria-label="Pitches: unknown"'))
+  assert.ok(bravo.includes('aria-label="Outs: unavailable"'))
+  assert.ok(bravo.includes('>—<'))
+  assert.ok(bravo.includes('Evidence incomplete: Back-to-back, 3 appearances in 4 days, 4 appearances in 6 days, 25+ pitch outing.'))
+  assert.equal(bravo.includes('>null<'), false)
+  assert.ok(bravo.includes('aria-label="Appearances: 0"'))
+})
+
+test('active pitchers and off-active historical contributors stay in separate groups exactly once', () => {
+  const html = renderRecent({ read })
+  const offActiveHeading = html.indexOf('Recent workload from pitchers no longer active')
+
+  assert.ok(offActiveHeading > html.indexOf('Bravo Reliever'))
+  assert.ok(html.indexOf('Former Reliever') > offActiveHeading)
+  for (const name of ['Alpha Reliever', 'Bravo Reliever', 'Former Reliever']) {
+    assert.equal((html.match(new RegExp(`>${name}<`, 'g')) || []).length, 1, name)
+  }
+})
+
+test('Recent Usage distinguishes loading, outage, carrier mismatch, and unavailable publication states', () => {
   assert.ok(renderRecent({ loading: true }).includes('recent-usage-skeleton'))
-  assert.ok(renderRecent({ read: {
-    ...read,
-    sectionStatus: { ...read.sectionStatus, recent_usage: { status: 'partial', limitations: ['One date is unavailable.'] } },
-  } }).includes('One date is unavailable.'))
-  assert.ok(renderRecent({ read: {
-    ...read,
-    sectionStatus: { ...read.sectionStatus, recent_usage: { status: 'unavailable' } },
-  } }).includes('Recent usage evidence is unavailable.'))
-  assert.ok(renderRecent({ read: {
-    ...read,
-    recentReliefWork: { ...read.recentReliefWork, read: { windows: {}, relief_by_date: [] } },
-  } }).includes('A recent usage read is not available.'))
-  assert.ok(renderRecent({ read, error: 'private exception' }).includes('Recent usage could not be loaded.'))
+  assert.ok(renderRecent({ read, error: 'private exception' }).includes('Recent usage and rest patterns could not be loaded.'))
   assert.equal(renderRecent({ read, error: 'private exception' }).includes('private exception'), false)
+  assert.ok(renderRecent({ read: { ...read, recentUsageRest: null, recentUsageRestRejected: true } }).includes('does not match this Team Board publication'))
+  assert.ok(renderRecent({ read: { ...read, recentUsageRest: null } }).includes('publication-bound recent usage and rest read is not available'))
 })
 
-test('Rest Status renders only backend-owned counts and summary', () => {
+test('Rest Status retains the existing backend-owned aggregate read', () => {
   const html = renderRest({ read })
-
   for (const value of ['Rested arms', '>5<', 'Worked yesterday', '>2<', 'Back-to-back', '>1<', read.restStatus.summary]) {
     assert.ok(html.includes(value), value)
   }
 })
 
-test('Rest Status preserves zero and fails closed on missing counts', () => {
-  const zeroRead = {
-    ...read,
-    restStatus: {
-      ...read.restStatus,
-      rested_arm_count: 0,
-      worked_yesterday_count: 0,
-      back_to_back_count: 0,
-      summary: '0 of 8 active bullpen arms have at least one full day of rest.',
-    },
-  }
-  assert.ok(renderRest({ read: zeroRead }).includes('>0<'))
-  assert.ok(renderRest({ read: {
-    ...read,
-    restStatus: { ...read.restStatus, rested_arm_count: null },
-  } }).includes('Rest Status unavailable'))
-  assert.ok(renderRest({ loading: true }).includes('rest-status-skeleton'))
-})
-
-test('production reuses one v2 request, retires legacy section mounts, and leaves later sections legacy', async () => {
+test('TB-03 frontend consumes the carrier without baseball calculation or predictive copy', async () => {
   const boardSource = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
   const recentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRecentUsage.jsx', import.meta.url), 'utf8')
-  const viewSource = await readFile(new URL('../src/components/bullpen/board/recentUsageView.js', import.meta.url), 'utf8')
+  const adapterSource = await readFile(new URL('../src/adapters/teamBoardV2.js', import.meta.url), 'utf8')
 
+  assert.ok(boardSource.includes('<TeamBoardRecentUsage'))
+  assert.ok(recentSource.includes('read?.recentUsageRest'))
+  assert.ok(adapterSource.includes('details.recent_usage_rest'))
+  assert.ok(adapterSource.includes('carrier.data_through !== publicationIdentity.represented_date'))
+  assert.ok(adapterSource.includes('carrier.reference_date !== publicationIdentity.availability_reference_date'))
+  for (const forbidden of ['Math.', '.reduce(', '/ 3', 'Date(', 'pitch_spike', 'fatigue', 'likely unavailable']) {
+    assert.equal(recentSource.includes(forbidden), false, forbidden)
+    assert.equal(adapterSource.includes(forbidden), false, forbidden)
+  }
   assert.equal((boardSource.match(/getTeamBoardCore\(/g) || []).length, 1)
   assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
-  assert.equal((boardSource.match(/useTeamReliefWork\(/g) || []).length, 0)
-  assert.equal(boardSource.includes('getTeamReliefWork'), false)
-  assert.ok(boardSource.includes('<TeamBoardRecentUsage'))
-  assert.ok(boardSource.includes('<TeamBoardRestStatus'))
-  assert.equal(boardSource.includes('<RecentUsage'), false)
-  assert.equal(boardSource.includes('<RestStatus'), false)
-  assert.ok(boardSource.includes('<TeamBoardWorkloadOverview'))
-  assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
-  assert.ok(boardSource.indexOf('<TeamBoardActiveBullpen') < boardSource.indexOf('<TeamBoardRecentUsage'))
-  assert.ok(boardSource.indexOf('<TeamBoardRecentUsage') < boardSource.indexOf('<TeamBoardRestStatus'))
-  assert.ok(boardSource.indexOf('<TeamBoardRestStatus') < boardSource.indexOf('<TeamBoardWorkloadOverview'))
-  for (const forbidden of ['.sort(', '3_in_4', '4_in_5', '4_in_6', 'fatigue', 'workload_score', 'reason_code']) {
-    assert.equal(recentSource.includes(forbidden), false, forbidden)
-    assert.equal(viewSource.includes(forbidden), false, forbidden)
-  }
-  assert.equal(recentSource.includes('getTeamBoardV2'), false)
-  assert.equal(viewSource.includes('window_3'), false)
-  assert.ok(recentSource.includes('tablet:grid'))
-  assert.ok(recentSource.includes('flex-wrap'))
   assert.equal(recentSource.includes('overflow-x'), false)
-  assert.equal(recentSource.includes('text-[9px]'), false)
-  assert.equal(recentSource.includes('text-[10px]'), false)
-  assert.equal(recentSource.includes('text-[11px]'), false)
+  assert.ok(recentSource.includes('grid-cols-3'))
+  assert.ok(recentSource.includes('flex-wrap'))
 })
