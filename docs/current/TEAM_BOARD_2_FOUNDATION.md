@@ -114,6 +114,69 @@ The existing responsive layout uses one composed record per reliever below
 from 1024px. The Team Board shell caps content at 72rem. Primary baseball
 content does not require horizontal scrolling at 390px, 768px, or 1440px.
 
+## TB-03 publication-bound read model
+
+`team_board_recent_usage_rest_v1` is frozen inside each team's existing
+`trusted_team_boards` package while the trusted Dashboard candidate is built.
+It reuses the same set-based official `GameLog.appearance_team_id` query that
+authors the public workload windows and deployment profile. That query includes
+the frozen active pitcher IDs so the active source preserves an acquired
+pitcher's recent work for a prior club; the existing team-at-appearance filter
+continues to author team totals and separately preserves workload contributed
+by a pitcher who is now off-active. The carrier is computed before Recent
+Relief Work limits its display chronology to five game dates. It introduces no
+current selector, table, migration, cache, writer, or publication authority.
+
+The carrier uses the snapshot's `data_through` date as the inclusive end of
+three calendar windows: `yesterday` is that one represented baseball date,
+`last_3_days` begins two dates earlier, and `last_7_days` begins six dates
+earlier. The snapshot's availability reference date must be exactly one day
+after `data_through`; otherwise the carrier is unavailable. Each named pitcher
+window carries appearances, pitches, and outs as `{value, status,
+reason_codes}`. A missing pitch or outs value remains `unknown`; incomplete or
+missing slate coverage never becomes zero.
+
+The factual pattern contract is:
+
+- `days_since_last_appearance`: the existing governed workload value for a
+  frozen active pitcher, or a coverage-qualified historical calculation;
+- `pitched_yesterday`: at least one relief appearance on `data_through`;
+- `back_to_back`: the existing recent-window definition—at least one pair of
+  consecutive relief-appearance dates in the five-day availability window;
+- `three_in_four`: an appearance on `data_through` and appearances on at least
+  three distinct dates in the inclusive four-day window;
+- `four_in_six`: an appearance on `data_through` and appearances on at least
+  four distinct dates in the inclusive six-day window;
+- `recent_multi_inning`: at least one relief outing with four or more recorded
+  outs in the inclusive seven-day window; and
+- `high_pitch_outing`: at least one relief outing with 25 or more recorded
+  pitches in the inclusive seven-day window.
+
+These are descriptive completed-game observations. The carrier intentionally
+does not publish `pitch_spike`, availability predictions, health meaning, or
+manager-intent claims. Positive observations may be established from their
+rows; a false value requires complete coverage and all required row fields.
+The field states are `complete`, `partial`, `unknown`, and `unavailable`.
+
+`active_pitchers` is sourced from the same frozen default-visible bullpen
+membership as TB-02. Pitchers who represented the team during the seven-day
+window but are not in that frozen active population appear separately under
+`off_active_historical_contributors`; historical workload never changes
+current roster membership.
+
+The existing details endpoint exposes the carrier only after reconstructing
+the exact snapshot named by `team_board_publication_identity_v1`. A mismatched
+snapshot is still rejected by the shared HTTP 409 identity fence. Core does not
+include or calculate this carrier, so TB-01 and TB-02 remain independent of
+TB-03 hydration.
+
+Composition retains one set-based appearance query per team; the carrier adds
+no request-time database read. A local 12-pitcher/36-row component benchmark
+measured 0.638 ms median composition (0.614-1.018 ms), 0.072 ms median JSON
+serialization (0.070-0.165 ms), and an 18,044-byte compact payload. Publication
+also resolves the six prior league-date coverage decisions once and shares
+them across all teams; the admitted through-date decision is reused.
+
 ## Deferred packages
 
 TB-03 through TB-10 attach only through the same exact identity contract. This

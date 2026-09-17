@@ -8,6 +8,7 @@ from models.scheduled_game import ScheduledGame
 from services import board_freshness
 from services import game_shape
 from services import pitcher_season_ledger_coverage
+from services import slate_coverage
 from services import starter_assignment_context
 from utils.games_started import RELIEF, START, games_started_state
 
@@ -40,6 +41,43 @@ DEPLOYMENT_PROFILE_MULTI_INNING_MIN_OUTS = 4
 DEPLOYMENT_PROFILE_COMPLETE = 'complete'
 DEPLOYMENT_PROFILE_WITHHELD = 'withheld'
 DEPLOYMENT_PROFILE_DATA_THROUGH_MISSING = 'data_through_missing'
+
+RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_rest_v1'
+RECENT_USAGE_REST_METHOD_VERSION = 'team_board_recent_usage_rest_v1'
+RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION = 'team_board_recent_usage_rest_v1'
+RECENT_USAGE_REST_REFERENCE_DATE_POLICY = 'calendar_day_inclusive_through_date_v1'
+RECENT_USAGE_REST_POPULATION_BASIS = (
+    'official_appearance_team_relief_appearances_and_frozen_active_bullpen'
+)
+RECENT_USAGE_REST_POPULATION_AUTHORITY = WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+RECENT_USAGE_REST_MEMBERSHIP_AUTHORITY = (
+    'trusted_team_boards.default_pitcher_ids_and_historical_appearance_team'
+)
+RECENT_USAGE_REST_COMPLETE = 'complete'
+RECENT_USAGE_REST_PARTIAL = 'partial'
+RECENT_USAGE_REST_UNKNOWN = 'unknown'
+RECENT_USAGE_REST_UNAVAILABLE = 'unavailable'
+RECENT_USAGE_REST_WINDOW_DAYS = {
+    'yesterday': 1,
+    'last_3_days': 3,
+    'last_7_days': 7,
+}
+RECENT_USAGE_REST_MAX_WINDOW_DAYS = 7
+RECENT_USAGE_REST_BACK_TO_BACK_WINDOW_DAYS = 5
+RECENT_USAGE_REST_THREE_IN_FOUR_DAYS = 4
+RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS = 3
+RECENT_USAGE_REST_FOUR_IN_SIX_DAYS = 6
+RECENT_USAGE_REST_FOUR_IN_SIX_MIN_DAYS = 4
+RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS = 4
+RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES = 25
+
+RECENT_USAGE_REST_REASON_COVERAGE_MISSING = 'slate_coverage_missing'
+RECENT_USAGE_REST_REASON_COVERAGE_INCOMPLETE = 'slate_coverage_incomplete'
+RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN = 'start_relief_status_unknown'
+RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN = 'appearance_pitch_count_unknown'
+RECENT_USAGE_REST_REASON_OUTS_UNKNOWN = 'appearance_outs_unknown'
+RECENT_USAGE_REST_REASON_LAST_APPEARANCE_UNKNOWN = 'last_appearance_unknown'
+RECENT_USAGE_REST_REASON_REFERENCE_DATE_INVALID = 'reference_date_invalid'
 
 WORKLOAD_WINDOWS_COMPLETE = 'complete'
 WORKLOAD_WINDOWS_WITHHELD = 'withheld'
@@ -181,7 +219,14 @@ def author_workload_windows(team_id, *, data_through):
     return _workload_windows_from_rows(rows, anchor)
 
 
-def author_public_team_relief_authority(team_id, *, data_through):
+def author_public_team_relief_authority(
+    team_id,
+    *,
+    data_through,
+    reference_date=None,
+    active_pitchers=None,
+    coverage_by_date=None,
+):
     """Author workload windows and deployment from one bounded row query."""
     anchor = _parse_data_through(data_through)
     if anchor is None:
@@ -192,13 +237,519 @@ def author_public_team_relief_authority(team_id, *, data_through):
             'deployment_profile': author_deployment_profile(
                 team_id, data_through=None
             ),
+            'recent_usage_rest': _unavailable_recent_usage_rest_carrier(
+                reference_date=reference_date,
+                reason_code='data_through_missing',
+            ),
         }
-    start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
-    rows = _appearance_rows(team_id, start_date, anchor)
-    return {
-        'workload_windows': _workload_windows_from_rows(rows, anchor),
-        'deployment_profile': _deployment_profile_from_rows(rows, anchor),
+    active_ids = {
+        pitcher_id
+        for pitcher_id in dict(active_pitchers or {})
+        if type(pitcher_id) is int and pitcher_id > 0
     }
+    start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
+    rows = _appearance_rows(
+        team_id,
+        start_date,
+        anchor,
+        pitcher_ids=active_ids,
+    )
+    team_rows = [
+        (log, pitcher)
+        for log, pitcher in rows
+        if log.appearance_team_id == team_id
+    ]
+    return {
+        'workload_windows': _workload_windows_from_rows(team_rows, anchor),
+        'deployment_profile': _deployment_profile_from_rows(team_rows, anchor),
+        'recent_usage_rest': build_recent_usage_rest_carrier(
+            rows,
+            data_through=anchor,
+            reference_date=reference_date,
+            active_pitchers=active_pitchers,
+            coverage_by_date=coverage_by_date,
+        ),
+    }
+
+
+def build_recent_usage_rest_coverage(data_through, *, anchor_coverage=None):
+    """Resolve seven league-day coverage decisions once for one publication.
+
+    Coverage is team-independent, so the trusted publication builder calls this
+    once and shares the immutable result with all team carriers.  The already
+    admitted anchor-day coverage may be supplied to avoid recomputing it.
+    """
+    anchor = _parse_data_through(data_through)
+    if anchor is None:
+        return {}
+    coverage = {}
+    for offset in range(RECENT_USAGE_REST_MAX_WINDOW_DAYS):
+        day = anchor - timedelta(days=offset)
+        if (
+            offset == 0
+            and isinstance(anchor_coverage, dict)
+            and anchor_coverage.get('slate_date') == day.isoformat()
+        ):
+            payload = dict(anchor_coverage)
+        else:
+            try:
+                payload = slate_coverage.compute_slate_coverage(day)
+            except Exception:
+                payload = {
+                    'slate_date': day.isoformat(),
+                    'complete_enough_to_publish': False,
+                    'coverage_known': False,
+                    'reason_codes': ['slate_coverage_unavailable'],
+                }
+        coverage[day.isoformat()] = payload
+    return coverage
+
+
+def build_recent_usage_rest_carrier(
+    rows,
+    *,
+    data_through,
+    reference_date,
+    active_pitchers=None,
+    coverage_by_date=None,
+):
+    """Freeze named-arm workload observations from the full appearance row set.
+
+    ``rows`` is the untruncated official appearance-team query also used by the
+    existing public workload/deployment carriers.  No request-time state or
+    five-date display chronology participates in this projection.
+    """
+    anchor = _parse_data_through(data_through)
+    reference = _parse_data_through(reference_date)
+    if anchor is None:
+        return _unavailable_recent_usage_rest_carrier(
+            reference_date=reference,
+            reason_code='data_through_missing',
+        )
+    if reference is None or reference != anchor + timedelta(days=1):
+        return _unavailable_recent_usage_rest_carrier(
+            data_through=anchor,
+            reference_date=reference,
+            reason_code=RECENT_USAGE_REST_REASON_REFERENCE_DATE_INVALID,
+        )
+
+    active = {
+        int(pitcher_id): dict(value or {})
+        for pitcher_id, value in dict(active_pitchers or {}).items()
+        if type(pitcher_id) is int and pitcher_id > 0
+    }
+    coverage = dict(coverage_by_date or {})
+    relief_rows = [
+        (log, pitcher)
+        for log, pitcher in rows
+        if _start_relief_state(log) == RELIEF
+    ]
+    seven_start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
+    contributor_ids = {
+        pitcher.id
+        for log, pitcher in relief_rows
+        if log.game_date is not None and log.game_date >= seven_start
+    }
+    relevant_ids = sorted(set(active) | contributor_ids)
+    rows_by_pitcher = {}
+    names = {}
+    for log, pitcher in rows:
+        rows_by_pitcher.setdefault(pitcher.id, []).append(log)
+        names[pitcher.id] = pitcher.full_name
+
+    active_pitchers = []
+    off_active = []
+    for pitcher_id in relevant_ids:
+        active_source = active.get(pitcher_id) or {}
+        item = _recent_usage_rest_pitcher(
+            pitcher_id=pitcher_id,
+            pitcher_name=active_source.get('name') or names.get(pitcher_id),
+            rows=rows_by_pitcher.get(pitcher_id) or [],
+            anchor=anchor,
+            reference=reference,
+            coverage=coverage,
+            source_days_since=active_source.get('days_since_last_appearance'),
+            roster_state='active' if pitcher_id in active else 'off_active_historical',
+        )
+        if pitcher_id in active:
+            active_pitchers.append(item)
+        else:
+            off_active.append(item)
+
+    all_items = active_pitchers + off_active
+    carrier_status = (
+        RECENT_USAGE_REST_COMPLETE
+        if all(_pitcher_recent_usage_rest_complete(item) for item in all_items)
+        else RECENT_USAGE_REST_PARTIAL
+    )
+    return {
+        'contract': RECENT_USAGE_REST_CONTRACT,
+        'status': carrier_status,
+        'reason_code': (
+            None if carrier_status == RECENT_USAGE_REST_COMPLETE
+            else 'some_usage_rest_fields_incomplete'
+        ),
+        'data_through': anchor.isoformat(),
+        'reference_date': reference.isoformat(),
+        'window_policy': RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+        'population_basis': RECENT_USAGE_REST_POPULATION_BASIS,
+        'thresholds': {
+            'multi_inning_minimum_outs': RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
+            'high_pitch_outing_minimum_pitches': RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
+            'three_in_four_minimum_distinct_days': RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS,
+            'four_in_six_minimum_distinct_days': RECENT_USAGE_REST_FOUR_IN_SIX_MIN_DAYS,
+        },
+        'active_pitchers': active_pitchers,
+        'off_active_historical_contributors': off_active,
+    }
+
+
+def _unavailable_recent_usage_rest_carrier(
+    *, data_through=None, reference_date=None, reason_code,
+):
+    return {
+        'contract': RECENT_USAGE_REST_CONTRACT,
+        'status': RECENT_USAGE_REST_UNAVAILABLE,
+        'reason_code': reason_code,
+        'data_through': _iso_date(data_through),
+        'reference_date': _iso_date(reference_date),
+        'window_policy': RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+        'population_basis': RECENT_USAGE_REST_POPULATION_BASIS,
+        'thresholds': {
+            'multi_inning_minimum_outs': RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
+            'high_pitch_outing_minimum_pitches': RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
+            'three_in_four_minimum_distinct_days': RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS,
+            'four_in_six_minimum_distinct_days': RECENT_USAGE_REST_FOUR_IN_SIX_MIN_DAYS,
+        },
+        'active_pitchers': [],
+        'off_active_historical_contributors': [],
+    }
+
+
+def _recent_usage_rest_pitcher(
+    *,
+    pitcher_id,
+    pitcher_name,
+    rows,
+    anchor,
+    reference,
+    coverage,
+    source_days_since,
+    roster_state,
+):
+    windows = {
+        key: _recent_usage_rest_window(
+            rows,
+            anchor=anchor,
+            window_days=window_days,
+            coverage=coverage,
+        )
+        for key, window_days in RECENT_USAGE_REST_WINDOW_DAYS.items()
+    }
+    relief_rows = [row for row in rows if _start_relief_state(row) == RELIEF]
+    relief_dates = {
+        row.game_date for row in relief_rows if row.game_date is not None
+    }
+
+    days_since = _days_since_last_appearance_fact(
+        relief_rows,
+        anchor=anchor,
+        reference=reference,
+        coverage=coverage,
+        source_value=source_days_since,
+    )
+    pitched_yesterday = _pattern_fact(
+        matched=anchor in relief_dates,
+        window_state=_classified_window_state(rows, coverage, anchor, anchor),
+    )
+
+    back_to_back_start = reference - timedelta(
+        days=RECENT_USAGE_REST_BACK_TO_BACK_WINDOW_DAYS - 1
+    )
+    back_to_back_dates = {
+        day for day in relief_dates if back_to_back_start <= day <= anchor
+    }
+    observed_back_to_back = any(
+        day - timedelta(days=1) in back_to_back_dates
+        for day in back_to_back_dates
+    )
+    back_to_back = _pattern_fact(
+        matched=observed_back_to_back,
+        window_state=_classified_window_state(
+            rows, coverage, back_to_back_start, anchor
+        ),
+    )
+
+    three_start = anchor - timedelta(days=RECENT_USAGE_REST_THREE_IN_FOUR_DAYS - 1)
+    three_dates = {day for day in relief_dates if three_start <= day <= anchor}
+    three_in_four = _pattern_fact(
+        matched=(
+            anchor in three_dates
+            and len(three_dates) >= RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS
+        ),
+        window_state=_classified_window_state(
+            rows, coverage, three_start, anchor
+        ),
+    )
+
+    four_start = anchor - timedelta(days=RECENT_USAGE_REST_FOUR_IN_SIX_DAYS - 1)
+    four_dates = {day for day in relief_dates if four_start <= day <= anchor}
+    four_in_six = _pattern_fact(
+        matched=(
+            anchor in four_dates
+            and len(four_dates) >= RECENT_USAGE_REST_FOUR_IN_SIX_MIN_DAYS
+        ),
+        window_state=_classified_window_state(
+            rows, coverage, four_start, anchor
+        ),
+    )
+
+    seven_start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
+    recent_rows = [
+        row for row in relief_rows
+        if row.game_date is not None and seven_start <= row.game_date <= anchor
+    ]
+    multi_inning = _threshold_pattern_fact(
+        recent_rows,
+        field_name='innings_pitched_outs',
+        threshold=RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
+        window_state=_classified_window_state(
+            rows, coverage, seven_start, anchor
+        ),
+        missing_reason=RECENT_USAGE_REST_REASON_OUTS_UNKNOWN,
+    )
+    high_pitch = _threshold_pattern_fact(
+        recent_rows,
+        field_name='pitches_thrown',
+        threshold=RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
+        window_state=_classified_window_state(
+            rows, coverage, seven_start, anchor
+        ),
+        missing_reason=RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN,
+    )
+
+    return {
+        'pitcher_id': pitcher_id,
+        'pitcher_name': pitcher_name,
+        'roster_state': roster_state,
+        'windows': windows,
+        'days_since_last_appearance': days_since,
+        'pitched_yesterday': pitched_yesterday,
+        'back_to_back': back_to_back,
+        'three_in_four': three_in_four,
+        'four_in_six': four_in_six,
+        'recent_multi_inning': multi_inning,
+        'high_pitch_outing': high_pitch,
+    }
+
+
+def _recent_usage_rest_window(rows, *, anchor, window_days, coverage):
+    start = anchor - timedelta(days=window_days - 1)
+    window_rows = [
+        row for row in rows
+        if row.game_date is not None and start <= row.game_date <= anchor
+    ]
+    relief_rows = [row for row in window_rows if _start_relief_state(row) == RELIEF]
+    start_relief_unknown = any(
+        _start_relief_state(row) not in (START, RELIEF) for row in window_rows
+    )
+    state, reasons = _coverage_state(coverage, start, anchor)
+    if state != RECENT_USAGE_REST_COMPLETE:
+        appearances = _fact(None, state, reasons)
+        pitches = _fact(None, state, reasons)
+        outs = _fact(None, state, reasons)
+    elif start_relief_unknown:
+        appearances = _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
+        )
+        pitches = _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
+        )
+        outs = _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
+        )
+    else:
+        appearances = _fact(
+            len(relief_rows), RECENT_USAGE_REST_COMPLETE, [],
+        )
+        pitches = _sum_fact(
+            relief_rows,
+            'pitches_thrown',
+            RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN,
+        )
+        outs = _sum_fact(
+            relief_rows,
+            'innings_pitched_outs',
+            RECENT_USAGE_REST_REASON_OUTS_UNKNOWN,
+        )
+    return {
+        'window_days': window_days,
+        'start_date': start.isoformat(),
+        'through_date': anchor.isoformat(),
+        'appearances': appearances,
+        'pitches': pitches,
+        'outs': outs,
+    }
+
+
+def _days_since_last_appearance_fact(
+    relief_rows, *, anchor, reference, coverage, source_value,
+):
+    if type(source_value) is int and source_value >= 0:
+        return _fact(source_value, RECENT_USAGE_REST_COMPLETE, [])
+    dated = [
+        row for row in relief_rows
+        if row.game_date is not None and row.game_date <= anchor
+    ]
+    if not dated:
+        state, reasons = _coverage_state(
+            coverage,
+            anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1),
+            anchor,
+        )
+        if state == RECENT_USAGE_REST_COMPLETE:
+            return _fact(
+                None,
+                RECENT_USAGE_REST_UNKNOWN,
+                [RECENT_USAGE_REST_REASON_LAST_APPEARANCE_UNKNOWN],
+            )
+        return _fact(None, state, reasons)
+    latest = max(row.game_date for row in dated)
+    state, reasons = _coverage_state(coverage, max(latest, anchor - timedelta(days=6)), anchor)
+    if state != RECENT_USAGE_REST_COMPLETE:
+        return _fact(None, state, reasons)
+    return _fact(
+        (reference - latest).days,
+        RECENT_USAGE_REST_COMPLETE,
+        [],
+        last_appearance_date=latest.isoformat(),
+    )
+
+
+def _threshold_pattern_fact(
+    rows, *, field_name, threshold, window_state, missing_reason,
+):
+    matching = [
+        row for row in rows
+        if getattr(row, field_name, None) is not None
+        and getattr(row, field_name) >= threshold
+    ]
+    if matching:
+        most_recent = max(row.game_date for row in matching)
+        return _fact(
+            True,
+            RECENT_USAGE_REST_COMPLETE,
+            [],
+            most_recent_date=most_recent.isoformat(),
+            threshold=threshold,
+        )
+    state, reasons = window_state
+    if state != RECENT_USAGE_REST_COMPLETE:
+        return _fact(None, state, reasons, threshold=threshold)
+    if any(getattr(row, field_name, None) is None for row in rows):
+        return _fact(
+            None,
+            RECENT_USAGE_REST_UNKNOWN,
+            [missing_reason],
+            threshold=threshold,
+        )
+    return _fact(False, RECENT_USAGE_REST_COMPLETE, [], threshold=threshold)
+
+
+def _pattern_fact(*, matched, window_state):
+    state, reasons = window_state
+    if state != RECENT_USAGE_REST_COMPLETE:
+        return _fact(None, state, reasons)
+    return _fact(bool(matched), RECENT_USAGE_REST_COMPLETE, [])
+
+
+def _coverage_state(coverage, start, end):
+    payloads = []
+    current = start
+    while current <= end:
+        payload = coverage.get(current.isoformat())
+        if not isinstance(payload, dict):
+            return (
+                RECENT_USAGE_REST_UNAVAILABLE,
+                [RECENT_USAGE_REST_REASON_COVERAGE_MISSING],
+            )
+        payloads.append(payload)
+        current += timedelta(days=1)
+    incomplete = [
+        payload for payload in payloads
+        if payload.get('complete_enough_to_publish') is not True
+    ]
+    if incomplete:
+        reasons = [RECENT_USAGE_REST_REASON_COVERAGE_INCOMPLETE]
+        for payload in incomplete:
+            reasons.extend(payload.get('reason_codes') or [])
+        return RECENT_USAGE_REST_PARTIAL, _dedupe(reasons)
+    return RECENT_USAGE_REST_COMPLETE, []
+
+
+def _classified_window_state(rows, coverage, start, end):
+    state, reasons = _coverage_state(coverage, start, end)
+    if state != RECENT_USAGE_REST_COMPLETE:
+        return state, reasons
+    if any(
+        row.game_date is not None
+        and start <= row.game_date <= end
+        and _start_relief_state(row) not in (START, RELIEF)
+        for row in rows
+    ):
+        return (
+            RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
+        )
+    return state, reasons
+
+
+def _sum_fact(rows, field_name, missing_reason):
+    values = [getattr(row, field_name, None) for row in rows]
+    if any(value is None for value in values):
+        return _fact(None, RECENT_USAGE_REST_UNKNOWN, [missing_reason])
+    return _fact(sum(values), RECENT_USAGE_REST_COMPLETE, [])
+
+
+def _fact(value, status, reason_codes, **extra):
+    payload = {
+        'value': value,
+        'status': status,
+        'reason_codes': _dedupe(reason_codes),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _pitcher_recent_usage_rest_complete(item):
+    facts = [
+        item.get('days_since_last_appearance'),
+        item.get('pitched_yesterday'),
+        item.get('back_to_back'),
+        item.get('three_in_four'),
+        item.get('four_in_six'),
+        item.get('recent_multi_inning'),
+        item.get('high_pitch_outing'),
+    ]
+    for window in (item.get('windows') or {}).values():
+        facts.extend((window.get('appearances'), window.get('pitches'), window.get('outs')))
+    return all(
+        isinstance(fact, dict)
+        and fact.get('status') == RECENT_USAGE_REST_COMPLETE
+        for fact in facts
+    )
+
+
+def _dedupe(values):
+    return list(dict.fromkeys(value for value in values if value))
+
+
+def _iso_date(value):
+    parsed = _parse_data_through(value)
+    return parsed.isoformat() if parsed else None
 
 
 def author_deployment_profile(team_id, *, data_through):
@@ -348,17 +899,28 @@ def _workload_windows_from_rows(rows, anchor):
     }
 
 
-def _appearance_rows(team_id, start_date, anchor):
+def _appearance_rows(team_id, start_date, anchor, *, pitcher_ids=None):
     # Scoped by official game-side ownership, not by who is on the roster today.
     # This both keeps another club's game out of this board and keeps this
     # club's own game complete when a pitcher has since left the organization.
+    team_scope = GameLog.appearance_team_id == team_id
+    requested_pitcher_ids = sorted({
+        pitcher_id
+        for pitcher_id in (pitcher_ids or [])
+        if type(pitcher_id) is int and pitcher_id > 0
+    })
+    appearance_scope = (
+        or_(team_scope, GameLog.pitcher_id.in_(requested_pitcher_ids))
+        if requested_pitcher_ids
+        else team_scope
+    )
     return (
         GameLog.query
         .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
         .add_entity(Pitcher)
         .filter(
             GameLog.appearance_team_status == APPEARANCE_TEAM_RESOLVED,
-            GameLog.appearance_team_id == team_id,
+            appearance_scope,
             GameLog.game_date >= start_date,
             GameLog.game_date <= anchor,
         )

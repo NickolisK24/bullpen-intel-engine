@@ -48,18 +48,20 @@ def _team_missing(board):
     return team.get('team_name') is None and team.get('team_abbreviation') is None
 
 
-def _select_core_board(team_id):
+def _select_core_board(team_id, *, include_recent_usage_rest=False):
     """Select the trusted publication once and keep it for every core field."""
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None:
         return None, build_published_team_board(
             team_id, snapshot_override=snapshot,
         ), None
-    board = build_published_team_board(
-        team_id,
-        snapshot_override=snapshot,
-        include_delivery_identity=True,
-    )
+    board_kwargs = {
+        'snapshot_override': snapshot,
+        'include_delivery_identity': True,
+    }
+    if include_recent_usage_rest:
+        board_kwargs['include_recent_usage_rest'] = True
+    board = build_published_team_board(team_id, **board_kwargs)
     identity = build_team_board_identity(snapshot, board)
     return snapshot, board, identity
 
@@ -189,6 +191,7 @@ def get_team_board_details(team_id):
             team_id,
             snapshot_override=snapshot,
             include_delivery_identity=True,
+            include_recent_usage_rest=True,
         )
         require_matching_team_board_identity(normalized, snapshot, board)
     except TeamBoardIdentityMismatch as exc:
@@ -226,7 +229,9 @@ def get_team_board_details(team_id):
 @team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])
 def get_team_board_v2(team_id):
     """Compatibility composition using one selected publication identity."""
-    snapshot, board, identity = _select_core_board(team_id)
+    snapshot, board, identity = _select_core_board(
+        team_id, include_recent_usage_rest=True,
+    )
     if _team_missing(board):
         return jsonify({'error': 'team_not_found'}), 404
     if snapshot is None or identity is None:
