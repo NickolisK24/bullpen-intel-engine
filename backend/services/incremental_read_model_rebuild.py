@@ -377,6 +377,28 @@ def build_shadow_snapshot(snapshot, cu05_result, *, take_payload_ownership=False
         _get(cu05_result, 'workload_rest_pitcher_results') or {}
     )
     team_workload = dict(_get(cu05_result, 'workload_rest_team_results') or {})
+    represented_date = _parse_date(_get(cu05_result, 'data_through'))
+    availability_reference_date = _parse_date(
+        _get(cu05_result, 'availability_reference_date')
+    )
+    if represented_date is None or availability_reference_date is None:
+        raise ValueError('CU-06 shadow date identity is incomplete')
+
+    # CU-06 is a private next-generation projection. Its source publication
+    # remains immutable, but the copied identity must describe the CU-04/CU-05
+    # facts being overlaid rather than the prior Dashboard generation.
+    shadow.data_through = represented_date
+    shadow.availability_reference_date = availability_reference_date
+    freshness = payload.setdefault('freshness', {})
+    freshness['data_through'] = represented_date.isoformat()
+    freshness['latest_workload_date'] = represented_date.isoformat()
+    freshness['availability_reference_date'] = (
+        availability_reference_date.isoformat()
+    )
+    package['data_through'] = represented_date.isoformat()
+    package['availability_reference_date'] = (
+        availability_reference_date.isoformat()
+    )
 
     for team_id in set(_get(cu05_result, 'teams_recomputed') or ()):
         team_package = by_team.get(str(team_id))
@@ -408,9 +430,14 @@ def build_shadow_snapshot(snapshot, cu05_result, *, take_payload_ownership=False
         ]
         team_package['rest_status'] = author_rest_status(
             selected,
-            freshness=payload.get('freshness') or {},
+            freshness=freshness,
             roster_authority=team_package.get('roster_authority') or {},
         )
+        rest_authority = team_package.get('rest_status_authority') or {}
+        rest_authority['availability_reference_date'] = (
+            availability_reference_date.isoformat()
+        )
+        team_package['rest_status_authority'] = rest_authority
     shadow.payload = payload
     return shadow
 
@@ -562,11 +589,15 @@ def _parity(surface, entity_id, incremental, authoritative):
 
 
 def _failure(scope, entity_id, exc):
-    return {
+    failure = {
         'scope': scope,
         'entity_id': entity_id,
         'error': type(exc).__name__,
     }
+    detail = str(exc).strip()
+    if detail:
+        failure['detail'] = detail
+    return failure
 
 
 def _partial(game_pk, represented_date, pitcher_ids, team_ids, *, failure):
