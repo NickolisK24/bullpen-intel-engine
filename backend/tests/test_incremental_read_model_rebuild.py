@@ -1,7 +1,7 @@
 """CU-06 bounded read-model rebuild contracts."""
 
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +13,7 @@ import models.prospect  # noqa: F401
 from models.pitcher import Pitcher
 from models.slate_game import SlateGame
 from services import incremental_read_model_rebuild as cu06
+from services import team_board_delta_substrate as delta
 from services import incremental_arm_read_team_state as cu05
 from services import incremental_workload_rest as cu04
 from services import change_impact_orchestration as orchestration
@@ -521,6 +522,49 @@ def test_shadow_snapshot_overlays_only_affected_team_and_pitcher(app):
         )
 
 
+def test_shadow_snapshot_advances_private_date_identity_without_mutating_source(app):
+    with app.app_context():
+        snapshot = _snapshot(team_ids=(10,))
+        snapshot.data_through = date(2026, 7, 13)
+        snapshot.availability_reference_date = date(2026, 7, 14)
+        snapshot.payload['freshness'].update({
+            'data_through': '2026-07-13',
+            'latest_workload_date': '2026-07-13',
+            'availability_reference_date': '2026-07-14',
+        })
+        package = snapshot.payload['trusted_team_boards']
+        package['data_through'] = '2026-07-13'
+        package['availability_reference_date'] = '2026-07-14'
+        package['by_team_id']['10']['rest_status_authority'] = {
+            'method_version': 'preserved-method',
+            'availability_reference_date': '2026-07-14',
+        }
+        before = deepcopy(snapshot)
+
+        shadow = cu06.build_shadow_snapshot(snapshot, _cu05(teams=(10,)))
+
+        assert shadow.data_through == date(2026, 7, 14)
+        assert shadow.availability_reference_date == date(2026, 7, 15)
+        assert shadow.payload['freshness']['data_through'] == '2026-07-14'
+        assert shadow.payload['freshness']['latest_workload_date'] == '2026-07-14'
+        assert (
+            shadow.payload['freshness']['availability_reference_date']
+            == '2026-07-15'
+        )
+        assert package['data_through'] == '2026-07-13'
+        shadow_package = shadow.payload['trusted_team_boards']
+        assert shadow_package['data_through'] == '2026-07-14'
+        assert shadow_package['availability_reference_date'] == '2026-07-15'
+        assert (
+            shadow_package['by_team_id']['10']['rest_status_authority'][
+                'availability_reference_date'
+            ]
+            == '2026-07-15'
+        )
+        assert snapshot.data_through == before.data_through
+        assert snapshot.payload == before.payload
+
+
 def test_shadow_snapshot_can_take_ownership_of_private_context_payload(app):
     with app.app_context():
         snapshot = _snapshot()
@@ -708,15 +752,46 @@ def test_strongest_cu02_through_cu06_chain_rebuilds_then_stops(app, monkeypatch)
         calls = []
         builders = _builders(calls)
         snapshot = _snapshot(team_ids=(AWAY_TEAM, HOME_TEAM, 30))
-        snapshot.data_through = GAME_DATE
-        snapshot.availability_reference_date = (
-            date.fromisoformat(state.availability_reference_date)
-        )
-        snapshot.payload['freshness']['data_through'] = GAME_DATE.isoformat()
-        snapshot.payload['trusted_team_boards']['data_through'] = GAME_DATE.isoformat()
-        snapshot.payload['trusted_team_boards']['availability_reference_date'] = (
-            state.availability_reference_date
-        )
+        prior_date = GAME_DATE - timedelta(days=1)
+        snapshot.data_through = prior_date
+        snapshot.availability_reference_date = GAME_DATE
+        snapshot.payload['freshness'].update({
+            'data_through': prior_date.isoformat(),
+            'latest_workload_date': prior_date.isoformat(),
+            'availability_reference_date': GAME_DATE.isoformat(),
+        })
+        package = snapshot.payload['trusted_team_boards']
+        package['data_through'] = prior_date.isoformat()
+        package['availability_reference_date'] = GAME_DATE.isoformat()
+        for team_id in (AWAY_TEAM, HOME_TEAM):
+            package['by_team_id'][str(team_id)]['workload_windows_authority'] = {
+                'method_version': delta.WORKLOAD_WINDOWS_METHOD_VERSION,
+                'public_contract_version': (
+                    delta.WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+                ),
+                'team_board_package_contract': (
+                    cu06.public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+                ),
+                'population_basis': {
+                    'basis': (
+                        cu06.public_serving_authority
+                        .WORKLOAD_WINDOWS_POPULATION_BASIS
+                    ),
+                    'population_authority': (
+                        cu06.public_serving_authority
+                        .WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+                    ),
+                    'membership_authority': (
+                        cu06.public_serving_authority
+                        .WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+                    ),
+                },
+                'reference_date_policy': (
+                    cu06.public_serving_authority
+                    .WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+                ),
+                'data_through': prior_date.isoformat(),
+            }
         result = cu06.rebuild_read_model_impact(
             state,
             source_snapshot=snapshot,
@@ -739,6 +814,17 @@ def test_strongest_cu02_through_cu06_chain_rebuilds_then_stops(app, monkeypatch)
         )
         assert result.matchups_rebuilt == (GAME_PK,)
         assert result.tonight_entries_rebuilt == (GAME_PK,)
+        assert {
+            board['represented_date']
+            for board in result.team_board_results.values()
+        } == {GAME_DATE.isoformat()}
+        shadow = cu06.build_shadow_snapshot(snapshot, state)
+        for team_id in (AWAY_TEAM, HOME_TEAM):
+            capture = delta.build_workload_window_capture(
+                snapshot=shadow, team_id=team_id,
+            )
+            assert capture['represented_date'] == GAME_DATE.isoformat()
+        assert snapshot.data_through == prior_date
         assert result.publication_affected is False
         assert result.cache_invalidation_triggered is False
 

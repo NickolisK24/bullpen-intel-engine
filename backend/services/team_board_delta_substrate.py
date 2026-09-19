@@ -585,10 +585,12 @@ def try_build_workload_window_capture(*, snapshot, team_id) -> dict | None:
         return build_workload_window_capture(snapshot=snapshot, team_id=team_id)
     except Exception as exc:  # noqa: BLE001 - optional prospective domain
         logger.warning(
-            'Workload window capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            'Workload window capture withheld team_id=%s snapshot_id=%s '
+            'reason=%s detail=%s.',
             team_id,
             getattr(snapshot, 'id', None),
             type(exc).__name__,
+            str(exc) or None,
         )
         return None
 

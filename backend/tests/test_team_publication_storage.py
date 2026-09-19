@@ -525,7 +525,8 @@ def test_continuous_shadow_equivalence_failure_is_atomic(app):
 
     with pytest.raises(
         TeamPublicationError,
-        match='team_publication_continuous_equivalence_invalid:116',
+        match='team_publication_continuous_equivalence_invalid:'
+        'team_state_mismatch:116',
     ):
         _author_continuous(tuple(inputs))
 
@@ -538,8 +539,22 @@ def test_continuous_shadow_equivalence_failure_is_atomic(app):
     ).count() == 0
 
 
-@pytest.mark.parametrize('domain', ('workload', 'roster', 'method_version'))
-def test_continuous_shadow_fails_closed_on_incoherent_required_domain(app, domain):
+@pytest.mark.parametrize(('domain', 'error'), (
+    (
+        'workload',
+        'team_publication_continuous_equivalence_invalid:'
+        'workload_fact_mismatch:116:1160:pitches_last_7_days',
+    ),
+    (
+        'roster',
+        'team_publication_continuous_equivalence_invalid:'
+        'roster_team_identity_mismatch:116',
+    ),
+    ('method_version', 'team_publication_method_version_missing'),
+))
+def test_continuous_shadow_fails_closed_on_incoherent_required_domain(
+    app, domain, error,
+):
     snapshot, _proof = _source()
     author_league_dashboard_team_publications(snapshot)
     inputs = list(_continuous_inputs())
@@ -553,7 +568,7 @@ def test_continuous_shadow_fails_closed_on_incoherent_required_domain(app, domai
     else:
         del board['publication_method_versions']['workload_windows']
 
-    with pytest.raises(TeamPublicationError):
+    with pytest.raises(TeamPublicationError, match=error):
         _author_continuous(tuple(inputs))
 
     assert TeamPublicPublication.query.filter_by(

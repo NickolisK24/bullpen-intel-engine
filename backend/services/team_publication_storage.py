@@ -862,6 +862,14 @@ def _continuous_publication_id(team_id, cohort_id) -> str:
     })
 
 
+def _continuous_equivalence_invalid(team_id, detail):
+    code, separator, context = str(detail).partition(':')
+    suffix = f':{context}' if separator else ''
+    raise TeamPublicationError(
+        f'team_publication_continuous_equivalence_invalid:{code}:{team_id}{suffix}'
+    )
+
+
 def _continuous_sources(
     *, team_id, change, canonical_impact, workload_result, team_state_result,
     read_model_result, source_sync_run_id, work_job_id,
@@ -919,19 +927,22 @@ def _continuous_sources(
     team_state = _team_mapping(team_state_result.get('team_state_results'), team_id)
     public_team_state = _mapping(team_state.get('public_team_state'))
     roster_authority = _mapping(board.get('roster_authority'))
-    if (
-        _board_team_id(board) != team_id
-        or not isinstance(board.get('groups'), list)
-        or _positive_int(roster_authority.get('team_id')) != team_id
-        or not str(roster_authority.get('contract') or '').strip()
-        or not public_team_state
-        or _mapping(board.get('team_state')) != public_team_state
-        or not _board_pitcher_ids(board)
-        or _mapping(team_package.get('roster_authority')) != roster_authority
-    ):
-        raise TeamPublicationError(
-            f'team_publication_continuous_equivalence_invalid:{team_id}'
-        )
+    if _board_team_id(board) != team_id:
+        _continuous_equivalence_invalid(team_id, 'board_team_identity_mismatch')
+    if not isinstance(board.get('groups'), list):
+        _continuous_equivalence_invalid(team_id, 'board_groups_invalid')
+    if _positive_int(roster_authority.get('team_id')) != team_id:
+        _continuous_equivalence_invalid(team_id, 'roster_team_identity_mismatch')
+    if not str(roster_authority.get('contract') or '').strip():
+        _continuous_equivalence_invalid(team_id, 'roster_contract_missing')
+    if not public_team_state:
+        _continuous_equivalence_invalid(team_id, 'team_state_missing')
+    if _mapping(board.get('team_state')) != public_team_state:
+        _continuous_equivalence_invalid(team_id, 'team_state_mismatch')
+    if not _board_pitcher_ids(board):
+        _continuous_equivalence_invalid(team_id, 'active_pitchers_missing')
+    if _mapping(team_package.get('roster_authority')) != roster_authority:
+        _continuous_equivalence_invalid(team_id, 'roster_authority_mismatch')
     versions = _continuous_method_versions(board)
     active_pitcher_ids = _board_pitcher_ids(board)
     affected_pitcher_ids = _int_tuple(
@@ -948,10 +959,10 @@ def _continuous_sources(
         team_state_result.get('workload_rest_team_results'), team_id
     )
     cards = _board_cards_by_pitcher(board)
-    if not evidence_pitcher_ids or not team_workload:
-        raise TeamPublicationError(
-            f'team_publication_continuous_equivalence_invalid:{team_id}'
-        )
+    if not evidence_pitcher_ids:
+        _continuous_equivalence_invalid(team_id, 'affected_active_pitchers_missing')
+    if not team_workload:
+        _continuous_equivalence_invalid(team_id, 'team_workload_missing')
     for pitcher_id in evidence_pitcher_ids:
         workload = _mapping(
             pitcher_workload.get(pitcher_id)
@@ -967,23 +978,34 @@ def _continuous_sources(
         fatigue = _mapping(workload.get('fatigue_workload'))
         board_workload = _mapping(card.get('workload_facts'))
         overlapping_workload = set(fatigue).intersection(board_workload)
+        if not workload:
+            _continuous_equivalence_invalid(
+                team_id, f'pitcher_workload_missing:{pitcher_id}'
+            )
+        if not player_availability:
+            _continuous_equivalence_invalid(
+                team_id, f'pitcher_availability_missing:{pitcher_id}'
+            )
+        if not arm_read:
+            _continuous_equivalence_invalid(
+                team_id, f'arm_read_missing:{pitcher_id}'
+            )
+        if not overlapping_workload:
+            _continuous_equivalence_invalid(
+                team_id, f'workload_facts_missing:{pitcher_id}'
+            )
+        for key in sorted(overlapping_workload):
+            if board_workload[key] != fatigue[key]:
+                _continuous_equivalence_invalid(
+                    team_id, f'workload_fact_mismatch:{pitcher_id}:{key}'
+                )
         if (
-            not workload
-            or not player_availability
-            or not arm_read
-            or not overlapping_workload
-            or any(
-                board_workload[key] != fatigue[key]
-                for key in overlapping_workload
-            )
-            or (
-                card.get('availability_status') is not None
-                and player_availability.get('availability_status')
-                != card.get('availability_status')
-            )
+            card.get('availability_status') is not None
+            and player_availability.get('availability_status')
+            != card.get('availability_status')
         ):
-            raise TeamPublicationError(
-                f'team_publication_continuous_equivalence_invalid:{team_id}'
+            _continuous_equivalence_invalid(
+                team_id, f'availability_status_mismatch:{pitcher_id}'
             )
     team_evidence = {
         'team_state': team_state,
