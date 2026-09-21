@@ -10,6 +10,7 @@ from services import game_shape
 from services import pitcher_season_ledger_coverage
 from services import slate_coverage
 from services import starter_assignment_context
+from services import team_board_workload_coverage
 from utils.games_started import RELIEF, START, games_started_state
 
 
@@ -315,9 +316,7 @@ def extend_team_workload_coverage(data_through, recent_coverage):
     anchor = _parse_data_through(data_through)
     if anchor is None:
         return dict(recent_coverage or {})
-    return slate_coverage.compute_slate_coverage_window(
-        anchor, days=LOOKBACK_DAYS, base=recent_coverage,
-    )
+    return team_board_workload_coverage.extend_coverage(anchor, recent_coverage)
 
 
 def build_recent_usage_rest_carrier(

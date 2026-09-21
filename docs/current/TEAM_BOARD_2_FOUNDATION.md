@@ -225,6 +225,13 @@ teams and uses at most two additional set-based source queries after TB-03's
 seven-day decisions. No new selector, migration, or request-time TB-04
 aggregation is involved.
 
+The 30-day batch lives in `team_board_workload_coverage.py`, called only by
+the trusted Team Board workload author. It reuses the existing daily slate
+decision and its schedule-context width; it is not a second general coverage
+authority. `slate_coverage.py` remains byte-identical to the protected base,
+as required by the unchanged legacy What Changed freeze guard. This move
+changes neither the carrier facts nor their evidence states.
+
 The `team_board_workload_overview_v1` contract contains independent
 `window_3`, `window_7`, `window_14`, and `window_30` facts. Each window starts
 at publication `data_through - (days - 1)` and ends on `data_through`, both
