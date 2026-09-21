@@ -6,12 +6,75 @@ export const TEAM_BOARD_DETAILS_CAPABILITY = 'team_board_deferred_details'
 export const TEAM_BOARD_DETAILS_CONTRACT_VERSION = 'team_board_deferred_details_v1'
 export const TEAM_BOARD_RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_rest_v1'
 export const TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT = 'team_board_workload_overview_v1'
+export const TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT = 'team_board_public_deployment_context_v1'
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 const workloadWindowKeys = [3, 7, 14, 30]
 const workloadMetricKeys = ['pitches', 'appearances', 'outs']
 
 const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
+
+const publicRoleLabels = new Set(['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear'])
+
+function readDeploymentDomain(source, fields) {
+  if (!source || !recentUsageRestStates.has(source.status)
+    || !nonnegativeCount(source.appearances) || !nonnegativeCount(source.known_appearances)
+    || source.known_appearances > source.appearances
+    || fields.some(field => !nonnegativeCount(source[field]))) return null
+  return {
+    status: source.status,
+    appearances: source.appearances,
+    knownAppearances: source.known_appearances,
+    reasonCodes: Array.isArray(source.reason_codes) ? [...source.reason_codes] : [],
+    ...Object.fromEntries(fields.map(field => [field, source[field]])),
+  }
+}
+
+export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT
+    || carrier.method_version !== TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT
+    || !publicationIdentity || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || carrier.team_id !== publicationIdentity.team_id
+    || carrier.data_through !== publicationIdentity.represented_date
+    || carrier.window_days !== 14 || !Array.isArray(carrier.profiles)) return null
+  const profiles = carrier.profiles.map(item => {
+    const role = item?.public_role_read
+    const context = item?.context
+    const entry = readDeploymentDomain(context?.entry_inning, ['eighth_or_later_appearances', 'extra_inning_appearances'])
+    const score = readDeploymentDomain(context?.score_context, ['leading', 'tied', 'trailing'])
+    const leverage = readDeploymentDomain(context?.leverage, ['high', 'middle', 'low'])
+    const observed = item?.observed_profile
+    if (!nonnegativeCount(item?.pitcher_id) || item.team_id !== carrier.team_id
+      || typeof item.pitcher_name !== 'string' || !item.pitcher_name.trim()
+      || !role || !publicRoleLabels.has(role.label)
+      || context?.pitcher_id !== item.pitcher_id || !entry || !score || !leverage
+      || context.leverage.basis !== 'recorded_game_log_leverage_index_only'
+      || !Array.isArray(context.entry_inning.by_inning)
+      || context.entry_inning.by_inning.some(row => !nonnegativeCount(row?.inning) || !nonnegativeCount(row?.appearances))
+      || observed && (observed.pitcher_id !== item.pitcher_id || ['appearances_analyzed', 'saves', 'holds', 'games_finished', 'multi_inning_appearances', 'appearances_with_games_finished', 'appearances_with_outs'].some(key => !nonnegativeCount(observed[key])))) return null
+    return {
+      pitcherId: item.pitcher_id,
+      name: item.pitcher_name,
+      role: { key: role.key, label: role.label, confidence: role.confidence ?? null },
+      entry: { ...entry, byInning: context.entry_inning.by_inning.map(row => ({ inning: row.inning, appearances: row.appearances })) },
+      score,
+      leverage,
+      observed: observed ? {
+        appearances: observed.appearances_analyzed,
+        saves: observed.saves,
+        holds: observed.holds,
+        gamesFinished: observed.games_finished,
+        knownGamesFinished: observed.appearances_with_games_finished,
+        multiInning: observed.multi_inning_appearances,
+        knownOuts: observed.appearances_with_outs,
+        limitations: Array.isArray(observed.limitations) ? [...observed.limitations] : [],
+      } : null,
+    }
+  })
+  if (profiles.some(profile => !profile)) return null
+  return { contract: carrier.contract, teamId: carrier.team_id, dataThrough: carrier.data_through, windowDays: 14, profiles }
+}
 
 function readWorkloadMetric(metric) {
   if (!metric || typeof metric !== 'object' || !recentUsageRestStates.has(metric.status)) return null
@@ -224,6 +287,7 @@ export function readTeamBoardV2(payload) {
     workloadOverview: payload.workload_overview,
     frozenTeamWorkload: readTeamBoardFrozenWorkload(payload.workload_overview?.frozen_team_workload, payload.publication_identity),
     rolesDeployment: payload.roles_deployment,
+    frozenPublicDeployment: readTeamBoardFrozenDeployment(payload.roles_deployment?.frozen_public_deployment, payload.publication_identity),
     rotationImpact: payload.rotation_impact,
     recentTransactions: payload.recent_transactions,
     rosterContext: payload.roster_context,
@@ -275,6 +339,9 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
   const frozenTeamWorkload = detailsValid
     ? readTeamBoardFrozenWorkload(details.workload_overview?.frozen_team_workload, corePayload.publication_identity)
     : null
+  const frozenPublicDeployment = detailsValid
+    ? readTeamBoardFrozenDeployment(details.roles_deployment?.frozen_public_deployment, corePayload.publication_identity)
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -293,6 +360,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     workloadOverview: details.workload_overview || corePayload.workload_overview,
     frozenTeamWorkload,
     rolesDeployment: details.roles_deployment || corePayload.roles_deployment,
+    frozenPublicDeployment,
     rotationImpact: corePayload.rotation_impact,
     recentTransactions: details.recent_transactions || null,
     rosterContext: corePayload.roster_context,
@@ -309,6 +377,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     detailsRejected: Boolean(detailsPayload) && !detailsValid,
     recentUsageRestRejected: Boolean(details.recent_usage_rest) && !recentUsageRest,
     frozenTeamWorkloadRejected: Boolean(details.workload_overview?.frozen_team_workload) && !frozenTeamWorkload,
+    frozenPublicDeploymentRejected: Boolean(details.roles_deployment?.frozen_public_deployment) && !frozenPublicDeployment,
     limitations: corePayload.limitations,
   }
 }

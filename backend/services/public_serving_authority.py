@@ -91,6 +91,11 @@ from services.team_state_public_vocabulary import (
     TEAM_STATE_READINESS_UNAVAILABLE,
     team_state_unavailable,
 )
+from services.team_board_public_deployment_context import (
+    CONTRACT as PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT,
+    METHOD_VERSION as PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION,
+    author_public_deployment_context,
+)
 from services.workload_concentration import summarize_recent_relief_workload
 from utils.db import db
 
@@ -212,6 +217,41 @@ def _plain_board_record(record, role_logs, reference_date):
         'eligibility': deepcopy(record.get('eligibility') or {}),
         'roster_status': deepcopy(record.get('roster_status') or {}),
         'visibility': deepcopy(record.get('visibility') or {}),
+    }
+
+
+def _frozen_roles_deployment_carrier(team_id, selected_records, deployment_profile, context):
+    """Join existing public role reads and observed facts at publication only."""
+    if not isinstance(context, Mapping) or context.get('contract') != PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT:
+        return None
+    by_pitcher = {
+        item.get('pitcher_id'): item for item in context.get('profiles') or []
+        if isinstance(item, Mapping) and type(item.get('pitcher_id')) is int
+    }
+    factual = {
+        item.get('pitcher_id'): item for item in (deployment_profile.get('profiles') or [])
+        if isinstance(item, Mapping) and type(item.get('pitcher_id')) is int
+    }
+    profiles = []
+    for record in selected_records:
+        pitcher_id = record.get('pitcher_id')
+        profiles.append({
+            'pitcher_id': pitcher_id,
+            'pitcher_name': record.get('name'),
+            'team_id': team_id,
+            'public_role_read': deepcopy(record.get('public_role_read')),
+            'observed_profile': deepcopy(factual.get(pitcher_id)),
+            'context': deepcopy(by_pitcher.get(pitcher_id)),
+        })
+    return {
+        'contract': PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT,
+        'method_version': PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION,
+        'team_id': team_id,
+        'data_through': context.get('data_through'),
+        'window_days': context.get('window_days'),
+        'profiles': profiles,
+        'deployment_profile': deepcopy(deployment_profile),
+        'role_movement': {'status': 'unavailable', 'reason_code': 'not_published'},
     }
 
 
@@ -379,9 +419,22 @@ def build_frozen_team_board_package(dashboard_payload):
                 if type(record.get('pitcher_id')) is int
             },
             coverage_by_date=workload_coverage,
+            include_publication_rows=True,
         )
         workload_windows = relief_authority['workload_windows']
         deployment_profile = relief_authority['deployment_profile']
+        publication_rows = relief_authority.pop('_publication_team_rows', [])
+        deployment_anchor = parse_reference_date(represented_data_through)
+        deployment_context = (
+            author_public_deployment_context(
+                team_id, publication_rows, deployment_anchor, pitcher_ids=default_ids,
+            )
+            if deployment_anchor is not None else None
+        )
+        roles_deployment = _frozen_roles_deployment_carrier(
+            team_id, selected_records, deployment_profile,
+            deployment_context,
+        )
         recent_usage_rest = relief_authority['recent_usage_rest']
         rotation_support_pressure = _support_for_team(
             payload, 'rotation_support_pressure', team_id
@@ -430,6 +483,13 @@ def build_frozen_team_board_package(dashboard_payload):
                 'data_through': workload_windows.get('data_through'),
             },
             'deployment_profile': deepcopy(deployment_profile),
+            'roles_deployment': deepcopy(roles_deployment),
+            'roles_deployment_authority': {
+                'method_version': PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION,
+                'public_contract_version': PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': roles_deployment.get('data_through') if roles_deployment else None,
+            },
             'deployment_profile_authority': {
                 'method_version': DEPLOYMENT_PROFILE_METHOD_VERSION,
                 'public_contract_version': (
@@ -826,6 +886,67 @@ def _frozen_workload_overview_for_view(snapshot, team_package):
     return deepcopy(overview)
 
 
+def _frozen_roles_deployment_for_view(snapshot, team_package, team_id):
+    """Reject a missing or mismatched TB-05 carrier without affecting other sections."""
+    carrier = team_package.get('roles_deployment')
+    authority = team_package.get('roles_deployment_authority')
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    if (
+        not isinstance(carrier, Mapping)
+        or not isinstance(authority, Mapping)
+        or carrier.get('contract') != PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT
+        or carrier.get('method_version') != PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION
+        or carrier.get('team_id') != team_id
+        or carrier.get('data_through') != represented
+        or carrier.get('window_days') != 14
+        or authority.get('method_version') != PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION
+        or authority.get('public_contract_version') != PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('data_through') != represented
+    ):
+        return None
+    profiles = carrier.get('profiles')
+    if not isinstance(profiles, list) or any(
+        not isinstance(item, Mapping)
+        or item.get('team_id') != team_id
+        or type(item.get('pitcher_id')) is not int
+        or not isinstance(item.get('public_role_read'), Mapping)
+        or not isinstance(item.get('context'), Mapping)
+        or item['context'].get('pitcher_id') != item['pitcher_id']
+        or (
+            item.get('observed_profile') is not None
+            and (
+                not isinstance(item.get('observed_profile'), Mapping)
+                or item['observed_profile'].get('pitcher_id') != item['pitcher_id']
+            )
+        )
+        for item in profiles
+    ):
+        return None
+    return deepcopy(carrier)
+
+
+def _frozen_legacy_deployment_profile_for_view(snapshot, team_package):
+    """Keep old publications' already-frozen profile without mutable fallback."""
+    if 'roles_deployment' in team_package:
+        return None
+    profile = team_package.get('deployment_profile')
+    authority = team_package.get('deployment_profile_authority')
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    if (
+        not isinstance(profile, Mapping)
+        or not isinstance(authority, Mapping)
+        or profile.get('contract') != DEPLOYMENT_PROFILE_CARRIER_CONTRACT
+        or profile.get('data_through') != represented
+        or authority.get('method_version') != DEPLOYMENT_PROFILE_METHOD_VERSION
+        or authority.get('public_contract_version') != DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('data_through') != represented
+    ):
+        return None
+    return deepcopy(profile)
+
+
 def build_published_team_board(
     team_id, *, include_stale=False, snapshot_override=_SNAPSHOT_NOT_PROVIDED,
     team_state_override=None, include_delivery_identity=False,
@@ -871,6 +992,12 @@ def build_published_team_board(
         )
         payload['workload_overview'] = _frozen_workload_overview_for_view(
             snapshot, team_package
+        )
+        payload['frozen_roles_deployment'] = _frozen_roles_deployment_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_legacy_deployment_profile'] = (
+            _frozen_legacy_deployment_profile_for_view(snapshot, team_package)
         )
         payload['workload_windows'] = (
             deepcopy((team_package.get('workload_windows') or {}).get('windows'))

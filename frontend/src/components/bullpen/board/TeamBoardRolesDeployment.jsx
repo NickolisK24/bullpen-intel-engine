@@ -3,6 +3,7 @@ import { SkeletonBlock } from '../../UI/Skeleton'
 
 const countValue = value => Number.isInteger(value) && value >= 0 ? value : null
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
+const counted = (value, singular, plural = `${singular}s`) => `${value} ${value === 1 ? singular : plural}`
 
 export function getRoleCompositionRows(rolesDeployment) {
   const roles = Array.isArray(rolesDeployment?.roles) ? rolesDeployment.roles : []
@@ -35,6 +36,67 @@ function firstLimitation(status) {
     : null
 }
 
+function EvidenceNote({ evidence }) {
+  if (!evidence || evidence.status === 'complete') return null
+  return <span className="ml-1 text-text-withheld">({evidence.status}{evidence.status === 'partial' ? `, ${evidence.knownAppearances} of ${evidence.appearances} known` : ''})</span>
+}
+
+function DeploymentFact({ label, evidence, children }) {
+  return (
+    <div className="min-w-0">
+      <dt className="type-overline text-text-tertiary">{label}</dt>
+      <dd className="type-compact mt-meta break-words text-text-secondary">
+        {evidence?.status === 'unknown' || evidence?.status === 'unavailable' ? '—' : children}
+        <EvidenceNote evidence={evidence} />
+      </dd>
+    </div>
+  )
+}
+
+function FrozenDeployment({ deployment }) {
+  return (
+    <div className="mt-section border-t border-line-default pt-section" aria-label="Frozen observed bullpen deployment">
+      <div className="type-overline">Observed deployment · 14 baseball days</div>
+      <p className="type-compact mt-meta text-text-tertiary">Through {deployment.dataThrough}. Recorded leverage refers to the appearance-level index, not necessarily leverage at entry.</p>
+      {deployment.profiles.length === 0 ? (
+        <p className="type-compact mt-panel text-text-tertiary">No current arms have a published deployment profile.</p>
+      ) : (
+        <ol className="mt-panel divide-y divide-line-subtle border-y border-line-subtle" aria-label="Named-arm deployment evidence">
+          {deployment.profiles.map(profile => (
+            <li key={profile.pitcherId} className="min-w-0 py-panel">
+              <div className="flex flex-wrap items-baseline gap-x-row gap-y-1">
+                <h3 className="font-board text-board-body font-semibold text-text-primary">{profile.name}</h3>
+                <span className="type-compact text-text-secondary">{profile.role.label}</span>
+                {profile.role.confidence && <span className="type-compact text-text-tertiary">Role confidence: {profile.role.confidence}</span>}
+              </div>
+              {profile.observed && (
+                <p className="type-compact mt-row text-text-secondary">
+                  {counted(profile.observed.appearances, 'appearance')} · {counted(profile.observed.saves, 'save')} · {counted(profile.observed.holds, 'hold')} ·{' '}
+                  {counted(profile.observed.gamesFinished, 'game finished', 'games finished')} · {counted(profile.observed.multiInning, 'multi-inning appearance')}
+                </p>
+              )}
+              <dl className="mt-row grid min-w-0 gap-x-panel gap-y-row tablet:grid-cols-3">
+                <DeploymentFact label="Entry innings" evidence={profile.entry}>
+                  {profile.entry.byInning.map(row => `Inning ${row.inning}: ${row.appearances}`).join(' · ') || 'No recorded entries'}
+                  {' · '}{profile.entry.eighth_or_later_appearances} entered 8th or later
+                  {profile.entry.extra_inning_appearances > 0 && ` · ${counted(profile.entry.extra_inning_appearances, 'extra-inning entry', 'extra-inning entries')}`}
+                </DeploymentFact>
+                <DeploymentFact label="Score at entry" evidence={profile.score}>
+                  {profile.score.leading} leading · {profile.score.tied} tied · {profile.score.trailing} trailing
+                </DeploymentFact>
+                <DeploymentFact label="Recorded leverage" evidence={profile.leverage}>
+                  {profile.leverage.high} high · {profile.leverage.middle} middle · {profile.leverage.low} low
+                </DeploymentFact>
+              </dl>
+              {profile.observed?.limitations?.length > 0 && <p className="type-compact mt-row text-text-withheld">{profile.observed.limitations.join(' ')}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
 function RoleCompositionSkeleton() {
   return (
     <section className="foundation-section min-w-0" aria-labelledby="roles-deployment-title" aria-busy="true" data-testid="roles-deployment-skeleton">
@@ -64,6 +126,7 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
     : 'unavailable'
   const rows = getRoleCompositionRows(rolesDeployment)
   const deploymentRows = getDeploymentRows(rolesDeployment)
+  const frozenDeployment = read?.frozenPublicDeployment
   const deployment = rolesDeployment?.deployment_profile
   const deploymentSummary = textValue(deployment?.summary)
   const limitation = firstLimitation(status)
@@ -78,6 +141,8 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
 
       {error ? (
         <SectionState status="error" title="Roles & Deployment unavailable" message="Current role composition could not be loaded." onRetry={onRetry} />
+      ) : read?.frozenPublicDeploymentRejected || read?.detailsRejected ? (
+        <SectionState status="unavailable" title="Roles & Deployment unavailable" message="Deployment identity does not match this Team Board." />
       ) : !read || !rolesDeployment ? (
         <SectionState status="unavailable" title="Roles & Deployment unavailable" message="A current backend-authored role composition is not available." onRetry={onRetry} />
       ) : (
@@ -97,7 +162,9 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
             </div>
           )}
 
-          {deploymentRows.length > 0 ? (
+          {frozenDeployment ? (
+            <FrozenDeployment deployment={frozenDeployment} />
+          ) : deploymentRows.length > 0 ? (
             <div className={rows.length > 0 ? 'mt-section border-t border-line-default pt-section' : ''} aria-label="Observed bullpen deployment">
               <div className="type-overline">Observed deployment</div>
               {deploymentSummary && <p className="type-compact mt-meta max-w-reading text-text-secondary">{deploymentSummary}</p>}
@@ -114,7 +181,7 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
             <SectionState
               status="unavailable"
               title="Deployment detail unavailable"
-              message="Observed deployment detail is not available for the represented window."
+              message="Frozen observed deployment detail is not published for this Team Board."
               className={rows.length > 0 ? 'mt-section' : ''}
             />
           )}

@@ -229,6 +229,7 @@ def author_public_team_relief_authority(
     reference_date=None,
     active_pitchers=None,
     coverage_by_date=None,
+    include_publication_rows=False,
 ):
     """Author workload windows and deployment from one bounded row query."""
     anchor = _parse_data_through(data_through)
@@ -262,7 +263,7 @@ def author_public_team_relief_authority(
         for log, pitcher in rows
         if log.appearance_team_id == team_id
     ]
-    return {
+    result = {
         'workload_windows': _workload_windows_from_rows(
             team_rows, anchor, coverage_by_date=coverage_by_date,
             active_pitcher_ids=active_ids,
@@ -276,6 +277,10 @@ def author_public_team_relief_authority(
             coverage_by_date=coverage_by_date,
         ),
     }
+    if include_publication_rows:
+        # Ephemeral ORM rows for the publication assembler, never serialized.
+        result['_publication_team_rows'] = team_rows
+    return result
 
 
 def build_recent_usage_rest_coverage(data_through, *, anchor_coverage=None):

@@ -293,6 +293,55 @@ response). This is not an isolated React render profile or production latency
 measurement. Older trusted
 snapshots without the frozen carrier show a section-local unavailable state.
 
+## TB-05 public deployment authority (backend carrier)
+
+The existing public roles remain Trusted Arm, Setup Arm, Coverage Arm, Middle
+Relief Arm, and Role Unclear. The 45-day role classifier and its guarded public
+read are unchanged. A separate 14-baseball-day `[D-13, D]` publication-time
+carrier now joins each current arm's already-authored public role with the
+existing official appearance-team deployment profile and bounded observed
+context. It does not label a closer or infer an intended bullpen order.
+
+The [public deployment decision](../decisions/2026-09-21-team-board-public-deployment-context.md)
+defines exact entry-inning counts, factual leading/tied/trailing score context
+at entry, and explicit low/middle/high bins of *recorded appearance-level*
+leverage index only. A save or hold never substitutes for a missing index.
+Each domain carries its own complete, partial, unknown, or unavailable state
+and known/total appearance denominators. Missing play-by-play, score, or LI
+does not erase a supported save, hold, finish, or multi-inning fact. Extra
+innings remain exact; entry base state and mid-inning context are not claimed.
+Named-arm role movement remains `unavailable/not_published` because no public
+materiality rule exists.
+
+The carrier is frozen inside `trusted_team_boards` under the same
+`trusted_dashboard_publication_v1` identity. The details reader validates its
+team, represented date, contract, method, and package authority before
+attachment; old packages stay readable but cannot acquire new context from
+request-time rows. The assembly reuses the existing bounded official
+appearance query, then makes at most one set-based processed-game marker and
+one set-based play-by-play projection per represented team with qualifying
+relief work. No migration, sync writer, or atomic authority changes are made.
+The TB-05 section now renders the already-frozen active-arm profiles after
+core/details identity attachment. The public role labels are unchanged; its
+compact role mix precedes named-arm rows with factual saves, holds, games
+finished, multi-inning appearances, exact inning-entry counts, leading/tied/
+trailing entry counts, and low/middle/high recorded appearance-level leverage.
+The section does not infer a closer, entry pattern, leverage-at-entry, role
+movement, manager intent, or future usage. Entry, score, and leverage each
+retain their own complete/partial/unknown/unavailable state and known-count
+denominator. Old publications without this carrier retain the prior frozen
+deployment summary, but cannot acquire the new context at request time.
+Mismatch rejects the new section without discarding the answer core, Active
+Bullpen, Recent Usage, or Workload Overview.
+
+At 390 pixels, named-arm evidence stacks without horizontal overflow; 768 and
+1440 pixels use compact cross-arm columns. Role and leverage meaning is textual,
+with semantic headings and list/name-value structure. A local browser fixture
+measured 227 ms to core answer, 210 ms to details response, and 239 ms to TB-05
+readiness (29 ms after the details response). These are local fixture timings,
+not production latency or an isolated React render profile. Named-arm role
+movement remains unavailable until a separate public materiality rule exists.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

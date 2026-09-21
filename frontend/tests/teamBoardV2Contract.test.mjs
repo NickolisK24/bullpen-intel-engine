@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { frozenTeamWorkloadFixture } from './fixtures/teamBoardFrozenWorkload.mjs'
+import { frozenPublicDeploymentFixture } from './fixtures/teamBoardFrozenDeployment.mjs'
 
 import {
   TEAM_BOARD_V2_CAPABILITY,
@@ -15,6 +16,7 @@ import {
   readTeamBoardDelivery,
   readTeamBoardRecentUsageRest,
   readTeamBoardFrozenWorkload,
+  readTeamBoardFrozenDeployment,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -282,6 +284,43 @@ test('team switching cannot carry prior team workload into the new core', () => 
   assert.equal(switched.frozenTeamWorkload, null)
   assert.equal(switched.detailsRejected, true)
   assert.equal(switched.teamState, payload.team_state)
+})
+
+test('TB-05 frozen deployment attaches only to exact trusted details identity', () => {
+  const carrier = frozenPublicDeploymentFixture({ teamId: identity.team_id, dataThrough: identity.represented_date })
+  const details = { ...detailsPayload, roles_deployment: { ...detailsPayload.roles_deployment, frozen_public_deployment: carrier } }
+  const attached = readTeamBoardDelivery(corePayload, details)
+  assert.equal(attached.frozenPublicDeployment.profiles[0].role.label, 'Trusted Arm')
+  assert.equal(attached.frozenPublicDeployment.profiles[0].leverage.high, 2)
+  assert.equal(attached.frozenPublicDeployment.profiles[0].entry.byInning[2].inning, 9)
+  assert.equal(attached.frozenPublicDeploymentRejected, false)
+
+  const mismatched = readTeamBoardDelivery(corePayload, { ...details, publication_identity: { ...identity, snapshot_id: identity.snapshot_id + 1 } })
+  assert.equal(mismatched.frozenPublicDeployment, null)
+  assert.equal(mismatched.detailsRejected, true)
+  assert.equal(mismatched.teamState, payload.team_state)
+  assert.equal(mismatched.activeBullpen, payload.active_bullpen)
+  const switched = readTeamBoardDelivery({ ...corePayload, publication_identity: { ...identity, team_id: identity.team_id + 1 } }, details)
+  assert.equal(switched.frozenPublicDeployment, null)
+  assert.equal(switched.detailsRejected, true)
+  const staleCarrier = readTeamBoardDelivery(corePayload, { ...details, roles_deployment: { frozen_public_deployment: { ...carrier, data_through: '2026-09-01' } } })
+  assert.equal(staleCarrier.frozenPublicDeployment, null)
+  assert.equal(staleCarrier.frozenPublicDeploymentRejected, true)
+  assert.equal(readTeamBoardFrozenDeployment(carrier, { ...identity, publication_authority_contract: 'other' }), null)
+})
+
+test('TB-05 adapter preserves unknown leverage and backend role without inference', () => {
+  const carrier = frozenPublicDeploymentFixture({ teamId: identity.team_id, dataThrough: identity.represented_date })
+  const profile = carrier.profiles[0]
+  profile.public_role_read = { key: 'limited_read', label: 'Role Unclear', confidence: 'low' }
+  profile.context.leverage = { ...profile.context.leverage, status: 'unknown', known_appearances: 0, high: 0, middle: 0, low: 0 }
+  profile.context.entry_inning = { ...profile.context.entry_inning, status: 'partial', known_appearances: 3 }
+  const adapted = readTeamBoardFrozenDeployment(carrier, identity)
+  assert.equal(adapted.profiles[0].role.label, 'Role Unclear')
+  assert.equal(adapted.profiles[0].leverage.status, 'unknown')
+  assert.equal(adapted.profiles[0].observed.saves, 2)
+  assert.equal(adapted.profiles[0].entry.status, 'partial')
+  assert.equal(Object.hasOwn(adapted.profiles[0], 'roleMovement'), false)
 })
 
 

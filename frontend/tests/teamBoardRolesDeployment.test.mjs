@@ -4,6 +4,8 @@ import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
+import { frozenPublicDeploymentFixture } from './fixtures/teamBoardFrozenDeployment.mjs'
+import { readTeamBoardFrozenDeployment } from '../src/adapters/teamBoardV2.js'
 
 const server = await createServer({
   root: process.cwd(),
@@ -47,6 +49,8 @@ const read = {
 }
 
 const renderRoles = props => renderToStaticMarkup(React.createElement(TeamBoardRolesDeployment, props))
+const publicationIdentity = { team_id: 111, represented_date: '2026-09-02', publication_authority_contract: 'trusted_dashboard_publication_v1' }
+const frozen = () => readTeamBoardFrozenDeployment(frozenPublicDeploymentFixture(), publicationIdentity)
 
 test('Roles & Deployment preserves backend role order, labels, and counts', () => {
   const rows = getRoleCompositionRows(rolesDeployment)
@@ -136,7 +140,61 @@ test('production uses the shared v2 request and leaves later packages untouched'
   assert.ok(boardSource.includes('<TeamBoardPerformance'))
   assert.ok(boardSource.includes('<SectionPair label="Roles and performance" ratio="7:5">'))
   assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
-  for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'leverage', 'roleMovement', 'role_movement']) {
+  for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'roleMovement', 'role_movement']) {
     assert.equal(componentSource.includes(forbidden), false, forbidden)
   }
+})
+
+test('frozen named-arm deployment renders backend role, entry, score, recorded leverage, and factual usage', () => {
+  const html = renderRoles({ read: { ...read, frozenPublicDeployment: frozen() } })
+  for (const expected of ['Trusted Arm', 'Role confidence: high', 'Inning 7: 1', 'Inning 9: 2',
+    '3 entered 8th or later', '2 leading · 1 tied · 1 trailing', '2 high · 1 middle · 1 low',
+    '2 saves', '1 hold', '2 games finished', '1 multi-inning appearance',
+    'appearance-level index, not necessarily leverage at entry']) assert.ok(html.includes(expected), expected)
+  for (const forbidden of ['Closer', 'moving up', 'manager', 'tonight', 'next save']) assert.equal(html.includes(forbidden), false)
+})
+
+test('entry, score, and leverage limitations are independent and missing leverage is never low', () => {
+  const carrier = frozenPublicDeploymentFixture()
+  const context = carrier.profiles[0].context
+  context.entry_inning = { ...context.entry_inning, status: 'partial', known_appearances: 3, by_inning: [{ inning: 8, appearances: 1 }, { inning: 9, appearances: 2 }], eighth_or_later_appearances: 3 }
+  context.score_context = { ...context.score_context, status: 'unknown', known_appearances: 0, leading: 0, tied: 0, trailing: 0 }
+  context.leverage = { ...context.leverage, status: 'unknown', known_appearances: 0, high: 0, middle: 0, low: 0 }
+  const html = renderRoles({ read: { ...read, frozenPublicDeployment: readTeamBoardFrozenDeployment(carrier, publicationIdentity) } })
+  assert.ok(html.includes('partial, 3 of 4 known'))
+  assert.ok(html.includes('Inning 9: 2'))
+  assert.ok(html.includes('Score at entry'))
+  assert.ok(html.includes('Recorded leverage'))
+  assert.equal(html.includes('0 high · 0 middle · 0 low'), false)
+  assert.ok(html.includes('unknown'))
+  assert.ok(html.includes('2 saves'))
+})
+
+test('all five public role labels render verbatim and extras remain exact counts', () => {
+  const labels = ['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear']
+  for (const label of labels) {
+    const carrier = frozenPublicDeploymentFixture()
+    carrier.profiles[0].public_role_read.label = label
+    carrier.profiles[0].context.entry_inning.by_inning = [{ inning: 10, appearances: 1 }]
+    carrier.profiles[0].context.entry_inning.extra_inning_appearances = 1
+    const html = renderRoles({ read: { ...read, frozenPublicDeployment: readTeamBoardFrozenDeployment(carrier, publicationIdentity) } })
+    assert.ok(html.includes(label), label)
+    assert.ok(html.includes('Inning 10: 1'))
+    assert.ok(html.includes('1 extra-inning entry'))
+  }
+})
+
+test('invalid frozen identity withholds TB-05 even when a legacy prose profile exists', () => {
+  const html = renderRoles({ read: { ...read, frozenPublicDeployment: null, frozenPublicDeploymentRejected: true } })
+  assert.ok(html.includes('Deployment identity does not match this Team Board'))
+  assert.equal(html.includes('Example Pitcher recorded'), false)
+})
+
+test('frontend does not calculate role, leverage bands, movement, or future deployment', async () => {
+  const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRolesDeployment.jsx', import.meta.url), 'utf8')
+  const adapterSource = await readFile(new URL('../src/adapters/teamBoardV2.js', import.meta.url), 'utf8')
+  for (const source of [componentSource, adapterSource]) {
+    for (const forbidden of ['1.5', '0.85', 'role_movement', 'next save', 'Closer']) assert.equal(source.includes(forbidden), false, forbidden)
+  }
+  for (const forbidden of ['.reduce(', 'Math.', 'save ?']) assert.equal(componentSource.includes(forbidden), false, forbidden)
 })
