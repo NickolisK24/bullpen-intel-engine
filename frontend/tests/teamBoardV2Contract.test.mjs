@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { frozenTeamWorkloadFixture } from './fixtures/teamBoardFrozenWorkload.mjs'
 
 import {
   TEAM_BOARD_V2_CAPABILITY,
@@ -13,6 +14,7 @@ import {
   isTeamBoardV2Payload,
   readTeamBoardDelivery,
   readTeamBoardRecentUsageRest,
+  readTeamBoardFrozenWorkload,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -245,6 +247,41 @@ test('recent usage carrier dates must match the exact core identity', () => {
   assert.equal(staleCarrier.recentUsageRestRejected, true)
   assert.equal(staleCarrier.teamState, payload.team_state)
   assert.equal(staleCarrier.activeBullpen, payload.active_bullpen)
+})
+
+test('frozen TB-04 carrier attaches only to matching trusted details identity', () => {
+  const carrier = frozenTeamWorkloadFixture(identity.represented_date)
+  const details = { ...detailsPayload, workload_overview: { ...detailsPayload.workload_overview, frozen_team_workload: carrier } }
+  const attached = readTeamBoardDelivery(corePayload, details)
+  assert.equal(attached.frozenTeamWorkload.windows.length, 4)
+  assert.equal(attached.frozenTeamWorkload.windows[0].pitches.value, 0)
+  assert.equal(attached.frozenTeamWorkload.concentration.topThreeShare, carrier.concentration_7_day.top_3_share)
+  assert.deepEqual(attached.frozenTeamWorkload.concentration.topThree.map(item => item.pitcherId), [101, 102, 103])
+  assert.equal(attached.frozenTeamWorkload.concentration.offActiveContribution.pitches, 18)
+  assert.equal(attached.frozenTeamWorkloadRejected, false)
+
+  const staleDetails = readTeamBoardDelivery(corePayload, { ...details, publication_identity: { ...identity, snapshot_id: identity.snapshot_id + 1 } })
+  assert.equal(staleDetails.frozenTeamWorkload, null)
+  assert.equal(staleDetails.detailsRejected, true)
+  assert.equal(staleDetails.teamState, payload.team_state)
+  assert.equal(staleDetails.activeBullpen, payload.active_bullpen)
+
+  const staleCarrier = readTeamBoardDelivery(corePayload, { ...details, workload_overview: { frozen_team_workload: { ...carrier, data_through: '2026-09-01' } } })
+  assert.equal(staleCarrier.detailsAttached, true)
+  assert.equal(staleCarrier.frozenTeamWorkload, null)
+  assert.equal(staleCarrier.frozenTeamWorkloadRejected, true)
+  assert.ok(staleCarrier.recentUsageRest)
+  assert.equal(readTeamBoardFrozenWorkload(carrier, { ...identity, publication_authority_contract: 'other' }), null)
+})
+
+test('team switching cannot carry prior team workload into the new core', () => {
+  const carrier = frozenTeamWorkloadFixture(identity.represented_date)
+  const oldDetails = { ...detailsPayload, workload_overview: { frozen_team_workload: carrier } }
+  const newCore = { ...corePayload, publication_identity: { ...identity, team_id: 2, team_abbreviation: 'NX' } }
+  const switched = readTeamBoardDelivery(newCore, oldDetails)
+  assert.equal(switched.frozenTeamWorkload, null)
+  assert.equal(switched.detailsRejected, true)
+  assert.equal(switched.teamState, payload.team_state)
 })
 
 

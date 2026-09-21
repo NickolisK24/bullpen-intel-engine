@@ -413,8 +413,7 @@ test('summary, Rest Status, and Workload Overview use governed board reads', () 
     'Rest Status',
     '3 of 6 active bullpen arms have at least one full day of rest',
     'Workload Overview',
-    'Shared Recent Work',
-    'Recent relief work is spread across the bullpen.',
+    'Frozen team workload is not published for this Team Board.',
   ]) assert.ok(htmlIncludes(html, copy), `missing governed copy: ${copy}`)
   assert.equal(htmlIncludes(html, 'Resource Health'), false)
 })

@@ -44,12 +44,13 @@ test('Team Board chapter bands remain mobile-first and do not create paired tabl
   assert.equal(pairSource.includes('lg:grid-cols-2'), false)
 })
 
-test('Team Board keeps Performance secondary and the workload trend as the only governed chart surface', async () => {
+test('Team Board keeps Performance secondary and TB-04 omits ungoverned trend', async () => {
   const workloadSource = await readSource('../src/components/bullpen/board/TeamBoardWorkloadOverview.jsx')
   const performanceSource = await readSource('../src/components/bullpen/board/TeamBoardPerformance.jsx')
   const rolesSource = await readSource('../src/components/bullpen/board/TeamBoardRolesDeployment.jsx')
 
-  assert.equal((workloadSource.match(/<WorkloadTrend/g) || []).length, 1)
+  assert.equal(workloadSource.includes('<WorkloadTrend'), false)
+  assert.ok(workloadSource.includes('<table'))
   assert.ok(performanceSource.includes('Performance unavailable'))
   assert.equal(performanceSource.includes('<svg'), false)
   assert.equal(performanceSource.includes('<canvas'), false)

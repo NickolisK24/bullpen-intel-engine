@@ -10,6 +10,7 @@ from services import game_shape
 from services import pitcher_season_ledger_coverage
 from services import slate_coverage
 from services import starter_assignment_context
+from services import team_board_workload_coverage
 from utils.games_started import RELIEF, START, games_started_state
 
 
@@ -17,6 +18,8 @@ CAPABILITY = 'public_team_relief_work'
 RECENT_GAME_DATES_MAX = 5
 LOOKBACK_DAYS = 30
 WINDOW_DAYS = (7, 14)
+WORKLOAD_OVERVIEW_WINDOW_DAYS = (3, 7, 14, 30)
+WORKLOAD_OVERVIEW_CONTRACT = 'team_board_workload_overview_v1'
 WORKLOAD_WINDOWS_METHOD_VERSION = 'public_team_relief_work_windows_v1'
 WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION = (
     'public_team_relief_work_windows_public_v1'
@@ -260,7 +263,10 @@ def author_public_team_relief_authority(
         if log.appearance_team_id == team_id
     ]
     return {
-        'workload_windows': _workload_windows_from_rows(team_rows, anchor),
+        'workload_windows': _workload_windows_from_rows(
+            team_rows, anchor, coverage_by_date=coverage_by_date,
+            active_pitcher_ids=active_ids,
+        ),
         'deployment_profile': _deployment_profile_from_rows(team_rows, anchor),
         'recent_usage_rest': build_recent_usage_rest_carrier(
             rows,
@@ -303,6 +309,14 @@ def build_recent_usage_rest_coverage(data_through, *, anchor_coverage=None):
                 }
         coverage[day.isoformat()] = payload
     return coverage
+
+
+def extend_team_workload_coverage(data_through, recent_coverage):
+    """Reuse seven-day decisions and freeze the older league-day decisions."""
+    anchor = _parse_data_through(data_through)
+    if anchor is None:
+        return dict(recent_coverage or {})
+    return team_board_workload_coverage.extend_coverage(anchor, recent_coverage)
 
 
 def build_recent_usage_rest_carrier(
@@ -886,7 +900,9 @@ def _plural(count, singular):
     return singular if count == 1 else f'{singular}s'
 
 
-def _workload_windows_from_rows(rows, anchor):
+def _workload_windows_from_rows(
+    rows, anchor, *, coverage_by_date=None, active_pitcher_ids=None,
+):
     return {
         'contract': WORKLOAD_WINDOWS_CARRIER_CONTRACT,
         'status': WORKLOAD_WINDOWS_COMPLETE,
@@ -896,6 +912,115 @@ def _workload_windows_from_rows(rows, anchor):
             f'window_{window_days}': _window(rows, anchor, window_days)
             for window_days in WINDOW_DAYS
         },
+        'overview': _team_workload_overview(
+            rows, anchor, coverage_by_date or {}, active_pitcher_ids or set(),
+        ),
+    }
+
+
+def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids):
+    """One frozen factual team projection; no roster membership filter."""
+    windows = {}
+    for days in WORKLOAD_OVERVIEW_WINDOW_DAYS:
+        start = anchor - timedelta(days=days - 1)
+        scoped = [(log, pitcher) for log, pitcher in rows if start <= log.game_date <= anchor]
+        relief = [(log, pitcher) for log, pitcher in scoped if _start_relief_state(log) == RELIEF]
+        state, reasons = _classified_window_state(
+            [log for log, _ in scoped], coverage, start, anchor,
+        )
+        if any(
+            (coverage.get((start + timedelta(days=offset)).isoformat()) or {})
+            .get('coverage_known') is False
+            for offset in range(days)
+        ):
+            state = RECENT_USAGE_REST_UNAVAILABLE
+            reasons = _dedupe([*reasons, 'slate_coverage_unavailable'])
+        if state == RECENT_USAGE_REST_COMPLETE:
+            appearances = _fact(len(relief), state, [])
+            pitches = _sum_fact(
+                [log for log, _ in relief], 'pitches_thrown',
+                RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN,
+            )
+            outs = _sum_fact(
+                [log for log, _ in relief], 'innings_pitched_outs',
+                RECENT_USAGE_REST_REASON_OUTS_UNKNOWN,
+            )
+        else:
+            appearances = _fact(None, state, reasons)
+            pitches = _fact(None, state, reasons)
+            outs = _fact(None, state, reasons)
+        windows[f'window_{days}'] = {
+            'start': start.isoformat(), 'through': anchor.isoformat(),
+            'appearances': appearances, 'pitches': pitches, 'outs': outs,
+        }
+
+    seven = windows['window_7']
+    if seven['pitches']['status'] != RECENT_USAGE_REST_COMPLETE:
+        concentration = {
+            'status': seven['pitches']['status'],
+            'reason_codes': seven['pitches']['reason_codes'],
+            'total_pitches': None, 'top_3_share': None,
+            'pitcher_count': None, 'contributors': [],
+            'top_contributor': None, 'top_3_contributors': [],
+            'active_current_contribution': None,
+            'off_active_contribution': None,
+        }
+    else:
+        contributions = {}
+        seven_start = anchor - timedelta(days=6)
+        for log, pitcher in rows:
+            if seven_start <= log.game_date <= anchor and _start_relief_state(log) == RELIEF:
+                item = contributions.setdefault(pitcher.id, {
+                    'pitcher_id': pitcher.id, 'name': pitcher.full_name,
+                    'pitches': 0, 'appearances': 0, 'outs': 0,
+                    'current_active': pitcher.id in active_pitcher_ids,
+                })
+                item['pitches'] += log.pitches_thrown
+                item['appearances'] += 1
+                if log.innings_pitched_outs is None:
+                    item['outs'] = None
+                elif item['outs'] is not None:
+                    item['outs'] += log.innings_pitched_outs
+        contributors = sorted(
+            contributions.values(), key=lambda item: (-item['pitches'], item['pitcher_id']),
+        )
+        active_items = [item for item in contributors if item['current_active']]
+        off_active_items = [item for item in contributors if not item['current_active']]
+
+        def contribution(items):
+            return {
+                'pitches': sum(item['pitches'] for item in items),
+                'appearances': sum(item['appearances'] for item in items),
+                'outs': (
+                    sum(item['outs'] for item in items)
+                    if all(item['outs'] is not None for item in items) else None
+                ),
+            }
+
+        active_contribution = contribution(active_items)
+        off_active_contribution = contribution(off_active_items)
+        total = seven['pitches']['value']
+        concentration = {
+            'status': RECENT_USAGE_REST_COMPLETE, 'reason_codes': [],
+            'total_pitches': total,
+            'top_3_share': (
+                sum(item['pitches'] for item in contributors[:3]) / total
+                if total else None
+            ),
+            'pitcher_count': len(contributors),
+            'contributors': contributors,
+            'top_contributor': contributors[0] if contributors else None,
+            'top_3_contributors': contributors[:3],
+            'active_current_contribution': active_contribution,
+            'off_active_contribution': off_active_contribution,
+        }
+    return {
+        'contract': WORKLOAD_OVERVIEW_CONTRACT,
+        'data_through': anchor.isoformat(),
+        'window_policy': WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+        'population_basis': WORKLOAD_WINDOWS_POPULATION_BASIS,
+        'windows': windows, 'concentration_7_day': concentration,
+        'trend_status': RECENT_USAGE_REST_UNAVAILABLE,
     }
 
 

@@ -51,6 +51,13 @@ function teamBoardFixtureFor(teamId) {
   details.publication_identity = nextIdentity
   details.recent_usage_rest.active_pitchers[0].pitcher_id = pitcherId
   details.recent_usage_rest.active_pitchers[0].pitcher_name = pitcherName
+  const workload = details.workload_overview.frozen_team_workload
+  workload.concentration_7_day.contributors[0].pitcher_id = pitcherId
+  workload.concentration_7_day.contributors[0].name = pitcherName
+  workload.concentration_7_day.top_contributor.pitcher_id = pitcherId
+  workload.concentration_7_day.top_contributor.name = pitcherName
+  workload.concentration_7_day.top_3_contributors[0].pitcher_id = pitcherId
+  workload.concentration_7_day.top_3_contributors[0].name = pitcherName
   return { core, details, pitcherName }
 }
 
@@ -93,6 +100,9 @@ async function installApiFixtures(page, {
         details.recent_usage_rest.reason_code = 'some_usage_rest_fields_incomplete'
         details.recent_usage_rest.active_pitchers[0].high_pitch_outing = {
           value: null, status: 'unknown', reason_codes: ['appearance_pitch_count_unknown'], threshold: 25,
+        }
+        details.workload_overview.frozen_team_workload.windows.window_30.outs = {
+          value: null, status: 'partial', reason_codes: ['slate_coverage_incomplete'],
         }
       }
       return detailsFailure
@@ -280,6 +290,72 @@ test('Team Board recent usage journeys render BAL, LAD, and NYY publication-boun
     await expect(recent).toContainText('25+ pitch outing')
     await expectNoPageOverflow(page)
   }
+})
+
+test('TB-04 four-window workload renders BAL, LAD, and NYY without overflow at product widths', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const workload = page.getByTestId('team-board-workload-overview')
+      await expect(workload).toContainText(`${abbreviation} Fixture Reliever`)
+      await expect(workload.getByRole('table', { name: 'Team relief workload by baseball-date window' })).toBeVisible()
+      for (const days of [3, 7, 14, 30]) await expect(workload.locator(`[data-window-days="${days}"]`)).toBeVisible()
+      await expect(workload).toContainText('Top 3 arms account for 80% of 7-day pitches')
+      await expect(workload).toContainText('Recent off-active contributors:')
+      await expectNoPageOverflow(page)
+    }
+  }
+})
+
+test('TB-04 preserves partial metric evidence without hiding complete windows', async ({ page }) => {
+  await installApiFixtures(page, { partialCarrier: true })
+  await page.goto('/bullpen?team=BOS')
+  const workload = page.getByTestId('team-board-workload-overview')
+  await expect(workload.locator('[data-window-days="30"]')).toContainText('partial')
+  await expect(workload.locator('[data-window-days="30"]')).toContainText('430')
+  await expect(workload.locator('[data-window-days="7"]')).toContainText('88')
+  await expect(workload.locator('[data-window-days="3"]')).toContainText('0')
+})
+
+test('TB-04 is withheld on mismatched details while the core remains visible', async ({ page }) => {
+  await installApiFixtures(page, { detailsIdentityMismatch: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  await expect(page.getByTestId('team-board-active-bullpen')).toContainText('Fixture Reliever')
+  await expect(page.getByTestId('team-board-workload-overview')).not.toContainText('Top 3 arms account for')
+})
+
+test('TB-04 does not attach delayed old-team workload after switching', async ({ page }) => {
+  const fixtures = await installApiFixtures(page, { deferDetails: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('workload-overview-skeleton')).toBeVisible()
+  await page.getByLabel('Select team for Team Board').selectOption('147')
+  const workload = page.getByTestId('team-board-workload-overview')
+  await expect(workload).toContainText('NYY Fixture Reliever')
+  fixtures.releaseDetails()
+  await expect(workload).toContainText('NYY Fixture Reliever')
+  await expect(workload.getByText('Fixture Reliever', { exact: true })).toHaveCount(0)
+})
+
+test('TB-04 local fixture readiness is measured separately from core and details', async ({ page }) => {
+  await installApiFixtures(page)
+  const responseTimes = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responseTimes.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responseTimes.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-workload-overview')).toContainText('Top 3 arms account for')
+  const workloadReady = performance.now()
+  expect(responseTimes.core).toBeDefined()
+  expect(responseTimes.details).toBeDefined()
+  console.log(`TB-04 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responseTimes.details - start)}ms workload-ready=${Math.round(workloadReady - start)}ms details-to-workload=${Math.round(workloadReady - responseTimes.details)}ms`)
 })
 
 test('Team Board recent usage keeps a partial carrier fail-closed', async ({ page }) => {

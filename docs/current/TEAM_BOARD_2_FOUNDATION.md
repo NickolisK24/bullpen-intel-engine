@@ -214,6 +214,85 @@ they are not production network measurements. TB-03 still arrives with the
 full details response, whose existing production baseline is approximately
 7.9 seconds. No production latency improvement is claimed.
 
+## TB-04 frozen workload read model (backend only)
+
+The trusted Team Board package now freezes `workload_windows.overview` from
+the full, resolved official `GameLog.appearance_team_id` row set before any
+five-date display truncation or current-roster filtering. This is the same
+30-day set-based appearance query used by the existing relief-work and TB-03
+carriers. The separate league-day slate coverage extension is shared by all
+teams and uses at most two additional set-based source queries after TB-03's
+seven-day decisions. No new selector, migration, or request-time TB-04
+aggregation is involved.
+
+The 30-day batch lives in `team_board_workload_coverage.py`, called only by
+the trusted Team Board workload author. It reuses the existing daily slate
+decision and its schedule-context width; it is not a second general coverage
+authority. `slate_coverage.py` remains byte-identical to the protected base,
+as required by the unchanged legacy What Changed freeze guard. This move
+changes neither the carrier facts nor their evidence states.
+
+The `team_board_workload_overview_v1` contract contains independent
+`window_3`, `window_7`, `window_14`, and `window_30` facts. Each window starts
+at publication `data_through - (days - 1)` and ends on `data_through`, both
+inclusive. Pitches, relief appearances (not game dates), and official
+`innings_pitched_outs` are separate `{value, status, reason_codes}` facts.
+Complete slate coverage permits numeric totals, including a certified zero.
+Incomplete coverage produces `partial`/null; missing or unknown coverage
+produces `unavailable`/null; an ambiguous start/relief flag or absent official
+pitch/outs value produces `unknown`/null for the dependent fact. A partial
+30-day window does not invalidate a complete seven-day window.
+
+Seven-day factual concentration uses that same appearance-team population:
+all named contributors are ordered by pitches descending then pitcher ID,
+with a top contributor, top three contributors, top-three pitch share (a
+fraction of total team pitches), and count of pitchers with relief work.
+Frozen active membership only labels and splits those contributions into
+active-current and off-active pitches, appearances, and outs; it never filters
+historical team work.
+An acquired pitcher's earlier appearances for another club remain outside
+this team's totals. A zero-pitch window has no share denominator and publishes
+`top_3_share: null`, not a fabricated percentage. No trend is authored:
+`trend_status: unavailable`.
+
+The core/details identity fence is unchanged. Details serve the frozen facts
+only when the selected trusted snapshot, Team Board package authority, and
+carrier date agree. The existing 7/14-day presentation fields are projected
+from the frozen legacy carrier for compatibility; the four-window contract is
+attached as `workload_overview.frozen_team_workload` for the later TB-04
+frontend package. TB-01/TB-02/TB-03 presentation remains untouched. Local
+query-count tests assert one appearance query per team and at most two
+additional set-based league coverage queries per publication. Older snapshots
+without this new nested contract retain their prior 7/14-day presentation
+behavior; they do not gain or synthesize TB-04 facts at request time.
+An isolated local 30-row projection measured 0.169 ms aggregation, 0.032 ms
+JSON serialization, and 2,593 serialized bytes; details projection measured
+0.055 ms and 3,376 bytes including the legacy presentation shape. These are
+local composition measurements, not production latency claims.
+
+TB-04 now renders the nested frozen carrier as one compact, semantic table of
+3/7/14/30 baseball-date windows, each with backend-authored pitches, relief
+appearances, and official outs. Each cell renders its own complete, partial,
+unknown, or unavailable state; only a complete numeric zero is displayed as
+zero. The seven-day panel displays the backend's top-three pitch share and
+ordered named contributors, plus current-active and off-active contributions.
+It does not sum pitcher rows, infer a trend, or put off-active pitchers into
+Active Bullpen. Prior-team appearances are excluded by the frozen backend
+appearance-team authority, not by a frontend calculation.
+
+The existing core/details publication-identity comparison still gates the
+attachment. The frontend also checks the nested carrier contract and
+data-through date; a mismatched TB-04 carrier is withheld without replacing
+valid TB-01/TB-02/TB-03 content. Core renders before details, while TB-04
+shows a lightweight loading state. The table remains readable at 390, 768,
+and 1440 pixels without horizontal scrolling; headings and exact values are
+text-accessible. Local fixture readiness measurements are recorded separately
+from core and details: a local browser fixture measured 224 ms to core answer,
+210 ms to details response, and 232 ms to TB-04 readiness (22 ms after details
+response). This is not an isolated React render profile or production latency
+measurement. Older trusted
+snapshots without the frozen carrier show a section-local unavailable state.
+
 ## Deferred packages
 
 TB-04 through TB-10 attach only through the same exact identity contract. This

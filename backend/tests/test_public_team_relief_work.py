@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
 
 import freeze_policy
 from flask import Flask
@@ -14,6 +15,7 @@ from flask import Flask
 from api.team_recent_work import team_recent_work_bp
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from services import pitcher_season_ledger_coverage
 from services import public_team_relief_work
@@ -65,7 +67,9 @@ FORBIDDEN_TERMS = (
     'tier',
     'injury',
     'health',
-    'concentration',
+    'overconcentrated',
+    'dangerously concentrated',
+    'thin bullpen',
     'distribution',
     'leaned',
     'fresh',
@@ -107,7 +111,7 @@ def client(monkeypatch):
             drop_test_schema(app)
 
 
-def _carrier_coverage(anchor, *, incomplete_days=()):
+def _carrier_coverage(anchor, *, incomplete_days=(), days=7):
     incomplete = set(incomplete_days)
     return {
         (anchor - timedelta(days=offset)).isoformat(): {
@@ -120,7 +124,7 @@ def _carrier_coverage(anchor, *, incomplete_days=()):
                 else ['final_games_not_fully_ingested']
             ),
         }
-        for offset in range(7)
+        for offset in range(days)
     }
 
 
@@ -487,6 +491,242 @@ def test_recent_usage_rest_set_query_keeps_acquired_work_separate_from_team_tota
         'relief_appearances'
     ] == 0
     assert result['deployment_profile']['profiles'] == []
+    assert result['workload_windows']['overview']['windows']['window_7'][
+        'pitches'
+    ]['value'] == 0
+
+
+def test_frozen_team_overview_uses_exact_calendar_windows_and_off_active_rows():
+    anchor = date(2026, 7, 30)
+    active = SimpleNamespace(id=1, full_name='Current Arm')
+    former = SimpleNamespace(id=2, full_name='Former Arm')
+    rows = [
+        _carrier_row(active, anchor - timedelta(days=2), pitches=30, outs=3, game_pk=1),
+        _carrier_row(former, anchor - timedelta(days=6), pitches=20, outs=6, game_pk=2),
+        _carrier_row(former, anchor - timedelta(days=13), pitches=10, outs=3, game_pk=3),
+        _carrier_row(former, anchor - timedelta(days=29), pitches=5, outs=3, game_pk=4),
+        _carrier_row(active, anchor - timedelta(days=30), pitches=99, outs=3, game_pk=5),
+    ]
+    overview = public_team_relief_work._team_workload_overview(
+        rows, anchor, _carrier_coverage(anchor, days=30), {active.id},
+    )
+    for days, pitches, apps, outs in (
+        (3, 30, 1, 3), (7, 50, 2, 9),
+        (14, 60, 3, 12), (30, 65, 4, 15),
+    ):
+        window = overview['windows'][f'window_{days}']
+        assert window['start'] == (anchor - timedelta(days=days - 1)).isoformat()
+        assert (window['pitches']['value'], window['appearances']['value'],
+                window['outs']['value']) == (pitches, apps, outs)
+        assert all(window[key]['status'] == 'complete' for key in ('pitches', 'appearances', 'outs'))
+    concentration = overview['concentration_7_day']
+    assert concentration['top_contributor']['pitcher_id'] == active.id
+    assert concentration['top_3_share'] == 1
+    assert concentration['pitcher_count'] == 2
+    assert concentration['active_current_contribution'] == {
+        'pitches': 30, 'appearances': 1, 'outs': 3,
+    }
+    assert concentration['off_active_contribution'] == {
+        'pitches': 20, 'appearances': 1, 'outs': 6,
+    }
+    assert [item['pitcher_id'] for item in concentration['contributors']] == [1, 2]
+    assert overview['trend_status'] == 'unavailable'
+
+
+def test_team_overview_coverage_is_independent_and_zero_is_certified():
+    anchor = date(2026, 7, 30)
+    complete = public_team_relief_work._team_workload_overview(
+        [], anchor, _carrier_coverage(anchor, days=30), set(),
+    )
+    assert all(
+        complete['windows'][f'window_{days}']['pitches']['value'] == 0
+        for days in (3, 7, 14, 30)
+    )
+    partial = public_team_relief_work._team_workload_overview(
+        [], anchor, _carrier_coverage(
+            anchor, days=30, incomplete_days={anchor - timedelta(days=20)}
+        ), set(),
+    )
+    assert partial['windows']['window_14']['pitches']['value'] == 0
+    assert partial['windows']['window_30']['pitches'] == {
+        'value': None, 'status': 'partial',
+        'reason_codes': ['slate_coverage_incomplete', 'final_games_not_fully_ingested'],
+    }
+
+
+def test_thirty_day_coverage_extension_uses_bounded_queries(client):
+    anchor = date(2026, 7, 30)
+    with client.application.app_context():
+        _final_game(TEAM_ID, 5001, anchor - timedelta(days=15))
+        db.session.commit()
+        selects = []
+
+        def count_sql(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().lower().startswith('select'):
+                selects.append(statement)
+
+        event.listen(db.engine, 'before_cursor_execute', count_sql)
+        try:
+            coverage = public_team_relief_work.extend_team_workload_coverage(
+                anchor, _carrier_coverage(anchor),
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', count_sql)
+    assert len(selects) == 2
+    assert len(coverage) == 30
+    assert coverage[(anchor - timedelta(days=15)).isoformat()][
+        'complete_enough_to_publish'
+    ] is False
+    with client.application.app_context():
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=5001,
+            game_date=anchor - timedelta(days=15),
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
+        db.session.commit()
+        complete = public_team_relief_work.extend_team_workload_coverage(
+            anchor, _carrier_coverage(anchor),
+        )
+    assert complete[(anchor - timedelta(days=15)).isoformat()][
+        'complete_enough_to_publish'
+    ] is True
+
+
+def test_team_workload_projection_uses_one_appearance_query(client):
+    anchor = date(2026, 7, 30)
+    with client.application.app_context():
+        pitcher = _pitcher(name='One Arm', mlb_id=90234)
+        db.session.add(pitcher)
+        db.session.flush()
+        db.session.add(_log(pitcher.id, 5050, anchor, pitches=12, outs=3))
+        db.session.commit()
+        pitcher_id = pitcher.id
+        pitcher_name = pitcher.full_name
+        selects = []
+
+        def count_sql(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().lower().startswith('select'):
+                selects.append(statement)
+
+        event.listen(db.engine, 'before_cursor_execute', count_sql)
+        try:
+            result = public_team_relief_work.author_public_team_relief_authority(
+                TEAM_ID, data_through=anchor,
+                reference_date=anchor + timedelta(days=1),
+                active_pitchers={pitcher_id: {'name': pitcher_name}},
+                coverage_by_date=_carrier_coverage(anchor, days=30),
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', count_sql)
+    assert len(selects) == 1
+    assert result['workload_windows']['overview']['windows']['window_3'][
+        'outs'
+    ]['value'] == 3
+
+
+def test_team_overview_keeps_departed_arm_and_excludes_acquired_prior_team(client):
+    anchor = date(2026, 7, 30)
+    with client.application.app_context():
+        departed = _pitcher(name='Departed Arm', mlb_id=90235, team_id=111)
+        acquired = _pitcher(name='Acquired Arm', mlb_id=90236)
+        db.session.add_all([departed, acquired])
+        db.session.flush()
+        db.session.add_all([
+            _log(departed.id, 5101, anchor - timedelta(days=1),
+                 appearance_team_id=TEAM_ID, pitches=18, outs=3),
+            _log(acquired.id, 5102, anchor - timedelta(days=1),
+                 appearance_team_id=111, pitches=40, outs=6),
+        ])
+        db.session.commit()
+        result = public_team_relief_work.author_public_team_relief_authority(
+            TEAM_ID, data_through=anchor,
+            reference_date=anchor + timedelta(days=1),
+            active_pitchers={acquired.id: {'name': acquired.full_name}},
+            coverage_by_date=_carrier_coverage(anchor, days=30),
+        )
+    overview = result['workload_windows']['overview']
+    assert overview['windows']['window_7']['pitches']['value'] == 18
+    assert overview['windows']['window_7']['outs']['value'] == 3
+    assert overview['concentration_7_day']['off_active_contribution'] == {
+        'pitches': 18, 'appearances': 1, 'outs': 3,
+    }
+    assert overview['concentration_7_day']['active_current_contribution'] == {
+        'pitches': 0, 'appearances': 0, 'outs': 0,
+    }
+    assert [item['pitcher_id'] for item in overview['concentration_7_day']['contributors']] == [
+        departed.id
+    ]
+    unavailable = public_team_relief_work._team_workload_overview(
+        [], anchor, _carrier_coverage(anchor), set(),
+    )
+    assert unavailable['windows']['window_7']['pitches']['value'] == 0
+    assert unavailable['windows']['window_14']['pitches']['status'] == 'unavailable'
+    unknown_coverage = _carrier_coverage(anchor, days=30)
+    unknown_coverage[(anchor - timedelta(days=1)).isoformat()]['coverage_known'] = False
+    unknown = public_team_relief_work._team_workload_overview(
+        [], anchor, unknown_coverage, set(),
+    )
+    assert unknown['windows']['window_3']['pitches']['status'] == 'unavailable'
+
+
+def test_team_overview_appearances_count_rows_not_distinct_game_dates():
+    anchor = date(2026, 7, 30)
+    pitcher = SimpleNamespace(id=1, full_name='Doubleheader Arm')
+    rows = [
+        _carrier_row(pitcher, anchor, pitches=12, outs=2, game_pk=1),
+        _carrier_row(pitcher, anchor, pitches=9, outs=1, game_pk=2),
+    ]
+    overview = public_team_relief_work._team_workload_overview(
+        rows, anchor, _carrier_coverage(anchor, days=30), {1},
+    )
+    assert overview['windows']['window_3']['appearances']['value'] == 2
+    assert overview['windows']['window_3']['outs']['value'] == 3
+    assert overview['concentration_7_day']['pitcher_count'] == 1
+
+
+def test_team_overview_unknown_start_relief_state_withholds_dependent_totals():
+    anchor = date(2026, 7, 30)
+    pitcher = SimpleNamespace(id=1, full_name='Unknown Role')
+    rows = [_carrier_row(pitcher, anchor, games_started=None, game_pk=1)]
+    overview = public_team_relief_work._team_workload_overview(
+        rows, anchor, _carrier_coverage(anchor, days=30), {1},
+    )
+    assert all(
+        overview['windows']['window_7'][metric]['value'] is None
+        and overview['windows']['window_7'][metric]['status'] == 'unknown'
+        for metric in ('pitches', 'appearances', 'outs')
+    )
+
+
+def test_team_overview_missing_metrics_and_deterministic_contributors():
+    anchor = date(2026, 7, 30)
+    first = SimpleNamespace(id=1, full_name='First')
+    second = SimpleNamespace(id=2, full_name='Second')
+    third = SimpleNamespace(id=3, full_name='Third')
+    fourth = SimpleNamespace(id=4, full_name='Fourth')
+    rows = [
+        _carrier_row(second, anchor, pitches=10, outs=3, game_pk=1),
+        _carrier_row(first, anchor, pitches=10, outs=3, game_pk=2),
+        _carrier_row(third, anchor, pitches=5, outs=3, game_pk=3),
+        _carrier_row(fourth, anchor, pitches=5, outs=3, game_pk=4),
+    ]
+    overview = public_team_relief_work._team_workload_overview(
+        rows, anchor, _carrier_coverage(anchor, days=30), {1},
+    )
+    concentration = overview['concentration_7_day']
+    assert [item['pitcher_id'] for item in concentration['contributors']] == [1, 2, 3, 4]
+    assert [item['pitcher_id'] for item in concentration['top_3_contributors']] == [1, 2, 3]
+    assert concentration['top_3_share'] == 25 / 30
+    rows[0][0].innings_pitched_outs = None
+    rows[2][0].pitches_thrown = None
+    degraded = public_team_relief_work._team_workload_overview(
+        rows, anchor, _carrier_coverage(anchor, days=30), {1},
+    )
+    window = degraded['windows']['window_7']
+    assert window['appearances']['value'] == 4
+    assert window['pitches']['status'] == 'unknown'
+    assert window['outs']['status'] == 'unknown'
+    assert degraded['concentration_7_day']['contributors'] == []
 
 
 def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client):

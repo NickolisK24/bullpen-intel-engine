@@ -5,8 +5,74 @@ export const TEAM_BOARD_CORE_CONTRACT_VERSION = 'team_board_answer_core_v1'
 export const TEAM_BOARD_DETAILS_CAPABILITY = 'team_board_deferred_details'
 export const TEAM_BOARD_DETAILS_CONTRACT_VERSION = 'team_board_deferred_details_v1'
 export const TEAM_BOARD_RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_rest_v1'
+export const TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT = 'team_board_workload_overview_v1'
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
+const workloadWindowKeys = [3, 7, 14, 30]
+const workloadMetricKeys = ['pitches', 'appearances', 'outs']
+
+const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
+
+function readWorkloadMetric(metric) {
+  if (!metric || typeof metric !== 'object' || !recentUsageRestStates.has(metric.status)) return null
+  if (metric.value !== null && !nonnegativeCount(metric.value)) return null
+  if (metric.status === 'complete' && metric.value === null) return null
+  if (metric.status !== 'complete' && metric.value !== null) return null
+  return { value: metric.value, status: metric.status, reasonCodes: Array.isArray(metric.reason_codes) ? [...metric.reason_codes] : [] }
+}
+
+function readWorkloadContributor(item) {
+  if (!item || !nonnegativeCount(item.pitcher_id) || typeof item.name !== 'string' || !nonnegativeCount(item.pitches) || !nonnegativeCount(item.appearances) || (item.outs !== null && !nonnegativeCount(item.outs)) || typeof item.current_active !== 'boolean') return null
+  return { pitcherId: item.pitcher_id, name: item.name, pitches: item.pitches, appearances: item.appearances, outs: item.outs, currentActive: item.current_active }
+}
+
+function readWorkloadContribution(item) {
+  if (!item || !nonnegativeCount(item.pitches) || !nonnegativeCount(item.appearances) || (item.outs !== null && !nonnegativeCount(item.outs))) return null
+  return { pitches: item.pitches, appearances: item.appearances, outs: item.outs }
+}
+
+export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT
+    || !publicationIdentity || carrier.data_through !== publicationIdentity.represented_date
+    || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || !carrier.windows || typeof carrier.windows !== 'object') return null
+  const windows = workloadWindowKeys.map(days => {
+    const window = carrier.windows[`window_${days}`]
+    if (!window || typeof window.start !== 'string' || window.through !== carrier.data_through) return null
+    const metrics = Object.fromEntries(workloadMetricKeys.map(key => [key, readWorkloadMetric(window[key])]))
+    if (workloadMetricKeys.some(key => !metrics[key])) return null
+    return { days, label: `${days} Days`, start: window.start, through: window.through, ...metrics }
+  })
+  if (windows.some(window => !window)) return null
+  const source = carrier.concentration_7_day
+  if (!source || !recentUsageRestStates.has(source.status) || !Array.isArray(source.contributors)
+    || !Array.isArray(source.top_3_contributors)) return null
+  const contributors = source.contributors.map(readWorkloadContributor)
+  const topThree = source.top_3_contributors.map(readWorkloadContributor)
+  if (contributors.some(item => !item) || topThree.some(item => !item)
+    || !Object.prototype.hasOwnProperty.call(source, 'top_3_share')
+    || !Object.prototype.hasOwnProperty.call(source, 'pitcher_count')
+    || (source.top_3_share !== null && !(typeof source.top_3_share === 'number' && source.top_3_share >= 0 && source.top_3_share <= 1))
+    || (source.pitcher_count !== null && !nonnegativeCount(source.pitcher_count))
+    || (source.status === 'complete' && (!nonnegativeCount(source.total_pitches) || !nonnegativeCount(source.pitcher_count)))) return null
+  return {
+    contract: carrier.contract,
+    dataThrough: carrier.data_through,
+    windows,
+    concentration: {
+      status: source.status,
+      reasonCodes: Array.isArray(source.reason_codes) ? [...source.reason_codes] : [],
+      totalPitches: source.total_pitches,
+      topThreeShare: source.top_3_share,
+      pitcherCount: source.pitcher_count,
+      contributors,
+      topThree,
+      activeCurrentContribution: source.active_current_contribution === null ? null : readWorkloadContribution(source.active_current_contribution),
+      offActiveContribution: source.off_active_contribution === null ? null : readWorkloadContribution(source.off_active_contribution),
+    },
+  }
+}
 
 const identityFields = [
   'contract', 'team_id', 'team_abbreviation', 'snapshot_id', 'sync_run_id',
@@ -156,6 +222,7 @@ export function readTeamBoardV2(payload) {
     offActiveCount: payload.off_active_count,
     restStatus: payload.rest_status,
     workloadOverview: payload.workload_overview,
+    frozenTeamWorkload: readTeamBoardFrozenWorkload(payload.workload_overview?.frozen_team_workload, payload.publication_identity),
     rolesDeployment: payload.roles_deployment,
     rotationImpact: payload.rotation_impact,
     recentTransactions: payload.recent_transactions,
@@ -205,6 +272,9 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
         corePayload.publication_identity,
       )
     : null
+  const frozenTeamWorkload = detailsValid
+    ? readTeamBoardFrozenWorkload(details.workload_overview?.frozen_team_workload, corePayload.publication_identity)
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -221,6 +291,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     offActiveCount: corePayload.off_active_count,
     restStatus: corePayload.rest_status,
     workloadOverview: details.workload_overview || corePayload.workload_overview,
+    frozenTeamWorkload,
     rolesDeployment: details.roles_deployment || corePayload.roles_deployment,
     rotationImpact: corePayload.rotation_impact,
     recentTransactions: details.recent_transactions || null,
@@ -237,6 +308,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     detailsAttached: detailsValid,
     detailsRejected: Boolean(detailsPayload) && !detailsValid,
     recentUsageRestRejected: Boolean(details.recent_usage_rest) && !recentUsageRest,
+    frozenTeamWorkloadRejected: Boolean(details.workload_overview?.frozen_team_workload) && !frozenTeamWorkload,
     limitations: corePayload.limitations,
   }
 }
