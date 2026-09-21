@@ -237,9 +237,9 @@ export default function TonightsBullpenBoard({
             <SectionPair label="Roles and performance" ratio="7:5">
               <TeamBoardRolesDeployment
                 read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
+                loading={deepLoading}
+                error={deepError}
+                onRetry={retryDeep}
               />
               <TeamBoardPerformance
                 read={teamBoardRead}

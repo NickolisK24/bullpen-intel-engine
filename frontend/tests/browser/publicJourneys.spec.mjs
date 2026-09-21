@@ -58,6 +58,13 @@ function teamBoardFixtureFor(teamId) {
   workload.concentration_7_day.top_contributor.name = pitcherName
   workload.concentration_7_day.top_3_contributors[0].pitcher_id = pitcherId
   workload.concentration_7_day.top_3_contributors[0].name = pitcherName
+  const deployment = details.roles_deployment.frozen_public_deployment
+  deployment.team_id = team.team_id
+  deployment.profiles[0].team_id = team.team_id
+  deployment.profiles[0].pitcher_id = pitcherId
+  deployment.profiles[0].pitcher_name = pitcherName
+  deployment.profiles[0].observed_profile.pitcher_id = pitcherId
+  deployment.profiles[0].context.pitcher_id = pitcherId
   return { core, details, pitcherName }
 }
 
@@ -66,6 +73,7 @@ async function installApiFixtures(page, {
   detailsIdentityMismatch = false,
   deferDetails = false,
   partialCarrier = false,
+  partialDeployment = false,
   corruptTeams = false,
   finderNoResults = false,
 } = {}) {
@@ -104,6 +112,23 @@ async function installApiFixtures(page, {
         details.workload_overview.frozen_team_workload.windows.window_30.outs = {
           value: null, status: 'partial', reason_codes: ['slate_coverage_incomplete'],
         }
+      }
+      if (partialDeployment) {
+        const context = details.roles_deployment.frozen_public_deployment.profiles[0].context
+        context.entry_inning.status = 'partial'
+        context.entry_inning.known_appearances = 3
+        context.entry_inning.by_inning = [{ inning: 8, appearances: 1 }, { inning: 9, appearances: 2 }]
+        context.entry_inning.eighth_or_later_appearances = 3
+        context.score_context.status = 'unknown'
+        context.score_context.known_appearances = 0
+        context.score_context.leading = 0
+        context.score_context.tied = 0
+        context.score_context.trailing = 0
+        context.leverage.status = 'unknown'
+        context.leverage.known_appearances = 0
+        context.leverage.high = 0
+        context.leverage.middle = 0
+        context.leverage.low = 0
       }
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
@@ -337,6 +362,71 @@ test('TB-04 does not attach delayed old-team workload after switching', async ({
   fixtures.releaseDetails()
   await expect(workload).toContainText('NYY Fixture Reliever')
   await expect(workload.getByText('Fixture Reliever', { exact: true })).toHaveCount(0)
+})
+
+test('TB-05 serves frozen roles and deployment for BAL, LAD, and NYY at product widths', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-roles-deployment')
+      await expect(section).toContainText(`${abbreviation} Fixture Reliever`)
+      await expect(section).toContainText('Trusted Arm')
+      await expect(section).toContainText('Inning 9: 2')
+      await expect(section).toContainText('2 leading · 1 tied · 1 trailing')
+      await expect(section).toContainText('2 high · 1 middle · 1 low')
+      await expectNoPageOverflow(page)
+    }
+  }
+})
+
+test('TB-05 shows independent partial and unknown evidence while preserving factual saves', async ({ page }) => {
+  await installApiFixtures(page, { partialDeployment: true })
+  await page.goto('/bullpen?team=BOS')
+  const section = page.getByTestId('team-board-roles-deployment')
+  await expect(section).toContainText('partial, 3 of 4 known')
+  await expect(section).toContainText('2 saves')
+  await expect(section).not.toContainText('0 high · 0 middle · 0 low')
+})
+
+test('TB-05 rejects mismatched details without affecting TB-01 through TB-04', async ({ page }) => {
+  await installApiFixtures(page, { detailsIdentityMismatch: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  await expect(page.getByTestId('team-board-active-bullpen')).toContainText('Fixture Reliever')
+  await expect(page.getByTestId('team-board-roles-deployment')).not.toContainText('Inning 9: 2')
+})
+
+test('TB-05 discards delayed old-team deployment on team switch', async ({ page }) => {
+  const fixtures = await installApiFixtures(page, { deferDetails: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('roles-deployment-skeleton')).toBeVisible()
+  await page.getByLabel('Select team for Team Board').selectOption('147')
+  const section = page.getByTestId('team-board-roles-deployment')
+  await expect(section).toContainText('NYY Fixture Reliever')
+  fixtures.releaseDetails()
+  await expect(section).toContainText('NYY Fixture Reliever')
+  await expect(section).not.toContainText('Fixture Reliever recorded')
+})
+
+test('TB-05 local fixture readiness is timed separately from core and details', async ({ page }) => {
+  await installApiFixtures(page)
+  const responseTimes = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responseTimes.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responseTimes.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-roles-deployment')).toContainText('Inning 9: 2')
+  const rolesReady = performance.now()
+  expect(responseTimes.core).toBeDefined()
+  expect(responseTimes.details).toBeDefined()
+  console.log(`TB-05 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responseTimes.details - start)}ms roles-ready=${Math.round(rolesReady - start)}ms details-to-roles=${Math.round(rolesReady - responseTimes.details)}ms`)
 })
 
 test('TB-04 local fixture readiness is measured separately from core and details', async ({ page }) => {

@@ -321,7 +321,26 @@ request-time rows. The assembly reuses the existing bounded official
 appearance query, then makes at most one set-based processed-game marker and
 one set-based play-by-play projection per represented team with qualifying
 relief work. No migration, sync writer, or atomic authority changes are made.
-Frontend TB-05 presentation is not part of this backend package.
+The TB-05 section now renders the already-frozen active-arm profiles after
+core/details identity attachment. The public role labels are unchanged; its
+compact role mix precedes named-arm rows with factual saves, holds, games
+finished, multi-inning appearances, exact inning-entry counts, leading/tied/
+trailing entry counts, and low/middle/high recorded appearance-level leverage.
+The section does not infer a closer, entry pattern, leverage-at-entry, role
+movement, manager intent, or future usage. Entry, score, and leverage each
+retain their own complete/partial/unknown/unavailable state and known-count
+denominator. Old publications without this carrier retain the prior frozen
+deployment summary, but cannot acquire the new context at request time.
+Mismatch rejects the new section without discarding the answer core, Active
+Bullpen, Recent Usage, or Workload Overview.
+
+At 390 pixels, named-arm evidence stacks without horizontal overflow; 768 and
+1440 pixels use compact cross-arm columns. Role and leverage meaning is textual,
+with semantic headings and list/name-value structure. A local browser fixture
+measured 227 ms to core answer, 210 ms to details response, and 239 ms to TB-05
+readiness (29 ms after the details response). These are local fixture timings,
+not production latency or an isolated React render profile. Named-arm role
+movement remains unavailable until a separate public materiality rule exists.
 
 ## Trusted publication rehearsal release gate
 
