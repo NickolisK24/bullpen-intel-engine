@@ -596,9 +596,14 @@ def test_roles_deployment_copies_canonical_observed_profile_without_inference():
         }],
         'limitations': [],
     }
+    board['frozen_roles_deployment'] = {
+        'contract': 'team_board_public_deployment_context_v1',
+        'deployment_profile': deployment,
+        'profiles': [],
+    }
     composition = build_team_board_v2_payload(
         board,
-        recent_relief_work={'deployment_profile': deployment},
+        recent_relief_work={'deployment_profile': {'summary': 'mutable value'}},
     )['roles_deployment']
 
     assert composition['roles'] == [{
@@ -607,6 +612,7 @@ def test_roles_deployment_copies_canonical_observed_profile_without_inference():
         'arm_count': 1,
     }]
     assert composition['deployment_profile'] == deployment
+    assert composition['frozen_public_deployment'] == board['frozen_roles_deployment']
     for forbidden in (
         'inning_entered', 'leverage', 'movement', 'trend', 'manager', 'prediction',
         'closer', 'fireman',

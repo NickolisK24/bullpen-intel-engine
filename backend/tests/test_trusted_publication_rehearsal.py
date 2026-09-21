@@ -2,7 +2,9 @@
 
 from datetime import timedelta
 import importlib
+import json
 import os
+from time import perf_counter
 from urllib.parse import urlparse
 
 import pytest
@@ -13,6 +15,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
+from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from services.roster_status import STATUS_IL_15
@@ -67,7 +70,29 @@ def _seed_teams(reference_date):
             pitches_thrown=18 + index,
             appearance_team_id=team_id,
             appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+            leverage_index=1.5 if index == 0 else None,
         ))
+        if index == 0:
+            db.session.add(PlayByPlayProcessedGame(
+                mlb_game_pk=7900000, game_date=reference_date - timedelta(days=1),
+                game_type='R', home_team_id=team_id, away_team_id=TEAM_IDS[1],
+                final_state='Final', processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED,
+                source='test_fixture', source_endpoint='test_fixture',
+            ))
+            for event_index, fielding_team_id, pitcher_mlb_id, inning in (
+                (1, TEAM_IDS[1], 7999999, 7),
+                (2, team_id, pitcher.mlb_id, 8),
+            ):
+                db.session.add(GamePlayByPlayEvent(
+                    mlb_game_pk=7900000, event_index=event_index,
+                    game_date=reference_date - timedelta(days=1), game_type='R',
+                    home_team_id=team_id, away_team_id=TEAM_IDS[1],
+                    event_type='pitching_change', inning=inning, half_inning='top',
+                    home_score_at_event=3, away_score_at_event=2,
+                    pitcher_mlb_id=pitcher_mlb_id,
+                    fielding_team_id=fielding_team_id, is_pitching_change=True,
+                    source='test_fixture', source_endpoint='test_fixture',
+                ))
         db.session.add(FatigueScore(
             pitcher_id=pitcher.id, calculated_at=utc_now_naive(),
             raw_score=19.0, pitch_count_score=11.0, rest_days_score=9.0,
@@ -206,10 +231,37 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 raise AssertionError('rehearsal attempted pointer movement')
 
             monkeypatch.setattr(dashboard_snapshot, 'publish_dashboard_snapshot', forbidden_publish)
-            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
-                sync_run_id=run.id, source='trusted_publication_rehearsal',
-                publish=False, raise_errors=True,
+            context_ms = []
+            original_context_author = public_serving_authority.author_public_deployment_context
+            def measured_context_author(*args, **kwargs):
+                started = perf_counter()
+                try:
+                    return original_context_author(*args, **kwargs)
+                finally:
+                    context_ms.append((perf_counter() - started) * 1000)
+            monkeypatch.setattr(
+                public_serving_authority, 'author_public_deployment_context',
+                measured_context_author,
             )
+            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0}
+            def count_publication_reads(_conn, _cursor, statement, _params, _context, _many):
+                sql = statement.lower()
+                if 'from game_logs' in sql:
+                    query_counts['appearance'] += 1
+                if 'from play_by_play_processed_games' in sql:
+                    query_counts['processed_game'] += 1
+                if 'from game_play_by_play_events' in sql:
+                    query_counts['pbp_event'] += 1
+            event.listen(db.engine, 'before_cursor_execute', count_publication_reads)
+            started = perf_counter()
+            try:
+                snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+                    sync_run_id=run.id, source='trusted_publication_rehearsal',
+                    publish=False, raise_errors=True,
+                )
+            finally:
+                publication_seconds = perf_counter() - started
+                event.remove(db.engine, 'before_cursor_execute', count_publication_reads)
             assert snapshot is not None
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
             assert snapshot.is_published is False
@@ -235,6 +287,24 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     team['rest_status']
                 )
                 _assert_workload_carrier(snapshot, team_id)
+                assert team['roles_deployment']['contract'] == 'team_board_public_deployment_context_v1'
+                assert team['roles_deployment']['team_id'] == team_id
+                assert team['roles_deployment']['data_through'] == snapshot.data_through.isoformat()
+            public_deployment = package['by_team_id'][str(TEAM_IDS[0])]['roles_deployment']
+            assert query_counts['pbp_event'] <= len(TEAM_IDS)
+            assert query_counts['processed_game'] <= len(TEAM_IDS)
+            serialization_started = perf_counter()
+            serialized_context = json.dumps(public_deployment, sort_keys=True)
+            all_context = json.dumps({
+                team_id: package['by_team_id'][str(team_id)]['roles_deployment']
+                for team_id in TEAM_IDS
+            }, sort_keys=True)
+            serialization_ms = (perf_counter() - serialization_started) * 1000
+            first_profile = next(item for item in public_deployment['profiles'] if item['pitcher_name'] == 'Rehearsal Pitcher 00')
+            assert first_profile['context']['entry_inning']['by_inning'] == [{'inning': 8, 'appearances': 1}]
+            assert first_profile['context']['score_context']['leading'] == 1
+            assert first_profile['context']['leverage']['high'] == 1
+            assert public_deployment['role_movement']['status'] == 'unavailable'
             first = _assert_workload_carrier(snapshot, TEAM_IDS[0])
             for days in (3, 7, 14, 30):
                 window = first['windows'][f'window_{days}']
@@ -287,6 +357,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert details['workload_overview']['frozen_team_workload'] == (
                 _assert_workload_carrier(snapshot, team_id)
             )
+            assert details['roles_deployment']['frozen_public_deployment'] == public_deployment
             require_matching_team_board_identity(identity, snapshot, board)
             changed = {**identity, 'snapshot_id': identity['snapshot_id'] + 1}
             try:
@@ -305,6 +376,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
             older_team = dict(older_teams[str(team_id)])
             older_team.pop('workload_windows')
             older_team.pop('workload_windows_authority')
+            older_team.pop('roles_deployment')
+            older_team.pop('roles_deployment_authority')
             older_teams[str(team_id)] = older_team
             older_package['by_team_id'] = older_teams
             older['trusted_team_boards'] = older_package
@@ -313,11 +386,19 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 team_id, snapshot_override=snapshot, include_recent_usage_rest=True,
             )
             assert older_board['workload_overview'] is None
+            assert older_board['frozen_roles_deployment'] is None
             assert older_board['recent_usage_rest'] is not None
             print(
                 f'REHEARSAL candidate_snapshot_id={snapshot.id} sync_run_id={run.id} '
                 f'team_count={package["team_count"]} data_through={package["data_through"]} '
-                'published_pointer_moves=0'
+                f'published_pointer_moves=0 appearance_queries={query_counts["appearance"]} '
+                f'processed_game_queries={query_counts["processed_game"]} '
+                f'pbp_event_queries={query_counts["pbp_event"]} '
+                f'publication_ms={publication_seconds * 1000:.3f} '
+                f'tb05_context_ms={sum(context_ms):.3f} '
+                f'tb05_serialize_ms={serialization_ms:.3f} '
+                f'tb05_team_bytes={len(serialized_context.encode("utf-8"))} '
+                f'tb05_all_team_bytes={len(all_context.encode("utf-8"))}'
             )
         finally:
             db.session.remove()

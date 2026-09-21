@@ -293,6 +293,36 @@ response). This is not an isolated React render profile or production latency
 measurement. Older trusted
 snapshots without the frozen carrier show a section-local unavailable state.
 
+## TB-05 public deployment authority (backend carrier)
+
+The existing public roles remain Trusted Arm, Setup Arm, Coverage Arm, Middle
+Relief Arm, and Role Unclear. The 45-day role classifier and its guarded public
+read are unchanged. A separate 14-baseball-day `[D-13, D]` publication-time
+carrier now joins each current arm's already-authored public role with the
+existing official appearance-team deployment profile and bounded observed
+context. It does not label a closer or infer an intended bullpen order.
+
+The [public deployment decision](../decisions/2026-09-21-team-board-public-deployment-context.md)
+defines exact entry-inning counts, factual leading/tied/trailing score context
+at entry, and explicit low/middle/high bins of *recorded appearance-level*
+leverage index only. A save or hold never substitutes for a missing index.
+Each domain carries its own complete, partial, unknown, or unavailable state
+and known/total appearance denominators. Missing play-by-play, score, or LI
+does not erase a supported save, hold, finish, or multi-inning fact. Extra
+innings remain exact; entry base state and mid-inning context are not claimed.
+Named-arm role movement remains `unavailable/not_published` because no public
+materiality rule exists.
+
+The carrier is frozen inside `trusted_team_boards` under the same
+`trusted_dashboard_publication_v1` identity. The details reader validates its
+team, represented date, contract, method, and package authority before
+attachment; old packages stay readable but cannot acquire new context from
+request-time rows. The assembly reuses the existing bounded official
+appearance query, then makes at most one set-based processed-game marker and
+one set-based play-by-play projection per represented team with qualifying
+relief work. No migration, sync writer, or atomic authority changes are made.
+Frontend TB-05 presentation is not part of this backend package.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

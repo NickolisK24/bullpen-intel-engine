@@ -151,13 +151,13 @@ def _active_status(board, represented_date):
     return _section_status(STATUS_AVAILABLE, represented_date=represented_date)
 
 
-def _roles_deployment(arms, represented_date, relief_work=None):
+def _roles_deployment(arms, represented_date, frozen=None, legacy_profile=None):
     """Combine governed role reads with observed public deployment evidence.
 
     The active-arm projection already carries the output of the one public role
     authority. This composition only counts its governed keys in that owner's
-    stable display order. Deployment is copied from the canonical Recent Relief
-    Work owner; this composer performs no appearance aggregation or role inference.
+    stable display order. Deployment attaches only from the selected trusted
+    publication; this composer performs no appearance aggregation or inference.
     """
     counts = {key: 0 for key in PUBLIC_ROLE_COMPOSITION_KEYS}
     missing_role_count = 0
@@ -180,10 +180,9 @@ def _roles_deployment(arms, represented_date, relief_work=None):
         if counts[key] > 0
     ]
     deployment = (
-        deepcopy(relief_work.get('deployment_profile'))
-        if isinstance(relief_work, dict)
-        and isinstance(relief_work.get('deployment_profile'), dict)
-        else None
+        deepcopy(frozen.get('deployment_profile'))
+        if isinstance(frozen, dict) and isinstance(frozen.get('deployment_profile'), dict)
+        else deepcopy(legacy_profile) if isinstance(legacy_profile, dict) else None
     )
     return {
         'population_basis': ROLES_DEPLOYMENT_POPULATION_BASIS,
@@ -192,6 +191,7 @@ def _roles_deployment(arms, represented_date, relief_work=None):
         'missing_role_count': missing_role_count,
         'roles': roles,
         'deployment_profile': deployment,
+        'frozen_public_deployment': deepcopy(frozen) if isinstance(frozen, dict) else None,
         'represented_date': represented_date,
     }
 
@@ -806,7 +806,10 @@ def build_team_board_v2_payload(
     )
     arms = _active_arms(board)
     relief_work = deepcopy(recent_relief_work) if isinstance(recent_relief_work, dict) else None
-    roles_deployment = _roles_deployment(arms, represented_date, relief_work)
+    roles_deployment = _roles_deployment(
+        arms, represented_date, board.get('frozen_roles_deployment'),
+        board.get('frozen_legacy_deployment_profile'),
+    )
     rotation = deepcopy(board.get('rotation_support_pressure') or {})
     context = deepcopy(game_context) if isinstance(game_context, dict) else None
     performance_read = deepcopy(performance) if isinstance(performance, dict) else None
