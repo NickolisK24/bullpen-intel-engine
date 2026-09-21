@@ -1074,84 +1074,76 @@ def test_off_active_count_fails_closed_independently_for_unprovable_authority(
 def test_workload_overview_projects_only_governed_windows_and_concentration():
     board = _board()
     relief = _relief_work()
-    relief['windows']['window_30'] = {
-        'through': '2026-08-16',
-        'relief_appearances': 20,
-        'pitchers_in_relief': 9,
-        'pitches_total': 350,
+    frozen = {
+        'contract': 'team_board_workload_overview_v1',
+        'data_through': '2026-08-16',
+        'windows': {
+            f'window_{days}': {
+                metric: {'value': days, 'status': 'complete', 'reason_codes': []}
+                for metric in ('pitches', 'appearances', 'outs')
+            }
+            for days in (3, 7, 14, 30)
+        },
+        'concentration_7_day': {'status': 'complete', 'top_3_share': 0.6},
+        'trend_status': 'unavailable',
     }
+    board['workload_overview'] = frozen
+    board['workload_windows'] = relief['windows']
 
     payload = build_team_board_v2_payload(board, recent_relief_work=relief)
     workload = payload['workload_overview']
 
-    assert workload['population_basis'] == WORKLOAD_OVERVIEW_POPULATION_BASIS
-    assert workload['windows'] == [
-        {
-            'window_days': 7,
-            'through': '2026-08-16',
-            'relief_appearances': 4,
-            'pitchers_in_relief': 3,
-            'pitches_total': None,
-        },
-        {
-            'window_days': 14,
-            'through': '2026-08-16',
-            'relief_appearances': 8,
-            'pitchers_in_relief': 5,
-            'pitches_total': 121,
-        },
-    ]
-    assert workload['concentration'] == {
-        'population_basis': 'current_bullpen_eligible_pitchers_recent_relief_pitch_workload',
-        'label': 'Some Workload Concentration',
-        'summary': 'Two arms have carried 62% of the recent relief work across five bullpen arms.',
-    }
+    assert workload['frozen_team_workload'] == frozen
+    assert [item['window_days'] for item in workload['windows']] == [7, 14]
+    assert workload['windows'][0]['pitches_total'] is None
     assert payload['section_status']['workload_overview']['status'] == 'partial'
-    assert workload['limitations'] == [
-        'Pitch count unavailable for 1 of 4 relief appearances; 52 pitches across the other 3.'
-    ]
-    rendered = repr(workload)
-    for forbidden in ('window_30', 'trend', 'workload_score', 'fatigue_score', '3_in_4', '4_in_6'):
-        assert forbidden not in rendered
+    relief['windows']['window_7']['pitches_total'] = 999
+    assert build_team_board_v2_payload(board, recent_relief_work=relief)[
+        'workload_overview'
+    ]['frozen_team_workload'] == frozen
 
 
 def test_workload_overview_preserves_legitimate_zero_and_missing_metrics():
-    relief = _relief_work()
-    relief['windows']['window_7'].update({
-        'relief_appearances': 0,
-        'pitchers_in_relief': 0,
-        'pitches_total': 0,
-        'appearances_with_pitches': 0,
-    })
-    relief['windows']['window_14']['pitches_total'] = None
-    relief['windows']['window_14']['appearances_with_pitches'] = 7
-    relief['windows']['window_14']['pitches_sentence'] = (
-        'Pitch count unavailable for 1 of 8 relief appearances; 109 pitches across the other 7.'
-    )
-
-    workload = build_team_board_v2_payload(
-        _board(), recent_relief_work=relief
-    )['workload_overview']
-
-    assert workload['windows'][0]['relief_appearances'] == 0
-    assert workload['windows'][0]['pitches_total'] == 0
-    assert workload['windows'][1]['pitches_total'] is None
+    board = _board()
+    board['workload_overview'] = {
+        'contract': 'team_board_workload_overview_v1',
+        'windows': {
+            f'window_{days}': {
+                metric: {'value': 0, 'status': 'complete'}
+                for metric in ('pitches', 'appearances', 'outs')
+            }
+            for days in (3, 7, 14, 30)
+        },
+        'concentration_7_day': {'status': 'complete'},
+    }
+    board['workload_overview']['windows']['window_14']['pitches'] = {
+        'value': None, 'status': 'unknown',
+    }
+    board['workload_windows'] = _relief_work()['windows']
+    payload = build_team_board_v2_payload(board, recent_relief_work=_relief_work())
+    frozen = payload['workload_overview']['frozen_team_workload']
+    assert frozen['windows']['window_7']['pitches']['value'] == 0
+    assert frozen['windows']['window_14']['pitches']['value'] is None
+    assert payload['section_status']['workload_overview']['status'] == 'partial'
 
 
 def test_workload_overview_scopes_missing_parts_without_destroying_other_sections():
     board = _board()
-    board['team_shape']['workloadConcentration'] = {
-        'label': 'Limited Read',
-        'summary': 'Recent relief pitch-count workload is incomplete.',
+    board['workload_overview'] = {
+        'contract': 'team_board_workload_overview_v1',
+        'windows': {'window_7': {'pitches': {'value': 21, 'status': 'complete'}}},
+        'concentration_7_day': {'status': 'partial'},
     }
     relief = _relief_work()
     relief['windows'].pop('window_14')
+    board['workload_windows'] = relief['windows']
 
     payload = build_team_board_v2_payload(board, recent_relief_work=relief)
 
     assert payload['section_status']['workload_overview']['status'] == 'partial'
-    assert payload['workload_overview']['windows'][0]['window_days'] == 7
-    assert payload['workload_overview']['concentration']['label'] == 'Limited Read'
+    assert payload['workload_overview']['frozen_team_workload']['windows'][
+        'window_7'
+    ]['pitches']['value'] == 21
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
     assert payload['recent_usage']['appearances'][0]['pitcher_id'] == 7
     assert payload['rest_status']['available'] is True

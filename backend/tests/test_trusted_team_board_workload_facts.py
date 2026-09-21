@@ -666,7 +666,13 @@ def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):
             int(team_id),
             data_through=snapshot.data_through,
         )
-        assert team['workload_windows'] == direct
+        assert {
+            key: value for key, value in team['workload_windows'].items()
+            if key != 'overview'
+        } == {key: value for key, value in direct.items() if key != 'overview'}
+        assert team['workload_windows']['overview']['data_through'] == (
+            snapshot.data_through.isoformat()
+        )
 
     # Direct parity probes above use the canonical owner, not the publication
     # wrapper tracked by this fixture. The package itself authored once/team.
@@ -947,7 +953,7 @@ def test_phase2_live_workload_changes_cannot_refresh_frozen_rest_status(
     assert board_v2['rest_status'] == frozen
 
 
-def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
+def test_missing_workload_window_carrier_withholds_only_board_v2_overview(trusted_app):
     app = trusted_app['app']
     package = trusted_app['snapshot'].payload[
         public_serving_authority.TEAM_BOARD_PACKAGE_KEY
@@ -973,9 +979,36 @@ def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
     ).get_json()
 
     assert board_after == board_before
-    assert v2_after['workload_overview'] == v2_before['workload_overview']
+    assert 'frozen_team_workload' in v2_before['workload_overview']
+    assert 'frozen_team_workload' not in v2_after['workload_overview']
+    assert v2_after['workload_overview']['windows'] == (
+        v2_before['workload_overview']['windows']
+    )
     assert v2_after['recent_relief_work'] == v2_before['recent_relief_work']
     assert len(trusted_app['relief_authority_calls']) == publication_calls
+
+
+def test_frozen_workload_overview_rejects_mismatched_snapshot_identity(trusted_app):
+    snapshot = trusted_app['snapshot']
+    team = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(TEAM_ID)]
+    valid = public_serving_authority._frozen_workload_overview_for_view(
+        snapshot, team,
+    )
+    assert valid['contract'] == 'team_board_workload_overview_v1'
+    original = team['workload_windows']['overview']['data_through']
+    team['workload_windows']['overview']['data_through'] = '2026-01-01'
+    assert public_serving_authority._frozen_workload_overview_for_view(
+        snapshot, team,
+    ) is None
+    team['workload_windows']['overview']['data_through'] = original
+    original_method = team['workload_windows_authority']['method_version']
+    team['workload_windows_authority']['method_version'] = 'other_method'
+    assert public_serving_authority._frozen_workload_overview_for_view(
+        snapshot, team,
+    ) is None
+    team['workload_windows_authority']['method_version'] = original_method
 
 
 @pytest.mark.parametrize(

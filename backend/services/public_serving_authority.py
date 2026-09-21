@@ -68,8 +68,11 @@ from services.public_team_relief_work import (
     WORKLOAD_WINDOWS_POPULATION_BASIS,
     WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
     WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+    WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+    WORKLOAD_OVERVIEW_CONTRACT,
     author_public_team_relief_authority,
     build_recent_usage_rest_coverage,
+    extend_team_workload_coverage,
 )
 from services.roster_authority import build_roster_authority
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
@@ -321,6 +324,9 @@ def build_frozen_team_board_package(dashboard_payload):
             else None
         ),
     )
+    workload_coverage = extend_team_workload_coverage(
+        represented_data_through, recent_usage_rest_coverage,
+    )
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -372,7 +378,7 @@ def build_frozen_team_board_package(dashboard_payload):
                 for record in selected_records
                 if type(record.get('pitcher_id')) is int
             },
-            coverage_by_date=recent_usage_rest_coverage,
+            coverage_by_date=workload_coverage,
         )
         workload_windows = relief_authority['workload_windows']
         deployment_profile = relief_authority['deployment_profile']
@@ -798,6 +804,28 @@ def _frozen_recent_usage_rest_for_view(snapshot, team_package):
     return deepcopy(carrier)
 
 
+def _frozen_workload_overview_for_view(snapshot, team_package):
+    """Attach TB-04 only from the exact selected trusted team package."""
+    carrier = team_package.get('workload_windows')
+    authority = team_package.get('workload_windows_authority')
+    if not isinstance(carrier, Mapping) or not isinstance(authority, Mapping):
+        return None
+    overview = carrier.get('overview')
+    if not isinstance(overview, Mapping) or (
+        carrier.get('contract') != WORKLOAD_WINDOWS_CARRIER_CONTRACT
+        or overview.get('contract') != WORKLOAD_OVERVIEW_CONTRACT
+        or authority.get('method_version') != WORKLOAD_WINDOWS_METHOD_VERSION
+        or authority.get('public_contract_version') != WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('reference_date_policy') != WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+        or carrier.get('data_through') != _iso(getattr(snapshot, 'data_through', None))
+        or overview.get('data_through') != carrier.get('data_through')
+        or authority.get('data_through') != carrier.get('data_through')
+    ):
+        return None
+    return deepcopy(overview)
+
+
 def build_published_team_board(
     team_id, *, include_stale=False, snapshot_override=_SNAPSHOT_NOT_PROVIDED,
     team_state_override=None, include_delivery_identity=False,
@@ -840,6 +868,13 @@ def build_published_team_board(
     if include_recent_usage_rest:
         payload['recent_usage_rest'] = _frozen_recent_usage_rest_for_view(
             snapshot, team_package
+        )
+        payload['workload_overview'] = _frozen_workload_overview_for_view(
+            snapshot, team_package
+        )
+        payload['workload_windows'] = (
+            deepcopy((team_package.get('workload_windows') or {}).get('windows'))
+            if payload['workload_overview'] is not None else None
         )
     payload['publication_authority'] = publication_authority(snapshot)
     if include_delivery_identity:

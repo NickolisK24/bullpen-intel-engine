@@ -262,6 +262,52 @@ def _markers_by_game_pk(game_pks, markers=None):
     }
 
 
+def compute_slate_coverage_window(anchor, *, days, base=None):
+    """Resolve a bounded date range without per-date schedule/marker queries."""
+    ref = _as_date(anchor)
+    coverage = dict(base or {})
+    if ref is None:
+        return coverage
+    oldest = ref - timedelta(days=days - 1)
+    context = _SCHEDULE_CONTEXT_WINDOW_DAYS
+    try:
+        rows = ScheduledGame.query.filter(
+            ScheduledGame.game_date >= oldest - timedelta(days=context),
+            ScheduledGame.game_date <= ref + timedelta(days=context),
+        ).all()
+        game_pks = {row.game_pk for row in rows if row.game_pk is not None}
+        markers = (
+            PostgameProcessedGame.query.filter(
+                PostgameProcessedGame.mlb_game_pk.in_(game_pks)
+            ).all() if game_pks else []
+        )
+    except Exception:
+        rows = None
+        markers = None
+    by_date = defaultdict(list)
+    for row in rows or []:
+        by_date[row.game_date].append(row)
+    for offset in range(days):
+        day = ref - timedelta(days=offset)
+        if day.isoformat() in coverage:
+            continue
+        if rows is None or markers is None:
+            coverage[day.isoformat()] = unknown_slate_coverage(day)
+            continue
+        nearby = any(
+            by_date.get(day + timedelta(days=delta))
+            for delta in range(-context, context + 1)
+        )
+        try:
+            coverage[day.isoformat()] = compute_slate_coverage(
+                day, schedule_rows=by_date.get(day, []),
+                postgame_markers=markers, schedule_material_available=nearby,
+            )
+        except Exception:
+            coverage[day.isoformat()] = unknown_slate_coverage(day)
+    return coverage
+
+
 def _marker_status(marker):
     if marker is None:
         return None

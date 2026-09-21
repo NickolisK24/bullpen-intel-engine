@@ -214,6 +214,55 @@ they are not production network measurements. TB-03 still arrives with the
 full details response, whose existing production baseline is approximately
 7.9 seconds. No production latency improvement is claimed.
 
+## TB-04 frozen workload read model (backend only)
+
+The trusted Team Board package now freezes `workload_windows.overview` from
+the full, resolved official `GameLog.appearance_team_id` row set before any
+five-date display truncation or current-roster filtering. This is the same
+30-day set-based appearance query used by the existing relief-work and TB-03
+carriers. The separate league-day slate coverage extension is shared by all
+teams and uses at most two additional set-based source queries after TB-03's
+seven-day decisions. No new selector, migration, or request-time TB-04
+aggregation is involved.
+
+The `team_board_workload_overview_v1` contract contains independent
+`window_3`, `window_7`, `window_14`, and `window_30` facts. Each window starts
+at publication `data_through - (days - 1)` and ends on `data_through`, both
+inclusive. Pitches, relief appearances (not game dates), and official
+`innings_pitched_outs` are separate `{value, status, reason_codes}` facts.
+Complete slate coverage permits numeric totals, including a certified zero.
+Incomplete coverage produces `partial`/null; missing or unknown coverage
+produces `unavailable`/null; an ambiguous start/relief flag or absent official
+pitch/outs value produces `unknown`/null for the dependent fact. A partial
+30-day window does not invalidate a complete seven-day window.
+
+Seven-day factual concentration uses that same appearance-team population:
+all named contributors are ordered by pitches descending then pitcher ID,
+with a top contributor, top three contributors, top-three pitch share (a
+fraction of total team pitches), and count of pitchers with relief work.
+Frozen active membership only labels and splits those contributions into
+active-current and off-active pitches, appearances, and outs; it never filters
+historical team work.
+An acquired pitcher's earlier appearances for another club remain outside
+this team's totals. A zero-pitch window has no share denominator and publishes
+`top_3_share: null`, not a fabricated percentage. No trend is authored:
+`trend_status: unavailable`.
+
+The core/details identity fence is unchanged. Details serve the frozen facts
+only when the selected trusted snapshot, Team Board package authority, and
+carrier date agree. The existing 7/14-day presentation fields are projected
+from the frozen legacy carrier for compatibility; the four-window contract is
+attached as `workload_overview.frozen_team_workload` for the later TB-04
+frontend package. TB-01/TB-02/TB-03 presentation remains untouched. Local
+query-count tests assert one appearance query per team and at most two
+additional set-based league coverage queries per publication. Older snapshots
+without this new nested contract retain their prior 7/14-day presentation
+behavior; they do not gain or synthesize TB-04 facts at request time.
+An isolated local 30-row projection measured 0.169 ms aggregation, 0.032 ms
+JSON serialization, and 2,593 serialized bytes; details projection measured
+0.055 ms and 3,376 bytes including the legacy presentation shape. These are
+local composition measurements, not production latency claims.
+
 ## Deferred packages
 
 TB-04 through TB-10 attach only through the same exact identity contract. This

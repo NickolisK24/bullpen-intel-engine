@@ -617,20 +617,25 @@ def _off_active_count(board):
 
 
 def _workload_overview(board, relief_work):
-    """Project only the already-public relief windows and concentration read."""
-    source_windows = (
-        relief_work.get('windows') if isinstance(relief_work, dict) else {}
+    """Attach frozen TB-04 facts without changing older presentation reads."""
+    frozen = board.get('workload_overview') if isinstance(board, dict) else None
+    valid_frozen = (
+        isinstance(frozen, dict)
+        and frozen.get('contract') == 'team_board_workload_overview_v1'
     )
-    source_windows = source_windows if isinstance(source_windows, dict) else {}
+    source_windows = (
+        board.get('workload_windows') or {}
+        if valid_frozen else
+        (relief_work.get('windows') or {} if isinstance(relief_work, dict) else {})
+    )
     windows = []
     limitations = []
-
-    for source_key, window_days in WORKLOAD_OVERVIEW_WINDOWS:
+    for source_key, days in WORKLOAD_OVERVIEW_WINDOWS:
         source = source_windows.get(source_key)
         if not isinstance(source, dict):
             continue
         windows.append({
-            'window_days': window_days,
+            'window_days': days,
             'through': source.get('through'),
             'relief_appearances': source.get('relief_appearances'),
             'pitchers_in_relief': source.get('pitchers_in_relief'),
@@ -641,17 +646,11 @@ def _workload_overview(board, relief_work):
         if (
             source.get('relief_appearances') is not None
             and source.get('appearances_with_pitches') is not None
-            and source.get('appearances_with_pitches')
-            < source.get('relief_appearances')
+            and source['appearances_with_pitches'] < source['relief_appearances']
             and source.get('pitches_sentence')
         ):
             limitations.append(source['pitches_sentence'])
-
-    source_concentration = (
-        (board.get('team_shape') or {}).get('workloadConcentration')
-        if isinstance(board, dict)
-        else None
-    )
+    source_concentration = (board.get('team_shape') or {}).get('workloadConcentration')
     concentration = None
     if isinstance(source_concentration, dict):
         concentration = {
@@ -659,41 +658,39 @@ def _workload_overview(board, relief_work):
             'label': source_concentration.get('label'),
             'summary': source_concentration.get('summary'),
         }
-        if (
-            source_concentration.get('label') == 'Limited Read'
-            and source_concentration.get('summary')
-        ):
+        if source_concentration.get('label') == 'Limited Read' and source_concentration.get('summary'):
             limitations.append(source_concentration['summary'])
-
-    return {
+    result = {
         'population_basis': WORKLOAD_OVERVIEW_POPULATION_BASIS,
         'window_population_basis': WORKLOAD_WINDOW_POPULATION_BASIS,
         'windows': windows,
         'concentration': concentration,
         'represented_date': (
-            relief_work.get('data_through')
-            if isinstance(relief_work, dict)
-            else None
+            frozen.get('data_through') if valid_frozen else
+            (relief_work.get('data_through') if isinstance(relief_work, dict) else None)
         ),
         'limitations': limitations,
     }
+    if valid_frozen:
+        result['frozen_team_workload'] = deepcopy(frozen)
+    return result
 
 
 def _workload_overview_status(board, relief_work, error, represented_date):
     read = _workload_overview(board, relief_work)
-    windows = read['windows']
+    if not read['windows'] and not (
+        isinstance(read['concentration'], dict)
+        and read['concentration'].get('label')
+        and read['concentration'].get('summary')
+    ):
+        return unavailable_section('workload_overview_unavailable')
     concentration = read['concentration']
     has_concentration = bool(
         isinstance(concentration, dict)
-        and concentration.get('label')
-        and concentration.get('summary')
+        and concentration.get('label') and concentration.get('summary')
     )
-    if not windows and not has_concentration:
-        return unavailable_section('workload_overview_unavailable')
-
     partial = bool(
-        error
-        or len(windows) != len(WORKLOAD_OVERVIEW_WINDOWS)
+        len(read['windows']) != len(WORKLOAD_OVERVIEW_WINDOWS)
         or not has_concentration
         or concentration.get('label') == 'Limited Read'
         or read['limitations']
