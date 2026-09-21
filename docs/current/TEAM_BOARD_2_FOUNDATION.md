@@ -270,6 +270,29 @@ JSON serialization, and 2,593 serialized bytes; details projection measured
 0.055 ms and 3,376 bytes including the legacy presentation shape. These are
 local composition measurements, not production latency claims.
 
+TB-04 now renders the nested frozen carrier as one compact, semantic table of
+3/7/14/30 baseball-date windows, each with backend-authored pitches, relief
+appearances, and official outs. Each cell renders its own complete, partial,
+unknown, or unavailable state; only a complete numeric zero is displayed as
+zero. The seven-day panel displays the backend's top-three pitch share and
+ordered named contributors, plus current-active and off-active contributions.
+It does not sum pitcher rows, infer a trend, or put off-active pitchers into
+Active Bullpen. Prior-team appearances are excluded by the frozen backend
+appearance-team authority, not by a frontend calculation.
+
+The existing core/details publication-identity comparison still gates the
+attachment. The frontend also checks the nested carrier contract and
+data-through date; a mismatched TB-04 carrier is withheld without replacing
+valid TB-01/TB-02/TB-03 content. Core renders before details, while TB-04
+shows a lightweight loading state. The table remains readable at 390, 768,
+and 1440 pixels without horizontal scrolling; headings and exact values are
+text-accessible. Local fixture readiness measurements are recorded separately
+from core and details: a local browser fixture measured 224 ms to core answer,
+210 ms to details response, and 232 ms to TB-04 readiness (22 ms after details
+response). This is not an isolated React render profile or production latency
+measurement. Older trusted
+snapshots without the frozen carrier show a section-local unavailable state.
+
 ## Deferred packages
 
 TB-04 through TB-10 attach only through the same exact identity contract. This

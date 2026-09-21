@@ -227,9 +227,9 @@ export default function TonightsBullpenBoard({
                 />
                 <TeamBoardWorkloadOverview
                   read={teamBoardRead}
-                  loading={teamBoardV2State.loading}
-                  error={teamBoardV2State.error}
-                  onRetry={teamBoardV2State.refetch}
+                  loading={deepLoading}
+                  error={deepError}
+                  onRetry={retryDeep}
                 />
               </SectionPair>
             </div>

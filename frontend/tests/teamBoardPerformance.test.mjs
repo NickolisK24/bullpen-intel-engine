@@ -151,11 +151,12 @@ test('the 7:5 pair keeps role and Performance presentation compact', () => {
   assert.ok(html.indexOf('Roles &amp; Deployment') < html.indexOf('Performance'))
 })
 
-test('Team Board retains exactly one chart and Performance adds none', async () => {
+test('TB-04 comparison and Performance add no ungoverned charts', async () => {
   const workloadSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardWorkloadOverview.jsx', import.meta.url), 'utf8')
   const performanceSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardPerformance.jsx', import.meta.url), 'utf8')
 
-  assert.equal((workloadSource.match(/<WorkloadTrend/g) || []).length, 1)
+  assert.equal(workloadSource.includes('<WorkloadTrend'), false)
+  assert.ok(workloadSource.includes('<table'))
   assert.equal(performanceSource.includes('chart'), false)
   assert.equal(performanceSource.includes('svg'), false)
   assert.equal(performanceSource.includes('canvas'), false)
