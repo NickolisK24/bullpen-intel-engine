@@ -293,6 +293,31 @@ response). This is not an isolated React render profile or production latency
 measurement. Older trusted
 snapshots without the frozen carrier show a section-local unavailable state.
 
+## Trusted publication rehearsal release gate
+
+Run `python -m scripts.rehearse_trusted_publication` from `backend` with
+`TEST_DATABASE_URL` set to a dedicated, disposable local PostgreSQL database
+whose name contains `rehearsal_test`. The command rejects missing or
+non-PostgreSQL targets, nonlocal hosts, a conflicting `DATABASE_URL`, and
+production app mode. It creates representative rows for 30 teams, runs the
+installed trusted Dashboard builder and Team Board package assembly, stores
+the candidate with `publish=False`, and asserts that neither the published
+snapshot pointer nor the SyncRun pointer moves. It checks the frozen TB-04
+windows, evidence states, certified zero, concentration, off-active workload,
+prior-team exclusion, core/details identity, mismatch rejection, and older
+package compatibility. The candidate is disposable test evidence, never a
+trusted production publication or a substitute for production admission.
+
+Team Board packages may advance when targeted tests, hosted CI, this
+deterministic rehearsal, and deployment health all pass. Waiting for the next
+natural trusted publication is post-release confirmation, not a serial
+development gate. When it arrives, verify the new carrier, exact identity,
+representative values, and production rendering asynchronously. A failed
+natural confirmation interrupts current product work for a demonstrated
+correctness or currentness repair. No production publication pointer is moved
+by rehearsal, and the existing trusted-publication admission rules remain
+unchanged.
+
 ## Deferred packages
 
 TB-04 through TB-10 attach only through the same exact identity contract. This
