@@ -98,13 +98,17 @@ test('TB-07 renders frozen recent starts without classifying them in the browser
     ...read,
     frozenRotationGames: {
       dataThrough: '2026-08-16', status: 'partial', gamesExcluded: 1,
+      windowDays: 7, gamesAnalyzed: 2, gamesInWindow: 3,
+      summary: 'Backend-authored represented-date summary.',
       starts: [
-        { gameId: 55, date: '2026-08-15', starterName: 'Source Starter', starterInnings: 4.2, bullpenInnings: 4.1, shortStart: true },
-        { gameId: 54, date: '2026-08-14', starterName: null, starterInnings: 6, bullpenInnings: 3, shortStart: false },
+        { gameId: 55, date: '2026-08-15', starterName: 'Source Starter', starterInnings: '4.2', bullpenInnings: '4.1', shortStart: true },
+        { gameId: 54, date: '2026-08-14', starterName: null, starterInnings: '6.0', bullpenInnings: '3.0', shortStart: false },
       ],
     },
   } })
   assert.ok(html.includes('Source Starter'))
+  assert.ok(html.includes('Backend-authored represented-date summary.'))
+  assert.equal(html.includes(rotationImpact.read.summary), false)
   assert.ok(html.includes('Starter 4.2 IP · Bullpen 4.1 IP'))
   assert.ok(html.includes('Short start: fewer than 5 starter innings'))
   assert.ok(html.includes('Starter name unavailable'))

@@ -282,12 +282,15 @@ test('TB-07 recent starts attach only to exact trusted team and snapshot', () =>
     window_start: '2026-08-10', window_days: 7,
     status: 'partial', reason_codes: ['split_row_missing'],
     games_in_window: 2, games_excluded: 1,
+    games_analyzed: 1, starter_innings: '4.2', bullpen_innings: '4.1',
+    short_start_count: 1,
+    summary: 'Backend-authored represented-date rotation summary.',
     starts: [{
       mlb_game_pk: 55, game_date: '2026-08-15',
       starter_pitcher_id: 18, starter_name: 'Source Starter',
-      starter_outs: 14, starter_innings: 4.2,
+      starter_outs: 14, starter_innings: '4.2',
       starter_evidence: { status: 'complete', reason_codes: [] },
-      bullpen_outs: 13, bullpen_innings: 4.1,
+      bullpen_outs: 13, bullpen_innings: '4.1',
       bullpen_evidence: { status: 'complete', reason_codes: [] },
       short_start: true, short_start_evidence: { status: 'complete', reason_codes: [] },
       status: 'complete', reason_codes: [],
@@ -320,6 +323,7 @@ test('TB-07 recent starts attach only to exact trusted team and snapshot', () =>
   assert.equal(switched.frozenRotationGames, null)
   assert.equal(switched.detailsRejected, true)
   assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], short_start: null }] }, identity), null)
+  assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], starter_innings: '4.7' }] }, identity), null)
 })
 
 test('TB-06 rejects fabricated deferred metrics and never changes certified zero', () => {

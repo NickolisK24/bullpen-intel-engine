@@ -589,6 +589,11 @@ def _round_innings(outs, digits=1):
     return round(outs_to_decimal_innings(outs), digits)
 
 
+def _baseball_innings(outs):
+    """Render recorded outs in box-score thirds, never decimal tenths."""
+    return f'{outs // 3}.{outs % 3}'
+
+
 def _round_innings_value(outs, digits=2):
     return round(float(outs or 0) / 3.0, digits)
 
@@ -1024,6 +1029,17 @@ def build_team_rotation_support_pressure_from_splits(
             'reason_codes': list(limitation_reasons),
             'games_in_window': games_in_window,
             'games_excluded': games_excluded,
+            'games_analyzed': games_analyzed,
+            'starter_innings': _baseball_innings(starter_outs) if games_analyzed else None,
+            'bullpen_innings': _baseball_innings(bullpen_outs) if games_analyzed else None,
+            'short_start_count': short_start_count if games_analyzed else None,
+            'summary': (
+                f'Across {games_analyzed} complete recent starts, starters covered '
+                f'{_baseball_innings(starter_outs)} innings and the bullpen covered '
+                f'{_baseball_innings(bullpen_outs)} innings. '
+                f'{short_start_count} of those starts ended before five innings.'
+                if games_analyzed else None
+            ),
             'starts': [
                 {
                     'mlb_game_pk': game['mlb_game_pk'],
@@ -1031,10 +1047,10 @@ def build_team_rotation_support_pressure_from_splits(
                     'starter_pitcher_id': game['starter_pitcher_id'],
                     'starter_name': None,
                     'starter_outs': game['starter_outs'],
-                    'starter_innings': _round_innings(game['starter_outs'], 1),
+                    'starter_innings': _baseball_innings(game['starter_outs']),
                     'starter_evidence': {'status': 'complete', 'reason_codes': []},
                     'bullpen_outs': game['bullpen_outs_required'],
-                    'bullpen_innings': _round_innings(game['bullpen_outs_required'], 1),
+                    'bullpen_innings': _baseball_innings(game['bullpen_outs_required']),
                     'bullpen_evidence': {'status': 'complete', 'reason_codes': []},
                     'short_start': game['short_start'],
                     'short_start_evidence': {'status': 'complete', 'reason_codes': []},
@@ -1121,6 +1137,11 @@ def frozen_recent_rotation_games_by_team(team_ids, *, represented_date):
                 'reason_codes': ['final_team_game_window_unavailable'],
                 'games_in_window': 0,
                 'games_excluded': 0,
+                'games_analyzed': 0,
+                'starter_innings': None,
+                'bullpen_innings': None,
+                'short_start_count': None,
+                'summary': None,
                 'starts': [],
             }
             continue

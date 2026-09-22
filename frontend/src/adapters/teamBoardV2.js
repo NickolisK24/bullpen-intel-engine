@@ -15,7 +15,7 @@ const workloadWindowKeys = [3, 7, 14, 30]
 const workloadMetricKeys = ['pitches', 'appearances', 'outs']
 
 const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
-const nonnegativeNumber = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
+const baseballInnings = value => typeof value === 'string' && /^\d+\.[012]$/.test(value)
 
 export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
   if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
@@ -27,6 +27,12 @@ export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
     || !['complete', 'partial', 'unknown', 'unavailable'].includes(carrier.status)
     || !nonnegativeCount(carrier.games_in_window)
     || !nonnegativeCount(carrier.games_excluded)
+    || !nonnegativeCount(carrier.games_analyzed)
+    || (carrier.games_analyzed > 0
+      ? !baseballInnings(carrier.starter_innings) || !baseballInnings(carrier.bullpen_innings)
+        || !nonnegativeCount(carrier.short_start_count) || typeof carrier.summary !== 'string'
+      : carrier.starter_innings !== null || carrier.bullpen_innings !== null
+        || carrier.short_start_count !== null || carrier.summary !== null)
     || !Array.isArray(carrier.starts)) return null
   const starts = carrier.starts.map(game => {
     const starterStatus = game?.starter_evidence?.status
@@ -37,8 +43,8 @@ export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
       || !recentUsageRestStates.has(starterStatus)
       || !recentUsageRestStates.has(bullpenStatus)
       || !recentUsageRestStates.has(shortStatus)
-      || (starterStatus === 'complete' ? !nonnegativeCount(game.starter_outs) || !nonnegativeNumber(game.starter_innings) : game.starter_outs !== null || game.starter_innings !== null)
-      || (bullpenStatus === 'complete' ? !nonnegativeCount(game.bullpen_outs) || !nonnegativeNumber(game.bullpen_innings) : game.bullpen_outs !== null || game.bullpen_innings !== null)
+      || (starterStatus === 'complete' ? !nonnegativeCount(game.starter_outs) || !baseballInnings(game.starter_innings) : game.starter_outs !== null || game.starter_innings !== null)
+      || (bullpenStatus === 'complete' ? !nonnegativeCount(game.bullpen_outs) || !baseballInnings(game.bullpen_innings) : game.bullpen_outs !== null || game.bullpen_innings !== null)
       || (shortStatus === 'complete' ? typeof game.short_start !== 'boolean' : game.short_start !== null)
       || !recentUsageRestStates.has(game.status)
       || game.starter_pitcher_id !== null && !nonnegativeCount(game.starter_pitcher_id)
@@ -69,6 +75,11 @@ export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
     reasonCodes: Array.isArray(carrier.reason_codes) ? [...carrier.reason_codes] : [],
     gamesInWindow: carrier.games_in_window,
     gamesExcluded: carrier.games_excluded,
+    gamesAnalyzed: carrier.games_analyzed,
+    starterInnings: carrier.starter_innings,
+    bullpenInnings: carrier.bullpen_innings,
+    shortStartCount: carrier.short_start_count,
+    summary: carrier.summary,
     starts,
   }
 }

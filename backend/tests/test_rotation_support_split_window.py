@@ -287,10 +287,17 @@ def test_short_start_definition_is_fewer_than_fifteen_outs(app):
         assert recent['team_id'] == TEAM_A
         assert recent['data_through'] == REF.isoformat()
         assert recent['status'] == 'complete'
+        assert recent['games_analyzed'] == 3
+        assert recent['starter_innings'] == '15.2'
+        assert recent['bullpen_innings'] == '11.1'
+        assert recent['short_start_count'] == 1
+        assert 'Across 3 complete recent starts' in recent['summary']
         assert [game['mlb_game_pk'] for game in recent['starts']] == [8401, 8402, 8403]
         assert [game['short_start'] for game in recent['starts']] == [True, False, False]
         assert recent['starts'][0]['starter_outs'] == 14
+        assert recent['starts'][0]['starter_innings'] == '4.2'
         assert recent['starts'][0]['bullpen_outs'] == 13
+        assert recent['starts'][0]['bullpen_innings'] == '4.1'
 
 
 def test_recent_game_carrier_withholds_missing_splits_without_zero_or_false(app):
@@ -335,6 +342,8 @@ def test_frozen_recent_games_use_final_team_ownership_and_three_league_queries(a
         assert carriers[TEAM_A]['starts'][0]['starter_outs'] == 18
         assert carriers[TEAM_A]['starts'][0]['bullpen_outs'] == 9
         assert carriers[TEAM_B]['status'] == 'unknown'
+        assert carriers[TEAM_B]['summary'] is None
+        assert carriers[TEAM_B]['starter_innings'] is None
         assert carriers[TEAM_B]['starts'] == []
 
 

@@ -390,6 +390,8 @@ game-level facts needed to explain that context: the official starter's name
 where resolvable, starter outs/innings, and team bullpen outs/innings for
 completed regular-season team games. A short start is the existing public
 classifier's fewer-than-15 recorded starter outs (before five innings); an
+innings figure is rendered from exact outs in baseball thirds (`4.2`, never
+`4.7` for 14 outs). An
 opener/bulk or bullpen game is not relabeled as a rotation start. The window
 is seven inclusive baseball dates, `[data_through - 6, data_through]`, not
 the availability reference date used by the older aggregate summary.
@@ -411,8 +413,11 @@ short-start evidence states. Only classified complete facts are displayed;
 missing or ambiguous splits are counted as excluded and make the window
 partial. Without scheduled-final game evidence, the window is unknown and
 no split-only game is presented as final. Missing outs never display as zero
-or as a negative short-start claim. The section keeps the prior compact
-aggregate and adds a small, text-first recent-start list. It does not infer
+or as a negative short-start claim. A backend-authored subtotal summarizes
+only the complete starts in the represented window. With the new carrier,
+the section uses that summary and a small text-first recent-start list;
+older snapshots retain the prior compact aggregate rather than mixing its
+different availability-date window into the represented-date read. It does not infer
 causation, predict usage, or repeat TB-04's 3/7/14/30 workload windows.
 Names and game facts remain readable at 390, 768, and 1440 pixels without
 horizontal scrolling; the layout uses semantic list and time elements.
