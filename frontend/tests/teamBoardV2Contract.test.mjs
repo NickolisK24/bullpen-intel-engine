@@ -20,6 +20,7 @@ import {
   readTeamBoardFrozenPerformance,
   readTeamBoardFrozenRotationGames,
   readTeamBoardFrozenRosterTransactions,
+  readTeamBoardFrozenWhatChanged,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -136,6 +137,39 @@ const corePayload = {
   publication_identity: identity,
 }
 
+const frozenWhatChanged = {
+  contract: 'team_board_what_changed_v1',
+  method_version: 'team_board_what_changed_v1',
+  team_id: identity.team_id,
+  current_snapshot_id: identity.snapshot_id,
+  previous_snapshot_id: 1899,
+  current_represented_date: identity.represented_date,
+  previous_represented_date: '2026-08-15',
+  comparison_identity: {
+    contract: 'what_changed_comparison_identity_v1',
+    current_snapshot_id: identity.snapshot_id,
+    previous_snapshot_id: 1899,
+    current_data_through: identity.represented_date,
+    previous_data_through: '2026-08-15',
+  },
+  state: 'changes',
+  comparison_status: 'partial',
+  quiet_message: null,
+  domains: {
+    team_state: { status: 'complete' }, roster: { status: 'complete' },
+    workload_rest: { status: 'complete' }, transactions: { status: 'complete' },
+    rotation: { status: 'complete' }, roles_deployment: { status: 'not_comparable' },
+    performance: { status: 'not_comparable' },
+  },
+  events: [{
+    event_type: 'team_state_changed', domain: 'team_state', team_id: identity.team_id,
+    subject_id: null, event_date: null, previous_value: 'Fresh', current_value: 'Stretched',
+    facts: {}, summary: 'Team State changed from Fresh to Stretched.', evidence_status: 'complete',
+    current_snapshot_id: identity.snapshot_id, previous_snapshot_id: 1899,
+    method_version: 'team_board_what_changed_event_v1',
+  }],
+}
+
 const recentUsageRest = {
   contract: 'team_board_recent_usage_rest_v1',
   status: 'complete',
@@ -194,7 +228,7 @@ const detailsPayload = {
       inherited_runner_context: { status: 'unavailable', value: null },
     },
   },
-  what_changed: { state: 'changes' },
+  what_changed: frozenWhatChanged,
   section_status: payload.section_status,
 }
 
@@ -243,7 +277,8 @@ test('deferred sections attach only when every publication identity field matche
   const attached = readTeamBoardDelivery(corePayload, detailsPayload)
   assert.equal(attached.detailsAttached, true)
   assert.equal(attached.performance, detailsPayload.performance)
-  assert.equal(attached.whatChanged, detailsPayload.what_changed)
+  assert.equal(attached.whatChanged.state, 'changes')
+  assert.equal(attached.whatChanged.events[0].summary, frozenWhatChanged.events[0].summary)
   assert.equal(attached.recentUsageRest.activePitchers[0].windows[0].label, 'Yesterday')
   assert.equal(attached.recentUsageRest.activePitchers[0].highPitchOuting.value, true)
 
@@ -257,6 +292,41 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(mismatched.whatChanged, null)
   assert.equal(mismatched.recentUsageRest, null)
   assert.equal(mismatched.teamState, payload.team_state)
+})
+
+test('TB-09 carrier attaches only to its exact current snapshot, predecessor receipt, and team', () => {
+  const attached = readTeamBoardDelivery(corePayload, detailsPayload)
+  assert.equal(attached.whatChanged.events[0].previousValue, 'Fresh')
+  assert.equal(attached.whatChanged.events[0].currentValue, 'Stretched')
+  assert.equal(attached.frozenWhatChangedRejected, false)
+
+  const wrongCurrent = readTeamBoardFrozenWhatChanged(
+    { ...frozenWhatChanged, current_snapshot_id: identity.snapshot_id + 1 }, identity,
+  )
+  const wrongPredecessor = readTeamBoardFrozenWhatChanged({
+    ...frozenWhatChanged,
+    comparison_identity: { ...frozenWhatChanged.comparison_identity, previous_snapshot_id: 1800 },
+  }, identity)
+  assert.equal(wrongCurrent, null)
+  assert.equal(wrongPredecessor, null)
+
+  const switched = readTeamBoardDelivery({
+    ...corePayload,
+    publication_identity: { ...identity, team_id: 2, team_abbreviation: 'NX' },
+  }, detailsPayload)
+  assert.equal(switched.whatChanged, null)
+  assert.equal(switched.detailsRejected, true)
+  assert.equal(switched.teamState, corePayload.team_state)
+})
+
+test('TB-09 adapter transports backend events and cannot derive raw diffs', async () => {
+  const adapted = readTeamBoardFrozenWhatChanged(frozenWhatChanged, identity)
+  assert.deepEqual(adapted.events.map(event => event.type), ['team_state_changed'])
+  assert.equal(adapted.events[0].summary, frozenWhatChanged.events[0].summary)
+  const source = await readFile(new URL('../src/adapters/teamBoardV2.js', import.meta.url), 'utf8')
+  for (const forbidden of ['active_bullpen_joined =', 'team_state_changed =', 'previousValue !== currentValue', 'ERA improved', 'WHIP worsened']) {
+    assert.equal(source.includes(forbidden), false, forbidden)
+  }
 })
 
 test('TB-08 attaches only frozen roster movement for the exact core, team and active group', () => {

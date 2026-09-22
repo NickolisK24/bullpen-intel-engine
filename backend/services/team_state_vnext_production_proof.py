@@ -990,6 +990,19 @@ def require_transactional_publication_proof(
         updated_payload['trusted_team_boards'] = updated_package
         snapshot.payload = updated_payload
         proof['snapshot_team_state_generation_inputs'] = frozen_inputs
+        from models.dashboard_snapshot import DashboardSnapshot
+        from services.team_board_what_changed import attach_frozen_what_changed
+        from services.what_changed_comparison_identity import comparison_identity_from_payload
+        from utils.db import db
+
+        comparison_identity = comparison_identity_from_payload(snapshot.payload)
+        previous_snapshot = (
+            db.session.get(
+                DashboardSnapshot, comparison_identity['previous_snapshot_id'],
+            )
+            if comparison_identity is not None else None
+        )
+        attach_frozen_what_changed(snapshot, previous_snapshot)
     elif has_app_context() and current_app.config.get('APP_ENV') == 'production':
         raise ValueError('snapshot_team_state_package_missing')
     _store_durable_proof(snapshot, proof, commit=False)

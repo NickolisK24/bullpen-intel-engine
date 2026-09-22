@@ -174,7 +174,35 @@ export const teamBoardDetails = {
       { pitcher_id: 102, name: 'Former Reliever', current_roster: { status: 'complete', membership: 'off_active', label: '15-day IL' } },
     ] },
   }, recent_relief_work: { read: { relief_by_date: [] } },
-  game_context: null, performance: frozenPerformanceFixture(), what_changed: { state: 'no_change', items: [] },
+  game_context: null, performance: frozenPerformanceFixture(),
+  what_changed: {
+    contract: 'team_board_what_changed_v1', method_version: 'team_board_what_changed_v1',
+    team_id: identity.team_id, current_snapshot_id: identity.snapshot_id,
+    previous_snapshot_id: 1899, current_represented_date: identity.represented_date,
+    previous_represented_date: '2026-09-01', state: 'changes', comparison_status: 'partial',
+    quiet_message: null, reason_code: null,
+    comparison_identity: {
+      contract: 'what_changed_comparison_identity_v1', current_snapshot_id: identity.snapshot_id,
+      previous_snapshot_id: 1899, current_data_through: identity.represented_date,
+      previous_data_through: '2026-09-01',
+    },
+    domains: {
+      team_state: { status: 'complete', reason_code: null },
+      roster: { status: 'complete', reason_code: null },
+      workload_rest: { status: 'complete', reason_code: null },
+      transactions: { status: 'complete', reason_code: null },
+      rotation: { status: 'complete', reason_code: null },
+      roles_deployment: { status: 'not_comparable', reason_code: 'role_movement_not_governed' },
+      performance: { status: 'not_comparable', reason_code: 'performance_materiality_not_governed' },
+    },
+    events: [{
+      event_type: 'active_bullpen_joined', domain: 'roster', team_id: identity.team_id,
+      subject_id: 101, event_date: null, previous_value: null, current_value: 'active',
+      facts: { pitcher_name: 'Fixture Reliever' }, summary: 'Fixture Reliever joined the active bullpen.',
+      evidence_status: 'complete', current_snapshot_id: identity.snapshot_id,
+      previous_snapshot_id: 1899, method_version: 'team_board_what_changed_event_v1',
+    }],
+  },
   section_status: sectionStatus,
 }
 

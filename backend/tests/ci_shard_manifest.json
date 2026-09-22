@@ -700,6 +700,14 @@
           "measured_seconds": 4.846
         },
         {
+          "path": "tests/test_team_board_snapshot_team_state.py",
+          "measured_seconds": 0.02
+        },
+        {
+          "path": "tests/test_team_board_what_changed.py",
+          "measured_seconds": 0.03
+        },
+        {
           "path": "tests/test_team_operations_bullpen_readiness.py",
           "measured_seconds": 0.012
         },

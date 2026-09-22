@@ -746,16 +746,21 @@ def _what_changed_status(what_changed, error, represented_date):
         status = STATUS_UNAVAILABLE
     elif source_state in ('stale', STATUS_PARTIAL):
         status = STATUS_PARTIAL
-    elif source_state in ('changes', 'no_changes', 'no_baseline'):
+    elif source_state in ('changes', 'quiet', 'no_changes', 'no_baseline'):
         status = STATUS_AVAILABLE
     else:
         return unavailable_section('what_changed_state_unsupported')
 
     result = _section_status(
         status,
-        reason_code=(what_changed.get('state_reason_codes') or [None])[0],
+        reason_code=(
+            what_changed.get('reason_code')
+            or (what_changed.get('state_reason_codes') or [None])[0]
+        ),
         limitations=what_changed.get('limitations') or [],
         represented_date=(
+            what_changed.get('current_represented_date')
+            or
             (what_changed.get('comparison') or {}).get('current_game_date')
             or represented_date
         ),

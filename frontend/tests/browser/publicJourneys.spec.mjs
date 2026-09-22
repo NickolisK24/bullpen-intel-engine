@@ -88,6 +88,12 @@ function teamBoardFixtureFor(teamId) {
   rosterTransactions.off_active_recent_contributors.contributors[0].name = offActiveName
   details.performance.metrics[0].value = team.team_abbreviation === 'NYY' ? '4.11'
     : team.team_abbreviation === 'LAD' ? '2.99' : '3.42'
+  const changed = details.what_changed
+  changed.team_id = team.team_id
+  changed.events[0].team_id = team.team_id
+  changed.events[0].subject_id = pitcherId
+  changed.events[0].facts.pitcher_name = pitcherName
+  changed.events[0].summary = `${pitcherName} joined the active bullpen.`
   return { core, details, pitcherName }
 }
 
@@ -664,6 +670,50 @@ test('TB-08 keeps verified events while disclosing a partial source window', asy
   await expect(section).toContainText('BAL Fixture Reliever')
   await expect(section).toContainText('One unverified transaction was withheld.')
   await expect(section).not.toContainText('No verified pitching moves')
+})
+
+test('TB-09 frozen material changes stay readable and team-scoped at product widths', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-what-changed')
+      await expect(section).toContainText(`${abbreviation} Fixture Reliever joined the active bullpen.`)
+      await expect(section).toContainText('Since')
+      await expect(section).toContainText('Partial comparison')
+      await expect(section).toContainText('roles deployment, performance')
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    }
+  }
+
+  await page.goto('/bullpen?team=BAL')
+  const section = page.getByTestId('team-board-what-changed')
+  await expect(section).toContainText('BAL Fixture Reliever')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(section).toContainText('LAD Fixture Reliever')
+  await expect(section).not.toContainText('BAL Fixture Reliever')
+  const accessibility = await new AxeBuilder({ page }).include('[data-testid="team-board-what-changed"]').analyze()
+  expect(accessibility.violations).toEqual([])
+})
+
+test('TB-09 local fixture readiness remains deferred and adds a bounded render interval', async ({ page }) => {
+  await installApiFixtures(page)
+  const responses = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responses.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responses.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-what-changed')).toContainText('BAL Fixture Reliever')
+  const changedReady = performance.now()
+  expect(responses.core).toBeDefined()
+  expect(responses.details).toBeDefined()
+  console.log(`TB-09 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responses.details - start)}ms changed-ready=${Math.round(changedReady - start)}ms details-to-changed=${Math.round(changedReady - responses.details)}ms`)
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {
