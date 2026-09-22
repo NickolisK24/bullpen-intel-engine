@@ -59,11 +59,6 @@ def client(monkeypatch):
     )
     monkeypatch.setattr(
         team_board_v2_api,
-        'build_public_team_performance_payload',
-        lambda _team_id, board: _performance(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
         'build_team_changes_payload',
         lambda _team_id, freshness=None, generated_at=None: _what_changed(),
     )
@@ -211,6 +206,7 @@ def _board(*, rotation=None, roster_authority=None):
         'generated_at': '2026-08-17T12:00:00+00:00',
         'freshness': {'data_through': '2026-08-16'},
         'team_state': deepcopy(TEAM_STATE),
+        'frozen_performance': _performance(),
         'publication_method_versions': {
             'bullpen_membership': 'team_board_default_bullpen_membership_v1',
             'rest_status': 'rest_status_v1',
@@ -354,6 +350,7 @@ def _performance(*, status='partial'):
     return {
         'capability': 'public_team_performance',
         'contract_version': 'public_team_performance_v1',
+        'population_basis': 'represented_default_visible_active_bullpen',
         'status': status,
         'reason_code': 'additional_metrics_not_governed' if status == 'partial' else None,
         'through': '2026-08-16',
@@ -367,6 +364,10 @@ def _performance(*, status='partial'):
         'pitchers_with_sample': 1,
         'relief_appearances': 36,
         'innings_pitched': '36.0',
+        'capabilities': {
+            name: {'status': 'unavailable', 'value': None}
+            for name in ('k_bb_percent', 'home_runs_allowed', 'inherited_runner_context')
+        },
         'metrics': [
             {
                 'key': 'active_bullpen_era',
@@ -1388,10 +1389,12 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
 
 
 def test_route_scopes_performance_failure_without_changing_other_sections(client, monkeypatch):
+    missing_performance = _board()
+    missing_performance['frozen_performance'] = None
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id, **_kwargs: _board(),
+        lambda _team_id, **_kwargs: missing_performance,
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1407,11 +1410,6 @@ def test_route_scopes_performance_failure_without_changing_other_sections(client
         team_board_v2_api,
         'build_public_recent_transactions',
         lambda _team_id, reference_date=None: _recent_transactions(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_team_performance_payload',
-        lambda _team_id, board: (_ for _ in ()).throw(RuntimeError('fixture failure')),
     )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
@@ -1540,7 +1538,7 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     for name in (
         'build_public_team_relief_work_payload', 'build_team_game_context',
-        'build_public_recent_transactions', 'build_public_team_performance_payload',
+            'build_public_recent_transactions',
         'build_team_changes_payload',
     ):
         monkeypatch.setattr(
@@ -1771,10 +1769,6 @@ def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
         team_board_v2_api, 'build_public_recent_transactions',
         lambda team_id, reference_date=None: _recent_transactions(),
     )
-    monkeypatch.setattr(
-        team_board_v2_api, 'build_public_team_performance_payload',
-        lambda team_id, board: _performance(),
-    )
 
     app = Flask(__name__)
     with app.app_context():
@@ -1785,6 +1779,72 @@ def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
     assert captured['changes'][1]['comparison_source_snapshot_id'] == 1900
     assert captured['changes'][1]['through_date'] == date(2026, 8, 16)
     assert sections['performance'] == _performance()
+
+
+def test_frozen_performance_attaches_only_to_matching_team_date_and_population():
+    snapshot = _snapshot()
+    read = _performance()
+    team_package = {
+        'default_pitcher_ids': [7],
+        'records': [{'pitcher_id': 7, 'visibility': {'is_visible_by_default': True}}],
+        'performance': {
+            'contract': 'team_board_performance_v1',
+            'team_board_package_contract': public_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'team_id': 1,
+            'data_through': '2026-08-16',
+            'population_pitcher_ids': [7],
+            'read': read,
+        },
+    }
+    assert public_authority._frozen_performance_for_view(snapshot, team_package, 1) == read
+    for key, wrong in (
+        ('team_id', 2),
+        ('data_through', '2026-08-15'),
+        ('population_pitcher_ids', [8]),
+    ):
+        changed = deepcopy(team_package)
+        changed['performance'][key] = wrong
+        assert public_authority._frozen_performance_for_view(snapshot, changed, 1) is None
+    changed = deepcopy(team_package)
+    changed['performance']['read']['through'] = '2026-08-15'
+    assert public_authority._frozen_performance_for_view(snapshot, changed, 1) is None
+    assert public_authority._frozen_performance_for_view(snapshot, {}, 1) is None
+
+
+def test_deferred_route_reads_frozen_performance_without_mutable_metric_query(client, monkeypatch):
+    monkeypatch.setattr(
+        'services.performance_intelligence.qualifying_appearances',
+        lambda *_args, **_kwargs: pytest.fail('request-time performance query'),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_published_team_board',
+        lambda _team_id, **_kwargs: _board(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_public_team_relief_work_payload',
+        lambda _team_id, **_kwargs: _relief_work(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_team_game_context',
+        lambda _team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: _recent_transactions(),
+    )
+    response = client.get('/api/bullpen/teams/1/board-v2')
+    assert response.status_code == 200
+    assert response.get_json()['performance'] == _performance()
+
+
+def test_frozen_performance_cannot_change_team_state_or_answer_core():
+    board = _board()
+    identity = build_team_board_identity(_snapshot(), board)
+    baseline = build_team_board_core_payload(board, publication_identity=identity)
+    changed = deepcopy(board)
+    changed['frozen_performance']['metrics'][0]['value'] = '99.99'
+    changed['frozen_performance']['metrics'][1]['value'] = '9.99'
+    assert build_team_board_core_payload(changed, publication_identity=identity) == baseline
 
 
 def test_core_and_deferred_envelopes_keep_semantics_separate():

@@ -46,6 +46,10 @@ from services.bullpen_population import eligible_bullpen_pitcher_contexts, usage
 from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.public_fatigue_view import public_workload_facts
+from services.public_team_performance import (
+    FROZEN_CONTRACT as TEAM_BOARD_PERFORMANCE_CONTRACT,
+    build_frozen_team_performance_payload,
+)
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
 from services.public_team_relief_work import (
     DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
@@ -435,6 +439,16 @@ def build_frozen_team_board_package(dashboard_payload):
             team_id, selected_records, deployment_profile,
             deployment_context,
         )
+        performance_records = [
+            record for record in selected_records
+            if (record.get('visibility') or {}).get('is_visible_by_default') is not False
+        ]
+        performance = build_frozen_team_performance_payload(
+            team_id,
+            records=performance_records,
+            represented_date=represented_data_through,
+            freshness=freshness,
+        )
         recent_usage_rest = relief_authority['recent_usage_rest']
         rotation_support_pressure = _support_for_team(
             payload, 'rotation_support_pressure', team_id
@@ -484,6 +498,17 @@ def build_frozen_team_board_package(dashboard_payload):
             },
             'deployment_profile': deepcopy(deployment_profile),
             'roles_deployment': deepcopy(roles_deployment),
+            'performance': {
+                'contract': TEAM_BOARD_PERFORMANCE_CONTRACT,
+                'team_id': team_id,
+                'data_through': represented_data_through,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_pitcher_ids': sorted(
+                    record['pitcher_id'] for record in performance_records
+                    if type(record.get('pitcher_id')) is int
+                ),
+                'read': performance,
+            },
             'roles_deployment_authority': {
                 'method_version': PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION,
                 'public_contract_version': PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT,
@@ -926,6 +951,52 @@ def _frozen_roles_deployment_for_view(snapshot, team_package, team_id):
     return deepcopy(carrier)
 
 
+def _frozen_performance_for_view(snapshot, team_package, team_id):
+    """Attach only the exact team/date performance read in the trusted package."""
+    carrier = team_package.get('performance')
+    if not isinstance(carrier, Mapping):
+        return None
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    read = carrier.get('read')
+    default_ids = set(team_package.get('default_pitcher_ids') or [])
+    expected_ids = sorted(
+        record['pitcher_id'] for record in team_package.get('records') or []
+        if isinstance(record, Mapping)
+        and type(record.get('pitcher_id')) is int
+        and record['pitcher_id'] in default_ids
+        and (record.get('visibility') or {}).get('is_visible_by_default') is not False
+    )
+    if (
+        carrier.get('contract') != TEAM_BOARD_PERFORMANCE_CONTRACT
+        or carrier.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or carrier.get('team_id') != team_id
+        or carrier.get('data_through') != represented
+        or not isinstance(read, Mapping)
+        or read.get('through') != represented
+        or read.get('contract_version') != 'public_team_performance_v1'
+        or read.get('population_basis') != 'represented_default_visible_active_bullpen'
+        or (
+            isinstance(read.get('window'), Mapping)
+            and read['window'].get('through') != represented
+        )
+        or not isinstance(read.get('capabilities'), Mapping)
+        or any(
+            not isinstance(read['capabilities'].get(domain), Mapping)
+            or read['capabilities'][domain].get('status') != 'unavailable'
+            or read['capabilities'][domain].get('value') is not None
+            for domain in ('k_bb_percent', 'home_runs_allowed', 'inherited_runner_context')
+        )
+        or (
+            read.get('status') != 'unavailable'
+            and [item.get('metric_id') for item in read.get('metrics') or []]
+            != ['M-001', 'M-002']
+        )
+        or sorted(carrier.get('population_pitcher_ids') or []) != expected_ids
+    ):
+        return None
+    return deepcopy(read)
+
+
 def _frozen_legacy_deployment_profile_for_view(snapshot, team_package):
     """Keep old publications' already-frozen profile without mutable fallback."""
     if 'roles_deployment' in team_package:
@@ -994,6 +1065,9 @@ def build_published_team_board(
             snapshot, team_package
         )
         payload['frozen_roles_deployment'] = _frozen_roles_deployment_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_performance'] = _frozen_performance_for_view(
             snapshot, team_package, team_id,
         )
         payload['frozen_legacy_deployment_profile'] = (

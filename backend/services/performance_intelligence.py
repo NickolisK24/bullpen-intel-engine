@@ -661,13 +661,14 @@ def build_metric_reads(
     freshness=None,
     group=None,
     publication_surface=None,
+    selection=None,
 ):
     """Build multiple metric reads from one common appearance selection."""
     metric_ids = tuple(metric_ids or ())
     if freshness is None:
         freshness = resolve_freshness(reference_date)
     group = group or resolve_active_group(team_id, reference_date=reference_date)
-    selection = (
+    selection = selection if selection is not None else (
         qualifying_appearances(
             team_id,
             group['pitcher_ids'],

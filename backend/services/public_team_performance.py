@@ -16,6 +16,7 @@ from services import performance_metrics
 
 CAPABILITY = 'public_team_performance'
 CONTRACT_VERSION = 'public_team_performance_v1'
+FROZEN_CONTRACT = 'team_board_performance_v1'
 POPULATION_BASIS = 'represented_default_visible_active_bullpen'
 POPULATION_AUTHORITY = 'trusted_team_board.groups.default_visible_pitchers'
 MEMBERSHIP_AUTHORITY = 'eligible_bullpen_pitcher_contexts'
@@ -26,8 +27,8 @@ STATUS_PARTIAL = 'partial'
 STATUS_UNAVAILABLE = 'unavailable'
 
 ADDITIONAL_METRICS_LIMITATION = (
-    'K-BB%, home-run rate, and inherited-runner outcomes are not included '
-    'because they do not yet have approved public metric and sample contracts.'
+    'K-BB%, home-run context, and inherited-runner outcomes are not published '
+    'because their public source-completeness contracts are not certified.'
 )
 WHIP_INPUT_LIMITATION = (
     'Active Bullpen WHIP is withheld because at least one qualifying official '
@@ -43,12 +44,53 @@ METRIC_IDS = (
 def build_public_team_performance_payload(team_id, *, board):
     represented = _represented_date(board)
     group = _represented_active_group(board, represented)
+    return _build_performance_payload(team_id, represented, group, board.get('freshness') or {})
+
+
+def build_frozen_team_performance_payload(
+    team_id, *, records, represented_date, freshness,
+):
+    """Author the existing ERA/WHIP read once, while the trusted package builds.
+
+    ``records`` is the same default-visible population frozen beside this read
+    in ``trusted_team_boards.default_pitcher_ids``. No serving query is made.
+    """
+    try:
+        represented = date.fromisoformat(str(represented_date))
+    except (TypeError, ValueError):
+        represented = None
+    members = [
+        {
+            'pitcher_id': record['pitcher_id'],
+            'pitcher_mlb_id': None,
+            'pitcher_full_name': record.get('name'),
+            'role_evidence': None,
+        }
+        for record in records
+        if type(record.get('pitcher_id')) is int
+    ]
+    group = {
+        'team_id': team_id,
+        'reference_date': represented.isoformat() if represented else None,
+        'membership_authority': MEMBERSHIP_AUTHORITY,
+        'population_authority': POPULATION_AUTHORITY,
+        'pitcher_ids': [member['pitcher_id'] for member in members],
+        'members': members,
+        'size': len(members),
+    }
+    return _build_performance_payload(team_id, represented, group, freshness or {})
+
+
+def _build_performance_payload(team_id, represented, group, freshness):
     if represented is None:
         return _unavailable('represented_date_unavailable', group=group)
     if not group['pitcher_ids']:
         return _unavailable('active_group_empty', group=group, through=represented)
 
-    freshness = board.get('freshness') or {}
+    selection = performance_intelligence.qualifying_appearances(
+        team_id, group['pitcher_ids'],
+        season=represented.year, through_date=represented,
+    )
     reads = performance_intelligence.build_metric_reads(
         METRIC_IDS,
         team_id,
@@ -65,8 +107,9 @@ def build_public_team_performance_payload(team_id, *, board):
         },
         group=group,
         publication_surface=performance_intelligence.PUBLIC_SURFACE_TEAM_BOARD,
+        selection=selection,
     )
-    return _project_reads(reads, represented)
+    return _project_reads(reads, represented, selection)
 
 
 def _represented_date(board):
@@ -111,7 +154,7 @@ def _represented_active_group(board, represented):
     }
 
 
-def _project_reads(reads, represented):
+def _project_reads(reads, represented, selection):
     era_read = reads[performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA]
     whip_read = reads[performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP]
     metric_reads = (era_read, whip_read)
@@ -193,6 +236,45 @@ def _project_reads(reads, represented):
         'evidence_by_metric': {
             read.get('metric_id'): read.get('evidence') for read in metric_reads
         },
+        'capabilities': _deferred_capabilities(selection),
+    }
+
+
+def _deferred_capabilities(selection=None):
+    rows = tuple(getattr(selection, 'rows', ()) or ())
+    def known_nonnegative(value):
+        return type(value) is int and value >= 0
+
+    bf_rows = sum(
+        known_nonnegative(getattr(row, 'batters_faced', None))
+        and known_nonnegative(getattr(row, 'strikeouts', None))
+        and known_nonnegative(getattr(row, 'walks', None))
+        for row in rows
+    )
+    hr_rows = sum(
+        known_nonnegative(getattr(row, 'home_runs_allowed', None))
+        for row in rows
+    )
+    coverage = {
+        'qualifying_appearances': len(rows),
+        'selection_valid': getattr(selection, 'is_valid', False) is True,
+    }
+    return {
+        'k_bb_percent': {
+            'status': 'unavailable', 'reason_code': 'source_completeness_not_certified',
+            'reason_codes': ['source_completeness_not_certified'],
+            'value': None, 'coverage': dict(coverage, rows_with_required_fields=bf_rows),
+        },
+        'home_runs_allowed': {
+            'status': 'unavailable', 'reason_code': 'official_comparison_not_publication_bound',
+            'reason_codes': ['official_comparison_not_publication_bound'],
+            'value': None, 'coverage': dict(coverage, rows_with_recorded_hr=hr_rows),
+        },
+        'inherited_runner_context': {
+            'status': 'unavailable', 'reason_code': 'source_completeness_not_certified',
+            'reason_codes': ['source_completeness_not_certified'],
+            'value': None,
+        },
     }
 
 
@@ -214,6 +296,12 @@ def _metric_payload(read):
         qualification_status = 'unavailable'
         reason_code = read.get('reason_code') or publication.get('reason')
     metric_id = read.get('metric_id')
+    if reason_code == performance_intelligence.REFUSAL_QUALIFYING_ROW_INVALID:
+        evidence_status = 'partial'
+    elif read.get('evidence') is not None:
+        evidence_status = 'complete'
+    else:
+        evidence_status = 'unavailable'
     return {
         'key': {
             performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA:
@@ -225,6 +313,10 @@ def _metric_payload(read):
         'label': read.get('metric_name'),
         'value': read.get('display_value') if publishable else None,
         'method_version': read.get('metric_version'),
+        'evidence_state': {
+            'status': evidence_status,
+            'reason_codes': [reason_code] if reason_code else [],
+        },
         'qualification': {
             'status': qualification_status,
             'reason_code': reason_code,
@@ -293,6 +385,7 @@ def _unavailable(reason_code, *, group=None, through=None):
         'limitations': [ADDITIONAL_METRICS_LIMITATION],
         'evidence': None,
         'evidence_by_metric': {},
+        'capabilities': _deferred_capabilities(),
     }
 
 
@@ -307,10 +400,12 @@ def _month_day(value):
 __all__ = [
     'CAPABILITY',
     'CONTRACT_VERSION',
+    'FROZEN_CONTRACT',
     'MEMBERSHIP_AUTHORITY',
     'POPULATION_AUTHORITY',
     'POPULATION_BASIS',
     'WHIP_INPUT_LIMITATION',
     'WINDOW_POLICY',
     'build_public_team_performance_payload',
+    'build_frozen_team_performance_payload',
 ]

@@ -18,13 +18,13 @@ function PerformanceSkeleton() {
 export default function TeamBoardPerformance({ read, loading = false, error = null, onRetry }) {
   if (loading) return <PerformanceSkeleton />
 
-  const performance = read?.performance
+  const performance = read?.frozenPerformance
   const status = read?.sectionStatus?.performance
   const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
     ? status.status
     : 'unavailable'
   const metrics = Array.isArray(performance?.metrics)
-    ? performance.metrics.filter(metric => textValue(metric?.label) && textValue(metric?.value))
+    ? performance.metrics.filter(metric => textValue(metric?.label))
     : []
   const metricColumns = metrics.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
   const summary = textValue(performance?.summary)
@@ -32,6 +32,12 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
   const limitation = (Array.isArray(performance?.limitations) ? performance.limitations : [])
     .find(value => textValue(value))
   const hasGovernedContent = metrics.length > 0 || Boolean(summary)
+  const capabilityNames = [
+    ['k_bb_percent', 'K-BB%'],
+    ['home_runs_allowed', 'HR allowed'],
+    ['inherited_runner_context', 'Inherited runners'],
+  ]
+  const deferredCapabilities = capabilityNames.filter(([key]) => performance?.capabilities?.[key]?.status === 'unavailable')
 
   return (
     <section className="foundation-section min-w-0" aria-labelledby="performance-title" data-testid="team-board-performance">
@@ -43,7 +49,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
 
       {error ? (
         <SectionState status="error" title="Performance unavailable" message="Current performance context could not be loaded." onRetry={onRetry} />
-      ) : !read || !performance || statusName === 'unavailable' || !hasGovernedContent ? (
+      ) : !read || !performance || read.frozenPerformanceRejected || statusName === 'unavailable' || !hasGovernedContent ? (
         <SectionState status="unavailable" title="Performance unavailable" message={PERFORMANCE_UNAVAILABLE_MESSAGE} onRetry={!read ? onRetry : undefined} />
       ) : (
         <>
@@ -52,7 +58,14 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
               {metrics.map(metric => (
                 <div key={metric.key || metric.metric_id} className="min-w-0 bg-surface-base p-panel">
                   <dt className="type-overline break-words text-text-tertiary">{metric.label}</dt>
-                  <dd className="mt-meta font-board text-2xl font-semibold tabular-nums text-text-primary">{metric.value}</dd>
+                  <dd className="mt-meta font-board text-2xl font-semibold tabular-nums text-text-primary">
+                    {textValue(metric.value) || (metric.qualification?.status === 'below_minimum' ? 'Not enough innings' : '—')}
+                  </dd>
+                  {metric.qualification?.status !== 'qualified' && (
+                    <p className="type-metadata mt-meta text-text-tertiary">
+                      {metric.qualification?.status === 'below_minimum' ? 'Below the recorded-outs minimum' : 'Evidence unavailable'}
+                    </p>
+                  )}
                 </div>
               ))}
             </dl>
@@ -67,6 +80,14 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
           {metrics.length > 0 && sampleSummary && <p className="type-metadata mt-panel text-text-tertiary">{sampleSummary}</p>}
           {statusName === 'partial' && limitation && (
             <p className="type-metadata mt-row max-w-reading text-text-withheld" role="status" data-state="partial">{limitation}</p>
+          )}
+          {deferredCapabilities.length > 0 && (
+            <details className="type-metadata mt-panel text-text-tertiary">
+              <summary className="cursor-pointer">Additional performance context not published</summary>
+              <ul className="mt-meta list-disc pl-5">
+                {deferredCapabilities.map(([key, label]) => <li key={key}>{label} — not published</li>)}
+              </ul>
+            </details>
           )}
         </>
       )}

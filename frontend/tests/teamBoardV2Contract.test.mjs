@@ -17,6 +17,7 @@ import {
   readTeamBoardRecentUsageRest,
   readTeamBoardFrozenWorkload,
   readTeamBoardFrozenDeployment,
+  readTeamBoardFrozenPerformance,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -166,7 +167,22 @@ const detailsPayload = {
   recent_transactions: payload.recent_transactions,
   recent_relief_work: payload.recent_relief_work,
   game_context: payload.game_context,
-  performance: { status: 'available' },
+  performance: {
+    capability: 'public_team_performance', contract_version: 'public_team_performance_v1', status: 'available',
+    through: identity.represented_date,
+    window: { policy: 'current_mlb_regular_season_through_represented_date', through: identity.represented_date },
+    sample: { recorded_outs: 126, innings_pitched: '42.0' },
+    population_basis: 'represented_default_visible_active_bullpen',
+    metrics: [
+      { key: 'active_bullpen_era', metric_id: 'M-001', value: '3.42', evidence_state: { status: 'complete' }, qualification: { status: 'qualified' } },
+      { key: 'active_bullpen_whip', metric_id: 'M-002', value: '1.18', evidence_state: { status: 'complete' }, qualification: { status: 'qualified' } },
+    ],
+    capabilities: {
+      k_bb_percent: { status: 'unavailable', value: null },
+      home_runs_allowed: { status: 'unavailable', value: null },
+      inherited_runner_context: { status: 'unavailable', value: null },
+    },
+  },
   what_changed: { state: 'changes' },
   section_status: payload.section_status,
 }
@@ -231,6 +247,42 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(mismatched.whatChanged, null)
   assert.equal(mismatched.recentUsageRest, null)
   assert.equal(mismatched.teamState, payload.team_state)
+})
+
+test('TB-06 attaches only the frozen represented-date performance read', () => {
+  const attached = readTeamBoardDelivery(corePayload, detailsPayload)
+  assert.equal(attached.frozenPerformance, detailsPayload.performance)
+  assert.equal(attached.frozenPerformanceRejected, false)
+  assert.equal(attached.teamState, corePayload.team_state)
+
+  const stale = readTeamBoardDelivery(corePayload, {
+    ...detailsPayload,
+    performance: { ...detailsPayload.performance, through: '2026-08-15' },
+  })
+  assert.equal(stale.frozenPerformance, null)
+  assert.equal(stale.frozenPerformanceRejected, true)
+  assert.equal(stale.frozenPublicDeployment, attached.frozenPublicDeployment)
+  assert.equal(stale.teamState, corePayload.team_state)
+
+  const priorTeam = readTeamBoardDelivery({
+    ...corePayload,
+    publication_identity: { ...identity, team_id: 2 },
+  }, detailsPayload)
+  assert.equal(priorTeam.frozenPerformance, null)
+  assert.equal(priorTeam.detailsRejected, true)
+  assert.equal(priorTeam.teamState, corePayload.team_state)
+})
+
+test('TB-06 rejects fabricated deferred metrics and never changes certified zero', () => {
+  assert.equal(readTeamBoardFrozenPerformance({
+    ...detailsPayload.performance,
+    capabilities: { ...detailsPayload.performance.capabilities, home_runs_allowed: { status: 'unavailable', value: 0 } },
+  }, identity), null)
+  assert.equal(readTeamBoardFrozenPerformance({
+    ...detailsPayload.performance,
+    metrics: detailsPayload.performance.metrics.map((metric, index) => index === 0
+      ? { ...metric, value: '0.00' } : metric),
+  }, identity).metrics[0].value, '0.00')
 })
 
 

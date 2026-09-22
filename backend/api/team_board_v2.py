@@ -11,7 +11,6 @@ from services.public_team_relief_work import (
     build_public_team_relief_work_payload,
 )
 from services.public_recent_transactions import build_public_recent_transactions
-from services.public_team_performance import build_public_team_performance_payload
 from services.public_delivery import apply_public_delivery_headers
 from services.team_changes import build_team_changes_payload
 from services.team_board_delivery import (
@@ -118,12 +117,9 @@ def _build_deferred_sections(team_id, board, snapshot):
     if transactions_error:
         section_errors['recent_transactions'] = transactions_error
 
-    performance, performance_error = _optional_failure(
-        'performance', 'performance_unavailable',
-        lambda: build_public_team_performance_payload(team_id, board=board),
-    )
-    if performance_error:
-        section_errors['performance'] = performance_error
+    # New trusted packages carry this read by value. An older package simply
+    # lacks TB-06; mutable GameLog rows must not synthesize it at request time.
+    performance = board.get('frozen_performance')
 
     comparison_identity = comparison_identity_from_payload(snapshot.payload)
     what_changed, what_changed_error = _optional_failure(

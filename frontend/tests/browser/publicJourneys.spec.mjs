@@ -65,6 +65,8 @@ function teamBoardFixtureFor(teamId) {
   deployment.profiles[0].pitcher_name = pitcherName
   deployment.profiles[0].observed_profile.pitcher_id = pitcherId
   deployment.profiles[0].context.pitcher_id = pitcherId
+  details.performance.metrics[0].value = team.team_abbreviation === 'NYY' ? '4.11'
+    : team.team_abbreviation === 'LAD' ? '2.99' : '3.42'
   return { core, details, pitcherName }
 }
 
@@ -427,6 +429,60 @@ test('TB-05 local fixture readiness is timed separately from core and details', 
   expect(responseTimes.core).toBeDefined()
   expect(responseTimes.details).toBeDefined()
   console.log(`TB-05 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responseTimes.details - start)}ms roles-ready=${Math.round(rolesReady - start)}ms details-to-roles=${Math.round(rolesReady - responseTimes.details)}ms`)
+})
+
+test('TB-06 shows frozen ERA and WHIP at product widths across BAL, LAD, and NYY', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-performance')
+      await expect(section).toContainText(abbreviation === 'NYY' ? '4.11' : abbreviation === 'LAD' ? '2.99' : '3.42')
+      await expect(section).toContainText('1.18')
+      await expect(section).toContainText('42.0 innings')
+      await expect(section.getByText('Additional performance context not published')).toBeVisible()
+      await expectNoPageOverflow(page)
+    }
+  }
+})
+
+test('TB-06 stale details are withheld while core remains usable', async ({ page }) => {
+  await installApiFixtures(page, { detailsIdentityMismatch: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  await expect(page.getByTestId('team-board-performance')).not.toContainText('3.42')
+})
+
+test('TB-06 drops old-team performance during deferred team switching', async ({ page }) => {
+  const fixtures = await installApiFixtures(page, { deferDetails: true })
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('performance-skeleton')).toBeVisible()
+  await page.getByLabel('Select team for Team Board').selectOption('147')
+  await expect(page.getByTestId('team-board-performance')).toContainText('4.11')
+  fixtures.releaseDetails()
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('New York Yankees')
+  await expect(page.getByTestId('team-board-performance')).toContainText('4.11')
+  await expect(page.getByTestId('team-board-performance')).not.toContainText('3.42')
+})
+
+test('TB-06 local fixture readiness is measured separately from core and details', async ({ page }) => {
+  await installApiFixtures(page)
+  const responseTimes = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responseTimes.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responseTimes.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-performance')).toContainText('3.42')
+  const performanceReady = performance.now()
+  expect(responseTimes.core).toBeDefined()
+  expect(responseTimes.details).toBeDefined()
+  console.log(`TB-06 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responseTimes.details - start)}ms performance-ready=${Math.round(performanceReady - start)}ms details-to-performance=${Math.round(performanceReady - responseTimes.details)}ms`)
 })
 
 test('TB-04 local fixture readiness is measured separately from core and details', async ({ page }) => {
