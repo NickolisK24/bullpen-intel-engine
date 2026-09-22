@@ -79,6 +79,20 @@ def _seed_teams(reference_date):
             appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
             leverage_index=1.5 if index == 0 else None,
         ))
+        db.session.add(ScheduledGame(
+            team_id=team_id, game_pk=7900000 + index,
+            game_date=reference_date - timedelta(days=4 if index == 29 else 1),
+            game_type='R', status_code='F',
+            status_state=ScheduledGame.STATE_FINAL,
+            game_number=1, home_away='home',
+        ))
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=7900000 + index,
+            game_date=reference_date - timedelta(days=4 if index == 29 else 1),
+            game_type='R', home_team_id=team_id, away_team_id=TEAM_IDS[(index + 1) % 30],
+            final_state='Final', pitching_lines_seen=1,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
         if index == 0:
             db.session.add(PlayByPlayProcessedGame(
                 mlb_game_pk=7900000, game_date=reference_date - timedelta(days=1),
@@ -338,9 +352,32 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     roster_projection_ms.append((perf_counter() - started) * 1000)
             monkeypatch.setattr(public_serving_authority, 'build_public_recent_transactions_by_team', measured_roster_read)
             monkeypatch.setattr(public_serving_authority, 'author_frozen_roster_transactions', measured_roster_projection)
-            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0, 'rotation_source': 0, 'transactions': 0}
+            relief_projection_ms = []
+            relief_source_queries = []
+            original_relief_author = public_serving_authority.author_frozen_recent_relief_work
+            original_final_authority = public_serving_authority.load_final_game_authority
+            original_unresolved_counts = public_serving_authority.load_unresolved_current_roster_counts
+            def measured_relief_author(*args, **kwargs):
+                started = perf_counter()
+                try:
+                    return original_relief_author(*args, **kwargs)
+                finally:
+                    relief_projection_ms.append((perf_counter() - started) * 1000)
+            def measured_relief_source(operation):
+                def measured(*args, **kwargs):
+                    before = query_counts['all']
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        relief_source_queries.append(query_counts['all'] - before)
+                return measured
+            monkeypatch.setattr(public_serving_authority, 'author_frozen_recent_relief_work', measured_relief_author)
+            monkeypatch.setattr(public_serving_authority, 'load_final_game_authority', measured_relief_source(original_final_authority))
+            monkeypatch.setattr(public_serving_authority, 'load_unresolved_current_roster_counts', measured_relief_source(original_unresolved_counts))
+            query_counts = {'all': 0, 'appearance': 0, 'processed_game': 0, 'pbp_event': 0, 'rotation_source': 0, 'transactions': 0}
             def count_publication_reads(_conn, _cursor, statement, _params, _context, _many):
                 sql = statement.lower()
+                query_counts['all'] += 1
                 if 'from game_logs' in sql:
                     query_counts['appearance'] += 1
                 if 'from player_transactions' in sql:
@@ -515,12 +552,19 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 rehearsal_identity = build_team_board_identity(snapshot, rehearsal_board)
                 rehearsal_details = build_team_board_details_payload(
                     rehearsal_board, publication_identity=rehearsal_identity,
-                    recent_relief_work=None,
+                    recent_relief_work=rehearsal_board['frozen_recent_relief_work'],
                     recent_transactions=rehearsal_board['frozen_roster_transactions'],
                     game_context=None, performance=rehearsal_board['frozen_performance'],
                     what_changed=rehearsal_board['frozen_what_changed'], section_errors={},
                 )
                 assert rehearsal_details['what_changed'] == changed
+                relief = rehearsal_details['recent_relief_work']['read']
+                assert relief['contract'] == 'team_board_recent_relief_work_v1'
+                assert relief['team_id'] == TEAM_IDS[0]
+                assert relief['data_through'] == snapshot.data_through.isoformat()
+                assert relief['games'][0]['finality']['game_status'] == 'final'
+                assert relief['games'][0]['appearances'][0]['appearance_team_id'] == TEAM_IDS[0]
+                assert relief['games'][0]['appearances'][0]['current_roster']['active'] is True
             finally:
                 savepoint.rollback()
                 db.session.expire(snapshot)
@@ -559,6 +603,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert len(performance_ms) == len(TEAM_IDS)
             assert rotation_queries == [3]
             assert query_counts['transactions'] == 1
+            assert relief_source_queries == [1, 1]
+            assert len(relief_projection_ms) == len(TEAM_IDS)
             assert performance_appearance_queries == [1] * len(TEAM_IDS)
             assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS}
             assert package['data_through'] == snapshot.data_through.isoformat()
@@ -603,6 +649,15 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 assert read['capabilities']['k_bb_percent']['status'] == 'unavailable'
                 assert read['capabilities']['home_runs_allowed']['status'] == 'unavailable'
                 assert read['capabilities']['inherited_runner_context']['status'] == 'unavailable'
+                relief = team['recent_relief_work']
+                assert relief['contract'] == 'team_board_recent_relief_work_v1'
+                assert relief['team_id'] == team_id
+                assert relief['data_through'] == snapshot.data_through.isoformat()
+                assert relief['status'] in {'complete', 'partial'}
+                assert all(
+                    game['finality']['game_status'] == 'final'
+                    for game in relief['games']
+                )
             public_deployment = package['by_team_id'][str(TEAM_IDS[0])]['roles_deployment']
             assert query_counts['pbp_event'] <= len(TEAM_IDS)
             assert query_counts['processed_game'] <= len(TEAM_IDS)
@@ -633,6 +688,12 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 for team_id in TEAM_IDS
             }, sort_keys=True)
             roster_serialization_ms = (perf_counter() - roster_serialization_started) * 1000
+            relief_serialization_started = perf_counter()
+            relief_json = json.dumps({
+                team_id: package['by_team_id'][str(team_id)]['recent_relief_work']
+                for team_id in TEAM_IDS
+            }, sort_keys=True)
+            relief_serialization_ms = (perf_counter() - relief_serialization_started) * 1000
             first_profile = next(item for item in public_deployment['profiles'] if item['pitcher_name'] == 'Rehearsal Pitcher 00')
             assert first_profile['context']['entry_inning']['by_inning'] == [{'inning': 8, 'appearances': 1}]
             assert first_profile['context']['score_context']['leading'] == 1
@@ -764,6 +825,11 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 f' tb08_projection_ms={sum(roster_projection_ms):.3f}'
                 f' tb08_all_team_bytes={len(roster_json.encode("utf-8"))}'
                 f' tb08_serialize_ms={roster_serialization_ms:.3f}'
+                f' tb10_source_queries={sum(relief_source_queries)}'
+                f' tb10_projection_ms={sum(relief_projection_ms):.3f}'
+                f' tb10_team_bytes={len(json.dumps(package["by_team_id"][str(team_id)]["recent_relief_work"]).encode("utf-8"))}'
+                f' tb10_all_team_bytes={len(relief_json.encode("utf-8"))}'
+                f' tb10_serialize_ms={relief_serialization_ms:.3f}'
             )
         finally:
             db.session.remove()

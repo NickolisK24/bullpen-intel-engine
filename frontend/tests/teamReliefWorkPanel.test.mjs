@@ -63,6 +63,10 @@ const reliefPayload = {
           hits_allowed: 0,
           runs_allowed: 0,
           roster_status_sentence: 'On the active roster per MLB roster data.',
+          multi_inning: { value: false, status: 'complete', reason_codes: [] },
+          save: { value: false, status: 'complete', reason_codes: [] },
+          hold: { value: false, status: 'complete', reason_codes: [] },
+          game_finished: { value: false, status: 'complete', reason_codes: [] },
         },
         {
           pitcher_id: 9,
@@ -76,6 +80,10 @@ const reliefPayload = {
           hits_allowed: 1,
           runs_allowed: 0,
           roster_status_sentence: 'Roster status: Optioned / Minors per MLB roster data.',
+          multi_inning: { value: false, status: 'complete', reason_codes: [] },
+          save: { value: true, status: 'complete', reason_codes: [] },
+          hold: { value: false, status: 'complete', reason_codes: [] },
+          game_finished: { value: true, status: 'complete', reason_codes: [] },
         },
         {
           pitcher_id: 8,
@@ -89,6 +97,10 @@ const reliefPayload = {
           hits_allowed: 0,
           runs_allowed: 0,
           roster_status_sentence: 'On the active roster per MLB roster data.',
+          multi_inning: { value: false, status: 'complete', reason_codes: [] },
+          save: { value: false, status: 'complete', reason_codes: [] },
+          hold: { value: true, status: 'complete', reason_codes: [] },
+          game_finished: { value: false, status: 'complete', reason_codes: [] },
         },
       ],
     },
@@ -111,6 +123,10 @@ const reliefPayload = {
         hits_allowed: 0,
         runs_allowed: 0,
         roster_status_sentence: 'On the active roster per MLB roster data.',
+        multi_inning: { value: false, status: 'complete', reason_codes: [] },
+        save: { value: false, status: 'complete', reason_codes: [] },
+        hold: { value: false, status: 'complete', reason_codes: [] },
+        game_finished: { value: false, status: 'complete', reason_codes: [] },
       }],
     },
   ],
@@ -149,13 +165,15 @@ test('Recent Relief Work renders mobile records and the shared-header governed t
   assert.ok(html.includes('Zachary Very Long Relief Pitcher Name'))
   assert.ok(html.includes('Recent relief work records'))
   assert.ok(html.includes('Recent relief work table'))
-  for (const heading of ['Arm', 'IP', 'P', 'K', 'BB', 'H', 'R', 'Status']) {
+  for (const heading of ['Arm', 'IP', 'P', 'Recorded facts', 'Status']) {
     assert.ok(html.includes(`>${heading}<`), heading)
   }
   assert.ok(html.includes('2.0 IP'))
   assert.ok(html.includes('Pitch coverage:'))
   assert.ok(html.includes('2 of 3 appearances'))
   assert.ok(html.includes('Optioned / Minors'))
+  assert.ok(html.includes('Save · Game finished'))
+  assert.ok(html.includes('Hold'))
   assert.equal(html.includes(reliefPayload.windows.window_14.sentence), false)
   assert.equal(html.includes('<details'), false)
 })
@@ -212,11 +230,7 @@ test('withheld work remains an em dash while legitimate zero remains zero', () =
 
   assert.ok(html.includes('— P'))
   assert.ok(html.includes('0.0 IP'))
-  assert.ok(html.includes('0 P'))
-  assert.ok(html.includes('0 K'))
-  assert.ok(html.includes('0 BB'))
-  assert.ok(html.includes('0 H'))
-  assert.ok(html.includes('0 R'))
+  assert.ok(html.includes('0 pitches'))
 })
 
 test('game context remains fail-closed on reconciliation and starter authority', () => {
@@ -326,7 +340,8 @@ test('responsive structure uses records below 768 and a sticky shared header at 
   assert.equal(source.includes('sticky bg-surface-raised'), false)
   assert.equal(source.includes('overflow-x'), false)
   assert.ok(source.includes('min-h-16'))
-  assert.ok(source.includes("onSelectPitcher(pitcherId, event.currentTarget)"))
+  assert.ok(source.includes('href={`/pitcher/${pitcherId}`}'))
+  assert.ok(source.includes('onSelectPitcher(pitcherId)'))
   assert.ok(source.includes("hidden min-w-52 py-row pl-panel type-metadata lg:table-cell"))
 })
 

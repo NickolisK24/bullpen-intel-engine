@@ -21,6 +21,7 @@ import {
   readTeamBoardFrozenRotationGames,
   readTeamBoardFrozenRosterTransactions,
   readTeamBoardFrozenWhatChanged,
+  readTeamBoardFrozenRecentReliefWork,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -130,6 +131,59 @@ const identity = {
   rotation_impact_method_version: 'rotation_support_pressure_v1',
 }
 
+const frozenRecentReliefWork = {
+  contract: 'team_board_recent_relief_work_v1',
+  method_version: 'team_board_recent_relief_work_v1',
+  team_board_package_contract: 'trusted_team_board_publication_v1',
+  team_id: identity.team_id,
+  data_through: identity.represented_date,
+  population_basis: 'official_final_appearance_team_relief_appearances',
+  window: { lookback_days: 30, start: '2026-07-18', through: identity.represented_date, display_latest_game_dates: 5 },
+  status: 'complete', reason_code: null, limitations: [],
+  games: [{
+    mlb_game_pk: 801, game_date: '2026-08-15', game_number: 1,
+    finality: { status: 'complete', game_status: 'final', reason_codes: [] },
+    evidence_status: 'complete', relief_appearances: 1,
+    outs_total: 3, innings: '1.0', pitches_total: 14,
+    appearances: [{
+      pitcher_id: 7, pitcher_mlb_id: 700007, pitcher_full_name: 'Exact Source Name',
+      appearance_team_id: identity.team_id, mlb_game_pk: 801, game_date: '2026-08-15',
+      current_roster: { active: true, status: 'active' }, innings: '1.0',
+      outs: { value: 3, status: 'complete', reason_codes: [] },
+      pitches: { value: 14, status: 'complete', reason_codes: [] },
+      multi_inning: { value: false, status: 'complete', reason_codes: [] },
+      save: { value: true, status: 'complete', reason_codes: [] },
+      hold: { value: false, status: 'complete', reason_codes: [] },
+      game_finished: { value: true, status: 'complete', reason_codes: [] },
+    }],
+  }],
+  relief_by_date: [{
+    game_date: '2026-08-15', relief_appearances: 1, outs_total: 3,
+    pitches_total: 14, appearances_with_pitches: 1, game_pks: [801],
+    game_count: 1, sentence: '2026-08-15 — 1 relief appearance, 1.0 IP, 14 pitches.',
+    games: [{
+      mlb_game_pk: 801, game_number: 1, opponent: null,
+      opponent_abbreviation: null, home_away: null,
+      finality: { status: 'complete', game_status: 'final', reason_codes: [] },
+    }],
+    appearances: [{
+      pitcher_id: 7, pitcher_mlb_id: 700007, pitcher_full_name: 'Exact Source Name',
+      roster_status_sentence: 'On the active roster per frozen MLB roster authority.',
+      mlb_game_pk: 801, appearance_team_id: identity.team_id,
+      game_date: '2026-08-15', innings_pitched: '1.0', innings_pitched_outs: 3,
+      pitches_thrown: 14,
+      multi_inning: { value: false, status: 'complete', reason_codes: [] },
+      save: { value: true, status: 'complete', reason_codes: [] },
+      hold: { value: false, status: 'complete', reason_codes: [] },
+      game_finished: { value: true, status: 'complete', reason_codes: [] },
+    }],
+  }], game_count: 1, appearance_count: 1,
+  capabilities: {
+    entry_context: { status: 'unavailable', reason_code: 'not_published' },
+    leverage_context: { status: 'unavailable', reason_code: 'not_published' },
+  },
+}
+
 const corePayload = {
   ...payload,
   capability: TEAM_BOARD_CORE_CAPABILITY,
@@ -210,7 +264,7 @@ const detailsPayload = {
   workload_overview: payload.workload_overview,
   roles_deployment: payload.roles_deployment,
   recent_transactions: payload.recent_transactions,
-  recent_relief_work: payload.recent_relief_work,
+  recent_relief_work: { read: frozenRecentReliefWork },
   game_context: payload.game_context,
   performance: {
     capability: 'public_team_performance', contract_version: 'public_team_performance_v1', status: 'available',
@@ -281,6 +335,7 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(attached.whatChanged.events[0].summary, frozenWhatChanged.events[0].summary)
   assert.equal(attached.recentUsageRest.activePitchers[0].windows[0].label, 'Yesterday')
   assert.equal(attached.recentUsageRest.activePitchers[0].highPitchOuting.value, true)
+  assert.equal(attached.recentReliefWork.read.games[0].appearances[0].pitches.value, 14)
 
   const mismatched = readTeamBoardDelivery(corePayload, {
     ...detailsPayload,
@@ -292,6 +347,30 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(mismatched.whatChanged, null)
   assert.equal(mismatched.recentUsageRest, null)
   assert.equal(mismatched.teamState, payload.team_state)
+})
+
+test('TB-10 attaches only the frozen final team-owned ledger for the exact core identity', () => {
+  const attached = readTeamBoardDelivery(corePayload, detailsPayload)
+  assert.equal(attached.frozenRecentReliefWorkRejected, false)
+  assert.equal(attached.recentReliefWork.read.games[0].finality.game_status, 'final')
+  assert.equal(attached.recentReliefWork.read.games[0].appearances[0].appearance_team_id, identity.team_id)
+
+  for (const altered of [
+    { team_id: 2 },
+    { data_through: '2026-08-15' },
+    { games: [{ ...frozenRecentReliefWork.games[0], finality: { status: 'unknown', game_status: null, reason_codes: ['finality_unknown'] } }] },
+    { games: [{ ...frozenRecentReliefWork.games[0], appearances: [{ ...frozenRecentReliefWork.games[0].appearances[0], appearance_team_id: 2 }] }] },
+    { relief_by_date: [{ ...frozenRecentReliefWork.relief_by_date[0], appearances: [{ ...frozenRecentReliefWork.relief_by_date[0].appearances[0], pitches_thrown: 999 }] }] },
+  ]) {
+    const stale = readTeamBoardDelivery(corePayload, {
+      ...detailsPayload,
+      recent_relief_work: { read: { ...frozenRecentReliefWork, ...altered } },
+    })
+    assert.equal(stale.recentReliefWork, null)
+    assert.equal(stale.frozenRecentReliefWorkRejected, true)
+    assert.equal(stale.teamState, corePayload.team_state)
+  }
+  assert.equal(readTeamBoardFrozenRecentReliefWork(frozenRecentReliefWork, null), null)
 })
 
 test('TB-09 carrier attaches only to its exact current snapshot, predecessor receipt, and team', () => {

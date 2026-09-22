@@ -269,14 +269,23 @@ def _relief_work_status(relief_work, error, represented_date):
         return deepcopy(error)
     if not isinstance(relief_work, dict):
         return unavailable_section('recent_relief_work_unavailable')
+    carrier_status = relief_work.get('status')
+    if carrier_status == STATUS_UNAVAILABLE:
+        return _section_status(
+            STATUS_UNAVAILABLE,
+            reason_code=relief_work.get('reason_code') or 'recent_relief_work_unavailable',
+            limitations=relief_work.get('limitations') or [],
+            represented_date=relief_work.get('data_through') or represented_date,
+        )
     groups = relief_work.get('relief_by_date') or []
-    partial = bool(relief_work.get('unattributed_appearance_count')) or any(
+    partial = carrier_status == STATUS_PARTIAL or bool(relief_work.get('unattributed_appearance_count')) or any(
         group.get('available') is False or group.get('unavailable') is True
         for group in groups if isinstance(group, dict)
     )
     return _section_status(
         STATUS_PARTIAL if partial else STATUS_AVAILABLE,
         reason_code='relief_work_reconciliation_limited' if partial else None,
+        limitations=relief_work.get('limitations') or [],
         represented_date=relief_work.get('data_through') or represented_date,
     )
 
@@ -790,6 +799,7 @@ def build_team_board_v2_payload(
     board,
     *,
     recent_relief_work=None,
+    legacy_relief_work=None,
     recent_transactions=None,
     game_context=None,
     performance=None,
@@ -811,6 +821,16 @@ def build_team_board_v2_payload(
     )
     arms = _active_arms(board)
     relief_work = deepcopy(recent_relief_work) if isinstance(recent_relief_work, dict) else None
+    support_relief_work = (
+        relief_work
+        if relief_work is not None
+        else deepcopy(legacy_relief_work) if isinstance(legacy_relief_work, dict) else None
+    )
+    workload_relief_work = (
+        deepcopy(legacy_relief_work)
+        if isinstance(legacy_relief_work, dict)
+        else support_relief_work
+    )
     roles_deployment = _roles_deployment(
         arms, represented_date, board.get('frozen_roles_deployment'),
         board.get('frozen_legacy_deployment_profile'),
@@ -821,7 +841,7 @@ def build_team_board_v2_payload(
     active_status = _active_status(board, represented_date)
     recently_used_arms = _recently_used_arms(
         arms,
-        relief_work,
+        support_relief_work,
         active_status,
         errors.get('recent_relief_work'),
         represented_date,
@@ -842,7 +862,7 @@ def build_team_board_v2_payload(
             represented_date=represented_date,
         ),
         'recent_usage': _recent_usage_status(
-            relief_work,
+            support_relief_work,
             errors.get('recent_relief_work'),
             represented_date,
         ),
@@ -860,7 +880,7 @@ def build_team_board_v2_payload(
         ),
         'workload_overview': _workload_overview_status(
             board,
-            relief_work,
+            workload_relief_work,
             errors.get('recent_relief_work'),
             represented_date,
         ),
@@ -901,11 +921,11 @@ def build_team_board_v2_payload(
             'arms': arms,
         },
         'rest_status': deepcopy(board.get('rest_status') or {}),
-        'recent_usage': _recent_usage(relief_work),
+        'recent_usage': _recent_usage(support_relief_work),
         'recent_usage_rest': deepcopy(board.get('recent_usage_rest')),
         'recently_used_arms': recently_used_arms,
         'off_active_count': off_active_count,
-        'workload_overview': _workload_overview(board, relief_work),
+        'workload_overview': _workload_overview(board, workload_relief_work),
         'roles_deployment': roles_deployment,
         'rotation_impact': {
             'population_basis': ROTATION_IMPACT_POPULATION_BASIS,
@@ -982,6 +1002,7 @@ def build_team_board_details_payload(
     *,
     publication_identity,
     recent_relief_work=None,
+    legacy_relief_work=None,
     recent_transactions=None,
     game_context=None,
     performance=None,
@@ -992,6 +1013,7 @@ def build_team_board_details_payload(
     full = build_team_board_v2_payload(
         board,
         recent_relief_work=recent_relief_work,
+        legacy_relief_work=legacy_relief_work,
         recent_transactions=recent_transactions,
         game_context=game_context,
         performance=performance,

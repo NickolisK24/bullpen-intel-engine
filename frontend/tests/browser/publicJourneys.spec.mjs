@@ -94,6 +94,20 @@ function teamBoardFixtureFor(teamId) {
   changed.events[0].subject_id = pitcherId
   changed.events[0].facts.pitcher_name = pitcherName
   changed.events[0].summary = `${pitcherName} joined the active bullpen.`
+  const relief = details.recent_relief_work.read
+  relief.team_id = team.team_id
+  relief.games[0].appearances[0].pitcher_id = pitcherId
+  relief.games[0].appearances[0].pitcher_full_name = pitcherName
+  relief.games[0].appearances[0].appearance_team_id = team.team_id
+  relief.games[0].appearances[1].pitcher_id = offActiveId
+  relief.games[0].appearances[1].pitcher_full_name = offActiveName
+  relief.games[0].appearances[1].appearance_team_id = team.team_id
+  relief.relief_by_date[0].appearances[0].pitcher_id = pitcherId
+  relief.relief_by_date[0].appearances[0].pitcher_full_name = pitcherName
+  relief.relief_by_date[0].appearances[0].appearance_team_id = team.team_id
+  relief.relief_by_date[0].appearances[1].pitcher_id = offActiveId
+  relief.relief_by_date[0].appearances[1].pitcher_full_name = offActiveName
+  relief.relief_by_date[0].appearances[1].appearance_team_id = team.team_id
   return { core, details, pitcherName }
 }
 
@@ -714,6 +728,58 @@ test('TB-09 local fixture readiness remains deferred and adds a bounded render i
   expect(responses.core).toBeDefined()
   expect(responses.details).toBeDefined()
   console.log(`TB-09 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responses.details - start)}ms changed-ready=${Math.round(changedReady - start)}ms details-to-changed=${Math.round(changedReady - responses.details)}ms`)
+})
+
+test('TB-10 frozen relief ledger stays readable, accessible, and team-scoped at product widths', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-recent-relief-work')
+      await expect(section).toContainText(`${abbreviation} Fixture Reliever`)
+      await expect(section).toContainText(`${abbreviation} Former Reliever`)
+      if (width < 768) {
+        await expect(section).toContainText('18 pitches')
+        await expect(section).toContainText('27 pitches')
+      } else {
+        await expect(section.getByRole('cell', { name: '18', exact: true })).toBeVisible()
+        await expect(section.getByRole('cell', { name: '27', exact: true })).toBeVisible()
+      }
+      await expect(section).toContainText('Multi-inning')
+      await expect(section).toContainText('Covers official final relief appearances made for this team.')
+      await expect(section.getByRole('link', { name: `${abbreviation} Fixture Reliever` })).toHaveAttribute('href', /\/pitcher\/\d+$/)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    }
+  }
+
+  await page.goto('/bullpen?team=BAL')
+  const section = page.getByTestId('team-board-recent-relief-work')
+  await expect(section).toContainText('BAL Fixture Reliever')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(section).toContainText('LAD Fixture Reliever')
+  await expect(section).not.toContainText('BAL Fixture Reliever')
+  const accessibility = await new AxeBuilder({ page }).include('[data-testid="team-board-recent-relief-work"]').analyze()
+  expect(accessibility.violations).toEqual([])
+})
+
+test('TB-10 local fixture readiness remains deferred with a bounded render interval', async ({ page }) => {
+  await installApiFixtures(page)
+  const responses = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responses.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responses.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-recent-relief-work')).toContainText('BAL Fixture Reliever')
+  const ledgerReady = performance.now()
+  expect(responses.core).toBeDefined()
+  expect(responses.details).toBeDefined()
+  console.log(`TB-10 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responses.details - start)}ms ledger-ready=${Math.round(ledgerReady - start)}ms details-to-ledger=${Math.round(ledgerReady - responses.details)}ms`)
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {

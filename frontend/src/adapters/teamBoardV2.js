@@ -11,6 +11,7 @@ export const TEAM_BOARD_PERFORMANCE_CONTRACT = 'public_team_performance_v1'
 export const TEAM_BOARD_ROTATION_GAMES_CONTRACT = 'team_board_recent_rotation_games_v1'
 export const TEAM_BOARD_ROSTER_TRANSACTIONS_CONTRACT = 'team_board_roster_transactions_v1'
 export const TEAM_BOARD_WHAT_CHANGED_CONTRACT = 'team_board_what_changed_v1'
+export const TEAM_BOARD_RECENT_RELIEF_WORK_CONTRACT = 'team_board_recent_relief_work_v1'
 
 const whatChangedDomains = new Set([
   'team_state', 'roster', 'workload_rest', 'transactions', 'rotation',
@@ -77,6 +78,84 @@ const workloadMetricKeys = ['pitches', 'appearances', 'outs']
 
 const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
 const baseballInnings = value => typeof value === 'string' && /^\d+\.[012]$/.test(value)
+
+function readReliefFact(fact, { boolean = false } = {}) {
+  if (!fact || !recentUsageRestStates.has(fact.status) || !Array.isArray(fact.reason_codes)) return null
+  if (fact.status === 'complete') {
+    if (boolean ? typeof fact.value !== 'boolean' : !nonnegativeCount(fact.value)) return null
+  } else if (fact.value !== null) return null
+  return fact
+}
+
+function reliefCompatibilityViewMatches(carrier) {
+  const authoritative = new Map()
+  for (const game of carrier.games) {
+    for (const appearance of game.appearances) {
+      const key = `${game.mlb_game_pk}:${appearance.pitcher_id}`
+      if (authoritative.has(key)) return false
+      authoritative.set(key, appearance)
+    }
+  }
+  const seen = new Set()
+  for (const group of carrier.relief_by_date) {
+    if (!group || typeof group.game_date !== 'string'
+      || !Array.isArray(group.games) || !Array.isArray(group.appearances)) return false
+    for (const appearance of group.appearances) {
+      const key = `${appearance?.mlb_game_pk}:${appearance?.pitcher_id}`
+      const source = authoritative.get(key)
+      if (!source || seen.has(key)
+        || appearance.game_date !== group.game_date
+        || appearance.appearance_team_id !== carrier.team_id
+        || appearance.innings_pitched_outs !== source.outs.value
+        || appearance.pitches_thrown !== source.pitches.value
+        || appearance.multi_inning?.value !== source.multi_inning.value
+        || appearance.save?.value !== source.save.value
+        || appearance.hold?.value !== source.hold.value
+        || appearance.game_finished?.value !== source.game_finished.value) return false
+      seen.add(key)
+    }
+  }
+  return seen.size === authoritative.size
+}
+
+export function readTeamBoardFrozenRecentReliefWork(carrier, publicationIdentity) {
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_RECENT_RELIEF_WORK_CONTRACT
+    || carrier.method_version !== TEAM_BOARD_RECENT_RELIEF_WORK_CONTRACT
+    || !publicationIdentity || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || carrier.team_id !== publicationIdentity.team_id
+    || carrier.data_through !== publicationIdentity.represented_date
+    || !['complete', 'partial', 'unavailable'].includes(carrier.status)
+    || !Array.isArray(carrier.limitations)
+    || !Array.isArray(carrier.games)
+    || !Array.isArray(carrier.relief_by_date)
+    || new Set(carrier.games.map(game => game?.game_date)).size > 5
+    || !reliefCompatibilityViewMatches(carrier)) return null
+
+  for (const game of carrier.games) {
+    if (!nonnegativeCount(game?.mlb_game_pk)
+      || typeof game.game_date !== 'string' || game.game_date > carrier.data_through
+      || game.finality?.status !== 'complete' || game.finality?.game_status !== 'final'
+      || !recentUsageRestStates.has(game.evidence_status)
+      || !Array.isArray(game.appearances)) return null
+    for (const appearance of game.appearances) {
+      if (!nonnegativeCount(appearance?.pitcher_id)
+        || appearance.appearance_team_id !== carrier.team_id
+        || appearance.mlb_game_pk !== game.mlb_game_pk
+        || appearance.game_date !== game.game_date
+        || !readReliefFact(appearance.outs)
+        || !readReliefFact(appearance.pitches)
+        || !readReliefFact(appearance.multi_inning, { boolean: true })
+        || !readReliefFact(appearance.save, { boolean: true })
+        || !readReliefFact(appearance.hold, { boolean: true })
+        || !readReliefFact(appearance.game_finished, { boolean: true })) return null
+    }
+  }
+  return {
+    population_basis: carrier.population_basis,
+    read: carrier,
+  }
+}
 
 function readCurrentRosterStatus(source) {
   if (!source || !recentUsageRestStates.has(source.status)
@@ -528,7 +607,9 @@ export function readTeamBoardV2(payload) {
       payload.active_bullpen.arms.map(arm => arm.pitcher_id),
     ),
     rosterContext: payload.roster_context,
-    recentReliefWork: payload.recent_relief_work,
+    recentReliefWork: readTeamBoardFrozenRecentReliefWork(
+      payload.recent_relief_work?.read, payload.publication_identity,
+    ),
     gameContext: payload.game_context,
     performance: payload.performance,
     whatChanged: readTeamBoardFrozenWhatChanged(payload.what_changed, payload.publication_identity),
@@ -594,6 +675,11 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
   const frozenWhatChanged = detailsValid
     ? readTeamBoardFrozenWhatChanged(details.what_changed, corePayload.publication_identity)
     : null
+  const frozenRecentReliefWork = detailsValid
+    ? readTeamBoardFrozenRecentReliefWork(
+        details.recent_relief_work?.read, corePayload.publication_identity,
+      )
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -617,7 +703,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenRotationGames,
     recentTransactions: frozenRosterTransactions,
     rosterContext: corePayload.roster_context,
-    recentReliefWork: details.recent_relief_work || null,
+    recentReliefWork: frozenRecentReliefWork,
     gameContext: details.game_context || null,
     performance: frozenPerformance,
     frozenPerformance,
@@ -636,6 +722,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenRotationGamesRejected: Boolean(details.rotation_impact?.frozen_recent_games) && !frozenRotationGames,
     frozenRosterTransactionsRejected: Boolean(details.recent_transactions) && !frozenRosterTransactions,
     frozenWhatChangedRejected: Boolean(details.what_changed) && !frozenWhatChanged,
+    frozenRecentReliefWorkRejected: Boolean(details.recent_relief_work?.read) && !frozenRecentReliefWork,
     limitations: corePayload.limitations,
   }
 }
