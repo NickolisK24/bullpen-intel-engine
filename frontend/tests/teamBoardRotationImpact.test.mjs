@@ -93,6 +93,29 @@ test('Rotation Impact omits unknown metrics without converting them to zero', ()
   assert.equal(html.includes('Short starts'), false)
 })
 
+test('TB-07 renders frozen recent starts without classifying them in the browser', async () => {
+  const html = renderRotation({ read: {
+    ...read,
+    frozenRotationGames: {
+      dataThrough: '2026-08-16', status: 'partial', gamesExcluded: 1,
+      starts: [
+        { gameId: 55, date: '2026-08-15', starterName: 'Source Starter', starterInnings: 4.2, bullpenInnings: 4.1, shortStart: true },
+        { gameId: 54, date: '2026-08-14', starterName: null, starterInnings: 6, bullpenInnings: 3, shortStart: false },
+      ],
+    },
+  } })
+  assert.ok(html.includes('Source Starter'))
+  assert.ok(html.includes('Starter 4.2 IP · Bullpen 4.1 IP'))
+  assert.ok(html.includes('Short start: fewer than 5 starter innings'))
+  assert.ok(html.includes('Starter name unavailable'))
+  assert.ok(html.includes('1 recent team game lacks a complete'))
+  const source = await readFile(new URL('../src/components/bullpen/board/TeamBoardRotationImpact.jsx', import.meta.url), 'utf8')
+  assert.equal(source.includes('starterOuts <'), false)
+  assert.equal(source.includes('bullpenOuts +'), false)
+  assert.equal(source.includes('.reduce('), false)
+  assert.equal(source.includes('will pitch'), false)
+})
+
 test('Rotation Impact keeps normal governed context visible and uses no browser threshold', async () => {
   const html = renderRotation({ read })
   const source = await readFile(new URL('../src/components/bullpen/board/TeamBoardRotationImpact.jsx', import.meta.url), 'utf8')

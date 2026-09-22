@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 import services.sync as sync_service
 from models.game_log import GameLog
@@ -19,6 +20,7 @@ from services.rotation_support_pressure import (
     STATUS_LIMITED,
     STATUS_SUPPORTIVE,
     build_team_rotation_support_pressure_from_splits,
+    frozen_recent_rotation_games_by_team,
     recent_team_game_splits,
 )
 from services.roster_status import STATUS_MINORS
@@ -155,6 +157,7 @@ def _payload(team_id=TEAM_A):
             'team_abbreviation': f'T{team_id}',
         },
         reference_date=REF,
+        include_recent_games=True,
     )
 
 
@@ -279,6 +282,60 @@ def test_short_start_definition_is_fewer_than_fifteen_outs(app):
         assert payload['short_start_rate'] == 0.33
         assert payload['thresholds']['short_start_outs'] == 15
         assert payload['thresholds']['short_start_max_outs'] == 14
+        recent = payload['recent_games']
+        assert recent['contract'] == 'team_board_recent_rotation_games_v1'
+        assert recent['team_id'] == TEAM_A
+        assert recent['data_through'] == REF.isoformat()
+        assert recent['status'] == 'complete'
+        assert [game['mlb_game_pk'] for game in recent['starts']] == [8401, 8402, 8403]
+        assert [game['short_start'] for game in recent['starts']] == [True, False, False]
+        assert recent['starts'][0]['starter_outs'] == 14
+        assert recent['starts'][0]['bullpen_outs'] == 13
+
+
+def test_recent_game_carrier_withholds_missing_splits_without_zero_or_false(app):
+    with app.app_context():
+        starter = _pitcher('Known Starter', 9040, TEAM_A)
+        _scheduled_game(8501, 1)
+        _split(8501, 1, starter_pitcher=starter, starter_outs=18, bullpen_outs=9)
+        _scheduled_game(8502, 2)
+        db.session.commit()
+
+        recent = _payload()['recent_games']
+        assert recent['status'] == 'partial'
+        assert recent['games_in_window'] == 2
+        assert recent['games_excluded'] == 1
+        assert len(recent['starts']) == 1
+        assert recent['starts'][0]['mlb_game_pk'] == 8501
+        assert all(game['mlb_game_pk'] != 8502 for game in recent['starts'])
+
+
+def test_frozen_recent_games_use_final_team_ownership_and_three_league_queries(app):
+    with app.app_context():
+        traded_starter = _pitcher('Traded Starter', 9050, TEAM_B)
+        _scheduled_game(8601, 1, team_id=TEAM_A)
+        _split(8601, 1, team_id=TEAM_A, starter_pitcher=traded_starter,
+               starter_outs=18, bullpen_outs=9)
+        _split(8602, 1, team_id=TEAM_B, starter_pitcher=traded_starter,
+               starter_outs=18, bullpen_outs=9)
+        db.session.commit()
+        statements = []
+        def count(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().lower().startswith('select'):
+                statements.append(statement)
+        event.listen(db.engine, 'before_cursor_execute', count)
+        try:
+            carriers = frozen_recent_rotation_games_by_team(
+                [TEAM_A, TEAM_B], represented_date=REF,
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', count)
+        assert len(statements) == 3
+        assert carriers[TEAM_A]['starts'][0]['starter_name'] == 'Traded Starter'
+        assert carriers[TEAM_A]['starts'][0]['starter_outs'] == 18
+        assert carriers[TEAM_A]['starts'][0]['bullpen_outs'] == 9
+        assert carriers[TEAM_B]['status'] == 'unknown'
+        assert carriers[TEAM_B]['starts'] == []
 
 
 def test_inclusive_window_keeps_distinct_team_games_and_integer_outs(app):

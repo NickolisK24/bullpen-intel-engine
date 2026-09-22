@@ -77,6 +77,7 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
   const handoffTarget = textValue(handoff?.target)
   const handoffSummary = textValue(handoff?.summary)
   const receiptGames = Array.isArray(handoff?.games) ? handoff.games : []
+  const frozenGames = read?.frozenRotationGames
   const hasFacts = Boolean(summary || metrics.length > 0)
 
   return (
@@ -110,6 +111,39 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
                 </div>
               ))}
             </dl>
+          )}
+
+          {frozenGames && (
+            <div className="mt-panel border-t border-line-subtle pt-panel" data-testid="rotation-recent-starts">
+              <h3 className="type-compact font-semibold text-text-primary">Recent starts</h3>
+              <p className="type-metadata mt-meta text-text-tertiary">
+                Completed regular-season team games in the seven baseball days through {frozenGames.dataThrough}.
+              </p>
+              {frozenGames.starts.length > 0 ? (
+                <ol className="mt-panel grid gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle tablet:grid-cols-2">
+                  {frozenGames.starts.map(game => (
+                    <li key={game.gameId} className="min-w-0 bg-surface-base p-panel">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-panel gap-y-meta">
+                        <span className="font-board font-semibold text-text-primary">{game.starterName || 'Starter name unavailable'}</span>
+                        <time className="type-metadata text-text-tertiary" dateTime={game.date}>{game.date}</time>
+                      </div>
+                      <p className="type-compact mt-meta text-text-secondary">
+                        Starter {game.starterInnings == null ? 'unknown' : `${game.starterInnings} IP`} · Bullpen {game.bullpenInnings == null ? 'unknown' : `${game.bullpenInnings} IP`}
+                      </p>
+                      {game.shortStart && <p className="type-metadata mt-meta text-text-tertiary">Short start: fewer than 5 starter innings</p>}
+                      {['starterEvidence', 'bullpenEvidence', 'shortStartEvidence'].some(key => game[key]?.status !== 'complete') && (
+                        <p className="type-metadata mt-meta text-text-tertiary">Some game-level rotation evidence is incomplete.</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className="type-metadata mt-meta text-text-tertiary">No complete rotation starts in this window.</p>}
+              {frozenGames.status !== 'complete' && (
+                <p className="type-metadata mt-panel text-text-tertiary" role="status">
+                  {frozenGames.gamesExcluded} recent team {frozenGames.gamesExcluded === 1 ? 'game lacks' : 'games lack'} a complete starter/bullpen split; shown starts remain factual.
+                </p>
+              )}
+            </div>
           )}
 
           {(windowDays != null || representedDate || gamesAnalyzed != null || gamesInWindow != null) && (

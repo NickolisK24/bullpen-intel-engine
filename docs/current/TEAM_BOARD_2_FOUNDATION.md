@@ -382,6 +382,51 @@ latency or an isolated React render profile. The frozen carrier adds no request-
 performance query. Uncertified source completeness for the three deferred
 capabilities is the known TB-06 v1 limitation.
 
+## TB-07 recent rotation impact
+
+The existing `rotation_support_pressure_v1` read governs the rotation-start
+population, short-start rule, and aggregate context. TB-07 adds only the
+game-level facts needed to explain that context: the official starter's name
+where resolvable, starter outs/innings, and team bullpen outs/innings for
+completed regular-season team games. A short start is the existing public
+classifier's fewer-than-15 recorded starter outs (before five innings); an
+opener/bulk or bullpen game is not relabeled as a rotation start. The window
+is seven inclusive baseball dates, `[data_through - 6, data_through]`, not
+the availability reference date used by the older aggregate summary.
+
+`trusted_team_boards.by_team_id[team].frozen_rotation_impact` is authored
+during candidate publication from the stored team-game pitching splits and
+scheduled-final team-game identities. Starter names are resolved in one
+league-wide set query. Team-at-game ownership does not follow a starter's
+current team, so a traded starter's historical start remains with the club
+for which it occurred. Two source queries plus one name query cover the normal
+30-team complete-split path; ambiguous game shapes may require the existing
+classifier's verification read. No request-time source query or migration is added. The new read is
+available only in Team Board details and attaches through the existing exact
+core/details identity fence plus carrier team and represented-date checks.
+Older snapshots lack the carrier and cannot synthesize it from current rows.
+
+Each displayed start carries independent starter-length, bullpen-work, and
+short-start evidence states. Only classified complete facts are displayed;
+missing or ambiguous splits are counted as excluded and make the window
+partial. Without scheduled-final game evidence, the window is unknown and
+no split-only game is presented as final. Missing outs never display as zero
+or as a negative short-start claim. The section keeps the prior compact
+aggregate and adds a small, text-first recent-start list. It does not infer
+causation, predict usage, or repeat TB-04's 3/7/14/30 workload windows.
+Names and game facts remain readable at 390, 768, and 1440 pixels without
+horizontal scrolling; the layout uses semantic list and time elements.
+
+The local disposable 30-team publication rehearsal measured 3 TB-07 source
+queries, 2.624 ms for carrier composition, 0.055 ms serialization, and 9,203
+serialized bytes across all teams in its sparse fixture. These are fixture
+measurements, not production latency. Its candidate never moved a pointer.
+The local browser fixture measured 234 ms to core readiness, 217 ms to details
+response, and 248 ms to TB-07 readiness (31 ms after details); these are not
+production measurements or an isolated React render profile. Incomplete
+team-game split coverage, unavailable starter names, and the legacy aggregate's
+different reference-date anchor remain explicit limitations.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

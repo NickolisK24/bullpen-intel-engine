@@ -87,7 +87,9 @@ from services.rotation_support_pressure import (
     POPULATION_BASIS as ROTATION_IMPACT_POPULATION_BASIS,
     PUBLIC_CONTRACT_VERSION as ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION,
     REFERENCE_DATE_POLICY as ROTATION_IMPACT_REFERENCE_DATE_POLICY,
+    RECENT_GAMES_CONTRACT as ROTATION_GAMES_CONTRACT,
     VERSION as ROTATION_IMPACT_METHOD_VERSION,
+    frozen_recent_rotation_games_by_team,
 )
 from services.published_team_state import project_published_team_state_artifact
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
@@ -371,6 +373,10 @@ def build_frozen_team_board_package(dashboard_payload):
     workload_coverage = extend_team_workload_coverage(
         represented_data_through, recent_usage_rest_coverage,
     )
+    rotation_game_carriers = frozen_recent_rotation_games_by_team(
+        records_by_team,
+        represented_date=parse_reference_date(represented_data_through),
+    )
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -568,6 +574,12 @@ def build_frozen_team_board_package(dashboard_payload):
             },
             'capacity_intelligence': _support_for_team(payload, 'capacity_intelligence', team_id),
             'rotation_support_pressure': deepcopy(rotation_support_pressure),
+            'frozen_rotation_impact': deepcopy(rotation_game_carriers.get(team_id)),
+            'frozen_rotation_impact_authority': {
+                'method_version': ROTATION_GAMES_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': represented_data_through,
+            },
             'rotation_support_pressure_authority': {
                 'method_version': ROTATION_IMPACT_METHOD_VERSION,
                 'public_contract_version': (
@@ -911,6 +923,27 @@ def _frozen_workload_overview_for_view(snapshot, team_package):
     return deepcopy(overview)
 
 
+def _frozen_rotation_impact_for_view(snapshot, team_package, team_id):
+    """Attach only the game-level read frozen in this trusted team package."""
+    carrier = team_package.get('frozen_rotation_impact')
+    authority = team_package.get('frozen_rotation_impact_authority')
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    if (
+        not isinstance(carrier, Mapping)
+        or not isinstance(authority, Mapping)
+        or carrier.get('contract') != ROTATION_GAMES_CONTRACT
+        or carrier.get('team_id') != team_id
+        or carrier.get('data_through') != represented
+        or carrier.get('window_days') != 7
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('method_version') != ROTATION_GAMES_CONTRACT
+        or authority.get('data_through') != represented
+        or not isinstance(carrier.get('starts'), list)
+    ):
+        return None
+    return deepcopy(carrier)
+
+
 def _frozen_roles_deployment_for_view(snapshot, team_package, team_id):
     """Reject a missing or mismatched TB-05 carrier without affecting other sections."""
     carrier = team_package.get('roles_deployment')
@@ -1068,6 +1101,9 @@ def build_published_team_board(
             snapshot, team_package, team_id,
         )
         payload['frozen_performance'] = _frozen_performance_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_rotation_impact'] = _frozen_rotation_impact_for_view(
             snapshot, team_package, team_id,
         )
         payload['frozen_legacy_deployment_profile'] = (

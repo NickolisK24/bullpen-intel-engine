@@ -34,6 +34,7 @@ LEAGUE_CAPABILITY = 'league_rotation_support_pressure_v1'
 VERSION = '2026-06-18.phase2'
 PUBLIC_CONTRACT_VERSION = 'rotation_support_pressure_public_v1'
 DELTA_CARRIER_CONTRACT = 'team_board_rotation_impact_carrier_v1'
+RECENT_GAMES_CONTRACT = 'team_board_recent_rotation_games_v1'
 POPULATION_BASIS = 'official_scheduled_final_team_games_with_team_game_pitching_splits'
 POPULATION_AUTHORITY = 'scheduled_games_team_game_identity'
 MEMBERSHIP_AUTHORITY = 'team_game_pitching_splits_team_at_game'
@@ -866,6 +867,7 @@ def build_team_rotation_support_pressure_from_splits(
     team=None,
     reference_date=None,
     window_days=DEFAULT_WINDOW_DAYS,
+    include_recent_games=False,
 ):
     """Build public starter-exposure context from stored team-game split rows."""
     parts = _split_window_parts(split_window)
@@ -901,6 +903,7 @@ def build_team_rotation_support_pressure_from_splits(
         item['mlb_game_pk'] = int(game_pk)
         game_date = _date_value(_value(split, 'game_date'))
         item['game_date'] = game_date.isoformat() if game_date else None
+        item['starter_pitcher_id'] = _value(split, 'starter_pitcher_id')
         shape_counts[item['shape']] += 1
         kind = item['kind']
         if kind == KIND_ROTATION_START:
@@ -1011,6 +1014,36 @@ def build_team_rotation_support_pressure_from_splits(
                 for game in rotation_games
             ],
         },
+        **({'recent_games': {
+            'contract': RECENT_GAMES_CONTRACT,
+            'team_id': _team_identity(team)['team_id'],
+            'data_through': ref.isoformat() if ref else None,
+            'window_start': window_start.isoformat() if window_start else None,
+            'window_days': int(window_days or DEFAULT_WINDOW_DAYS),
+            'status': 'complete' if not limitation_reasons else 'partial',
+            'reason_codes': list(limitation_reasons),
+            'games_in_window': games_in_window,
+            'games_excluded': games_excluded,
+            'starts': [
+                {
+                    'mlb_game_pk': game['mlb_game_pk'],
+                    'game_date': game['game_date'],
+                    'starter_pitcher_id': game['starter_pitcher_id'],
+                    'starter_name': None,
+                    'starter_outs': game['starter_outs'],
+                    'starter_innings': _round_innings(game['starter_outs'], 1),
+                    'starter_evidence': {'status': 'complete', 'reason_codes': []},
+                    'bullpen_outs': game['bullpen_outs_required'],
+                    'bullpen_innings': _round_innings(game['bullpen_outs_required'], 1),
+                    'bullpen_evidence': {'status': 'complete', 'reason_codes': []},
+                    'short_start': game['short_start'],
+                    'short_start_evidence': {'status': 'complete', 'reason_codes': []},
+                    'status': 'complete',
+                    'reason_codes': [],
+                }
+                for game in reversed(rotation_games)
+            ],
+        }} if include_recent_games else {}),
         'summary': _summary(
             status,
             games_analyzed,
@@ -1038,6 +1071,88 @@ def build_league_rotation_support_payload(team_items):
     }
 
 
+def frozen_recent_rotation_games_by_team(team_ids, *, represented_date):
+    """Freeze seven-day game facts once for the represented Team Board date.
+
+    This uses the same scheduled-final/split population and classifier as the
+    existing public rotation read. Three set queries cover the normal league
+    window; ambiguous game-shape evidence may require the classifier's existing
+    bounded verification read. Serving never queries these source tables.
+    """
+    ids = sorted({int(team_id) for team_id in team_ids if team_id is not None})
+    if not ids or represented_date is None:
+        return {}
+    start, through = _window(represented_date)
+    schedules = (
+        ScheduledGame.query
+        .filter(ScheduledGame.team_id.in_(ids))
+        .filter(ScheduledGame.status_state == ScheduledGame.STATE_FINAL)
+        .filter(ScheduledGame.game_type == 'R')
+        .filter(ScheduledGame.game_date >= start, ScheduledGame.game_date <= through)
+        .order_by(ScheduledGame.team_id, ScheduledGame.game_date, ScheduledGame.game_pk)
+        .all()
+    )
+    splits = (
+        TeamGamePitchingSplit.query
+        .filter(TeamGamePitchingSplit.team_id.in_(ids))
+        .filter(TeamGamePitchingSplit.game_type == 'R')
+        .filter(TeamGamePitchingSplit.game_date >= start, TeamGamePitchingSplit.game_date <= through)
+        .order_by(TeamGamePitchingSplit.team_id, TeamGamePitchingSplit.game_date, TeamGamePitchingSplit.mlb_game_pk)
+        .all()
+    )
+    scheduled_by_team = defaultdict(list)
+    splits_by_team = defaultdict(list)
+    for game in schedules:
+        scheduled_by_team[game.team_id].append(game.game_pk)
+    for split in splits:
+        splits_by_team[split.team_id].append(split)
+    carriers = {}
+    for team_id in ids:
+        team_schedules = _ordered_unique(scheduled_by_team[team_id])
+        team_splits = splits_by_team[team_id]
+        if not team_schedules:
+            carriers[team_id] = {
+                'contract': RECENT_GAMES_CONTRACT,
+                'team_id': team_id,
+                'data_through': through.isoformat(),
+                'window_start': start.isoformat(),
+                'window_days': DEFAULT_WINDOW_DAYS,
+                'status': 'unknown',
+                'reason_codes': ['final_team_game_window_unavailable'],
+                'games_in_window': 0,
+                'games_excluded': 0,
+                'starts': [],
+            }
+            continue
+        read = build_team_rotation_support_pressure_from_splits(
+            {
+                'splits': team_splits,
+                'expected_game_pks': team_schedules,
+                'source_window_partial': False,
+                'expected_game_source': 'scheduled_final_team_games',
+                'scheduled_final_game_count': len(scheduled_by_team[team_id]),
+                'split_row_count': len(team_splits),
+            },
+            team={'team_id': team_id}, reference_date=represented_date,
+            include_recent_games=True,
+        )
+        carriers[team_id] = read['recent_games']
+    starter_ids = {
+        game['starter_pitcher_id']
+        for carrier in carriers.values()
+        for game in carrier['starts']
+        if game['starter_pitcher_id'] is not None
+    }
+    names = dict(
+        Pitcher.query.with_entities(Pitcher.id, Pitcher.full_name)
+        .filter(Pitcher.id.in_(starter_ids)).all()
+    ) if starter_ids else {}
+    for carrier in carriers.values():
+        for game in carrier['starts']:
+            game['starter_name'] = names.get(game['starter_pitcher_id'])
+    return carriers
+
+
 __all__ = [
     'CAPABILITY',
     'CURRENT_ASSIGNMENT_LIMITATION',
@@ -1059,6 +1174,7 @@ __all__ = [
     'POPULATION_AUTHORITY',
     'POPULATION_BASIS',
     'PUBLIC_CONTRACT_VERSION',
+    'RECENT_GAMES_CONTRACT',
     'REFERENCE_DATE_POLICY',
     'SOURCE_LIMITATIONS',
     'STATUS_HEAVY',
@@ -1069,6 +1185,7 @@ __all__ = [
     'UNKNOWN_SPLIT_LIMITATION',
     'VERSION',
     'build_league_rotation_support_payload',
+    'frozen_recent_rotation_games_by_team',
     'build_team_rotation_support_pressure',
     'build_team_rotation_support_pressure_from_splits',
     'recent_team_game_splits',

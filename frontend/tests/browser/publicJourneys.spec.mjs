@@ -65,6 +65,10 @@ function teamBoardFixtureFor(teamId) {
   deployment.profiles[0].pitcher_name = pitcherName
   deployment.profiles[0].observed_profile.pitcher_id = pitcherId
   deployment.profiles[0].context.pitcher_id = pitcherId
+  const rotation = details.rotation_impact.frozen_recent_games
+  rotation.team_id = team.team_id
+  rotation.starts[0].starter_name = `${team.team_abbreviation} Fixture Starter`
+  rotation.starts[0].starter_pitcher_id = team.team_id * 1000 + 500
   details.performance.metrics[0].value = team.team_abbreviation === 'NYY' ? '4.11'
     : team.team_abbreviation === 'LAD' ? '2.99' : '3.42'
   return { core, details, pitcherName }
@@ -445,6 +449,65 @@ test('TB-06 shows frozen ERA and WHIP at product widths across BAL, LAD, and NYY
       await expectNoPageOverflow(page)
     }
   }
+})
+
+test('TB-07 shows publication-bound recent starts across teams and widths', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-rotation-impact')
+      await expect(section).toContainText(`${abbreviation} Fixture Starter`)
+      await expect(section).toContainText('Starter 4.2 IP · Bullpen 4.1 IP')
+      await expect(section).toContainText('Short start: fewer than 5 starter innings')
+      await expect(section).toContainText('1 recent team game lacks')
+      await expectNoPageOverflow(page)
+    }
+  }
+})
+
+test('TB-07 rejects stale details and old-team starts while preserving the answer', async ({ page }) => {
+  await installApiFixtures(page, { detailsIdentityMismatch: true })
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toBeVisible()
+  await expect(page.getByTestId('team-board-rotation-impact')).not.toContainText('BAL Fixture Starter')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Los Angeles Dodgers')
+  await expect(page.getByTestId('team-board-rotation-impact')).not.toContainText('BAL Fixture Starter')
+})
+
+test('TB-07 clears old-team starts during in-page team switching', async ({ page }) => {
+  const fixtures = await installApiFixtures(page, { deferDetails: true })
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Baltimore Orioles')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Los Angeles Dodgers')
+  await expect(page.getByTestId('team-board-rotation-impact')).not.toContainText('BAL Fixture Starter')
+  fixtures.releaseDetails()
+  await expect(page.getByTestId('rotation-recent-starts')).toContainText('LAD Fixture Starter')
+  await page.getByLabel('Select team for Team Board').selectOption('147')
+  await expect(page.getByTestId('rotation-recent-starts')).toContainText('NYY Fixture Starter')
+  await expect(page.getByTestId('rotation-recent-starts')).not.toContainText('LAD Fixture Starter')
+})
+
+test('TB-07 fixture readiness is measured separately from core and details', async ({ page }) => {
+  await installApiFixtures(page)
+  const responseTimes = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responseTimes.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responseTimes.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toBeVisible()
+  const coreReady = performance.now()
+  await expect(page.getByTestId('rotation-recent-starts')).toContainText('BAL Fixture Starter')
+  const rotationReady = performance.now()
+  expect(responseTimes.core).toBeDefined()
+  expect(responseTimes.details).toBeDefined()
+  console.log(`TB-07 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responseTimes.details - start)}ms rotation-ready=${Math.round(rotationReady - start)}ms details-to-rotation=${Math.round(rotationReady - responseTimes.details)}ms`)
 })
 
 test('TB-06 stale details are withheld while core remains usable', async ({ page }) => {
