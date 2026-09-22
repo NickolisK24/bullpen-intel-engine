@@ -18,6 +18,7 @@ import {
   readTeamBoardFrozenWorkload,
   readTeamBoardFrozenDeployment,
   readTeamBoardFrozenPerformance,
+  readTeamBoardFrozenRotationGames,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -271,6 +272,71 @@ test('TB-06 attaches only the frozen represented-date performance read', () => {
   assert.equal(priorTeam.frozenPerformance, null)
   assert.equal(priorTeam.detailsRejected, true)
   assert.equal(priorTeam.teamState, corePayload.team_state)
+})
+
+test('TB-07 recent starts attach only to exact trusted team and snapshot', () => {
+  const carrier = {
+    contract: 'team_board_recent_rotation_games_v1',
+    team_id: identity.team_id,
+    data_through: identity.represented_date,
+    window_start: '2026-08-10', window_days: 7,
+    status: 'partial', reason_codes: ['split_row_missing'],
+    games_in_window: 2, games_excluded: 1,
+    games_analyzed: 1, starter_innings: '4.2', bullpen_innings: '4.1',
+    short_start_count: 1,
+    summary: 'Backend-authored represented-date rotation summary.',
+    starts: [{
+      mlb_game_pk: 55, game_date: '2026-08-15',
+      starter_pitcher_id: 18, starter_name: 'Source Starter',
+      starter_outs: 14, starter_innings: '4.2',
+      starter_evidence: { status: 'complete', reason_codes: [] },
+      bullpen_outs: 13, bullpen_innings: '4.1',
+      bullpen_evidence: { status: 'complete', reason_codes: [] },
+      short_start: true, short_start_evidence: { status: 'complete', reason_codes: [] },
+      status: 'complete', reason_codes: [],
+    }],
+  }
+  const details = { ...detailsPayload, rotation_impact: { frozen_recent_games: carrier } }
+  const attached = readTeamBoardDelivery(corePayload, details)
+  assert.equal(attached.frozenRotationGames.starts[0].starterName, 'Source Starter')
+  assert.equal(attached.frozenRotationGames.starts[0].shortStart, true)
+  assert.equal(attached.frozenRotationGames.gamesExcluded, 1)
+  assert.equal(attached.frozenRotationGamesRejected, false)
+
+  const wrongDate = readTeamBoardDelivery(corePayload, {
+    ...details, rotation_impact: { frozen_recent_games: { ...carrier, data_through: '2026-08-15' } },
+  })
+  assert.equal(wrongDate.frozenRotationGames, null)
+  assert.equal(wrongDate.frozenRotationGamesRejected, true)
+  assert.equal(wrongDate.frozenPerformance, attached.frozenPerformance)
+
+  const wrongSnapshot = readTeamBoardDelivery(corePayload, {
+    ...details, publication_identity: { ...identity, snapshot_id: 1901 },
+  })
+  assert.equal(wrongSnapshot.detailsRejected, true)
+  assert.equal(wrongSnapshot.frozenRotationGames, null)
+  assert.equal(wrongSnapshot.teamState, corePayload.team_state)
+
+  const switched = readTeamBoardDelivery({
+    ...corePayload, publication_identity: { ...identity, team_id: 2 },
+  }, details)
+  assert.equal(switched.frozenRotationGames, null)
+  assert.equal(switched.detailsRejected, true)
+  assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], short_start: null }] }, identity), null)
+  assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], starter_innings: '4.7' }] }, identity), null)
+  const partialStart = readTeamBoardFrozenRotationGames({
+    ...carrier,
+    starts: [{
+      ...carrier.starts[0], status: 'partial',
+      starter_outs: null, starter_innings: null,
+      starter_evidence: { status: 'partial', reason_codes: ['starter_outs_missing'] },
+      short_start: null,
+      short_start_evidence: { status: 'unknown', reason_codes: ['starter_outs_missing'] },
+    }],
+  }, identity)
+  assert.equal(partialStart.starts[0].starterInnings, null)
+  assert.equal(partialStart.starts[0].bullpenInnings, '4.1')
+  assert.equal(partialStart.starts[0].shortStart, null)
 })
 
 test('TB-06 rejects fabricated deferred metrics and never changes certified zero', () => {

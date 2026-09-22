@@ -905,6 +905,8 @@ def build_team_board_v2_payload(
         'rotation_impact': {
             'population_basis': ROTATION_IMPACT_POPULATION_BASIS,
             'read': rotation,
+            **({'frozen_recent_games': deepcopy(board['frozen_rotation_impact'])}
+               if board.get('frozen_rotation_impact') is not None else {}),
         },
         'roster_context': deepcopy(board.get('roster_authority') or {}),
         'recent_transactions': deepcopy(recent_transactions) if isinstance(recent_transactions, dict) else None,
@@ -948,7 +950,13 @@ def build_team_board_core_payload(board, *, publication_identity):
         'off_active_count': full['off_active_count'],
         'workload_overview': full['workload_overview'],
         'roles_deployment': full['roles_deployment'],
-        'rotation_impact': full['rotation_impact'],
+        'rotation_impact': {
+            'population_basis': full['rotation_impact']['population_basis'],
+            'read': {
+                key: value for key, value in full['rotation_impact']['read'].items()
+                if key != 'recent_games'
+            },
+        },
         'roster_context': full['roster_context'],
         'operating_state': full['operating_state'],
         'section_status': {
@@ -988,7 +996,7 @@ def build_team_board_details_payload(
     )
     detail_sections = (
         'recent_usage', 'recent_usage_rest', 'recently_used_arms', 'workload_overview',
-        'roles_deployment', 'recent_transactions', 'recent_relief_work',
+        'roles_deployment', 'rotation_impact', 'recent_transactions', 'recent_relief_work',
         'game_context', 'performance', 'what_changed',
     )
     return {
@@ -1002,6 +1010,9 @@ def build_team_board_details_payload(
         'recently_used_arms': full['recently_used_arms'],
         'workload_overview': full['workload_overview'],
         'roles_deployment': full['roles_deployment'],
+        'rotation_impact': {
+            'frozen_recent_games': full['rotation_impact'].get('frozen_recent_games'),
+        },
         'recent_transactions': full['recent_transactions'],
         'recent_relief_work': full['recent_relief_work'],
         'game_context': full['game_context'],

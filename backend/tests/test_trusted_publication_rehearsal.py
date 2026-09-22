@@ -18,6 +18,7 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
+from models.team_game_pitching_split import TeamGamePitchingSplit
 from services.roster_status import STATUS_IL_15
 from services import appearance_ledger, dashboard_snapshot, public_serving_authority
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
@@ -126,11 +127,25 @@ def _seed_teams(reference_date):
         ))
         db.session.add(GameLog(
             pitcher_id=starter.id, mlb_game_pk=game_pk, game_date=game_date,
-            game_type='R', games_started=1, innings_pitched=5.0,
-            innings_pitched_outs=15, pitches_thrown=80,
+            game_type='R', games_started=1,
+            innings_pitched=9.0 if offset == 5 else 5.0,
+            innings_pitched_outs=27 if offset == 5 else 15, pitches_thrown=80,
             appearance_team_id=TEAM_IDS[0],
             appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
         ))
+    db.session.add(TeamGamePitchingSplit(
+        team_id=TEAM_IDS[0], mlb_game_pk=7800005,
+        game_date=reference_date - timedelta(days=6), game_type='R',
+        starter_pitcher_id=starter.id, starter_mlb_id=starter.mlb_id,
+        starter_identity_status=TeamGamePitchingSplit.STARTER_KNOWN,
+        starter_outs_recorded=27, bullpen_outs_recorded=0,
+        total_team_outs=27,
+        split_completeness_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        split_reason_codes=[],
+        suspended_resumed_linkage_status=TeamGamePitchingSplit.LINKAGE_NONE,
+        calendar_context_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        calendar_reason_codes=[], source='test_fixture',
+    ))
     off_active = Pitcher(
         mlb_id=7999001, full_name='Former Rehearsal Arm',
         team_id=TEAM_IDS[1], team_name='Rehearsal Team 01',
@@ -260,7 +275,22 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 public_serving_authority, 'build_frozen_team_performance_payload',
                 measured_performance_author,
             )
-            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0}
+            rotation_ms = []
+            rotation_queries = []
+            original_rotation_author = public_serving_authority.frozen_recent_rotation_games_by_team
+            def measured_rotation_author(*args, **kwargs):
+                started = perf_counter()
+                before = query_counts['rotation_source']
+                try:
+                    return original_rotation_author(*args, **kwargs)
+                finally:
+                    rotation_ms.append((perf_counter() - started) * 1000)
+                    rotation_queries.append(query_counts['rotation_source'] - before)
+            monkeypatch.setattr(
+                public_serving_authority, 'frozen_recent_rotation_games_by_team',
+                measured_rotation_author,
+            )
+            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0, 'rotation_source': 0}
             def count_publication_reads(_conn, _cursor, statement, _params, _context, _many):
                 sql = statement.lower()
                 if 'from game_logs' in sql:
@@ -269,6 +299,10 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     query_counts['processed_game'] += 1
                 if 'from game_play_by_play_events' in sql:
                     query_counts['pbp_event'] += 1
+                if any(name in sql for name in (
+                    'from scheduled_games', 'from team_game_pitching_splits', 'from pitchers',
+                )):
+                    query_counts['rotation_source'] += 1
             event.listen(db.engine, 'before_cursor_execute', count_publication_reads)
             started = perf_counter()
             try:
@@ -297,11 +331,21 @@ def test_trusted_publication_rehearsal(monkeypatch):
             package = snapshot.payload['trusted_team_boards']
             assert package['team_count'] == len(TEAM_IDS)
             assert len(performance_ms) == len(TEAM_IDS)
+            assert rotation_queries == [3]
             assert performance_appearance_queries == [1] * len(TEAM_IDS)
             assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS}
             assert package['data_through'] == snapshot.data_through.isoformat()
             for team_id in TEAM_IDS:
                 team = package['by_team_id'][str(team_id)]
+                rotation = team['frozen_rotation_impact']
+                assert rotation['contract'] == 'team_board_recent_rotation_games_v1'
+                assert rotation['team_id'] == team_id
+                assert rotation['data_through'] == snapshot.data_through.isoformat()
+                if team_id == TEAM_IDS[0]:
+                    assert rotation['starts'][0]['starter_name'] == 'Rehearsal Coverage Starter'
+                    assert rotation['starts'][0]['starter_outs'] == 27
+                    assert rotation['starts'][0]['bullpen_outs'] == 0
+                    assert rotation['starts'][0]['short_start'] is False
                 assert public_serving_authority.is_valid_rest_status_carrier(
                     team['rest_status']
                 )
@@ -338,6 +382,12 @@ def test_trusted_publication_rehearsal(monkeypatch):
             performance_serialization_ms = (
                 perf_counter() - performance_serialization_started
             ) * 1000
+            rotation_serialization_started = perf_counter()
+            rotation_json = json.dumps({
+                team_id: package['by_team_id'][str(team_id)]['frozen_rotation_impact']
+                for team_id in TEAM_IDS
+            }, sort_keys=True)
+            rotation_serialization_ms = (perf_counter() - rotation_serialization_started) * 1000
             first_profile = next(item for item in public_deployment['profiles'] if item['pitcher_name'] == 'Rehearsal Pitcher 00')
             assert first_profile['context']['entry_inning']['by_inning'] == [{'inning': 8, 'appearances': 1}]
             assert first_profile['context']['score_context']['leading'] == 1
@@ -396,6 +446,9 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 _assert_workload_carrier(snapshot, team_id)
             )
             assert details['roles_deployment']['frozen_public_deployment'] == public_deployment
+            assert details['rotation_impact']['frozen_recent_games'] == (
+                package['by_team_id'][str(team_id)]['frozen_rotation_impact']
+            )
             assert details['performance'] == package['by_team_id'][str(team_id)]['performance']['read']
             require_matching_team_board_identity(identity, snapshot, board)
             changed = {**identity, 'snapshot_id': identity['snapshot_id'] + 1}
@@ -418,6 +471,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
             older_team.pop('roles_deployment')
             older_team.pop('roles_deployment_authority')
             older_team.pop('performance')
+            older_team.pop('frozen_rotation_impact')
+            older_team.pop('frozen_rotation_impact_authority')
             older_teams[str(team_id)] = older_team
             older_package['by_team_id'] = older_teams
             older['trusted_team_boards'] = older_package
@@ -428,6 +483,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert older_board['workload_overview'] is None
             assert older_board['frozen_roles_deployment'] is None
             assert older_board['frozen_performance'] is None
+            assert older_board['frozen_rotation_impact'] is None
             assert older_board['recent_usage_rest'] is not None
             print(
                 f'REHEARSAL candidate_snapshot_id={snapshot.id} sync_run_id={run.id} '
@@ -445,6 +501,10 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 f' tb06_team_bytes={len(json.dumps(package["by_team_id"][str(team_id)]["performance"]).encode("utf-8"))}'
                 f' tb06_all_team_bytes={len(performance_json.encode("utf-8"))}'
                 f' tb06_serialize_ms={performance_serialization_ms:.3f}'
+                f' tb07_rotation_ms={sum(rotation_ms):.3f}'
+                f' tb07_source_queries={sum(rotation_queries)}'
+                f' tb07_all_team_bytes={len(rotation_json.encode("utf-8"))}'
+                f' tb07_serialize_ms={rotation_serialization_ms:.3f}'
             )
         finally:
             db.session.remove()

@@ -8,12 +8,81 @@ export const TEAM_BOARD_RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_re
 export const TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT = 'team_board_workload_overview_v1'
 export const TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT = 'team_board_public_deployment_context_v1'
 export const TEAM_BOARD_PERFORMANCE_CONTRACT = 'public_team_performance_v1'
+export const TEAM_BOARD_ROTATION_GAMES_CONTRACT = 'team_board_recent_rotation_games_v1'
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 const workloadWindowKeys = [3, 7, 14, 30]
 const workloadMetricKeys = ['pitches', 'appearances', 'outs']
 
 const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
+const baseballInnings = value => typeof value === 'string' && /^\d+\.[012]$/.test(value)
+
+export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_ROTATION_GAMES_CONTRACT
+    || !publicationIdentity || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || carrier.team_id !== publicationIdentity.team_id
+    || carrier.data_through !== publicationIdentity.represented_date
+    || carrier.window_days !== 7
+    || !['complete', 'partial', 'unknown', 'unavailable'].includes(carrier.status)
+    || !nonnegativeCount(carrier.games_in_window)
+    || !nonnegativeCount(carrier.games_excluded)
+    || !nonnegativeCount(carrier.games_analyzed)
+    || (carrier.games_analyzed > 0
+      ? !baseballInnings(carrier.starter_innings) || !baseballInnings(carrier.bullpen_innings)
+        || !nonnegativeCount(carrier.short_start_count) || typeof carrier.summary !== 'string'
+      : carrier.starter_innings !== null || carrier.bullpen_innings !== null
+        || carrier.short_start_count !== null || carrier.summary !== null)
+    || !Array.isArray(carrier.starts)) return null
+  const starts = carrier.starts.map(game => {
+    const starterStatus = game?.starter_evidence?.status
+    const bullpenStatus = game?.bullpen_evidence?.status
+    const shortStatus = game?.short_start_evidence?.status
+    if (!nonnegativeCount(game?.mlb_game_pk)
+      || typeof game.game_date !== 'string'
+      || !recentUsageRestStates.has(starterStatus)
+      || !recentUsageRestStates.has(bullpenStatus)
+      || !recentUsageRestStates.has(shortStatus)
+      || (starterStatus === 'complete' ? !nonnegativeCount(game.starter_outs) || !baseballInnings(game.starter_innings) : game.starter_outs !== null || game.starter_innings !== null)
+      || (bullpenStatus === 'complete' ? !nonnegativeCount(game.bullpen_outs) || !baseballInnings(game.bullpen_innings) : game.bullpen_outs !== null || game.bullpen_innings !== null)
+      || (shortStatus === 'complete' ? typeof game.short_start !== 'boolean' : game.short_start !== null)
+      || !recentUsageRestStates.has(game.status)
+      || game.starter_pitcher_id !== null && !nonnegativeCount(game.starter_pitcher_id)
+      || game.starter_name !== null && typeof game.starter_name !== 'string') return null
+    return {
+      gameId: game.mlb_game_pk,
+      date: game.game_date,
+      starterPitcherId: game.starter_pitcher_id,
+      starterName: game.starter_name,
+      starterOuts: game.starter_outs,
+      starterInnings: game.starter_innings,
+      starterEvidence: game.starter_evidence,
+      bullpenOuts: game.bullpen_outs,
+      bullpenInnings: game.bullpen_innings,
+      bullpenEvidence: game.bullpen_evidence,
+      shortStart: game.short_start,
+      shortStartEvidence: game.short_start_evidence,
+    }
+  })
+  if (starts.some(game => !game)) return null
+  return {
+    contract: carrier.contract,
+    teamId: carrier.team_id,
+    dataThrough: carrier.data_through,
+    windowStart: carrier.window_start,
+    windowDays: carrier.window_days,
+    status: carrier.status,
+    reasonCodes: Array.isArray(carrier.reason_codes) ? [...carrier.reason_codes] : [],
+    gamesInWindow: carrier.games_in_window,
+    gamesExcluded: carrier.games_excluded,
+    gamesAnalyzed: carrier.games_analyzed,
+    starterInnings: carrier.starter_innings,
+    bullpenInnings: carrier.bullpen_innings,
+    shortStartCount: carrier.short_start_count,
+    summary: carrier.summary,
+    starts,
+  }
+}
 
 const publicRoleLabels = new Set(['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear'])
 
@@ -321,6 +390,7 @@ export function readTeamBoardV2(payload) {
     rolesDeployment: payload.roles_deployment,
     frozenPublicDeployment: readTeamBoardFrozenDeployment(payload.roles_deployment?.frozen_public_deployment, payload.publication_identity),
     rotationImpact: payload.rotation_impact,
+    frozenRotationGames: readTeamBoardFrozenRotationGames(payload.rotation_impact?.frozen_recent_games, payload.publication_identity),
     recentTransactions: payload.recent_transactions,
     rosterContext: payload.roster_context,
     recentReliefWork: payload.recent_relief_work,
@@ -377,6 +447,9 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
   const frozenPerformance = detailsValid
     ? readTeamBoardFrozenPerformance(details.performance, corePayload.publication_identity)
     : null
+  const frozenRotationGames = detailsValid
+    ? readTeamBoardFrozenRotationGames(details.rotation_impact?.frozen_recent_games, corePayload.publication_identity)
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -397,6 +470,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     rolesDeployment: details.roles_deployment || corePayload.roles_deployment,
     frozenPublicDeployment,
     rotationImpact: corePayload.rotation_impact,
+    frozenRotationGames,
     recentTransactions: details.recent_transactions || null,
     rosterContext: corePayload.roster_context,
     recentReliefWork: details.recent_relief_work || null,
@@ -415,6 +489,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenTeamWorkloadRejected: Boolean(details.workload_overview?.frozen_team_workload) && !frozenTeamWorkload,
     frozenPublicDeploymentRejected: Boolean(details.roles_deployment?.frozen_public_deployment) && !frozenPublicDeployment,
     frozenPerformanceRejected: Boolean(details.performance) && !frozenPerformance,
+    frozenRotationGamesRejected: Boolean(details.rotation_impact?.frozen_recent_games) && !frozenRotationGames,
     limitations: corePayload.limitations,
   }
 }

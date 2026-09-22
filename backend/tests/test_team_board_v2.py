@@ -1596,6 +1596,49 @@ def test_core_is_semantically_equal_to_compatibility_board_for_same_publication(
         assert core[field] == full[field]
 
 
+def test_recent_rotation_games_are_details_only_and_keep_publication_identity():
+    snapshot = _snapshot()
+    board = _board()
+    carrier = {
+        'contract': 'team_board_recent_rotation_games_v1',
+        'team_id': TEAM['team_id'], 'data_through': '2026-08-16',
+        'window_days': 7, 'starts': [],
+    }
+    board['rotation_support_pressure']['recent_games'] = deepcopy(carrier)
+    board['frozen_rotation_impact'] = deepcopy(carrier)
+    identity = build_team_board_identity(snapshot, board)
+    core = build_team_board_core_payload(board, publication_identity=identity)
+    details = build_team_board_details_payload(board, publication_identity=identity)
+
+    assert 'recent_games' not in core['rotation_impact']['read']
+    assert 'frozen_recent_games' not in core['rotation_impact']
+    assert details['rotation_impact']['frozen_recent_games'] == carrier
+    assert details['publication_identity'] == core['publication_identity']
+
+
+def test_frozen_rotation_games_reject_mismatched_team_or_represented_date():
+    snapshot = _snapshot()
+    carrier = {
+        'contract': 'team_board_recent_rotation_games_v1',
+        'team_id': TEAM['team_id'], 'data_through': '2026-08-16',
+        'window_days': 7, 'starts': [],
+    }
+    package = {
+        'frozen_rotation_impact': carrier,
+        'frozen_rotation_impact_authority': {
+            'team_board_package_contract': public_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'method_version': 'team_board_recent_rotation_games_v1',
+            'data_through': '2026-08-16',
+        },
+    }
+    attach = public_authority._frozen_rotation_impact_for_view
+    assert attach(snapshot, package, TEAM['team_id']) == carrier
+    assert attach(snapshot, package, TEAM['team_id'] + 1) is None
+    changed = deepcopy(package)
+    changed['frozen_rotation_impact']['data_through'] = '2026-08-15'
+    assert attach(snapshot, changed, TEAM['team_id']) is None
+
+
 def test_core_active_bullpen_count_matches_every_authoritative_visible_arm():
     snapshot = _snapshot()
     board = _board()

@@ -66,30 +66,31 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
   const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
     ? status.status
     : 'unavailable'
-  const summary = textValue(rotationRead?.summary)
-  const metrics = getRotationImpactMetrics(rotationImpact)
-  const windowDays = numberValue(rotationRead?.window_days)
-  const gamesAnalyzed = numberValue(rotationRead?.games_analyzed)
-  const gamesInWindow = numberValue(rotationRead?.games_in_window)
-  const representedDate = textValue(rotationRead?.reference_date) || textValue(status?.represented_date)
+  const frozenGames = read?.frozenRotationGames
+  const summary = textValue(frozenGames ? frozenGames.summary : rotationRead?.summary)
+  const metrics = frozenGames ? [] : getRotationImpactMetrics(rotationImpact)
+  const windowDays = numberValue(frozenGames ? frozenGames.windowDays : rotationRead?.window_days)
+  const gamesAnalyzed = numberValue(frozenGames ? frozenGames.gamesAnalyzed : rotationRead?.games_analyzed)
+  const gamesInWindow = numberValue(frozenGames ? frozenGames.gamesInWindow : rotationRead?.games_in_window)
+  const representedDate = textValue(frozenGames ? frozenGames.dataThrough : rotationRead?.reference_date) || textValue(status?.represented_date)
   const limitation = firstLimitation(status, rotationImpact)
   const handoff = rotationRead?.relief_work_handoff
   const handoffTarget = textValue(handoff?.target)
   const handoffSummary = textValue(handoff?.summary)
   const receiptGames = Array.isArray(handoff?.games) ? handoff.games : []
-  const hasFacts = Boolean(summary || metrics.length > 0)
+  const hasFacts = Boolean(summary || metrics.length > 0 || frozenGames?.starts?.length)
 
   return (
     <section className="foundation-section min-w-0" aria-labelledby="rotation-impact-title" data-testid="team-board-rotation-impact">
       <header className="mb-panel border-b border-line-default pb-panel">
         <div className="type-overline text-text-tertiary">Game load context</div>
         <h2 id="rotation-impact-title" className="type-section-title mt-meta">Rotation Impact</h2>
-        <p className="type-metadata mt-meta max-w-reading text-text-tertiary">How recent starter length has shaped bullpen coverage demand.</p>
+        <p className="type-metadata mt-meta max-w-reading text-text-tertiary">Recent starter and bullpen innings in completed team games.</p>
       </header>
 
       {error ? (
         <SectionState status="error" title="Rotation Impact unavailable" message="Current rotation context could not be loaded." onRetry={onRetry} />
-      ) : !read || !rotationImpact || !rotationRead || statusName === 'unavailable' ? (
+      ) : !read || (!frozenGames && (!rotationImpact || !rotationRead || statusName === 'unavailable')) ? (
         <SectionState status="unavailable" title="Rotation Impact unavailable" message="A current backend-authored rotation read is not available." onRetry={!read ? onRetry : undefined} />
       ) : (
         <>
@@ -112,6 +113,42 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
             </dl>
           )}
 
+          {frozenGames && (
+            <div className="mt-panel border-t border-line-subtle pt-panel" data-testid="rotation-recent-starts">
+              <h3 className="type-compact font-semibold text-text-primary">Recent starts</h3>
+              <p className="type-metadata mt-meta text-text-tertiary">
+                Completed regular-season team games in the seven baseball days through {frozenGames.dataThrough}.
+              </p>
+              {frozenGames.starts.length > 0 ? (
+                <ol className="mt-panel grid gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle tablet:grid-cols-2">
+                  {frozenGames.starts.map(game => (
+                    <li key={game.gameId} className="min-w-0 bg-surface-base p-panel">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-panel gap-y-meta">
+                        <span className="font-board font-semibold text-text-primary">{game.starterName || 'Starter name unavailable'}</span>
+                        <time className="type-metadata text-text-tertiary" dateTime={game.date}>{game.date}</time>
+                      </div>
+                      <p className="type-compact mt-meta text-text-secondary">
+                        Starter {game.starterInnings == null ? 'unknown' : `${game.starterInnings} IP`} · Bullpen {game.bullpenInnings == null ? 'unknown' : `${game.bullpenInnings} IP`}
+                      </p>
+                      {game.shortStart && <p className="type-metadata mt-meta text-text-tertiary">Short start: fewer than 5 starter innings</p>}
+                      {['starterEvidence', 'bullpenEvidence', 'shortStartEvidence'].some(key => game[key]?.status !== 'complete') && (
+                        <p className="type-metadata mt-meta text-text-tertiary">Some game-level rotation evidence is incomplete.</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className="type-metadata mt-meta text-text-tertiary">No complete rotation starts in this window.</p>}
+              {frozenGames.status === 'partial' && frozenGames.gamesExcluded > 0 && (
+                <p className="type-metadata mt-panel text-text-tertiary" role="status">
+                  {frozenGames.gamesExcluded} recent team {frozenGames.gamesExcluded === 1 ? 'game lacks' : 'games lack'} a complete starter/bullpen split; shown starts remain factual.
+                </p>
+              )}
+              {frozenGames.status === 'unknown' && (
+                <p className="type-metadata mt-panel text-text-tertiary" role="status">Completed-game rotation evidence is unknown for this window.</p>
+              )}
+            </div>
+          )}
+
           {(windowDays != null || representedDate || gamesAnalyzed != null || gamesInWindow != null) && (
             <p className="type-metadata mt-panel text-text-tertiary">
               {windowDays != null ? `${windowDays}-day window` : null}
@@ -124,7 +161,7 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
             </p>
           )}
 
-          {handoffTarget && handoffSummary && receiptGames.length > 0 && (
+          {!frozenGames && handoffTarget && handoffSummary && receiptGames.length > 0 && (
             <div className="mt-panel border-t border-line-subtle pt-panel">
               <a
                 href={`#${handoffTarget}`}
@@ -136,10 +173,10 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
             </div>
           )}
 
-          {statusName === 'partial' && (
+          {!frozenGames && statusName === 'partial' && (
             <SectionState status="partial" title="Rotation Impact is partially available" message={limitation || 'Some recent rotation context is unavailable.'} className={hasFacts ? 'mt-panel' : ''} />
           )}
-          {statusName === 'available' && !hasFacts && (
+          {!frozenGames && statusName === 'available' && !hasFacts && (
             <div className="section-state" role="status" data-state="empty">
               <h3 className="type-section-title">No recent rotation context</h3>
               <p className="type-compact mt-meta">The governed rotation read contains no current facts.</p>
