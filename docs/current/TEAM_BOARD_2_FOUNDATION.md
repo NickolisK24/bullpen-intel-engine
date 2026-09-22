@@ -71,8 +71,9 @@ population.
 
 Backend owners:
 
-- Team State and summary: published Team State artifact frozen to the selected
-  trusted Dashboard snapshot;
+- Team State and summary: the pre-trust, snapshot-bound Team State receipt in
+  the trusted Team Board package for new publications; older snapshots retain
+  their published-artifact compatibility read;
 - active membership and roster context: trusted Team Board package and roster
   authority;
 - role and current read: existing public role/read projections;
@@ -515,6 +516,27 @@ TB-09 What Changed must use the exact current/previous trusted Dashboard
 snapshot pair. It must not claim atomic predecessor authority. R3-D remains
 frozen unless a future product requirement explicitly adopts atomic publication
 semantics.
+
+### Snapshot-bound Team State authority for TB-09
+
+The mandatory pre-trust Team State publication proof resolves governed readiness
+once for each of the 30 teams. In the same transaction, it binds one
+`frozen_team_state` receipt per Team Board package to team id, Dashboard snapshot
+id, represented date, and `v3_phase_5` method. The receipt uses the existing
+Fresh/Stretched/Vulnerable public vocabulary and passes the same artifact
+eligibility gate. The proof retains the frozen generation inputs so the
+post-commit Share Artifact writer consumes the pre-commit evidence rather than
+reading later mutable rows. A missing or ineligible team, proof failure, or
+receipt persistence failure rolls back the trusted pointer movement.
+
+For new snapshots, TB-01 reads the receipt directly; a later Share Artifact
+write failure cannot change the served Team State. TB-09's backend comparison
+reads those same receipts from the current snapshot and the *exact* governed
+legacy predecessor. It emits a Team State transition only when both immutable
+receipts are valid. If either older snapshot lacks a receipt, that comparison
+domain is unavailable rather than reconstructed from mutable data. Existing
+TB-01 artifact serving remains available for those older snapshots. This does
+not add roster/workload/role/performance What Changed events or implement R3-D.
 
 ## Known evidence limitations
 

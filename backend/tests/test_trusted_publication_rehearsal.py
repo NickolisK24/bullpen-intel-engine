@@ -365,6 +365,104 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert dashboard_snapshot.payload_version_valid(snapshot)
             assert DashboardSnapshot.query.filter_by(is_published=True).count() == 0
             assert run.published_dashboard_snapshot_id is None
+            # Rehearse the same pre-trust proof/admission step within an isolated
+            # savepoint.  Rollback keeps the candidate unpublished and proves no
+            # production-style pointer movement is needed for the receipt check.
+            from services.team_state_vnext_production_proof import require_transactional_publication_proof
+            savepoint = db.session.begin_nested()
+            try:
+                snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
+                snapshot.is_published = True
+                snapshot.published_at = utc_now_naive()
+                def governed_rehearsal_readiness(team_id, *, reference_dates_out,
+                                                 **_kwargs):
+                    # The publication fixture is intentionally sparse for the
+                    # earlier Team Board slices.  Supply a complete governed
+                    # readiness fixture only at the proof seam; production still
+                    # uses the installed resolver.
+                    reference_dates_out.update({
+                        'membership_reference_date': snapshot.data_through,
+                        'availability_reference_date': snapshot.availability_reference_date,
+                    })
+                    return {
+                        'contract_version': 'v3_phase_5',
+                        'team': {
+                            'team_id': team_id, 'team_name': f'Rehearsal Team {team_id}',
+                            'team_abbreviation': f'R{team_id}',
+                        },
+                        'readiness': {
+                            'status_code': 'operationally_stable',
+                            'summary': 'Current bullpen state.',
+                        },
+                        'freshness': {'data_through': snapshot.data_through.isoformat()},
+                        'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
+                        'team_state_evidence': {
+                            'method_version': 'v3_phase_5',
+                            'contract': 'team_state_contract_a',
+                            'basis': 'status_only',
+                            'readiness_status_code': 'operationally_stable',
+                            'active_pitcher_count': 8,
+                            'clean_count': 6, 'moderate_count': 2,
+                            'severe_count': 0, 'unknown_count': 0,
+                            'clean_share': 0.75, 'moderate_share': 0.25,
+                            'severe_share': 0.0, 'unknown_share': 0.0,
+                            'decisive_rule': 'fresh_coverage',
+                            'decisive_inputs': {'clean_count': 6},
+                            'thresholds_applied': {
+                                'clean_share_fresh_min': [3, 5],
+                                'clean_share_fresh_min_value': 0.6,
+                                'clean_count_fresh_min': 5,
+                                'severe_count_fresh_max': 1,
+                                'clean_count_vulnerable_max': 2,
+                                'severe_share_vulnerable_min': [1, 3],
+                                'severe_share_vulnerable_min_value': 1 / 3,
+                            },
+                            'trust_state': 'high', 'trust_data_state': 'fresh',
+                            'freshness_state': 'current',
+                            'material_limitations': [],
+                            'evidence_references': {
+                                'population_authority': 'resolve_readiness_population',
+                            },
+                        },
+                    }
+
+                rehearsal_proof = require_transactional_publication_proof(
+                    snapshot, readiness_resolver=governed_rehearsal_readiness,
+                )
+                assert len(rehearsal_proof['snapshot_team_state_generation_inputs']) == 30
+                assert all(
+                    'frozen_team_state' in team
+                    for team in snapshot.payload['trusted_team_boards']['by_team_id'].values()
+                )
+                first = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_IDS[0])]
+                assert public_serving_authority._published_team_state(
+                    snapshot, TEAM_IDS[0],
+                ) == first['frozen_team_state']['value']
+            finally:
+                savepoint.rollback()
+                db.session.expire(snapshot)
+            assert snapshot.is_published is False
+            assert run.published_dashboard_snapshot_id is None
+            failed_savepoint = db.session.begin_nested()
+            try:
+                snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
+                snapshot.is_published = True
+                snapshot.published_at = utc_now_naive()
+
+                def missing_team_readiness(team_id, **kwargs):
+                    if team_id == TEAM_IDS[1]:
+                        return None
+                    return governed_rehearsal_readiness(team_id, **kwargs)
+
+                with pytest.raises(ValueError, match='missing_team'):
+                    require_transactional_publication_proof(
+                        snapshot, readiness_resolver=missing_team_readiness,
+                    )
+            finally:
+                failed_savepoint.rollback()
+                db.session.expire(snapshot)
+            assert snapshot.is_published is False
+            assert run.published_dashboard_snapshot_id is None
             assert dashboard_snapshot._payload_slate_coverage_unavailable_reason(
                 snapshot.payload
             ) is None

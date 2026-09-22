@@ -815,9 +815,16 @@ def _team_package(snapshot, team_id):
 
 
 def _published_team_state(snapshot, team_id):
-    """Read Team State from the immutable league artifact for this exact snapshot."""
+    """Read the pre-trust frozen value, with legacy artifact compatibility."""
     if snapshot is None:
         return team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE)
+    from services.team_board_snapshot_team_state import receipt_value
+    receipt_present, frozen_value = receipt_value(snapshot, team_id)
+    if receipt_present:
+        # Prospective publications use the proof-flushed value that authorized
+        # the pointer. A malformed receipt fails closed; it never falls back to
+        # a post-commit calculation. Legacy snapshots retain artifact serving.
+        return frozen_value
     artifact = (
         db.session.query(ShareArtifact)
         .filter(

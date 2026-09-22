@@ -931,6 +931,128 @@ class TestDashboardSnapshotService:
             assert candidate.is_published is True
             assert candidate_run.published_dashboard_snapshot_id == candidate.id
 
+    def test_snapshot_team_state_receipts_commit_with_publication(self, app, monkeypatch):
+        from services import team_state_vnext_production_proof as proof_service
+        from services import team_state_source
+        from services.public_serving_authority import _published_team_state
+
+        with app.app_context():
+            run = _create_sync_run(stage='started')
+            payload = _minimal_dashboard_payload()
+            payload['freshness']['data_through'] = '2026-08-31'
+            payload['freshness']['availability_reference_date'] = '2026-09-01'
+            payload['freshness']['slate_coverage']['slate_date'] = '2026-08-31'
+            candidate = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={
+                    **payload,
+                    'trusted_team_boards': {
+                        'contract': 'trusted_team_board_publication_v1',
+                        'data_through': '2026-08-31',
+                        'by_team_id': {
+                            str(team_id): {'team': {'team_id': team_id}}
+                            for team_id in MLB_TEAM_IDS
+                        },
+                    },
+                },
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=date(2026, 8, 31),
+                availability_reference_date=date(2026, 9, 1),
+                snapshot_generated_at=utc_now_naive(),
+                source='external_schedule',
+            )
+            db.session.add(candidate)
+            db.session.commit()
+            app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+            monkeypatch.setattr(dashboard_snapshot, 'product_current_date', lambda: date(2026, 9, 1))
+            monkeypatch.setattr(team_state_source, 'is_valid_team_id', lambda _team_id: True)
+            calculations = []
+            real_requirement = proof_service.require_transactional_publication_proof
+
+            def resolver(team_id, **kwargs):
+                calculations.append(team_id)
+                readiness = _team_state_proof_readiness(
+                    kwargs['reference_dates_out'], candidate,
+                )
+                readiness['freshness'] = {'data_through': '2026-08-31'}
+                readiness['team'] = {
+                    'team_id': team_id, 'team_name': f'Team {team_id}',
+                    'team_abbreviation': f'T{team_id}',
+                }
+                readiness['readiness']['summary'] = 'Current bullpen state.'
+                readiness['trust_metadata'] = {'confidence': 'high', 'data_state': 'fresh'}
+                return readiness
+
+            monkeypatch.setattr(
+                proof_service, 'require_transactional_publication_proof',
+                lambda snapshot: real_requirement(
+                    snapshot, team_ids=MLB_TEAM_IDS, readiness_resolver=resolver,
+                ),
+            )
+            dashboard_snapshot.publish_dashboard_snapshot(candidate)
+            db.session.refresh(candidate)
+            assert len(calculations) == 30
+            assert len(set(calculations)) == 30
+            package = candidate.payload['trusted_team_boards']['by_team_id']
+            assert len(package) == 30
+            assert all(
+                team['frozen_team_state']['dashboard_snapshot_id'] == candidate.id
+                for team in package.values()
+            )
+            assert _published_team_state(candidate, MLB_TEAM_IDS[0]) == (
+                package[str(MLB_TEAM_IDS[0])]['frozen_team_state']['value']
+            )
+            proof_row = TeamStatePublicationProof.query.one()
+            assert len(proof_row.proof['snapshot_team_state_generation_inputs']) == 30
+            from types import SimpleNamespace
+            from services import share_artifact_generation, share_artifact_publication_hook
+
+            generation_inputs = []
+
+            def inspect_artifact_inputs(team_id, *, readiness_resolver, **kwargs):
+                reference_dates = {}
+                arm_reads = {}
+                readiness = readiness_resolver(
+                    team_id, reference_dates_out=reference_dates,
+                    arm_reads_out=arm_reads,
+                )
+                generation_inputs.append((readiness, reference_dates, arm_reads))
+                return None
+
+            def inspect_batch(snapshot, *, generator):
+                generator(MLB_TEAM_IDS[0], snapshot=snapshot,
+                          requested_date=snapshot.data_through)
+                return SimpleNamespace(canonical_team_count=30)
+
+            monkeypatch.setattr(
+                share_artifact_generation, 'generate_team_state_artifact',
+                inspect_artifact_inputs,
+            )
+            monkeypatch.setattr(
+                share_artifact_publication_hook, 'run_post_publication_generation',
+                inspect_batch,
+            )
+            proof_service.capture_publication_proof(candidate)
+            assert len(calculations) == 30
+            assert generation_inputs[0][0] == (
+                proof_row.proof['snapshot_team_state_generation_inputs']
+                [str(MLB_TEAM_IDS[0])]['readiness']
+            )
+            app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = True
+            monkeypatch.setattr(
+                proof_service, 'capture_publication_proof',
+                lambda _snapshot: (_ for _ in ()).throw(RuntimeError('artifact write failed')),
+            )
+            dashboard_snapshot.run_post_commit_snapshot_publication(candidate)
+            db.session.refresh(candidate)
+            assert candidate.is_published is True
+            assert _published_team_state(candidate, MLB_TEAM_IDS[0]) == (
+                package[str(MLB_TEAM_IDS[0])]['frozen_team_state']['value']
+            )
+
     def test_required_proof_constraint_failure_rolls_back_publication(
         self, app, monkeypatch,
     ):
