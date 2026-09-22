@@ -452,7 +452,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
                         snapshot.availability_reference_date - timedelta(days=1)
                     ),
                     snapshot_generated_at=utc_now_naive() - timedelta(days=1),
-                    source='trusted_publication_rehearsal_previous',
+                    source='trusted_rehearsal_previous',
                 )
                 db.session.add(previous)
                 db.session.flush()
