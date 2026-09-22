@@ -1,5 +1,6 @@
 import { frozenTeamWorkloadFixture } from '../fixtures/teamBoardFrozenWorkload.mjs'
 import { frozenPublicDeploymentFixture } from '../fixtures/teamBoardFrozenDeployment.mjs'
+import { frozenPerformanceFixture } from '../fixtures/teamBoardFrozenPerformance.mjs'
 
 export const teams = [
   { team_id: 111, team_name: 'Boston Red Sox', team_abbreviation: 'BOS' },
@@ -132,7 +133,7 @@ export const teamBoardDetails = {
   recently_used_arms: { status: 'available', value: 0, summary: 'No recent appearances.' },
   workload_overview: { windows: [], limitations: [], frozen_team_workload: frozenTeamWorkloadFixture() }, roles_deployment: { ...teamBoardCore.roles_deployment, frozen_public_deployment: frozenPublicDeploymentFixture() },
   recent_transactions: { status: 'available', events: [] }, recent_relief_work: { read: { relief_by_date: [] } },
-  game_context: null, performance: { status: 'available' }, what_changed: { state: 'no_change', items: [] },
+  game_context: null, performance: frozenPerformanceFixture(), what_changed: { state: 'no_change', items: [] },
   section_status: sectionStatus,
 }
 

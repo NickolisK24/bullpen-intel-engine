@@ -364,8 +364,23 @@ than recomputing current GameLog rows. Team State is unchanged. The local
 team (30 total), 27.793 ms across 30 performance compositions, 0.389 ms to
 serialize all 30 carriers, and 93,711 serialized bytes in that small fixture.
 These are local fixture measurements, not production latency or payload size.
-No per-pitcher query or publication pointer movement occurred. This is a
-backend authority package; TB-06 frontend presentation is separate.
+No per-pitcher query or publication pointer movement occurred. This is the
+publication-time cost baseline. The TB-06 section presents frozen ERA and
+WHIP side by side with the backend-authored active-group, regular-season, and
+recorded-innings sample summary. Each metric retains its own qualification:
+a certified `0.00` displays, but a withheld value never becomes zero. A compact
+native disclosure lists K-BB%, HR allowed, and inherited runners as not
+published. The frontend does not calculate rates, grade results, predict
+usage, or alter Team State. It attaches only when the existing core/details
+identity matches and the frozen read's represented date matches; otherwise
+TB-06 alone is withheld. Older publications do not synthesize TB-06. The
+layout is a compact responsive pair at 390, 768, and 1440 pixels, with textual
+values and a keyboard-accessible disclosure. A local browser fixture measured
+204 ms to core answer, 189 ms to details response, and 210 ms to TB-06
+readiness (21 ms after details). These are fixture timings, not production
+latency or an isolated React render profile. The frozen carrier adds no request-time
+performance query. Uncertified source completeness for the three deferred
+capabilities is the known TB-06 v1 limitation.
 
 ## Trusted publication rehearsal release gate
 

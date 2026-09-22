@@ -23,15 +23,20 @@ const { default: TeamBoardRolesDeployment } = await server.ssrLoadModule(
 const { default: SectionPair } = await server.ssrLoadModule('/src/components/UI/SectionPair.jsx')
 
 const availableRead = {
-  performance: {
+  frozenPerformance: {
     status: 'partial',
     metrics: [
-      { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42' },
-      { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: '1.18' },
+      { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42', qualification: { status: 'qualified' } },
+      { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: '1.18', qualification: { status: 'qualified' } },
     ],
     summary: 'Active Bullpen ERA and Active Bullpen WHIP describe recorded results for the current active bullpen and remain supporting context.',
     sample_summary: 'Current regular season · 8 active arms · 7 with a sample · 31 relief appearances · 42.0 innings · Through Aug 20, 2026',
     limitations: ['K-BB%, home-run rate, and inherited-runner outcomes are not included because they do not yet have approved public metric and sample contracts.'],
+    capabilities: {
+      k_bb_percent: { status: 'unavailable', value: null },
+      home_runs_allowed: { status: 'unavailable', value: null },
+      inherited_runner_context: { status: 'unavailable', value: null },
+    },
   },
   sectionStatus: { performance: { status: 'partial' } },
 }
@@ -51,14 +56,42 @@ test('Performance renders backend-owned ERA and WHIP with shared sample context'
   assert.ok(html.includes('K-BB%, home-run rate'))
   assert.ok(html.includes('data-state="partial"'))
   assert.equal(html.includes('<button'), false)
+  assert.ok(html.includes('Additional performance context not published'))
+  assert.ok(html.includes('K-BB% — not published'))
+  assert.ok(html.includes('HR allowed — not published'))
+  assert.ok(html.includes('Inherited runners — not published'))
+  assert.equal(html.includes('K-BB%: 0'), false)
+})
+
+test('Performance renders a certified zero without deriving missing capabilities', () => {
+  const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
+    read: {
+      ...availableRead,
+      frozenPerformance: {
+        ...availableRead.frozenPerformance,
+        metrics: availableRead.frozenPerformance.metrics.map((metric, index) => index === 0
+          ? { ...metric, value: '0.00' } : metric),
+      },
+    },
+  }))
+  assert.ok(html.includes('0.00'))
+  assert.equal(html.includes('HR allowed — 0'), false)
+})
+
+test('stale frozen performance is withheld without hiding prior sections', () => {
+  const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
+    read: { ...availableRead, frozenPerformance: null, frozenPerformanceRejected: true },
+  }))
+  assert.ok(html.includes(PERFORMANCE_UNAVAILABLE_MESSAGE))
+  assert.equal(html.includes('3.42'), false)
 })
 
 test('Performance preserves below-sample and unavailable states without a number', () => {
   const partial = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
     read: {
-      performance: {
+      frozenPerformance: {
         status: 'partial',
-        metrics: [{ key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: null }],
+        metrics: [{ key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: null, qualification: { status: 'below_minimum' } }],
         summary: 'Not Enough Innings Yet',
         sample_summary: 'Current regular season · 8 active arms · 3 with a sample · 7 relief appearances · 9.0 innings · Through Aug 20, 2026',
         limitations: [],
@@ -68,7 +101,7 @@ test('Performance preserves below-sample and unavailable states without a number
   }))
   const unavailable = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
     read: {
-      performance: { status: 'unavailable' },
+      frozenPerformance: { status: 'unavailable' },
       sectionStatus: { performance: { status: 'unavailable' } },
     },
   }))
@@ -83,11 +116,11 @@ test('Performance preserves below-sample and unavailable states without a number
 test('Performance preserves ERA when WHIP is unavailable and renders backend limitation', () => {
   const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
     read: {
-      performance: {
+      frozenPerformance: {
         status: 'partial',
         metrics: [
-          { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42' },
-          { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: null },
+          { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42', qualification: { status: 'qualified' } },
+          { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: null, qualification: { status: 'unavailable' } },
         ],
         summary: 'Active Bullpen ERA describes recorded results for the current active bullpen and remains supporting context.',
         sample_summary: 'Current regular season · 8 active arms · 31 relief appearances · Through Aug 20, 2026',
@@ -101,7 +134,7 @@ test('Performance preserves ERA when WHIP is unavailable and renders backend lim
   assert.ok(html.includes('3.42'))
   assert.equal(html.includes('1.18'), false)
   assert.ok(html.includes('Active Bullpen WHIP is withheld'))
-  assert.ok(html.includes('grid-cols-1'))
+  assert.ok(html.includes('grid-cols-2'))
 })
 
 test('Performance loading and error states retain existing SectionState behavior', () => {
@@ -132,7 +165,7 @@ test('Team Board has no internal Performance fetch or browser-authored metric ca
     assert.equal(source.includes('/api/internal/performance'), false)
     assert.equal(source.includes('active-bullpen-era'), false)
   }
-  for (const forbiddenCalculation of ['earned_runs', 'innings_pitched', 'strikeouts', 'walks', 'home_runs', '.reduce(']) {
+  for (const forbiddenCalculation of ['earned_runs', 'strikeouts', 'walks', '.reduce(']) {
     assert.equal(performanceSource.includes(forbiddenCalculation), false, forbiddenCalculation)
   }
 })

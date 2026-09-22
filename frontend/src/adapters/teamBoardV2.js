@@ -7,6 +7,7 @@ export const TEAM_BOARD_DETAILS_CONTRACT_VERSION = 'team_board_deferred_details_
 export const TEAM_BOARD_RECENT_USAGE_REST_CONTRACT = 'team_board_recent_usage_rest_v1'
 export const TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT = 'team_board_workload_overview_v1'
 export const TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT = 'team_board_public_deployment_context_v1'
+export const TEAM_BOARD_PERFORMANCE_CONTRACT = 'public_team_performance_v1'
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 const workloadWindowKeys = [3, 7, 14, 30]
@@ -135,6 +136,37 @@ export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
       offActiveContribution: source.off_active_contribution === null ? null : readWorkloadContribution(source.off_active_contribution),
     },
   }
+}
+
+export function readTeamBoardFrozenPerformance(read, publicationIdentity) {
+  if (!read || typeof read !== 'object' || Array.isArray(read)
+    || !publicationIdentity
+    || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || read.capability !== 'public_team_performance'
+    || read.contract_version !== TEAM_BOARD_PERFORMANCE_CONTRACT
+    || read.through !== publicationIdentity.represented_date
+    || read.population_basis !== 'represented_default_visible_active_bullpen'
+    || !['available', 'partial', 'unavailable'].includes(read.status)
+    || (read.status !== 'unavailable' && (!read.window || !read.sample))
+    || (read.window && (read.window.through !== read.through
+      || read.window.policy !== 'current_mlb_regular_season_through_represented_date'))
+    || !Array.isArray(read.metrics)
+    || !read.capabilities || typeof read.capabilities !== 'object') return null
+  const expected = ['active_bullpen_era', 'active_bullpen_whip']
+  if (read.status !== 'unavailable' && (read.metrics.length !== 2
+    || read.metrics.some((metric, index) => metric?.key !== expected[index]
+      || metric.metric_id !== `M-00${index + 1}`))) return null
+  if (read.metrics.some(metric => !metric || !['M-001', 'M-002'].includes(metric.metric_id)
+    || !['complete', 'partial', 'unknown', 'unavailable'].includes(metric.evidence_state?.status)
+    || !['qualified', 'below_minimum', 'unavailable'].includes(metric.qualification?.status)
+    || (metric.value !== null && typeof metric.value !== 'string')
+    || (metric.qualification.status === 'qualified' && metric.value === null)
+    || (metric.qualification.status !== 'qualified' && metric.value !== null))) return null
+  if (['k_bb_percent', 'home_runs_allowed', 'inherited_runner_context'].some(key => {
+    const capability = read.capabilities[key]
+    return !capability || capability.status !== 'unavailable' || capability.value !== null
+  })) return null
+  return read
 }
 
 const identityFields = [
@@ -342,6 +374,9 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
   const frozenPublicDeployment = detailsValid
     ? readTeamBoardFrozenDeployment(details.roles_deployment?.frozen_public_deployment, corePayload.publication_identity)
     : null
+  const frozenPerformance = detailsValid
+    ? readTeamBoardFrozenPerformance(details.performance, corePayload.publication_identity)
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -366,7 +401,8 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     rosterContext: corePayload.roster_context,
     recentReliefWork: details.recent_relief_work || null,
     gameContext: details.game_context || null,
-    performance: details.performance || null,
+    performance: frozenPerformance,
+    frozenPerformance,
     whatChanged: details.what_changed || null,
     operatingState: corePayload.operating_state,
     sectionStatus: {
@@ -378,6 +414,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     recentUsageRestRejected: Boolean(details.recent_usage_rest) && !recentUsageRest,
     frozenTeamWorkloadRejected: Boolean(details.workload_overview?.frozen_team_workload) && !frozenTeamWorkload,
     frozenPublicDeploymentRejected: Boolean(details.roles_deployment?.frozen_public_deployment) && !frozenPublicDeployment,
+    frozenPerformanceRejected: Boolean(details.performance) && !frozenPerformance,
     limitations: corePayload.limitations,
   }
 }
