@@ -11,7 +11,6 @@ from services.public_team_relief_work import (
     build_public_team_relief_work_payload,
 )
 from services.public_delivery import apply_public_delivery_headers
-from services.team_changes import build_team_changes_payload
 from services.team_board_delivery import (
     TeamBoardIdentityMismatch,
     build_team_board_identity,
@@ -24,7 +23,6 @@ from services.team_board_v2 import (
     build_team_board_v2_payload,
     unavailable_section,
 )
-from services.what_changed_comparison_identity import comparison_identity_from_payload
 from utils.db import db
 
 
@@ -115,20 +113,9 @@ def _build_deferred_sections(team_id, board, snapshot):
     # lacks TB-06; mutable GameLog rows must not synthesize it at request time.
     performance = board.get('frozen_performance')
 
-    comparison_identity = comparison_identity_from_payload(snapshot.payload)
-    what_changed, what_changed_error = _optional_failure(
-        'what_changed', 'what_changed_unavailable',
-        lambda: build_team_changes_payload(
-            team_id,
-            freshness=freshness,
-            generated_at=board.get('generated_at'),
-            comparison_source_snapshot_id=snapshot.id,
-            through_date=represented_date,
-            comparison_identity=comparison_identity,
-        ),
-    )
-    if what_changed_error:
-        section_errors['what_changed'] = what_changed_error
+    # TB-09 is authored during trusted publication. Older packages intentionally
+    # lack it; mutable rows must not synthesize a comparison at request time.
+    what_changed = board.get('frozen_what_changed')
 
     return {
         'recent_relief_work': relief_work,

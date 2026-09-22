@@ -1,0 +1,92 @@
+from datetime import date, datetime
+from types import SimpleNamespace
+
+import pytest
+
+from services.team_board_snapshot_team_state import (
+    compare_exact_team_state, make_receipt, receipt_value,
+)
+from services.what_changed_comparison_identity import (
+    ComparisonIdentityInvalid, build_comparison_identity,
+)
+
+
+def _snapshot(snapshot_id, represented_date, status_code, *, with_receipt=True):
+    snapshot = SimpleNamespace(
+        id=snapshot_id, sync_run_id=snapshot_id + 100,
+        data_through=date.fromisoformat(represented_date),
+        snapshot_type='bullpen_dashboard', payload_version=1,
+        status='ready', published_at=datetime(2026, 9, 22),
+        is_published=True, payload={},
+    )
+    if with_receipt:
+        readiness = {
+            'readiness': {'status_code': status_code},
+            'freshness': {'data_through': represented_date},
+        }
+        snapshot.payload['trusted_team_boards'] = {
+            'contract': 'trusted_team_board_publication_v1',
+            'data_through': represented_date,
+            'by_team_id': {'110': {
+                'frozen_team_state': make_receipt(
+                    snapshot, 110, readiness, method_version='v3_phase_5',
+                ),
+            }},
+        }
+    return snapshot
+
+
+def _pair(previous, current):
+    identity = build_comparison_identity(current, previous)
+    current.payload['what_changed_since_yesterday'] = {
+        'comparison': {'identity': identity},
+    }
+    return identity
+
+
+def test_receipt_is_exact_snapshot_team_date_and_method():
+    snapshot = _snapshot(12, '2026-09-22', 'operationally_stable')
+    present, value = receipt_value(snapshot, 110)
+    assert present is True
+    assert value['public_label'] == 'Fresh'
+    value['public_label'] = 'Altered'
+    assert receipt_value(snapshot, 110)[1]['public_label'] == 'Fresh'
+
+    for field, wrong in (
+        ('dashboard_snapshot_id', 999), ('team_id', 111),
+        ('represented_date', '2026-09-21'), ('method_version', 'unknown'),
+    ):
+        invalid = _snapshot(12, '2026-09-22', 'operationally_stable')
+        invalid.payload['trusted_team_boards']['by_team_id']['110']['frozen_team_state'][field] = wrong
+        assert receipt_value(invalid, 110)[1]['available'] is False
+    assert receipt_value(snapshot, 111)[1]['available'] is False
+
+
+def test_exact_pair_change_and_unchanged():
+    previous = _snapshot(11, '2026-09-21', 'operationally_constrained')
+    current = _snapshot(12, '2026-09-22', 'operationally_stable')
+    identity = _pair(previous, current)
+    result = compare_exact_team_state(previous, current, 110, identity)
+    assert result['status'] == 'changed'
+    assert result['event']['previous_label'] == 'Stretched'
+    assert result['event']['current_label'] == 'Fresh'
+    current.payload['trusted_team_boards']['by_team_id']['110']['frozen_team_state'] = (
+        make_receipt(current, 110, {
+            'readiness': {'status_code': 'operationally_constrained'},
+            'freshness': {'data_through': '2026-09-22'},
+        }, method_version='v3_phase_5')
+    )
+    assert compare_exact_team_state(previous, current, 110, identity)['status'] == 'unchanged'
+
+
+def test_wrong_predecessor_rejected_and_missing_receipt_unavailable():
+    previous = _snapshot(11, '2026-09-21', 'operationally_constrained')
+    current = _snapshot(12, '2026-09-22', 'operationally_stable')
+    identity = _pair(previous, current)
+    wrong = _snapshot(10, '2026-09-21', 'operationally_constrained')
+    with pytest.raises(ComparisonIdentityInvalid):
+        compare_exact_team_state(wrong, current, 110, identity)
+    previous.payload.pop('trusted_team_boards')
+    result = compare_exact_team_state(previous, current, 110, identity)
+    assert result['status'] == 'unavailable'
+    assert result['event'] is None

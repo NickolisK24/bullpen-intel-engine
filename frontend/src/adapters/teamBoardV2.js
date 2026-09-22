@@ -10,6 +10,66 @@ export const TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT = 'team_board_public_deployme
 export const TEAM_BOARD_PERFORMANCE_CONTRACT = 'public_team_performance_v1'
 export const TEAM_BOARD_ROTATION_GAMES_CONTRACT = 'team_board_recent_rotation_games_v1'
 export const TEAM_BOARD_ROSTER_TRANSACTIONS_CONTRACT = 'team_board_roster_transactions_v1'
+export const TEAM_BOARD_WHAT_CHANGED_CONTRACT = 'team_board_what_changed_v1'
+
+const whatChangedDomains = new Set([
+  'team_state', 'roster', 'workload_rest', 'transactions', 'rotation',
+])
+
+export function readTeamBoardFrozenWhatChanged(carrier, publicationIdentity) {
+  const receipt = carrier?.comparison_identity
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_WHAT_CHANGED_CONTRACT
+    || carrier.method_version !== TEAM_BOARD_WHAT_CHANGED_CONTRACT
+    || !publicationIdentity || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || carrier.team_id !== publicationIdentity.team_id
+    || carrier.current_snapshot_id !== publicationIdentity.snapshot_id
+    || carrier.current_represented_date !== publicationIdentity.represented_date
+    || !['changes', 'quiet', 'unavailable'].includes(carrier.state)
+    || !['complete', 'partial', 'unavailable'].includes(carrier.comparison_status)
+    || (carrier.state !== 'unavailable' && !receipt)
+    || !carrier.domains || typeof carrier.domains !== 'object'
+    || Object.values(carrier.domains).some(domain => !domain || !['complete', 'partial', 'unavailable', 'not_comparable'].includes(domain.status))
+    || !Array.isArray(carrier.events)
+    || carrier.events.length > 5
+    || (carrier.state === 'quiet' && carrier.events.length > 0)
+    || (receipt && (receipt.contract !== 'what_changed_comparison_identity_v1'
+      || receipt.current_snapshot_id !== publicationIdentity.snapshot_id
+      || receipt.current_data_through !== publicationIdentity.represented_date
+      || receipt.previous_snapshot_id !== carrier.previous_snapshot_id
+      || receipt.previous_data_through !== carrier.previous_represented_date))) return null
+  const events = carrier.events.map((event, index) => {
+    if (!event || !whatChangedDomains.has(event.domain)
+      || typeof event.event_type !== 'string' || !event.event_type
+      || event.evidence_status !== 'complete'
+      || event.current_snapshot_id !== carrier.current_snapshot_id
+      || event.previous_snapshot_id !== carrier.previous_snapshot_id
+      || event.method_version !== 'team_board_what_changed_event_v1'
+      || typeof event.summary !== 'string' || !event.summary.trim()) return null
+    return {
+      key: `${event.domain}-${event.event_type}-${event.subject_id ?? 'team'}-${event.event_date || index}`,
+      type: event.event_type,
+      domain: event.domain,
+      subjectId: event.subject_id,
+      eventDate: event.event_date,
+      previousValue: event.previous_value,
+      currentValue: event.current_value,
+      facts: event.facts && typeof event.facts === 'object' ? event.facts : {},
+      summary: event.summary,
+    }
+  })
+  if (events.some(event => !event)) return null
+  return {
+    contract: carrier.contract,
+    state: carrier.state,
+    comparisonStatus: carrier.comparison_status,
+    currentRepresentedDate: carrier.current_represented_date,
+    previousRepresentedDate: carrier.previous_represented_date,
+    quietMessage: carrier.quiet_message,
+    domains: carrier.domains,
+    events,
+  }
+}
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 const workloadWindowKeys = [3, 7, 14, 30]
@@ -471,7 +531,7 @@ export function readTeamBoardV2(payload) {
     recentReliefWork: payload.recent_relief_work,
     gameContext: payload.game_context,
     performance: payload.performance,
-    whatChanged: payload.what_changed,
+    whatChanged: readTeamBoardFrozenWhatChanged(payload.what_changed, payload.publication_identity),
     operatingState: payload.operating_state,
     sectionStatus: payload.section_status,
     limitations: payload.limitations,
@@ -531,6 +591,9 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
         corePayload.active_bullpen.arms.map(arm => arm.pitcher_id),
       )
     : null
+  const frozenWhatChanged = detailsValid
+    ? readTeamBoardFrozenWhatChanged(details.what_changed, corePayload.publication_identity)
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -558,7 +621,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     gameContext: details.game_context || null,
     performance: frozenPerformance,
     frozenPerformance,
-    whatChanged: details.what_changed || null,
+    whatChanged: frozenWhatChanged,
     operatingState: corePayload.operating_state,
     sectionStatus: {
       ...(corePayload.section_status || {}),
@@ -572,6 +635,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenPerformanceRejected: Boolean(details.performance) && !frozenPerformance,
     frozenRotationGamesRejected: Boolean(details.rotation_impact?.frozen_recent_games) && !frozenRotationGames,
     frozenRosterTransactionsRejected: Boolean(details.recent_transactions) && !frozenRosterTransactions,
+    frozenWhatChangedRejected: Boolean(details.what_changed) && !frozenWhatChanged,
     limitations: corePayload.limitations,
   }
 }

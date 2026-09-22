@@ -71,8 +71,9 @@ population.
 
 Backend owners:
 
-- Team State and summary: published Team State artifact frozen to the selected
-  trusted Dashboard snapshot;
+- Team State and summary: the pre-trust, snapshot-bound Team State receipt in
+  the trusted Team Board package for new publications; older snapshots retain
+  their published-artifact compatibility read;
 - active membership and roster context: trusted Team Board package and roster
   authority;
 - role and current read: existing public role/read projections;
@@ -480,6 +481,60 @@ The local browser fixture measured 233 ms to core readiness, 212 ms to
 details response, and 239 ms to TB-08 readiness (28 ms after details). This
 does not isolate React render cost or predict production latency.
 
+## TB-09 What Changed
+
+TB-09 is a selective, publication-time comparison over the exact trusted
+Dashboard current/predecessor pair already named by
+`what_changed_comparison_identity_v1`. Its frozen
+`team_board_what_changed_v1` receipt records both snapshot IDs, both represented
+dates, team ID, method version, per-domain comparison coverage, and at most five
+deterministically ordered material events. The details route serves this value
+from the trusted Team Board package; it never selects a predecessor or rebuilds
+a comparison from mutable rows.
+
+Comparable v1 domains are the immutable Team State receipts, frozen active
+bullpen membership, newly complete TB-03 usage-pattern facts (back-to-back,
+3-in-4, 4-in-6, and qualifying high-pitch outing), newly appearing verified
+TB-08 transaction identities, and a newly appearing complete TB-07 short
+start. Raw pitch-count differences are not material events. Named-arm role
+movement and ERA/WHIP materiality remain not comparable because no public
+materiality rules govern them; the receipt therefore reports honest partial
+coverage instead of deriving a change.
+
+Team State transitions read the same snapshot-bound values used by TB-01.
+Roster events compare pitcher identities and do not infer transaction causes.
+Transaction events require complete frozen evidence and exact event identity,
+so an event already present in the predecessor is not repeated. When a
+verified addition/removal explains the same membership delta, its exact
+identity and label are attached to that roster event instead of creating a
+duplicate timeline item. Rotation
+events repeat only backend-authored starter/bullpen innings from a new governed
+short start. The priority is Team State, active roster, workload/rest,
+transaction, then rotation; database row order cannot change prominence.
+
+No material events produces the frozen quiet message, “No material bullpen
+changes since the previous trusted update.” No exact predecessor produces an
+unavailable result, not a quiet claim. One unavailable domain does not erase
+valid events; it makes the comparison partial and the UI names the omitted
+domains compactly. Older packages without the carrier do not synthesize it.
+The frontend preserves backend event order and text, adds only formatting and
+keyboard-native handoffs to existing sections, and performs no raw diff,
+role-movement, performance, or baseball materiality logic. Exact core/details,
+team, current snapshot, predecessor receipt, and represented-date checks reject
+stale attachment without affecting TB-01 through TB-08. The stacked list has
+no horizontal table dependency at 390, 768, or 1440 pixels; text conveys every
+change without relying on color.
+
+The pure frozen-comparison benchmark measured 0.061 ms per team (1.830 ms
+projected across 30 teams) and 1,766 serialized bytes for the representative
+changed-team receipt (52,980 bytes projected across 30 teams). It issues no
+query itself because it consumes already-frozen package values. A local browser
+fixture measured 291 ms to core readiness, 269 ms to the details response, and
+319 ms to TB-09 readiness, with a 50 ms details-response-to-render interval.
+These are local fixture measurements, not production latency. The trusted
+publication rehearsal supplies the authoritative integrated PostgreSQL release
+proof and never moves a publication pointer.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with
@@ -492,7 +547,11 @@ the candidate with `publish=False`, and asserts that neither the published
 snapshot pointer nor the SyncRun pointer moves. It checks the frozen TB-04
 windows, evidence states, certified zero, concentration, off-active workload,
 prior-team exclusion, core/details identity, mismatch rejection, and older
-package compatibility. The candidate is disposable test evidence, never a
+package compatibility. For TB-09 it also installs an unpublished exact
+predecessor fixture, freezes all 30 comparison receipts, proves changed and
+quiet Team State cases plus partial coverage, serves the candidate carrier
+through the real details composer, and still records zero pointer moves. The
+candidate is disposable test evidence, never a
 trusted production publication or a substitute for production admission.
 
 Team Board packages may advance when targeted tests, hosted CI, this
@@ -515,6 +574,27 @@ TB-09 What Changed must use the exact current/previous trusted Dashboard
 snapshot pair. It must not claim atomic predecessor authority. R3-D remains
 frozen unless a future product requirement explicitly adopts atomic publication
 semantics.
+
+### Snapshot-bound Team State authority for TB-09
+
+The mandatory pre-trust Team State publication proof resolves governed readiness
+once for each of the 30 teams. In the same transaction, it binds one
+`frozen_team_state` receipt per Team Board package to team id, Dashboard snapshot
+id, represented date, and `v3_phase_5` method. The receipt uses the existing
+Fresh/Stretched/Vulnerable public vocabulary and passes the same artifact
+eligibility gate. The proof retains the frozen generation inputs so the
+post-commit Share Artifact writer consumes the pre-commit evidence rather than
+reading later mutable rows. A missing or ineligible team, proof failure, or
+receipt persistence failure rolls back the trusted pointer movement.
+
+For new snapshots, TB-01 reads the receipt directly; a later Share Artifact
+write failure cannot change the served Team State. TB-09's backend comparison
+reads those same receipts from the current snapshot and the *exact* governed
+legacy predecessor. It emits a Team State transition only when both immutable
+receipts are valid. If either older snapshot lacks a receipt, that comparison
+domain is unavailable rather than reconstructed from mutable data. Existing
+TB-01 artifact serving remains available for those older snapshots. This does
+not add roster/workload/role/performance What Changed events or implement R3-D.
 
 ## Known evidence limitations
 

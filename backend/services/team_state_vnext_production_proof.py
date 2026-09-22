@@ -31,6 +31,7 @@ a day early (D-056).
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import os
 from datetime import date, datetime, timezone
@@ -874,6 +875,7 @@ def require_transactional_publication_proof(
     from services.share_artifact_generation import resolve_team_readiness_payload
     from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_directory import valid_team_ids
+    from flask import current_app, has_app_context
 
     resolver = readiness_resolver or resolve_team_readiness_payload
     expected_ids = tuple(sorted(int(value) for value in (
@@ -889,16 +891,58 @@ def require_transactional_publication_proof(
 
     historical = historical_team_state_inventory(getattr(snapshot, 'id', None))
     teams = []
+    frozen_inputs = {}
+    frozen_receipts = {}
+    package = _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
+    by_team = _mapping(package.get('by_team_id'))
+    has_team_board_package = bool(package)
+    if has_team_board_package and len(by_team) != 30:
+        raise ValueError('snapshot_team_state_package_requires_30_teams')
+    resolver_parameters = inspect.signature(resolver).parameters if has_team_board_package else {}
+    capture_arm_reads = (
+        'arm_reads_out' in resolver_parameters
+        or any(
+            item.kind == inspect.Parameter.VAR_KEYWORD
+            for item in resolver_parameters.values()
+        )
+    )
+    from services.team_board_snapshot_team_state import make_receipt
+    from services.team_state_eligibility import evaluate_team_state_eligibility
+    from services.team_state_source import gather_team_state_source
     for team_id in expected_ids:
         reference_dates = {}
-        readiness = resolver(
-            team_id,
-            requested_date=getattr(snapshot, 'data_through', None),
-            source_snapshot=snapshot,
-            reference_dates_out=reference_dates,
-        )
+        arm_reads = {}
+        resolver_kwargs = {
+            'requested_date': getattr(snapshot, 'data_through', None),
+            'source_snapshot': snapshot,
+            'reference_dates_out': reference_dates,
+        }
+        if capture_arm_reads:
+            resolver_kwargs['arm_reads_out'] = arm_reads
+        readiness = resolver(team_id, **resolver_kwargs)
         if not isinstance(readiness, Mapping):
             raise ValueError(f'team_state_publication_proof_missing_team:{team_id}')
+        if has_team_board_package:
+            source = gather_team_state_source(
+                team_id, readiness_payload=readiness, snapshot=snapshot,
+                requested_date=getattr(snapshot, 'data_through', None),
+            )
+            eligibility = evaluate_team_state_eligibility(
+                source,
+            )
+            if not eligibility.eligible:
+                raise ValueError(
+                    f'snapshot_team_state_ineligible:{team_id}:'
+                    + ','.join(eligibility.reasons)
+                )
+            frozen_receipts[str(team_id)] = make_receipt(
+                snapshot, team_id, readiness, method_version=EXPECTED_METHOD_VERSION,
+            )
+            frozen_inputs[str(team_id)] = {
+                'readiness': _json_safe(readiness),
+                'reference_dates': _json_safe(reference_dates),
+                'arm_reads': _json_safe(arm_reads),
+            }
         teams.append(_candidate_team_entry(
             snapshot, team_id, readiness, reference_dates,
         ))
@@ -933,6 +977,34 @@ def require_transactional_publication_proof(
         raise ValueError(
             'team_state_publication_proof_invariant_failed:' + ','.join(failed)
         )
+    if has_team_board_package:
+        if set(by_team) != set(frozen_receipts):
+            raise ValueError('snapshot_team_state_team_identity_mismatch')
+        updated_payload = dict(snapshot.payload)
+        updated_package = dict(package)
+        updated_teams = {
+            key: {**dict(team), 'frozen_team_state': frozen_receipts[key]}
+            for key, team in by_team.items()
+        }
+        updated_package['by_team_id'] = updated_teams
+        updated_payload['trusted_team_boards'] = updated_package
+        snapshot.payload = updated_payload
+        proof['snapshot_team_state_generation_inputs'] = frozen_inputs
+        from models.dashboard_snapshot import DashboardSnapshot
+        from services.team_board_what_changed import attach_frozen_what_changed
+        from services.what_changed_comparison_identity import comparison_identity_from_payload
+        from utils.db import db
+
+        comparison_identity = comparison_identity_from_payload(snapshot.payload)
+        previous_snapshot = (
+            db.session.get(
+                DashboardSnapshot, comparison_identity['previous_snapshot_id'],
+            )
+            if comparison_identity is not None else None
+        )
+        attach_frozen_what_changed(snapshot, previous_snapshot)
+    elif has_app_context() and current_app.config.get('APP_ENV') == 'production':
+        raise ValueError('snapshot_team_state_package_missing')
     _store_durable_proof(snapshot, proof, commit=False)
     logger.info(
         'Mandatory Team State publication proof flushed snapshot_id=%s teams=30 '
@@ -987,6 +1059,58 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
     if base_generator is None:
         from services.share_artifact_generation import generate_team_state_artifact
         base_generator = generate_team_state_artifact
+        package_teams = _mapping(
+            _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
+            .get('by_team_id')
+        )
+        has_receipts = any(
+            'frozen_team_state' in _mapping(team)
+            for team in package_teams.values()
+        )
+        if has_receipts:
+            frozen_inputs = _mapping(_mapping(durable_proof).get(
+                'snapshot_team_state_generation_inputs'
+            ))
+            if set(frozen_inputs) != set(package_teams):
+                logger.error(
+                    'Post-publication Team State generation withheld: frozen input '
+                    'identity mismatch snapshot_id=%s.', snapshot_id,
+                )
+                return None
+            original_generator = base_generator
+
+            def base_generator(team_id, **kwargs):
+                from copy import deepcopy
+                from services.team_board_snapshot_team_state import receipt_value
+
+                source_snapshot = kwargs.get('snapshot')
+                if (
+                    getattr(source_snapshot, 'id', None) != snapshot_id
+                    or getattr(source_snapshot, 'data_through', None)
+                    != getattr(snapshot, 'data_through', None)
+                ):
+                    raise ValueError('snapshot_team_state_generation_identity_mismatch')
+                present, value = receipt_value(source_snapshot, team_id)
+                inputs = _mapping(frozen_inputs.get(str(team_id)))
+                if not present or value is None or not isinstance(inputs.get('readiness'), Mapping):
+                    raise ValueError('snapshot_team_state_generation_input_missing')
+
+                def frozen_resolver(_team_id, *, reference_dates_out=None,
+                                    arm_reads_out=None, **_unused):
+                    if int(_team_id) != int(team_id):
+                        raise ValueError('snapshot_team_state_generation_team_mismatch')
+                    if reference_dates_out is not None:
+                        reference_dates_out.update(deepcopy(inputs.get('reference_dates') or {}))
+                    if arm_reads_out is not None:
+                        arm_reads_out.update({
+                            int(key): deepcopy(item)
+                            for key, item in _mapping(inputs.get('arm_reads')).items()
+                        })
+                    return deepcopy(inputs['readiness'])
+
+                return original_generator(
+                    team_id, readiness_resolver=frozen_resolver, **kwargs,
+                )
     batch = run_post_publication_generation(snapshot, generator=collector.wrap(base_generator))
 
     after = _safe_inventory(snapshot_id, when='post')

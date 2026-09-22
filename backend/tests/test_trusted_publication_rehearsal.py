@@ -1,5 +1,6 @@
 """A bounded, isolated rehearsal of the installed trusted publication builder."""
 
+from copy import deepcopy
 from datetime import timedelta
 import importlib
 import json
@@ -32,6 +33,10 @@ from services.team_board_v2 import (
     build_team_board_core_payload,
     build_team_board_details_payload,
 )
+from services.team_board_snapshot_team_state import make_receipt
+from services.team_board_what_changed import build_frozen_what_changed
+from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
+from services.what_changed_comparison_identity import build_comparison_identity
 from tests.db_config import (
     assert_disposable_test_target,
     create_test_schema,
@@ -365,6 +370,182 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert dashboard_snapshot.payload_version_valid(snapshot)
             assert DashboardSnapshot.query.filter_by(is_published=True).count() == 0
             assert run.published_dashboard_snapshot_id is None
+            # Rehearse the same pre-trust proof/admission step within an isolated
+            # savepoint.  Rollback keeps the candidate unpublished and proves no
+            # production-style pointer movement is needed for the receipt check.
+            from services.team_state_vnext_production_proof import require_transactional_publication_proof
+            savepoint = db.session.begin_nested()
+            try:
+                snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
+                snapshot.is_published = True
+                snapshot.published_at = utc_now_naive()
+                no_predecessor = build_frozen_what_changed(
+                    None, snapshot, TEAM_IDS[0],
+                )
+                assert no_predecessor['state'] == 'unavailable'
+                assert no_predecessor['reason_code'] == 'no_prior_trusted_comparison'
+                def governed_rehearsal_readiness(team_id, *, reference_dates_out,
+                                                 **_kwargs):
+                    # The publication fixture is intentionally sparse for the
+                    # earlier Team Board slices.  Supply a complete governed
+                    # readiness fixture only at the proof seam; production still
+                    # uses the installed resolver.
+                    reference_dates_out.update({
+                        'membership_reference_date': snapshot.data_through,
+                        'availability_reference_date': snapshot.availability_reference_date,
+                    })
+                    return {
+                        'contract_version': 'v3_phase_5',
+                        'team': {
+                            'team_id': team_id, 'team_name': f'Rehearsal Team {team_id}',
+                            'team_abbreviation': f'R{team_id}',
+                        },
+                        'readiness': {
+                            'status_code': 'operationally_stable',
+                            'summary': 'Current bullpen state.',
+                        },
+                        'freshness': {'data_through': snapshot.data_through.isoformat()},
+                        'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
+                        'team_state_evidence': {
+                            'method_version': 'v3_phase_5',
+                            'contract': 'team_state_contract_a',
+                            'basis': 'status_only',
+                            'readiness_status_code': 'operationally_stable',
+                            'active_pitcher_count': 8,
+                            'clean_count': 6, 'moderate_count': 2,
+                            'severe_count': 0, 'unknown_count': 0,
+                            'clean_share': 0.75, 'moderate_share': 0.25,
+                            'severe_share': 0.0, 'unknown_share': 0.0,
+                            'decisive_rule': 'fresh_coverage',
+                            'decisive_inputs': {'clean_count': 6},
+                            'thresholds_applied': {
+                                'clean_share_fresh_min': [3, 5],
+                                'clean_share_fresh_min_value': 0.6,
+                                'clean_count_fresh_min': 5,
+                                'severe_count_fresh_max': 1,
+                                'clean_count_vulnerable_max': 2,
+                                'severe_share_vulnerable_min': [1, 3],
+                                'severe_share_vulnerable_min_value': 1 / 3,
+                            },
+                            'trust_state': 'high', 'trust_data_state': 'fresh',
+                            'freshness_state': 'current',
+                            'material_limitations': [],
+                            'evidence_references': {
+                                'population_authority': 'resolve_readiness_population',
+                            },
+                        },
+                    }
+
+                # Provide one exact immutable predecessor inside disposable
+                # storage. It is never made current; it exists only so the real
+                # proof seam can freeze TB-09 against an exact trusted pair.
+                previous = DashboardSnapshot(
+                    snapshot_type=snapshot.snapshot_type,
+                    sync_run_id=run.id,
+                    status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                    is_published=False,
+                    published_at=utc_now_naive() - timedelta(days=1),
+                    payload=deepcopy(snapshot.payload),
+                    payload_version=snapshot.payload_version,
+                    data_through=snapshot.data_through - timedelta(days=1),
+                    availability_reference_date=(
+                        snapshot.availability_reference_date - timedelta(days=1)
+                    ),
+                    snapshot_generated_at=utc_now_naive() - timedelta(days=1),
+                    source='trusted_rehearsal_previous',
+                )
+                db.session.add(previous)
+                db.session.flush()
+                previous_package = deepcopy(previous.payload['trusted_team_boards'])
+                previous_package['data_through'] = previous.data_through.isoformat()
+                for team_id, team in previous_package['by_team_id'].items():
+                    state_code = (
+                        'operationally_constrained'
+                        if int(team_id) == TEAM_IDS[0]
+                        else 'operationally_stable'
+                    )
+                    readiness = {
+                        'readiness': {'status_code': state_code},
+                        'freshness': {'data_through': previous.data_through.isoformat()},
+                    }
+                    team['frozen_team_state'] = make_receipt(
+                        previous, int(team_id), readiness,
+                        method_version=EXPECTED_METHOD_VERSION,
+                    )
+                previous.payload = {
+                    **deepcopy(previous.payload),
+                    'trusted_team_boards': previous_package,
+                }
+                current_payload = deepcopy(snapshot.payload)
+                current_payload['what_changed_since_yesterday'] = {
+                    'comparison': {
+                        'identity': build_comparison_identity(snapshot, previous),
+                    },
+                }
+                snapshot.payload = current_payload
+
+                rehearsal_proof = require_transactional_publication_proof(
+                    snapshot, readiness_resolver=governed_rehearsal_readiness,
+                )
+                assert len(rehearsal_proof['snapshot_team_state_generation_inputs']) == 30
+                assert all(
+                    'frozen_team_state' in team
+                    for team in snapshot.payload['trusted_team_boards']['by_team_id'].values()
+                )
+                first = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_IDS[0])]
+                assert public_serving_authority._published_team_state(
+                    snapshot, TEAM_IDS[0],
+                ) == first['frozen_team_state']['value']
+                changed = first['frozen_what_changed']
+                assert changed['contract'] == 'team_board_what_changed_v1'
+                assert changed['current_snapshot_id'] == snapshot.id
+                assert changed['previous_snapshot_id'] == previous.id
+                assert changed['events'][0]['event_type'] == 'team_state_changed'
+                assert changed['events'][0]['previous_value'] == 'Stretched'
+                assert changed['events'][0]['current_value'] == 'Fresh'
+                assert changed['comparison_status'] == 'partial'
+                quiet = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_IDS[1])]['frozen_what_changed']
+                assert quiet['state'] == 'quiet'
+                assert quiet['events'] == []
+                assert quiet['quiet_message']
+                rehearsal_board = public_serving_authority.build_published_team_board(
+                    TEAM_IDS[0], snapshot_override=snapshot,
+                    include_delivery_identity=True, include_recent_usage_rest=True,
+                )
+                rehearsal_identity = build_team_board_identity(snapshot, rehearsal_board)
+                rehearsal_details = build_team_board_details_payload(
+                    rehearsal_board, publication_identity=rehearsal_identity,
+                    recent_relief_work=None,
+                    recent_transactions=rehearsal_board['frozen_roster_transactions'],
+                    game_context=None, performance=rehearsal_board['frozen_performance'],
+                    what_changed=rehearsal_board['frozen_what_changed'], section_errors={},
+                )
+                assert rehearsal_details['what_changed'] == changed
+            finally:
+                savepoint.rollback()
+                db.session.expire(snapshot)
+            assert snapshot.is_published is False
+            assert run.published_dashboard_snapshot_id is None
+            failed_savepoint = db.session.begin_nested()
+            try:
+                snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
+                snapshot.is_published = True
+                snapshot.published_at = utc_now_naive()
+
+                def missing_team_readiness(team_id, **kwargs):
+                    if team_id == TEAM_IDS[1]:
+                        return None
+                    return governed_rehearsal_readiness(team_id, **kwargs)
+
+                with pytest.raises(ValueError, match='missing_team'):
+                    require_transactional_publication_proof(
+                        snapshot, readiness_resolver=missing_team_readiness,
+                    )
+            finally:
+                failed_savepoint.rollback()
+                db.session.expire(snapshot)
+            assert snapshot.is_published is False
+            assert run.published_dashboard_snapshot_id is None
             assert dashboard_snapshot._payload_slate_coverage_unavailable_reason(
                 snapshot.payload
             ) is None
@@ -502,7 +683,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     board, publication_identity=identity,
                     recent_relief_work=None,
                     recent_transactions=board['frozen_roster_transactions'],
-                    game_context=None, performance=board['frozen_performance'], what_changed=None,
+                    game_context=None, performance=board['frozen_performance'],
+                    what_changed=board['frozen_what_changed'],
                     section_errors={},
                 )
             finally:
@@ -542,6 +724,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             older_team.pop('frozen_rotation_impact_authority')
             older_team.pop('frozen_roster_transactions')
             older_team.pop('frozen_roster_transactions_authority')
+            older_team.pop('frozen_what_changed', None)
             older_teams[str(team_id)] = older_team
             older_package['by_team_id'] = older_teams
             older['trusted_team_boards'] = older_package
@@ -554,6 +737,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert older_board['frozen_performance'] is None
             assert older_board['frozen_rotation_impact'] is None
             assert older_board['frozen_roster_transactions'] is None
+            assert older_board['frozen_what_changed'] is None
             assert older_board['recent_usage_rest'] is not None
             print(
                 f'REHEARSAL candidate_snapshot_id={snapshot.id} sync_run_id={run.id} '

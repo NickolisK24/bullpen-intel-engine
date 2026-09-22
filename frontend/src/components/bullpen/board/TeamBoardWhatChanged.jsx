@@ -2,180 +2,88 @@ import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
 import { getWhatChangedView } from './whatChangedView'
 
-function ComparisonLine({ comparison }) {
-  if (!comparison.fromDate && !comparison.toDate) return null
+function WhatChangedSkeleton() {
+  return (
+    <section id="what-changed" className="foundation-section" aria-labelledby="what-changed-title" aria-busy="true" data-testid="what-changed-skeleton">
+      <div className="rounded-sm border border-line-default bg-surface-nav/30 p-panel tablet:p-section">
+        <div className="type-overline text-brand-gold">Exact trusted comparison</div>
+        <h2 id="what-changed-title" className="type-section-title mt-meta">What Changed</h2>
+        <span className="sr-only">Loading governed bullpen changes.</span>
+        <SkeletonBlock className="mt-meta h-4 w-64 max-w-full" />
+        <SkeletonBlock className="mt-section h-16 w-full" />
+      </div>
+    </section>
+  )
+}
+
+function ComparisonWindow({ view }) {
+  if (!view.previousDate) return null
   return (
     <p className="type-metadata mt-meta text-text-tertiary" data-testid="what-changed-comparison">
-      {comparison.fromDate && comparison.fromLabel
-        ? <>Since <time dateTime={comparison.fromDate}>{comparison.fromLabel}</time></>
-        : null}
-      {comparison.fromDate && comparison.toDate ? ' · ' : null}
-      {comparison.toDate && comparison.toLabel
-        ? <>through <time dateTime={comparison.toDate}>{comparison.toLabel}</time></>
-        : null}
+      Since <time dateTime={view.previousDate}>{view.previousDateLabel}</time>
+      {view.currentDate && view.currentDateLabel ? <>{' · through '}<time dateTime={view.currentDate}>{view.currentDateLabel}</time></> : null}
     </p>
   )
 }
 
-function PitcherSubject({ row, onSelectPitcher }) {
-  if (row.pitcherId == null || typeof onSelectPitcher !== 'function') {
-    return <span className="type-data break-words font-semibold text-text-primary">{row.subject}</span>
-  }
+function ChangeItem({ event, onSelectPitcher }) {
+  const canSelect = event.subjectId != null && event.subject && typeof onSelectPitcher === 'function'
   return (
-    <button
-      type="button"
-      className="min-h-11 break-words text-left font-board text-board-body font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
-      onClick={event => onSelectPitcher(row.pitcherId, event.currentTarget)}
-    >
-      {row.subject}
-    </button>
-  )
-}
-
-function ChangeRow({ row, groupKey, onSelectPitcher }) {
-  if (groupKey === 'team-state' || groupKey === 'rest-status') {
-    const hasWindow = row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
-    return (
-      <li className="min-w-0 py-panel first:pt-row last:pb-row">
-        {row.transition && <p className="font-board text-lg font-semibold break-words text-text-primary">{row.transition}</p>}
-        {row.summary && <p className="type-compact mt-meta max-w-3xl break-words text-text-secondary">{row.summary}</p>}
-        {hasWindow && (
-          <p className="type-metadata mt-meta text-text-tertiary">
-            Since <time dateTime={row.fromDate}>{row.fromDateLabel}</time>
-            {' · through '}
-            <time dateTime={row.toDate}>{row.toDateLabel}</time>
-          </p>
-        )}
-      </li>
-    )
-  }
-
-  const detail = groupKey === 'arm-read'
-    ? row.transition
-    : row.gameDate && row.dateLabel
-      ? <><time dateTime={row.gameDate}>{row.dateLabel}</time>{row.pitches != null ? ` · ${row.pitches} pitches` : ''}</>
-      : row.pitches != null ? `${row.pitches} pitches` : null
-  const armReadWindow = groupKey === 'arm-read'
-    && row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
-
-  return (
-    <li className="grid min-w-0 gap-meta py-panel first:pt-row last:pb-row tablet:grid-cols-[minmax(10rem,0.8fr)_minmax(0,1.7fr)] tablet:gap-panel">
-      <div className="min-w-0"><PitcherSubject row={row} onSelectPitcher={onSelectPitcher} /></div>
-      <div className="min-w-0">
-        {detail && <p className="type-data break-words font-medium text-text-primary">{detail}</p>}
-        {row.summary && <p className="type-compact mt-meta max-w-3xl break-words text-text-secondary">{row.summary}</p>}
-        {armReadWindow && (
-          <p className="type-metadata mt-meta text-text-tertiary">
-            Since <time dateTime={row.fromDate}>{row.fromDateLabel}</time>
-            {' · through '}
-            <time dateTime={row.toDate}>{row.toDateLabel}</time>
-          </p>
-        )}
+    <li className="min-w-0 py-panel first:pt-0 last:pb-0" data-domain={event.domain}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-panel gap-y-meta">
+        <span className="type-overline text-text-tertiary">{event.domainLabel}</span>
+        {event.eventDate && event.eventDateLabel ? <time className="type-metadata text-text-tertiary" dateTime={event.eventDate}>{event.eventDateLabel}</time> : null}
+      </div>
+      <p className="type-data mt-meta break-words font-semibold text-text-primary">{event.summary}</p>
+      <div className="mt-meta flex flex-wrap gap-panel">
+        {canSelect ? (
+          <button type="button" className="min-h-11 text-left font-board text-board-metadata font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus" onClick={click => onSelectPitcher(event.subjectId, click.currentTarget)}>
+            Review {event.subject}
+          </button>
+        ) : null}
+        {event.handoff ? <a className="inline-flex min-h-11 items-center font-board text-board-metadata font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus" href={event.handoff.href}>{event.handoff.label}</a> : null}
       </div>
     </li>
   )
 }
 
-function ChangeGroup({ group, onSelectPitcher }) {
-  const isTeamLevel = group.key === 'team-state' || group.key === 'rest-status'
-  return (
-    <section
-      className={`mt-section rounded-sm border p-panel tablet:p-section ${isTeamLevel ? 'border-line-default bg-surface-raised/45' : 'border-line-subtle bg-surface-raised/20'}`}
-      aria-labelledby={`what-changed-${group.key}-title`}
-    >
-      <div className="flex min-w-0 items-center justify-between gap-panel border-b border-line-subtle pb-panel">
-        <h3 id={`what-changed-${group.key}-title`} className={`type-overline ${isTeamLevel ? 'text-brand-gold' : 'text-text-tertiary'}`}>{group.label}</h3>
-        <span className="type-metadata tabular-nums text-text-tertiary">{group.rows.length}</span>
-      </div>
-      <ul className="divide-y divide-line-subtle">
-        {group.rows.map(row => (
-          <ChangeRow key={row.key} row={row} groupKey={group.key} onSelectPitcher={onSelectPitcher} />
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-function WhatChangedSkeleton() {
-  return (
-    <section className="foundation-section" aria-labelledby="what-changed-title" aria-busy="true" data-testid="what-changed-skeleton">
-      <div className="rounded-sm border border-line-default bg-surface-nav/30 p-panel tablet:p-section">
-        <div className="type-overline text-brand-gold">Since the last completed game</div>
-        <h2 id="what-changed-title" className="type-section-title mt-meta">What Changed</h2>
-        <span className="sr-only">Loading governed bullpen changes.</span>
-        <SkeletonBlock className="mt-meta h-4 w-64 max-w-full" />
-        <div className="mt-section rounded-sm border border-line-subtle bg-surface-raised/20 p-panel">
-          <SkeletonBlock className="h-5 w-44 max-w-full" />
-          <SkeletonBlock className="mt-meta h-4 w-full max-w-2xl" />
-        </div>
-      </div>
-    </section>
-  )
-}
-
 export default function TeamBoardWhatChanged({ changes, loading = false, error = null, onRetry, onSelectPitcher }) {
   if (loading) return <WhatChangedSkeleton />
-
   const view = getWhatChangedView(changes)
-  const limitation = view.limitations[0] || null
-  const teamStateUnavailable = view.teamStateComparison.status === 'unavailable'
-  const teamStateLimitation = view.teamStateComparison.limitation
-  const restStatusUnavailable = view.restStatusComparison.status === 'unavailable'
-  const restStatusLimitation = view.restStatusComparison.limitation
-  const armReadLimited = !['changed', 'unchanged'].includes(view.armReadComparison.status)
-  const armReadLimitation = view.armReadComparison.limitation
-    || 'A governed Arm Read comparison is not available.'
-  const hasGroups = view.groups.length > 0
 
   return (
-    <section className="foundation-section" aria-labelledby="what-changed-title" data-testid="team-board-what-changed">
+    <section id="what-changed" className="foundation-section" aria-labelledby="what-changed-title" data-testid="team-board-what-changed">
       <div className="-mx-4 border-y border-line-default bg-surface-nav/30 px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg">
         <header className="border-b border-line-default pb-panel">
-          <div className="type-overline text-brand-gold">Since the last completed game</div>
-          <div className="mt-meta flex min-w-0 flex-wrap items-end justify-between gap-panel">
-            <div className="min-w-0">
-              <h2 id="what-changed-title" className="font-board text-2xl font-semibold text-text-primary tablet:text-3xl">What Changed</h2>
-              <p className="type-compact mt-meta max-w-reading text-text-secondary">Material bullpen movement, kept separate from the deeper receipts below.</p>
-            </div>
-            <ComparisonLine comparison={view.comparison} />
-          </div>
+          <div className="type-overline text-brand-gold">Exact trusted comparison</div>
+          <h2 id="what-changed-title" className="mt-meta font-board text-2xl font-semibold text-text-primary tablet:text-3xl">What Changed</h2>
+          <ComparisonWindow view={view} />
+          {view.teamStateOutcome === 'unchanged' ? <p className="type-metadata mt-meta text-text-secondary">Team State was unchanged across this exact pair.</p> : null}
         </header>
 
         {error ? (
           <SectionState status="error" title="What Changed unavailable" message="Current bullpen changes could not be loaded." onRetry={onRetry} className="mt-section" />
-        ) : !view.capabilityValid || view.state === 'unavailable' ? (
-          <SectionState status="unavailable" title="What Changed unavailable" message={limitation || 'A governed bullpen comparison is not available.'} className="mt-section" />
-        ) : view.state === 'no_baseline' ? (
-          <SectionState status="unavailable" title="No comparison baseline" message={limitation || 'No earlier completed game is available for comparison.'} className="mt-section" />
-        ) : view.state === 'stale' ? (
-          <SectionState status="unavailable" title="Comparison freshness blocked" message={limitation || 'Current workload data is not fresh enough to compare safely.'} className="mt-section" />
-        ) : view.state === 'no_changes' && (teamStateUnavailable || restStatusUnavailable || armReadLimited) ? (
-          <>
-            {teamStateUnavailable && <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-section" />}
-            {restStatusUnavailable && <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />}
-            {armReadLimited && <SectionState status="partial" title="Arm Read comparison limited" message={armReadLimitation} className="mt-section" />}
-          </>
-        ) : view.state === 'no_changes' ? (
+        ) : !view.valid ? (
+          <SectionState status="unavailable" title="What Changed unavailable" message="This trusted update does not contain a frozen comparison." className="mt-section" />
+        ) : view.state === 'unavailable' ? (
+          <SectionState status="unavailable" title={view.previousDate ? 'What Changed unavailable' : 'No prior trusted comparison'} message={view.previousDate ? 'The frozen comparison is unavailable for this update.' : 'No exact earlier trusted update is available for comparison.'} className="mt-section" />
+        ) : view.state === 'quiet' ? (
           <div className="section-state mt-section rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
-            <p className="type-compact">No material changes were detected for this published comparison.</p>
+            <p className="type-compact">{view.quietMessage || 'No material bullpen changes since the previous trusted update.'}</p>
           </div>
-        ) : view.state === 'changes' && hasGroups ? (
-          <>
-            {view.groups.map(group => <ChangeGroup key={group.key} group={group} onSelectPitcher={onSelectPitcher} />)}
-            {teamStateUnavailable && teamStateLimitation && (
-              <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-section" />
-            )}
-            {restStatusUnavailable && restStatusLimitation && (
-              <SectionState status="partial" title="Rest Status comparison unavailable" message={restStatusLimitation} className="mt-section" />
-            )}
-            {armReadLimited && armReadLimitation && (
-              <SectionState status="partial" title="Arm Read comparison limited" message={armReadLimitation} className="mt-section" />
-            )}
-            {limitation && <SectionState status="partial" title="Some change context is limited" message={limitation} className="mt-section" />}
-          </>
+        ) : view.events.length ? (
+          <ul className="mt-section divide-y divide-line-subtle rounded-sm border border-line-subtle bg-surface-raised/20 p-panel tablet:p-section" aria-label="Material bullpen changes">
+            {view.events.map(event => <ChangeItem key={event.key} event={event} onSelectPitcher={onSelectPitcher} />)}
+          </ul>
         ) : (
-          <SectionState status="unavailable" title="Published changes unavailable" message="No supported structured change category is available for this comparison." className="mt-section" />
+          <SectionState status="unavailable" title="Published changes unavailable" message="No governed material-change event is available for this comparison." className="mt-section" />
         )}
+
+        {view.comparisonStatus === 'partial' && view.state !== 'unavailable' ? (
+          <p className="type-metadata mt-panel text-text-tertiary" role="note">
+            Partial comparison. Not compared: {view.unavailableDomains.map(domain => domain.label).join(', ')}.
+          </p>
+        ) : null}
       </div>
     </section>
   )

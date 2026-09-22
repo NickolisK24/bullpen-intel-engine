@@ -107,6 +107,11 @@ from services.team_board_roster_transactions import (
     CONTRACT as ROSTER_TRANSACTIONS_CONTRACT,
     author_frozen_roster_transactions,
 )
+from services.team_board_what_changed import (
+    CONTRACT as WHAT_CHANGED_CONTRACT,
+    EVENT_METHOD_VERSION as WHAT_CHANGED_EVENT_METHOD_VERSION,
+    METHOD_VERSION as WHAT_CHANGED_METHOD_VERSION,
+)
 from services.workload_concentration import summarize_recent_relief_workload
 from utils.db import db
 
@@ -815,9 +820,16 @@ def _team_package(snapshot, team_id):
 
 
 def _published_team_state(snapshot, team_id):
-    """Read Team State from the immutable league artifact for this exact snapshot."""
+    """Read the pre-trust frozen value, with legacy artifact compatibility."""
     if snapshot is None:
         return team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE)
+    from services.team_board_snapshot_team_state import receipt_value
+    receipt_present, frozen_value = receipt_value(snapshot, team_id)
+    if receipt_present:
+        # Prospective publications use the proof-flushed value that authorized
+        # the pointer. A malformed receipt fails closed; it never falls back to
+        # a post-commit calculation. Legacy snapshots retain artifact serving.
+        return frozen_value
     artifact = (
         db.session.query(ShareArtifact)
         .filter(
@@ -1009,6 +1021,58 @@ def _frozen_roster_transactions_for_view(snapshot, team_package, team_id):
     return deepcopy(carrier)
 
 
+def _frozen_what_changed_for_view(snapshot, team_package, team_id):
+    """Attach TB-09 only when its receipt matches this exact publication."""
+    from services.what_changed_comparison_identity import comparison_identity_from_payload
+
+    carrier = team_package.get('frozen_what_changed')
+    if not isinstance(carrier, Mapping):
+        return None
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    embedded = comparison_identity_from_payload(getattr(snapshot, 'payload', None))
+    if (
+        carrier.get('contract') != WHAT_CHANGED_CONTRACT
+        or carrier.get('method_version') != WHAT_CHANGED_METHOD_VERSION
+        or carrier.get('team_id') != team_id
+        or carrier.get('current_snapshot_id') != getattr(snapshot, 'id', None)
+        or carrier.get('current_represented_date') != represented
+        or carrier.get('comparison_identity') != embedded
+        or carrier.get('comparison_status') not in {'complete', 'partial', 'unavailable'}
+        or carrier.get('state') not in {'changes', 'quiet', 'unavailable'}
+        or (carrier.get('state') != 'unavailable' and embedded is None)
+        or not isinstance(carrier.get('domains'), Mapping)
+        or not isinstance(carrier.get('events'), list)
+    ):
+        return None
+    if embedded is not None and (
+        carrier.get('previous_snapshot_id') != embedded['previous_snapshot_id']
+        or carrier.get('previous_represented_date') != embedded['previous_data_through']
+    ):
+        return None
+    if carrier.get('state') == 'quiet' and carrier.get('events'):
+        return None
+    if any(
+        not isinstance(domain, Mapping)
+        or domain.get('status') not in {'complete', 'partial', 'unavailable', 'not_comparable'}
+        for domain in carrier['domains'].values()
+    ):
+        return None
+    if any(
+        not isinstance(event, Mapping)
+        or event.get('domain') not in {
+            'team_state', 'roster', 'workload_rest', 'transactions', 'rotation',
+        }
+        or event.get('evidence_status') != 'complete'
+        or event.get('current_snapshot_id') != getattr(snapshot, 'id', None)
+        or event.get('previous_snapshot_id') != carrier.get('previous_snapshot_id')
+        or event.get('method_version') != WHAT_CHANGED_EVENT_METHOD_VERSION
+        or not event.get('summary')
+        for event in carrier['events']
+    ):
+        return None
+    return deepcopy(carrier)
+
+
 def _frozen_roles_deployment_for_view(snapshot, team_package, team_id):
     """Reject a missing or mismatched TB-05 carrier without affecting other sections."""
     carrier = team_package.get('roles_deployment')
@@ -1172,6 +1236,9 @@ def build_published_team_board(
             snapshot, team_package, team_id,
         )
         payload['frozen_roster_transactions'] = _frozen_roster_transactions_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_what_changed'] = _frozen_what_changed_for_view(
             snapshot, team_package, team_id,
         )
         payload['frozen_legacy_deployment_profile'] = (
