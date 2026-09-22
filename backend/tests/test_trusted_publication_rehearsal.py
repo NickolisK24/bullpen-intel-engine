@@ -14,6 +14,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.postgame_processed_game import PostgameProcessedGame
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.scheduled_game import ScheduledGame
@@ -229,6 +230,30 @@ def test_trusted_publication_rehearsal(monkeypatch):
         try:
             reference_date = public_serving_authority.product_current_date()
             _seed_teams(reference_date)
+            represented_date = reference_date - timedelta(days=1)
+            first_pitcher = Pitcher.query.filter_by(mlb_id=7900000).one()
+            db.session.add(PlayerTransactionSyncWindow(
+                source='mlb_stats_api:transactions', source_endpoint='/transactions',
+                source_query_start_date=represented_date - timedelta(days=7),
+                source_query_end_date=represented_date,
+                attempted_at=utc_now_naive(), successful_at=utc_now_naive(),
+                status='success', records_fetched=1, records_stored=1,
+                records_created=1, records_corrected=0, records_unchanged=0,
+                unknown_type_count=0, alignment_unknown_count=0,
+                alignment_misaligned_count=0, alignment_no_snapshot_count=0,
+                records_failed=0, created_at=utc_now_naive(),
+            ))
+            db.session.add(PlayerTransaction(
+                transaction_key='rehearsal:recall:7900000', transaction_id='rehearsal-recall',
+                pitcher_id=first_pitcher.id, player_mlb_id=first_pitcher.mlb_id,
+                from_team_id=None, to_team_id=TEAM_IDS[0],
+                transaction_date=represented_date, transaction_type_code='RECALL',
+                normalized_category='recall', roster_snapshot_alignment='aligned',
+                explanatory_linkage_eligible=True,
+                source='mlb_stats_api:transactions', source_endpoint='/transactions',
+                source_query_start_date=represented_date - timedelta(days=7),
+                source_query_end_date=represented_date,
+            ))
             run = SyncRun(
                 job_name='daily_sync',
                 started_at=utc_now_naive() - timedelta(minutes=2),
@@ -290,11 +315,31 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 public_serving_authority, 'frozen_recent_rotation_games_by_team',
                 measured_rotation_author,
             )
-            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0, 'rotation_source': 0}
+            roster_read_ms = []
+            roster_projection_ms = []
+            original_roster_read = public_serving_authority.build_public_recent_transactions_by_team
+            original_roster_projection = public_serving_authority.author_frozen_roster_transactions
+            def measured_roster_read(*args, **kwargs):
+                started = perf_counter()
+                try:
+                    return original_roster_read(*args, **kwargs)
+                finally:
+                    roster_read_ms.append((perf_counter() - started) * 1000)
+            def measured_roster_projection(*args, **kwargs):
+                started = perf_counter()
+                try:
+                    return original_roster_projection(*args, **kwargs)
+                finally:
+                    roster_projection_ms.append((perf_counter() - started) * 1000)
+            monkeypatch.setattr(public_serving_authority, 'build_public_recent_transactions_by_team', measured_roster_read)
+            monkeypatch.setattr(public_serving_authority, 'author_frozen_roster_transactions', measured_roster_projection)
+            query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0, 'rotation_source': 0, 'transactions': 0}
             def count_publication_reads(_conn, _cursor, statement, _params, _context, _many):
                 sql = statement.lower()
                 if 'from game_logs' in sql:
                     query_counts['appearance'] += 1
+                if 'from player_transactions' in sql:
+                    query_counts['transactions'] += 1
                 if 'from play_by_play_processed_games' in sql:
                     query_counts['processed_game'] += 1
                 if 'from game_play_by_play_events' in sql:
@@ -332,11 +377,24 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert package['team_count'] == len(TEAM_IDS)
             assert len(performance_ms) == len(TEAM_IDS)
             assert rotation_queries == [3]
+            assert query_counts['transactions'] == 1
             assert performance_appearance_queries == [1] * len(TEAM_IDS)
             assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS}
             assert package['data_through'] == snapshot.data_through.isoformat()
             for team_id in TEAM_IDS:
                 team = package['by_team_id'][str(team_id)]
+                roster_moves = team['frozen_roster_transactions']
+                assert roster_moves['contract'] == 'team_board_roster_transactions_v1'
+                assert roster_moves['team_id'] == team_id
+                assert roster_moves['data_through'] == snapshot.data_through.isoformat()
+                assert roster_moves['current_group']['active_pitcher_ids'] == team['default_pitcher_ids']
+                if team_id == TEAM_IDS[0]:
+                    assert roster_moves['status'] == 'available'
+                    assert [item['event_id'] for item in roster_moves['events']] == ['rehearsal-recall']
+                    assert roster_moves['events'][0]['direction'] == 'addition'
+                    assert roster_moves['events'][0]['current_roster']['membership'] == 'active'
+                else:
+                    assert roster_moves['events'] == []
                 rotation = team['frozen_rotation_impact']
                 assert rotation['contract'] == 'team_board_recent_rotation_games_v1'
                 assert rotation['team_id'] == team_id
@@ -388,6 +446,12 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 for team_id in TEAM_IDS
             }, sort_keys=True)
             rotation_serialization_ms = (perf_counter() - rotation_serialization_started) * 1000
+            roster_serialization_started = perf_counter()
+            roster_json = json.dumps({
+                team_id: package['by_team_id'][str(team_id)]['frozen_roster_transactions']
+                for team_id in TEAM_IDS
+            }, sort_keys=True)
+            roster_serialization_ms = (perf_counter() - roster_serialization_started) * 1000
             first_profile = next(item for item in public_deployment['profiles'] if item['pitcher_name'] == 'Rehearsal Pitcher 00')
             assert first_profile['context']['entry_inning']['by_inning'] == [{'inning': 8, 'appearances': 1}]
             assert first_profile['context']['score_context']['leading'] == 1
@@ -422,8 +486,9 @@ def test_trusted_publication_rehearsal(monkeypatch):
             snapshot.published_at = utc_now_naive()
             team_id = TEAM_IDS[0]
             def no_mutable_workload_read(_conn, _cursor, statement, _params, _context, _many):
-                if 'game_logs' in statement.lower():
-                    raise AssertionError('candidate serving queried mutable workload rows')
+                sql = statement.lower()
+                if 'game_logs' in sql or 'player_transactions' in sql or 'player_transaction_sync_windows' in sql:
+                    raise AssertionError('candidate serving queried mutable workload or transaction rows')
 
             event.listen(db.engine, 'before_cursor_execute', no_mutable_workload_read)
             try:
@@ -435,7 +500,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 core = build_team_board_core_payload(board, publication_identity=identity)
                 details = build_team_board_details_payload(
                     board, publication_identity=identity,
-                    recent_relief_work=None, recent_transactions=None,
+                    recent_relief_work=None,
+                    recent_transactions=board['frozen_roster_transactions'],
                     game_context=None, performance=board['frozen_performance'], what_changed=None,
                     section_errors={},
                 )
@@ -450,6 +516,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 package['by_team_id'][str(team_id)]['frozen_rotation_impact']
             )
             assert details['performance'] == package['by_team_id'][str(team_id)]['performance']['read']
+            assert details['recent_transactions'] == package['by_team_id'][str(team_id)]['frozen_roster_transactions']
             require_matching_team_board_identity(identity, snapshot, board)
             changed = {**identity, 'snapshot_id': identity['snapshot_id'] + 1}
             try:
@@ -473,6 +540,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
             older_team.pop('performance')
             older_team.pop('frozen_rotation_impact')
             older_team.pop('frozen_rotation_impact_authority')
+            older_team.pop('frozen_roster_transactions')
+            older_team.pop('frozen_roster_transactions_authority')
             older_teams[str(team_id)] = older_team
             older_package['by_team_id'] = older_teams
             older['trusted_team_boards'] = older_package
@@ -484,6 +553,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert older_board['frozen_roles_deployment'] is None
             assert older_board['frozen_performance'] is None
             assert older_board['frozen_rotation_impact'] is None
+            assert older_board['frozen_roster_transactions'] is None
             assert older_board['recent_usage_rest'] is not None
             print(
                 f'REHEARSAL candidate_snapshot_id={snapshot.id} sync_run_id={run.id} '
@@ -505,6 +575,11 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 f' tb07_source_queries={sum(rotation_queries)}'
                 f' tb07_all_team_bytes={len(rotation_json.encode("utf-8"))}'
                 f' tb07_serialize_ms={rotation_serialization_ms:.3f}'
+                f' tb08_transaction_queries={query_counts["transactions"]}'
+                f' tb08_source_read_ms={sum(roster_read_ms):.3f}'
+                f' tb08_projection_ms={sum(roster_projection_ms):.3f}'
+                f' tb08_all_team_bytes={len(roster_json.encode("utf-8"))}'
+                f' tb08_serialize_ms={roster_serialization_ms:.3f}'
             )
         finally:
             db.session.remove()

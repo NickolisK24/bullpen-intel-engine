@@ -9,6 +9,7 @@ export const TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT = 'team_board_workload_overview
 export const TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT = 'team_board_public_deployment_context_v1'
 export const TEAM_BOARD_PERFORMANCE_CONTRACT = 'public_team_performance_v1'
 export const TEAM_BOARD_ROTATION_GAMES_CONTRACT = 'team_board_recent_rotation_games_v1'
+export const TEAM_BOARD_ROSTER_TRANSACTIONS_CONTRACT = 'team_board_roster_transactions_v1'
 
 const recentUsageRestStates = new Set(['complete', 'partial', 'unknown', 'unavailable'])
 const workloadWindowKeys = [3, 7, 14, 30]
@@ -16,6 +17,77 @@ const workloadMetricKeys = ['pitches', 'appearances', 'outs']
 
 const nonnegativeCount = value => Number.isSafeInteger(value) && value >= 0
 const baseballInnings = value => typeof value === 'string' && /^\d+\.[012]$/.test(value)
+
+function readCurrentRosterStatus(source) {
+  if (!source || !recentUsageRestStates.has(source.status)
+    || !['active', 'active_roster', 'off_active', null].includes(source.membership)
+    || typeof source.label !== 'string' || !source.label.trim()) return null
+  return { status: source.status, membership: source.membership, label: source.label }
+}
+
+export function readTeamBoardFrozenRosterTransactions(carrier, publicationIdentity, activeArmIds = null) {
+  const group = carrier?.current_group
+  const offActive = carrier?.off_active_recent_contributors
+  if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
+    || carrier.contract !== TEAM_BOARD_ROSTER_TRANSACTIONS_CONTRACT
+    || !publicationIdentity || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
+    || carrier.team_id !== publicationIdentity.team_id
+    || carrier.data_through !== publicationIdentity.represented_date
+    || !['available', 'partial', 'unavailable'].includes(carrier.status)
+    || !Array.isArray(carrier.events) || !Array.isArray(carrier.limitations)
+    || !group || !nonnegativeCount(group.active_count)
+    || !Array.isArray(group.active_pitcher_ids)
+    || group.active_count !== group.active_pitcher_ids.length
+    || group.active_pitcher_ids.some(id => !nonnegativeCount(id))
+    || (activeArmIds && JSON.stringify([...group.active_pitcher_ids].sort((a, b) => a - b))
+      !== JSON.stringify([...activeArmIds].sort((a, b) => a - b)))
+    || !offActive || !recentUsageRestStates.has(offActive.status)
+    || offActive.window_days !== 7 || !Array.isArray(offActive.contributors)
+    || (offActive.status !== 'complete' && offActive.contributors.length > 0)) return null
+  const events = carrier.events.map(event => {
+    const currentRoster = readCurrentRosterStatus(event?.current_roster)
+    if (!event || !nonnegativeCount(event.player_id)
+      || typeof event.player_name !== 'string' || !event.player_name.trim()
+      || typeof event.date !== 'string' || event.date > carrier.data_through
+      || typeof event.label !== 'string' || !event.label.trim()
+      || typeof event.description !== 'string' || !event.description.trim()
+      || !['addition', 'removal', 'other'].includes(event.direction)
+      || event.evidence_status !== 'complete'
+      || typeof event.source !== 'string' || !event.source
+      || !currentRoster) return null
+    return {
+      eventId: event.event_id,
+      pitcherId: event.player_id,
+      name: event.player_name,
+      date: event.date,
+      type: event.type,
+      label: event.label,
+      description: event.description,
+      direction: event.direction,
+      currentRoster,
+    }
+  })
+  const contributors = offActive.contributors.map(item => {
+    const currentRoster = readCurrentRosterStatus(item?.current_roster)
+    if (!item || !nonnegativeCount(item.pitcher_id)
+      || typeof item.name !== 'string' || !item.name.trim()
+      || !currentRoster) return null
+    return { pitcherId: item.pitcher_id, name: item.name, currentRoster }
+  })
+  if (events.some(item => !item) || contributors.some(item => !item)) return null
+  return {
+    contract: carrier.contract,
+    teamId: carrier.team_id,
+    dataThrough: carrier.data_through,
+    status: carrier.status,
+    windowStart: carrier.window_start_date,
+    windowEnd: carrier.window_end_date,
+    limitations: carrier.limitations,
+    currentGroup: { activeCount: group.active_count },
+    events,
+    offActiveRecentContributors: { status: offActive.status, contributors },
+  }
+}
 
 export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
   if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
@@ -391,7 +463,10 @@ export function readTeamBoardV2(payload) {
     frozenPublicDeployment: readTeamBoardFrozenDeployment(payload.roles_deployment?.frozen_public_deployment, payload.publication_identity),
     rotationImpact: payload.rotation_impact,
     frozenRotationGames: readTeamBoardFrozenRotationGames(payload.rotation_impact?.frozen_recent_games, payload.publication_identity),
-    recentTransactions: payload.recent_transactions,
+    recentTransactions: readTeamBoardFrozenRosterTransactions(
+      payload.recent_transactions, payload.publication_identity,
+      payload.active_bullpen.arms.map(arm => arm.pitcher_id),
+    ),
     rosterContext: payload.roster_context,
     recentReliefWork: payload.recent_relief_work,
     gameContext: payload.game_context,
@@ -450,6 +525,12 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
   const frozenRotationGames = detailsValid
     ? readTeamBoardFrozenRotationGames(details.rotation_impact?.frozen_recent_games, corePayload.publication_identity)
     : null
+  const frozenRosterTransactions = detailsValid
+    ? readTeamBoardFrozenRosterTransactions(
+        details.recent_transactions, corePayload.publication_identity,
+        corePayload.active_bullpen.arms.map(arm => arm.pitcher_id),
+      )
+    : null
   return {
     capability: corePayload.capability,
     contractVersion: corePayload.contract_version,
@@ -471,7 +552,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenPublicDeployment,
     rotationImpact: corePayload.rotation_impact,
     frozenRotationGames,
-    recentTransactions: details.recent_transactions || null,
+    recentTransactions: frozenRosterTransactions,
     rosterContext: corePayload.roster_context,
     recentReliefWork: details.recent_relief_work || null,
     gameContext: details.game_context || null,
@@ -490,6 +571,7 @@ export function readTeamBoardDelivery(corePayload, detailsPayload = null) {
     frozenPublicDeploymentRejected: Boolean(details.roles_deployment?.frozen_public_deployment) && !frozenPublicDeployment,
     frozenPerformanceRejected: Boolean(details.performance) && !frozenPerformance,
     frozenRotationGamesRejected: Boolean(details.rotation_impact?.frozen_recent_games) && !frozenRotationGames,
+    frozenRosterTransactionsRejected: Boolean(details.recent_transactions) && !frozenRosterTransactions,
     limitations: corePayload.limitations,
   }
 }

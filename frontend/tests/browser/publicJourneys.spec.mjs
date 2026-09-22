@@ -58,6 +58,12 @@ function teamBoardFixtureFor(teamId) {
   workload.concentration_7_day.top_contributor.name = pitcherName
   workload.concentration_7_day.top_3_contributors[0].pitcher_id = pitcherId
   workload.concentration_7_day.top_3_contributors[0].name = pitcherName
+  const offActiveId = team.team_id * 1000 + 2
+  const offActiveName = `${team.team_abbreviation} Former Reliever`
+  workload.concentration_7_day.contributors[1].pitcher_id = offActiveId
+  workload.concentration_7_day.contributors[1].name = offActiveName
+  workload.concentration_7_day.top_3_contributors[1].pitcher_id = offActiveId
+  workload.concentration_7_day.top_3_contributors[1].name = offActiveName
   const deployment = details.roles_deployment.frozen_public_deployment
   deployment.team_id = team.team_id
   deployment.profiles[0].team_id = team.team_id
@@ -69,6 +75,17 @@ function teamBoardFixtureFor(teamId) {
   rotation.team_id = team.team_id
   rotation.starts[0].starter_name = `${team.team_abbreviation} Fixture Starter`
   rotation.starts[0].starter_pitcher_id = team.team_id * 1000 + 500
+  const rosterTransactions = details.recent_transactions
+  rosterTransactions.team_id = team.team_id
+  rosterTransactions.current_group.active_pitcher_ids = [pitcherId]
+  rosterTransactions.events[0].player_id = pitcherId
+  rosterTransactions.events[0].player_name = pitcherName
+  rosterTransactions.events[0].description = `${pitcherName} was recalled.`
+  rosterTransactions.events[1].player_id = offActiveId
+  rosterTransactions.events[1].player_name = offActiveName
+  rosterTransactions.events[1].description = `${offActiveName} was placed on the injured list.`
+  rosterTransactions.off_active_recent_contributors.contributors[0].pitcher_id = offActiveId
+  rosterTransactions.off_active_recent_contributors.contributors[0].name = offActiveName
   details.performance.metrics[0].value = team.team_abbreviation === 'NYY' ? '4.11'
     : team.team_abbreviation === 'LAD' ? '2.99' : '3.42'
   return { core, details, pitcherName }
@@ -80,6 +97,7 @@ async function installApiFixtures(page, {
   deferDetails = false,
   partialCarrier = false,
   partialDeployment = false,
+  partialTransactions = false,
   corruptTeams = false,
   finderNoResults = false,
 } = {}) {
@@ -135,6 +153,10 @@ async function installApiFixtures(page, {
         context.leverage.high = 0
         context.leverage.middle = 0
         context.leverage.low = 0
+      }
+      if (partialTransactions) {
+        details.recent_transactions.status = 'partial'
+        details.recent_transactions.limitations = ['One unverified transaction was withheld.']
       }
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
@@ -586,6 +608,62 @@ test('switching teams cannot attach a delayed carrier from the prior team', asyn
   fixtures.releaseDetails()
   await expect(recent).toContainText('NYY Fixture Reliever')
   await expect(recent.getByText('Fixture Reliever', { exact: true })).toHaveCount(0)
+})
+
+test('TB-08 frozen roster movement stays scoped through BAL, LAD, NYY and team switching', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const abbreviation of ['BAL', 'LAD', 'NYY']) {
+      await page.goto(`/bullpen?team=${abbreviation}`)
+      const section = page.getByTestId('team-board-recent-transactions')
+      await expect(section).toContainText(`${abbreviation} Fixture Reliever`)
+      await expect(section).toContainText('Recalled')
+      await expect(section).toContainText('Placed on injured list')
+      await expect(section).toContainText(`${abbreviation} Former Reliever`)
+      await expect(section).toContainText('Current roster: Active bullpen')
+      await expect(section).toContainText('Current roster: 15-day IL')
+      await expect(page.getByTestId('team-board-active-bullpen')).not.toContainText(`${abbreviation} Former Reliever`)
+      await expect(section).not.toContainText('Roster movement not published')
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    }
+  }
+  await page.goto('/bullpen?team=BAL')
+  const section = page.getByTestId('team-board-recent-transactions')
+  await expect(section).toContainText('BAL Fixture Reliever')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(section).toContainText('LAD Fixture Reliever')
+  await expect(section).not.toContainText('BAL Fixture Reliever')
+  await expect(section).toContainText('LAD Former Reliever')
+  await expect(section).not.toContainText('BAL Former Reliever')
+})
+
+test('TB-08 local fixture readiness remains separate from core and details', async ({ page }) => {
+  await installApiFixtures(page)
+  const responses = {}
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.endsWith('/board-v2/core')) responses.core = performance.now()
+    if (path.endsWith('/board-v2/details')) responses.details = performance.now()
+  })
+  const start = performance.now()
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const coreReady = performance.now()
+  await expect(page.getByTestId('team-board-recent-transactions')).toContainText('Fixture Reliever')
+  const rosterReady = performance.now()
+  expect(responses.core).toBeDefined()
+  expect(responses.details).toBeDefined()
+  console.log(`TB-08 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responses.details - start)}ms roster-ready=${Math.round(rosterReady - start)}ms details-to-roster=${Math.round(rosterReady - responses.details)}ms`)
+})
+
+test('TB-08 keeps verified events while disclosing a partial source window', async ({ page }) => {
+  await installApiFixtures(page, { partialTransactions: true })
+  await page.goto('/bullpen?team=BAL')
+  const section = page.getByTestId('team-board-recent-transactions')
+  await expect(section).toContainText('BAL Fixture Reliever')
+  await expect(section).toContainText('One unverified transaction was withheld.')
+  await expect(section).not.toContainText('No verified pitching moves')
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {

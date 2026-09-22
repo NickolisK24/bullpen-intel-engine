@@ -51,6 +51,7 @@ from services.public_team_performance import (
     build_frozen_team_performance_payload,
 )
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
+from services.public_recent_transactions import build_public_recent_transactions_by_team
 from services.public_team_relief_work import (
     DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
     DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
@@ -101,6 +102,10 @@ from services.team_board_public_deployment_context import (
     CONTRACT as PUBLIC_DEPLOYMENT_CONTEXT_CONTRACT,
     METHOD_VERSION as PUBLIC_DEPLOYMENT_CONTEXT_METHOD_VERSION,
     author_public_deployment_context,
+)
+from services.team_board_roster_transactions import (
+    CONTRACT as ROSTER_TRANSACTIONS_CONTRACT,
+    author_frozen_roster_transactions,
 )
 from services.workload_concentration import summarize_recent_relief_workload
 from utils.db import db
@@ -377,6 +382,11 @@ def build_frozen_team_board_package(dashboard_payload):
         records_by_team,
         represented_date=parse_reference_date(represented_data_through),
     )
+    transaction_reads = build_public_recent_transactions_by_team(
+        records_by_team,
+        reference_date=parse_reference_date(represented_data_through),
+        include_event_direction=True,
+    )
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -432,6 +442,15 @@ def build_frozen_team_board_package(dashboard_payload):
             include_publication_rows=True,
         )
         workload_windows = relief_authority['workload_windows']
+        frozen_roster_transactions = author_frozen_roster_transactions(
+            team_id,
+            data_through=represented_data_through,
+            transaction_read=transaction_reads[team_id],
+            records=records,
+            active_pitcher_ids=default_ids,
+            workload_overview=workload_windows.get('overview'),
+            team_board_package_contract=TEAM_BOARD_PACKAGE_CONTRACT,
+        )
         deployment_profile = relief_authority['deployment_profile']
         publication_rows = relief_authority.pop('_publication_team_rows', [])
         deployment_anchor = parse_reference_date(represented_data_through)
@@ -486,6 +505,12 @@ def build_frozen_team_board_package(dashboard_payload):
                 'membership_reference_date': reference_date.isoformat(),
             },
             'roster_authority': deepcopy(roster_authority),
+            'frozen_roster_transactions': frozen_roster_transactions,
+            'frozen_roster_transactions_authority': {
+                'method_version': ROSTER_TRANSACTIONS_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': represented_data_through,
+            },
             'workload_concentration': deepcopy(workload_concentration),
             'workload_windows': deepcopy(workload_windows),
             'workload_windows_authority': {
@@ -944,6 +969,46 @@ def _frozen_rotation_impact_for_view(snapshot, team_package, team_id):
     return deepcopy(carrier)
 
 
+def _frozen_roster_transactions_for_view(snapshot, team_package, team_id):
+    """Attach TB-08 only from the exact selected trusted team package."""
+    carrier = team_package.get('frozen_roster_transactions')
+    authority = team_package.get('frozen_roster_transactions_authority')
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    if not isinstance(carrier, Mapping) or not isinstance(authority, Mapping):
+        return None
+    group = carrier.get('current_group')
+    if (
+        carrier.get('contract') != ROSTER_TRANSACTIONS_CONTRACT
+        or carrier.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or carrier.get('team_id') != team_id
+        or carrier.get('data_through') != represented
+        or authority.get('method_version') != ROSTER_TRANSACTIONS_CONTRACT
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('data_through') != represented
+        or carrier.get('status') not in {'available', 'partial', 'unavailable'}
+        or not isinstance(carrier.get('events'), list)
+        or not isinstance(group, Mapping)
+        or group.get('active_pitcher_ids') != sorted(team_package.get('default_pitcher_ids') or [])
+        or group.get('active_count') != len(group['active_pitcher_ids'])
+        or not isinstance(carrier.get('off_active_recent_contributors'), Mapping)
+    ):
+        return None
+    if any(
+        not isinstance(event, Mapping)
+        or type(event.get('player_id')) is not int
+        or event.get('direction') not in {'addition', 'removal', 'other'}
+        or event.get('evidence_status') != 'complete'
+        or not isinstance(event.get('source'), str)
+        or not event['source']
+        or not isinstance(event.get('current_roster'), Mapping)
+        or not isinstance(event.get('date'), str)
+        or event['date'] > represented
+        for event in carrier['events']
+    ):
+        return None
+    return deepcopy(carrier)
+
+
 def _frozen_roles_deployment_for_view(snapshot, team_package, team_id):
     """Reject a missing or mismatched TB-05 carrier without affecting other sections."""
     carrier = team_package.get('roles_deployment')
@@ -1104,6 +1169,9 @@ def build_published_team_board(
             snapshot, team_package, team_id,
         )
         payload['frozen_rotation_impact'] = _frozen_rotation_impact_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_roster_transactions'] = _frozen_roster_transactions_for_view(
             snapshot, team_package, team_id,
         )
         payload['frozen_legacy_deployment_profile'] = (
