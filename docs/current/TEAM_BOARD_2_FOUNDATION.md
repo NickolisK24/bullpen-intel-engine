@@ -342,6 +342,31 @@ readiness (29 ms after the details response). These are local fixture timings,
 not production latency or an isolated React render profile. Named-arm role
 movement remains unavailable until a separate public materiality rule exists.
 
+## TB-06 frozen active-bullpen performance (backend carrier)
+
+The [TB-06 v1 publication decision](../decisions/2026-09-22-team-board-performance-v1-publication.md)
+freezes the existing Active Bullpen ERA and WHIP reads in
+`trusted_team_boards.performance` at Dashboard publication. The group is the
+represented default-visible active bullpen; the sample is official, completed
+regular-season relief work for this team through the represented baseball
+date. Appearance-team ownership excludes acquired arms' prior-team work;
+off-active arms are not in this active-group read. Recorded outs, displayed
+innings, relief appearances, active arms, and contributing arms accompany
+the two independent metric qualifications and evidence states.
+
+K-BB% and HR context have bounded source-field coverage counts but remain
+`unavailable/not_published` until their publication-critical source contracts
+are certified. Inherited-runner context remains explicitly unavailable for
+uncertified completeness. No missing value is zero. The details route serves
+only the exact frozen performance carrier; older packages lack TB-06 rather
+than recomputing current GameLog rows. Team State is unchanged. The local
+30-team PostgreSQL rehearsal measured one performance appearance query per
+team (30 total), 27.793 ms across 30 performance compositions, 0.389 ms to
+serialize all 30 carriers, and 93,711 serialized bytes in that small fixture.
+These are local fixture measurements, not production latency or payload size.
+No per-pitcher query or publication pointer movement occurred. This is a
+backend authority package; TB-06 frontend presentation is separate.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

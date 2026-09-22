@@ -11,6 +11,7 @@ from services.public_team_performance import (
     CONTRACT_VERSION,
     POPULATION_BASIS,
     WHIP_INPUT_LIMITATION,
+    build_frozen_team_performance_payload,
     build_public_team_performance_payload,
 )
 from services import performance_intelligence
@@ -234,9 +235,11 @@ def test_unknown_whip_input_never_becomes_zero_and_era_remains_visible(
     era, whip = payload['metrics']
     assert era['value'] == '0.00'
     assert era['qualification']['status'] == 'qualified'
+    assert era['evidence_state']['status'] == 'complete'
     assert whip['value'] is None
     assert whip['qualification']['status'] == 'unavailable'
     assert whip['qualification']['reason_code'] == 'qualifying_row_invalid'
+    assert whip['evidence_state']['status'] == 'partial'
     assert payload['status'] == 'partial'
     assert payload['limitations'][0] == WHIP_INPUT_LIMITATION
 
@@ -300,3 +303,62 @@ def test_ingestion_and_orm_preserve_missing_whip_inputs_as_unknown(app):
     assert values['walks'] is None
     assert GameLog.__table__.c.hits_allowed.default is None
     assert GameLog.__table__.c.walks.default is None
+
+
+def test_frozen_read_keeps_active_team_owned_sample_and_deferred_domains(app):
+    active = _pitcher('Acquired Active Arm', 700050)
+    off_active = _pitcher('Off Active Arm', 700051)
+    for index in range(36):
+        _log(active, 800 + index, hits=1, batters_faced=4)
+    _log(active, 900, outs=9, earned_runs=9, appearance_team_id=OTHER_TEAM_ID)
+    _log(off_active, 901, outs=9, earned_runs=9)
+    db.session.commit()
+
+    payload = build_frozen_team_performance_payload(
+        TEAM_ID,
+        records=[{'pitcher_id': active.id, 'name': active.full_name}],
+        represented_date=THROUGH.isoformat(),
+        freshness={'freshness_state': 'current', 'fail_closed': False},
+    )
+
+    assert payload['through'] == THROUGH.isoformat()
+    assert payload['active_pitcher_count'] == 1
+    assert payload['relief_appearances'] == 36
+    assert payload['sample']['recorded_outs'] == 108
+    assert [item['value'] for item in payload['metrics']] == ['0.00', '1.00']
+    assert {row['appearance_team_id'] for row in payload['evidence']['evidence']['appearances']} == {TEAM_ID}
+    assert {row['pitcher_id'] for row in payload['evidence']['evidence']['appearances']} == {active.id}
+    capabilities = payload['capabilities']
+    assert capabilities['k_bb_percent']['status'] == 'unavailable'
+    assert capabilities['k_bb_percent']['coverage']['rows_with_required_fields'] == 36
+    assert capabilities['home_runs_allowed']['status'] == 'unavailable'
+    assert capabilities['home_runs_allowed']['value'] is None
+    assert GameLog.__table__.c.home_runs_allowed.default.arg == 0
+    assert capabilities['inherited_runner_context'] == {
+        'status': 'unavailable',
+        'reason_code': 'source_completeness_not_certified',
+        'reason_codes': ['source_completeness_not_certified'],
+        'value': None,
+    }
+
+
+def test_optional_metric_missing_fields_never_certify_zero(app):
+    active = _pitcher('Missing Optional Inputs', 700052)
+    for index in range(36):
+        _log(active, 1000 + index, batters_faced=None)
+    db.session.flush()
+    first = GameLog.query.filter_by(pitcher_id=active.id).first()
+    first.home_runs_allowed = None
+    db.session.commit()
+
+    payload = build_frozen_team_performance_payload(
+        TEAM_ID,
+        records=[{'pitcher_id': active.id, 'name': active.full_name}],
+        represented_date=THROUGH.isoformat(),
+        freshness={'freshness_state': 'current', 'fail_closed': False},
+    )
+
+    assert payload['metrics'][0]['value'] == '0.00'
+    assert payload['capabilities']['k_bb_percent']['coverage']['rows_with_required_fields'] == 0
+    assert payload['capabilities']['home_runs_allowed']['coverage']['rows_with_recorded_hr'] == 35
+    assert payload['capabilities']['home_runs_allowed']['value'] is None

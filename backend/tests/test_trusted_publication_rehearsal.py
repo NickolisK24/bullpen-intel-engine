@@ -243,6 +243,23 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 public_serving_authority, 'author_public_deployment_context',
                 measured_context_author,
             )
+            performance_ms = []
+            performance_appearance_queries = []
+            original_performance_author = public_serving_authority.build_frozen_team_performance_payload
+            def measured_performance_author(*args, **kwargs):
+                started = perf_counter()
+                before_queries = query_counts['appearance']
+                try:
+                    return original_performance_author(*args, **kwargs)
+                finally:
+                    performance_ms.append((perf_counter() - started) * 1000)
+                    performance_appearance_queries.append(
+                        query_counts['appearance'] - before_queries
+                    )
+            monkeypatch.setattr(
+                public_serving_authority, 'build_frozen_team_performance_payload',
+                measured_performance_author,
+            )
             query_counts = {'appearance': 0, 'processed_game': 0, 'pbp_event': 0}
             def count_publication_reads(_conn, _cursor, statement, _params, _context, _many):
                 sql = statement.lower()
@@ -279,6 +296,8 @@ def test_trusted_publication_rehearsal(monkeypatch):
             assert ledger['complete'] is True
             package = snapshot.payload['trusted_team_boards']
             assert package['team_count'] == len(TEAM_IDS)
+            assert len(performance_ms) == len(TEAM_IDS)
+            assert performance_appearance_queries == [1] * len(TEAM_IDS)
             assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS}
             assert package['data_through'] == snapshot.data_through.isoformat()
             for team_id in TEAM_IDS:
@@ -290,6 +309,17 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 assert team['roles_deployment']['contract'] == 'team_board_public_deployment_context_v1'
                 assert team['roles_deployment']['team_id'] == team_id
                 assert team['roles_deployment']['data_through'] == snapshot.data_through.isoformat()
+                carrier = team['performance']
+                assert carrier['contract'] == 'team_board_performance_v1'
+                assert carrier['team_id'] == team_id
+                assert carrier['data_through'] == snapshot.data_through.isoformat()
+                assert carrier['population_pitcher_ids'] == team['default_pitcher_ids']
+                read = carrier['read']
+                assert read['through'] == carrier['data_through']
+                assert [metric['metric_id'] for metric in read['metrics']] == ['M-001', 'M-002']
+                assert read['capabilities']['k_bb_percent']['status'] == 'unavailable'
+                assert read['capabilities']['home_runs_allowed']['status'] == 'unavailable'
+                assert read['capabilities']['inherited_runner_context']['status'] == 'unavailable'
             public_deployment = package['by_team_id'][str(TEAM_IDS[0])]['roles_deployment']
             assert query_counts['pbp_event'] <= len(TEAM_IDS)
             assert query_counts['processed_game'] <= len(TEAM_IDS)
@@ -300,6 +330,14 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 for team_id in TEAM_IDS
             }, sort_keys=True)
             serialization_ms = (perf_counter() - serialization_started) * 1000
+            performance_serialization_started = perf_counter()
+            performance_json = json.dumps({
+                team_id: package['by_team_id'][str(team_id)]['performance']
+                for team_id in TEAM_IDS
+            }, sort_keys=True)
+            performance_serialization_ms = (
+                perf_counter() - performance_serialization_started
+            ) * 1000
             first_profile = next(item for item in public_deployment['profiles'] if item['pitcher_name'] == 'Rehearsal Pitcher 00')
             assert first_profile['context']['entry_inning']['by_inning'] == [{'inning': 8, 'appearances': 1}]
             assert first_profile['context']['score_context']['leading'] == 1
@@ -348,7 +386,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 details = build_team_board_details_payload(
                     board, publication_identity=identity,
                     recent_relief_work=None, recent_transactions=None,
-                    game_context=None, performance=None, what_changed=None,
+                    game_context=None, performance=board['frozen_performance'], what_changed=None,
                     section_errors={},
                 )
             finally:
@@ -358,6 +396,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 _assert_workload_carrier(snapshot, team_id)
             )
             assert details['roles_deployment']['frozen_public_deployment'] == public_deployment
+            assert details['performance'] == package['by_team_id'][str(team_id)]['performance']['read']
             require_matching_team_board_identity(identity, snapshot, board)
             changed = {**identity, 'snapshot_id': identity['snapshot_id'] + 1}
             try:
@@ -378,6 +417,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             older_team.pop('workload_windows_authority')
             older_team.pop('roles_deployment')
             older_team.pop('roles_deployment_authority')
+            older_team.pop('performance')
             older_teams[str(team_id)] = older_team
             older_package['by_team_id'] = older_teams
             older['trusted_team_boards'] = older_package
@@ -387,6 +427,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
             )
             assert older_board['workload_overview'] is None
             assert older_board['frozen_roles_deployment'] is None
+            assert older_board['frozen_performance'] is None
             assert older_board['recent_usage_rest'] is not None
             print(
                 f'REHEARSAL candidate_snapshot_id={snapshot.id} sync_run_id={run.id} '
@@ -399,6 +440,11 @@ def test_trusted_publication_rehearsal(monkeypatch):
                 f'tb05_serialize_ms={serialization_ms:.3f} '
                 f'tb05_team_bytes={len(serialized_context.encode("utf-8"))} '
                 f'tb05_all_team_bytes={len(all_context.encode("utf-8"))}'
+                f' tb06_performance_ms={sum(performance_ms):.3f}'
+                f' tb06_appearance_queries={sum(performance_appearance_queries)}'
+                f' tb06_team_bytes={len(json.dumps(package["by_team_id"][str(team_id)]["performance"]).encode("utf-8"))}'
+                f' tb06_all_team_bytes={len(performance_json.encode("utf-8"))}'
+                f' tb06_serialize_ms={performance_serialization_ms:.3f}'
             )
         finally:
             db.session.remove()
