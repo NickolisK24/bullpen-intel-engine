@@ -120,6 +120,27 @@ test('TB-07 renders frozen recent starts without classifying them in the browser
   assert.equal(source.includes('will pitch'), false)
 })
 
+test('TB-07 keeps one incomplete game metric independent of known bullpen innings', () => {
+  const html = renderRotation({ read: {
+    ...read,
+    frozenRotationGames: {
+      dataThrough: '2026-08-16', windowDays: 7,
+      status: 'partial', gamesExcluded: 0, gamesAnalyzed: 1, gamesInWindow: 1,
+      summary: null,
+      starts: [{
+        gameId: 99, date: '2026-08-15', starterName: null,
+        starterInnings: null, bullpenInnings: '4.1', shortStart: null,
+        starterEvidence: { status: 'partial' }, bullpenEvidence: { status: 'complete' },
+        shortStartEvidence: { status: 'unknown' },
+      }],
+    },
+  } })
+  assert.ok(html.includes('Starter unknown · Bullpen 4.1 IP'))
+  assert.ok(html.includes('Some game-level rotation evidence is incomplete.'))
+  assert.equal(html.includes('Short start: fewer than 5 starter innings'), false)
+  assert.equal(html.includes('Starter 0 IP'), false)
+})
+
 test('Rotation Impact keeps normal governed context visible and uses no browser threshold', async () => {
   const html = renderRotation({ read })
   const source = await readFile(new URL('../src/components/bullpen/board/TeamBoardRotationImpact.jsx', import.meta.url), 'utf8')

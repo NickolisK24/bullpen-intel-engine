@@ -324,6 +324,19 @@ test('TB-07 recent starts attach only to exact trusted team and snapshot', () =>
   assert.equal(switched.detailsRejected, true)
   assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], short_start: null }] }, identity), null)
   assert.equal(readTeamBoardFrozenRotationGames({ ...carrier, starts: [{ ...carrier.starts[0], starter_innings: '4.7' }] }, identity), null)
+  const partialStart = readTeamBoardFrozenRotationGames({
+    ...carrier,
+    starts: [{
+      ...carrier.starts[0], status: 'partial',
+      starter_outs: null, starter_innings: null,
+      starter_evidence: { status: 'partial', reason_codes: ['starter_outs_missing'] },
+      short_start: null,
+      short_start_evidence: { status: 'unknown', reason_codes: ['starter_outs_missing'] },
+    }],
+  }, identity)
+  assert.equal(partialStart.starts[0].starterInnings, null)
+  assert.equal(partialStart.starts[0].bullpenInnings, '4.1')
+  assert.equal(partialStart.starts[0].shortStart, null)
 })
 
 test('TB-06 rejects fabricated deferred metrics and never changes certified zero', () => {
