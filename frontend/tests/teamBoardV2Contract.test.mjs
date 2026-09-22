@@ -19,6 +19,7 @@ import {
   readTeamBoardFrozenDeployment,
   readTeamBoardFrozenPerformance,
   readTeamBoardFrozenRotationGames,
+  readTeamBoardFrozenRosterTransactions,
   readTeamBoardV2,
   teamBoardIdentityKey,
 } from '../src/adapters/teamBoardV2.js'
@@ -77,9 +78,18 @@ const payload = {
     read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' },
   },
   recent_transactions: {
+    contract: 'team_board_roster_transactions_v1',
+    team_board_package_contract: 'trusted_team_board_publication_v1',
+    team_id: 1,
+    data_through: '2026-08-16',
     population_basis: 'explanatory_eligible_pitcher_transactions_touching_selected_team_in_latest_source_sync_window',
     status: 'available',
-    events: [{ player_id: 7, player_name: 'Exact Source Name', date: '2026-08-16', label: 'Recalled' }],
+    events: [{ event_id: 'tx-7', player_id: 7, player_name: 'Exact Source Name', date: '2026-08-16', type: 'recall', label: 'Recalled', description: 'Exact Source Name was recalled.', direction: 'addition', source: 'mlb_stats_api:transactions', evidence_status: 'complete', current_roster: { status: 'complete', membership: 'active', label: 'Active bullpen' } }],
+    window_start_date: '2026-08-10',
+    window_end_date: '2026-08-16',
+    limitations: [],
+    current_group: { population_basis: 'trusted_team_boards.default_pitcher_ids', active_count: 1, active_pitcher_ids: [7] },
+    off_active_recent_contributors: { status: 'complete', window_days: 7, contributors: [] },
   },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
@@ -214,8 +224,7 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.rolesDeployment.roles[0].label, 'Setup Arm')
   assert.equal(view.sectionStatus, payload.section_status)
   assert.equal(view.rotationImpact.read.summary, 'Backend sentence.')
-  assert.equal(view.recentTransactions, payload.recent_transactions)
-  assert.equal(view.recentTransactions.events[0].label, 'Recalled')
+  assert.equal(view.recentTransactions, null)
 })
 
 
@@ -248,6 +257,40 @@ test('deferred sections attach only when every publication identity field matche
   assert.equal(mismatched.whatChanged, null)
   assert.equal(mismatched.recentUsageRest, null)
   assert.equal(mismatched.teamState, payload.team_state)
+})
+
+test('TB-08 attaches only frozen roster movement for the exact core, team and active group', () => {
+  const attached = readTeamBoardDelivery(corePayload, detailsPayload)
+  assert.equal(attached.recentTransactions.events[0].label, 'Recalled')
+  assert.equal(attached.recentTransactions.currentGroup.activeCount, 1)
+  assert.equal(attached.frozenRosterTransactionsRejected, false)
+  assert.equal(attached.teamState, corePayload.team_state)
+
+  for (const altered of [
+    { team_id: 2 }, { data_through: '2026-08-15' },
+    { current_group: { ...payload.recent_transactions.current_group, active_pitcher_ids: [8] } },
+    { events: [{ ...payload.recent_transactions.events[0], date: '2026-08-17' }] },
+  ]) {
+    const wrong = readTeamBoardDelivery(corePayload, {
+      ...detailsPayload,
+      recent_transactions: { ...payload.recent_transactions, ...altered },
+    })
+    assert.equal(wrong.recentTransactions, null)
+    assert.equal(wrong.frozenRosterTransactionsRejected, true)
+    assert.equal(wrong.frozenPerformance, attached.frozenPerformance)
+    assert.equal(wrong.teamState, corePayload.team_state)
+  }
+  const priorSnapshot = readTeamBoardDelivery(corePayload, {
+    ...detailsPayload, publication_identity: { ...identity, snapshot_id: 1901 },
+  })
+  assert.equal(priorSnapshot.recentTransactions, null)
+  assert.equal(priorSnapshot.detailsRejected, true)
+  const switchedTeam = readTeamBoardDelivery({
+    ...corePayload, publication_identity: { ...identity, team_id: 2 },
+  }, detailsPayload)
+  assert.equal(switchedTeam.recentTransactions, null)
+  assert.equal(switchedTeam.detailsRejected, true)
+  assert.equal(readTeamBoardFrozenRosterTransactions(payload.recent_transactions, null), null)
 })
 
 test('TB-06 attaches only the frozen represented-date performance read', () => {

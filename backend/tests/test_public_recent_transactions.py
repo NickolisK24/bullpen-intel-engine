@@ -12,6 +12,7 @@ from services.public_recent_transactions import (
     TRANSACTION_PUBLIC_DESCRIPTIONS,
     TRANSACTION_PUBLIC_LABELS,
     build_public_recent_transactions,
+    build_public_recent_transactions_by_team,
 )
 from services.transaction_rehab_assignment import AUTHORITY as REHAB_AUTHORITY
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
@@ -161,6 +162,90 @@ def _certified_rehab_fields(pitcher, *, event_date, from_team_id=113, to_team_id
             'active_roster': False,
         },
     }
+
+
+def test_publication_batch_reuses_one_window_and_set_based_event_read(app):
+    with app.app_context():
+        _window()
+        moved = _pitcher(mlb_id=700101, name='Moved Arm', team_id=114)
+        _transaction(moved, transaction_id='trade', transaction_date=date(2026, 8, 16),
+                     category='trade', from_team_id=113, to_team_id=114)
+        _transaction(moved, transaction_id='recall', transaction_date=date(2026, 8, 17),
+                     category='recall', from_team_id=555, to_team_id=114)
+        _transaction(moved, transaction_id='option', transaction_date=date(2026, 8, 18),
+                     category='option', from_team_id=114, to_team_id=555)
+        statements = []
+
+        def track(_conn, _cursor, statement, _params, _context, _many):
+            if 'player_transactions' in statement.lower() and statement.lstrip().lower().startswith('select'):
+                statements.append(statement)
+
+        event.listen(db.engine, 'before_cursor_execute', track)
+        try:
+            result = build_public_recent_transactions_by_team(
+                [113, 114], reference_date=date(2026, 8, 18), include_event_direction=True,
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', track)
+        assert len(statements) == 1
+        assert [event['direction'] for event in result[113]['events']] == ['removal']
+        assert [event['direction'] for event in result[114]['events']] == [
+            'removal', 'addition', 'addition',
+        ]
+        assert result[113]['events'][0]['player_name'] == 'Moved Arm'
+        assert result[113]['events'][0]['source'] == 'mlb_stats_api:transactions'
+        assert result[113]['events'][0]['evidence_status'] == 'complete'
+        assert result[114]['events'][0]['date'] == '2026-08-18'
+        assert result[113]['window_end_date'] == '2026-08-18'
+
+
+def test_publication_batch_withholds_unverified_without_affecting_other_team(app):
+    with app.app_context():
+        _window()
+        known = _pitcher(mlb_id=700102, name='Verified Arm')
+        _transaction(known, transaction_id='known', transaction_date=date(2026, 8, 16),
+                     from_team_id=555, to_team_id=113)
+        _transaction(known, transaction_id='unverified', transaction_date=date(2026, 8, 17),
+                     from_team_id=555, to_team_id=114, eligible=False)
+        result = build_public_recent_transactions_by_team(
+            [113, 114], reference_date=date(2026, 8, 18), include_event_direction=True,
+        )
+        assert result[113]['status'] == 'available'
+        assert len(result[113]['events']) == 1
+        assert result[114]['status'] == 'partial'
+        assert result[114]['events'] == []
+        assert result[114]['limitations']
+
+
+def test_same_team_source_and_destination_projects_one_event_without_reinventing_dedupe(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700103, name='Same Team Arm', team_id=113)
+        _transaction(pitcher, transaction_id='same-team',
+                     transaction_date=date(2026, 8, 18), category='roster_activation',
+                     from_team_id=113, to_team_id=113)
+        result = build_public_recent_transactions_by_team(
+            [113], reference_date=date(2026, 8, 18), include_event_direction=True,
+        )[113]
+        assert len(result['events']) == 1
+        assert result['events'][0]['event_id'] == 'same-team'
+        assert result['events'][0]['direction'] == 'addition'
+
+
+def test_publication_withholds_event_from_unmatched_source_without_affecting_legacy_reader(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700104, name='Source Mismatch Arm')
+        row = _transaction(pitcher, transaction_id='source-mismatch',
+                           transaction_date=date(2026, 8, 18), to_team_id=113)
+        row.source = 'unverified_source'
+        db.session.flush()
+        frozen = build_public_recent_transactions_by_team(
+            [113], reference_date=date(2026, 8, 18), include_event_direction=True,
+        )[113]
+        assert frozen['status'] == 'partial'
+        assert frozen['events'] == []
+        assert build_public_recent_transactions(113, reference_date=date(2026, 8, 18))['events'][0]['event_id'] == 'source-mismatch'
 
 
 def test_projects_typed_team_events_in_newest_first_source_order(app):

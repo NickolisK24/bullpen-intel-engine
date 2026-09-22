@@ -150,7 +150,30 @@ export const teamBoardDetails = {
       status: 'complete', reason_codes: [],
     }],
   } },
-  recent_transactions: { status: 'available', events: [] }, recent_relief_work: { read: { relief_by_date: [] } },
+  recent_transactions: {
+    contract: 'team_board_roster_transactions_v1',
+    team_board_package_contract: 'trusted_team_board_publication_v1',
+    team_id: identity.team_id, data_through: identity.represented_date,
+    status: 'available', window_start_date: '2026-08-26',
+    window_end_date: identity.represented_date, limitations: [],
+    current_group: { population_basis: 'trusted_team_boards.default_pitcher_ids', active_count: 1, active_pitcher_ids: [101] },
+    events: [{
+      event_id: 'fixture-recall', player_id: 101, player_name: 'Fixture Reliever',
+      date: identity.represented_date, type: 'recall', label: 'Recalled',
+      description: 'Fixture Reliever was recalled.', direction: 'addition',
+      source: 'mlb_stats_api:transactions', evidence_status: 'complete',
+      current_roster: { status: 'complete', membership: 'active', label: 'Active bullpen' },
+    }, {
+      event_id: 'fixture-il', player_id: 102, player_name: 'Former Reliever',
+      date: '2026-09-01', type: 'il_placement', label: 'Placed on injured list',
+      description: 'Former Reliever was placed on the injured list.', direction: 'removal',
+      source: 'mlb_stats_api:transactions', evidence_status: 'complete',
+      current_roster: { status: 'complete', membership: 'off_active', label: '15-day IL' },
+    }],
+    off_active_recent_contributors: { status: 'complete', window_days: 7, contributors: [
+      { pitcher_id: 102, name: 'Former Reliever', current_roster: { status: 'complete', membership: 'off_active', label: '15-day IL' } },
+    ] },
+  }, recent_relief_work: { read: { relief_by_date: [] } },
   game_context: null, performance: frozenPerformanceFixture(), what_changed: { state: 'no_change', items: [] },
   section_status: sectionStatus,
 }

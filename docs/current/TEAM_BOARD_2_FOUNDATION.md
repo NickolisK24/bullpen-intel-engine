@@ -432,6 +432,54 @@ production measurements or an isolated React render profile. Incomplete
 team-game split coverage, unavailable starter names, and the legacy aggregate's
 different reference-date anchor remain explicit limitations.
 
+## TB-08 roster and transactions
+
+TB-02's frozen `default_pitcher_ids` and represented roster records remain the
+only current active-bullpen authority. TB-08 freezes the existing public,
+identity-qualified pitcher transaction projection into
+`team_board_roster_transactions_v1` during trusted Dashboard assembly. The
+authority audit found current membership, typed/qualified transaction dates,
+recall/option/IL labels, and source-window status ready; off-active contributor
+linkage is partial when seven-day workload evidence is incomplete; ambiguous
+or unverified event claims are not governed for public display. The
+source-owned latest transaction sync window is bounded by its recorded query
+dates (normally the source end date and seven preceding baseball dates) and
+clamped to the represented Team Board date. No request-time transaction query
+fills an older package or an unavailable source window. Only events with
+verified pitcher identity, typed public category, team endpoint, and explicit
+explanatory eligibility are shown; partial windows and withheld events remain
+limited, never certified empty.
+
+Each frozen event keeps its verified source and complete event-level evidence
+state; the window may still be partial when other events are withheld. Public
+labels reuse the existing typed vocabulary: recalled, optioned,
+activated, injured-list placement/activation, traded, designated,
+outrighted, released, claimed, and the other qualified roster-list moves.
+Additions/removals require a matching team endpoint; ambiguous movement stays
+in other moves. The dated event and current status are deliberately separate:
+an old option does not override a later active roster read. Injured-list
+wording states only the verified roster move, not severity or return timing.
+Recent contributors outside the represented active bullpen may receive frozen
+current-roster context from the same package, without copying TB-03/TB-04
+workload values or changing appearance-team ownership. Acquired pitchers'
+prior-team appearances remain with that prior team.
+
+The section is a compact current-group summary plus dated additions/removals
+and off-active context. It renders backend type, direction, dates, current
+membership, and evidence state without browser roster inference. Exact
+core/details identity and carrier team/date/active-group checks reject stale
+attachment while earlier sections remain usable. The layout uses textual
+status, semantic time/list elements, keyboard-operable pitcher handoffs, and
+no horizontal table at 390, 768, or 1440 pixels. Old snapshots explicitly
+lack TB-08. The local rehearsal measured one set-based transaction read for
+30 teams, 6.089 ms to read, 0.193 ms to project all carriers, 0.090 ms to
+serialize 21,030 bytes, and zero pointer moves. These fixture timings are not
+production latency.
+Natural publication confirmation remains asynchronous.
+The local browser fixture measured 233 ms to core readiness, 212 ms to
+details response, and 239 ms to TB-08 readiness (28 ms after details). This
+does not isolate React render cost or predict production latency.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

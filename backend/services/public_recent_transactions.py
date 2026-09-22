@@ -91,6 +91,19 @@ TRANSACTION_PUBLIC_DESCRIPTIONS = {
     CATEGORY_RESTRICTED: '{name} was placed on the restricted list.',
 }
 
+# Historical event direction is not current roster membership. The typed
+# category is sufficient for the first two groups; trades and claims also
+# require an unambiguous team endpoint.
+_ADDITION_CATEGORIES = {
+    CATEGORY_RECALL, CATEGORY_IL_ACTIVATION, CATEGORY_ROSTER_ACTIVATION,
+    CATEGORY_CONTRACT_SELECTION,
+}
+_REMOVAL_CATEGORIES = {
+    CATEGORY_OPTION, CATEGORY_IL_PLACEMENT, CATEGORY_ROSTER_DEACTIVATION,
+    CATEGORY_DFA, CATEGORY_OUTRIGHT, CATEGORY_RELEASE, CATEGORY_SUSPENSION,
+    CATEGORY_BEREAVEMENT, CATEGORY_PATERNITY, CATEGORY_RESTRICTED,
+}
+
 SOURCE_UNAVAILABLE_LIMITATION = 'Recent official transaction records are unavailable.'
 SOURCE_STALE_LIMITATION = 'Recent official transaction records have not been verified recently.'
 SOURCE_WINDOW_NOT_COVERED_LIMITATION = (
@@ -181,8 +194,24 @@ def project_qualified_public_transaction(row, pitcher):
     }
 
 
-def build_public_recent_transactions(team_id, *, reference_date=None):
-    """Return the latest governed transaction window for ``team_id``.
+def _event_direction(row, team_id):
+    category = row.normalized_category
+    if category in _ADDITION_CATEGORIES and row.to_team_id == team_id:
+        return 'addition'
+    if category in _REMOVAL_CATEGORIES and row.from_team_id == team_id:
+        return 'removal'
+    if category in {CATEGORY_TRADE, CATEGORY_WAIVER_CLAIM}:
+        if row.to_team_id == team_id and row.from_team_id != team_id:
+            return 'addition'
+        if row.from_team_id == team_id and row.to_team_id != team_id:
+            return 'removal'
+    return 'other'
+
+
+def build_public_recent_transactions_by_team(
+    team_ids, *, reference_date=None, include_event_direction=False,
+):
+    """Project one source window for many teams with the same public qualifier.
 
     The latest sync window is the existing bounded depth owner. Events must
     already be typed, identity-resolved, roster-aligned, and explicitly marked
@@ -190,9 +219,15 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     either source or destination are included; current pitcher assignment is
     never used for event-team attribution.
     """
+    team_ids = sorted({int(team_id) for team_id in team_ids})
+    if not team_ids:
+        return {}
     window = latest_transaction_sync_window()
     if window is None:
-        return _unavailable(limitation=SOURCE_UNAVAILABLE_LIMITATION)
+        return {
+            team_id: _unavailable(limitation=SOURCE_UNAVAILABLE_LIMITATION)
+            for team_id in team_ids
+        }
 
     start_date = _coerce_date(window.source_query_start_date)
     end_date = _coerce_date(window.source_query_end_date)
@@ -202,29 +237,33 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
         or start_date is None
         or end_date is None
     ):
-        return _unavailable(
-            limitation=SOURCE_UNAVAILABLE_LIMITATION,
-            represented_date=end_date,
-        )
+        return {
+            team_id: _unavailable(
+                limitation=SOURCE_UNAVAILABLE_LIMITATION, represented_date=end_date,
+            ) for team_id in team_ids
+        }
     if ref is not None and (ref - end_date).days > TRANSACTION_STALE_AFTER_DAYS:
-        return _unavailable(
-            limitation=SOURCE_STALE_LIMITATION,
-            represented_date=end_date,
-        )
+        return {
+            team_id: _unavailable(
+                limitation=SOURCE_STALE_LIMITATION, represented_date=end_date,
+            ) for team_id in team_ids
+        }
     represented_date = min(end_date, ref) if ref is not None else end_date
     if represented_date < start_date:
-        return _unavailable(
-            limitation=SOURCE_WINDOW_NOT_COVERED_LIMITATION,
-            represented_date=represented_date,
-        )
+        return {
+            team_id: _unavailable(
+                limitation=SOURCE_WINDOW_NOT_COVERED_LIMITATION,
+                represented_date=represented_date,
+            ) for team_id in team_ids
+        }
 
     rows = (
         PlayerTransaction.query
         .filter(PlayerTransaction.transaction_date >= start_date)
         .filter(PlayerTransaction.transaction_date <= represented_date)
         .filter(or_(
-            PlayerTransaction.from_team_id == team_id,
-            PlayerTransaction.to_team_id == team_id,
+            PlayerTransaction.from_team_id.in_(team_ids),
+            PlayerTransaction.to_team_id.in_(team_ids),
         ))
         .order_by(
             PlayerTransaction.transaction_date.desc(),
@@ -246,44 +285,65 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
         )
     }
 
-    events = []
-    withheld_count = 0
+    events_by_team = {team_id: [] for team_id in team_ids}
+    withheld_by_team = {team_id: 0 for team_id in team_ids}
     for row in rows:
+        affected = {row.from_team_id, row.to_team_id}.intersection(events_by_team)
+        if include_event_direction and row.source != window.source:
+            for team_id in affected:
+                withheld_by_team[team_id] += 1
+            continue
         pitcher = pitchers.get(row.pitcher_id)
         projected = project_qualified_public_transaction(row, pitcher)
         if projected is None:
             if is_proven_non_pitcher(row) or is_certified_non_material_rehab_assignment(row):
                 continue
-            withheld_count += 1
+            for team_id in affected:
+                withheld_by_team[team_id] += 1
             continue
-        events.append({
-            'event_id': row.transaction_id or row.transaction_key,
-            'player_id': row.pitcher_id,
-            'player_mlb_id': row.player_mlb_id,
-            'player_name': projected['pitcher']['name'],
-            'date': projected['transaction_date'],
-            'type': projected['normalized_category'],
-            'label': projected['label'],
-            'description': projected['description'],
-        })
+        for team_id in affected:
+            event = {
+                'event_id': row.transaction_id or row.transaction_key,
+                'player_id': row.pitcher_id,
+                'player_mlb_id': row.player_mlb_id,
+                'player_name': projected['pitcher']['name'],
+                'date': projected['transaction_date'],
+                'type': projected['normalized_category'],
+                'label': projected['label'],
+                'description': projected['description'],
+            }
+            if include_event_direction:
+                event['direction'] = _event_direction(row, team_id)
+                event['source'] = row.source
+                event['evidence_status'] = 'complete'
+            events_by_team[team_id].append(event)
 
-    limitations = []
-    if window.status == WINDOW_STATUS_PARTIAL:
-        limitations.append(SOURCE_PARTIAL_LIMITATION)
-    if withheld_count:
-        limitations.append(WITHHELD_EVENT_LIMITATION)
+    result = {}
+    for team_id in team_ids:
+        limitations = []
+        if window.status == WINDOW_STATUS_PARTIAL:
+            limitations.append(SOURCE_PARTIAL_LIMITATION)
+        if withheld_by_team[team_id]:
+            limitations.append(WITHHELD_EVENT_LIMITATION)
+        result[team_id] = {
+            'capability': CAPABILITY,
+            'version': VERSION,
+            'population_basis': POPULATION_BASIS,
+            'status': STATUS_PARTIAL if limitations else STATUS_AVAILABLE,
+            'events': events_by_team[team_id],
+            'window_start_date': _iso(start_date),
+            'window_end_date': _iso(represented_date),
+            'represented_date': _iso(represented_date),
+            'limitations': limitations,
+        }
+    return result
 
-    return {
-        'capability': CAPABILITY,
-        'version': VERSION,
-        'population_basis': POPULATION_BASIS,
-        'status': STATUS_PARTIAL if limitations else STATUS_AVAILABLE,
-        'events': events,
-        'window_start_date': _iso(start_date),
-        'window_end_date': _iso(represented_date),
-        'represented_date': _iso(represented_date),
-        'limitations': limitations,
-    }
+
+def build_public_recent_transactions(team_id, *, reference_date=None):
+    """Return the existing single-team public chronology unchanged."""
+    return build_public_recent_transactions_by_team(
+        [team_id], reference_date=reference_date,
+    )[int(team_id)]
 
 
 __all__ = [
@@ -293,5 +353,6 @@ __all__ = [
     'TRANSACTION_PUBLIC_DESCRIPTIONS',
     'VERSION',
     'build_public_recent_transactions',
+    'build_public_recent_transactions_by_team',
     'project_qualified_public_transaction',
 ]

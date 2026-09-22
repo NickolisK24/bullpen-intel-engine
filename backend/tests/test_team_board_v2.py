@@ -207,6 +207,7 @@ def _board(*, rotation=None, roster_authority=None):
         'freshness': {'data_through': '2026-08-16'},
         'team_state': deepcopy(TEAM_STATE),
         'frozen_performance': _performance(),
+        'frozen_roster_transactions': _frozen_roster_transactions(),
         'publication_method_versions': {
             'bullpen_membership': 'team_board_default_bullpen_membership_v1',
             'rest_status': 'rest_status_v1',
@@ -343,6 +344,39 @@ def _recent_transactions(*, status='available', events=None, limitations=None):
         'window_end_date': '2026-08-17',
         'represented_date': '2026-08-17',
         'limitations': limitations or [],
+    }
+
+
+def _frozen_roster_transactions():
+    source = _recent_transactions()
+    return {
+        'contract': 'team_board_roster_transactions_v1',
+        'team_board_package_contract': public_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+        'team_id': 1,
+        'data_through': '2026-08-16',
+        'population_basis': source['population_basis'],
+        'status': source['status'],
+        'window_start_date': source['window_start_date'],
+        'window_end_date': '2026-08-16',
+        'source_represented_date': '2026-08-16',
+        'limitations': [],
+        'events': [{
+            **source['events'][0],
+            'direction': 'addition',
+            'source': 'mlb_stats_api:transactions',
+            'evidence_status': 'complete',
+            'current_roster': {
+                'status': 'complete', 'membership': 'active',
+                'label': 'Active bullpen',
+            },
+        }],
+        'current_group': {
+            'population_basis': 'trusted_team_boards.default_pitcher_ids',
+            'active_count': 1, 'active_pitcher_ids': [7],
+        },
+        'off_active_recent_contributors': {
+            'status': 'unavailable', 'window_days': 7, 'contributors': [],
+        },
     }
 
 
@@ -1274,7 +1308,7 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 
 
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
-    calls = {'board': 0, 'relief': 0, 'game': 0, 'transactions': 0, 'changes': 0}
+    calls = {'board': 0, 'relief': 0, 'game': 0, 'changes': 0}
 
     def board(team_id, **_kwargs):
         calls['board'] += 1
@@ -1292,12 +1326,6 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
         assert reference_date.isoformat() == '2026-08-16'
         return _game_context()
 
-    def transactions(team_id, reference_date=None):
-        calls['transactions'] += 1
-        assert team_id == 1
-        assert reference_date.isoformat() == '2026-08-16'
-        return _recent_transactions()
-
     def changes(team_id, freshness=None, generated_at=None, **_kwargs):
         calls['changes'] += 1
         assert team_id == 1
@@ -1308,18 +1336,18 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', game)
-    monkeypatch.setattr(team_board_v2_api, 'build_public_recent_transactions', transactions)
     monkeypatch.setattr(team_board_v2_api, 'build_team_changes_payload', changes)
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'relief': 1, 'game': 1, 'transactions': 1, 'changes': 1}
+    assert calls == {'board': 1, 'relief': 1, 'game': 1, 'changes': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
     assert payload['recently_used_arms']['value'] == 1
     assert payload['recently_used_arms']['window_label'] == 'Last 3 days'
     assert payload['what_changed'] == _what_changed()
+    assert payload['recent_transactions'] == _frozen_roster_transactions()
 
 
 def test_route_scopes_what_changed_failure_without_destroying_core(client, monkeypatch):
@@ -1336,11 +1364,6 @@ def test_route_scopes_what_changed_failure_without_destroying_core(client, monke
     )
     monkeypatch.setattr(
         team_board_v2_api,
-        'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: _recent_transactions(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
         'build_team_changes_payload',
         lambda _team_id, freshness=None, generated_at=None, **_kwargs: (_ for _ in ()).throw(RuntimeError('fixture failure')),
     )
@@ -1348,7 +1371,7 @@ def test_route_scopes_what_changed_failure_without_destroying_core(client, monke
     payload = client.get('/api/bullpen/teams/1/board-v2').get_json()
     assert payload['team_state'] == TEAM_STATE
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
-    assert payload['recent_transactions'] == _recent_transactions()
+    assert payload['recent_transactions'] == _frozen_roster_transactions()
     assert payload['what_changed'] is None
     assert payload['section_status']['what_changed'] == unavailable_section(
         'what_changed_unavailable'
@@ -1370,11 +1393,6 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
         team_board_v2_api,
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: _recent_transactions(),
     )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
@@ -1406,11 +1424,6 @@ def test_route_scopes_performance_failure_without_changing_other_sections(client
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
     )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: _recent_transactions(),
-    )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
@@ -1440,11 +1453,6 @@ def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypat
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
     )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: _recent_transactions(),
-    )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
@@ -1459,11 +1467,13 @@ def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypat
     assert payload['rotation_impact']['read'] == ROTATION
 
 
-def test_route_scopes_transaction_failure_without_destroying_other_sections(client, monkeypatch):
+def test_route_missing_frozen_transaction_carrier_preserves_other_sections(client, monkeypatch):
+    missing_transactions = _board()
+    missing_transactions['frozen_roster_transactions'] = None
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id, **_kwargs: _board(),
+        lambda _team_id, **_kwargs: missing_transactions,
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1474,11 +1484,6 @@ def test_route_scopes_transaction_failure_without_destroying_other_sections(clie
         team_board_v2_api,
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: (_ for _ in ()).throw(RuntimeError('fixture failure')),
     )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
@@ -1538,7 +1543,6 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     for name in (
         'build_public_team_relief_work_payload', 'build_team_game_context',
-            'build_public_recent_transactions',
         'build_team_changes_payload',
     ):
         monkeypatch.setattr(
@@ -1808,10 +1812,6 @@ def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
         team_board_v2_api, 'build_team_game_context',
         lambda team_id, reference_date=None: _game_context(),
     )
-    monkeypatch.setattr(
-        team_board_v2_api, 'build_public_recent_transactions',
-        lambda team_id, reference_date=None: _recent_transactions(),
-    )
 
     app = Flask(__name__)
     with app.app_context():
@@ -1854,6 +1854,46 @@ def test_frozen_performance_attaches_only_to_matching_team_date_and_population()
     assert public_authority._frozen_performance_for_view(snapshot, {}, 1) is None
 
 
+def test_frozen_roster_transactions_attach_only_to_matching_team_date_and_group():
+    snapshot = _snapshot()
+    carrier = _frozen_roster_transactions()
+    package = {
+        'default_pitcher_ids': [7],
+        'frozen_roster_transactions': carrier,
+        'frozen_roster_transactions_authority': {
+            'method_version': 'team_board_roster_transactions_v1',
+            'team_board_package_contract': public_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'data_through': '2026-08-16',
+        },
+    }
+    assert public_authority._frozen_roster_transactions_for_view(snapshot, package, 1) == carrier
+    for key, wrong in (
+        ('team_id', 2), ('data_through', '2026-08-15'),
+        ('current_group', {'active_count': 1, 'active_pitcher_ids': [8]}),
+        ('events', [{**carrier['events'][0], 'date': '2026-08-17'}]),
+    ):
+        changed = deepcopy(package)
+        changed['frozen_roster_transactions'][key] = wrong
+        assert public_authority._frozen_roster_transactions_for_view(snapshot, changed, 1) is None
+    changed = deepcopy(package)
+    changed['frozen_roster_transactions_authority']['data_through'] = '2026-08-15'
+    assert public_authority._frozen_roster_transactions_for_view(snapshot, changed, 1) is None
+    assert public_authority._frozen_roster_transactions_for_view(snapshot, {}, 1) is None
+
+
+def test_details_serves_frozen_roster_transactions_without_mutable_transaction_read(client, monkeypatch):
+    monkeypatch.setattr(
+        'services.public_recent_transactions.build_public_recent_transactions',
+        lambda *_args, **_kwargs: pytest.fail('request-time transaction query'),
+    )
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id, **_kwargs: _board())
+    monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', lambda _team_id, **_kwargs: _relief_work())
+    monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', lambda _team_id, reference_date=None: _game_context())
+    response = client.get('/api/bullpen/teams/1/board-v2')
+    assert response.status_code == 200
+    assert response.get_json()['recent_transactions'] == _frozen_roster_transactions()
+
+
 def test_deferred_route_reads_frozen_performance_without_mutable_metric_query(client, monkeypatch):
     monkeypatch.setattr(
         'services.performance_intelligence.qualifying_appearances',
@@ -1870,10 +1910,6 @@ def test_deferred_route_reads_frozen_performance_without_mutable_metric_query(cl
     monkeypatch.setattr(
         team_board_v2_api, 'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api, 'build_public_recent_transactions',
-        lambda _team_id, reference_date=None: _recent_transactions(),
     )
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
