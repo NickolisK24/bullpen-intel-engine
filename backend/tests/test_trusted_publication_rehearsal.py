@@ -23,6 +23,7 @@ from models.sync_run import SyncRun
 from models.team_game_pitching_split import TeamGamePitchingSplit
 from services.roster_status import STATUS_IL_15
 from services import appearance_ledger, dashboard_snapshot, public_serving_authority
+from services import public_team_relief_work
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services.team_board_delivery import (
     TeamBoardIdentityMismatch,
@@ -806,6 +807,30 @@ def test_trusted_publication_rehearsal(monkeypatch, tmp_path):
             finally:
                 event.remove(db.engine, 'before_cursor_execute', no_mutable_workload_read)
             assert core['publication_identity'] == details['publication_identity']
+            # Active Bullpen workload columns are the frozen governed bullpen
+            # workload (the Recent Usage carrier), while the record's physical
+            # FatigueScore facts stay exactly as published.
+            team_package = package['by_team_id'][str(team_id)]
+            usage = team_package['recent_usage_rest']
+            assert usage['appearance_policy'] == (
+                public_team_relief_work.RECENT_USAGE_REST_APPEARANCE_POLICY
+            )
+            usage_by_pitcher = {item['pitcher_id']: item for item in usage['active_pitchers']}
+            frozen_records = {record['pitcher_id']: record for record in team_package['records']}
+            assert core['active_bullpen']['arms']
+            for arm in core['active_bullpen']['arms']:
+                record = frozen_records[arm['pitcher_id']]
+                display = record['bullpen_workload_display']
+                assert display['contract'] == (
+                    public_team_relief_work.ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT
+                )
+                window = usage_by_pitcher[arm['pitcher_id']]['windows']['last_7_days']
+                assert arm['workload']['appearances_last_7'] == window['appearances']['value']
+                assert arm['workload']['pitches_last_7_days'] == window['pitches']['value']
+                assert arm['last_appearance'] == display['last_appearance']
+                score = FatigueScore.query.filter_by(pitcher_id=arm['pitcher_id']).one()
+                assert record['workload_facts']['appearances_last_7'] == score.appearances_last_7
+                assert record['workload_facts']['pitches_last_7_days'] == score.pitches_last_7_days
             assert details['workload_overview']['frozen_team_workload'] == (
                 _assert_workload_carrier(snapshot, team_id)
             )

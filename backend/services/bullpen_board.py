@@ -582,6 +582,7 @@ def _board_cards(records):
             last_appearance=record.get('last_appearance'),
             last_workload_appearance=record.get('last_workload_appearance'),
             workload_facts=record.get('workload_facts'),
+            bullpen_workload_display=record.get('bullpen_workload_display'),
         )
         for record in records
     ]
@@ -615,6 +616,7 @@ def build_card(
     last_appearance=None,
     last_workload_appearance=None,
     workload_facts=None,
+    bullpen_workload_display=None,
 ):
     """Build a single display card from existing availability output.
 
@@ -639,7 +641,7 @@ def build_card(
         roster_status=roster_status,
     )
 
-    return {
+    card = {
         'pitcher_id': pitcher_id,
         'name': name,
         # Engine state, kept for internal consumers and existing contracts.
@@ -679,6 +681,11 @@ def build_card(
         # preserves the pure grouping API.
         'visibility': visibility or default_visible_contract(),
     }
+    if bullpen_workload_display is not None:
+        # Frozen bullpen-workload facts for the Active Bullpen columns; the
+        # physical workload above keeps driving availability.
+        card['bullpen_workload_display'] = bullpen_workload_display
+    return card
 
 
 def group_cards(cards):

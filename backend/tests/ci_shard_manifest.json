@@ -746,6 +746,10 @@
         {
           "path": "tests/test_v4_explanations_deterministic_builder.py",
           "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_team_board_bullpen_workload_display.py",
+          "measured_seconds": 2.1
         }
       ]
     },

@@ -81,6 +81,14 @@ RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN = 'appearance_pitch_count_unknown'
 RECENT_USAGE_REST_REASON_OUTS_UNKNOWN = 'appearance_outs_unknown'
 RECENT_USAGE_REST_REASON_LAST_APPEARANCE_UNKNOWN = 'last_appearance_unknown'
 RECENT_USAGE_REST_REASON_REFERENCE_DATE_INVALID = 'reference_date_invalid'
+RECENT_USAGE_REST_REASON_SAME_DAY_ORDER_UNKNOWN = 'same_day_appearance_order_unknown'
+# Which appearances the per-arm windows count. Bullpen workload is decided per
+# appearance by services.game_shape (relief lines plus openers in an
+# opener/bulk game); a conventional rotation start is physical workload only.
+RECENT_USAGE_REST_APPEARANCE_POLICY = 'governed_game_shape_bullpen_workload_v1'
+ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT = (
+    'team_board_active_bullpen_workload_display_v1'
+)
 
 WORKLOAD_WINDOWS_COMPLETE = 'complete'
 WORKLOAD_WINDOWS_WITHHELD = 'withheld'
@@ -275,6 +283,7 @@ def author_public_team_relief_authority(
             reference_date=reference_date,
             active_pitchers=active_pitchers,
             coverage_by_date=coverage_by_date,
+            team_game_logs=_start_team_game_logs(rows, anchor=anchor),
         ),
     }
     if include_publication_rows:
@@ -331,12 +340,19 @@ def build_recent_usage_rest_carrier(
     reference_date,
     active_pitchers=None,
     coverage_by_date=None,
+    team_game_logs=None,
 ):
     """Freeze named-arm workload observations from the full appearance row set.
 
     ``rows`` is the untruncated official appearance-team query also used by the
     existing public workload/deployment carriers.  No request-time state or
     five-date display chronology participates in this projection.
+
+    Windows count governed bullpen workload only (see
+    ``bullpen_workload_classes``). ``team_game_logs`` supplies every pitching
+    line of the games in which a row is a credited start, so the start can be
+    classified by its game's shape; when omitted, the rows themselves are the
+    only game lines.
     """
     anchor = _parse_data_through(data_through)
     reference = _parse_data_through(reference_date)
@@ -358,10 +374,13 @@ def build_recent_usage_rest_carrier(
         if type(pitcher_id) is int and pitcher_id > 0
     }
     coverage = dict(coverage_by_date or {})
+    classes = bullpen_workload_classes(
+        [log for log, _pitcher in rows], team_game_logs=team_game_logs,
+    )
     relief_rows = [
         (log, pitcher)
         for log, pitcher in rows
-        if _start_relief_state(log) == RELIEF
+        if _bullpen_state(log, classes) == RELIEF
     ]
     seven_start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
     contributor_ids = {
@@ -389,6 +408,7 @@ def build_recent_usage_rest_carrier(
             coverage=coverage,
             source_days_since=active_source.get('days_since_last_appearance'),
             roster_state='active' if pitcher_id in active else 'off_active_historical',
+            classes=classes,
         )
         if pitcher_id in active:
             active_pitchers.append(item)
@@ -412,6 +432,7 @@ def build_recent_usage_rest_carrier(
         'reference_date': reference.isoformat(),
         'window_policy': RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
         'population_basis': RECENT_USAGE_REST_POPULATION_BASIS,
+        'appearance_policy': RECENT_USAGE_REST_APPEARANCE_POLICY,
         'thresholds': {
             'multi_inning_minimum_outs': RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
             'high_pitch_outing_minimum_pitches': RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
@@ -434,6 +455,7 @@ def _unavailable_recent_usage_rest_carrier(
         'reference_date': _iso_date(reference_date),
         'window_policy': RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
         'population_basis': RECENT_USAGE_REST_POPULATION_BASIS,
+        'appearance_policy': RECENT_USAGE_REST_APPEARANCE_POLICY,
         'thresholds': {
             'multi_inning_minimum_outs': RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
             'high_pitch_outing_minimum_pitches': RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
@@ -455,6 +477,7 @@ def _recent_usage_rest_pitcher(
     coverage,
     source_days_since,
     roster_state,
+    classes=None,
 ):
     windows = {
         key: _recent_usage_rest_window(
@@ -462,10 +485,11 @@ def _recent_usage_rest_pitcher(
             anchor=anchor,
             window_days=window_days,
             coverage=coverage,
+            classes=classes,
         )
         for key, window_days in RECENT_USAGE_REST_WINDOW_DAYS.items()
     }
-    relief_rows = [row for row in rows if _start_relief_state(row) == RELIEF]
+    relief_rows = [row for row in rows if _bullpen_state(row, classes) == RELIEF]
     relief_dates = {
         row.game_date for row in relief_rows if row.game_date is not None
     }
@@ -479,7 +503,7 @@ def _recent_usage_rest_pitcher(
     )
     pitched_yesterday = _pattern_fact(
         matched=anchor in relief_dates,
-        window_state=_classified_window_state(rows, coverage, anchor, anchor),
+        window_state=_classified_window_state(rows, coverage, anchor, anchor, classes),
     )
 
     back_to_back_start = reference - timedelta(
@@ -495,7 +519,7 @@ def _recent_usage_rest_pitcher(
     back_to_back = _pattern_fact(
         matched=observed_back_to_back,
         window_state=_classified_window_state(
-            rows, coverage, back_to_back_start, anchor
+            rows, coverage, back_to_back_start, anchor, classes,
         ),
     )
 
@@ -507,7 +531,7 @@ def _recent_usage_rest_pitcher(
             and len(three_dates) >= RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS
         ),
         window_state=_classified_window_state(
-            rows, coverage, three_start, anchor
+            rows, coverage, three_start, anchor, classes,
         ),
     )
 
@@ -519,7 +543,7 @@ def _recent_usage_rest_pitcher(
             and len(four_dates) >= RECENT_USAGE_REST_FOUR_IN_SIX_MIN_DAYS
         ),
         window_state=_classified_window_state(
-            rows, coverage, four_start, anchor
+            rows, coverage, four_start, anchor, classes,
         ),
     )
 
@@ -533,7 +557,7 @@ def _recent_usage_rest_pitcher(
         field_name='innings_pitched_outs',
         threshold=RECENT_USAGE_REST_MULTI_INNING_MIN_OUTS,
         window_state=_classified_window_state(
-            rows, coverage, seven_start, anchor
+            rows, coverage, seven_start, anchor, classes,
         ),
         missing_reason=RECENT_USAGE_REST_REASON_OUTS_UNKNOWN,
     )
@@ -542,9 +566,16 @@ def _recent_usage_rest_pitcher(
         field_name='pitches_thrown',
         threshold=RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES,
         window_state=_classified_window_state(
-            rows, coverage, seven_start, anchor
+            rows, coverage, seven_start, anchor, classes,
         ),
         missing_reason=RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN,
+    )
+
+    last_bullpen_appearance = _last_bullpen_appearance_fact(
+        rows,
+        anchor=anchor,
+        coverage=coverage,
+        classes=classes,
     )
 
     return {
@@ -559,18 +590,19 @@ def _recent_usage_rest_pitcher(
         'four_in_six': four_in_six,
         'recent_multi_inning': multi_inning,
         'high_pitch_outing': high_pitch,
+        'last_bullpen_appearance': last_bullpen_appearance,
     }
 
 
-def _recent_usage_rest_window(rows, *, anchor, window_days, coverage):
+def _recent_usage_rest_window(rows, *, anchor, window_days, coverage, classes=None):
     start = anchor - timedelta(days=window_days - 1)
     window_rows = [
         row for row in rows
         if row.game_date is not None and start <= row.game_date <= anchor
     ]
-    relief_rows = [row for row in window_rows if _start_relief_state(row) == RELIEF]
+    relief_rows = [row for row in window_rows if _bullpen_state(row, classes) == RELIEF]
     start_relief_unknown = any(
-        _start_relief_state(row) not in (START, RELIEF) for row in window_rows
+        _bullpen_state(row, classes) not in (START, RELIEF) for row in window_rows
     )
     state, reasons = _coverage_state(coverage, start, anchor)
     if state != RECENT_USAGE_REST_COMPLETE:
@@ -709,14 +741,14 @@ def _coverage_state(coverage, start, end):
     return RECENT_USAGE_REST_COMPLETE, []
 
 
-def _classified_window_state(rows, coverage, start, end):
+def _classified_window_state(rows, coverage, start, end, classes=None):
     state, reasons = _coverage_state(coverage, start, end)
     if state != RECENT_USAGE_REST_COMPLETE:
         return state, reasons
     if any(
         row.game_date is not None
         and start <= row.game_date <= end
-        and _start_relief_state(row) not in (START, RELIEF)
+        and _bullpen_state(row, classes) not in (START, RELIEF)
         for row in rows
     ):
         return (
@@ -724,6 +756,108 @@ def _classified_window_state(rows, coverage, start, end):
             [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
         )
     return state, reasons
+
+
+def _last_bullpen_appearance_fact(rows, *, anchor, coverage, classes):
+    """Pitches in the most recent single bullpen-workload appearance.
+
+    Bounded to the governed seven-day window. A later or same-day appearance
+    whose bullpen status is unknown, incomplete slate coverage after the
+    outing, or two qualifying outings on one date (stored lines carry no
+    in-day order) withhold the value instead of guessing.
+    """
+    start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
+    window_rows = [
+        row for row in rows
+        if row.game_date is not None and start <= row.game_date <= anchor
+    ]
+    included = [row for row in window_rows if _bullpen_state(row, classes) == RELIEF]
+    if not included:
+        state, reasons = _classified_window_state(
+            rows, coverage, start, anchor, classes,
+        )
+        return _fact(None, state, reasons)
+    latest = max(row.game_date for row in included)
+    state, reasons = _coverage_state(coverage, latest, anchor)
+    if state != RECENT_USAGE_REST_COMPLETE:
+        return _fact(None, state, reasons)
+    if any(
+        row.game_date >= latest
+        and _bullpen_state(row, classes) not in (START, RELIEF)
+        for row in window_rows
+    ):
+        return _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_START_RELIEF_UNKNOWN],
+        )
+    same_day = [row for row in included if row.game_date == latest]
+    if len(same_day) != 1:
+        return _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_SAME_DAY_ORDER_UNKNOWN],
+            game_date=latest.isoformat(),
+        )
+    row = same_day[0]
+    pitches = getattr(row, 'pitches_thrown', None)
+    if pitches is None:
+        return _fact(
+            None, RECENT_USAGE_REST_UNKNOWN,
+            [RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN],
+            game_date=latest.isoformat(),
+        )
+    return _fact(
+        int(pitches),
+        RECENT_USAGE_REST_COMPLETE,
+        [],
+        game_date=latest.isoformat(),
+        game_pk=getattr(row, 'mlb_game_pk', None),
+        appearance_class=_bullpen_class(row, classes),
+    )
+
+
+def author_active_bullpen_workload_display(carrier, pitcher_ids):
+    """Freeze the Active Bullpen 7d App / 7d P / Last P from one carrier.
+
+    The values are the carrier's own governed bullpen-workload facts, never a
+    second aggregation. A fact that is not complete is frozen as ``None`` so
+    the board withholds it rather than showing a total-pitching number.
+    """
+    carrier = carrier if isinstance(carrier, dict) else {}
+    usable = (
+        carrier.get('contract') == RECENT_USAGE_REST_CONTRACT
+        and carrier.get('appearance_policy') == RECENT_USAGE_REST_APPEARANCE_POLICY
+        and carrier.get('status') != RECENT_USAGE_REST_UNAVAILABLE
+    )
+    items = {
+        item.get('pitcher_id'): item
+        for item in (carrier.get('active_pitchers') or [])
+        if isinstance(item, dict)
+    } if usable else {}
+    display = {}
+    for pitcher_id in pitcher_ids:
+        item = items.get(pitcher_id) or {}
+        window = (item.get('windows') or {}).get('last_7_days') or {}
+        last = item.get('last_bullpen_appearance') or {}
+        last_pitches = _complete_value(last)
+        display[pitcher_id] = {
+            'contract': ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT,
+            'appearance_policy': RECENT_USAGE_REST_APPEARANCE_POLICY,
+            'data_through': carrier.get('data_through'),
+            'appearances_last_7': _complete_value(window.get('appearances')),
+            'pitches_last_7_days': _complete_value(window.get('pitches')),
+            'last_appearance': (
+                {'game_date': last.get('game_date'), 'pitches': last_pitches}
+                if last_pitches is not None else None
+            ),
+        }
+    return display
+
+
+def _complete_value(fact):
+    if not isinstance(fact, dict) or fact.get('status') != RECENT_USAGE_REST_COMPLETE:
+        return None
+    value = fact.get('value')
+    return value if type(value) is int and value >= 0 else None
 
 
 def _sum_fact(rows, field_name, missing_reason):
@@ -1057,6 +1191,86 @@ def _appearance_rows(team_id, start_date, anchor, *, pitcher_ids=None):
         .order_by(desc(GameLog.game_date), asc(Pitcher.full_name), asc(GameLog.id))
         .all()
     )
+
+
+def _start_team_game_logs(rows, *, anchor):
+    """Every stored line of the in-window games in which a row is a credited start.
+
+    Only the seven-day per-arm windows and last outing use the classification,
+    so older starts are not loaded.
+    """
+    start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
+    game_pks = sorted({
+        log.mlb_game_pk
+        for log, _pitcher in rows
+        if _start_relief_state(log) == START
+        and log.mlb_game_pk is not None
+        and log.game_date is not None
+        and start <= log.game_date <= anchor
+    })
+    if not game_pks:
+        return []
+    return GameLog.query.filter(GameLog.mlb_game_pk.in_(game_pks)).all()
+
+
+def bullpen_workload_classes(logs, *, team_game_logs=None):
+    """Map ``(pitcher_id, mlb_game_pk)`` to its governed bullpen-workload class.
+
+    Relief lines are classified on their own official flag. A credited start is
+    classified by the shape of its team's game (services.game_shape), using the
+    lines of that game grouped by official appearance team. A game with any
+    line whose official side is not resolved cannot be grouped, so its start
+    stays unknown.
+    """
+    logs = list(logs or [])
+    pool = {}
+    unresolved_games = set()
+    for log in list(team_game_logs or []):
+        if getattr(log, 'appearance_team_status', None) != APPEARANCE_TEAM_RESOLVED:
+            unresolved_games.add(getattr(log, 'mlb_game_pk', None))
+        pool.setdefault(_appearance_key(log), log)
+    for log in logs:
+        pool.setdefault(_appearance_key(log), log)
+    games = {}
+    for log in pool.values():
+        games.setdefault(
+            (getattr(log, 'mlb_game_pk', None), getattr(log, 'appearance_team_id', None)),
+            [],
+        ).append(log)
+    classes = {}
+    for log in logs:
+        key = _appearance_key(log)
+        if _start_relief_state(log) == START and key[1] in unresolved_games:
+            classes[key] = game_shape.BULLPEN_WORKLOAD_UNKNOWN
+            continue
+        line = pool[key]
+        team_logs = games.get((key[1], getattr(line, 'appearance_team_id', None)), [])
+        classes[key] = game_shape.bullpen_workload_appearance_class(line, team_logs)
+    return classes
+
+
+def _appearance_key(log):
+    return (getattr(log, 'pitcher_id', None), getattr(log, 'mlb_game_pk', None))
+
+
+def _bullpen_class(log, classes):
+    if classes is None:
+        return None
+    return classes.get(_appearance_key(log))
+
+
+def _bullpen_state(log, classes):
+    """RELIEF when the line is bullpen workload, START when it is a rotation
+    start, anything else when unknown. ``classes=None`` keeps the raw official
+    start/relief flag for the team-level reads that are not per-arm."""
+    if classes is None:
+        return _start_relief_state(log)
+    value = _bullpen_class(log, classes)
+    if value in game_shape.BULLPEN_WORKLOAD_INCLUDED:
+        return RELIEF
+    if value == game_shape.BULLPEN_WORKLOAD_ROTATION_START:
+        return START
+    return 'unknown'
 
 
 def _start_relief_state(log):
