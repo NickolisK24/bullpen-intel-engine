@@ -486,6 +486,23 @@ def test_failed_closed_attempt_is_audited(app, monkeypatch):
     assert audit.outcome == OUTCOME_FAILED_CLOSED
     assert audit.failure_code == FAILURE_READINESS_RESOLUTION
     assert audit.share_artifact_id is None
+    assert result.failure_exception_class == 'RuntimeError'
+    assert result.failure_exception_message == 'kaboom'
+
+
+def test_failed_closed_exception_diagnostic_redacts_credentials(app, monkeypatch):
+    _eligible_env(monkeypatch)
+
+    def _boom(team_id, *, requested_date=None, session=None):
+        raise RuntimeError(
+            'postgresql://reader:private-value@example.test/db token=private-token'
+        )
+
+    result = generate_team_state_artifact(TEAM_ID, readiness_resolver=_boom)
+
+    assert 'private-value' not in result.failure_exception_message
+    assert 'private-token' not in result.failure_exception_message
+    assert '[redacted]' in result.failure_exception_message
 
 
 # ---------------------------------------------------------------------------

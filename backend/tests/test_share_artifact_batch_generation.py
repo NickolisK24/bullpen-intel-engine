@@ -263,7 +263,7 @@ def test_refusal_does_not_stop_other_teams(app, monkeypatch):
 # 12 — one unexpected exception does not silently skip later teams
 def test_unexpected_team_error_does_not_skip_later_teams(app, monkeypatch):
     _seed_teams()
-    _install_snapshot(monkeypatch)
+    _install_snapshot(monkeypatch, sync_run_id=84413)
 
     def _gen(team_id, **kwargs):
         if team_id == 109:
@@ -279,6 +279,10 @@ def test_unexpected_team_error_does_not_skip_later_teams(app, monkeypatch):
     failed = [r for r in result.results if r.outcome == BATCH_OUTCOME_FAILED]
     assert [r.team_id for r in failed] == [109]
     assert failed[0].failure_code == 'batch_team_error'
+    assert failed[0].exception_class == 'RuntimeError'
+    assert failed[0].exception_message == 'boom'
+    assert failed[0].source_snapshot_id == SNAPSHOT_ID
+    assert failed[0].source_sync_run_id == 84413
     # 110 still attempted and generated after 109 raised.
     assert any(r.team_id == 110 and r.outcome == BATCH_OUTCOME_GENERATED for r in result.results)
 
@@ -539,7 +543,8 @@ def test_batch_endpoint_response_is_sanitized(admin_client, monkeypatch):
     assert set(body).issubset(allowed_top)
     allowed_team = {
         'team_id', 'outcome', 'public_id', 'reason_code', 'failure_code',
-        'audit_id', 'source_snapshot_id', 'product_date',
+        'audit_id', 'source_snapshot_id', 'source_sync_run_id', 'product_date',
+        'exception_class', 'exception_message',
     }
     for row in body['results']:
         assert set(row).issubset(allowed_team)

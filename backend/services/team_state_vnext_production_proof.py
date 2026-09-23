@@ -1215,12 +1215,15 @@ def frozen_team_state_artifact_generator(snapshot, generator=None):
     from copy import deepcopy
     from services.share_artifact_generation import generate_team_state_artifact
     from services.team_board_snapshot_team_state import receipt_value
+    from services.team_state_public_vocabulary import public_team_state
 
     original_generator = generator or generate_team_state_artifact
     snapshot_id = getattr(snapshot, 'id', None)
     durable_row = load_durable_proof(snapshot_id)
     durable_proof = _mapping(getattr(durable_row, 'proof', None))
     frozen_inputs = _mapping(durable_proof.get('snapshot_team_state_generation_inputs'))
+    durable_sync_run_id = getattr(durable_row, 'sync_run_id', None)
+    durable_data_through = getattr(durable_row, 'data_through', None)
 
     def frozen_generator(team_id, **kwargs):
         source_snapshot = kwargs.get('snapshot')
@@ -1228,12 +1231,29 @@ def frozen_team_state_artifact_generator(snapshot, generator=None):
             getattr(source_snapshot, 'id', None) != snapshot_id
             or getattr(source_snapshot, 'data_through', None)
             != getattr(snapshot, 'data_through', None)
+            or (
+                durable_sync_run_id is not None
+                and getattr(source_snapshot, 'sync_run_id', None) != durable_sync_run_id
+            )
+            or (
+                durable_data_through is not None
+                and getattr(source_snapshot, 'data_through', None) != durable_data_through
+            )
         ):
             raise ValueError('snapshot_team_state_generation_identity_mismatch')
         present, value = receipt_value(source_snapshot, team_id)
         inputs = _mapping(frozen_inputs.get(str(team_id)))
         if not present or value is None or not isinstance(inputs.get('readiness'), Mapping):
             raise ValueError('snapshot_team_state_generation_input_missing')
+        observed_value = public_team_state(inputs['readiness'])
+        if any((
+            value.get('available') is not True,
+            observed_value.get('available') is not True,
+            observed_value.get('public_state') != value.get('public_state'),
+            observed_value.get('public_label') != value.get('public_label'),
+            observed_value.get('data_through') != value.get('data_through'),
+        )):
+            raise ValueError('snapshot_team_state_generation_receipt_mismatch')
 
         def frozen_resolver(_team_id, *, reference_dates_out=None,
                             arm_reads_out=None, **_unused):
@@ -1242,10 +1262,11 @@ def frozen_team_state_artifact_generator(snapshot, generator=None):
             if reference_dates_out is not None:
                 reference_dates_out.update(deepcopy(inputs.get('reference_dates') or {}))
             if arm_reads_out is not None:
-                arm_reads_out.update({
-                    int(key): deepcopy(item)
-                    for key, item in _mapping(inputs.get('arm_reads')).items()
-                })
+                # The proof freezes the complete Arm Read capture contract, not a
+                # pitcher-id keyed mapping. Preserve its metadata + records shape
+                # byte-for-byte; treating top-level keys as pitcher ids made every
+                # snapshot-3435 team fail on ``availability_reference_date``.
+                arm_reads_out.update(deepcopy(_mapping(inputs.get('arm_reads'))))
             return deepcopy(inputs['readiness'])
 
         return original_generator(
