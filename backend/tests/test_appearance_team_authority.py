@@ -1075,6 +1075,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
                   + freeze_policy.HIST03_QUALIFIED_TRANSACTION_HISTORY_PATHS
                   + freeze_policy.SHARE_ARTIFACT_PUBLICATION_SEAL_PATHS
                   + freeze_policy.EO02_SHARE_LINK_PREVIEW_PATHS
+                  + freeze_policy.STATIC_PREVIEW_CANONICAL_TEAM_UNIVERSE_PATHS
                   + freeze_policy.CU06_INCREMENTAL_READ_MODEL_PATHS,
     )
     assert offenders == [], (

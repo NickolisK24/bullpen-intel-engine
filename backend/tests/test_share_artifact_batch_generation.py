@@ -16,7 +16,9 @@ from flask import Flask
 from models.pitcher import Pitcher
 from models.share_artifact import ShareArtifact
 from models.sync_run import SyncRun
+from services import share_artifact_batch_generation as batch_module
 from services import team_state_source as source_module
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.share_artifact_batch_generation import (
     BATCH_OUTCOME_FAILED,
     BATCH_OUTCOME_GENERATED,
@@ -27,6 +29,7 @@ from services.share_artifact_batch_generation import (
     BatchSourceAuthorityError,
     BatchTeamResult,
     BatchValidationError,
+    _canonical_team_ids,
     generate_team_state_artifacts_batch,
 )
 from services.share_artifact_generation import (
@@ -49,6 +52,16 @@ from utils.db import db
 SNAPSHOT_ID = 7001
 PRODUCT_DATE = date(2026, 7, 20)
 TEAM_IDS = (108, 109, 110)
+
+
+@pytest.fixture(autouse=True)
+def scoped_team_universe(monkeypatch):
+    """Keep behavioral tests small; dedicated tests exercise the real 30 clubs."""
+    monkeypatch.setattr(
+        batch_module,
+        '_canonical_team_ids',
+        lambda session=None: TEAM_IDS,
+    )
 
 
 @pytest.fixture
@@ -98,6 +111,12 @@ def _seed_teams(team_ids=TEAM_IDS):
         db.session.add(Pitcher(mlb_id=930000 + index, full_name=f'Arm {team_id}',
                                team_id=team_id, active=True))
     db.session.flush()
+
+
+def test_real_batch_team_universe_is_exactly_the_canonical_mlb_set(app):
+    _seed_teams(tuple(MLB_TEAM_IDS) + (484, 531, 534, 5434))
+
+    assert _canonical_team_ids() == tuple(sorted(MLB_TEAM_IDS))
 
 
 def _readiness(team_id, *, status_code='operationally_constrained'):

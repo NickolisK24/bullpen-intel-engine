@@ -37,7 +37,7 @@ from services.share_artifact_generation import (
     OUTCOME_REUSED,
     generate_team_state_artifact,
 )
-from services.team_directory import valid_team_ids
+from services.public_team_distribution import canonical_distribution_team_ids
 from services.team_state_source import resolve_latest_trusted_snapshot
 
 
@@ -229,10 +229,11 @@ class BatchGenerationResult:
 def _canonical_team_ids(session=None) -> tuple:
     """The canonical MLB team set, in stable ascending team-id order.
 
-    Reuses the existing team authority (``services.team_directory``) — the same
-    universe the public team surfaces are built from. No second team registry.
+    Reuses the explicit public distribution authority. Mutable active-player
+    organization rows may include affiliates and may omit an MLB club; neither
+    condition can alter the 30-team public denominator.
     """
-    return tuple(sorted(valid_team_ids()))
+    return canonical_distribution_team_ids()
 
 
 def _normalize_requested_subset(team_ids: Iterable) -> tuple:
