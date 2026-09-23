@@ -896,8 +896,11 @@ def require_transactional_publication_proof(
     package = _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
     by_team = _mapping(package.get('by_team_id'))
     has_team_board_package = bool(package)
-    if has_team_board_package and len(by_team) != 30:
-        raise ValueError('snapshot_team_state_package_requires_30_teams')
+    if has_team_board_package:
+        from services.team_board_snapshot_team_state import (
+            require_complete_team_accounting,
+        )
+        require_complete_team_accounting(package, expected_ids)
     resolver_parameters = inspect.signature(resolver).parameters if has_team_board_package else {}
     capture_arm_reads = (
         'arm_reads_out' in resolver_parameters
@@ -978,8 +981,6 @@ def require_transactional_publication_proof(
             'team_state_publication_proof_invariant_failed:' + ','.join(failed)
         )
     if has_team_board_package:
-        if set(by_team) != set(frozen_receipts):
-            raise ValueError('snapshot_team_state_team_identity_mismatch')
         updated_payload = dict(snapshot.payload)
         updated_package = dict(package)
         updated_teams = {
@@ -987,6 +988,7 @@ def require_transactional_publication_proof(
             for key, team in by_team.items()
         }
         updated_package['by_team_id'] = updated_teams
+        updated_package['frozen_team_state_by_team_id'] = frozen_receipts
         updated_payload['trusted_team_boards'] = updated_package
         snapshot.payload = updated_payload
         proof['snapshot_team_state_generation_inputs'] = frozen_inputs
@@ -1063,7 +1065,11 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
             _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
             .get('by_team_id')
         )
-        has_receipts = any(
+        package_receipts = _mapping(
+            _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
+            .get('frozen_team_state_by_team_id')
+        )
+        has_receipts = bool(package_receipts) or any(
             'frozen_team_state' in _mapping(team)
             for team in package_teams.values()
         )
@@ -1071,7 +1077,12 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
             frozen_inputs = _mapping(_mapping(durable_proof).get(
                 'snapshot_team_state_generation_inputs'
             ))
-            if set(frozen_inputs) != set(package_teams):
+            receipt_ids = package_receipts or {
+                key: _mapping(team).get('frozen_team_state')
+                for key, team in package_teams.items()
+                if 'frozen_team_state' in _mapping(team)
+            }
+            if set(frozen_inputs) != set(receipt_ids):
                 logger.error(
                     'Post-publication Team State generation withheld: frozen input '
                     'identity mismatch snapshot_id=%s.', snapshot_id,

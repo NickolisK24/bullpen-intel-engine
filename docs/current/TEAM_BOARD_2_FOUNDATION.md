@@ -729,8 +729,13 @@ semantics.
 
 The mandatory pre-trust Team State publication proof resolves governed readiness
 once for each of the 30 teams. In the same transaction, it binds one
-`frozen_team_state` receipt per Team Board package to team id, Dashboard snapshot
-id, represented date, and `v3_phase_5` method. The receipt uses the existing
+`frozen_team_state` receipt per canonical team to team id, Dashboard snapshot
+id, represented date, and `v3_phase_5` method. The package-level receipt map is
+independent of Team Board availability: `team_accounting` lists all 30 canonical
+clubs as `publishable` or truthfully `unavailable`, while `by_team_id` contains
+only actual frozen Team Boards. Missing, duplicate, or non-canonical accounting
+still fails publication; an unavailable board is never fabricated as empty
+baseball data. The receipt uses the existing
 Fresh/Stretched/Vulnerable public vocabulary and passes the same artifact
 eligibility gate. The proof retains the frozen generation inputs so the
 post-commit Share Artifact writer consumes the pre-commit evidence rather than

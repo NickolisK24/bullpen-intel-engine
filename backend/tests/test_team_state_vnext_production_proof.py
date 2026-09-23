@@ -836,6 +836,102 @@ def test_transactional_publication_proof_flushes_30_teams_without_committing(
     )
 
 
+@pytest.mark.parametrize('published_count', (30, 18))
+def test_transactional_proof_separates_canonical_accounting_from_board_availability(
+    monkeypatch, published_count,
+):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import build_team_accounting
+
+    canonical = tuple(sorted(MLB_TEAM_IDS))
+    published = canonical[:published_count]
+    snapshot = _snapshot()
+    snapshot.availability_reference_date = AVAILABILITY
+    snapshot.source = 'sync_completion'
+    snapshot.payload['trusted_team_boards'] = {
+        'contract': 'trusted_team_board_publication_v1',
+        'data_through': SLATE.isoformat(),
+        'team_count': published_count,
+        'team_accounting': build_team_accounting(published, canonical),
+        'by_team_id': {
+            str(team_id): {'team': {'team_id': team_id}}
+            for team_id in published
+        },
+    }
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        readiness = json.loads(json.dumps(_result(team_id).readiness))
+        readiness['freshness'] = {'data_through': SLATE.isoformat()}
+        readiness['team'] = {'team_id': team_id}
+        return readiness
+
+    monkeypatch.setattr(proof_module, 'historical_team_state_inventory', lambda *_a, **_k: _inventory([]))
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *_a, **_k: None)
+    monkeypatch.setattr('services.team_state_source.gather_team_state_source', lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        'services.team_state_eligibility.evaluate_team_state_eligibility',
+        lambda *_a, **_k: SimpleNamespace(eligible=True, reasons=()),
+    )
+
+    proof_module.require_transactional_publication_proof(
+        snapshot, readiness_resolver=resolver, team_ids=canonical,
+    )
+
+    package = snapshot.payload['trusted_team_boards']
+    assert set(package['frozen_team_state_by_team_id']) == {
+        str(team_id) for team_id in canonical
+    }
+    assert set(package['by_team_id']) == {str(team_id) for team_id in published}
+    assert all(
+        'frozen_team_state' in team for team in package['by_team_id'].values()
+    )
+    unavailable = [
+        item for item in package['team_accounting']['teams']
+        if item['team_board_status'] == 'unavailable'
+    ]
+    assert len(unavailable) == 30 - published_count
+    assert all(str(item['team_id']) not in package['by_team_id'] for item in unavailable)
+
+
+@pytest.mark.parametrize('mutation', ('missing', 'duplicate', 'noncanonical'))
+def test_transactional_proof_rejects_incomplete_or_corrupt_team_accounting(
+    monkeypatch, mutation,
+):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import build_team_accounting
+
+    canonical = tuple(sorted(MLB_TEAM_IDS))
+    accounting = build_team_accounting(canonical[:18], canonical)
+    if mutation == 'missing':
+        accounting['teams'].pop()
+    elif mutation == 'duplicate':
+        accounting['teams'][-1] = dict(accounting['teams'][0])
+    else:
+        accounting['teams'][-1] = {
+            'team_id': 999,
+            'team_board_status': 'unavailable',
+            'reason_code': 'team_board_source_records_unavailable',
+        }
+    snapshot = _snapshot()
+    snapshot.payload['trusted_team_boards'] = {
+        'contract': 'trusted_team_board_publication_v1',
+        'team_count': 18,
+        'team_accounting': accounting,
+        'by_team_id': {str(team_id): {} for team_id in canonical[:18]},
+    }
+    monkeypatch.setattr(proof_module, 'historical_team_state_inventory', lambda *_a, **_k: _inventory([]))
+
+    with pytest.raises(ValueError, match='requires_30_accounted_teams'):
+        proof_module.require_transactional_publication_proof(
+            snapshot, readiness_resolver=lambda *_a, **_k: None,
+            team_ids=canonical,
+        )
+
+
 def test_transactional_publication_proof_rejects_corrupt_team_state(
     monkeypatch,
 ):

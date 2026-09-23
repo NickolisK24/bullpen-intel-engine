@@ -836,6 +836,126 @@ def test_trusted_publication_rehearsal(monkeypatch):
             drop_test_schema(app)
 
 
+def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
+    monkeypatch,
+):
+    """Exercise real candidate assembly with 30 clubs but only 18 board reads."""
+    url = _test_database_url()
+    assert_disposable_test_target(url, operation='sparse trusted publication rehearsal')
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', url)
+    app = importlib.import_module('app').create_app('test')
+    app.config['TRUSTED_PUBLIC_SERVING_ENABLED'] = True
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            reference_date = public_serving_authority.product_current_date()
+            _seed_teams(reference_date)
+            represented_date = reference_date - timedelta(days=1)
+            run = SyncRun(
+                job_name='daily_sync', started_at=utc_now_naive(),
+                completed_at=utc_now_naive(), status='success', stage='published',
+                source='test', latest_game_date=represented_date,
+                latest_workload_date=represented_date,
+                latest_fatigue_calculated_at=utc_now_naive(),
+            )
+            db.session.add(run)
+            db.session.commit()
+            assert public_serving_authority.install_public_serving_authority(app)
+
+            publishable_ids = set(TEAM_IDS[:18])
+            original_contexts = public_serving_authority.eligible_bullpen_pitcher_contexts
+
+            def sparse_contexts(*args, **kwargs):
+                return [
+                    context for context in original_contexts(*args, **kwargs)
+                    if context['pitcher'].team_id in publishable_ids
+                ]
+
+            monkeypatch.setattr(
+                public_serving_authority,
+                'eligible_bullpen_pitcher_contexts', sparse_contexts,
+            )
+            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+                sync_run_id=run.id, source='sparse_rehearsal',
+                publish=False, raise_errors=True,
+            )
+            package = snapshot.payload['trusted_team_boards']
+            assert package['team_count'] == 18
+            assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS[:18]}
+            assert package['team_accounting']['accounted_team_count'] == 30
+
+            def readiness(team_id, *, reference_dates_out, **_kwargs):
+                reference_dates_out.update({
+                    'membership_reference_date': snapshot.data_through,
+                    'availability_reference_date': snapshot.availability_reference_date,
+                })
+                return {
+                    'contract_version': 'v3_phase_5',
+                    'team': {
+                        'team_id': team_id,
+                        'team_name': f'Rehearsal Team {team_id}',
+                        'team_abbreviation': f'R{team_id}',
+                    },
+                    'readiness': {
+                        'status_code': 'operationally_stable',
+                        'summary': 'Current bullpen state.',
+                    },
+                    'freshness': {'data_through': snapshot.data_through.isoformat()},
+                    'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
+                    'team_state_evidence': {
+                        'method_version': 'v3_phase_5',
+                        'contract': 'team_state_contract_a', 'basis': 'status_only',
+                        'readiness_status_code': 'operationally_stable',
+                        'active_pitcher_count': 8, 'clean_count': 6,
+                        'moderate_count': 2, 'severe_count': 0, 'unknown_count': 0,
+                        'clean_share': 0.75, 'moderate_share': 0.25,
+                        'severe_share': 0.0, 'unknown_share': 0.0,
+                        'decisive_rule': 'fresh_coverage',
+                        'decisive_inputs': {'clean_count': 6},
+                        'thresholds_applied': {
+                            'clean_share_fresh_min': [3, 5],
+                            'clean_share_fresh_min_value': 0.6,
+                            'clean_count_fresh_min': 5,
+                            'severe_count_fresh_max': 1,
+                            'clean_count_vulnerable_max': 2,
+                            'severe_share_vulnerable_min': [1, 3],
+                            'severe_share_vulnerable_min_value': 1 / 3,
+                        },
+                        'trust_state': 'high', 'trust_data_state': 'fresh',
+                        'freshness_state': 'current', 'material_limitations': [],
+                        'evidence_references': {
+                            'population_authority': 'resolve_readiness_population',
+                        },
+                    },
+                }
+
+            from services.team_state_vnext_production_proof import (
+                require_transactional_publication_proof,
+            )
+            savepoint = db.session.begin_nested()
+            try:
+                snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
+                snapshot.is_published = True
+                snapshot.published_at = utc_now_naive()
+                proof = require_transactional_publication_proof(
+                    snapshot, readiness_resolver=readiness,
+                )
+                package = snapshot.payload['trusted_team_boards']
+                assert len(proof['teams']) == 30
+                assert len(package['frozen_team_state_by_team_id']) == 30
+                assert len(package['by_team_id']) == 18
+            finally:
+                savepoint.rollback()
+                db.session.expire(snapshot)
+            assert DashboardSnapshot.query.filter_by(is_published=True).count() == 0
+            assert db.session.get(SyncRun, run.id).published_dashboard_snapshot_id is None
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(app)
+
+
 @pytest.mark.parametrize('env', [
     {},
     {'TEST_DATABASE_URL': 'sqlite:///:memory:'},
