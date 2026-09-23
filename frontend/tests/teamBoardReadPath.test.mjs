@@ -26,7 +26,7 @@ test('selected Team Board has one eager core request and one deferred identified
 test('What Changed is deferred while operating disclosure is carried by core', () => {
   assert.ok(board.includes('teamBoardRead?.whatChanged'))
   assert.ok(board.includes('teamBoardRead?.operatingState'))
-  assert.ok(board.includes('teamBoardRead?.sectionStatus?.what_changed'))
+  assert.equal(board.includes("reason_code === 'what_changed_unavailable'"), false)
 })
 
 test('share-card work starts only from the explicit share-menu interaction', () => {

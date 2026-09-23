@@ -107,11 +107,7 @@ export default function TonightsBullpenBoard({
     : {
         data: teamBoardRead?.whatChanged || null,
         loading: deepLoading,
-        error: deepError || (
-          teamBoardRead?.sectionStatus?.what_changed?.reason_code === 'what_changed_unavailable'
-            ? 'What Changed unavailable'
-            : null
-        ),
+        error: deepError,
         refetch: retryDeep,
       }
   const operatingStatePayload = boardPayload !== undefined

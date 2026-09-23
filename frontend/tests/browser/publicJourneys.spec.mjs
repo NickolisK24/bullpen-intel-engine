@@ -190,7 +190,7 @@ async function installApiFixtures(page, {
         details.performance = null
         details.recent_transactions = null
         details.recent_relief_work = null
-        details.section_status.what_changed = { status: 'unavailable' }
+        details.section_status.what_changed = { status: 'unavailable', reason_code: 'what_changed_unavailable' }
         details.section_status.performance = { status: 'unavailable' }
         details.section_status.recent_transactions = { status: 'unavailable' }
         details.section_status.recent_relief_work = { status: 'unavailable' }
@@ -887,6 +887,7 @@ test('product compression keeps deep evidence closed and unavailable sections co
       const section = page.getByTestId(sectionId)
       expect((await section.boundingBox()).height).toBeLessThan(230)
     }
+    await expect(page.getByTestId('team-board-what-changed')).not.toContainText('Try again')
     await expectNoPageOverflow(page)
   }
 })

@@ -653,7 +653,8 @@ Recent Relief Work as deep evidence. Meaningful changes keep their promoted
 position; quiet and unavailable comparisons collapse to one truthful line.
 
 Recent Usage is now one compact comparison row per pitcher with yesterday,
-3-day, 7-day and pattern cells. Mobile uses wrapping two-column cells rather
+3-day, 7-day and pattern cells. Mobile uses three compact window cells followed
+by a full-width pattern row rather
 than a horizontally scrolling table. Active and off-active groups remain
 separate, and every backend value and evidence state is retained. Roles and
 Deployment now leads with the pitcher, public role, confidence and strongest
@@ -673,9 +674,14 @@ rest, transaction, comparison, finality or ownership logic.
 
 Before compression, the live BAL board measured 12,704 px tall at 390 px and
 9,062 px at 1440 px. Recent Usage alone measured 3,545/2,746 px and Roles and
-Deployment 3,173/2,056 px at those widths. Final fixture measurements and the
-production smoke are recorded with the product-compression PR because trusted
-production content can differ by snapshot. The request contract remains one
+Deployment 3,173/2,056 px at those widths. The production build against the
+same live trusted payload measured 10,187/6,902 px overall, 2,465/1,135 px for
+Recent Usage, and 2,122/1,819 px for Roles and Deployment. At 768 px the final
+board measured 7,905 px, with Recent Usage at 1,335 px and Roles and Deployment
+at 1,801 px. What Changed collapsed from 270 to 159 px at 390 px and from 290
+to 140 px at 1440 px. All three widths had zero primary horizontal overflow,
+and every deployment disclosure remained closed by default. Trusted production
+content can still vary by snapshot. The request contract remains one
 core request followed by one exact identity-bound details request, with no new
 carrier, endpoint, migration, sync work or atomic authority.
 
