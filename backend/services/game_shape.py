@@ -276,3 +276,50 @@ def bulk_follower_appearance_keys(logs, *, pitcher_id_of=_default_pitcher_id, ga
             if pitcher_id is not None:
                 keys.add((pitcher_id, game_pk))
     return keys
+
+
+# ── Bullpen-workload appearance eligibility ──────────────────────────────────
+#
+# One appearance-level answer derived from the game-level shape above: does this
+# pitching line count as bullpen workload? Physical workload (fatigue,
+# availability, Team State) is NOT decided here and keeps counting every line.
+#
+#   relief (gamesStarted 0, including a bulk follower)      -> included
+#   credited start in an OPENER_BULK_GAME (the opener)      -> included
+#   credited start in a NORMAL_START / SHORT_START game     -> excluded
+#   unknown start flag, or a start in an unclassifiable game -> unknown
+#
+# A BULLPEN_GAME has no credited starter by definition, so every line in it is
+# relief and included.
+BULLPEN_WORKLOAD_RELIEF = 'relief'
+BULLPEN_WORKLOAD_OPENER = 'opener'
+BULLPEN_WORKLOAD_ROTATION_START = 'rotation_start'
+BULLPEN_WORKLOAD_UNKNOWN = 'unknown'
+BULLPEN_WORKLOAD_INCLUDED = frozenset({
+    BULLPEN_WORKLOAD_RELIEF,
+    BULLPEN_WORKLOAD_OPENER,
+})
+ROTATION_START_SHAPES = frozenset({SHAPE_NORMAL_START, SHAPE_SHORT_START})
+
+
+def bullpen_workload_appearance_class(log: Any, team_game_logs) -> str:
+    """Classify one appearance against its own team's complete game lines.
+
+    ``team_game_logs`` must be every pitching line for the appearance's team in
+    that game. Only a credited start needs the game's shape; a relief line is
+    bullpen workload on its own official flag.
+    """
+    state = _state(log)
+    if state == RELIEF:
+        return BULLPEN_WORKLOAD_RELIEF
+    if state != START:
+        return BULLPEN_WORKLOAD_UNKNOWN
+    logs = list(team_game_logs or [])
+    if not any(item is log for item in logs):
+        return BULLPEN_WORKLOAD_UNKNOWN
+    shape = classify_game_shape(logs)['shape']
+    if shape == SHAPE_OPENER_BULK_GAME:
+        return BULLPEN_WORKLOAD_OPENER
+    if shape in ROTATION_START_SHAPES:
+        return BULLPEN_WORKLOAD_ROTATION_START
+    return BULLPEN_WORKLOAD_UNKNOWN

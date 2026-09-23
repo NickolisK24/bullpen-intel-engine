@@ -13,6 +13,7 @@ from services.pitcher_public_labels import (
     PUBLIC_ROLE_COMPOSITION_KEYS,
     ROLE_PUBLIC_LABELS,
 )
+from services.public_team_relief_work import ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT
 from services.roster_authority import (
     CAPABILITY as ROSTER_AUTHORITY_CAPABILITY,
     ROSTER_STATUS_CATEGORY_ACTIVE,
@@ -99,6 +100,19 @@ def _active_arms(board):
             if visibility.get('is_visible_by_default') is False:
                 continue
             facts = card.get('workload_facts') or {}
+            last_appearance = deepcopy(card.get('last_appearance'))
+            appearances_last_7 = facts.get('appearances_last_7')
+            pitches_last_7_days = facts.get('pitches_last_7_days')
+            display = card.get('bullpen_workload_display')
+            if (
+                isinstance(display, dict)
+                and display.get('contract') == ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT
+            ):
+                # Bullpen workload frozen with this publication (relief lines and
+                # openers); a conventional start is never shown as bullpen work.
+                appearances_last_7 = display.get('appearances_last_7')
+                pitches_last_7_days = display.get('pitches_last_7_days')
+                last_appearance = deepcopy(display.get('last_appearance'))
             arms.append({
                 'pitcher_id': card.get('pitcher_id'),
                 'name': card.get('name'),
@@ -113,11 +127,11 @@ def _active_arms(board):
                     'reasons': deepcopy(card.get('reasons') or []),
                     'limitations': deepcopy(card.get('limitations') or []),
                 },
-                'last_appearance': deepcopy(card.get('last_appearance')),
+                'last_appearance': last_appearance,
                 'workload': {
                     'days_since_last_appearance': facts.get('days_since_last_appearance'),
-                    'appearances_last_7': facts.get('appearances_last_7'),
-                    'pitches_last_7_days': facts.get('pitches_last_7_days'),
+                    'appearances_last_7': appearances_last_7,
+                    'pitches_last_7_days': pitches_last_7_days,
                     'back_to_back': facts.get('back_to_back'),
                 },
                 'roster_status': deepcopy(card.get('roster_status')),

@@ -75,6 +75,7 @@ from services.public_team_relief_work import (
     WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
     WORKLOAD_WINDOWS_CARRIER_CONTRACT,
     WORKLOAD_OVERVIEW_CONTRACT,
+    author_active_bullpen_workload_display,
     author_public_team_relief_authority,
     build_recent_usage_rest_coverage,
     extend_team_workload_coverage,
@@ -509,6 +510,16 @@ def build_frozen_team_board_package(dashboard_payload):
             freshness=freshness,
         )
         recent_usage_rest = relief_authority['recent_usage_rest']
+        # Active Bullpen 7d App / 7d P / Last P are bullpen workload, frozen from
+        # the same carrier as Recent Usage. FatigueScore facts on the record stay
+        # untouched: they remain the physical workload behind availability.
+        workload_display = author_active_bullpen_workload_display(
+            recent_usage_rest, default_ids,
+        )
+        for record in records:
+            display = workload_display.get(_as_int(record.get('pitcher_id')))
+            if display is not None:
+                record['bullpen_workload_display'] = deepcopy(display)
         rotation_support_pressure = _support_for_team(
             payload, 'rotation_support_pressure', team_id
         )
