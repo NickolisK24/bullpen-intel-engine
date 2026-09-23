@@ -70,12 +70,67 @@ def test_sync_completion_triggers_generation_after_commit(app, monkeypatch):
     fake_snapshot = _published_snapshot()
     monkeypatch.setattr(sync_service.sync_metadata, 'finish_sync_run', lambda *a, **k: fake_run)
     monkeypatch.setattr(ds, 'build_bullpen_dashboard_snapshot', lambda **k: fake_snapshot)
+    monkeypatch.setattr(
+        'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+        lambda snapshot: {},
+    )
 
     run, snapshot = sync_service.complete_sync_run_with_snapshot(999, final_status='success')
 
     assert snapshot is fake_snapshot
     assert run.stage == sync_service.sync_metadata.STAGE_PUBLISHED
     assert calls == [fake_snapshot]  # fires exactly once, after commit
+
+
+def test_sync_completion_does_not_report_success_without_league_artifacts(
+    app, monkeypatch,
+):
+    from services.league_team_state_artifact_recovery import (
+        LeagueTeamStateArtifactRecoveryError,
+    )
+
+    fake_run = SimpleNamespace(id=42, stage=None, published_dashboard_snapshot_id=None)
+    fake_snapshot = _published_snapshot()
+    monkeypatch.setattr(sync_service.sync_metadata, 'finish_sync_run', lambda *a, **k: fake_run)
+    monkeypatch.setattr(ds, 'build_bullpen_dashboard_snapshot', lambda **k: fake_snapshot)
+    monkeypatch.setattr(ds, 'run_post_commit_snapshot_publication', lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+        lambda _snapshot: (_ for _ in ()).throw(
+            LeagueTeamStateArtifactRecoveryError(
+                'league_team_state_artifact_set_incomplete'
+            )
+        ),
+    )
+
+    with pytest.raises(
+        LeagueTeamStateArtifactRecoveryError,
+        match='artifact_set_incomplete',
+    ):
+        sync_service.complete_sync_run_with_snapshot(999, final_status='success')
+
+
+def test_sync_completion_skips_distribution_gate_when_generation_is_disabled(
+    app, monkeypatch,
+):
+    app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = False
+    fake_run = SimpleNamespace(id=42, stage=None, published_dashboard_snapshot_id=None)
+    fake_snapshot = _published_snapshot()
+    monkeypatch.setattr(sync_service.sync_metadata, 'finish_sync_run', lambda *a, **k: fake_run)
+    monkeypatch.setattr(ds, 'build_bullpen_dashboard_snapshot', lambda **k: fake_snapshot)
+    monkeypatch.setattr(ds, 'run_post_commit_snapshot_publication', lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+        lambda *_args, **_kwargs: pytest.fail(
+            'disabled artifact generation must not impose its distribution gate'
+        ),
+    )
+
+    run, snapshot = sync_service.complete_sync_run_with_snapshot(
+        999, final_status='success',
+    )
+
+    assert (run, snapshot) == (fake_run, fake_snapshot)
 
 
 # -- post-commit completion function guards --------------------------------------

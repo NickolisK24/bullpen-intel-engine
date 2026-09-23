@@ -1009,6 +1009,10 @@
           "measured_seconds": 0.97
         },
         {
+          "path": "tests/test_league_team_state_artifact_recovery.py",
+          "measured_seconds": 0.8
+        },
+        {
           "path": "tests/test_legacy_read_reconciliation.py",
           "measured_seconds": 3.06
         },
