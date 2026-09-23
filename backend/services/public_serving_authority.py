@@ -661,12 +661,16 @@ def build_frozen_team_board_package(dashboard_payload):
             'bullpen_environment': _support_for_team(payload, 'bullpen_environment', team_id),
         }
 
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import build_team_accounting
+
     return {
         'contract': TEAM_BOARD_PACKAGE_CONTRACT,
         'generated_at': payload.get('generated_at') or datetime.now(timezone.utc).isoformat(),
         'data_through': freshness.get('data_through') or freshness.get('latest_workload_date'),
         'availability_reference_date': reference_date.isoformat(),
         'team_count': len(by_team_id),
+        'team_accounting': build_team_accounting(by_team_id, MLB_TEAM_IDS),
         'by_team_id': by_team_id,
     }
 

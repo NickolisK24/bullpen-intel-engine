@@ -62,6 +62,22 @@ def test_receipt_is_exact_snapshot_team_date_and_method():
     assert receipt_value(snapshot, 111)[1]['available'] is False
 
 
+def test_package_level_receipt_serves_team_state_without_fabricating_a_board():
+    snapshot = _snapshot(12, '2026-09-22', 'operationally_stable')
+    package = snapshot.payload['trusted_team_boards']
+    receipt = package['by_team_id'].pop('110')['frozen_team_state']
+    package['frozen_team_state_by_team_id'] = {'110': receipt}
+
+    present, value = receipt_value(snapshot, 110)
+
+    assert present is True
+    assert value['public_label'] == 'Fresh'
+    assert package['by_team_id'] == {}
+    package['frozen_team_state_by_team_id'].pop('110')
+    package['frozen_team_state_by_team_id']['111'] = receipt
+    assert receipt_value(snapshot, 110)[1]['available'] is False
+
+
 def test_exact_pair_change_and_unchanged():
     previous = _snapshot(11, '2026-09-21', 'operationally_constrained')
     current = _snapshot(12, '2026-09-22', 'operationally_stable')

@@ -17,6 +17,89 @@ from services.team_state_public_vocabulary import (
 
 CONTRACT = 'team_board_snapshot_team_state_v1'
 COMPARISON_CONTRACT = 'team_board_team_state_comparison_v1'
+ACCOUNTING_CONTRACT = 'trusted_team_board_team_accounting_v1'
+ACCOUNTING_PUBLISHABLE = 'publishable'
+ACCOUNTING_UNAVAILABLE = 'unavailable'
+ACCOUNTING_UNAVAILABLE_REASON = 'team_board_source_records_unavailable'
+
+
+def build_team_accounting(publishable_team_ids, canonical_team_ids):
+    """Account for every canonical club without fabricating a Team Board."""
+    publishable = {int(team_id) for team_id in publishable_team_ids}
+    canonical = tuple(sorted(int(value) for value in canonical_team_ids))
+    return {
+        'contract': ACCOUNTING_CONTRACT,
+        'accounted_team_count': len(canonical),
+        'teams': [
+            {
+                'team_id': int(team_id),
+                'team_board_status': (
+                    ACCOUNTING_PUBLISHABLE
+                    if int(team_id) in publishable
+                    else ACCOUNTING_UNAVAILABLE
+                ),
+                'reason_code': (
+                    None
+                    if int(team_id) in publishable
+                    else ACCOUNTING_UNAVAILABLE_REASON
+                ),
+            }
+            for team_id in canonical
+        ],
+    }
+
+
+def require_complete_team_accounting(package, expected_team_ids):
+    """Validate exact canonical accounting separately from board availability."""
+    expected = tuple(sorted(int(team_id) for team_id in expected_team_ids))
+    accounting = package.get('team_accounting') if isinstance(package, Mapping) else None
+    teams = accounting.get('teams') if isinstance(accounting, Mapping) else None
+    if (
+        not isinstance(accounting, Mapping)
+        or accounting.get('contract') != ACCOUNTING_CONTRACT
+        or accounting.get('accounted_team_count') != len(expected)
+        or not isinstance(teams, list)
+    ):
+        raise ValueError('snapshot_team_state_package_accounting_invalid')
+
+    accounted_ids = [
+        item.get('team_id') if isinstance(item, Mapping) else None
+        for item in teams
+    ]
+    if (
+        any(type(team_id) is not int for team_id in accounted_ids)
+        or
+        len(accounted_ids) != len(expected)
+        or len(set(accounted_ids)) != len(expected)
+        or tuple(sorted(accounted_ids)) != expected
+    ):
+        raise ValueError('snapshot_team_state_package_requires_30_accounted_teams')
+
+    by_team = package.get('by_team_id')
+    if not isinstance(by_team, Mapping):
+        raise ValueError('snapshot_team_state_package_accounting_invalid')
+    try:
+        published_ids = {int(team_id) for team_id in by_team}
+    except (TypeError, ValueError):
+        raise ValueError('snapshot_team_state_package_accounting_invalid') from None
+    if not published_ids.issubset(set(expected)):
+        raise ValueError('snapshot_team_state_package_noncanonical_team')
+
+    status_by_team = {
+        item['team_id']: item for item in teams if isinstance(item, Mapping)
+    }
+    for team_id in expected:
+        item = status_by_team[team_id]
+        status = item.get('team_board_status')
+        if team_id in published_ids:
+            if status != ACCOUNTING_PUBLISHABLE or item.get('reason_code') is not None:
+                raise ValueError('snapshot_team_state_package_accounting_mismatch')
+        elif (
+            status != ACCOUNTING_UNAVAILABLE
+            or item.get('reason_code') != ACCOUNTING_UNAVAILABLE_REASON
+        ):
+            raise ValueError('snapshot_team_state_package_accounting_mismatch')
+    return accounting
 
 
 def _date(value):
@@ -48,7 +131,9 @@ def receipt_value(snapshot, team_id):
     if not isinstance(package, Mapping):
         return False, None
     by_team = package.get('by_team_id') or {}
-    has_receipts = any(
+    receipts = package.get('frozen_team_state_by_team_id')
+    has_package_receipts = isinstance(receipts, Mapping)
+    has_receipts = has_package_receipts or any(
         isinstance(item, Mapping) and 'frozen_team_state' in item
         for item in by_team.values()
     )
@@ -67,13 +152,17 @@ def receipt_value(snapshot, team_id):
             reason_code='snapshot_team_state_package_identity_mismatch',
         )
     team = by_team.get(str(int(team_id)))
-    if not isinstance(team, Mapping) or 'frozen_team_state' not in team:
+    receipt = (
+        receipts.get(str(int(team_id)))
+        if has_package_receipts
+        else team.get('frozen_team_state') if isinstance(team, Mapping) else None
+    )
+    if not isinstance(receipt, Mapping):
         return True, team_state_unavailable(
             TEAM_STATE_READINESS_UNAVAILABLE,
             data_through=_date(snapshot.data_through),
             reason_code='snapshot_team_state_receipt_missing',
         )
-    receipt = team['frozen_team_state']
     from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
     expected_date = _date(snapshot.data_through)
     if not isinstance(receipt, Mapping) or any((

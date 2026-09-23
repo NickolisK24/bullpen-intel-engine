@@ -942,6 +942,7 @@ class TestDashboardSnapshotService:
             payload['freshness']['data_through'] = '2026-08-31'
             payload['freshness']['availability_reference_date'] = '2026-09-01'
             payload['freshness']['slate_coverage']['slate_date'] = '2026-08-31'
+            from services.team_board_snapshot_team_state import build_team_accounting
             candidate = DashboardSnapshot(
                 snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                 sync_run_id=run.id,
@@ -952,6 +953,9 @@ class TestDashboardSnapshotService:
                     'trusted_team_boards': {
                         'contract': 'trusted_team_board_publication_v1',
                         'data_through': '2026-08-31',
+                        'team_accounting': build_team_accounting(
+                            MLB_TEAM_IDS, MLB_TEAM_IDS,
+                        ),
                         'by_team_id': {
                             str(team_id): {'team': {'team_id': team_id}}
                             for team_id in MLB_TEAM_IDS
@@ -997,7 +1001,11 @@ class TestDashboardSnapshotService:
             assert len(calculations) == 30
             assert len(set(calculations)) == 30
             package = candidate.payload['trusted_team_boards']['by_team_id']
+            receipts = candidate.payload['trusted_team_boards'][
+                'frozen_team_state_by_team_id'
+            ]
             assert len(package) == 30
+            assert len(receipts) == 30
             assert all(
                 team['frozen_team_state']['dashboard_snapshot_id'] == candidate.id
                 for team in package.values()
