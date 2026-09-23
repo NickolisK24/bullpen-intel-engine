@@ -405,6 +405,22 @@ def test_publication_seal_exception_is_exact_and_keeps_neighbors_frozen():
     ]
 
 
+def test_static_preview_team_universe_exception_is_exact():
+    approved = freeze_policy.STATIC_PREVIEW_CANONICAL_TEAM_UNIVERSE_PATHS
+    assert approved == ('backend/services/share_artifact_batch_generation.py',)
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifact_batch_generation.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifact_generation.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/share_artifact_generation.py']
+
+
 def test_gap30_exception_is_exact_and_decision_linked():
     approved = freeze_policy.GAP30_TEAM_STATE_DELTA_PATHS
     assert approved == ('backend/services/team_changes.py',)

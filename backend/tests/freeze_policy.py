@@ -483,6 +483,17 @@ EO02_SHARE_LINK_PREVIEW_PATHS = (
     'backend/services/share_artifact_previews.py',
 )
 
+# September 23 2026. Public static Team Story and Share Artifact distribution
+# must enumerate the canonical MLB team universe rather than organizations
+# discovered from active player rows. This exact exception permits the bounded
+# Share Artifact batch caller to use the shared canonical distribution helper;
+# neighboring Share Artifact services, schema, and baseball semantics remain
+# frozen. Focused tests prove exact 30-team accounting and reject affiliates,
+# missing canonical clubs, duplicates, and substitutions.
+STATIC_PREVIEW_CANONICAL_TEAM_UNIVERSE_PATHS = (
+    'backend/services/share_artifact_batch_generation.py',
+)
+
 # CU-06, August 28 2026. The existing bullpen-context composer accepts an
 # optional, already-classified availability-record override so the bounded
 # shadow read-model rebuild can reuse the authoritative composer without

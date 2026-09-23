@@ -46,7 +46,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ['AUTO_SYNC'] = 'false'
 
-from models.pitcher import Pitcher
 from services.team_story_previews import (
     DEFAULT_OG_IMAGE_PATH,
     DEFAULT_SITE_URL,
@@ -55,8 +54,9 @@ from services.team_story_previews import (
     write_team_story_pages,
 )
 from services import dashboard_snapshot as dashboard_snapshot_service
+from services.mlb_club_directory import EXPECTED_CLUB_COUNT
+from services.public_team_distribution import snapshot_distribution_teams
 from services.public_serving_authority import build_published_team_board
-from utils.db import db
 from utils.read_only_app import create_read_only_app
 from utils.summary_output import (
     SummaryOutputError,
@@ -64,7 +64,7 @@ from utils.summary_output import (
     write_summary,
 )
 
-EXPECTED_MLB_TEAM_COUNT = 30
+EXPECTED_MLB_TEAM_COUNT = EXPECTED_CLUB_COUNT
 
 app = create_read_only_app()
 
@@ -119,29 +119,6 @@ def parse_args():
         ),
     )
     return parser.parse_args()
-
-
-def active_teams():
-    rows = (
-        db.session.query(
-            Pitcher.team_id,
-            Pitcher.team_name,
-            Pitcher.team_abbreviation,
-        )
-        .filter(Pitcher.active == True)
-        .filter(Pitcher.team_id.isnot(None))
-        .group_by(Pitcher.team_id, Pitcher.team_name, Pitcher.team_abbreviation)
-        .order_by(Pitcher.team_abbreviation)
-        .all()
-    )
-    return [
-        {
-            'team_id': row.team_id,
-            'team_name': row.team_name,
-            'team_abbreviation': row.team_abbreviation,
-        }
-        for row in rows
-    ]
 
 
 def load_trusted_publication(snapshot_id=None):
@@ -265,7 +242,7 @@ def main():
                 'pages_written': 0,
             }, args.result_out)
             return EXIT_NO_TRUSTED_PUBLICATION
-        teams = active_teams()
+        teams = snapshot_distribution_teams(payload)
         boards = build_team_boards(teams)
         previews = build_team_story_previews(
             teams,

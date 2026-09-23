@@ -79,6 +79,28 @@ Read-only commands use `utils.read_only_app.create_read_only_app`, which registe
 no HTTP routes, scheduler, sync service, or operational writes. The normal API
 still fails startup without its admin token.
 
+## Public MLB team universe
+
+Every snapshot-bound public team distribution uses the exact canonical Team
+Board accounting carried by that trusted snapshot. Stable names and
+abbreviations come from `services.mlb_club_directory.MLB_CLUBS`, the same
+immutable registry that defines `MLB_TEAM_IDS`.
+
+Mutable player and roster rows are not a public-team denominator. Those sources
+legitimately contain affiliates and other organizations, so `team_id IS NOT
+NULL`, distinct player organization IDs, and roster-derived team lists must
+never drive Team Story, preview, or share distribution. Exact accounting fails
+closed on an extra, missing, duplicate, or substituted club. A canonical club
+without an active player row remains accounted for; a noncanonical organization
+never receives a public team page.
+
+The static Team Story exporter uses snapshot accounting plus `MLB_CLUBS`.
+League Share Artifact batch generation uses the same canonical distribution
+helper. Share-page preview export iterates already-published immutable artifacts
+and therefore performs no organization discovery. Administrative coverage and
+team-following reads retain their separate contracts; they are not public page
+denominators.
+
 ## Artifact lifecycle and statuses
 
 `public-sync` exports `team-state-vnext-production-proof.json` and
@@ -98,6 +120,10 @@ team-count mismatch, noncanonical team, and missing receipt.
   `MLB_TEAM_IDS` set and do not treat arbitrary non-null team IDs as MLB clubs.
 - **Safe:** new post-commit proof and artifact generation use frozen receipts or
   frozen generation inputs; neither independently selects a team universe.
+- **Fixed blocker:** static Team Story export derives its exact 30-team universe
+  from the selected snapshot's canonical accounting and uses `MLB_CLUBS` only
+  for stable display identity. Active `Pitcher.team_id` rows cannot expand or
+  substitute the distribution denominator.
 - **Fixed blocker:** proof export and current static/generated distribution
   readers no longer import the full write-capable API.
 - **Fixed blocker:** optional artifact-generation failure can no longer masquerade

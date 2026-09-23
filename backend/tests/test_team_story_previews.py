@@ -8,11 +8,17 @@ all.
 """
 
 import ast
+import json
 import re
+from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS, MlbClub
+from services.public_team_distribution import snapshot_distribution_teams
+from services.team_board_snapshot_team_state import build_team_accounting
 from services.team_bullpen_shape import TEAM_BULLPEN_PUBLIC_LABELS
 from services.team_story_previews import (
     REPRESENTATION_DATED_READ,
@@ -56,6 +62,16 @@ def _team(team_id=1, name='Toronto Blue Jays', abbr='TOR'):
         'team_id': team_id,
         'team_name': name,
         'team_abbreviation': abbr,
+    }
+
+
+def _distribution_payload(*, publishable_team_ids=MLB_TEAM_IDS):
+    publishable = tuple(int(team_id) for team_id in publishable_team_ids)
+    return {
+        'trusted_team_boards': {
+            'team_accounting': build_team_accounting(publishable, MLB_TEAM_IDS),
+            'by_team_id': {str(team_id): {} for team_id in publishable},
+        },
     }
 
 
@@ -805,6 +821,169 @@ def test_the_exporter_takes_the_trusted_published_board_and_never_the_live_build
     # one snapshot is byte-stable instead of manufacturing a content diff.
     assert 'generated_at = _snapshot_generated_at(snapshot)' in source
     assert 'exported_at = datetime.now(timezone.utc)' in source
+
+
+def test_snapshot_distribution_uses_exact_canonical_accounting():
+    teams = snapshot_distribution_teams(_distribution_payload())
+
+    assert len(teams) == 30
+    assert {team['team_id'] for team in teams} == set(MLB_TEAM_IDS)
+    assert [team['team_abbreviation'] for team in teams] == sorted(
+        club.abbreviation for club in MLB_CLUBS
+    )
+
+
+def test_noncanonical_active_organizations_cannot_expand_static_distribution():
+    # Production run 35872797688 had these four organizations in mutable active
+    # player data.  They are intentionally not an input to the snapshot-bound
+    # distribution selector.
+    mutable_active_organization_ids = set(MLB_TEAM_IDS) | {484, 531, 534, 5434}
+
+    teams = snapshot_distribution_teams(_distribution_payload())
+
+    assert len(mutable_active_organization_ids) == 34
+    assert {team['team_id'] for team in teams} == set(MLB_TEAM_IDS)
+    assert not ({484, 531, 534, 5434} & {team['team_id'] for team in teams})
+
+
+def test_canonical_team_without_active_pitcher_is_still_accounted_for():
+    # No player table participates.  The exact snapshot accounting retains all
+    # 30 clubs even when only 18 have publishable Team Board packages.
+    teams = snapshot_distribution_teams(
+        _distribution_payload(publishable_team_ids=MLB_TEAM_IDS[:18])
+    )
+
+    assert {team['team_id'] for team in teams} == set(MLB_TEAM_IDS)
+
+
+def test_missing_or_substituted_snapshot_team_fails_closed():
+    payload = _distribution_payload()
+    accounting = payload['trusted_team_boards']['team_accounting']
+    accounting['teams'][-1]['team_id'] = 484
+
+    with pytest.raises(
+        ValueError,
+        match='snapshot_team_state_package_requires_30_accounted_teams',
+    ):
+        snapshot_distribution_teams(payload)
+
+
+def test_noncanonical_published_team_fails_closed():
+    payload = _distribution_payload()
+    payload['trusted_team_boards']['by_team_id']['484'] = {}
+
+    with pytest.raises(
+        ValueError,
+        match='snapshot_team_state_package_noncanonical_team',
+    ):
+        snapshot_distribution_teams(payload)
+
+
+def test_missing_canonical_display_metadata_fails_instead_of_substituting():
+    clubs = tuple(
+        MlbClub(club.team_id, '', club.team_name)
+        if club.team_id == MLB_TEAM_IDS[0]
+        else club
+        for club in MLB_CLUBS
+    )
+
+    with pytest.raises(
+        ValueError,
+        match='public_distribution_team_metadata_invalid',
+    ):
+        snapshot_distribution_teams(_distribution_payload(), clubs=clubs)
+
+
+def test_production_shaped_34_organization_fixture_writes_30_snapshot_pages(
+    tmp_path,
+):
+    payload = _distribution_payload()
+    teams = snapshot_distribution_teams(payload)
+    boards = [_board(team) for team in teams]
+
+    previews = build_team_story_previews(
+        teams,
+        dashboard_payload=payload,
+        boards=boards,
+        generated_at=GENERATED_AT,
+        expected_snapshot_id=SNAPSHOT_ID,
+    )
+    result = write_team_story_pages(previews, tmp_path)
+
+    assert result['count'] == 30
+    assert {path.parent.name for path in (tmp_path / 'team').glob('*/index.html')} == {
+        club.abbreviation for club in MLB_CLUBS
+    }
+    assert not {'484', '531', '534', '5434'} & {
+        path.parent.name for path in (tmp_path / 'team').glob('*/index.html')
+    }
+    for preview in previews:
+        assert preview['snapshot_id'] == str(SNAPSHOT_ID)
+        assert preview['data_through'] == DATA_THROUGH
+
+
+def test_export_command_uses_snapshot_accounting_and_writes_30_pages(
+    tmp_path, monkeypatch,
+):
+    from scripts import export_team_story_pages as exporter
+
+    payload = _distribution_payload()
+    snapshot = SimpleNamespace(
+        id=SNAPSHOT_ID,
+        payload=payload,
+        data_through=date.fromisoformat(DATA_THROUGH),
+        snapshot_generated_at=datetime.fromisoformat(SNAPSHOT_GENERATED_AT),
+    )
+    captured = {}
+
+    def boards(teams):
+        captured['teams'] = list(teams)
+        return [_board(team) for team in teams]
+
+    result_path = tmp_path / 'result.json'
+    monkeypatch.setattr(exporter, 'load_trusted_publication', lambda snapshot_id: snapshot)
+    monkeypatch.setattr(exporter, 'build_team_boards', boards)
+    monkeypatch.setattr(
+        exporter.sys,
+        'argv',
+        [
+            'export_team_story_pages.py',
+            '--output', str(tmp_path),
+            '--snapshot-id', str(SNAPSHOT_ID),
+            '--result-out', str(result_path),
+        ],
+    )
+
+    assert exporter.main() == exporter.EXIT_OK
+    result = json.loads(result_path.read_text(encoding='utf-8'))
+    assert result['teams'] == result['previews'] == result['output']['count'] == 30
+    assert result['publication_snapshot_id'] == SNAPSHOT_ID
+    assert result['publication_data_through'] == DATA_THROUGH
+    assert {team['team_id'] for team in captured['teams']} == set(MLB_TEAM_IDS)
+    assert not {'484', '531', '534', '5434'} & {
+        path.parent.name for path in (tmp_path / 'team').glob('*/index.html')
+    }
+
+
+def test_static_and_share_exporters_do_not_discover_teams_from_pitchers():
+    root = Path(__file__).resolve().parents[2]
+    team_exporter = (root / 'backend/scripts/export_team_story_pages.py').read_text()
+    share_exporter = (root / 'backend/scripts/export_share_artifact_pages.py').read_text()
+    batch_generator = (
+        root / 'backend/services/share_artifact_batch_generation.py'
+    ).read_text()
+    distribution_authority = (
+        root / 'backend/services/public_team_distribution.py'
+    ).read_text()
+
+    assert 'snapshot_distribution_teams(payload)' in team_exporter
+    assert 'Pitcher.team_id' not in team_exporter
+    assert 'team_id.isnot(None)' not in team_exporter
+    assert 'Pitcher.team_id' not in share_exporter
+    assert 'team_id.isnot(None)' not in share_exporter
+    assert 'canonical_distribution_team_ids' in batch_generator
+    assert 'valid_team_ids' not in batch_generator
+    assert 'Pitcher' not in distribution_authority
 
 
 def test_invalid_team_page_makes_no_team_claim():
