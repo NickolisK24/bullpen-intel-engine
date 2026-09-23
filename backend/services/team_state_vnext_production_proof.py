@@ -65,6 +65,20 @@ VERDICT_PASS = 'PASS'
 VERDICT_PASS_WITH_INCONCLUSIVE = 'PASS_WITH_INCONCLUSIVE'
 VERDICT_FAIL = 'FAIL'
 
+OBSERVATION_PROOF_VALID = 'proof_valid'
+OBSERVATION_PROOF_DISAGREED = 'proof_disagreed'
+OBSERVATION_PUBLICATION_NOT_OBSERVED = 'publication_not_observed'
+OBSERVATION_EXPORT_FAILED = 'export_failed'
+
+FAILURE_PROOF_EXPORT_ENVIRONMENT_INVALID = 'proof_export_environment_invalid'
+FAILURE_PROOF_EXPORT_FAILED = 'proof_export_failed'
+FAILURE_PROOF_ARTIFACT_MISSING = 'proof_artifact_missing'
+FAILURE_PROOF_SNAPSHOT_IDENTITY_MISMATCH = 'proof_snapshot_identity_mismatch'
+FAILURE_PROOF_TEAM_STATE_DISAGREEMENT = 'proof_team_state_disagreement'
+FAILURE_PROOF_TEAM_COUNT_MISMATCH = 'proof_team_count_mismatch'
+FAILURE_PROOF_NONCANONICAL_TEAM = 'proof_noncanonical_team'
+FAILURE_PROOF_RECEIPT_MISSING = 'proof_team_state_receipt_missing'
+
 INVARIANTS = (
     'all_teams_published',
     'method_version_observed',
@@ -992,6 +1006,12 @@ def require_transactional_publication_proof(
         updated_payload['trusted_team_boards'] = updated_package
         snapshot.payload = updated_payload
         proof['snapshot_team_state_generation_inputs'] = frozen_inputs
+        # Persist the exact immutable receipts admitted with the candidate.  The
+        # post-commit observer compares these bytes-as-data with the receipts on
+        # the committed snapshot; it never re-runs the classifier or reads live
+        # roster/GameLog state.
+        proof['snapshot_team_state_receipts'] = _json_safe(frozen_receipts)
+        proof['snapshot_team_state_receipt_digest'] = _digest(frozen_receipts)
         from models.dashboard_snapshot import DashboardSnapshot
         from services.team_board_what_changed import attach_frozen_what_changed
         from services.what_changed_comparison_identity import comparison_identity_from_payload
@@ -1036,149 +1056,259 @@ def load_durable_proof(snapshot_id):
         return None
 
 
-def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optional[dict]:
-    """Run generation under observation and durably store the resulting proof.
+def _expected_receipts_from_proof(snapshot, proof):
+    """Return the pre-commit receipt set, including legacy proof reconstruction.
 
-    Returns the proof document, or ``None`` when the proof could not be built or
-    written. The generation itself happens exactly once either way — this function
-    OWNS it when capture is enabled, so a returned ``None`` means "no proof", never
-    "no generation". Never raises: the publication has already committed and a proof
-    problem must not become a publication problem.
+    New proofs carry their exact receipt mapping.  Snapshot 3435 and the small
+    number of earlier receipt-bearing publications predate that field but retain
+    the immutable readiness inputs used before commit.  Re-projecting the public
+    receipt from those stored inputs is deterministic and reads no mutable source.
+    """
+    receipts = _mapping(_mapping(proof).get('snapshot_team_state_receipts'))
+    if receipts:
+        return _json_safe(receipts)
+
+    from services.team_board_snapshot_team_state import make_receipt
+
+    frozen_inputs = _mapping(
+        _mapping(proof).get('snapshot_team_state_generation_inputs')
+    )
+    expected = {}
+    for key, inputs in frozen_inputs.items():
+        readiness = _mapping(_mapping(inputs).get('readiness'))
+        if not readiness:
+            continue
+        try:
+            team_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        expected[str(team_id)] = make_receipt(
+            snapshot,
+            team_id,
+            readiness,
+            method_version=EXPECTED_METHOD_VERSION,
+        )
+    return _json_safe(expected)
+
+
+def _receipt_difference_fields(expected, actual):
+    fields = []
+    for key in sorted(set(expected) | set(actual)):
+        if key == 'value':
+            expected_value = _mapping(expected.get(key))
+            actual_value = _mapping(actual.get(key))
+            for value_key in sorted(set(expected_value) | set(actual_value)):
+                if expected_value.get(value_key) != actual_value.get(value_key):
+                    fields.append(f'value.{value_key}')
+        elif expected.get(key) != actual.get(key):
+            fields.append(key)
+    return fields
+
+
+def build_postcommit_observation(snapshot, proof) -> dict:
+    """Verify the committed snapshot against its immutable pre-commit proof.
+
+    This is deliberately a frozen-state comparison.  It reads only the durable
+    proof, the committed snapshot identity, and the receipts embedded in that
+    snapshot.  It never invokes Team State calculation or Share Artifact
+    generation, so later GameLog or roster mutations cannot change the result.
+    """
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import require_complete_team_accounting
+
+    snapshot_id = getattr(snapshot, 'id', None)
+    data_through = _iso(getattr(snapshot, 'data_through', None))
+    publication = _mapping(_mapping(proof).get('publication'))
+    base = {
+        'publication_observed': snapshot is not None,
+        'snapshot_id': snapshot_id,
+        'data_through': data_through,
+        'status': OBSERVATION_PROOF_DISAGREED,
+        'reason_code': None,
+        'canonical_team_count': len(MLB_TEAM_IDS),
+        'observed_team_count': 0,
+        'receipt_digest': None,
+        'expected_receipt_digest': None,
+        'differences': [],
+    }
+    if snapshot is None:
+        return {
+            **base,
+            'publication_observed': False,
+            'status': OBSERVATION_PUBLICATION_NOT_OBSERVED,
+        }
+    if (
+        publication.get('dashboard_snapshot_id') != snapshot_id
+        or publication.get('data_through') != data_through
+        or publication.get('expected_method_version') != EXPECTED_METHOD_VERSION
+    ):
+        return {**base, 'reason_code': FAILURE_PROOF_SNAPSHOT_IDENTITY_MISMATCH}
+
+    payload = _mapping(getattr(snapshot, 'payload', None))
+    package = _mapping(payload.get('trusted_team_boards'))
+    canonical = tuple(sorted(int(team_id) for team_id in MLB_TEAM_IDS))
+    try:
+        require_complete_team_accounting(package, canonical)
+    except ValueError as exc:
+        reason = (
+            FAILURE_PROOF_NONCANONICAL_TEAM
+            if str(exc) == 'snapshot_team_state_package_noncanonical_team'
+            else FAILURE_PROOF_TEAM_COUNT_MISMATCH
+        )
+        return {**base, 'reason_code': reason}
+
+    actual = _mapping(package.get('frozen_team_state_by_team_id'))
+    actual_ids = set(actual)
+    canonical_keys = {str(team_id) for team_id in canonical}
+    base['observed_team_count'] = len(actual_ids)
+    if actual_ids - canonical_keys:
+        return {**base, 'reason_code': FAILURE_PROOF_NONCANONICAL_TEAM}
+    if actual_ids != canonical_keys:
+        return {**base, 'reason_code': FAILURE_PROOF_RECEIPT_MISSING}
+
+    expected = _expected_receipts_from_proof(snapshot, proof)
+    if set(expected) != canonical_keys:
+        return {**base, 'reason_code': FAILURE_PROOF_RECEIPT_MISSING}
+
+    differences = []
+    for key in sorted(canonical_keys, key=int):
+        expected_receipt = _mapping(expected.get(key))
+        actual_receipt = _mapping(actual.get(key))
+        fields = _receipt_difference_fields(expected_receipt, actual_receipt)
+        if fields:
+            differences.append({
+                'team_id': int(key),
+                'fields': fields,
+                'expected_digest': _digest(expected_receipt),
+                'observed_digest': _digest(actual_receipt),
+            })
+
+    base['receipt_digest'] = _digest(actual)
+    base['expected_receipt_digest'] = _digest(expected)
+    base['differences'] = differences
+    if differences:
+        base['reason_code'] = FAILURE_PROOF_TEAM_STATE_DISAGREEMENT
+        return base
+    return {
+        **base,
+        'status': OBSERVATION_PROOF_VALID,
+        'reason_code': None,
+    }
+
+
+def observe_committed_publication_proof(snapshot) -> dict:
+    """Load and verify one committed publication without recomputation."""
+    row = load_durable_proof(getattr(snapshot, 'id', None))
+    if row is None:
+        return {
+            'publication_observed': snapshot is not None,
+            'snapshot_id': getattr(snapshot, 'id', None),
+            'status': OBSERVATION_PROOF_DISAGREED,
+            'reason_code': FAILURE_PROOF_ARTIFACT_MISSING,
+            'differences': [],
+        }
+    return build_postcommit_observation(snapshot, row.proof)
+
+
+def frozen_team_state_artifact_generator(snapshot, generator=None):
+    """Bind optional Share Artifact generation to pre-commit frozen inputs."""
+    from copy import deepcopy
+    from services.share_artifact_generation import generate_team_state_artifact
+    from services.team_board_snapshot_team_state import receipt_value
+
+    original_generator = generator or generate_team_state_artifact
+    snapshot_id = getattr(snapshot, 'id', None)
+    durable_row = load_durable_proof(snapshot_id)
+    durable_proof = _mapping(getattr(durable_row, 'proof', None))
+    frozen_inputs = _mapping(durable_proof.get('snapshot_team_state_generation_inputs'))
+
+    def frozen_generator(team_id, **kwargs):
+        source_snapshot = kwargs.get('snapshot')
+        if (
+            getattr(source_snapshot, 'id', None) != snapshot_id
+            or getattr(source_snapshot, 'data_through', None)
+            != getattr(snapshot, 'data_through', None)
+        ):
+            raise ValueError('snapshot_team_state_generation_identity_mismatch')
+        present, value = receipt_value(source_snapshot, team_id)
+        inputs = _mapping(frozen_inputs.get(str(team_id)))
+        if not present or value is None or not isinstance(inputs.get('readiness'), Mapping):
+            raise ValueError('snapshot_team_state_generation_input_missing')
+
+        def frozen_resolver(_team_id, *, reference_dates_out=None,
+                            arm_reads_out=None, **_unused):
+            if int(_team_id) != int(team_id):
+                raise ValueError('snapshot_team_state_generation_team_mismatch')
+            if reference_dates_out is not None:
+                reference_dates_out.update(deepcopy(inputs.get('reference_dates') or {}))
+            if arm_reads_out is not None:
+                arm_reads_out.update({
+                    int(key): deepcopy(item)
+                    for key, item in _mapping(inputs.get('arm_reads')).items()
+                })
+            return deepcopy(inputs['readiness'])
+
+        return original_generator(
+            team_id, readiness_resolver=frozen_resolver, **kwargs,
+        )
+
+    return frozen_generator
+
+
+def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optional[dict]:
+    """Generate optional artifacts and independently observe frozen receipts.
+
+    A generation exception is reported but cannot prevent receipt observation.
+    The proof result is sourced exclusively from the durable pre-commit proof and
+    committed snapshot; Share Artifact outcomes never become proof truth.
     """
     from services.share_artifact_publication_hook import run_post_publication_generation
 
     destination = path or proof_path()
-    durable_row = load_durable_proof(getattr(snapshot, 'id', None))
-    durable_proof = (
-        _json_safe(getattr(durable_row, 'proof', None))
-        if durable_row is not None else None
-    )
-    collector = ProofCollector()
     snapshot_id = getattr(snapshot, 'id', None)
-    before = _safe_inventory(snapshot_id, when='pre')
-
-    base_generator = generator
-    if base_generator is None:
-        from services.share_artifact_generation import generate_team_state_artifact
-        base_generator = generate_team_state_artifact
-        package_teams = _mapping(
-            _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
-            .get('by_team_id')
-        )
-        package_receipts = _mapping(
-            _mapping(_mapping(getattr(snapshot, 'payload', None)).get('trusted_team_boards'))
-            .get('frozen_team_state_by_team_id')
-        )
-        has_receipts = bool(package_receipts) or any(
-            'frozen_team_state' in _mapping(team)
-            for team in package_teams.values()
-        )
-        if has_receipts:
-            frozen_inputs = _mapping(_mapping(durable_proof).get(
-                'snapshot_team_state_generation_inputs'
-            ))
-            receipt_ids = package_receipts or {
-                key: _mapping(team).get('frozen_team_state')
-                for key, team in package_teams.items()
-                if 'frozen_team_state' in _mapping(team)
-            }
-            if set(frozen_inputs) != set(receipt_ids):
-                logger.error(
-                    'Post-publication Team State generation withheld: frozen input '
-                    'identity mismatch snapshot_id=%s.', snapshot_id,
-                )
-                return None
-            original_generator = base_generator
-
-            def base_generator(team_id, **kwargs):
-                from copy import deepcopy
-                from services.team_board_snapshot_team_state import receipt_value
-
-                source_snapshot = kwargs.get('snapshot')
-                if (
-                    getattr(source_snapshot, 'id', None) != snapshot_id
-                    or getattr(source_snapshot, 'data_through', None)
-                    != getattr(snapshot, 'data_through', None)
-                ):
-                    raise ValueError('snapshot_team_state_generation_identity_mismatch')
-                present, value = receipt_value(source_snapshot, team_id)
-                inputs = _mapping(frozen_inputs.get(str(team_id)))
-                if not present or value is None or not isinstance(inputs.get('readiness'), Mapping):
-                    raise ValueError('snapshot_team_state_generation_input_missing')
-
-                def frozen_resolver(_team_id, *, reference_dates_out=None,
-                                    arm_reads_out=None, **_unused):
-                    if int(_team_id) != int(team_id):
-                        raise ValueError('snapshot_team_state_generation_team_mismatch')
-                    if reference_dates_out is not None:
-                        reference_dates_out.update(deepcopy(inputs.get('reference_dates') or {}))
-                    if arm_reads_out is not None:
-                        arm_reads_out.update({
-                            int(key): deepcopy(item)
-                            for key, item in _mapping(inputs.get('arm_reads')).items()
-                        })
-                    return deepcopy(inputs['readiness'])
-
-                return original_generator(
-                    team_id, readiness_resolver=frozen_resolver, **kwargs,
-                )
-    batch = run_post_publication_generation(snapshot, generator=collector.wrap(base_generator))
-
-    after = _safe_inventory(snapshot_id, when='post')
     try:
-        from services.availability_reference_date import trusted_slate_reference_dates
-        data_through = getattr(snapshot, 'data_through', None)
-        _, expected_availability = trusted_slate_reference_dates(data_through)
-        teams = [
-            build_team_entry(
-                team_id, result,
-                expected_availability_reference_date=expected_availability,
-                data_through=data_through,
-            )
-            for team_id, result in collector.results
-            if result is not None
-        ]
-        expected_team_count = (
-            getattr(batch, 'canonical_team_count', None)
-            if batch is not None else None
-        ) or len(teams)
-        proof = build_proof(
-            snapshot=snapshot, teams=teams, expected_team_count=expected_team_count,
-            historical_before=before, historical_after=after,
-            boundary_snapshot_id=boundary_snapshot_id(),
-            proof_generated_at=datetime.now(timezone.utc),
+        run_post_publication_generation(
+            snapshot,
+            generator=frozen_team_state_artifact_generator(snapshot, generator),
         )
-        if durable_proof is None:
-            try:
-                _store_durable_proof(snapshot, proof)
-                durable_proof = proof
-            except Exception:
-                try:
-                    from utils.db import db
-                    db.session.rollback()
-                except Exception:
-                    logger.exception('Team State proof session recovery failed.')
-                logger.exception(
-                    'Team State durable proof storage failed non-fatally snapshot_id=%s.',
-                    snapshot_id,
-                )
-        elif _decisive_team_projection(durable_proof) != _decisive_team_projection(proof):
+    except Exception:
+        logger.exception(
+            'Post-publication Team State artifact generation failed non-fatally '
+            'snapshot_id=%s.', snapshot_id,
+        )
+
+    try:
+        durable_row = load_durable_proof(snapshot_id)
+        if durable_row is None:
             logger.error(
-                'Post-commit Team State artifact observation disagrees with mandatory '
-                'publication proof snapshot_id=%s.',
-                snapshot_id,
+                'Post-commit Team State proof missing snapshot_id=%s reason=%s.',
+                snapshot_id, FAILURE_PROOF_ARTIFACT_MISSING,
             )
+            return None
+        proof = _json_safe(durable_row.proof)
+        observation = build_postcommit_observation(snapshot, proof)
+        proof['postcommit_observation'] = observation
         if destination:
-            write_proof(durable_proof or proof, destination)
+            write_proof(proof, destination)
     except Exception:
         logger.exception('Team State proof capture failed non-fatally.')
         return None
 
-    logger.info(
-        'Team State vNext production proof written snapshot_id=%s teams=%s verdict=%s.',
-        snapshot_id, len(proof['teams']), proof['overall_verdict'],
-    )
-    return durable_proof or proof
+    if observation.get('status') != OBSERVATION_PROOF_VALID:
+        logger.error(
+            'Post-commit Team State proof observation failed snapshot_id=%s '
+            'reason=%s differences=%s.',
+            snapshot_id, observation.get('reason_code'),
+            observation.get('differences'),
+        )
+    else:
+        logger.info(
+            'Post-commit Team State proof observation passed snapshot_id=%s '
+            'teams=%s receipt_digest=%s.',
+            snapshot_id, observation.get('observed_team_count'),
+            observation.get('receipt_digest'),
+        )
+    return proof
 
 
 def _decisive_team_projection(proof):

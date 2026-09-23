@@ -179,7 +179,7 @@ _UNSET = object()
 def _build(teams=None, *, expected=30, before=_UNSET, after=_UNSET, snapshot=None,
            boundary_snapshot_id=None, boundary_loader=None):
     inventory = _inventory([[1, 'ts_old', 'sha256:aa', 'published', None]])
-    return build_proof(
+    proof = build_proof(
         snapshot=snapshot or _snapshot(),
         teams=_teams() if teams is None else teams,
         expected_team_count=expected,
@@ -189,6 +189,17 @@ def _build(teams=None, *, expected=30, before=_UNSET, after=_UNSET, snapshot=Non
         boundary_loader=boundary_loader,
         workflow={'run_id': '1', 'run_attempt': '1', 'source_sha': 'abc', 'note': 'test'},
     )
+    proof['postcommit_observation'] = {
+        'publication_observed': True,
+        'snapshot_id': proof['publication']['dashboard_snapshot_id'],
+        'status': proof_module.OBSERVATION_PROOF_VALID,
+        'reason_code': None,
+        'observed_team_count': 30,
+        'receipt_digest': 'sha256:test',
+        'expected_receipt_digest': 'sha256:test',
+        'differences': [],
+    }
+    return proof
 
 
 # ---------------------------------------------------------------------------
@@ -683,8 +694,16 @@ def test_capture_writes_the_proof_and_returns_it(monkeypatch, tmp_path):
         _fake_generation,
     )
     monkeypatch.setattr(
-        proof_module, 'historical_team_state_inventory',
-        lambda *args, **kwargs: _inventory([[1, 'ts_old', 'sha256:aa', 'published', None]]),
+        proof_module, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof=_build()),
+    )
+    monkeypatch.setattr(
+        proof_module, 'frozen_team_state_artifact_generator',
+        lambda _snapshot, generator=None: generator,
+    )
+    monkeypatch.setattr(
+        proof_module, 'build_postcommit_observation',
+        lambda *_args: _build()['postcommit_observation'],
     )
     proof = proof_module.capture_publication_proof(
         _snapshot(), generator=lambda team_id, **kwargs: _result(team_id),
@@ -695,7 +714,7 @@ def test_capture_writes_the_proof_and_returns_it(monkeypatch, tmp_path):
     written = json.loads(destination.read_text())
     assert written['publication']['dashboard_snapshot_id'] == SNAPSHOT_ID
     assert len(written['teams']) == 30
-    assert written['invariants']['reference_date_alignment']['result'] == RESULT_PASS
+    assert written['postcommit_observation']['status'] == 'proof_valid'
 
 
 def test_the_artifact_is_still_written_when_an_invariant_fails(monkeypatch, tmp_path):
@@ -711,9 +730,18 @@ def test_the_artifact_is_still_written_when_an_invariant_fails(monkeypatch, tmp_
         'services.share_artifact_publication_hook.run_post_publication_generation',
         _fake_generation,
     )
+    failing = _build(teams=_teams(29))
     monkeypatch.setattr(
-        proof_module, 'historical_team_state_inventory',
-        lambda *args, **kwargs: _inventory([[1, 'ts_old', 'sha256:aa', 'published', None]]),
+        proof_module, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof=failing),
+    )
+    monkeypatch.setattr(
+        proof_module, 'frozen_team_state_artifact_generator',
+        lambda _snapshot, generator=None: generator,
+    )
+    monkeypatch.setattr(
+        proof_module, 'build_postcommit_observation',
+        lambda *_args: failing['postcommit_observation'],
     )
     proof = proof_module.capture_publication_proof(
         _snapshot(),
@@ -725,7 +753,7 @@ def test_the_artifact_is_still_written_when_an_invariant_fails(monkeypatch, tmp_
     assert json.loads(destination.read_text())['overall_verdict'] == VERDICT_FAIL
 
 
-def test_a_capture_failure_never_propagates_to_the_publication(monkeypatch, tmp_path):
+def test_artifact_generation_failure_does_not_mask_receipt_observation(monkeypatch, tmp_path):
     def _boom(snapshot, *, generator=None):
         raise RuntimeError('generation exploded')
 
@@ -733,12 +761,18 @@ def test_a_capture_failure_never_propagates_to_the_publication(monkeypatch, tmp_
         'services.share_artifact_publication_hook.run_post_publication_generation', _boom,
     )
     monkeypatch.setattr(
-        proof_module, 'historical_team_state_inventory', lambda *a, **k: None,
+        proof_module, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof=_build()),
     )
-    with pytest.raises(RuntimeError):
-        # The hook wrapper in dashboard_snapshot owns the isolation; the capture must
-        # at minimum not corrupt state on its way out.
-        proof_module.capture_publication_proof(_snapshot(), path=str(tmp_path / 'p.json'))
+    monkeypatch.setattr(
+        proof_module, 'build_postcommit_observation',
+        lambda *_args: _build()['postcommit_observation'],
+    )
+    proof = proof_module.capture_publication_proof(
+        _snapshot(), path=str(tmp_path / 'p.json')
+    )
+    assert proof['postcommit_observation']['status'] == 'proof_valid'
+    assert (tmp_path / 'p.json').exists()
 
 
 def test_generation_runs_exactly_once_even_when_the_proof_cannot_be_written(
@@ -1031,6 +1065,21 @@ def test_validator_rejects_a_verdict_softer_than_its_invariants():
     assert reason == 'verdict_softer_than_invariants'
 
 
+def test_validator_requires_the_committed_receipt_observation():
+    proof = _build()
+    proof.pop('postcommit_observation')
+    assert _validator()(proof) == (False, 'postcommit_observation_missing')
+
+
+def test_validator_preserves_the_semantic_disagreement_reason():
+    proof = _build()
+    proof['postcommit_observation'].update({
+        'status': proof_module.OBSERVATION_PROOF_DISAGREED,
+        'reason_code': proof_module.FAILURE_PROOF_TEAM_STATE_DISAGREEMENT,
+    })
+    assert _validator()(proof) == (False, 'proof_team_state_disagreement')
+
+
 def test_validator_rejects_a_reconstructed_artifact():
     proof = _build()
     proof['reconstructed'] = True
@@ -1117,11 +1166,156 @@ def test_hook_runs_plain_generation_when_proof_capture_is_off(
         'services.share_artifact_publication_hook.run_post_publication_generation',
         lambda snapshot, **kwargs: calls.append(kwargs) or None,
     )
-    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
+    monkeypatch.setattr(
+        proof_module, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof=_build()),
+    )
+    monkeypatch.setattr(
+        proof_module, 'build_postcommit_observation',
+        lambda *_args: _build()['postcommit_observation'],
+    )
+    monkeypatch.setattr(
+        proof_module, 'frozen_team_state_artifact_generator',
+        lambda _snapshot, _generator=None: lambda *_args, **_kwargs: None,
+    )
     dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
     # Every publisher runs exactly once under durable observation.
     assert len(calls) == 1
     assert callable(calls[0]['generator'])
+
+
+def _frozen_snapshot_and_proof(monkeypatch):
+    """Build the production-shaped candidate admitted before pointer movement."""
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import build_team_accounting
+
+    canonical = tuple(sorted(MLB_TEAM_IDS))
+    snapshot = _snapshot()
+    snapshot.availability_reference_date = AVAILABILITY
+    snapshot.source = 'sync_completion'
+    snapshot.payload['trusted_team_boards'] = {
+        'contract': 'trusted_team_board_publication_v1',
+        'data_through': SLATE.isoformat(),
+        'team_count': 18,
+        'team_accounting': build_team_accounting(canonical[:18], canonical),
+        'by_team_id': {
+            str(team_id): {'team': {'team_id': team_id}}
+            for team_id in canonical[:18]
+        },
+    }
+
+    def resolver(team_id, **kwargs):
+        kwargs['reference_dates_out'].update({
+            'membership_reference_date': SLATE,
+            'availability_reference_date': AVAILABILITY,
+        })
+        readiness = json.loads(json.dumps(_result(team_id).readiness))
+        readiness['freshness'] = {'data_through': SLATE.isoformat()}
+        readiness['team'] = {'team_id': team_id}
+        return readiness
+
+    monkeypatch.setattr(
+        proof_module, 'historical_team_state_inventory',
+        lambda *_args, **_kwargs: _inventory([]),
+    )
+    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        'services.team_state_source.gather_team_state_source',
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        'services.team_state_eligibility.evaluate_team_state_eligibility',
+        lambda *_args, **_kwargs: SimpleNamespace(eligible=True, reasons=()),
+    )
+    proof = proof_module.require_transactional_publication_proof(
+        snapshot, readiness_resolver=resolver, team_ids=canonical,
+    )
+    return snapshot, proof, canonical
+
+
+def test_postcommit_observation_matches_the_exact_precommit_receipts(monkeypatch):
+    snapshot, proof, canonical = _frozen_snapshot_and_proof(monkeypatch)
+
+    observation = proof_module.build_postcommit_observation(snapshot, proof)
+
+    assert observation['status'] == proof_module.OBSERVATION_PROOF_VALID
+    assert observation['snapshot_id'] == SNAPSHOT_ID
+    assert observation['observed_team_count'] == len(canonical) == 30
+    assert observation['receipt_digest'] == observation['expected_receipt_digest']
+    assert observation['differences'] == []
+
+
+def test_postcommit_observation_detects_the_first_corrupt_receipt(monkeypatch):
+    snapshot, proof, canonical = _frozen_snapshot_and_proof(monkeypatch)
+    team_id = canonical[0]
+    receipt = snapshot.payload['trusted_team_boards'][
+        'frozen_team_state_by_team_id'
+    ][str(team_id)]
+    receipt['value']['public_code'] = 'vulnerable'
+
+    observation = proof_module.build_postcommit_observation(snapshot, proof)
+
+    assert observation['status'] == proof_module.OBSERVATION_PROOF_DISAGREED
+    assert observation['reason_code'] == proof_module.FAILURE_PROOF_TEAM_STATE_DISAGREEMENT
+    assert len(observation['differences']) == 1
+    assert observation['differences'][0]['team_id'] == team_id
+    assert observation['differences'][0]['fields'] == ['value.public_code']
+    assert observation['differences'][0]['expected_digest'] != (
+        observation['differences'][0]['observed_digest']
+    )
+
+
+def test_postcommit_observation_rejects_wrong_snapshot_identity(monkeypatch):
+    snapshot, proof, _canonical = _frozen_snapshot_and_proof(monkeypatch)
+    snapshot.id += 1
+
+    observation = proof_module.build_postcommit_observation(snapshot, proof)
+
+    assert observation['reason_code'] == proof_module.FAILURE_PROOF_SNAPSHOT_IDENTITY_MISMATCH
+
+
+def test_postcommit_observation_rejects_missing_or_noncanonical_receipts(monkeypatch):
+    snapshot, proof, canonical = _frozen_snapshot_and_proof(monkeypatch)
+    receipts = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+    receipts.pop(str(canonical[0]))
+    missing = proof_module.build_postcommit_observation(snapshot, proof)
+    assert missing['reason_code'] == proof_module.FAILURE_PROOF_RECEIPT_MISSING
+
+    snapshot, proof, _canonical = _frozen_snapshot_and_proof(monkeypatch)
+    receipts = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+    receipts['999'] = dict(next(iter(receipts.values())))
+    noncanonical = proof_module.build_postcommit_observation(snapshot, proof)
+    assert noncanonical['reason_code'] == proof_module.FAILURE_PROOF_NONCANONICAL_TEAM
+
+
+def test_postcommit_observation_ignores_mutable_sources_after_publication(monkeypatch):
+    snapshot, proof, _canonical = _frozen_snapshot_and_proof(monkeypatch)
+
+    def mutable_source_tripwire(*_args, **_kwargs):
+        raise AssertionError('postcommit observation must not read current source state')
+
+    monkeypatch.setattr(
+        'services.share_artifact_generation.resolve_team_readiness_payload',
+        mutable_source_tripwire,
+    )
+    observation = proof_module.build_postcommit_observation(snapshot, proof)
+
+    assert observation['status'] == proof_module.OBSERVATION_PROOF_VALID
+
+
+def test_legacy_receipt_publication_uses_frozen_inputs_not_live_recalculation(monkeypatch):
+    """Snapshot 3435 shape: receipts and frozen inputs, but no receipt copy in proof."""
+    snapshot, proof, _canonical = _frozen_snapshot_and_proof(monkeypatch)
+    proof.pop('snapshot_team_state_receipts')
+    proof.pop('snapshot_team_state_receipt_digest')
+    monkeypatch.setattr(
+        'services.share_artifact_generation.resolve_team_readiness_payload',
+        lambda *_a, **_k: pytest.fail('legacy observation must remain immutable'),
+    )
+
+    observation = proof_module.build_postcommit_observation(snapshot, proof)
+
+    assert observation['status'] == proof_module.OBSERVATION_PROOF_VALID
 
 
 def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
@@ -1129,17 +1323,20 @@ def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
 ):
     import services.dashboard_snapshot as dashboard_snapshot
 
-    destination = tmp_path / 'proof.json'
-    monkeypatch.setenv(proof_module.PROOF_PATH_ENV, str(destination))
     monkeypatch.setattr(
-        proof_module, 'historical_team_state_inventory',
-        lambda *args, **kwargs: _inventory([[1, 'ts_old', 'sha256:aa', 'published', None]]),
+        proof_module, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof=_build()),
+    )
+    observed = []
+    monkeypatch.setattr(
+        proof_module, 'build_postcommit_observation',
+        lambda snapshot, _proof: observed.append(snapshot.id) or
+        _build()['postcommit_observation'],
     )
     monkeypatch.setattr(
-        'services.share_artifact_generation.generate_team_state_artifact',
-        lambda team_id, **kwargs: _result(team_id),
+        proof_module, 'frozen_team_state_artifact_generator',
+        lambda _snapshot, _generator=None: lambda team_id, **_kwargs: _result(team_id),
     )
-    monkeypatch.setattr(proof_module, '_store_durable_proof', lambda *args: None)
 
     def _generation(snapshot, *, generator=None):
         assert generator is not None, 'capture must observe the real generation'
@@ -1152,9 +1349,7 @@ def test_hook_runs_generation_under_observation_when_proof_capture_is_on(
         _generation,
     )
     dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
-    written = json.loads(destination.read_text())
-    assert len(written['teams']) == 30
-    assert written['invariants']['reference_date_alignment']['result'] == RESULT_PASS
+    assert observed == [SNAPSHOT_ID]
 
 
 def test_a_proof_capture_explosion_never_breaks_the_publication(

@@ -520,7 +520,6 @@ jobs:
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
           AUTO_SYNC: 'false'
         run: >-
           python backend/scripts/export_team_state_publication_proof.py
@@ -631,24 +630,23 @@ jobs:
           set -uo pipefail
           proof=artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
           if [ ! -f "$proof" ]; then
-            if python - <<'PY'
+            python - <<'PY'
           import json
           from pathlib import Path
           path = Path('artifacts/team-state-vnext-proof/observation.json')
-          no_publication = (
-              path.exists()
-              and json.loads(path.read_text()).get('publication_observed') is False
-          )
-          raise SystemExit(0 if no_publication else 1)
+          if not path.exists():
+              print('::error::Team State proof artifact missing (reason=proof_artifact_missing).')
+              raise SystemExit(3)
+          observation = json.loads(path.read_text())
+          status = observation.get('status')
+          reason = observation.get('reason_code')
+          if status == 'publication_not_observed':
+              print('No publication was observed; no Team State proof is required.')
+              raise SystemExit(0)
+          print(f'::error::Team State proof artifact missing (status={status}, reason={reason or "proof_artifact_missing"}).')
+          raise SystemExit(3)
           PY
-            then
-              echo "No publication was observed; no Team State proof is required for this invocation."
-              echo "verdict=not_applicable" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "::error::No Team State vNext proof artifact was produced by this publication."
-            echo "verdict=missing" >> "$GITHUB_OUTPUT"
-            exit 3
+            exit $?
           fi
           set +e
           python backend/scripts/validate_team_state_vnext_proof.py "$proof" | tee proof-report.txt
@@ -977,7 +975,6 @@ jobs:
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
           AUTO_SYNC: 'false'
         run: |
           set -euo pipefail
@@ -1010,8 +1007,6 @@ jobs:
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           BASEBALLOS_SITE_URL: https://baseballos.app
           PUBLICATION_SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}
@@ -1041,7 +1036,6 @@ jobs:
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
           AUTO_SYNC: 'false'
           BASEBALLOS_SITE_URL: https://baseballos.app
           PUBLICATION_SNAPSHOT_ID: ${{ steps.publication.outputs.snapshot_id }}

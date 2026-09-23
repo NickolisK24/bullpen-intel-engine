@@ -261,7 +261,7 @@ def _assert_workload_carrier(snapshot, team_id):
     return carrier
 
 
-def test_trusted_publication_rehearsal(monkeypatch):
+def test_trusted_publication_rehearsal(monkeypatch, tmp_path):
     url = _test_database_url()
     assert url.startswith(('postgres://', 'postgresql://'))
     assert_disposable_test_target(url, operation='trusted publication rehearsal test')
@@ -444,7 +444,13 @@ def test_trusted_publication_rehearsal(monkeypatch):
             # Rehearse the same pre-trust proof/admission step within an isolated
             # savepoint.  Rollback keeps the candidate unpublished and proves no
             # production-style pointer movement is needed for the receipt check.
-            from services.team_state_vnext_production_proof import require_transactional_publication_proof
+            from services.team_state_vnext_production_proof import (
+                OBSERVATION_PROOF_VALID,
+                build_postcommit_observation,
+                require_transactional_publication_proof,
+                write_proof,
+            )
+            from scripts.validate_team_state_vnext_proof import validate_proof_file
             savepoint = db.session.begin_nested()
             try:
                 snapshot.status = dashboard_snapshot.SNAPSHOT_STATUS_READY
@@ -559,6 +565,16 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     snapshot, readiness_resolver=governed_rehearsal_readiness,
                 )
                 assert len(rehearsal_proof['snapshot_team_state_generation_inputs']) == 30
+                assert len(rehearsal_proof['snapshot_team_state_receipts']) == 30
+                observation = build_postcommit_observation(snapshot, rehearsal_proof)
+                assert observation['status'] == OBSERVATION_PROOF_VALID
+                assert observation['receipt_digest'] == observation['expected_receipt_digest']
+                exported_proof = deepcopy(rehearsal_proof)
+                exported_proof['postcommit_observation'] = observation
+                proof_path = tmp_path / 'team-state-vnext-production-proof.json'
+                write_proof(exported_proof, str(proof_path))
+                _, proof_valid, proof_reason = validate_proof_file(str(proof_path))
+                assert (proof_valid, proof_reason) == (True, 'ok')
                 assert set(
                     snapshot.payload['trusted_team_boards'][
                         'frozen_team_state_by_team_id'

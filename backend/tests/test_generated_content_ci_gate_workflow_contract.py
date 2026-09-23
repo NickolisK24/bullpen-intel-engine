@@ -809,50 +809,35 @@ def _exporter_source():
     return EXPORTER_PATH.read_text(encoding='utf-8')
 
 
-def test_the_exporter_still_contaminates_its_own_stdout(tmp_path):
-    """The defect's precondition, asserted rather than assumed.
-
-    If this ever stops being true the regression fixtures below stop proving
-    anything, and the failure should say so out loud instead of passing
-    vacuously. Note the assertion is on the FIRST line: nothing the exporter
-    prints can be reached without stepping over this.
-    """
+def test_the_read_only_exporter_emits_clean_json_stdout(tmp_path):
+    """Read-only initialization must not emit the API scheduler banner."""
     result_path = tmp_path / 'export-result.json'
     proc = _run_exporter_emit({'status': 'ok'}, result_path)
 
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.splitlines()[0].startswith(SCHEDULER_BANNER)
+    assert SCHEDULER_BANNER not in proc.stdout
+    assert json.loads(proc.stdout) == {'status': 'ok'}
 
 
-def test_the_old_stdout_transport_is_what_production_could_not_parse(tmp_path):
-    """`| tee export-result.json`, reproduced end to end.
-
-    This is run 31693516516 in miniature: the same stdout, captured the old
-    way, rejected by the same strict loader with the same class of error.
-    """
+def test_read_only_stdout_transport_is_parseable(tmp_path):
+    """The former banner-contaminated stdout channel is now valid JSON."""
     result, _ = _export_result(tmp_path)
     proc = _run_exporter_emit(result, tmp_path / 'export-result.json')
 
     teed = tmp_path / 'teed-export-result.json'
     teed.write_text(proc.stdout, encoding='utf-8')
 
-    with pytest.raises(json.JSONDecodeError):
-        json.loads(teed.read_text(encoding='utf-8'))
+    assert json.loads(teed.read_text(encoding='utf-8')) == result
 
 
-def test_stdout_contamination_cannot_corrupt_the_structured_result_file(tmp_path):
-    """The repair: same contaminated stdout, clean evidence file, gate passes.
-
-    The whole chain in one assertion set — a diagnostic banner on stdout, one
-    complete JSON document in the result file, and the unmodified delivery gate
-    verifying a coherent publication from it.
-    """
+def test_structured_result_file_remains_the_authoritative_transport(tmp_path):
+    """The clean stdout and retained result file carry the same publication."""
     result, root = _export_result(tmp_path)
     result_path = tmp_path / 'evidence' / 'export-result.json'
     proc = _run_exporter_emit(result, result_path)
 
     assert proc.returncode == 0, proc.stderr
-    assert SCHEDULER_BANNER in proc.stdout
+    assert SCHEDULER_BANNER not in proc.stdout
 
     # Exactly one JSON document, parsed strictly, with nothing in front of it.
     written = result_path.read_text(encoding='utf-8')

@@ -62,8 +62,8 @@ def test_missing_upload_is_an_error_and_no_publication_is_distinguished(workflow
     upload = _step(workflow, 'public-sync', 'Upload Team State vNext production proof')
     assert upload['with']['if-no-files-found'] == 'error'
     validate = _step(workflow, PROOF_JOB, 'Validate the Team State vNext production proof')
-    assert 'publication_observed' in validate['run']
-    assert 'verdict=not_applicable' in validate['run']
+    assert 'publication_not_observed' in validate['run']
+    assert 'proof_artifact_missing' in validate['run']
 
 
 def test_the_proof_is_not_written_into_the_shadow_handoff_source_directory(workflow):
@@ -118,7 +118,15 @@ def test_the_observer_job_holds_no_production_credential(workflow):
 def test_a_missing_proof_artifact_is_reported_rather_than_passing_quietly(workflow):
     validate = _step(workflow, PROOF_JOB, 'Validate the Team State vNext production proof')
     assert '::error::' in validate['run']
-    assert 'exit 3' in validate['run']
+    assert 'SystemExit(3)' in validate['run']
+
+
+def test_proof_export_is_read_only_and_has_no_write_endpoint_credentials(workflow):
+    export = _step(workflow, 'public-sync', 'Export durable Team State production proof')
+    assert export['env']['APP_ENV'] == 'production'
+    assert 'DATABASE_URL' in export['env']
+    assert 'ADMIN_API_TOKEN' not in export['env']
+    assert 'SECRET_KEY' not in export['env']
 
 
 def test_the_observer_does_not_gate_the_static_or_enrichment_delivery(workflow):
