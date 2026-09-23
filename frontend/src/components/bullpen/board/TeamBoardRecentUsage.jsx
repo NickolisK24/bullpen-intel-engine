@@ -34,13 +34,13 @@ function RecentUsageSkeleton() {
   )
 }
 
-function PublishedNumber({ fact, label }) {
+function PublishedNumber({ fact, label, shortLabel }) {
   const value = numericValue(fact)
   const withheld = value == null
   return (
-    <div className="min-w-0" aria-label={`${label}: ${withheld ? fact?.status || 'unavailable' : value}`}>
-      <dt className="type-overline text-text-tertiary">{label}</dt>
-      <dd className={`mt-meta font-board text-board-body font-semibold tabular-nums ${withheld ? 'text-text-withheld' : 'text-text-primary'}`}>
+    <div className="flex min-w-0 items-baseline gap-1" aria-label={`${label}: ${withheld ? fact?.status || 'unavailable' : value}`}>
+      <dt className="font-board text-board-metadata text-text-tertiary">{shortLabel || label}</dt>
+      <dd className={`font-board text-board-metadata font-semibold tabular-nums ${withheld ? 'text-text-withheld' : 'text-text-primary'}`}>
         {withheld ? '—' : value}
       </dd>
     </div>
@@ -49,23 +49,23 @@ function PublishedNumber({ fact, label }) {
 
 function UsageWindow({ window }) {
   return (
-    <div className="min-w-0 rounded-sm bg-surface-raised/40 px-row py-row tablet:rounded-none tablet:bg-transparent tablet:px-row">
+    <div className="min-w-0 rounded-sm bg-surface-raised/40 px-meta py-row tablet:rounded-none tablet:bg-transparent tablet:px-row">
       <div className="font-board text-board-label font-semibold text-text-secondary">{window?.label || 'Window'}</div>
-      <dl className="mt-meta flex min-w-0 flex-wrap gap-x-row gap-y-1">
-        <PublishedNumber fact={window?.appearances} label="Appearances" />
-        <PublishedNumber fact={window?.pitches} label="Pitches" />
-        <PublishedNumber fact={window?.outs} label="Outs" />
+      <dl className="mt-meta flex min-w-0 flex-wrap gap-x-meta gap-y-1">
+        <PublishedNumber fact={window?.appearances} label="Appearances" shortLabel="App" />
+        <PublishedNumber fact={window?.pitches} label="Pitches" shortLabel="P" />
+        <PublishedNumber fact={window?.outs} label="Outs" shortLabel="Out" />
       </dl>
     </div>
   )
 }
 
-function PatternList({ pitcher }) {
+function PatternList({ pitcher, className = '' }) {
   const published = PATTERN_FIELDS.filter(([key]) => pitcher?.[key]?.value === true)
   const limited = PATTERN_FIELDS.filter(([key]) => pitcher?.[key]?.status !== 'complete')
 
   return (
-    <div className="min-w-0 rounded-sm bg-surface-raised/40 px-row py-row tablet:rounded-none tablet:bg-transparent" aria-label={`Rest and usage patterns for ${pitcher.pitcherName || 'reliever'}`}>
+    <div className={`min-w-0 rounded-sm bg-surface-raised/40 px-row py-row tablet:rounded-none tablet:bg-transparent ${className}`} aria-label={`Rest and usage patterns for ${pitcher.pitcherName || 'reliever'}`}>
       <div className="font-board text-board-label font-semibold text-text-secondary">Patterns</div>
       <div className="mt-meta flex min-w-0 flex-wrap gap-meta">
         {published.map(([key, label]) => (
@@ -90,8 +90,8 @@ function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
   const canOpen = pitcher.pitcherId != null && typeof onSelectPitcher === 'function'
   return (
     <article className={`min-w-0 border-b border-line-subtle py-row last:border-b-0 ${subdued ? 'opacity-80' : ''}`}>
-      <div className="grid min-w-0 grid-cols-2 gap-row tablet:grid-cols-[minmax(9rem,1.15fr)_repeat(3,minmax(0,1fr))_minmax(9rem,1.2fr)] tablet:items-center">
-        <div className="col-span-2 min-w-0 tablet:col-span-1">
+      <div className="grid min-w-0 grid-cols-3 gap-meta tablet:grid-cols-[minmax(9rem,1.15fr)_repeat(3,minmax(0,1fr))_minmax(9rem,1.2fr)] tablet:items-center tablet:gap-row">
+        <div className="col-span-3 min-w-0 tablet:col-span-1">
           {canOpen ? (
             <button
               type="button"
@@ -106,7 +106,7 @@ function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
           )}
         </div>
         {pitcher.windows.map((window, index) => <UsageWindow key={window?.key || `window-${index}`} window={window} />)}
-        <PatternList pitcher={pitcher} />
+        <PatternList pitcher={pitcher} className="col-span-3 tablet:col-span-1" />
       </div>
     </article>
   )
