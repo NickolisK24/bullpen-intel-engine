@@ -93,6 +93,31 @@ test('Rotation Impact omits unknown metrics without converting them to zero', ()
   assert.equal(html.includes('Short starts'), false)
 })
 
+test('partial legacy rotation evidence never presents stored zeroes as certified facts', () => {
+  const partialZero = {
+    ...rotationImpact,
+    read: {
+      ...rotationImpact.read,
+      games_analyzed: 0,
+      games_in_window: 4,
+      starter_avg_innings: 0,
+      bullpen_innings_required: 0,
+      short_start_count: 0,
+      summary: null,
+    },
+  }
+  const html = renderRotation({ read: {
+    rotationImpact: partialZero,
+    sectionStatus: { rotation_impact: { status: 'partial', limitations: ['0 of 4 starts have complete evidence.'] } },
+  } })
+
+  assert.equal(html.includes('0 IP'), false)
+  assert.equal(html.includes('0 of 0'), false)
+  assert.equal(html.includes('Average starter length'), false)
+  assert.ok(html.includes('Limited evidence'))
+  assert.ok(html.includes('0 of 4 starts have complete evidence.'))
+})
+
 test('TB-07 renders frozen recent starts without classifying them in the browser', async () => {
   const html = renderRotation({ read: {
     ...read,

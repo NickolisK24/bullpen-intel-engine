@@ -1,6 +1,7 @@
 import SectionState from '../UI/SectionState'
 import { SkeletonBlock } from '../UI/Skeleton'
 import { formatDateOnly } from '../../utils/dateDisplay'
+import CompactSectionState from './board/CompactSectionState'
 
 const asArray = value => Array.isArray(value) ? value : []
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
@@ -398,7 +399,7 @@ export default function TeamReliefWorkPanel({ read, loading = false, error = nul
       {error ? (
         <SectionState status="error" title="Recent Relief Work unavailable" message="Recent relief-work records could not be loaded." onRetry={onRetry} />
       ) : !read || !recentReliefWork || !payload || statusName === 'unavailable' ? (
-        <SectionState status="unavailable" title="Recent Relief Work unavailable" message="Official recent relief-work records are unavailable." onRetry={!read ? onRetry : undefined} />
+        <CompactSectionState title="Recent Relief Work unavailable" message="Official recent relief-work records are unavailable." />
       ) : (
         <>
           {groups.length > 0 && (

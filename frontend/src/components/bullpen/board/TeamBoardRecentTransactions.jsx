@@ -1,6 +1,7 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
 import { formatDateOnly } from '../../../utils/dateDisplay'
+import CompactSectionState from './CompactSectionState'
 
 const eventGroups = [
   { key: 'addition', title: 'Recent additions' },
@@ -82,7 +83,7 @@ export default function TeamBoardRecentTransactions({ read, loading = false, err
       {error ? (
         <SectionState status="error" title="Roster movement unavailable" message="Roster and transaction details could not be loaded." onRetry={onRetry} />
       ) : !transactions ? (
-        <SectionState status="unavailable" title="Roster movement not published" message="This trusted Team Board does not contain frozen transaction context." onRetry={!read ? onRetry : undefined} />
+        <CompactSectionState title="Roster movement not published" message="This trusted Team Board does not contain frozen transaction context." />
       ) : (
         <>
           <p className="type-compact text-text-secondary">

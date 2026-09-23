@@ -1,5 +1,6 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
+import CompactSectionState from './CompactSectionState'
 
 export const PERFORMANCE_UNAVAILABLE_MESSAGE = 'A governed active-bullpen performance read is not available.'
 
@@ -50,7 +51,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
       {error ? (
         <SectionState status="error" title="Performance unavailable" message="Current performance context could not be loaded." onRetry={onRetry} />
       ) : !read || !performance || read.frozenPerformanceRejected || statusName === 'unavailable' || !hasGovernedContent ? (
-        <SectionState status="unavailable" title="Performance unavailable" message={PERFORMANCE_UNAVAILABLE_MESSAGE} onRetry={!read ? onRetry : undefined} />
+        <CompactSectionState title="Performance unavailable" message={PERFORMANCE_UNAVAILABLE_MESSAGE} />
       ) : (
         <>
           {metrics.length > 0 ? (

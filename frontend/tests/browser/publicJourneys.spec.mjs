@@ -119,6 +119,7 @@ async function installApiFixtures(page, {
   partialDeployment = false,
   partialTransactions = false,
   quietWhatChanged = false,
+  unavailableSupportingSections = false,
   corruptTeams = false,
   finderNoResults = false,
 } = {}) {
@@ -183,6 +184,16 @@ async function installApiFixtures(page, {
         details.what_changed.state = 'quiet'
         details.what_changed.quiet_message = 'No material bullpen changes since the previous trusted update.'
         details.what_changed.events = []
+      }
+      if (unavailableSupportingSections) {
+        details.what_changed = null
+        details.performance = null
+        details.recent_transactions = null
+        details.recent_relief_work = null
+        details.section_status.what_changed = { status: 'unavailable' }
+        details.section_status.performance = { status: 'unavailable' }
+        details.section_status.recent_transactions = { status: 'unavailable' }
+        details.section_status.recent_relief_work = { status: 'unavailable' }
       }
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
@@ -848,6 +859,7 @@ test('TB-11 keeps a quiet What Changed compact and the core layout stable during
   const active = page.getByTestId('team-board-active-bullpen')
   await expect(answer).toContainText('Team State: Fresh')
   const before = await Promise.all([answer, active].map(async locator => (await locator.boundingBox()).y))
+  await page.evaluate(() => document.fonts.ready)
   await page.evaluate(() => { window.__teamBoardLayoutShift = 0 })
   fixtures.releaseDetails()
   const changed = page.getByTestId('team-board-what-changed')
@@ -856,6 +868,27 @@ test('TB-11 keeps a quiet What Changed compact and the core layout stable during
   expect(Math.abs((after[1] - after[0]) - (before[1] - before[0]))).toBeLessThanOrEqual(20)
   expect((await changed.boundingBox()).height).toBeLessThan(400)
   expect(await page.evaluate(() => window.__teamBoardLayoutShift)).toBeLessThan(0.1)
+})
+
+test('product compression keeps deep evidence closed and unavailable sections compact', async ({ page }) => {
+  await installApiFixtures(page, { unavailableSupportingSections: true })
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/bullpen?team=BAL')
+    await expect(page.getByTestId('team-board-recent-usage')).toContainText('BAL Fixture Reliever')
+
+    const roles = page.getByTestId('team-board-roles-deployment')
+    const disclosure = roles.getByTestId('deployment-detail')
+    await expect(disclosure).not.toHaveAttribute('open', '')
+    await expect(disclosure.getByText('Inning 9: 2')).not.toBeVisible()
+    await expect(roles.getByText('View deployment detail')).toBeVisible()
+
+    for (const sectionId of ['team-board-what-changed', 'team-board-performance', 'team-board-recent-transactions', 'team-board-recent-relief-work']) {
+      const section = page.getByTestId(sectionId)
+      expect((await section.boundingBox()).height).toBeLessThan(230)
+    }
+    await expectNoPageOverflow(page)
+  }
 })
 
 test('TB-11 answers the six final Team Board product journeys without leaving the board', async ({ page }) => {
