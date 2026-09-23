@@ -72,9 +72,9 @@ test('pitcher handoff is keyboard-safe and section does not derive roster author
   }
 })
 
-test('one details request retains rotation-to-transactions placement', async () => {
+test('one details request retains final What Changed and rotation-to-transactions placement', async () => {
   const boardSource = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
   assert.equal((boardSource.match(/getTeamBoardDetails\(/g) || []).length, 1)
+  assert.ok(boardSource.indexOf('<TeamBoardWhatChanged') < boardSource.indexOf('<TeamBoardRotationImpact'))
   assert.ok(boardSource.indexOf('<TeamBoardRotationImpact') < boardSource.indexOf('<TeamBoardRecentTransactions'))
-  assert.ok(boardSource.indexOf('<TeamBoardRecentTransactions') < boardSource.indexOf('<TeamBoardWhatChanged'))
 })

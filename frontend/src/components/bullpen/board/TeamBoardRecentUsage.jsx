@@ -50,7 +50,7 @@ function PublishedNumber({ fact, label }) {
 function UsageWindow({ window }) {
   return (
     <div className="min-w-0 border-l border-line-subtle pl-row first:border-l-0 first:pl-0">
-      <h4 className="font-board text-board-label font-semibold uppercase text-text-secondary">{window?.label || 'Window'}</h4>
+      <div className="font-board text-board-label font-semibold uppercase text-text-secondary">{window?.label || 'Window'}</div>
       <dl className="mt-row grid min-w-0 gap-meta">
         <PublishedNumber fact={window?.appearances} label="Appearances" />
         <PublishedNumber fact={window?.pitches} label="Pitches" />
@@ -87,7 +87,6 @@ function PatternList({ pitcher }) {
 }
 
 function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
-  const daysSince = numericValue(pitcher.daysSinceLastAppearance)
   const canOpen = pitcher.pitcherId != null && typeof onSelectPitcher === 'function'
   return (
     <article className={`min-w-0 border-b border-line-subtle py-panel first:pt-row last:border-b-0 last:pb-row ${subdued ? 'opacity-80' : ''}`}>
@@ -105,12 +104,6 @@ function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
           ) : (
             <h3 className="font-board text-board-body font-semibold text-text-primary">{pitcher.pitcherName || 'Reliever'}</h3>
           )}
-          <p className={`type-metadata ${canOpen ? '' : 'mt-meta'}`}>
-            Days since last appearance:{' '}
-            <span className={daysSince == null ? 'text-text-withheld' : 'font-semibold text-text-secondary'}>
-              {daysSince == null ? '—' : daysSince}
-            </span>
-          </p>
         </div>
         <div className="grid min-w-0 grid-cols-3 gap-row" aria-label={`Published usage windows for ${pitcher.pitcherName || 'reliever'}`}>
           {pitcher.windows.map((window, index) => <UsageWindow key={window?.key || `window-${index}`} window={window} />)}
@@ -150,7 +143,7 @@ export default function TeamBoardRecentUsage({ read, loading = false, error = nu
         <div className="min-w-0">
           <div className="type-overline text-brand-gold">Named-arm workload</div>
           <h2 id="recent-usage-title" className="mt-meta font-board text-xl font-semibold text-text-primary">Recent Usage</h2>
-          <p className="type-compact mt-meta max-w-reading">Published workload across yesterday, three days, and seven days, followed by factual usage patterns.</p>
+          <p className="type-compact mt-meta max-w-reading">Published workload across yesterday, three days, and seven days, plus factual usage patterns. Current rest remains in Active Bullpen.</p>
         </div>
         {carrier?.dataThrough && <p className="type-metadata">Published through {formatDateOnly(carrier.dataThrough, { month: 'short' })}</p>}
       </header>

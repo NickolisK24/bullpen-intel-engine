@@ -5,12 +5,12 @@ import { getWhatChangedView } from './whatChangedView'
 function WhatChangedSkeleton() {
   return (
     <section id="what-changed" className="foundation-section" aria-labelledby="what-changed-title" aria-busy="true" data-testid="what-changed-skeleton">
-      <div className="rounded-sm border border-line-default bg-surface-nav/30 p-panel tablet:p-section">
+      <div className="rounded-sm border border-line-default bg-surface-nav/30 p-panel">
         <div className="type-overline text-brand-gold">Exact trusted comparison</div>
-        <h2 id="what-changed-title" className="type-section-title mt-meta">What Changed</h2>
+        <h2 id="what-changed-title" className="mt-meta font-board text-xl font-semibold text-text-primary">What Changed</h2>
         <span className="sr-only">Loading governed bullpen changes.</span>
         <SkeletonBlock className="mt-meta h-4 w-64 max-w-full" />
-        <SkeletonBlock className="mt-section h-16 w-full" />
+        <SkeletonBlock className="mt-panel h-10 w-full" />
       </div>
     </section>
   )
@@ -50,13 +50,14 @@ function ChangeItem({ event, onSelectPitcher }) {
 export default function TeamBoardWhatChanged({ changes, loading = false, error = null, onRetry, onSelectPitcher }) {
   if (loading) return <WhatChangedSkeleton />
   const view = getWhatChangedView(changes)
+  const compact = view.valid && view.state === 'quiet' && !error
 
   return (
     <section id="what-changed" className="foundation-section" aria-labelledby="what-changed-title" data-testid="team-board-what-changed">
-      <div className="-mx-4 border-y border-line-default bg-surface-nav/30 px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg">
-        <header className="border-b border-line-default pb-panel">
+      <div className={`-mx-4 border-y border-line-default bg-surface-nav/30 px-4 tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section ${compact ? 'py-panel' : 'py-section tablet:py-section-lg'}`}>
+        <header className={compact ? '' : 'border-b border-line-default pb-panel'}>
           <div className="type-overline text-brand-gold">Exact trusted comparison</div>
-          <h2 id="what-changed-title" className="mt-meta font-board text-2xl font-semibold text-text-primary tablet:text-3xl">What Changed</h2>
+          <h2 id="what-changed-title" className={`mt-meta font-board font-semibold text-text-primary ${compact ? 'text-xl' : 'text-2xl tablet:text-3xl'}`}>What Changed</h2>
           <ComparisonWindow view={view} />
           {view.teamStateOutcome === 'unchanged' ? <p className="type-metadata mt-meta text-text-secondary">Team State was unchanged across this exact pair.</p> : null}
         </header>
@@ -68,7 +69,7 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
         ) : view.state === 'unavailable' ? (
           <SectionState status="unavailable" title={view.previousDate ? 'What Changed unavailable' : 'No prior trusted comparison'} message={view.previousDate ? 'The frozen comparison is unavailable for this update.' : 'No exact earlier trusted update is available for comparison.'} className="mt-section" />
         ) : view.state === 'quiet' ? (
-          <div className="section-state mt-section rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
+          <div className="section-state mt-panel rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
             <p className="type-compact">{view.quietMessage || 'No material bullpen changes since the previous trusted update.'}</p>
           </div>
         ) : view.events.length ? (

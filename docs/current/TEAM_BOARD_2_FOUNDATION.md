@@ -587,6 +587,61 @@ details response at 211/217/212 ms (212 ms median), and TB-10 readiness at
 26/44/25 ms (26 ms median). These are fixture measurements, not production
 latency claims.
 
+## TB-11 final product cohesion
+
+The assembled-board audit found four bounded presentation issues: What Changed
+sat below most detail sections, the deep relief ledger expanded every date by
+default, Recent Usage repeated current-rest recency already owned by Active
+Bullpen, and the What Changed loading placeholder was materially taller than a
+quiet result. No semantic-authority, identity, or data-acquisition defect was
+found.
+
+The final order is Answer Block, Active Bullpen, What Changed, Recent Usage,
+Rest and Workload Overview, Roles and Deployment, Performance, Rotation
+Impact, Roster and Transactions, then Recent Relief Work. This keeps the
+answer and current group first, promotes the exact trusted comparison for a
+returning user, moves through use and deployment context, and ends with the
+game-level evidence ledger. A quiet comparison uses compact chrome; populated
+changes remain prominent and retain their governed handoffs.
+
+Active Bullpen remains the owner of current rest. Recent Usage now focuses on
+the independently governed yesterday/3-day/7-day windows and usage patterns.
+Recent Relief Work leads with the newest two game dates and exposes older
+dates in a keyboard-native disclosure; it does not remove evidence or change
+the backend order. Its loading state is a compact deep-detail placeholder.
+What Changed uses a compact placeholder matched to its common quiet geometry,
+while TB-01 and TB-02 remain usable before details arrive.
+
+The 390-pixel layout stays stacked with no primary horizontal overflow; the
+768-pixel layout retains deliberate single-column chapter flow rather than a
+cramped half-desktop grid; the 1440-pixel layout uses the existing paired
+desktop sections for density. A full-board accessibility scan at all three
+widths found no violations after changing the non-sectional workload-window
+labels from headings to ordinary text. Native details/summary behavior,
+visible focus, textual evidence states, semantic tables/lists, and canonical
+pitcher links remain intact. A deferred-details browser check measured
+post-core hydration layout shift below 0.1 and kept the answer/active geometry
+within 20 pixels.
+
+The request audit observed one core request and one identity-bound details
+request per selected team, including BAL to LAD switching, with no stale team
+content attached. No endpoint or backend composition change was required.
+Three local fixture samples measured core readiness at 241 ms median
+(232–265 ms), details response at 238 ms median (230–244 ms), and full-board
+readiness at the relief ledger at 264 ms median (257–271 ms). The
+details-response-to-full-board render interval was 27 ms median (25–27 ms).
+The six product-task browser journey reached the current-situation answer in
+252 ms and verified What Changed, workload, deployment, rotation explanation,
+and game receipts by 304 ms. These are local fixture measurements, not
+production latency claims.
+
+The final exit audit found no Team Board domain blocker. Known limitations
+remain authority-bound: some metrics or comparison domains can be partial or
+not published; older trusted packages do not synthesize newer carriers; and
+network-bound details latency remains distinct from the fast core. Team Board
+2.0 is complete without changing those meanings. Sync-pipeline work, atomic
+authority, new publication domains, and migrations remain outside TB-11.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

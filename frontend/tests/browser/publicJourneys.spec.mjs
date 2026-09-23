@@ -118,6 +118,7 @@ async function installApiFixtures(page, {
   partialCarrier = false,
   partialDeployment = false,
   partialTransactions = false,
+  quietWhatChanged = false,
   corruptTeams = false,
   finderNoResults = false,
 } = {}) {
@@ -177,6 +178,11 @@ async function installApiFixtures(page, {
       if (partialTransactions) {
         details.recent_transactions.status = 'partial'
         details.recent_transactions.limitations = ['One unverified transaction was withheld.']
+      }
+      if (quietWhatChanged) {
+        details.what_changed.state = 'quiet'
+        details.what_changed.quiet_message = 'No material bullpen changes since the previous trusted update.'
+        details.what_changed.events = []
       }
       return detailsFailure
         ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture detail outage' }) })
@@ -780,6 +786,91 @@ test('TB-10 local fixture readiness remains deferred with a bounded render inter
   expect(responses.core).toBeDefined()
   expect(responses.details).toBeDefined()
   console.log(`TB-10 local fixture: core=${Math.round(coreReady - start)}ms details-response=${Math.round(responses.details - start)}ms ledger-ready=${Math.round(ledgerReady - start)}ms details-to-ledger=${Math.round(ledgerReady - responses.details)}ms`)
+})
+
+test('TB-11 final Team Board hierarchy is answer-first, responsive, and accessible', async ({ page }) => {
+  await installApiFixtures(page)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/bullpen?team=BAL')
+
+    const answer = page.getByTestId('team-board-answer-block')
+    const active = page.getByTestId('team-board-active-bullpen')
+    const changed = page.getByTestId('team-board-what-changed')
+    const usage = page.getByTestId('team-board-recent-usage')
+    const receipts = page.getByTestId('team-board-recent-relief-work')
+    await expect(answer).toContainText('Team State: Fresh')
+    await expect(changed).toContainText('BAL Fixture Reliever joined the active bullpen.')
+    await expect(receipts).toContainText('BAL Fixture Reliever')
+
+    const positions = await Promise.all([answer, active, changed, usage, receipts].map(async locator => (await locator.boundingBox()).y))
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    await expectNoPageOverflow(page)
+
+    const accessibility = await new AxeBuilder({ page }).include('main').analyze()
+    expect(accessibility.violations).toEqual([])
+  }
+})
+
+test('TB-11 requests core and matching details once per team and drops prior-team content', async ({ page }) => {
+  const requestCounts = new Map()
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (!path.includes('/board-v2/')) return
+    requestCounts.set(path, (requestCounts.get(path) || 0) + 1)
+  })
+  await installApiFixtures(page)
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-recent-relief-work')).toContainText('BAL Fixture Reliever')
+  await page.getByLabel('Select team for Team Board').selectOption('119')
+  await expect(page.getByTestId('team-board-recent-relief-work')).toContainText('LAD Fixture Reliever')
+  await expect(page.getByTestId('team-board-what-changed')).not.toContainText('BAL Fixture Reliever')
+
+  for (const teamId of [110, 119]) {
+    expect(requestCounts.get(`/api/bullpen/teams/${teamId}/board-v2/core`)).toBe(1)
+    expect(requestCounts.get(`/api/bullpen/teams/${teamId}/board-v2/details`)).toBe(1)
+  }
+})
+
+test('TB-11 keeps a quiet What Changed compact and the core layout stable during details hydration', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__teamBoardLayoutShift = 0
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) {
+        if (!entry.hadRecentInput) window.__teamBoardLayoutShift += entry.value
+      }
+    }).observe({ type: 'layout-shift', buffered: true })
+  })
+  const fixtures = await installApiFixtures(page, { deferDetails: true, quietWhatChanged: true })
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.goto('/bullpen?team=BOS')
+  const answer = page.getByTestId('team-board-answer-block')
+  const active = page.getByTestId('team-board-active-bullpen')
+  await expect(answer).toContainText('Team State: Fresh')
+  const before = await Promise.all([answer, active].map(async locator => (await locator.boundingBox()).y))
+  await page.evaluate(() => { window.__teamBoardLayoutShift = 0 })
+  fixtures.releaseDetails()
+  const changed = page.getByTestId('team-board-what-changed')
+  await expect(changed).toContainText('No material bullpen changes since the previous trusted update.')
+  const after = await Promise.all([answer, active].map(async locator => (await locator.boundingBox()).y))
+  expect(Math.abs((after[1] - after[0]) - (before[1] - before[0]))).toBeLessThanOrEqual(20)
+  expect((await changed.boundingBox()).height).toBeLessThan(400)
+  expect(await page.evaluate(() => window.__teamBoardLayoutShift)).toBeLessThan(0.1)
+})
+
+test('TB-11 answers the six final Team Board product journeys without leaving the board', async ({ page }) => {
+  await installApiFixtures(page)
+  const started = performance.now()
+  await page.goto('/bullpen?team=BAL')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team State: Fresh')
+  const situationReady = performance.now() - started
+  await expect(page.getByTestId('team-board-what-changed')).toContainText('joined the active bullpen')
+  await expect(page.getByTestId('team-board-workload-overview')).toContainText('7 Days')
+  await expect(page.getByTestId('team-board-roles-deployment')).toContainText('Roles & Deployment')
+  await expect(page.getByTestId('team-board-rotation-impact')).toContainText('Rotation Impact')
+  await expect(page.getByTestId('team-board-recent-relief-work')).toContainText('BAL Fixture Reliever')
+  const allJourneysReady = performance.now() - started
+  console.log(`TB-11 product journeys: situation=${Math.round(situationReady)}ms all-six=${Math.round(allJourneysReady)}ms`)
 })
 
 test('Team Board share disclosure uses native controls and returns focus on Escape', async ({ page }) => {
