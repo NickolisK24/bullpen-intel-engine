@@ -120,6 +120,7 @@ from services.team_board_what_changed import (
     EVENT_METHOD_VERSION as WHAT_CHANGED_EVENT_METHOD_VERSION,
     METHOD_VERSION as WHAT_CHANGED_METHOD_VERSION,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.workload_concentration import summarize_recent_relief_workload
 from utils.db import db
 
@@ -304,7 +305,10 @@ def build_frozen_team_board_package(dashboard_payload):
 
     pitchers = (
         Pitcher.query
-        .filter(Pitcher.active == True, Pitcher.team_id.isnot(None))
+        .filter(
+            Pitcher.active == True,
+            Pitcher.team_id.in_(MLB_TEAM_IDS),
+        )
         .order_by(Pitcher.team_id, Pitcher.full_name)
         .all()
     )
@@ -661,7 +665,6 @@ def build_frozen_team_board_package(dashboard_payload):
             'bullpen_environment': _support_for_team(payload, 'bullpen_environment', team_id),
         }
 
-    from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_board_snapshot_team_state import build_team_accounting
 
     return {

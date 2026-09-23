@@ -53,6 +53,7 @@ TEAM_IDS = (
     133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146,
     147, 158,
 )
+NONCANONICAL_TEAM_IDS = (484, 531, 534, 5434)
 
 
 def _seed_teams(reference_date):
@@ -198,6 +199,38 @@ def _seed_teams(reference_date):
     seed_roster_readiness_snapshots([reference_date])
 
 
+def _seed_noncanonical_organizations(reference_date):
+    for index, team_id in enumerate(NONCANONICAL_TEAM_IDS):
+        pitcher = Pitcher(
+            mlb_id=7950000 + index,
+            full_name=f'Noncanonical Organization Pitcher {team_id}',
+            team_id=team_id,
+            team_name=f'Noncanonical Organization {team_id}',
+            team_abbreviation=f'N{index}',
+            position='P', active=True, roster_status='active',
+            roster_status_source='test_fixture',
+            roster_status_updated_at=utc_now_naive(),
+        )
+        db.session.add(pitcher)
+        db.session.flush()
+        db.session.add(GameLog(
+            pitcher_id=pitcher.id, mlb_game_pk=7950000 + index,
+            game_date=reference_date - timedelta(days=1), game_type='R',
+            games_started=0, innings_pitched=1.0, innings_pitched_outs=3,
+            pitches_thrown=12 + index, appearance_team_id=team_id,
+            appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        ))
+        db.session.add(FatigueScore(
+            pitcher_id=pitcher.id, calculated_at=utc_now_naive(),
+            raw_score=10.0, pitch_count_score=5.0, rest_days_score=5.0,
+            appearances_score=5.0, leverage_score=5.0, innings_score=5.0,
+            days_since_last_appearance=1, appearances_last_7=1,
+            appearances_last_14=1, pitches_last_7_days=12 + index,
+            innings_last_7_days=1.0, risk_level='LOW',
+        ))
+    db.session.commit()
+
+
 def _assert_workload_carrier(snapshot, team_id):
     package = snapshot.payload['trusted_team_boards']['by_team_id'][str(team_id)]
     carrier = package['workload_windows']['overview']
@@ -249,6 +282,7 @@ def test_trusted_publication_rehearsal(monkeypatch):
         try:
             reference_date = public_serving_authority.product_current_date()
             _seed_teams(reference_date)
+            _seed_noncanonical_organizations(reference_date)
             represented_date = reference_date - timedelta(days=1)
             first_pitcher = Pitcher.query.filter_by(mlb_id=7900000).one()
             db.session.add(PlayerTransactionSyncWindow(
@@ -525,6 +559,11 @@ def test_trusted_publication_rehearsal(monkeypatch):
                     snapshot, readiness_resolver=governed_rehearsal_readiness,
                 )
                 assert len(rehearsal_proof['snapshot_team_state_generation_inputs']) == 30
+                assert set(
+                    snapshot.payload['trusted_team_boards'][
+                        'frozen_team_state_by_team_id'
+                    ]
+                ) == {str(team_id) for team_id in TEAM_IDS}
                 assert all(
                     'frozen_team_state' in team
                     for team in snapshot.payload['trusted_team_boards']['by_team_id'].values()
@@ -883,6 +922,9 @@ def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
             package = snapshot.payload['trusted_team_boards']
             assert package['team_count'] == 18
             assert set(package['by_team_id']) == {str(team_id) for team_id in TEAM_IDS[:18]}
+            assert not set(package['by_team_id']).intersection(
+                {str(team_id) for team_id in NONCANONICAL_TEAM_IDS}
+            )
             assert package['team_accounting']['accounted_team_count'] == 30
 
             def readiness(team_id, *, reference_dates_out, **_kwargs):
@@ -945,6 +987,9 @@ def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
                 assert len(proof['teams']) == 30
                 assert len(package['frozen_team_state_by_team_id']) == 30
                 assert len(package['by_team_id']) == 18
+                assert set(package['frozen_team_state_by_team_id']) == {
+                    str(team_id) for team_id in TEAM_IDS
+                }
             finally:
                 savepoint.rollback()
                 db.session.expire(snapshot)
