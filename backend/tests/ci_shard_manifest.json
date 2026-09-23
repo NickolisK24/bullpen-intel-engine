@@ -1257,6 +1257,10 @@
           "measured_seconds": 0.67
         },
         {
+          "path": "tests/test_team_board_recent_relief_work.py",
+          "measured_seconds": 0.1
+        },
+        {
           "path": "tests/test_team_board_roster_transactions.py",
           "measured_seconds": 0.0
         },

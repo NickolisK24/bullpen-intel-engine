@@ -80,22 +80,24 @@ def _build_deferred_sections(team_id, board, snapshot):
     represented_date = snapshot.data_through
     freshness = board.get('freshness') or {}
 
-    try:
-        relief_work = build_public_team_relief_work_payload(
-            team_id,
-            data_through=represented_date,
-            freshness=freshness,
-        )
-    except TeamNotFoundError:
-        raise
-    except Exception:
-        current_app.logger.exception(
-            'Team Board optional section failed: section=recent_relief_work.'
-        )
-        relief_work = None
-        section_errors['recent_relief_work'] = unavailable_section(
-            'recent_relief_work_unavailable'
-        )
+    # TB-10 is frozen with the selected trusted package. The legacy read is
+    # retained only as an older-snapshot input for TB-03/TB-04 compatibility;
+    # it is never exposed as the new TB-10 ledger.
+    relief_work = board.get('frozen_recent_relief_work')
+    legacy_relief_work = None
+    if relief_work is None or board.get('workload_overview') is None:
+        try:
+            legacy_relief_work = build_public_team_relief_work_payload(
+                team_id,
+                data_through=represented_date,
+                freshness=freshness,
+            )
+        except TeamNotFoundError:
+            raise
+        except Exception:
+            current_app.logger.exception(
+                'Team Board compatibility section failed: section=legacy_relief_work.'
+            )
 
     reference_date = _freshness_reference_date(freshness)
     game_context, game_error = _optional_failure(
@@ -119,6 +121,7 @@ def _build_deferred_sections(team_id, board, snapshot):
 
     return {
         'recent_relief_work': relief_work,
+        'legacy_relief_work': legacy_relief_work,
         'recent_transactions': recent_transactions,
         'game_context': game_context,
         'performance': performance,

@@ -111,18 +111,30 @@ function ReliefWorkSkeleton() {
 function PitcherName({ appearance, onSelectPitcher }) {
   const name = textValue(appearance?.pitcher_full_name) || 'Pitcher unavailable'
   const pitcherId = appearance?.pitcher_id
-  if (pitcherId == null || typeof onSelectPitcher !== 'function') {
+  if (pitcherId == null) {
     return <span className="break-words">{name}</span>
   }
   return (
-    <button
-      type="button"
+    <a
+      href={`/pitcher/${pitcherId}`}
       className="min-h-11 break-words text-left font-board text-board-body font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
-      onClick={event => onSelectPitcher(pitcherId, event.currentTarget)}
+      onClick={typeof onSelectPitcher === 'function' ? event => {
+        event.preventDefault()
+        onSelectPitcher(pitcherId)
+      } : undefined}
     >
       {name}
-    </button>
+    </a>
   )
+}
+
+function appearanceFacts(appearance) {
+  const facts = []
+  if (appearance?.multi_inning?.status === 'complete' && appearance.multi_inning.value === true) facts.push('Multi-inning')
+  if (appearance?.save?.status === 'complete' && appearance.save.value === true) facts.push('Save')
+  if (appearance?.hold?.status === 'complete' && appearance.hold.value === true) facts.push('Hold')
+  if (appearance?.game_finished?.status === 'complete' && appearance.game_finished.value === true) facts.push('Game finished')
+  return facts
 }
 
 function gameContextView(game) {
@@ -197,6 +209,7 @@ function DateSummary({ group, headingId }) {
 
 function MobileAppearance({ appearance, onSelectPitcher }) {
   const innings = formatBaseballIpFromOuts(appearance?.innings_pitched_outs)
+  const facts = appearanceFacts(appearance)
   return (
     <li className="min-h-16 border-b border-line-subtle py-row last:border-b-0">
       <div className="flex min-w-0 items-start justify-between gap-panel">
@@ -206,11 +219,8 @@ function MobileAppearance({ appearance, onSelectPitcher }) {
         <div className="shrink-0 type-data text-right text-text-primary">{innings == null ? '—' : innings} IP</div>
       </div>
       <p className="type-data mt-meta flex flex-wrap gap-x-meta gap-y-1 text-text-secondary">
-        <span>{formatCount(appearance?.pitches_thrown)} P</span><span aria-hidden="true">·</span>
-        <span>{formatCount(appearance?.strikeouts)} K</span><span aria-hidden="true">·</span>
-        <span>{formatCount(appearance?.walks)} BB</span><span aria-hidden="true">·</span>
-        <span>{formatCount(appearance?.hits_allowed)} H</span><span aria-hidden="true">·</span>
-        <span>{formatCount(appearance?.runs_allowed)} R</span>
+        <span>{formatCount(appearance?.pitches_thrown)} pitches</span>
+        {facts.map(fact => <span key={fact}>· {fact}</span>)}
       </p>
     </li>
   )
@@ -224,7 +234,7 @@ function MobileGameGroup({ section, multipleGames, groupKey, sectionIndex, onSel
     <section aria-labelledby={showGameRow ? headingId : undefined}>
       {showGameRow && (
         <h4 id={headingId} className="type-overline border-b border-line-subtle py-row">
-          {label || 'Game context unavailable'}
+          {label || 'Game context unavailable'}{section?.game?.finality?.game_status === 'final' ? ' · Final' : ''}
         </h4>
       )}
       <GameContextContent game={section?.game} />
@@ -271,6 +281,7 @@ function MobileLedger({ groups, onSelectPitcher }) {
 
 function TableAppearanceRow({ appearance, showStatusColumn, onSelectPitcher }) {
   const innings = formatBaseballIpFromOuts(appearance?.innings_pitched_outs)
+  const facts = appearanceFacts(appearance)
   return (
     <tr className="border-b border-line-subtle last:border-b-0">
       <th scope="row" className="min-w-0 py-row pr-panel text-left type-data font-semibold text-text-primary">
@@ -278,10 +289,7 @@ function TableAppearanceRow({ appearance, showStatusColumn, onSelectPitcher }) {
       </th>
       <td className="px-meta py-row text-right type-data text-text-primary">{innings == null ? '—' : innings}</td>
       <td className="px-meta py-row text-right type-data text-text-primary">{formatCount(appearance?.pitches_thrown)}</td>
-      <td className="px-meta py-row text-right type-data text-text-primary">{formatCount(appearance?.strikeouts)}</td>
-      <td className="px-meta py-row text-right type-data text-text-primary">{formatCount(appearance?.walks)}</td>
-      <td className="px-meta py-row text-right type-data text-text-primary">{formatCount(appearance?.hits_allowed)}</td>
-      <td className="py-row pl-meta pr-panel text-right type-data text-text-primary">{formatCount(appearance?.runs_allowed)}</td>
+      <td colSpan="4" className="py-row pl-panel pr-panel text-left type-metadata">{facts.length ? facts.join(' · ') : '—'}</td>
       {showStatusColumn && <td className="hidden min-w-52 py-row pl-panel type-metadata lg:table-cell">{statusValue(appearance) || '—'}</td>}
     </tr>
   )
@@ -297,7 +305,7 @@ function TableGameRows({ section, multipleGames, groupKey, sectionIndex, showSta
       {showGameRow && (
         <tr className="border-b border-line-subtle">
           <th scope="rowgroup" colSpan={columnCount} className="py-row text-left type-overline" id={`${groupKey}-table-game-${sectionIndex}`}>
-            {label || 'Game context unavailable'}
+            {label || 'Game context unavailable'}{section?.game?.finality?.game_status === 'final' ? ' · Final' : ''}
           </th>
         </tr>
       )}
@@ -335,9 +343,10 @@ function TableLedger({ groups, showStatusColumn, onSelectPitcher }) {
       <thead className="sticky top-0 z-10 bg-surface-base">
         <tr className="border-b border-line-default">
           <th scope="col" className="py-row pr-panel text-left type-overline">Arm</th>
-          {['IP', 'P', 'K', 'BB', 'H', 'R'].map(label => (
+          {['IP', 'P'].map(label => (
             <th key={label} scope="col" className={label === 'R' ? 'py-row pl-meta pr-panel text-right type-overline' : 'px-meta py-row text-right type-overline'}>{label}</th>
           ))}
+          <th scope="col" colSpan="4" className="py-row pl-panel pr-panel text-left type-overline">Recorded facts</th>
           {showStatusColumn && <th scope="col" className="hidden py-row pl-panel text-left type-overline lg:table-cell">Status</th>}
         </tr>
       </thead>

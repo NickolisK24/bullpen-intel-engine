@@ -107,6 +107,14 @@ from services.team_board_roster_transactions import (
     CONTRACT as ROSTER_TRANSACTIONS_CONTRACT,
     author_frozen_roster_transactions,
 )
+from services.team_board_recent_relief_work import (
+    CONTRACT as RECENT_RELIEF_WORK_CONTRACT,
+    METHOD_VERSION as RECENT_RELIEF_WORK_METHOD_VERSION,
+    author_frozen_recent_relief_work,
+    load_final_game_authority,
+    load_unresolved_current_roster_counts,
+    valid_frozen_recent_relief_work,
+)
 from services.team_board_what_changed import (
     CONTRACT as WHAT_CHANGED_CONTRACT,
     EVENT_METHOD_VERSION as WHAT_CHANGED_EVENT_METHOD_VERSION,
@@ -392,6 +400,14 @@ def build_frozen_team_board_package(dashboard_payload):
         reference_date=parse_reference_date(represented_data_through),
         include_event_direction=True,
     )
+    final_games_by_team = load_final_game_authority(
+        records_by_team,
+        data_through=represented_data_through,
+    )
+    unresolved_relief_counts = load_unresolved_current_roster_counts(
+        records_by_team,
+        data_through=represented_data_through,
+    )
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -458,6 +474,15 @@ def build_frozen_team_board_package(dashboard_payload):
         )
         deployment_profile = relief_authority['deployment_profile']
         publication_rows = relief_authority.pop('_publication_team_rows', [])
+        recent_relief_work = author_frozen_recent_relief_work(
+            team_id,
+            publication_rows,
+            data_through=represented_data_through,
+            final_games=final_games_by_team.get(team_id),
+            unresolved_current_roster_count=unresolved_relief_counts.get(team_id, 0),
+            active_pitcher_ids=default_ids,
+            team_board_package_contract=TEAM_BOARD_PACKAGE_CONTRACT,
+        )
         deployment_anchor = parse_reference_date(represented_data_through)
         deployment_context = (
             author_public_deployment_context(
@@ -567,6 +592,13 @@ def build_frozen_team_board_package(dashboard_payload):
                 'data_through': deployment_profile.get('data_through'),
             },
             'recent_usage_rest': deepcopy(recent_usage_rest),
+            'recent_relief_work': deepcopy(recent_relief_work),
+            'recent_relief_work_authority': {
+                'method_version': RECENT_RELIEF_WORK_METHOD_VERSION,
+                'public_contract_version': RECENT_RELIEF_WORK_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'data_through': recent_relief_work.get('data_through'),
+            },
             'recent_usage_rest_authority': {
                 'method_version': RECENT_USAGE_REST_METHOD_VERSION,
                 'public_contract_version': (
@@ -1159,6 +1191,35 @@ def _frozen_performance_for_view(snapshot, team_package, team_id):
     return deepcopy(read)
 
 
+def _frozen_recent_relief_work_for_view(snapshot, team_package, team_id):
+    """Attach TB-10 only from this exact trusted team package."""
+    carrier = team_package.get('recent_relief_work')
+    authority = team_package.get('recent_relief_work_authority')
+    represented = _iso(getattr(snapshot, 'data_through', None))
+    if (
+        not isinstance(carrier, Mapping)
+        or not isinstance(authority, Mapping)
+        or carrier.get('contract') != RECENT_RELIEF_WORK_CONTRACT
+        or carrier.get('method_version') != RECENT_RELIEF_WORK_METHOD_VERSION
+        or carrier.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or carrier.get('team_id') != team_id
+        or carrier.get('data_through') != represented
+        or carrier.get('status') not in {'complete', 'partial', 'unavailable'}
+        or authority.get('method_version') != RECENT_RELIEF_WORK_METHOD_VERSION
+        or authority.get('public_contract_version') != RECENT_RELIEF_WORK_CONTRACT
+        or authority.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('data_through') != represented
+        or not valid_frozen_recent_relief_work(
+            carrier,
+            team_id=team_id,
+            data_through=represented,
+            team_board_package_contract=TEAM_BOARD_PACKAGE_CONTRACT,
+        )
+    ):
+        return None
+    return deepcopy(carrier)
+
+
 def _frozen_legacy_deployment_profile_for_view(snapshot, team_package):
     """Keep old publications' already-frozen profile without mutable fallback."""
     if 'roles_deployment' in team_package:
@@ -1239,6 +1300,9 @@ def build_published_team_board(
             snapshot, team_package, team_id,
         )
         payload['frozen_what_changed'] = _frozen_what_changed_for_view(
+            snapshot, team_package, team_id,
+        )
+        payload['frozen_recent_relief_work'] = _frozen_recent_relief_work_for_view(
             snapshot, team_package, team_id,
         )
         payload['frozen_legacy_deployment_profile'] = (

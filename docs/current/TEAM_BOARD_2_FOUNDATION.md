@@ -535,6 +535,58 @@ These are local fixture measurements, not production latency. The trusted
 publication rehearsal supplies the authoritative integrated PostgreSQL release
 proof and never moves a publication pointer.
 
+## TB-10 Recent Relief Work
+
+TB-10 freezes `team_board_recent_relief_work_v1` during trusted Dashboard
+assembly from the same 30-day official appearance-team row set already loaded
+for Team Board workload and deployment. Its reader-facing ledger is the latest
+five completed game dates with a represented-team relief appearance, newest
+first. Doubleheaders remain separate by MLB game identity and official game
+number. Within a game the fallback order is deterministic pitcher name,
+pitcher identity, then source row identity; because an authoritative pitching
+change sequence is not stored on every official line, that fallback does not
+claim bullpen entry order.
+
+The ready public facts are game identity/date, opponent where recorded,
+scheduled-final status, pitcher identity, recorded pitches, integer outs and
+baseball innings, multi-inning status using the existing four-out definition,
+save, hold, game-finished, and frozen current active/off-active roster context.
+Home/away is shown only when the final schedule row carries it. Per-appearance
+entry inning and leverage are intentionally not published in TB-10: TB-05's
+governed aggregates do not certify those facts for every ledger row. Other raw
+pitching-line fields remain outside this slice rather than acquiring a new
+zero or completeness meaning.
+
+Every appearance is owned by `appearance_team_id`; a current-team pitcher’s
+prior-team work cannot enter the current-team ledger, while a valid appearance
+for a pitcher now off-active remains. Rows without final team-game authority
+or resolved appearance-team ownership are withheld and make the carrier
+partial. Missing pitches remain unknown, never zero; recorded zero and zero
+outs remain legitimate complete values. Game-level totals are authored once
+from the displayed frozen rows and are null when their inputs are incomplete.
+
+The details route serves only the carrier in the selected trusted package.
+Older snapshots lack TB-10 and do not rebuild it from mutable `GameLog` rows.
+The existing core/details identity plus carrier team, represented date,
+contract, finality, and appearance ownership checks withhold only TB-10 on a
+mismatch. The frontend formats this backend record, preserves its order, and
+does no totals, finality, ownership, multi-inning, or roster inference. The
+mobile view stacks semantic game groups without horizontal scrolling; the
+desktop view uses a compact table. Pitcher names are canonical `/pitcher/:id`
+links, and all finality/evidence limits are textual rather than color-only.
+
+Publication uses the existing appearance query plus two league-wide bounded
+reads: final schedule authority and unresolved-attribution counts. There are
+no per-pitcher or per-game queries and no request-time relief-work query for
+new packages. In the disposable 30-team rehearsal fixture, those two source
+queries fed 30 in-memory projections in 0.994 ms; the carriers serialized in
+0.537 ms to 93,856 bytes total (3,218 bytes for the sampled team). Three local
+browser samples measured core readiness at 213/238/214 ms (214 ms median),
+details response at 211/217/212 ms (212 ms median), and TB-10 readiness at
+237/261/237 ms (237 ms median). The details-to-ledger render interval was
+26/44/25 ms (26 ms median). These are fixture measurements, not production
+latency claims.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

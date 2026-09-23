@@ -204,6 +204,7 @@ def _board(*, rotation=None, roster_authority=None):
         'frozen_performance': _performance(),
         'frozen_roster_transactions': _frozen_roster_transactions(),
         'frozen_what_changed': _what_changed(),
+        'frozen_recent_relief_work': _relief_work(),
         'publication_method_versions': {
             'bullpen_membership': 'team_board_default_bullpen_membership_v1',
             'rest_status': 'rest_status_v1',
@@ -1304,17 +1305,12 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 
 
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
-    calls = {'board': 0, 'relief': 0, 'game': 0}
+    calls = {'board': 0, 'game': 0}
 
     def board(team_id, **_kwargs):
         calls['board'] += 1
         assert team_id == 1
         return _board()
-
-    def relief(team_id, **_kwargs):
-        calls['relief'] += 1
-        assert team_id == 1
-        return _relief_work()
 
     def game(team_id, reference_date=None):
         calls['game'] += 1
@@ -1323,13 +1319,12 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
         return _game_context()
 
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
-    monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', game)
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'relief': 1, 'game': 1}
+    assert calls == {'board': 1, 'game': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
     assert payload['recently_used_arms']['value'] == 1
@@ -1340,11 +1335,6 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
 
 def test_route_uses_frozen_what_changed_without_destroying_core(client, monkeypatch):
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id, **_kwargs: _board())
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: _relief_work(),
-    )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_team_game_context',
@@ -1358,15 +1348,12 @@ def test_route_uses_frozen_what_changed_without_destroying_core(client, monkeypa
 
 
 def test_route_scopes_optional_failure_without_destroying_core(client, monkeypatch):
+    missing_relief = _board()
+    missing_relief['frozen_recent_relief_work'] = None
     monkeypatch.setattr(
         team_board_v2_api,
         'build_published_team_board',
-        lambda _team_id, **_kwargs: _board(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+        lambda _team_id, **_kwargs: missing_relief,
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1395,11 +1382,6 @@ def test_route_scopes_performance_failure_without_changing_other_sections(client
     )
     monkeypatch.setattr(
         team_board_v2_api,
-        'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: _relief_work(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
     )
@@ -1422,11 +1404,6 @@ def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypat
         return _board()
 
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: _relief_work(),
-    )
     monkeypatch.setattr(
         team_board_v2_api,
         'build_team_game_context',
@@ -1453,11 +1430,6 @@ def test_route_missing_frozen_transaction_carrier_preserves_other_sections(clien
         team_board_v2_api,
         'build_published_team_board',
         lambda _team_id, **_kwargs: missing_transactions,
-    )
-    monkeypatch.setattr(
-        team_board_v2_api,
-        'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -1520,9 +1492,7 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
         'get_latest_valid_dashboard_snapshot', latest,
     )
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
-    for name in (
-        'build_public_team_relief_work_payload', 'build_team_game_context',
-    ):
+    for name in ('build_team_game_context',):
         monkeypatch.setattr(
             team_board_v2_api, name,
             lambda *_args, _name=name, **_kwargs: pytest.fail(
@@ -1774,23 +1744,23 @@ def test_deferred_builders_are_bound_to_selected_snapshot_date_and_identity(
 ):
     snapshot = _snapshot(1900)
     board = _board()
-    captured = {}
-
-    def relief(team_id, *, data_through, freshness):
-        captured['relief'] = (team_id, data_through, freshness)
-        return _relief_work()
-
-    monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(
         team_board_v2_api, 'build_team_game_context',
         lambda team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api, 'build_public_team_relief_work_payload',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('new publications must not read mutable TB-10 rows')
+        ),
     )
 
     app = Flask(__name__)
     with app.app_context():
         sections = team_board_v2_api._build_deferred_sections(1, board, snapshot)
 
-    assert captured['relief'] == (1, date(2026, 8, 16), board['freshness'])
+    assert sections['recent_relief_work'] == board['frozen_recent_relief_work']
+    assert sections['legacy_relief_work'] is None
     assert sections['what_changed'] == board['frozen_what_changed']
     assert sections['performance'] == _performance()
 
@@ -1858,7 +1828,6 @@ def test_details_serves_frozen_roster_transactions_without_mutable_transaction_r
         lambda *_args, **_kwargs: pytest.fail('request-time transaction query'),
     )
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda _team_id, **_kwargs: _board())
-    monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', lambda _team_id, **_kwargs: _relief_work())
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', lambda _team_id, reference_date=None: _game_context())
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
@@ -1873,10 +1842,6 @@ def test_deferred_route_reads_frozen_performance_without_mutable_metric_query(cl
     monkeypatch.setattr(
         team_board_v2_api, 'build_published_team_board',
         lambda _team_id, **_kwargs: _board(),
-    )
-    monkeypatch.setattr(
-        team_board_v2_api, 'build_public_team_relief_work_payload',
-        lambda _team_id, **_kwargs: _relief_work(),
     )
     monkeypatch.setattr(
         team_board_v2_api, 'build_team_game_context',
