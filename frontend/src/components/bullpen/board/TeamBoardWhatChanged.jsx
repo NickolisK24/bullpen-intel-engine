@@ -1,6 +1,7 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
 import { getWhatChangedView } from './whatChangedView'
+import CompactSectionState from './CompactSectionState'
 
 function WhatChangedSkeleton() {
   return (
@@ -50,7 +51,7 @@ function ChangeItem({ event, onSelectPitcher }) {
 export default function TeamBoardWhatChanged({ changes, loading = false, error = null, onRetry, onSelectPitcher }) {
   if (loading) return <WhatChangedSkeleton />
   const view = getWhatChangedView(changes)
-  const compact = view.valid && view.state === 'quiet' && !error
+  const compact = !error && (!view.valid || view.state === 'quiet' || view.state === 'unavailable')
 
   return (
     <section id="what-changed" className="foundation-section" aria-labelledby="what-changed-title" data-testid="team-board-what-changed">
@@ -65,9 +66,9 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
         {error ? (
           <SectionState status="error" title="What Changed unavailable" message="Current bullpen changes could not be loaded." onRetry={onRetry} className="mt-section" />
         ) : !view.valid ? (
-          <SectionState status="unavailable" title="What Changed unavailable" message="This trusted update does not contain a frozen comparison." className="mt-section" />
+          <CompactSectionState title="What Changed unavailable" message="This trusted update does not contain a frozen comparison." className="mt-row" />
         ) : view.state === 'unavailable' ? (
-          <SectionState status="unavailable" title={view.previousDate ? 'What Changed unavailable' : 'No prior trusted comparison'} message={view.previousDate ? 'The frozen comparison is unavailable for this update.' : 'No exact earlier trusted update is available for comparison.'} className="mt-section" />
+          <CompactSectionState title={view.previousDate ? 'What Changed unavailable' : 'No prior trusted comparison'} message={view.previousDate ? 'The frozen comparison is unavailable for this update.' : 'No exact earlier trusted update is available for comparison.'} className="mt-row" />
         ) : view.state === 'quiet' ? (
           <div className="section-state mt-panel rounded-sm border border-line-subtle bg-surface-raised/20" role="status" data-state="quiet">
             <p className="type-compact">{view.quietMessage || 'No material bullpen changes since the previous trusted update.'}</p>

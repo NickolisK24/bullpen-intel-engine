@@ -54,16 +54,22 @@ function DeploymentFact({ label, evidence, children }) {
 }
 
 function FrozenDeployment({ deployment }) {
+  const leverageBroadlyUnavailable = deployment.profiles.length > 1 && deployment.profiles.every(
+    profile => profile.leverage?.status === 'unknown' || profile.leverage?.status === 'unavailable',
+  )
   return (
     <div className="mt-section border-t border-line-default pt-section" aria-label="Frozen observed bullpen deployment">
       <div className="type-overline">Observed deployment · 14 baseball days</div>
       <p className="type-compact mt-meta text-text-tertiary">Through {deployment.dataThrough}. Recorded leverage refers to the appearance-level index, not necessarily leverage at entry.</p>
+      {leverageBroadlyUnavailable && (
+        <p className="type-metadata mt-row text-text-withheld" role="note">Recorded leverage is not published for the arms in this snapshot.</p>
+      )}
       {deployment.profiles.length === 0 ? (
         <p className="type-compact mt-panel text-text-tertiary">No current arms have a published deployment profile.</p>
       ) : (
         <ol className="mt-panel divide-y divide-line-subtle border-y border-line-subtle" aria-label="Named-arm deployment evidence">
           {deployment.profiles.map(profile => (
-            <li key={profile.pitcherId} className="min-w-0 py-panel">
+            <li key={profile.pitcherId} className="min-w-0 py-row">
               <div className="flex flex-wrap items-baseline gap-x-row gap-y-1">
                 <h3 className="font-board text-board-body font-semibold text-text-primary">{profile.name}</h3>
                 <span className="type-compact text-text-secondary">{profile.role.label}</span>
@@ -75,19 +81,33 @@ function FrozenDeployment({ deployment }) {
                   {counted(profile.observed.gamesFinished, 'game finished', 'games finished')} · {counted(profile.observed.multiInning, 'multi-inning appearance')}
                 </p>
               )}
-              <dl className="mt-row grid min-w-0 gap-x-panel gap-y-row tablet:grid-cols-3">
-                <DeploymentFact label="Entry innings" evidence={profile.entry}>
-                  {profile.entry.byInning.map(row => `Inning ${row.inning}: ${row.appearances}`).join(' · ') || 'No recorded entries'}
-                  {' · '}{profile.entry.eighth_or_later_appearances} entered 8th or later
-                  {profile.entry.extra_inning_appearances > 0 && ` · ${counted(profile.entry.extra_inning_appearances, 'extra-inning entry', 'extra-inning entries')}`}
-                </DeploymentFact>
-                <DeploymentFact label="Score at entry" evidence={profile.score}>
-                  {profile.score.leading} leading · {profile.score.tied} tied · {profile.score.trailing} trailing
-                </DeploymentFact>
-                <DeploymentFact label="Recorded leverage" evidence={profile.leverage}>
-                  {profile.leverage.high} high · {profile.leverage.middle} middle · {profile.leverage.low} low
-                </DeploymentFact>
-              </dl>
+              <p className="type-metadata mt-meta text-text-secondary">
+                {profile.entry?.status === 'complete' || profile.entry?.status === 'partial'
+                  ? `${profile.entry.eighth_or_later_appearances} entries in the 8th or later`
+                  : 'Entry context not published'}
+                {' · '}
+                {profile.score?.status === 'complete' || profile.score?.status === 'partial'
+                  ? `${profile.score.leading} leading · ${profile.score.tied} tied · ${profile.score.trailing} trailing`
+                  : 'Score context not published'}
+              </p>
+              <details className="mt-meta" data-testid="deployment-detail">
+                <summary className="inline-flex min-h-11 cursor-pointer items-center font-board text-board-metadata font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus">View deployment detail</summary>
+                <dl className="mt-meta grid min-w-0 gap-x-panel gap-y-row rounded-sm bg-surface-raised/30 p-row tablet:grid-cols-3">
+                  <DeploymentFact label="Entry innings" evidence={profile.entry}>
+                    {profile.entry.byInning.map(row => `Inning ${row.inning}: ${row.appearances}`).join(' · ') || 'No recorded entries'}
+                    {' · '}{profile.entry.eighth_or_later_appearances} entered 8th or later
+                    {profile.entry.extra_inning_appearances > 0 && ` · ${counted(profile.entry.extra_inning_appearances, 'extra-inning entry', 'extra-inning entries')}`}
+                  </DeploymentFact>
+                  <DeploymentFact label="Score at entry" evidence={profile.score}>
+                    {profile.score.leading} leading · {profile.score.tied} tied · {profile.score.trailing} trailing
+                  </DeploymentFact>
+                  {!leverageBroadlyUnavailable && (
+                    <DeploymentFact label="Recorded leverage" evidence={profile.leverage}>
+                      {profile.leverage.high} high · {profile.leverage.middle} middle · {profile.leverage.low} low
+                    </DeploymentFact>
+                  )}
+                </dl>
+              </details>
               {profile.observed?.limitations?.length > 0 && <p className="type-compact mt-row text-text-withheld">{profile.observed.limitations.join(' ')}</p>}
             </li>
           ))}
@@ -148,12 +168,12 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="rounded-sm border border-line-subtle bg-surface-raised/30 px-panel" aria-label="Current role mix">
-              <dl className="divide-y divide-line-subtle" aria-label="Current active bullpen role composition">
+            <div className="rounded-sm border border-line-subtle bg-surface-raised/30 p-row" aria-label="Current role mix">
+              <dl className="flex flex-wrap gap-x-panel gap-y-meta" aria-label="Current active bullpen role composition">
                 {rows.map(row => (
-                  <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-panel py-row tablet:grid-cols-[minmax(12rem,1fr)_minmax(8rem,auto)]">
-                    <dt className={`font-board text-board-body font-medium min-w-0 break-words ${row.key === 'limited_read' || row.key === 'role-unavailable' ? 'text-text-withheld' : 'text-text-primary'}`}>{row.label}</dt>
-                    <dd className="font-board text-board-body whitespace-nowrap text-right font-semibold tabular-nums text-text-secondary">
+                  <div key={row.key} className="inline-flex min-w-0 items-baseline gap-meta">
+                    <dt className={`type-compact min-w-0 break-words ${row.key === 'limited_read' || row.key === 'role-unavailable' ? 'text-text-withheld' : 'text-text-secondary'}`}>{row.label}</dt>
+                    <dd className="font-board text-board-body whitespace-nowrap font-semibold tabular-nums text-text-primary">
                       {row.count} {row.count === 1 ? 'arm' : 'arms'}
                     </dd>
                   </div>

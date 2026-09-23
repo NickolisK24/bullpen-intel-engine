@@ -1,5 +1,6 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
+import CompactSectionState from './CompactSectionState'
 
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
 const numberValue = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
@@ -68,7 +69,10 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
     : 'unavailable'
   const frozenGames = read?.frozenRotationGames
   const summary = textValue(frozenGames ? frozenGames.summary : rotationRead?.summary)
-  const metrics = frozenGames ? [] : getRotationImpactMetrics(rotationImpact)
+  // Legacy partial reads do not carry metric-level certification. Rendering a
+  // stored zero from them would visually certify missing evidence, so only the
+  // fully available legacy contract can surface its aggregate values.
+  const metrics = frozenGames || statusName !== 'available' ? [] : getRotationImpactMetrics(rotationImpact)
   const windowDays = numberValue(frozenGames ? frozenGames.windowDays : rotationRead?.window_days)
   const gamesAnalyzed = numberValue(frozenGames ? frozenGames.gamesAnalyzed : rotationRead?.games_analyzed)
   const gamesInWindow = numberValue(frozenGames ? frozenGames.gamesInWindow : rotationRead?.games_in_window)
@@ -174,7 +178,7 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
           )}
 
           {!frozenGames && statusName === 'partial' && (
-            <SectionState status="partial" title="Rotation Impact is partially available" message={limitation || 'Some recent rotation context is unavailable.'} className={hasFacts ? 'mt-panel' : ''} />
+            <CompactSectionState status="partial" title="Limited evidence" message={limitation || 'Some recent rotation context is not published.'} className={hasFacts ? 'mt-panel' : ''} />
           )}
           {!frozenGames && statusName === 'available' && !hasFacts && (
             <div className="section-state" role="status" data-state="empty">

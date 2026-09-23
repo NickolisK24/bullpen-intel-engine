@@ -170,6 +170,28 @@ test('entry, score, and leverage limitations are independent and missing leverag
   assert.ok(html.includes('2 saves'))
 })
 
+test('deployment defaults to compact summaries and preserves full evidence in native disclosures', () => {
+  const deployment = frozen()
+  deployment.profiles.push({
+    ...structuredClone(deployment.profiles[0]),
+    pitcherId: 202,
+    name: 'Second Reliever',
+  })
+  deployment.profiles.forEach(profile => {
+    profile.leverage = { ...profile.leverage, status: 'unknown', low: null, middle: null, high: null }
+  })
+  const html = renderRoles({ read: {
+    ...read,
+    frozenPublicDeployment: deployment,
+  } })
+
+  assert.equal((html.match(/<details/g) || []).length, 2)
+  assert.equal((html.match(/View deployment detail/g) || []).length, 2)
+  assert.equal((html.match(/Recorded leverage is not published/g) || []).length, 1)
+  assert.equal(html.includes('Recorded leverage</dt>'), false)
+  assert.ok(html.includes('Inning 9: 2'))
+})
+
 test('all five public role labels render verbatim and extras remain exact counts', () => {
   const labels = ['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear']
   for (const label of labels) {

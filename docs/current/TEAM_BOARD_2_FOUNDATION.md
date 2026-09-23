@@ -642,6 +642,43 @@ network-bound details latency remains distinct from the fast core. Team Board
 2.0 is complete without changing those meanings. Sync-pipeline work, atomic
 authority, new publication domains, and migrations remain outside TB-11.
 
+## Final product-compression pass
+
+A production review after TB-11 found that the board was information-complete
+but gave repeated pitcher evidence and unavailable carriers nearly the same
+visual weight as useful baseball facts. The final hierarchy remains Answer,
+Active Bullpen, meaningful What Changed, Recent Usage/Rest and Workload,
+Roles/Deployment, then supporting Performance, Rotation and Transactions, with
+Recent Relief Work as deep evidence. Meaningful changes keep their promoted
+position; quiet and unavailable comparisons collapse to one truthful line.
+
+Recent Usage is now one compact comparison row per pitcher with yesterday,
+3-day, 7-day and pattern cells. Mobile uses wrapping two-column cells rather
+than a horizontally scrolling table. Active and off-active groups remain
+separate, and every backend value and evidence state is retained. Roles and
+Deployment now leads with the pitcher, public role, confidence and strongest
+recorded facts. Full inning, score and leverage distributions remain available
+inside native disclosures. When leverage is unavailable for the whole group,
+one section-level limitation replaces repeated unknown rows without hiding any
+known arm-level leverage.
+
+Unavailable Performance, Transactions and Recent Relief Work carriers share a
+compact state treatment instead of empty section-sized cards. The same
+treatment distinguishes Not published, Limited evidence, Unknown and error
+states without equating them with a certified empty result. Legacy partial
+rotation reads expose no aggregate zero unless their section contract is fully
+available; certified zero from an available contract still renders normally.
+This is a presentation gate only and does not introduce metric, role, workload,
+rest, transaction, comparison, finality or ownership logic.
+
+Before compression, the live BAL board measured 12,704 px tall at 390 px and
+9,062 px at 1440 px. Recent Usage alone measured 3,545/2,746 px and Roles and
+Deployment 3,173/2,056 px at those widths. Final fixture measurements and the
+production smoke are recorded with the product-compression PR because trusted
+production content can differ by snapshot. The request contract remains one
+core request followed by one exact identity-bound details request, with no new
+carrier, endpoint, migration, sync work or atomic authority.
+
 ## Trusted publication rehearsal release gate
 
 Run `python -m scripts.rehearse_trusted_publication` from `backend` with

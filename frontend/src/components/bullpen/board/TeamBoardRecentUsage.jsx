@@ -49,9 +49,9 @@ function PublishedNumber({ fact, label }) {
 
 function UsageWindow({ window }) {
   return (
-    <div className="min-w-0 border-l border-line-subtle pl-row first:border-l-0 first:pl-0">
-      <div className="font-board text-board-label font-semibold uppercase text-text-secondary">{window?.label || 'Window'}</div>
-      <dl className="mt-row grid min-w-0 gap-meta">
+    <div className="min-w-0 rounded-sm bg-surface-raised/40 px-row py-row tablet:rounded-none tablet:bg-transparent tablet:px-row">
+      <div className="font-board text-board-label font-semibold text-text-secondary">{window?.label || 'Window'}</div>
+      <dl className="mt-meta flex min-w-0 flex-wrap gap-x-row gap-y-1">
         <PublishedNumber fact={window?.appearances} label="Appearances" />
         <PublishedNumber fact={window?.pitches} label="Pitches" />
         <PublishedNumber fact={window?.outs} label="Outs" />
@@ -65,11 +65,11 @@ function PatternList({ pitcher }) {
   const limited = PATTERN_FIELDS.filter(([key]) => pitcher?.[key]?.status !== 'complete')
 
   return (
-    <div className="mt-row border-t border-line-subtle pt-row" aria-label={`Rest and usage patterns for ${pitcher.pitcherName || 'reliever'}`}>
-      <div className="type-overline">Rest / Usage Patterns</div>
+    <div className="min-w-0 rounded-sm bg-surface-raised/40 px-row py-row tablet:rounded-none tablet:bg-transparent" aria-label={`Rest and usage patterns for ${pitcher.pitcherName || 'reliever'}`}>
+      <div className="font-board text-board-label font-semibold text-text-secondary">Patterns</div>
       <div className="mt-meta flex min-w-0 flex-wrap gap-meta">
         {published.map(([key, label]) => (
-          <span key={key} className="inline-flex min-h-7 items-center rounded-sm border border-line-default bg-surface-raised px-2 py-1 font-board text-board-metadata font-medium text-text-secondary">
+          <span key={key} className="font-board text-board-metadata font-medium text-text-secondary">
             {label}
           </span>
         ))}
@@ -89,9 +89,9 @@ function PatternList({ pitcher }) {
 function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
   const canOpen = pitcher.pitcherId != null && typeof onSelectPitcher === 'function'
   return (
-    <article className={`min-w-0 border-b border-line-subtle py-panel first:pt-row last:border-b-0 last:pb-row ${subdued ? 'opacity-80' : ''}`}>
-      <div className="grid min-w-0 gap-panel desktop:grid-cols-[minmax(12rem,1fr)_minmax(0,3fr)] desktop:items-start">
-        <div className="min-w-0">
+    <article className={`min-w-0 border-b border-line-subtle py-row last:border-b-0 ${subdued ? 'opacity-80' : ''}`}>
+      <div className="grid min-w-0 grid-cols-2 gap-row tablet:grid-cols-[minmax(9rem,1.15fr)_repeat(3,minmax(0,1fr))_minmax(9rem,1.2fr)] tablet:items-center">
+        <div className="col-span-2 min-w-0 tablet:col-span-1">
           {canOpen ? (
             <button
               type="button"
@@ -105,11 +105,9 @@ function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
             <h3 className="font-board text-board-body font-semibold text-text-primary">{pitcher.pitcherName || 'Reliever'}</h3>
           )}
         </div>
-        <div className="grid min-w-0 grid-cols-3 gap-row" aria-label={`Published usage windows for ${pitcher.pitcherName || 'reliever'}`}>
-          {pitcher.windows.map((window, index) => <UsageWindow key={window?.key || `window-${index}`} window={window} />)}
-        </div>
+        {pitcher.windows.map((window, index) => <UsageWindow key={window?.key || `window-${index}`} window={window} />)}
+        <PatternList pitcher={pitcher} />
       </div>
-      <PatternList pitcher={pitcher} />
     </article>
   )
 }
@@ -117,7 +115,7 @@ function PitcherUsageRow({ pitcher, onSelectPitcher, subdued = false }) {
 function PitcherGroup({ pitchers, label, onSelectPitcher, subdued = false }) {
   if (pitchers.length === 0) return null
   return (
-    <div className={`min-w-0 rounded-sm border px-panel ${subdued ? 'mt-panel border-line-subtle bg-surface-base/50' : 'border-line-default bg-surface-raised/25'}`}>
+    <div className={`min-w-0 rounded-sm border px-row ${subdued ? 'mt-panel border-line-subtle bg-surface-base/50' : 'border-line-default bg-surface-raised/20'}`}>
       {label && <h3 className="border-b border-line-subtle py-row font-board text-board-body font-semibold text-text-secondary">{label}</h3>}
       <div role="list" aria-label={label || 'Current active bullpen recent usage'}>
         {pitchers.map((pitcher, index) => (
