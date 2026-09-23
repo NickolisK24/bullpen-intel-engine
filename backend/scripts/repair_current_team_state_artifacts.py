@@ -21,13 +21,26 @@ def main(argv=None):
     from app import app
     from services.dashboard_snapshot import get_latest_valid_dashboard_snapshot
     from services.league_team_state_artifact_recovery import (
+        LeagueTeamStateArtifactRecoveryError,
         repair_current_snapshot_artifacts,
     )
 
     with app.app_context():
         snapshot = get_latest_valid_dashboard_snapshot()
-        result = repair_current_snapshot_artifacts(snapshot)
-        payload = result.to_dict()
+        try:
+            result = repair_current_snapshot_artifacts(snapshot)
+        except LeagueTeamStateArtifactRecoveryError as exc:
+            payload = (
+                exc.result.to_dict() if exc.result is not None else {
+                    'outcome': 'failed',
+                    'reason_code': exc.reason_code,
+                }
+            )
+            payload['error'] = exc.reason_code
+            exit_code = 1
+        else:
+            payload = result.to_dict()
+            exit_code = 0
 
     if args.output:
         path = Path(args.output)
@@ -37,7 +50,7 @@ def main(argv=None):
             encoding='utf-8',
         )
     print(json.dumps(payload, sort_keys=True))
-    return 0
+    return exit_code
 
 
 if __name__ == '__main__':

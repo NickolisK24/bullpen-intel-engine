@@ -951,7 +951,16 @@ def test_rehearsal_persists_league_artifacts_from_frozen_receipts(monkeypatch):
                 inputs[str(team_id)] = {
                     'readiness': readiness,
                     'reference_dates': {},
-                    'arm_reads': {},
+                    'arm_reads': {
+                        'team_id': team_id,
+                        'membership_reference_date': product_date.isoformat(),
+                        'availability_reference_date': (
+                            product_date + timedelta(days=1)
+                        ).isoformat(),
+                        'member_pitcher_ids': [],
+                        'missing_record_pitcher_ids': [],
+                        'records': [],
+                    },
                 }
             snapshot.payload = {
                 'trusted_team_boards': {
@@ -990,6 +999,9 @@ def test_rehearsal_persists_league_artifacts_from_frozen_receipts(monkeypatch):
             second = repair_current_snapshot_artifacts(snapshot)
             assert first.outcome == 'repaired'
             assert first.generated_count == 30
+            assert len(first.terminal_outcomes) == 30
+            assert {item.outcome for item in first.terminal_outcomes} == {'generated'}
+            assert first.reason_histogram == ()
             assert second.outcome == 'already_complete'
             artifacts = ShareArtifact.query.filter_by(
                 artifact_type='team_state', source_snapshot_id=snapshot.id,
@@ -1005,6 +1017,14 @@ def test_rehearsal_persists_league_artifacts_from_frozen_receipts(monkeypatch):
             assert listing['team_count'] == 30
             assert listing['represented_team_count'] == 30
             assert listing['withheld_team_count'] == 0
+            for team_id in (110, 119, 147):
+                league_state = next(
+                    item['team_state'] for item in listing['teams']
+                    if item['team_id'] == team_id
+                )
+                assert league_state['public_state'] == (
+                    receipts[str(team_id)]['value']['public_state']
+                )
         finally:
             db.session.remove()
             drop_test_schema(app)

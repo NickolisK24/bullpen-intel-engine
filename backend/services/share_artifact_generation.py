@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping, Optional
@@ -90,6 +91,8 @@ class TeamStateGenerationResult:
     reasons: tuple
     audit_id: Optional[int]
     failure_code: Optional[str]
+    failure_exception_class: Optional[str] = None
+    failure_exception_message: Optional[str] = None
     artifact: Optional[Any] = None
     # Transient production-proof plumbing. The governed readiness payload that
     # produced this artifact, plus the two reference dates it was produced
@@ -131,6 +134,8 @@ class TeamStateGenerationResult:
             'reasons': list(self.reasons),
             'audit_id': self.audit_id,
             'failure_code': self.failure_code,
+            'failure_exception_class': self.failure_exception_class,
+            'failure_exception_message': self.failure_exception_message,
         }
 
 
@@ -432,7 +437,8 @@ def _record_audit(
 
 def _result(outcome, *, team_id, requested_date, eligibility=None, source=None,
             artifact=None, created_new=False, reused_existing=False, audit=None,
-            failure_code=None, reference_dates=None) -> TeamStateGenerationResult:
+            failure_code=None, failure_exception=None,
+            reference_dates=None) -> TeamStateGenerationResult:
     snapshot = source.snapshot if source is not None else None
     reference_dates = reference_dates if isinstance(reference_dates, dict) else {}
     return TeamStateGenerationResult(
@@ -451,6 +457,10 @@ def _result(outcome, *, team_id, requested_date, eligibility=None, source=None,
         reasons=eligibility.reasons if eligibility is not None else (),
         audit_id=audit.id if audit is not None else None,
         failure_code=failure_code,
+        failure_exception_class=(
+            failure_exception.__class__.__name__ if failure_exception is not None else None
+        ),
+        failure_exception_message=_safe_exception_message(failure_exception),
         artifact=artifact,
         readiness=source.readiness if source is not None else None,
         membership_reference_date=reference_dates.get('membership_reference_date'),
@@ -458,9 +468,24 @@ def _result(outcome, *, team_id, requested_date, eligibility=None, source=None,
     )
 
 
+def _safe_exception_message(exc, *, limit=240):
+    """Retain bounded diagnostics without leaking credentials or raw payloads."""
+    if exc is None:
+        return None
+    value = ' '.join(str(exc).split())
+    value = re.sub(r'(?i)([a-z][a-z0-9+.-]*://)[^\s/@]+:[^\s/@]+@', r'\1[redacted]@', value)
+    value = re.sub(
+        r'(?i)\b(password|token|secret|api[_-]?key)\s*[=:]\s*[^\s,;]+',
+        r'\1=[redacted]',
+        value,
+    )
+    return value[:limit]
+
+
 def _fail_closed(
     session, *, team_id, requested_date, failure_code,
     eligibility=None, source=None, actor=None, request_source=None,
+    failure_exception=None,
 ) -> TeamStateGenerationResult:
     """Roll back any partial work and record a durable failed-closed attempt."""
     session.rollback()
@@ -495,6 +520,7 @@ def _fail_closed(
         source=source,
         audit=audit,
         failure_code=failure_code,
+        failure_exception=failure_exception,
     )
 
 
@@ -581,10 +607,11 @@ def generate_team_state_artifact(
         resolver_kwargs['arm_reads_out'] = arm_read_capture
     try:
         readiness = resolver(team_id, **resolver_kwargs)
-    except Exception:
+    except Exception as exc:
         return _fail_closed(
             session, team_id=team_id, requested_date=requested_date,
             failure_code=FAILURE_READINESS_RESOLUTION, actor=actor, request_source=request_source,
+            failure_exception=exc,
         )
 
     # 2. Gather the governed source (snapshot/team-scoped authority + team + readiness).
@@ -594,10 +621,11 @@ def generate_team_state_artifact(
             source_authority=source_authority,
             requested_date=requested_date, session=session,
         )
-    except Exception:
+    except Exception as exc:
         return _fail_closed(
             session, team_id=team_id, requested_date=requested_date,
             failure_code=FAILURE_SOURCE_GATHER, actor=actor, request_source=request_source,
+            failure_exception=exc,
         )
 
     # 3. Deterministic eligibility (stamped with the version we will publish).
@@ -622,11 +650,12 @@ def generate_team_state_artifact(
                 request_source=request_source,
             )
             session.commit()
-        except Exception:
+        except Exception as exc:
             return _fail_closed(
                 session, team_id=team_id, requested_date=requested_date,
                 failure_code=FAILURE_PERSISTENCE, eligibility=eligibility, source=source,
                 actor=actor, request_source=request_source,
+                failure_exception=exc,
             )
         return _result(
             OUTCOME_REFUSED, team_id=team_id, requested_date=requested_date,
@@ -711,17 +740,19 @@ def generate_team_state_artifact(
             request_source=request_source,
         )
         session.commit()
-    except TeamStatePayloadError:
+    except TeamStatePayloadError as exc:
         return _fail_closed(
             session, team_id=team_id, requested_date=requested_date,
             failure_code=FAILURE_PAYLOAD_BUILD, eligibility=eligibility, source=source,
             actor=actor, request_source=request_source,
+            failure_exception=exc,
         )
-    except Exception:
+    except Exception as exc:
         return _fail_closed(
             session, team_id=team_id, requested_date=requested_date,
             failure_code=FAILURE_PUBLICATION, eligibility=eligibility, source=source,
             actor=actor, request_source=request_source,
+            failure_exception=exc,
         )
 
     return _result(

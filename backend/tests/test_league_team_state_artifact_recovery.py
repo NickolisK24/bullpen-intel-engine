@@ -6,6 +6,12 @@ from flask import Flask
 
 from services import league_team_state_artifact_recovery as recovery
 from services.mlb_club_directory import MLB_TEAM_IDS
+from services.share_artifact_batch_generation import (
+    BATCH_OUTCOME_FAILED,
+    BATCH_OUTCOME_GENERATED,
+    BatchGenerationResult,
+    BatchTeamResult,
+)
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -56,6 +62,32 @@ def _artifacts():
     ]
 
 
+def _batch(*, failed_team_id=None):
+    results = []
+    for team_id in MLB_TEAM_IDS:
+        failed = team_id == failed_team_id
+        results.append(BatchTeamResult(
+            team_id=team_id,
+            outcome=BATCH_OUTCOME_FAILED if failed else BATCH_OUTCOME_GENERATED,
+            failure_code='readiness_resolution_error' if failed else None,
+            exception_class='ValueError' if failed else None,
+            exception_message=(
+                "invalid literal for int() with base 10: 'availability_reference_date'"
+                if failed else None
+            ),
+            source_snapshot_id=SNAPSHOT_ID,
+            source_sync_run_id=SYNC_RUN_ID,
+            product_date=PRODUCT_DATE,
+        ))
+    return BatchGenerationResult(
+        source_snapshot_id=SNAPSHOT_ID,
+        product_date=PRODUCT_DATE,
+        results=tuple(results),
+        canonical_team_count=30,
+        expected_team_ids=tuple(MLB_TEAM_IDS),
+    )
+
+
 @pytest.fixture
 def governed_projection(monkeypatch):
     monkeypatch.setattr(
@@ -98,15 +130,12 @@ def test_complete_set_is_a_zero_write_noop(monkeypatch, governed_projection):
 def test_missing_set_is_repaired_from_frozen_generator(
     monkeypatch, governed_projection,
 ):
-    reads = iter(([], _artifacts()))
+    reads = iter(([], _artifacts(), _artifacts()))
     monkeypatch.setattr(
         recovery, 'list_team_state_artifacts_for_snapshot',
         lambda *_args, **_kwargs: next(reads),
     )
-    batch = SimpleNamespace(
-        failed_count=0, refused_count=0, missing_count=0,
-        generated_count=30, reused_count=0,
-    )
+    batch = _batch()
     observed = {}
 
     def generate(snapshot, *, generator):
@@ -138,10 +167,7 @@ def test_incomplete_generation_fails_closed(monkeypatch, governed_projection):
     )
     monkeypatch.setattr(
         'services.share_artifact_publication_hook.run_post_publication_generation',
-        lambda *_args, **_kwargs: SimpleNamespace(
-            failed_count=1, refused_count=0, missing_count=0,
-            generated_count=29, reused_count=0,
-        ),
+        lambda *_args, **_kwargs: _batch(failed_team_id=MLB_TEAM_IDS[0]),
     )
     monkeypatch.setattr(
         'services.team_state_vnext_production_proof.frozen_team_state_artifact_generator',
@@ -150,8 +176,62 @@ def test_incomplete_generation_fails_closed(monkeypatch, governed_projection):
     with pytest.raises(
         recovery.LeagueTeamStateArtifactRecoveryError,
         match='generation_incomplete',
-    ):
+    ) as caught:
         recovery.repair_current_snapshot_artifacts(_snapshot())
+    result = caught.value.result
+    assert result.generated_count == 29
+    assert result.failed_count == 1
+    assert result.reason_histogram == (('readiness_resolution_error', 1),)
+    assert result.affected_team_ids == (MLB_TEAM_IDS[0],)
+    terminal = result.terminal_outcomes[0]
+    assert terminal.team_abbreviation == 'LAA'
+    assert terminal.exception_class == 'ValueError'
+    assert terminal.receipt_public_state == 'fresh'
+    assert 'failed=1' in str(caught.value)
+    assert 'reasons=readiness_resolution_error:1' in str(caught.value)
+    assert f'teams=[{MLB_TEAM_IDS[0]}]' in str(caught.value)
+
+
+def test_partial_set_reports_generated_and_reused_without_duplicates(
+    monkeypatch, governed_projection,
+):
+    reads = iter((_artifacts()[:17], _artifacts(), _artifacts()))
+    monkeypatch.setattr(
+        recovery, 'list_team_state_artifacts_for_snapshot',
+        lambda *_args, **_kwargs: next(reads),
+    )
+    results = tuple(
+        BatchTeamResult(
+            team_id=team_id,
+            outcome='reused' if index < 17 else 'generated',
+            source_snapshot_id=SNAPSHOT_ID,
+            source_sync_run_id=SYNC_RUN_ID,
+            product_date=PRODUCT_DATE,
+        )
+        for index, team_id in enumerate(MLB_TEAM_IDS)
+    )
+    batch = BatchGenerationResult(
+        source_snapshot_id=SNAPSHOT_ID,
+        product_date=PRODUCT_DATE,
+        results=results,
+        canonical_team_count=30,
+        expected_team_ids=tuple(MLB_TEAM_IDS),
+    )
+    monkeypatch.setattr(
+        'services.share_artifact_publication_hook.run_post_publication_generation',
+        lambda *_args, **_kwargs: batch,
+    )
+    monkeypatch.setattr(
+        'services.team_state_vnext_production_proof.frozen_team_state_artifact_generator',
+        lambda *_args, **_kwargs: object(),
+    )
+
+    result = recovery.repair_current_snapshot_artifacts(_snapshot())
+
+    assert result.outcome == 'repaired'
+    assert result.generated_count == 13
+    assert result.reused_count == 17
+    assert result.artifact_count == 30
 
 
 @pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'wrong_sync', 'noncanonical'])
@@ -218,7 +298,7 @@ def test_frozen_receipts_generate_persisted_artifacts_without_mutable_recalculat
     )
     from tests.test_share_artifact_batch_generation import _readiness
 
-    team_ids = tuple(MLB_TEAM_IDS[:3])
+    team_ids = tuple(MLB_TEAM_IDS)
     run = SyncRun(job_name='league-artifact-recovery')
     db.session.add(run)
     db.session.flush()
@@ -247,7 +327,14 @@ def test_frozen_receipts_generate_persisted_artifacts_without_mutable_recalculat
         inputs[str(team_id)] = {
             'readiness': readiness,
             'reference_dates': {},
-            'arm_reads': {},
+            'arm_reads': {
+                'team_id': team_id,
+                'membership_reference_date': PRODUCT_DATE.isoformat(),
+                'availability_reference_date': '2026-09-23',
+                'member_pitcher_ids': [],
+                'missing_record_pitcher_ids': [],
+                'records': [],
+            },
         }
     snapshot.payload = {
         'trusted_team_boards': {
@@ -293,3 +380,94 @@ def test_frozen_receipts_generate_persisted_artifacts_without_mutable_recalculat
     ).all()
     assert {item.team_id for item in artifacts} == set(team_ids)
     assert all(item.source_sync_run_id == run.id for item in artifacts)
+
+
+def test_frozen_generator_rejects_receipt_readiness_disagreement(app, monkeypatch):
+    from services import team_state_vnext_production_proof as proof
+
+    snapshot = _snapshot()
+    monkeypatch.setattr(
+        proof, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(proof={
+            'snapshot_team_state_generation_inputs': {
+                str(MLB_TEAM_IDS[0]): {
+                    'readiness': {
+                        'contract_state': 'ready',
+                        'readiness': {'status_code': 'ready'},
+                        'freshness': {'data_through': PRODUCT_DATE.isoformat()},
+                    },
+                },
+            },
+        }),
+    )
+    monkeypatch.setattr(
+        'services.team_board_snapshot_team_state.receipt_value',
+        lambda *_args: (True, {
+            'available': True,
+            'public_state': 'vulnerable',
+            'public_label': 'Vulnerable',
+            'data_through': PRODUCT_DATE.isoformat(),
+        }),
+    )
+    generator = proof.frozen_team_state_artifact_generator(
+        snapshot,
+        lambda *_args, **_kwargs: pytest.fail('mismatched receipt must not publish'),
+    )
+    with pytest.raises(ValueError, match='generation_receipt_mismatch'):
+        generator(
+            MLB_TEAM_IDS[0], snapshot=snapshot, requested_date=PRODUCT_DATE,
+        )
+
+
+@pytest.mark.parametrize('mutation', ['snapshot', 'sync_run', 'date'])
+def test_frozen_generator_rejects_wrong_publication_identity(
+    app, monkeypatch, mutation,
+):
+    from services import team_state_vnext_production_proof as proof
+
+    snapshot = _snapshot()
+    source = _snapshot()
+    if mutation == 'snapshot':
+        source.id += 1
+    elif mutation == 'sync_run':
+        source.sync_run_id += 1
+    else:
+        source.data_through = date(2026, 9, 21)
+    monkeypatch.setattr(
+        proof, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(
+            sync_run_id=SYNC_RUN_ID,
+            data_through=PRODUCT_DATE,
+            proof={'snapshot_team_state_generation_inputs': {
+                str(MLB_TEAM_IDS[0]): {'readiness': {}},
+            }},
+        ),
+    )
+    generator = proof.frozen_team_state_artifact_generator(snapshot, object())
+
+    with pytest.raises(ValueError, match='generation_identity_mismatch'):
+        generator(MLB_TEAM_IDS[0], snapshot=source, requested_date=PRODUCT_DATE)
+
+
+def test_frozen_generator_reports_missing_receipt(app, monkeypatch):
+    from services import team_state_vnext_production_proof as proof
+
+    snapshot = _snapshot()
+    monkeypatch.setattr(
+        proof, 'load_durable_proof',
+        lambda _snapshot_id: SimpleNamespace(
+            sync_run_id=SYNC_RUN_ID,
+            data_through=PRODUCT_DATE,
+            proof={'snapshot_team_state_generation_inputs': {
+                str(MLB_TEAM_IDS[0]): {'readiness': {}},
+            }},
+        ),
+    )
+    monkeypatch.setattr(
+        'services.team_board_snapshot_team_state.receipt_value',
+        lambda *_args: (False, None),
+    )
+    generator = proof.frozen_team_state_artifact_generator(snapshot, object())
+
+    with pytest.raises(ValueError, match='generation_input_missing'):
+        generator(MLB_TEAM_IDS[0], snapshot=snapshot, requested_date=PRODUCT_DATE)

@@ -35,6 +35,7 @@ from services.share_artifact_generation import (
     OUTCOME_PUBLISHED,
     OUTCOME_REFUSED,
     OUTCOME_REUSED,
+    _safe_exception_message,
     generate_team_state_artifact,
 )
 from services.public_team_distribution import canonical_distribution_team_ids
@@ -94,7 +95,10 @@ class BatchTeamResult:
     failure_code: Optional[str] = None      # populated for failed
     audit_id: Optional[int] = None
     source_snapshot_id: Optional[int] = None
+    source_sync_run_id: Optional[int] = None
     product_date: Optional[date] = None
+    exception_class: Optional[str] = None
+    exception_message: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -105,7 +109,10 @@ class BatchTeamResult:
             'failure_code': self.failure_code,
             'audit_id': self.audit_id,
             'source_snapshot_id': self.source_snapshot_id,
+            'source_sync_run_id': self.source_sync_run_id,
             'product_date': self.product_date.isoformat() if self.product_date else None,
+            'exception_class': self.exception_class,
+            'exception_message': self.exception_message,
         }
 
 
@@ -303,7 +310,14 @@ def _refusal_reason_code(single_result) -> Optional[str]:
     return None
 
 
-def _team_result_from_single(team_id, single_result) -> BatchTeamResult:
+def _team_result_from_single(
+    team_id,
+    single_result,
+    *,
+    source_snapshot_id=None,
+    source_sync_run_id=None,
+    product_date=None,
+) -> BatchTeamResult:
     outcome = _batch_outcome(single_result)
     return BatchTeamResult(
         team_id=team_id,
@@ -312,8 +326,11 @@ def _team_result_from_single(team_id, single_result) -> BatchTeamResult:
         reason_code=_refusal_reason_code(single_result) if outcome == BATCH_OUTCOME_REFUSED else None,
         failure_code=single_result.failure_code if outcome == BATCH_OUTCOME_FAILED else None,
         audit_id=single_result.audit_id,
-        source_snapshot_id=single_result.source_snapshot_id,
-        product_date=single_result.product_date,
+        source_snapshot_id=single_result.source_snapshot_id or source_snapshot_id,
+        source_sync_run_id=single_result.source_sync_run_id or source_sync_run_id,
+        product_date=single_result.product_date or product_date,
+        exception_class=getattr(single_result, 'failure_exception_class', None),
+        exception_message=getattr(single_result, 'failure_exception_message', None),
     )
 
 
@@ -387,8 +404,14 @@ def generate_team_state_artifacts_batch(
                 snapshot=snapshot,
                 session=session,
             )
-            results.append(_team_result_from_single(team_id, single))
-        except Exception:
+            results.append(_team_result_from_single(
+                team_id,
+                single,
+                source_snapshot_id=authority.snapshot_id,
+                source_sync_run_id=getattr(snapshot, 'sync_run_id', None),
+                product_date=authority.data_through,
+            ))
+        except Exception as exc:
             # Defense in depth: the single-team service is designed to fail
             # closed and return a result, but an unexpected raise must not skip
             # the remaining teams. Record an accounted 'failed' outcome.
@@ -398,7 +421,10 @@ def generate_team_state_artifacts_batch(
                     outcome=BATCH_OUTCOME_FAILED,
                     failure_code=FAILURE_BATCH_TEAM_ERROR,
                     source_snapshot_id=authority.snapshot_id,
+                    source_sync_run_id=getattr(snapshot, 'sync_run_id', None),
                     product_date=authority.data_through,
+                    exception_class=exc.__class__.__name__,
+                    exception_message=_safe_exception_message(exc),
                 )
             )
 
