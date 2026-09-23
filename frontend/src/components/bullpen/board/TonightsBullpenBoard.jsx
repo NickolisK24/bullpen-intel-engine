@@ -199,6 +199,14 @@ export default function TonightsBullpenBoard({
               onSelectPitcher={onSelectPitcher}
             />
 
+            <TeamBoardWhatChanged
+              changes={changesState.data}
+              loading={changesState.loading}
+              error={changesState.error}
+              onRetry={changesState.refetch}
+              onSelectPitcher={onSelectPitcher}
+            />
+
             <div
               className="-mx-4 mt-section-lg border-y border-line-subtle bg-surface-nav/35 px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
               role="group"
@@ -263,14 +271,6 @@ export default function TonightsBullpenBoard({
                 onSelectPitcher={onSelectPitcher}
               />
             </SectionPair>
-            <TeamBoardWhatChanged
-              changes={changesState.data}
-              loading={changesState.loading}
-              error={changesState.error}
-              onRetry={changesState.refetch}
-              onSelectPitcher={onSelectPitcher}
-            />
-
             <div
               className="-mx-4 mt-section-lg border-y border-line-default bg-surface-base px-4 py-section tablet:mx-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
               role="group"

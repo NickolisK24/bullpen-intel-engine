@@ -178,6 +178,31 @@ test('Recent Relief Work renders mobile records and the shared-header governed t
   assert.equal(html.includes('<details'), false)
 })
 
+test('only the two newest dates lead while older receipts remain available in a native disclosure', () => {
+  const deepPayload = structuredClone(reliefPayload)
+  deepPayload.relief_by_date.push({
+    ...structuredClone(reliefPayload.relief_by_date[1]),
+    game_date: '2026-08-14',
+    sentence: 'August 14 — 1 relief appearance, 1.0 IP, 12 pitches.',
+    appearances: [{
+      ...structuredClone(reliefPayload.relief_by_date[1].appearances[0]),
+      pitcher_id: 6,
+      pitcher_full_name: 'Earlier Receipt Arm',
+      mlb_game_pk: 699,
+    }],
+  })
+  const html = renderPanel({ read: {
+    ...read,
+    recentReliefWork: { ...recentReliefWork, read: deepPayload },
+  } })
+
+  assert.ok(html.includes('<details'))
+  assert.ok(html.includes('View 1 earlier game date'))
+  assert.ok(html.includes('Earlier Receipt Arm'))
+  assert.ok(html.includes('Earlier recent relief work records'))
+  assert.ok(html.includes('Earlier recent relief work table'))
+})
+
 test('backend game and appearance order is preserved without frontend ranking', async () => {
   const groups = getReliefLedgerGroups(recentReliefWork)
   const html = renderPanel({ read })

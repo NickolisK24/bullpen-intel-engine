@@ -9,12 +9,12 @@ test('Team Board preserves the approved answer-to-receipts hierarchy', async () 
   const markers = [
     '<TeamBoardAnswerBlock',
     '<TeamBoardActiveBullpen',
+    '<TeamBoardWhatChanged',
     'aria-label="Current workload picture"',
     '<TeamBoardRecentUsage',
     'label="Rest and workload"',
     'label="Roles and performance"',
     'label="Rotation and transactions"',
-    '<TeamBoardWhatChanged',
     'aria-label="Relief work receipts"',
     '<TeamReliefWorkPanel',
     '<EvidenceShareMenu',
@@ -75,4 +75,20 @@ test('Team Board closeout retains accessible focus and truthful withheld-value c
   assert.ok(combined.includes('text-text-withheld'))
   assert.equal(combined.includes('animate-pulse'), false)
   assert.equal(combined.includes('animate-spin'), false)
+})
+
+test('deep relief receipts disclose older dates without delaying the current picture', async () => {
+  const source = await readSource('../src/components/bullpen/TeamReliefWorkPanel.jsx')
+
+  assert.ok(source.includes('groups.slice(0, 2)'))
+  assert.ok(source.includes('<details'))
+  assert.ok(source.includes('View {earlierGroups.length} earlier game'))
+  assert.ok(source.includes('Earlier recent relief work table'))
+})
+
+test('Recent Usage leaves current-rest recency in Active Bullpen', async () => {
+  const source = await readSource('../src/components/bullpen/board/TeamBoardRecentUsage.jsx')
+
+  assert.equal(source.includes('Days since last appearance:'), false)
+  assert.ok(source.includes('Current rest remains in Active Bullpen.'))
 })

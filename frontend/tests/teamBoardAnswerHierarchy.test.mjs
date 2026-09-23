@@ -232,7 +232,7 @@ test('meaningful structured changes are promoted while absent game context stays
   assert.equal(htmlIncludes(html, 'Game Context'), false)
   assert.ok(html.indexOf('Active Bullpen') < html.indexOf('What Changed'))
   assert.ok(html.indexOf('Active Bullpen') < html.indexOf('Recent Usage'))
-  assert.ok(html.indexOf('Recent Usage') < html.indexOf('What Changed'))
+  assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Usage'))
   assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Relief Work'))
 })
 

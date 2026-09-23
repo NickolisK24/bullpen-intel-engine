@@ -80,29 +80,9 @@ function ReliefWorkSkeleton() {
     <section id="team-relief-work" className="foundation-section scroll-mt-24" aria-labelledby="team-relief-work-title" aria-busy="true" tabIndex={-1} data-testid="recent-relief-work-skeleton">
       <h2 id="team-relief-work-title" className="type-section-title">Recent Relief Work</h2>
       <span className="sr-only">Loading recent relief work.</span>
-
-      <div className="mt-row tablet:hidden">
-        <SkeletonBlock className="h-12 w-full" />
-        {[0, 1, 2].map(index => (
-          <div key={index} className="min-h-16 border-b border-line-subtle py-row">
-            <SkeletonBlock className="h-5 w-44 max-w-full" />
-            <SkeletonBlock className="mt-meta h-4 w-64 max-w-full" />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-row hidden tablet:block">
-        <div className="grid grid-cols-[minmax(12rem,1fr)_repeat(6,minmax(2.75rem,0.3fr))] gap-meta border-b border-line-default px-panel py-row">
-          <SkeletonBlock className="h-4 w-20" />
-          {[0, 1, 2, 3, 4, 5].map(index => <SkeletonBlock key={index} className="ml-auto h-4 w-7" />)}
-        </div>
-        <SkeletonBlock className="h-12 w-full" />
-        {[0, 1, 2].map(index => (
-          <div key={index} className="grid grid-cols-[minmax(12rem,1fr)_repeat(6,minmax(2.75rem,0.3fr))] gap-meta border-b border-line-subtle px-panel py-row">
-            <SkeletonBlock className="h-5 w-44 max-w-full" />
-            {[0, 1, 2, 3, 4, 5].map(cell => <SkeletonBlock key={cell} className="ml-auto h-5 w-7" />)}
-          </div>
-        ))}
+      <div className="mt-row rounded-sm border border-line-subtle bg-surface-raised/20 p-panel">
+        <SkeletonBlock className="h-5 w-48 max-w-full" />
+        <SkeletonBlock className="mt-meta h-4 w-72 max-w-full" />
       </div>
     </section>
   )
@@ -253,9 +233,9 @@ function MobileGameGroup({ section, multipleGames, groupKey, sectionIndex, onSel
   )
 }
 
-function MobileLedger({ groups, onSelectPitcher }) {
+function MobileLedger({ groups, onSelectPitcher, label = 'Recent relief work records' }) {
   return (
-    <div className="tablet:hidden" aria-label="Recent relief work records">
+    <div className="tablet:hidden" aria-label={label}>
       {groups.map(group => (
         <section key={group.key} className="border-b border-line-default last:border-b-0" aria-labelledby={`${group.key}-mobile-title`}>
           <header className="bg-surface-raised px-panel py-row">
@@ -326,10 +306,10 @@ function TableGameRows({ section, multipleGames, groupKey, sectionIndex, showSta
   )
 }
 
-function TableLedger({ groups, showStatusColumn, onSelectPitcher }) {
+function TableLedger({ groups, showStatusColumn, onSelectPitcher, label = 'Recent relief work table' }) {
   const columnCount = showStatusColumn ? 8 : 7
   return (
-    <table className="hidden w-full table-fixed border-collapse tablet:table" aria-label="Recent relief work table">
+    <table className="hidden w-full table-fixed border-collapse tablet:table" aria-label={label}>
       <colgroup>
         <col className={showStatusColumn ? 'w-[28%]' : 'w-[34%]'} />
         <col className={showStatusColumn ? 'w-[8%]' : 'w-[11%]'} />
@@ -400,6 +380,8 @@ export default function TeamReliefWorkPanel({ read, loading = false, error = nul
   const limitation = firstLimitation(status, payload)
   const representedDate = textValue(payload?.data_through) || textValue(status?.represented_date)
   const showStatusColumn = hasUsefulStatus(groups)
+  const primaryGroups = groups.slice(0, 2)
+  const earlierGroups = groups.slice(2)
 
   return (
     <section id="team-relief-work" className="foundation-section scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus" aria-labelledby="team-relief-work-title" tabIndex={-1} data-testid="team-board-recent-relief-work">
@@ -421,8 +403,19 @@ export default function TeamReliefWorkPanel({ read, loading = false, error = nul
         <>
           {groups.length > 0 && (
             <div aria-label="Recent relief work by game date">
-              <MobileLedger groups={groups} onSelectPitcher={onSelectPitcher} />
-              <TableLedger groups={groups} showStatusColumn={showStatusColumn} onSelectPitcher={onSelectPitcher} />
+              <MobileLedger groups={primaryGroups} onSelectPitcher={onSelectPitcher} />
+              <TableLedger groups={primaryGroups} showStatusColumn={showStatusColumn} onSelectPitcher={onSelectPitcher} />
+              {earlierGroups.length > 0 && (
+                <details className="mt-panel border-t border-line-default pt-row" data-testid="earlier-relief-work">
+                  <summary className="inline-flex min-h-11 cursor-pointer items-center font-board text-board-label font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus">
+                    View {earlierGroups.length} earlier game {earlierGroups.length === 1 ? 'date' : 'dates'}
+                  </summary>
+                  <div className="mt-row border-t border-line-subtle pt-row">
+                    <MobileLedger groups={earlierGroups} label="Earlier recent relief work records" onSelectPitcher={onSelectPitcher} />
+                    <TableLedger groups={earlierGroups} label="Earlier recent relief work table" showStatusColumn={showStatusColumn} onSelectPitcher={onSelectPitcher} />
+                  </div>
+                </details>
+              )}
             </div>
           )}
 
