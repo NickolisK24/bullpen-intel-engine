@@ -29,6 +29,7 @@ from services.team_state_vnext_production_proof import (  # noqa: E402
     RESULT_FAIL,
     RESULT_INCONCLUSIVE,
     RESULT_PASS,
+    OBSERVATION_PROOF_VALID,
     VERDICT_FAIL,
     VERDICT_PASS,
     VERDICT_PASS_WITH_INCONCLUSIVE,
@@ -114,6 +115,18 @@ def validate_proof(payload):
         if team.get('source_snapshot_id') != publication.get('dashboard_snapshot_id'):
             return False, 'team_publication_identity_mismatch'
 
+    observation = payload.get('postcommit_observation')
+    if not isinstance(observation, dict):
+        return False, 'postcommit_observation_missing'
+    if observation.get('status') != OBSERVATION_PROOF_VALID:
+        return False, observation.get('reason_code') or 'postcommit_observation_failed'
+    if observation.get('snapshot_id') != publication.get('dashboard_snapshot_id'):
+        return False, 'proof_snapshot_identity_mismatch'
+    if observation.get('observed_team_count') != 30:
+        return False, 'proof_team_count_mismatch'
+    if observation.get('receipt_digest') != observation.get('expected_receipt_digest'):
+        return False, 'proof_team_state_disagreement'
+
     return True, 'ok'
 
 
@@ -139,6 +152,7 @@ def _report(payload):
         f"sync run           : {(payload.get('publication') or {}).get('sync_run_id')}",
         f"data through       : {(payload.get('publication') or {}).get('data_through')}",
         f"teams captured     : {len(payload.get('teams') or [])}",
+        f"postcommit proof   : {(payload.get('postcommit_observation') or {}).get('status')}",
     ]
     distribution = payload.get('distribution') or {}
     lines.append(

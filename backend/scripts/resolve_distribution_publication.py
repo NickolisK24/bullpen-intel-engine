@@ -15,11 +15,11 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ['AUTO_SYNC'] = 'false'
 
-from app import app
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
 from services import dashboard_snapshot as dashboard_snapshot_service
 from utils.db import db
+from utils.read_only_app import create_read_only_app
 from utils.summary_output import SummaryOutputError, serialize_summary, write_summary
 
 
@@ -101,6 +101,7 @@ def resolve_publication(
 def main(argv=None):
     args = parse_args(argv)
     try:
+        app = create_read_only_app()
         with app.app_context():
             result = resolve_publication(
                 snapshot_id=args.snapshot_id,

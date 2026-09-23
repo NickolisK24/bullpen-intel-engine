@@ -21,7 +21,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ['AUTO_SYNC'] = 'false'
 
-from app import app
 from models.share_artifact import (
     LIFECYCLE_PUBLISHED,
     LIFECYCLE_SUPERSEDED,
@@ -35,6 +34,7 @@ from services.share_artifact_previews import (
     write_share_artifact_pages,
 )
 from utils.db import db
+from utils.read_only_app import create_read_only_app
 from utils.summary_output import SummaryOutputError, serialize_summary, write_summary
 
 
@@ -42,6 +42,8 @@ EXIT_OK = 0
 EXIT_EXPORT_FAILED = 1
 EXIT_RESULT_OUTPUT_FAILED = 2
 logger = logging.getLogger('baseballos.share_artifact_preview_export')
+
+app = create_read_only_app()
 
 
 def parse_args(argv=None):

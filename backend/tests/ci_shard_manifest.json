@@ -365,7 +365,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 507.5,
+      "measured_seconds": 507.6,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -562,6 +562,10 @@
         {
           "path": "tests/test_public_why_copy_specificity.py",
           "measured_seconds": 0.5
+        },
+        {
+          "path": "tests/test_read_only_publication_app.py",
+          "measured_seconds": 0.1
         },
         {
           "path": "tests/test_recommendation_engine_integration.py",

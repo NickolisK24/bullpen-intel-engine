@@ -46,7 +46,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 os.environ['AUTO_SYNC'] = 'false'
 
-from app import app
 from models.pitcher import Pitcher
 from services.team_story_previews import (
     DEFAULT_OG_IMAGE_PATH,
@@ -58,6 +57,7 @@ from services.team_story_previews import (
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services.public_serving_authority import build_published_team_board
 from utils.db import db
+from utils.read_only_app import create_read_only_app
 from utils.summary_output import (
     SummaryOutputError,
     serialize_summary,
@@ -65,6 +65,8 @@ from utils.summary_output import (
 )
 
 EXPECTED_MLB_TEAM_COUNT = 30
+
+app = create_read_only_app()
 
 # Exit codes. A trusted-publication failure is deliberately distinguishable from
 # an ordinary count mismatch so the workflow log says which one happened.

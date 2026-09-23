@@ -95,15 +95,15 @@ def test_failure_gates_precede_commit_and_noop_avoids_empty_commit():
     assert 'publish=false' in commands
 
 
-def test_every_production_app_step_supplies_the_governed_admin_token():
-    production_app_steps = [
+def test_read_only_distribution_steps_do_not_receive_write_credentials():
+    read_only_steps = [
         step
         for step in _job()['steps']
         if step.get('env', {}).get('APP_ENV') == 'production'
     ]
 
-    assert production_app_steps
-    for step in production_app_steps:
-        assert step['env'].get('ADMIN_API_TOKEN') == (
-            '${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}'
-        ), step['name']
+    assert read_only_steps
+    for step in read_only_steps:
+        assert 'DATABASE_URL' in step['env'], step['name']
+        assert 'ADMIN_API_TOKEN' not in step['env'], step['name']
+        assert 'SECRET_KEY' not in step['env'], step['name']
