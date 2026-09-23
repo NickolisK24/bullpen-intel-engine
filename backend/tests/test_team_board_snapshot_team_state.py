@@ -4,8 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from services.team_board_snapshot_team_state import (
-    compare_exact_team_state, make_receipt, receipt_value,
+    build_team_accounting,
+    compare_exact_team_state,
+    make_receipt,
+    receipt_value,
+    require_complete_team_accounting,
 )
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.what_changed_comparison_identity import (
     ComparisonIdentityInvalid, build_comparison_identity,
 )
@@ -76,6 +81,34 @@ def test_package_level_receipt_serves_team_state_without_fabricating_a_board():
     package['frozen_team_state_by_team_id'].pop('110')
     package['frozen_team_state_by_team_id']['111'] = receipt
     assert receipt_value(snapshot, 110)[1]['available'] is False
+
+
+@pytest.mark.parametrize('published_ids', (
+    tuple(MLB_TEAM_IDS) + (484, 531, 534, 5434),
+    tuple(MLB_TEAM_IDS[:-1]) + (484,),
+))
+def test_noncanonical_board_cannot_enter_or_substitute_for_canonical_team(
+    published_ids,
+):
+    package = {
+        'team_accounting': build_team_accounting(MLB_TEAM_IDS, MLB_TEAM_IDS),
+        'by_team_id': {str(team_id): {} for team_id in published_ids},
+    }
+
+    with pytest.raises(ValueError, match='package_noncanonical_team'):
+        require_complete_team_accounting(package, MLB_TEAM_IDS)
+
+
+def test_duplicate_accounting_cannot_substitute_for_missing_canonical_team():
+    accounting = build_team_accounting(MLB_TEAM_IDS, MLB_TEAM_IDS)
+    accounting['teams'][-1] = dict(accounting['teams'][0])
+    package = {
+        'team_accounting': accounting,
+        'by_team_id': {str(team_id): {} for team_id in MLB_TEAM_IDS[:-1]},
+    }
+
+    with pytest.raises(ValueError, match='requires_30_accounted_teams'):
+        require_complete_team_accounting(package, MLB_TEAM_IDS)
 
 
 def test_exact_pair_change_and_unchanged():

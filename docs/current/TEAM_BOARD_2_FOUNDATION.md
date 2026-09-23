@@ -742,6 +742,16 @@ post-commit Share Artifact writer consumes the pre-commit evidence rather than
 reading later mutable rows. A missing or ineligible team, proof failure, or
 receipt persistence failure rolls back the trusted pointer movement.
 
+Team Board package assembly scopes its active-pitcher source query to the
+repository's canonical `MLB_TEAM_IDS` before any per-team frozen read is built.
+Historical or affiliate organization ids may remain in operational source
+tables, but they cannot enter `trusted_team_boards.by_team_id`, count toward
+canonical accounting, substitute for a missing club, or receive a canonical
+Team State receipt. The package therefore contains only publishable canonical
+boards, while `team_accounting` still represents all 30 clubs as publishable or
+truthfully unavailable and the proof still requires exactly 30 canonical
+receipts.
+
 For new snapshots, TB-01 reads the receipt directly; a later Share Artifact
 write failure cannot change the served Team State. TB-09's backend comparison
 reads those same receipts from the current snapshot and the *exact* governed
