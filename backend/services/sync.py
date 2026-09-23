@@ -5643,8 +5643,27 @@ def complete_sync_run_with_snapshot(
         # SC-03B-04: this path publishes with commit=False and owns the commit, so
         # the post-publication generation hook must be invoked here (once, after the
         # publication has durably committed). Reuses the one canonical completion
-        # function; never raises, so a generation problem never affects the sync.
+        # function. The trusted snapshot is already committed, but the Daily
+        # Primary is not complete until its League Board projection verifies.
         dashboard_snapshot_service.run_post_commit_snapshot_publication(snapshot)
+        # League Board authority is the published, snapshot-bound Team State
+        # artifact set.  The hook remains post-commit, but a Daily Primary must
+        # not report success when that required public projection is absent.
+        try:
+            from flask import current_app
+            artifact_generation_enabled = bool(
+                current_app
+                and current_app.config.get(
+                    'SHARE_ARTIFACT_AUTOGENERATION_ENABLED', False,
+                )
+            )
+        except Exception:
+            artifact_generation_enabled = False
+        if artifact_generation_enabled:
+            from services.league_team_state_artifact_recovery import (
+                require_complete_artifact_set,
+            )
+            require_complete_artifact_set(snapshot)
         return run, snapshot
     except Exception as exc:
         db.session.rollback()

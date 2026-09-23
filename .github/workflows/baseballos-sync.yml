@@ -514,6 +514,18 @@ jobs:
       # empty staging directory only if it passes, so a scanner bug produces an
       # empty handoff rather than a leak.
 
+      - name: Complete current League Board Team State artifacts
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *') }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+        run: >-
+          python backend/scripts/repair_current_team_state_artifacts.py
+          --output artifacts/team-state-vnext-proof/league-team-state-artifacts.json
+
       - name: Export durable Team State production proof
         continue-on-error: true
         if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_daily') || (github.event_name == 'schedule' && github.event.schedule == '17 10 * * *')) }}

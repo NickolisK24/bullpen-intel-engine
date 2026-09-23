@@ -891,6 +891,125 @@ def test_trusted_publication_rehearsal(monkeypatch, tmp_path):
             drop_test_schema(app)
 
 
+def test_rehearsal_persists_league_artifacts_from_frozen_receipts(monkeypatch):
+    """The disposable rehearsal includes the League Board delivery seam."""
+    from datetime import datetime
+
+    from models.share_artifact import ShareArtifact
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from services import team_state_source
+    from services.league_team_state_artifact_recovery import (
+        repair_current_snapshot_artifacts,
+    )
+    from services.league_team_state_listing import build_league_team_state_listing
+    from tests.test_share_artifact_batch_generation import _readiness
+
+    url = _test_database_url()
+    assert url.startswith(('postgres://', 'postgresql://'))
+    assert_disposable_test_target(url, operation='League Board artifact rehearsal')
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', url)
+    app = importlib.import_module('app').create_app('test')
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            product_date = public_serving_authority.product_current_date() - timedelta(days=1)
+            run = SyncRun(
+                job_name='daily_sync', status='success', stage='published', source='test',
+            )
+            db.session.add(run)
+            db.session.flush()
+            snapshot = DashboardSnapshot(
+                snapshot_type='bullpen_dashboard', sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True, published_at=datetime(2026, 9, 23, 12),
+                payload={}, payload_version=1, data_through=product_date,
+                snapshot_generated_at=datetime(2026, 9, 23, 11, 59),
+                source='trusted_publication_rehearsal',
+            )
+            db.session.add(snapshot)
+            db.session.flush()
+            run.published_dashboard_snapshot_id = snapshot.id
+
+            receipts = {}
+            inputs = {}
+            for index, team_id in enumerate(TEAM_IDS):
+                db.session.add(Pitcher(
+                    mlb_id=9800000 + index,
+                    full_name=f'Rehearsal Arm {team_id}',
+                    team_id=team_id,
+                    team_name=f'Rehearsal Team {team_id}',
+                    team_abbreviation=f'R{index:02d}',
+                    position='P', active=True,
+                ))
+                readiness = _readiness(team_id)
+                readiness['freshness']['data_through'] = product_date.isoformat()
+                receipts[str(team_id)] = make_receipt(
+                    snapshot, team_id, readiness,
+                    method_version=EXPECTED_METHOD_VERSION,
+                )
+                inputs[str(team_id)] = {
+                    'readiness': readiness,
+                    'reference_dates': {},
+                    'arm_reads': {},
+                }
+            snapshot.payload = {
+                'trusted_team_boards': {
+                    'contract': 'trusted_team_board_publication_v1',
+                    'data_through': product_date.isoformat(),
+                    'by_team_id': {},
+                    'frozen_team_state_by_team_id': receipts,
+                },
+            }
+            db.session.add(TeamStatePublicationProof(
+                snapshot_id=snapshot.id,
+                sync_run_id=run.id,
+                data_through=product_date,
+                proof={'snapshot_team_state_generation_inputs': inputs},
+                overall_verdict='PASS', captured_team_count=30,
+                method_version=EXPECTED_METHOD_VERSION,
+            ))
+            db.session.commit()
+
+            monkeypatch.setattr(
+                team_state_source, 'get_latest_dashboard_snapshot',
+                lambda *_args, **_kwargs: snapshot,
+            )
+            monkeypatch.setattr(
+                team_state_source, 'snapshot_unavailable_reason',
+                lambda *_args, **_kwargs: None,
+            )
+            monkeypatch.setattr(
+                'services.share_artifact_generation.resolve_team_readiness_payload',
+                lambda *_args, **_kwargs: pytest.fail(
+                    'rehearsal attempted mutable Team State recalculation'
+                ),
+            )
+
+            first = repair_current_snapshot_artifacts(snapshot)
+            second = repair_current_snapshot_artifacts(snapshot)
+            assert first.outcome == 'repaired'
+            assert first.generated_count == 30
+            assert second.outcome == 'already_complete'
+            artifacts = ShareArtifact.query.filter_by(
+                artifact_type='team_state', source_snapshot_id=snapshot.id,
+                lifecycle_state='published',
+            ).all()
+            assert len(artifacts) == 30
+            assert {artifact.team_id for artifact in artifacts} == set(TEAM_IDS)
+            assert all(artifact.source_sync_run_id == run.id for artifact in artifacts)
+
+            listing = build_league_team_state_listing(
+                snapshot_resolver=lambda: (snapshot, None),
+            )
+            assert listing['team_count'] == 30
+            assert listing['represented_team_count'] == 30
+            assert listing['withheld_team_count'] == 0
+        finally:
+            db.session.remove()
+            drop_test_schema(app)
+
+
 def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
     monkeypatch,
 ):

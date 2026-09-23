@@ -15,7 +15,7 @@ roster, GameLog, or readiness rows.
 | Pre-commit proof | `services.dashboard_snapshot.publish_dashboard_snapshot` -> `require_transactional_publication_proof` | Candidate payload, canonical club directory, governed readiness inputs; writes durable proof in the publication transaction | Candidate snapshot ID and 30 receipts frozen into `trusted_team_boards` | Same publication transaction | Publication-critical; failure rolls back |
 | Commit | `publish_dashboard_snapshot` transaction commit | Writes ready snapshot/current pointer, proof row, frozen package | Exact admitted candidate | Same publication transaction | Publication-critical |
 | Immediate observation | `run_post_commit_snapshot_publication` -> `observe_committed_publication_proof` | Read-only durable proof plus committed snapshot payload | Frozen receipt maps only | Existing publisher DB context | Adoption-critical; cannot undo an already committed publication |
-| Optional artifact generation | `run_post_commit_snapshot_publication` -> `run_post_publication_generation` | Frozen proof inputs and frozen snapshot receipt | Frozen input captured before commit | Existing publisher DB context | Distribution consumer; not Team State proof authority |
+| League Board artifact completion | `run_post_commit_snapshot_publication` -> `run_post_publication_generation`; recovery uses `repair_current_team_state_artifacts.py` | Frozen proof inputs and frozen snapshot receipts only | Exact committed snapshot and SyncRun | Existing publisher context; governed recovery requires production write credentials | Distribution-critical; not Team State proof authority |
 | Proof export | `export_team_state_publication_proof.py` | Read-only current/explicit snapshot and durable proof row | Frozen proof plus committed receipts | `APP_ENV`, `DATABASE_URL` only | Adoption-critical for recovery evidence |
 | Artifact scan/upload | `public-sync` workflow steps | Proof JSON and observation JSON on runner filesystem | Embedded snapshot identity | No DB or app credential | Adoption evidence retention |
 | Validation | `team-state-vnext-proof` -> `validate_team_state_vnext_proof.py` | Downloaded artifact only | Embedded immutable proof and post-commit observation | None | Workflow adoption-critical |
@@ -70,6 +70,7 @@ compatibility path does not query mutable baseball sources.
 |---|---|---|
 | Production API | `APP_ENV=production`, `DATABASE_URL`, strong `SECRET_KEY`, `ADMIN_API_TOKEN` | None; security guard remains mandatory |
 | Daily Primary / `recovery_daily` | Production DB plus governed sync/write credentials and API security settings | No reduction in existing privileges |
+| League Board artifact completion | `APP_ENV=production`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_API_TOKEN` | No source acquisition credentials beyond the existing public-sync lane |
 | Proof export | `APP_ENV=production`, `DATABASE_URL` | `SECRET_KEY`, `ADMIN_API_TOKEN`, sync credentials |
 | Proof validation | Proof artifact | Database and all secrets |
 | Static preview resolution/export | `APP_ENV=production`, `DATABASE_URL` | `SECRET_KEY`, `ADMIN_API_TOKEN`, sync credentials |
@@ -101,6 +102,28 @@ and therefore performs no organization discovery. Administrative coverage and
 team-following reads retain their separate contracts; they are not public page
 denominators.
 
+## League Board artifact completion
+
+The League Board intentionally reads immutable published Team State artifacts,
+not Team Board receipts directly. Those artifacts are projections of the exact
+snapshot-bound receipts; generation may not recalculate Team State from mutable
+roster, GameLog, or readiness rows. A valid set contains one published league
+artifact for every canonical club and binds each row to the current snapshot,
+SyncRun, and represented date. Its public state must equal the frozen receipt.
+
+Snapshot 3435 exposed the former lifecycle gap: pre-commit admission stored 30
+valid receipts, but the post-commit batch recorded 30 failed attempts and zero
+published artifacts. Because generation was treated as optional, Daily Primary
+still reported success; later `already_satisfied` recovery observed the proof but
+did not retry generation. The League Board therefore truthfully withheld 30/30.
+
+Daily publication now verifies the exact artifact set before reporting success.
+The governed daily recovery lane also runs an idempotent completion step before
+proof export. A complete set is a zero-write no-op; an incomplete set is rebuilt
+only from frozen inputs and receipts, then verified. Immutable artifact
+deduplication prevents duplicates, and any extra, missing, mismatched,
+noncanonical, draft, or receipt-disagreeing artifact fails the recovery lane.
+
 ## Artifact lifecycle and statuses
 
 `public-sync` exports `team-state-vnext-production-proof.json` and
@@ -120,6 +143,9 @@ team-count mismatch, noncanonical team, and missing receipt.
   `MLB_TEAM_IDS` set and do not treat arbitrary non-null team IDs as MLB clubs.
 - **Safe:** new post-commit proof and artifact generation use frozen receipts or
   frozen generation inputs; neither independently selects a team universe.
+- **Fixed blocker:** Daily Primary cannot report completion while its current
+  snapshot lacks the exact League Board artifact set. An already-satisfied daily
+  recovery can repair that downstream set without creating a new snapshot.
 - **Fixed blocker:** static Team Story export derives its exact 30-team universe
   from the selected snapshot's canonical accounting and uses `MLB_CLUBS` only
   for stable display identity. Active `Pitcher.team_id` rows cannot expand or

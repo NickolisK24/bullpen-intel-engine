@@ -49,6 +49,21 @@ def test_the_observer_exports_the_durable_proof_for_the_actual_publication(workf
     assert step['continue-on-error'] is True
 
 
+def test_daily_recovery_completes_league_artifacts_before_read_only_proof(workflow):
+    steps = _steps(workflow, 'public-sync')
+    names = [str(step.get('name', '')) for step in steps]
+    completion_index = names.index('Complete current League Board Team State artifacts')
+    export_index = names.index('Export durable Team State production proof')
+    assert completion_index < export_index
+    completion = steps[completion_index]
+    assert 'repair_current_team_state_artifacts.py' in completion['run']
+    assert completion.get('continue-on-error') is not True
+    assert completion['env']['APP_ENV'] == 'production'
+    assert 'DATABASE_URL' in completion['env']
+    assert 'ADMIN_API_TOKEN' in completion['env']
+    assert 'SECRET_KEY' in completion['env']
+
+
 def test_no_other_job_or_step_enables_proof_capture(workflow):
     for job_name, job in workflow['jobs'].items():
         assert 'TEAM_STATE_VNEXT_PROOF_PATH' not in (job.get('env') or {}), job_name
