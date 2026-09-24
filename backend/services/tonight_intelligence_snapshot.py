@@ -318,16 +318,60 @@ def _safe_write_snapshot(response, *, source, generated_at=None):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _unavailable_response(reference_date, empty_reason, *, served_from):
-    generated_at = utc_now_naive()
-    response = {
-        'status': 'empty',
+# Every Tonight response, including empty, unavailable, and error responses,
+# carries this structural shell with the existing contract names.
+TONIGHT_ENVELOPE_KEYS = (
+    'status',
+    'reference_date',
+    'cards',
+    'card_count',
+    'games',
+    'game_count',
+    'empty_reason',
+    'limitations',
+)
+EMPTY_SCHEDULE_DATA_UNAVAILABLE = 'schedule_data_unavailable'
+
+
+def tonight_envelope(reference_date, *, status, empty_reason, limitations=()):
+    """The Tonight shell with no cards and no games."""
+    return {
+        'status': status,
         'reference_date': _date_iso(reference_date),
         'cards': [],
         'card_count': 0,
+        'games': [],
+        'game_count': 0,
         'empty_reason': empty_reason,
-        'limitations': ['Tonight watch is temporarily unavailable.'],
+        'limitations': list(limitations),
     }
+
+
+def tonight_query_error_payload(error):
+    """A 400 body: the query error fields inside the Tonight shell."""
+    payload = tonight_envelope(
+        None, status='error', empty_reason=error.to_payload()['reason_code'],
+    )
+    payload.update(error.to_payload())
+    return payload
+
+
+def tonight_failure_payload(reference_date):
+    """A 503 body when the Tonight read itself raised."""
+    return tonight_envelope(
+        reference_date, status='error',
+        empty_reason=EMPTY_SCHEDULE_DATA_UNAVAILABLE,
+    )
+
+
+def _unavailable_response(reference_date, empty_reason, *, served_from):
+    generated_at = utc_now_naive()
+    response = tonight_envelope(
+        reference_date,
+        status='empty',
+        empty_reason=empty_reason,
+        limitations=['Tonight watch is temporarily unavailable.'],
+    )
     return _with_snapshot_metadata(
         response,
         served_from=served_from,

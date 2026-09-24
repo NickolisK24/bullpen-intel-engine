@@ -750,6 +750,10 @@
         {
           "path": "tests/test_team_board_bullpen_workload_display.py",
           "measured_seconds": 2.1
+        },
+        {
+          "path": "tests/test_tonight_authority_hardening.py",
+          "measured_seconds": 1.6
         }
       ]
     },

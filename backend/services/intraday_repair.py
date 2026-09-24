@@ -249,11 +249,6 @@ def run_intraday_roster_repair(
             if (today or {}).get('status') not in ('ok', 'empty', 'generated'):
                 raise RuntimeError('Today intelligence rebuild did not complete.')
 
-            tonight = tonight_builder(product_current_date(), source=JOB_INTRADAY_REPAIR)
-            result['tonight_snapshot'] = _surface_summary(tonight)
-            if (tonight or {}).get('status') not in ('ok', 'empty'):
-                raise RuntimeError('Tonight intelligence rebuild did not complete.')
-
             identity_changes = (
                 int((identity_result or {}).get('created') or 0)
                 + int((identity_result or {}).get('reassigned') or 0)
@@ -288,8 +283,15 @@ def run_intraday_roster_repair(
             if proof.get('verified') is not True:
                 raise RuntimeError('Intraday dashboard candidate is not serving.')
 
-            result['status'] = sync_metadata.STATUS_SUCCESS
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
+            # Tonight is rebuilt only from the now-trusted publication; a failed
+            # publication above never reaches this point, so the stored Tonight
+            # payload stays on the previous trusted state.
+            if not refresh_tonight_after_publication(
+                result, tonight_builder, source=JOB_INTRADAY_REPAIR,
+            ):
+                return result
+            result['status'] = sync_metadata.STATUS_SUCCESS
             result['message'] = (
                 'Intraday roster, identity, and transaction authority repair '
                 'published successfully.'
@@ -319,6 +321,33 @@ def run_intraday_roster_repair(
         finally:
             if writer_guard is not None:
                 writer_guard.release()
+
+
+def refresh_tonight_after_publication(result, tonight_builder, *, source):
+    """Rebuild Tonight after a trusted dashboard publication has committed.
+
+    The publication is already durable, so a Tonight failure here cannot roll
+    it back: the stored Tonight payload is left as it was, the result reports
+    ``partial`` with ``tonight_refresh='retry_required'``, and the published
+    sync run is not rewritten as failed. Returns True when Tonight refreshed.
+    """
+    try:
+        tonight = tonight_builder(product_current_date(), source=source)
+    except Exception as exc:  # noqa: BLE001 - reported, never re-raised
+        db.session.rollback()
+        tonight = None
+        result['tonight_error'] = type(exc).__name__
+    result['tonight_snapshot'] = _surface_summary(tonight)
+    if (tonight or {}).get('status') in ('ok', 'empty'):
+        result['tonight_refresh'] = 'complete'
+        return True
+    result['tonight_refresh'] = 'retry_required'
+    result['status'] = sync_metadata.STATUS_PARTIAL
+    result['message'] = (
+        'Dashboard published; the Tonight rebuild did not complete and the '
+        'previous stored Tonight payload was kept.'
+    )
+    return False
 
 
 def _blocked_scope(reason, findings):
