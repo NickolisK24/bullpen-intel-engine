@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from services import intraday_reconcile, sync_metadata
 from services.availability_reference_date import product_current_date
 from services.game_finality import has_safe_final_status
+from services.intraday_repair import refresh_tonight_after_publication
 from services.intraday_schedule_repair import (
     apply_intraday_schedule_findings,
     build_schedule_repair_scope,
@@ -156,16 +157,6 @@ def run_intraday_completed_game_repair(
                     'Today intelligence rebuild did not complete.'
                 )
 
-            tonight = tonight_builder(
-                product_current_date(),
-                source=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
-            )
-            result['tonight_snapshot'] = _surface_summary(tonight)
-            if (tonight or {}).get('status') not in ('ok', 'empty'):
-                raise IntradayCompletedGameRepairError(
-                    'Tonight intelligence rebuild did not complete.'
-                )
-
             run, snapshot = complete_with_snapshot(
                 sync_run_id,
                 final_status=sync_metadata.STATUS_SUCCESS,
@@ -196,8 +187,13 @@ def run_intraday_completed_game_repair(
                     'Intraday completed-game dashboard candidate is not serving.'
                 )
 
-            result['status'] = sync_metadata.STATUS_SUCCESS
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
+            # Tonight follows the trusted publication, never precedes it.
+            if not refresh_tonight_after_publication(
+                result, tonight_builder, source=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
+            ):
+                return result
+            result['status'] = sync_metadata.STATUS_SUCCESS
             result['message'] = (
                 'Intraday schedule and completed-game repair published successfully.'
             )

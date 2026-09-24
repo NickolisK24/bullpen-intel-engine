@@ -137,10 +137,17 @@ def _build_response(ref, schedule_contexts, limit, bullpen_context_builder,
         rotation_contexts = _build_rotation_contexts(lambda: rotation_listing)
         rest_statuses = _build_rest_statuses(lambda: rest_listing)
     else:
-        team_states = _build_team_states(team_state_listing_builder)
-        recent_volumes = _build_recent_volumes(workload_listing_builder)
-        rotation_contexts = _build_rotation_contexts(rotation_listing_builder)
-        rest_statuses = _build_rest_statuses(rest_status_listing_builder)
+        # A caller that injects sidecars owns their snapshot. A sidecar it did
+        # not inject is withheld rather than resolved from the current public
+        # snapshot, so one response never mixes two publications.
+        team_states = _build_team_states(
+            team_state_listing_builder or _withheld_listing)
+        recent_volumes = _build_recent_volumes(
+            workload_listing_builder or _withheld_listing)
+        rotation_contexts = _build_rotation_contexts(
+            rotation_listing_builder or _withheld_listing)
+        rest_statuses = _build_rest_statuses(
+            rest_status_listing_builder or _withheld_listing)
     candidates = build_tonight_candidates(
         ref, limit=limit, schedule_contexts=schedule_contexts,
         bullpen_context_builder=lambda team_id, _reference_date: team_contexts.get(team_id))
@@ -441,6 +448,10 @@ def _default_rest_status_listing_builder():
         build_published_team_rest_status_listing,
     )
     return build_published_team_rest_status_listing()
+
+
+def _withheld_listing():
+    return {}
 
 
 def _default_publication_sidecar_builder():

@@ -391,6 +391,9 @@ def _default_tonight_builder(
     from services.published_team_rest_status_listing import (
         build_published_team_rest_status_listing,
     )
+    from services.published_team_rotation_listing import (
+        build_published_team_rotation_listing,
+    )
     from services.published_team_workload_listing import (
         build_published_team_workload_listing,
     )
@@ -403,6 +406,8 @@ def _default_tonight_builder(
         row for row in build_schedule_contexts_for_date(ref)
         if row.get('team_id') in teams
     ]
+    # Every frozen sidecar resolves from this one snapshot: Team State (the
+    # league listing built from it), workload, rotation, and rest.
     resolver = lambda: (snapshot, None)
     return serve_tonight(
         ref,
@@ -417,6 +422,9 @@ def _default_tonight_builder(
         ),
         team_state_listing_builder=lambda: league_listing,
         workload_listing_builder=lambda: build_published_team_workload_listing(
+            snapshot_resolver=resolver,
+        ),
+        rotation_listing_builder=lambda: build_published_team_rotation_listing(
             snapshot_resolver=resolver,
         ),
         rest_status_listing_builder=lambda: build_published_team_rest_status_listing(

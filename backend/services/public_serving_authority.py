@@ -1432,11 +1432,14 @@ def trusted_team_compare_view():
 def trusted_tonight_view():
     # Import the existing parser lazily so request validation remains byte-for-byte
     # compatible without importing the bullpen API while this module is loaded.
-    from api.bullpen import _tonight_reference_date_from_request
+    from api.bullpen import (
+        _tonight_reference_date_from_request,
+        tonight_query_error_response,
+    )
 
     reference_date, error = _tonight_reference_date_from_request()
     if error:
-        return query_param_error_response(error)
+        return tonight_query_error_response(error)
     payload = tonight_intelligence_snapshot.serve_tonight_cached(
         reference_date=reference_date,
         persist=False,

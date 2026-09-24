@@ -104,7 +104,11 @@ from services.public_surface_projections import (
 )
 from services.public_delivery import apply_public_delivery_headers
 from services.snapshot_read_guard import SnapshotReadUnavailable
-from services.tonight_intelligence_snapshot import serve_tonight_cached
+from services.tonight_intelligence_snapshot import (
+    serve_tonight_cached,
+    tonight_failure_payload,
+    tonight_query_error_payload,
+)
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -2270,20 +2274,18 @@ def get_tonight_intelligence():
     """
     reference_date, error = _tonight_reference_date_from_request()
     if error:
-        return query_param_error_response(error)
+        return tonight_query_error_response(error)
     try:
         payload = serve_tonight_cached(reference_date=reference_date)
     except Exception:  # pragma: no cover - defensive; service isolates failures
         current_app.logger.exception('tonight intelligence build failed')
-        return jsonify({
-            'status': 'error',
-            'reference_date': reference_date.isoformat() if reference_date else None,
-            'cards': [],
-            'card_count': 0,
-            'empty_reason': 'schedule_data_unavailable',
-            'limitations': [],
-        }), 503
+        return jsonify(tonight_failure_payload(reference_date)), 503
     return jsonify(payload)
+
+
+def tonight_query_error_response(error):
+    """400 for a bad Tonight query, inside the stable Tonight shell."""
+    return jsonify(tonight_query_error_payload(error)), 400
 
 
 @bullpen_bp.route('/teams/compare', methods=['GET'])
