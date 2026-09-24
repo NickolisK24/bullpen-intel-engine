@@ -146,6 +146,9 @@ def create_test_schema(app):
     import models.team_progressive_publication  # noqa: F401
     import models.team_publication  # noqa: F401
     import models.team_state_publication_proof  # noqa: F401
+    import models.dashboard_snapshot  # noqa: F401
+    import models.slate_game  # noqa: F401
+    import models.tonight_publication  # noqa: F401
     import models.sync_failure  # noqa: F401
     import models.sync_run  # noqa: F401
     import models.sync_job  # noqa: F401
