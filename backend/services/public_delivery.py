@@ -50,13 +50,22 @@ def apply_public_delivery_headers(
     contract_version=None,
     immutable=False,
     available=True,
+    validator=None,
 ):
-    """Apply cache headers and a conditional 304 to one JSON response."""
-    validator = publication_validator(
-        resource,
-        identity,
-        contract_version=contract_version,
-    ) if available else None
+    """Apply cache headers and a conditional 304 to one JSON response.
+
+    ``validator`` lets a resource that already stores an authoritative content
+    digest (for example ``tonight_publications.content_sha256``) use it as the
+    ETag instead of deriving one from identity.
+    """
+    if not available:
+        validator = None
+    elif validator is None:
+        validator = publication_validator(
+            resource,
+            identity,
+            contract_version=contract_version,
+        )
     if validator is None:
         response.headers['Cache-Control'] = NO_STORE_CACHE_CONTROL
         return response

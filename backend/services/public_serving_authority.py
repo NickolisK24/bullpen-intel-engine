@@ -1434,8 +1434,15 @@ def trusted_tonight_view():
     # compatible without importing the bullpen API while this module is loaded.
     from api.bullpen import (
         _tonight_reference_date_from_request,
+        tonight_contract_response,
         tonight_query_error_response,
     )
+
+    # contract=tonight_v1 is already publication-bound; only legacy tonight_v5
+    # continues below.
+    contract_response = tonight_contract_response()
+    if contract_response is not None:
+        return contract_response
 
     reference_date, error = _tonight_reference_date_from_request()
     if error:
