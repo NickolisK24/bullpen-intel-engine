@@ -99,6 +99,14 @@ def create_app(config_name=None):
         os.environ.get('SHARE_ARTIFACT_AUTOGENERATION', 'true').lower()
         in ('1', 'true', 'yes')
     )
+    # Tonight v1 (TN-01): every committed trusted publication is projected into
+    # its immutable, publication-bound tonight_v1 row. Not served publicly yet;
+    # absent from bare-Flask unit apps so existing publication tests are
+    # unaffected.
+    app.config['TONIGHT_V1_PROJECTION_ENABLED'] = (
+        os.environ.get('TONIGHT_V1_PROJECTION', 'true').lower()
+        in ('1', 'true', 'yes')
+    )
     # A production snapshot is not trusted/current until its publication-linked
     # Team State proof has been flushed in the same database transaction. This
     # is not an operational toggle: every authorized production publisher
@@ -144,6 +152,7 @@ def create_app(config_name=None):
     from models.slate_game import SlateGame
     from models.editorial_post_history import EditorialPostHistory
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
+    from models.tonight_publication import TonightPublication
     from models.user import User, UserFollowedTeam
     from models.audience_subscriber import AudienceSubscriber
     from models.traffic_internal_visitor import TrafficInternalVisitor

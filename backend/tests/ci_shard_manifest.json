@@ -365,7 +365,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 507.6,
+      "measured_seconds": 521.6,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -754,6 +754,10 @@
         {
           "path": "tests/test_tonight_authority_hardening.py",
           "measured_seconds": 1.6
+        },
+        {
+          "path": "tests/test_tonight_v1_read_model.py",
+          "measured_seconds": 14.0
         }
       ]
     },

@@ -536,6 +536,35 @@ def run_post_commit_snapshot_publication(snapshot):
     if getattr(snapshot, 'status', None) != SNAPSHOT_STATUS_READY:
         return
     _maybe_generate_team_state_artifacts_after_publication(snapshot)
+    _maybe_generate_tonight_v1_after_publication(snapshot)
+
+
+def _maybe_generate_tonight_v1_after_publication(snapshot):
+    """Project the durable trusted publication into its immutable tonight_v1 row.
+
+    Runs only after the publication has committed, is gated by app config like
+    the Team State hook, and never raises: a projection failure is logged and
+    leaves the publication, earlier tonight_v1 rows, and legacy Tonight alone.
+    """
+    try:
+        from flask import current_app
+        enabled = bool(
+            current_app
+            and current_app.config.get('TONIGHT_V1_PROJECTION_ENABLED', False)
+        )
+    except Exception:
+        enabled = False
+    if not enabled:
+        return None
+    try:
+        from services.tonight_read_model import generate_tonight_v1_after_publication
+        return generate_tonight_v1_after_publication(snapshot)
+    except Exception:
+        logger.exception(
+            'tonight_v1 projection hook failed non-fatally snapshot_id=%s.',
+            getattr(snapshot, 'id', None),
+        )
+        return None
 
 
 def _maybe_generate_team_state_artifacts_after_publication(snapshot):
