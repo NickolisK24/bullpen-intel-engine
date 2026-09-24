@@ -332,7 +332,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            'f041ddaa4b418acf248e241bdb204052a0ea5e1d52aba87e0da48420bc5966bd',
+            'f35619014d1109fcb16057c0fba7015b48077cccdde753f5fbc7ccb762c873df',
         'change': (
             'Supabase egress P0 adds the nullable atomic candidate admission receipt. '
             'D-054 extracted the existing latest Dashboard snapshot queries '
@@ -356,7 +356,10 @@ PACKAGE_MODIFIED_MODULES = {
             'projection a prerequisite of publication, preventing a trusted '
             'snapshot from becoming public before its Daily Edition is prepared; '
             'trusted snapshot selection and other publication eligibility '
-            'semantics remain unchanged'
+            'semantics remain unchanged. TN-01 appended a config-gated, '
+            'non-raising tonight_v1 projection step to the same post-commit '
+            'hook; it writes only its own tonight_publications row after the '
+            'publication has committed and never changes publication outcome'
         ),
         # D-054 and D-056 did not move a publication outcome. The Production
         # Accuracy Proof package deliberately does: proof construction and
