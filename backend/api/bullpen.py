@@ -109,6 +109,7 @@ from services.tonight_intelligence_snapshot import (
     tonight_failure_payload,
     tonight_query_error_payload,
 )
+from services import tonight_v1_serving
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -2272,6 +2273,10 @@ def get_tonight_intelligence():
     — no predictions, no ranking, no recommendations. Separate from the COIN
     completed-game stories and from ``/intelligence/today``.
     """
+    contract_response = tonight_contract_response()
+    if contract_response is not None:
+        return contract_response
+
     reference_date, error = _tonight_reference_date_from_request()
     if error:
         return tonight_query_error_response(error)
@@ -2281,6 +2286,68 @@ def get_tonight_intelligence():
         current_app.logger.exception('tonight intelligence build failed')
         return jsonify(tonight_failure_payload(reference_date)), 503
     return jsonify(payload)
+
+
+def tonight_contract_response():
+    """Contract selection shared by the Tonight view and its trusted override.
+
+    ``None`` means serve legacy tonight_v5 (no ``contract`` or
+    ``contract=tonight_v5``). ``contract=tonight_v1`` serves the stored v1
+    projection; any other value is a 400 in the Tonight shell.
+    """
+    contract = request.args.get(tonight_v1_serving.CONTRACT_PARAM)
+    if contract in (None, '', tonight_v1_serving.LEGACY_CONTRACT):
+        return None
+    if contract == tonight_v1_serving.CONTRACT:
+        return _tonight_v1_response()
+    return tonight_query_error_response(QueryParamError(
+        tonight_v1_serving.CONTRACT_PARAM,
+        'contract must be one of: '
+        + ', '.join(tonight_v1_serving.SUPPORTED_CONTRACTS) + '.',
+    ))
+
+
+def _tonight_v1_response():
+    """Serve the stored tonight_v1 row of the current trusted publication.
+
+    Current alias only: never builds, never falls back to tonight_v5. A missing
+    or inconsistent row is a fail-closed, uncached 200 in the v1 shape; a read
+    failure is the normal 503 service error.
+    """
+    unsupported = tonight_v1_serving.unsupported_v1_param(request.args)
+    if unsupported:
+        return tonight_query_error_response(QueryParamError(
+            unsupported,
+            f'{unsupported} is not supported for contract=tonight_v1; '
+            'only the current trusted publication is served.',
+        ))
+    try:
+        payload, delivery = tonight_v1_serving.serve_current_tonight_v1()
+    except Exception:
+        current_app.logger.exception('tonight_v1 serving failed')
+        response = jsonify(tonight_failure_payload(None))
+        response.status_code = 503
+        response.headers['X-BaseballOS-Contract'] = tonight_v1_serving.CONTRACT
+        return apply_public_delivery_headers(
+            response, resource='tonight_v1', identity=None, available=False,
+        )
+    response = jsonify(payload)
+    response.headers['X-BaseballOS-Contract'] = tonight_v1_serving.CONTRACT
+    if delivery is None:
+        return apply_public_delivery_headers(
+            response, resource='tonight_v1', identity=None, available=False,
+        )
+    response.headers['X-BaseballOS-Sync-Run-ID'] = (
+        '' if delivery['sync_run_id'] is None else str(delivery['sync_run_id'])
+    )
+    response.headers['X-BaseballOS-Data-Through'] = delivery['data_through']
+    return apply_public_delivery_headers(
+        response,
+        resource='tonight_v1',
+        identity={'snapshot_id': delivery['snapshot_id']},
+        contract_version=delivery['contract'],
+        validator=delivery['validator'],
+    )
 
 
 def tonight_query_error_response(error):
