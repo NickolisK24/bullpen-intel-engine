@@ -1198,3 +1198,537 @@ def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
 def test_rehearsal_refuses_unsafe_targets(env):
     with pytest.raises(RuntimeError):
         assert_rehearsal_target(env)
+
+
+# ── Tonight v1: publication → projection → serving certification ─────────────
+#
+# The candidate rehearsal above never moves the trusted pointer. Tonight v1 is
+# downstream of a *committed* trusted publication, so these rehearsals publish
+# for real through the canonical publisher (with the mandatory Team State proof
+# enabled, as in production) and then prove the tonight_v1 chain against that
+# exact snapshot: post-commit projection, immutable row, Team Board parity,
+# public serving, delivery identity, and failure isolation.
+
+TONIGHT_STRETCHED_TEAM = TEAM_IDS[1]
+TONIGHT_V1_URL = '/api/bullpen/intelligence/tonight?contract=tonight_v1'
+
+
+def _tonight_rehearsal_readiness(original):
+    """Governed readiness at the proof seam; one club reads Stretched.
+
+    The partitions satisfy Contract A exactly (6/8 clean is fresh coverage,
+    4/8 clean with no severe arms is residual stretched), so the real proof
+    reproduces each decision rather than stamping it. Callers outside the
+    proof seam (no ``source_snapshot``) keep the installed resolver.
+    """
+    def resolver(team_id, *args, reference_dates_out=None, source_snapshot=None,
+                 **kwargs):
+        if source_snapshot is None or reference_dates_out is None:
+            return original(team_id, *args, **kwargs)
+        return _governed_readiness(team_id, reference_dates_out, source_snapshot)
+    return resolver
+
+
+def _governed_readiness(team_id, reference_dates_out, source_snapshot):
+    stretched = team_id == TONIGHT_STRETCHED_TEAM
+    clean, moderate = (4, 4) if stretched else (6, 2)
+    status_code = 'operationally_constrained' if stretched else 'operationally_stable'
+    reference_dates_out.update({
+        'membership_reference_date': source_snapshot.data_through,
+        'availability_reference_date': source_snapshot.availability_reference_date,
+    })
+    return {
+        'contract_version': 'v3_phase_5',
+        'team': {
+            'team_id': team_id, 'team_name': f'Rehearsal Team {team_id}',
+            'team_abbreviation': f'R{team_id}',
+        },
+        'readiness': {'status_code': status_code, 'summary': 'Current bullpen state.'},
+        'freshness': {'data_through': source_snapshot.data_through.isoformat()},
+        'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
+        'team_state_evidence': {
+            'method_version': 'v3_phase_5',
+            'contract': 'team_state_contract_a', 'basis': 'status_only',
+            'readiness_status_code': status_code,
+            'active_pitcher_count': 8, 'clean_count': clean,
+            'moderate_count': moderate, 'severe_count': 0, 'unknown_count': 0,
+            'clean_share': clean / 8, 'moderate_share': moderate / 8,
+            'severe_share': 0.0, 'unknown_share': 0.0,
+            'decisive_rule': 'residual_stretched' if stretched else 'fresh_coverage',
+            'decisive_inputs': {'clean_count': clean},
+            'thresholds_applied': {
+                'clean_share_fresh_min': [3, 5],
+                'clean_share_fresh_min_value': 0.6,
+                'clean_count_fresh_min': 5,
+                'severe_count_fresh_max': 1,
+                'clean_count_vulnerable_max': 2,
+                'severe_share_vulnerable_min': [1, 3],
+                'severe_share_vulnerable_min_value': 1 / 3,
+            },
+            'trust_state': 'high', 'trust_data_state': 'fresh',
+            'freshness_state': 'current', 'material_limitations': [],
+            'evidence_references': {
+                'population_authority': 'resolve_readiness_population',
+            },
+        },
+    }
+
+
+def _seed_tonight_extras(reference_date):
+    """Minimum Tonight inputs: a B2B / 3-in-4 reliever and a small slate.
+
+    Team 0's reliever also worked two and four days before the reference
+    date, inside Team 0's already-final games, so the ledger stays complete.
+    """
+    from models.slate_game import SlateGame
+
+    reliever = Pitcher.query.filter_by(mlb_id=7900000).one()
+    for offset, game_pk in ((2, 7800001), (4, 7800003)):
+        db.session.add(GameLog(
+            pitcher_id=reliever.id, mlb_game_pk=game_pk,
+            game_date=reference_date - timedelta(days=offset), game_type='R',
+            games_started=0, innings_pitched=1.0, innings_pitched_outs=3,
+            pitches_thrown=14, appearance_team_id=TEAM_IDS[0],
+            appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        ))
+        PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one().pitching_lines_seen = 2
+    first = utc_now_naive().replace(
+        year=reference_date.year, month=reference_date.month, day=reference_date.day,
+        hour=23, minute=5, second=0, microsecond=0,
+    )
+    db.session.add_all([
+        SlateGame(game_pk=7600001, game_date_et=reference_date, game_time_utc=first,
+                  away_team_id=TEAM_IDS[1], home_team_id=TEAM_IDS[0],
+                  normalized_state='upcoming', status_detailed='Scheduled', game_number=1),
+        SlateGame(game_pk=7600002, game_date_et=reference_date,
+                  game_time_utc=first - timedelta(hours=3),
+                  away_team_id=TEAM_IDS[3], home_team_id=TEAM_IDS[2],
+                  normalized_state='cancelled', status_detailed='Postponed', game_number=1),
+    ])
+    db.session.commit()
+
+
+def _tonight_pointer():
+    current = dashboard_snapshot.get_latest_valid_dashboard_snapshot()
+    published = [
+        (row.id, row.published_at)
+        for row in DashboardSnapshot.query.filter_by(is_published=True).all()
+    ]
+    runs = sorted(
+        (run.id, run.published_dashboard_snapshot_id) for run in SyncRun.query.all()
+    )
+    return (current.id if current is not None else None, published, runs)
+
+
+class _TonightRehearsal:
+    """A disposable app with the canonical publisher and production gates."""
+
+    def __init__(self, monkeypatch, *, name):
+        from services import share_artifact_generation
+
+        self.monkeypatch = monkeypatch
+        url = _test_database_url()
+        assert url.startswith(('postgres://', 'postgresql://'))
+        assert_disposable_test_target(url, operation=name)
+        monkeypatch.setenv('APP_ENV', 'test')
+        monkeypatch.setenv('DATABASE_URL', url)
+        self.app = importlib.import_module('app').create_app('test')
+        self.app.config['TRUSTED_PUBLIC_SERVING_ENABLED'] = True
+        # Production gates: publication requires the Team State proof and runs
+        # the tonight_v1 projection after commit.
+        self.app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = True
+        self.app.config['TONIGHT_V1_PROJECTION_ENABLED'] = True
+        monkeypatch.setattr(
+            share_artifact_generation, 'resolve_team_readiness_payload',
+            _tonight_rehearsal_readiness(
+                share_artifact_generation.resolve_team_readiness_payload,
+            ),
+        )
+
+    def setup(self):
+        create_test_schema(self.app)
+        self.reference_date = public_serving_authority.product_current_date()
+        _seed_teams(self.reference_date)
+        _seed_tonight_extras(self.reference_date)
+        assert public_serving_authority.install_public_serving_authority(self.app)
+
+    def publish(self, source):
+        represented = self.reference_date - timedelta(days=1)
+        run = SyncRun(
+            job_name='daily_sync', started_at=utc_now_naive() - timedelta(minutes=2),
+            completed_at=utc_now_naive(), status='success', stage='published',
+            source='test', latest_game_date=represented,
+            latest_workload_date=represented,
+            latest_fatigue_calculated_at=utc_now_naive(),
+        )
+        db.session.add(run)
+        db.session.commit()
+        snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+            sync_run_id=run.id, source=source, publish=True, raise_errors=True,
+        )
+        assert snapshot.is_published is True, (snapshot.status, snapshot.error_message)
+        assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+        assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == snapshot.id
+        assert db.session.get(SyncRun, run.id).published_dashboard_snapshot_id == snapshot.id
+        return snapshot
+
+
+def _forbid_live_tonight_engines(monkeypatch, active):
+    """Live engines raise while ``active['on']``; otherwise they run normally."""
+    import services.bullpen_context as bullpen_context
+    import services.tonight_candidate_selection as candidate_selection
+    import services.tonight_intelligence_service as tonight_service
+    from services import tonight_intelligence_snapshot
+
+    def guard(module, name):
+        original = getattr(module, name)
+
+        def guarded(*args, **kwargs):
+            if active['on']:
+                raise AssertionError(f'tonight_v1 reached {module.__name__}.{name}')
+            return original(*args, **kwargs)
+        monkeypatch.setattr(module, name, guarded)
+
+    guard(bullpen_context, 'build_team_bullpen_context')
+    guard(candidate_selection, 'build_tonight_candidates')
+    guard(tonight_service, 'serve_tonight')
+    guard(tonight_intelligence_snapshot, 'serve_tonight_cached')
+
+
+class _SqlRecorder:
+    def __init__(self):
+        self.statements = []
+
+    def __enter__(self):
+        event.listen(db.engine, 'before_cursor_execute', self._record)
+        return self
+
+    def __exit__(self, *_exc):
+        event.remove(db.engine, 'before_cursor_execute', self._record)
+
+    def _record(self, _conn, _cursor, statement, _params, _context, _many):
+        self.statements.append(statement.lower())
+
+    def count(self, *needles):
+        return sum(1 for sql in self.statements if any(n in sql for n in needles))
+
+    def writes(self):
+        return [
+            sql for sql in self.statements
+            if sql.lstrip().startswith(('insert', 'update', 'delete'))
+        ]
+
+
+def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
+    from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
+    from models.tonight_publication import TonightPublication, TonightPublicationImmutable
+    from services import public_delivery, tonight_intelligence_snapshot, tonight_read_model
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='Tonight v1 rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            # Legacy tonight_v5 storage exists before publication and must not move.
+            tonight_intelligence_snapshot.write_snapshot(
+                {'status': 'empty', 'reference_date': rehearsal.reference_date.isoformat(),
+                 'cards': [], 'card_count': 0, 'games': [], 'game_count': 0,
+                 'empty_reason': 'no_tonight_signals', 'limitations': []},
+                source='legacy_rehearsal',
+            )
+            legacy_before = [
+                (row.id, row.response_json, row.generated_at)
+                for row in TonightIntelligenceSnapshot.query.all()
+            ]
+
+            # Phases 3/5/10: wrap the real post-commit projection so its SQL,
+            # engine calls and pointer effect are measured inside publication.
+            engines = {'on': False}
+            _forbid_live_tonight_engines(monkeypatch, engines)
+            generation = {}
+            original_generate = tonight_read_model.generate_tonight_v1_after_publication
+
+            def measured_generate(snapshot):
+                generation['pointer_before'] = _tonight_pointer()
+                engines['on'] = True
+                try:
+                    with _SqlRecorder() as sql:
+                        result = original_generate(snapshot)
+                finally:
+                    engines['on'] = False
+                generation.update(result=result, sql=sql)
+                generation['pointer_after'] = _tonight_pointer()
+                return result
+
+            monkeypatch.setattr(
+                tonight_read_model, 'generate_tonight_v1_after_publication',
+                measured_generate,
+            )
+
+            # Phase 2: one real trusted publication through the canonical path.
+            snapshot = rehearsal.publish('tonight_rehearsal')
+            receipts = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+            assert set(receipts) == {str(team_id) for team_id in TEAM_IDS}
+            identity = {
+                'dashboard_snapshot_id': snapshot.id,
+                'sync_run_id': snapshot.sync_run_id,
+                'data_through': snapshot.data_through,
+                'availability_reference_date': snapshot.availability_reference_date,
+                'published_at': snapshot.published_at,
+            }
+            assert identity['availability_reference_date'] == rehearsal.reference_date
+
+            # Phase 3: exactly one immutable row, bound to that snapshot.
+            assert generation['result']['status'] == 'created'
+            rows = TonightPublication.query.all()
+            assert len(rows) == 1
+            row = rows[0]
+            assert generation['result']['tonight_publication_id'] == row.id
+            assert (row.contract, row.dashboard_snapshot_id, row.sync_run_id,
+                    row.data_through, row.reference_date,
+                    row.availability_reference_date) == (
+                'tonight_v1', snapshot.id, snapshot.sync_run_id, snapshot.data_through,
+                snapshot.availability_reference_date, snapshot.availability_reference_date,
+            )
+            assert len(row.content_sha256) == 64
+            assert row.content_sha256 == tonight_read_model.content_sha256(row.payload)
+            edition = row.payload['edition']
+            assert edition['publication']['dashboard_snapshot_id'] == snapshot.id
+            assert edition['publication']['sync_run_id'] == snapshot.sync_run_id
+            assert edition['data_through'] == snapshot.data_through.isoformat()
+            assert edition['baseball_date'] == row.reference_date.isoformat()
+            assert row.payload['summary']['games_by_state']['postponed'] == 1
+            assert row.payload['summary']['game_count'] == 2
+
+            # Phase 5: no second bullpen engine during generation.
+            gen_sql = generation['sql']
+            assert gen_sql.count('game_logs') == 0
+            assert gen_sql.count('fatigue_scores') == 0
+            generation_query_count = len(gen_sql.statements)
+
+            # Phase 10: projection moved no trusted pointer.
+            assert generation['pointer_before'] == generation['pointer_after']
+            assert generation['pointer_after'][0] == snapshot.id
+
+            # Phase 4: TeamSide parity with the served Team Board of this snapshot.
+            client = rehearsal.app.test_client()
+            sides = {}
+            for game in row.payload['games']:
+                for key in ('away', 'home'):
+                    sides[game[key]['team_id']] = game[key]
+            parity_teams = (TEAM_IDS[0], TEAM_IDS[1], TEAM_IDS[2], TEAM_IDS[3])
+            for team_id in parity_teams:
+                side = sides[team_id]
+                core = client.get(f'/api/bullpen/teams/{team_id}/board-v2/core').get_json()
+                assert core['publication_identity']['snapshot_id'] == snapshot.id
+                board = public_serving_authority.build_published_team_board(
+                    team_id, snapshot_override=snapshot, include_recent_usage_rest=True,
+                )
+                assert side['available'] is True
+                assert side['team_state']['public_state'] == core['team_state']['public_state']
+                assert side['team_state']['public_label'] == core['team_state']['public_label']
+                rest = core['rest_status']
+                for name in ('active_arm_count', 'rested_arm_count',
+                             'worked_yesterday_count', 'back_to_back_count'):
+                    assert side['rest'][name] == rest[name]
+                assert side['rest']['active_arm_count'] == core['active_bullpen']['arm_count']
+                window = board['workload_overview']['windows']['window_7']
+                for name in ('appearances', 'pitches', 'outs'):
+                    assert side['workload_7d'][name] == window[name]['value']
+                arms = core['active_bullpen']['arms']
+                arm_ids = {arm['pitcher_id'] for arm in arms}
+                assert side['multi_day_usage']['three_in_four_count'] == sum(
+                    1 for item in board['recent_usage_rest']['active_pitchers']
+                    if item['pitcher_id'] in arm_ids and item['three_in_four']['value'] is True
+                )
+                governed = sorted(
+                    (arm for arm in arms
+                     if (arm.get('public_role_read') or {}).get('key') in ('trust_arm', 'bridge_arm')),
+                    key=lambda arm: (
+                        ('trust_arm', 'bridge_arm').index(arm['public_role_read']['key']),
+                        str(arm['name']).casefold(), arm['pitcher_id'],
+                    ),
+                )[:3]
+                assert [arm['pitcher_id'] for arm in side['key_arms']] == [
+                    arm['pitcher_id'] for arm in governed
+                ]
+                rotation = board['frozen_rotation_impact']
+                if (rotation or {}).get('short_start_count'):
+                    assert side['rotation']['short_start_count'] == rotation['short_start_count']
+                else:
+                    assert side['rotation'] is None
+            # The fixture carries the facts the rehearsal is meant to exercise.
+            assert sides[TEAM_IDS[0]]['team_state']['public_state'] == 'fresh'
+            assert sides[TONIGHT_STRETCHED_TEAM]['team_state']['public_state'] == 'stretched'
+            assert sides[TEAM_IDS[0]]['rest']['back_to_back_count'] == 1
+            assert sides[TEAM_IDS[0]]['multi_day_usage']['three_in_four_count'] == 1
+            assert row.payload['summary']['clubs_with_back_to_back_arms'] == 1
+
+            # Phase 6: same-publication rebuild reuses the row; no ORM rewrite.
+            again, outcome = tonight_read_model.generate_tonight_v1_for_snapshot(snapshot)
+            assert (outcome, again.id, again.content_sha256) == (
+                'reused', row.id, row.content_sha256,
+            )
+            stored_payload = deepcopy(row.payload)
+            row.payload = {'contract': 'tampered'}
+            with pytest.raises(TonightPublicationImmutable):
+                db.session.commit()
+            db.session.rollback()
+            assert db.session.get(TonightPublication, row.id).payload == stored_payload
+            assert TonightPublication.query.count() == 1
+
+            # Phases 7/8: public serving returns the stored row, identified.
+            pointer_before_serving = _tonight_pointer()
+            engines['on'] = True
+            monkeypatch.setattr(tonight_read_model, 'build_tonight_v1', lambda *a, **k: pytest.fail('build'))
+            monkeypatch.setattr(tonight_read_model, 'generate_tonight_v1_for_snapshot', lambda *a, **k: pytest.fail('generate'))
+            with _SqlRecorder() as serve_sql:
+                response = client.get(TONIGHT_V1_URL)
+            assert response.status_code == 200
+            body = response.get_json()
+            assert body == stored_payload
+            assert body['edition']['publication']['dashboard_snapshot_id'] == snapshot.id
+            assert response.headers['X-BaseballOS-Snapshot-ID'] == str(snapshot.id)
+            assert response.headers['X-BaseballOS-Sync-Run-ID'] == str(snapshot.sync_run_id)
+            assert response.headers['X-BaseballOS-Data-Through'] == snapshot.data_through.isoformat()
+            assert response.headers['X-BaseballOS-Contract'] == 'tonight_v1'
+            assert response.headers['ETag'] == f'"{row.content_sha256}"'
+            assert response.headers['Cache-Control'] == public_delivery.CURRENT_ALIAS_CACHE_CONTROL
+            assert serve_sql.count('game_logs') == 0
+            assert serve_sql.count('fatigue_scores') == 0
+            assert serve_sql.writes() == []
+            serving_query_count = len(serve_sql.statements)
+            assert serving_query_count <= 2, serve_sql.statements
+
+            with _SqlRecorder() as not_modified_sql:
+                not_modified = client.get(
+                    TONIGHT_V1_URL, headers={'If-None-Match': response.headers['ETag']},
+                )
+            engines['on'] = False
+            assert not_modified.status_code == 304
+            assert not_modified.get_data() == b''
+            assert not_modified_sql.count('game_logs', 'fatigue_scores') == 0
+            assert not_modified_sql.writes() == []
+            assert _tonight_pointer() == pointer_before_serving
+
+            # Phase 11: legacy tonight_v5 storage untouched.
+            assert [
+                (row_.id, row_.response_json, row_.generated_at)
+                for row_ in TonightIntelligenceSnapshot.query.all()
+            ] == legacy_before
+
+            print(
+                'REHEARSAL tonight_v1 '
+                f'status={generation["result"]["status"]} row_id={row.id} '
+                f'contract={row.contract} dashboard_snapshot_id={row.dashboard_snapshot_id} '
+                f'sync_run_id={row.sync_run_id} reference_date={row.reference_date} '
+                f'data_through={row.data_through} content_sha256={row.content_sha256} '
+                f'generation_queries={generation_query_count} '
+                f'serving_queries={serving_query_count} '
+                f'game_log_queries=0 fatigue_score_queries=0 '
+                f'tonight_pointer_moves=0 parity_teams={len(parity_teams)} '
+                f'delivery_headers=PASS etag=PASS not_modified=PASS'
+            )
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
+
+
+def test_rehearsal_tonight_v1_never_serves_a_stale_row(monkeypatch):
+    from models.tonight_publication import TonightPublication
+    from services import tonight_read_model
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='Tonight v1 stale-row rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            client = rehearsal.app.test_client()
+            snapshot_a = rehearsal.publish('tonight_rehearsal_a')
+            row_a = tonight_read_model.read_tonight_v1(
+                snapshot_a.availability_reference_date, snapshot_a.id,
+            )
+            assert row_a is not None
+            row_a_identity = (row_a.id, row_a.content_sha256, deepcopy(row_a.payload))
+            assert client.get(TONIGHT_V1_URL).headers['ETag'] == f'"{row_a.content_sha256}"'
+
+            # B is published for the same date without its projection.
+            rehearsal.app.config['TONIGHT_V1_PROJECTION_ENABLED'] = False
+            snapshot_b = rehearsal.publish('tonight_rehearsal_b')
+            assert snapshot_b.id != snapshot_a.id
+            assert snapshot_b.availability_reference_date == snapshot_a.availability_reference_date
+            assert TonightPublication.query.count() == 1
+
+            stale = client.get(TONIGHT_V1_URL)
+            assert stale.status_code == 200
+            body = stale.get_json()
+            assert body['status'] == 'unavailable'
+            assert body['reason_codes'] == ['tonight_v1_publication_missing']
+            assert body['current_publication']['dashboard_snapshot_id'] == snapshot_b.id
+            assert body['games'] == []
+            assert 'ETag' not in stale.headers
+
+            # B's projection through the real hook; B serves, A is preserved.
+            rehearsal.app.config['TONIGHT_V1_PROJECTION_ENABLED'] = True
+            dashboard_snapshot.run_post_commit_snapshot_publication(snapshot_b)
+            row_b = tonight_read_model.read_tonight_v1(
+                snapshot_b.availability_reference_date, snapshot_b.id,
+            )
+            assert row_b is not None and row_b.id != row_a.id
+            current = client.get(TONIGHT_V1_URL)
+            assert current.get_json()['edition']['publication']['dashboard_snapshot_id'] == snapshot_b.id
+            assert current.headers['ETag'] == f'"{row_b.content_sha256}"'
+            preserved = db.session.get(TonightPublication, row_a.id)
+            assert (preserved.id, preserved.content_sha256, preserved.payload) == row_a_identity
+            print(
+                'REHEARSAL tonight_v1_stale_row '
+                f'snapshot_a={snapshot_a.id} snapshot_b={snapshot_b.id} '
+                f'row_a={row_a.id} row_b={row_b.id} stale_served=False'
+            )
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
+
+
+def test_rehearsal_tonight_v1_failure_never_invalidates_publication(monkeypatch, caplog):
+    from models.tonight_publication import TonightPublication
+    from services import tonight_read_model
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='Tonight v1 failure rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            snapshot_a = rehearsal.publish('tonight_rehearsal_prior')
+            prior = tonight_read_model.read_tonight_v1(
+                snapshot_a.availability_reference_date, snapshot_a.id,
+            )
+            prior_identity = (prior.id, prior.content_sha256, deepcopy(prior.payload))
+
+            def failing_build(*_args, **_kwargs):
+                raise RuntimeError('rehearsal tonight_v1 projection failure')
+
+            monkeypatch.setattr(tonight_read_model, 'build_tonight_v1', failing_build)
+            with caplog.at_level('ERROR'):
+                snapshot_b = rehearsal.publish('tonight_rehearsal_fail')
+
+            # The publication committed and is the trusted pointer.
+            refreshed = db.session.get(DashboardSnapshot, snapshot_b.id)
+            assert refreshed.is_published is True
+            assert refreshed.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert dashboard_snapshot.snapshot_unavailable_reason(refreshed) is None
+            assert _tonight_pointer()[0] == snapshot_b.id
+            # No partial row; the prior row is untouched; the failure is logged.
+            assert tonight_read_model.read_tonight_v1(
+                snapshot_b.availability_reference_date, snapshot_b.id,
+            ) is None
+            assert TonightPublication.query.count() == 1
+            kept = db.session.get(TonightPublication, prior.id)
+            assert (kept.id, kept.content_sha256, kept.payload) == prior_identity
+            assert f'tonight_v1 projection failed non-fatally snapshot_id={snapshot_b.id}' in caplog.text
+            # Current v1 fails closed rather than serving the prior snapshot's row.
+            body = rehearsal.app.test_client().get(TONIGHT_V1_URL).get_json()
+            assert body['reason_codes'] == ['tonight_v1_publication_missing']
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
