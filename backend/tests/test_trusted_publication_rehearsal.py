@@ -2001,6 +2001,15 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
     with rehearsal.app.app_context():
         try:
             rehearsal.setup()
+            # TN-06: a second pregame game whose home club had an active-bullpen join.
+            template = db.session.get(SlateGame, 7600001)
+            db.session.add(SlateGame(
+                game_pk=7600003, game_date_et=template.game_date_et,
+                game_time_utc=template.game_time_utc + timedelta(hours=1),
+                away_team_id=TEAM_IDS[4], home_team_id=TEAM_IDS[2],
+                normalized_state='upcoming', status_detailed='Scheduled', game_number=1,
+            ))
+            db.session.commit()
             seen = _inject_exact_predecessor(monkeypatch)
             snapshot = rehearsal.publish('tonight_rehearsal_changes')
             assert seen['joined_ids'], 'the joined club needs an active bullpen arm'
@@ -2031,6 +2040,20 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                         item['change_id'] for item in changes if item['team_id'] == side['team_id']
                     ]
                     assert set(side['change_refs']) <= set(ids)
+            # TN-06: featured games selected from the same frozen payload.
+            featured = stored['featured_game_pks']
+            by_pk = {g['game_pk']: g for g in stored['games']}
+            assert featured == [7600001, 7600003]
+            assert by_pk[7600001]['featured_reason_codes'][0] == 'team_state_change'
+            assert by_pk[7600003]['featured_reason_codes'] == ['bullpen_membership_change']
+            assert by_pk[7600002]['featured'] is False           # postponed at publication
+            change_index = {item['change_id']: item for item in changes}
+            for game in stored['games']:
+                assert game['featured'] == (game['game_pk'] in featured)
+                assert game['featured_reason_codes'] == (
+                    tonight_read_model.featured_reasons_for_game(game, change_index)
+                    if game['featured'] else []
+                )
             # Deterministic rebuild of the same trusted snapshot reuses the row.
             again, outcome = tonight_read_model.generate_tonight_v1_for_snapshot(snapshot)
             assert (outcome, again.id, again.content_sha256) == ('reused', row.id, row.content_sha256)
@@ -2056,6 +2079,13 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                 assert serve_sql.writes() == []
                 assert len(serve_sql.statements) <= 3, serve_sql.statements
                 served_changes.append(json.dumps(body['league_changes'], sort_keys=True))
+                # Serving never reselects: featured identity stays frozen.
+                assert body['featured_game_pks'] == featured
+                assert [
+                    (g['game_pk'], g['featured'], g['featured_reason_codes']) for g in body['games']
+                ] == [
+                    (g['game_pk'], g['featured'], g['featured_reason_codes']) for g in stored['games']
+                ]
                 served_game = next(g for g in body['games'] if g['game_pk'] == 7600001)
                 assert served_game['away']['change_refs'] == game['away']['change_refs']
                 assert served_game['home']['change_refs'] == game['home']['change_refs']
@@ -2069,6 +2099,8 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                 'REHEARSAL tonight_v1_league_changes '
                 f'snapshot={snapshot.id} previous={seen["previous_id"]} row={row.id} '
                 f'change_count={len(changes)} classes={sorted(classes)} '
+                f'featured={featured} '
+                f'featured_reasons={[by_pk[pk]["featured_reason_codes"] for pk in featured]} '
                 f'headlines={[item["headline"] for item in changes]} '
                 'overlay_scheduled_live_final=byte_identical rebuild=reused'
             )

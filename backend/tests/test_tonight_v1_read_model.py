@@ -333,7 +333,13 @@ def test_slate_uses_game_date_et_and_orders_every_game(tonight_app):
         'home_team_board': '/bullpen?view=board&team=SF',
         'matchup': '/matchup/801',
     }
-    assert games[801]['featured'] is False
+    # TN-06: SF has 2 back-to-back arms and a 3-in-4 arm. The postponed 802
+    # (NYY Vulnerable) is not eligible, and 803/804 meet no rule.
+    assert games[801]['featured'] is True
+    assert games[801]['featured_reason_codes'] == [
+        'multiple_back_to_back_arms', 'three_in_four_pressure',
+    ]
+    assert all(games[pk]['featured'] is False for pk in (802, 803, 804))
     # TN-04: one descriptive sentence authored from the frozen TeamSides.
     assert games[801]['context'] == {
         'sentence': 'SF has 2 bullpen arms coming off back-to-back usage.',
@@ -380,7 +386,7 @@ def test_summary_counts_come_from_the_projected_payload(tonight_app):
         'change_count': 0,
     }
     assert payload['lead'] is None
-    assert payload['featured_game_pks'] == []
+    assert payload['featured_game_pks'] == [801]
     assert payload['league_changes'] == []
     assert payload['quiet_day'] is False
     assert all(
@@ -1491,5 +1497,226 @@ def test_build_populates_league_changes_refs_and_count_frozen():
                 {**game['away'], 'change_refs': []}, {**game['home'], 'change_refs': []},
             ), game['state'],
         )
+    again = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 26))
+    assert tonight_read_model.content_sha256(again) == tonight_read_model.content_sha256(payload)
+
+
+# ── TN-06: featured games ────────────────────────────────────────────────────
+# Fixed rule priority over the frozen game cards and retained TN-05 changes.
+
+import ast as _ast  # noqa: E402
+import inspect as _inspect  # noqa: E402
+import itertools as _itertools  # noqa: E402
+
+_TEAM_IDS = _itertools.count(200)
+
+
+def _fside(abbr, state='fresh', *, team_id=None, refs=(), **kwargs):
+    side = _ctx_side(abbr, state, **kwargs)
+    side['team_id'] = team_id if team_id is not None else next(_TEAM_IDS)
+    side['change_refs'] = list(refs)
+    return side
+
+
+def _fgame(game_pk, away, home, *, state='scheduled', first_pitch='2026-09-25T23:05:00Z',
+           game_number=1):
+    return {
+        'game_pk': game_pk, 'game_number': game_number, 'first_pitch_utc': first_pitch,
+        'state': state, 'away': away, 'home': home,
+        'context': {'sentence': None, 'reason_codes': [], 'evidence_state': 'complete'},
+        'featured': False, 'featured_reason_codes': [],
+    }
+
+
+def _fchange(change_id, team_id, change_class):
+    return {'change_id': change_id, 'team_id': team_id, 'change_class': change_class}
+
+
+def _reasons(game, changes=()):
+    return tonight_read_model.featured_reasons_for_game(
+        game, {item['change_id']: item for item in changes},
+    )
+
+
+@pytest.mark.parametrize(('away', 'home', 'changes', 'expected'), [
+    (_fside('SEA', 'vulnerable'), _fside('HOU'), (), ['vulnerable_team']),              # 1
+    (_fside('SEA', 'vulnerable'), _fside('HOU', 'vulnerable'), (), ['vulnerable_team']),  # 2
+    (_fside('SEA', team_id=150, refs=['c1']), _fside('HOU'),
+     (_fchange('c1', 150, 'team_state_changed'),), ['team_state_change']),              # 3
+    (_fside('SEA', b2b=2), _fside('HOU'), (), ['multiple_back_to_back_arms']),          # 4
+    (_fside('SEA', b2b=1), _fside('HOU'), (), []),                                      # 5
+    (_fside('SEA', three=1), _fside('HOU'), (), ['three_in_four_pressure']),            # 6
+    (_fside('SEA', short=1), _fside('HOU'), (), ['short_start_transfer']),              # 7
+    (_fside('SEA', team_id=151, refs=['j1']), _fside('HOU'),
+     (_fchange('j1', 151, 'active_bullpen_joined'),), ['bullpen_membership_change']),   # 8
+    (_fside('SEA', team_id=152, refs=['l1']), _fside('HOU'),
+     (_fchange('l1', 152, 'active_bullpen_left'),), ['bullpen_membership_change']),     # 9
+    (_fside('SEA', team_id=153, refs=['t1', 'b1']), _fside('HOU'),
+     (_fchange('t1', 153, 'verified_transaction'),
+      _fchange('b1', 153, 'back_to_back_started')), []),                                # 10
+    (_fside('SEA', 'vulnerable', team_state=False), _fside('HOU'), (), []),             # 11
+    (_fside('SEA', b2b=3, rest=False), _fside('HOU'), (), []),                          # 12
+    (_fside('SEA', three=None), _fside('HOU', three=None), (), []),                     # 13
+    (_fside('SEA', short=None), _fside('HOU'), (), []),                                 # 14
+    (_fside('SEA'), _fside('HOU'), (), []),                                             # 15
+])
+def test_featured_rules_use_only_authoritative_frozen_facts(away, home, changes, expected):
+    game = _fgame(1, away, home)
+    assert _reasons(game, changes) == expected
+    selected = tonight_read_model.select_featured_games([game], list(changes))
+    assert selected == ([(1, expected)] if expected else [])
+
+
+def test_unresolved_or_foreign_change_refs_never_qualify():
+    side = _fside('SEA', team_id=160, refs=['missing', 'other-team'])
+    changes = [_fchange('other-team', 999, 'team_state_changed')]
+    assert _reasons(_fgame(1, side, _fside('HOU')), changes) == []
+
+
+def test_all_applicable_reasons_are_retained_in_priority_order():  # 22
+    away = _fside('SEA', 'vulnerable', team_id=161, refs=['s', 'j'], b2b=3, three=2, short=1)
+    changes = [_fchange('s', 161, 'team_state_changed'), _fchange('j', 161, 'active_bullpen_left')]
+    assert _reasons(_fgame(1, away, _fside('HOU')), changes) == list(
+        tonight_read_model.FEATURED_RULE_PRIORITY
+    )
+
+
+@pytest.mark.parametrize('state', ['live', 'final', 'postponed', 'suspended'])
+def test_only_pregame_states_are_eligible(state):  # 24
+    game = _fgame(1, _fside('SEA', 'vulnerable'), _fside('HOU', b2b=4), state=state)
+    assert _reasons(game) == []
+    assert _reasons(_fgame(1, _fside('SEA', 'vulnerable'), _fside('HOU'), state='uncertain')) == [
+        'vulnerable_team',
+    ]
+
+
+def test_priority_order_without_a_score():  # 23 + priority test
+    a = _fgame(10, _fside('SEA', 'vulnerable', b2b=3, short=1), _fside('HOU'),
+               first_pitch='2026-09-26T02:10:00Z')
+    b_side = _fside('BOS', team_id=170, refs=['sb'])
+    b = _fgame(11, b_side, _fside('NYY'), first_pitch='2026-09-25T17:05:00Z')
+    c = _fgame(12, _fside('ATL', three=1), _fside('PHI'), first_pitch='2026-09-25T16:05:00Z')
+    d_side = _fside('TEX', team_id=171, refs=['dj'])
+    d = _fgame(13, d_side, _fside('KC'), first_pitch='2026-09-25T15:05:00Z')
+    changes = [_fchange('sb', 170, 'team_state_changed'), _fchange('dj', 171, 'active_bullpen_joined')]
+    games = [d, c, b, a]
+    pks = tonight_read_model.apply_featured_games(games, changes)
+    assert pks == [10, 11, 12, 13]
+    assert a['featured_reason_codes'] == [
+        'vulnerable_team', 'multiple_back_to_back_arms', 'short_start_transfer',
+    ]
+
+
+def test_cap_of_four_and_time_game_number_pk_tiebreaks():  # 16, 18, 19, 20, 21 + cap test
+    games = [
+        _fgame(20, _fside('A1', b2b=2), _fside('B1'), first_pitch=None),                       # unknown time
+        _fgame(21, _fside('A2', b2b=2), _fside('B2'), first_pitch='2026-09-25T23:05:00Z', game_number=2),
+        _fgame(22, _fside('A3', b2b=2), _fside('B3'), first_pitch='2026-09-25T23:05:00Z', game_number=1),
+        _fgame(23, _fside('A4', b2b=2), _fside('B4'), first_pitch='2026-09-25T17:05:00Z'),
+        _fgame(25, _fside('A5', three=1), _fside('B5'), first_pitch='2026-09-25T15:05:00Z'),
+        _fgame(24, _fside('A6', three=1), _fside('B6'), first_pitch='2026-09-25T15:05:00Z'),
+        _fgame(26, _fside('A7', short=1), _fside('B7'), first_pitch='2026-09-25T12:05:00Z'),
+    ]
+    pks = tonight_read_model.apply_featured_games(games, [])
+    assert pks == [23, 22, 21, 20]
+    assert len(pks) == tonight_read_model.FEATURED_MAX == 4
+    assert [g['game_pk'] for g in games if g['featured']] == [20, 21, 22, 23]
+    assert all(not g['featured'] and g['featured_reason_codes'] == [] for g in games[4:])
+    # Same inputs in any order give the same selection.
+    assert tonight_read_model.apply_featured_games(list(reversed(games)), []) == pks
+    # game_pk breaks a full tie; fewer than four qualifying stays fewer.
+    tied = [
+        _fgame(31, _fside('X1', three=1), _fside('Y1')),
+        _fgame(30, _fside('X2', three=1), _fside('Y2')),
+        _fgame(32, _fside('X3'), _fside('Y3')),
+    ]
+    assert tonight_read_model.apply_featured_games(tied, []) == [30, 31]   # 17
+
+
+def test_featured_selection_has_no_numeric_score():  # 25
+    identifiers = set()
+    for helper in (tonight_read_model.select_featured_games,
+                   tonight_read_model.featured_reasons_for_game,
+                   tonight_read_model.apply_featured_games):
+        tree = _ast.parse(_inspect.getsource(helper))
+        identifiers |= {node.id for node in _ast.walk(tree) if isinstance(node, _ast.Name)}
+        identifiers |= {node.attr for node in _ast.walk(tree) if isinstance(node, _ast.Attribute)}
+        identifiers |= {node.arg for node in _ast.walk(tree) if isinstance(node, _ast.arg)}
+    assert not {name for name in identifiers
+                if any(word in name.lower() for word in ('score', 'weight', 'rank'))}
+    assert 'sum' not in identifiers
+    games = [_fgame(1, _fside('SEA', 'vulnerable'), _fside('HOU'))]
+    tonight_read_model.apply_featured_games(games, [])
+    assert not any('score' in key for key in games[0])
+
+
+def test_production_shaped_featured_games_and_parity():
+    """Six games: TeamSide-shaped frozen facts plus real TB-09 league changes."""
+    _previous, current = _real_pair()
+    real = tonight_read_model.build_tonight_v1(current, [
+        SimpleNamespace(game_pk=99, game_time_utc=datetime(2026, 9, 25, 12), away_team_id=110,
+                        home_team_id=111, normalized_state='upcoming', status_detailed='Scheduled',
+                        game_number=1, last_synced=None),
+    ], generated_at=datetime(2026, 9, 25))
+    league_changes = real['league_changes']
+    bal_refs = real['games'][0]['away']['change_refs']
+    assert [c['change_class'] for c in league_changes if c['team_id'] == 110][0] == 'team_state_changed'
+    games = [
+        _fgame(1, _fside('SEA', 'vulnerable'), _fside('HOU', 'fresh'),
+               first_pitch='2026-09-26T02:10:00Z'),                                   # Vulnerable
+        _fgame(2, _fside('BAL', team_id=110, refs=bal_refs), _fside('NYY'),
+               first_pitch='2026-09-25T23:05:00Z'),                                   # Team State change
+        _fgame(3, _fside('ATL', b2b=2), _fside('PHI'), first_pitch='2026-09-25T23:20:00Z'),
+        _fgame(4, _fside('CHC', three=1), _fside('MIL'), first_pitch='2026-09-25T18:20:00Z'),
+        _fgame(5, _fside('CLE', short=2), _fside('DET'), first_pitch='2026-09-25T17:10:00Z'),
+        _fgame(6, _fside('TEX'), _fside('KC'), first_pitch='2026-09-25T16:05:00Z'),  # no condition
+    ]
+    stored_changes = deepcopy(league_changes)
+    stored_refs = [deepcopy((g['away']['change_refs'], g['home']['change_refs'])) for g in games]
+    pks = tonight_read_model.apply_featured_games(games, league_changes)
+
+    assert pks == [1, 2, 3, 4]
+    by_pk = {g['game_pk']: g for g in games}
+    assert by_pk[1]['featured_reason_codes'] == ['vulnerable_team']
+    assert by_pk[2]['featured_reason_codes'] == ['team_state_change']
+    assert by_pk[3]['featured_reason_codes'] == ['multiple_back_to_back_arms']
+    assert by_pk[4]['featured_reason_codes'] == ['three_in_four_pressure']
+    # Game 5 qualifies (short start) but falls below the cap; game 6 does not qualify.
+    assert tonight_read_model.featured_reasons_for_game(
+        by_pk[5], {c['change_id']: c for c in league_changes}) == ['short_start_transfer']
+    assert by_pk[5]['featured'] is False and by_pk[6]['featured'] is False
+    # Parity: every reason is a frozen field of the stored card or a retained change.
+    assert by_pk[1]['away']['team_state']['public_state'] == 'vulnerable'
+    assert by_pk[1]['away']['team_state']['available'] is True
+    ref = by_pk[2]['away']['change_refs'][0]
+    assert next(c for c in league_changes if c['change_id'] == ref)['change_class'] == 'team_state_changed'
+    assert by_pk[3]['away']['rest']['available'] is True
+    assert by_pk[3]['away']['rest']['back_to_back_count'] == 2
+    assert by_pk[4]['away']['multi_day_usage']['three_in_four_count'] == 1
+    # Selection never changes league changes or refs.
+    assert league_changes == stored_changes
+    assert [(g['away']['change_refs'], g['home']['change_refs']) for g in games] == stored_refs
+
+
+def test_build_features_from_the_same_frozen_payload():
+    """The real builder marks cards and fills featured_game_pks from its own payload."""
+    _previous, current = _real_pair()
+    slate = [SimpleNamespace(
+        game_pk=pk, game_time_utc=datetime(2026, 9, 25, 17 + pk), away_team_id=away,
+        home_team_id=home, normalized_state='upcoming', status_detailed='Scheduled',
+        game_number=1, last_synced=None,
+    ) for pk, away, home in ((1, 110, 117), (2, 111, 118), (3, 116, 108))]
+    payload = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 25))
+    games = {game['game_pk']: game for game in payload['games']}
+    changes = {item['change_id']: item for item in payload['league_changes']}
+    assert payload['featured_game_pks'] == [1, 2]
+    assert games[1]['featured_reason_codes'] == ['team_state_change']
+    assert games[2]['featured_reason_codes'] == ['bullpen_membership_change']
+    assert games[3]['featured'] is False and games[3]['featured_reason_codes'] == []
+    for game in payload['games']:
+        assert game['featured'] == (game['game_pk'] in payload['featured_game_pks'])
+        if game['featured']:
+            assert game['featured_reason_codes'] == tonight_read_model.featured_reasons_for_game(
+                game, changes)
     again = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 26))
     assert tonight_read_model.content_sha256(again) == tonight_read_model.content_sha256(payload)

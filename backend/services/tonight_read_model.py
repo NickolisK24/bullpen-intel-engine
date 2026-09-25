@@ -20,7 +20,8 @@ The builder reads no FatigueScore, GameLog, live roster or legacy
 the two frozen TeamSides only, by ``build_matchup_context``. ``league_changes``
 (TN-05) aggregates each team's frozen Team Board What Changed events from the
 same snapshot, by ``build_league_changes``; it never detects a change itself.
-Featured games and lead are present and empty.
+Featured games (TN-06) are selected from those frozen facts by fixed rule
+priority, by ``select_featured_games``. The lead is present and empty.
 """
 
 from __future__ import annotations
@@ -147,6 +148,25 @@ LEAGUE_CHANGE_BANNED_TERMS = (
 _TRANSACTION_ALLOWED_TERMS = frozenset({'injured', 'hurt'})
 _ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
+# TN-06 featured games: fixed rule priority over frozen facts. Not a score.
+FEATURED_VULNERABLE_TEAM = 'vulnerable_team'
+FEATURED_TEAM_STATE_CHANGE = 'team_state_change'
+FEATURED_MULTIPLE_BACK_TO_BACK = 'multiple_back_to_back_arms'
+FEATURED_THREE_IN_FOUR = 'three_in_four_pressure'
+FEATURED_SHORT_START = 'short_start_transfer'
+FEATURED_MEMBERSHIP_CHANGE = 'bullpen_membership_change'
+FEATURED_RULE_PRIORITY = (
+    FEATURED_VULNERABLE_TEAM,
+    FEATURED_TEAM_STATE_CHANGE,
+    FEATURED_MULTIPLE_BACK_TO_BACK,
+    FEATURED_THREE_IN_FOUR,
+    FEATURED_SHORT_START,
+    FEATURED_MEMBERSHIP_CHANGE,
+)
+FEATURED_MAX = 4
+# Selection is frozen at publication; only a game not yet underway is eligible.
+FEATURED_ELIGIBLE_STATES = frozenset({'scheduled', 'uncertain'})
+
 _CLUBS_BY_ID = {club.team_id: club for club in MLB_CLUBS}
 _CANONICAL_TEAM_IDS = frozenset(MLB_TEAM_IDS)
 
@@ -192,6 +212,7 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
     games.sort(key=_game_order)
     league_changes = build_league_changes(_frozen_what_changed_by_team(snapshot, package))
     attach_change_refs(sides.values(), league_changes)
+    featured_game_pks = apply_featured_games(games, league_changes)
     return {
         'contract': CONTRACT,
         'edition': {
@@ -211,7 +232,7 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
         'summary': _summary(games, sides, league_changes),
         # Authored by later packages; present and empty so the contract is stable.
         'lead': None,
-        'featured_game_pks': [],
+        'featured_game_pks': featured_game_pks,
         'games': games,
         'league_changes': league_changes,
         # Temporary contract: a day with no games. Semantic quiet-day rules
@@ -491,6 +512,7 @@ def _game_card(row, away, home):
         'home': home,
         'context': present_matchup_context(context, state),
         'featured': False,
+        'featured_reason_codes': [],
         'links': {
             'away_team_board': _team_board_link(away),
             'home_team_board': _team_board_link(home),
@@ -913,6 +935,84 @@ def _mapping_or_empty(value):
     return value if isinstance(value, Mapping) else {}
 
 
+# ── Featured games (TN-06) ───────────────────────────────────────────────────
+
+def featured_reasons_for_game(game, league_changes_by_id):
+    """Every featured rule one frozen game card satisfies, in rule priority. Pure.
+
+    Reads only the card's two TeamSides and the retained TN-05 changes their
+    ``change_refs`` point to. A withheld or unknown fact never qualifies, and a
+    ref that does not resolve to a retained change is ignored. The TN-04
+    context is not consulted.
+    """
+    if not isinstance(game, Mapping) or game.get('state') not in FEATURED_ELIGIBLE_STATES:
+        return []
+    sides = [game.get(key) for key in ('away', 'home')]
+    sides = [side for side in sides if isinstance(side, Mapping)]
+    change_classes = {
+        league_changes_by_id[ref]['change_class']
+        for side in sides for ref in side.get('change_refs') or ()
+        if ref in league_changes_by_id
+        and league_changes_by_id[ref].get('team_id') == side.get('team_id')
+    }
+    checks = {
+        FEATURED_VULNERABLE_TEAM: any(
+            (_team_state_fact(side) or (None,))[0] == 'vulnerable' for side in sides
+        ),
+        FEATURED_TEAM_STATE_CHANGE: 'team_state_changed' in change_classes,
+        FEATURED_MULTIPLE_BACK_TO_BACK: any(
+            (_back_to_back_fact(side) or 0) >= BACK_TO_BACK_CONTEXT_MIN for side in sides
+        ),
+        FEATURED_THREE_IN_FOUR: any(
+            (_three_in_four_fact_for_side(side) or 0) >= 1 for side in sides
+        ),
+        FEATURED_SHORT_START: any(_short_start_fact(side) is not None for side in sides),
+        FEATURED_MEMBERSHIP_CHANGE: bool(
+            change_classes & {'active_bullpen_joined', 'active_bullpen_left'}
+        ),
+    }
+    return [rule for rule in FEATURED_RULE_PRIORITY if checks[rule]]
+
+
+def select_featured_games(games, league_changes, *, max_featured=FEATURED_MAX):
+    """``[(game_pk, reasons)]`` for at most ``max_featured`` games. Pure.
+
+    Order: the highest-priority rule a game satisfies, then first pitch
+    (unknown last), then game_number, then game_pk. No weights or scores.
+    """
+    by_id = {
+        item['change_id']: item for item in league_changes or ()
+        if isinstance(item, Mapping) and item.get('change_id')
+    }
+    candidates = []
+    for game in games or ():
+        reasons = featured_reasons_for_game(game, by_id)
+        if not reasons or type(game.get('game_pk')) is not int:
+            continue
+        first_pitch = game.get('first_pitch_utc')
+        candidates.append((
+            FEATURED_RULE_PRIORITY.index(reasons[0]),
+            first_pitch is None,
+            first_pitch or '',
+            game.get('game_number') if type(game.get('game_number')) is int else 0,
+            game['game_pk'],
+            reasons,
+        ))
+    candidates.sort(key=lambda item: item[:5])
+    return [(item[4], item[5]) for item in candidates[:max_featured]]
+
+
+def apply_featured_games(games, league_changes, *, max_featured=FEATURED_MAX):
+    """Mark the selected cards and return ``featured_game_pks`` in selection order."""
+    selected = select_featured_games(games, league_changes, max_featured=max_featured)
+    reasons_by_pk = dict(selected)
+    for game in games:
+        reasons = reasons_by_pk.get(game.get('game_pk'))
+        game['featured'] = reasons is not None
+        game['featured_reason_codes'] = list(reasons or ())
+    return [game_pk for game_pk, _reasons in selected]
+
+
 def _team_board_link(side):
     abbreviation = side.get('abbreviation')
     return f'/bullpen?view=board&team={abbreviation}' if abbreviation else None
@@ -1094,11 +1194,15 @@ __all__ = [
     'CONTEXT_BANNED_TERMS',
     'CONTEXT_PRIORITY',
     'CONTEXT_SENTENCE_MAX_CHARS',
+    'FEATURED_MAX',
+    'FEATURED_RULE_PRIORITY',
     'LEAGUE_CHANGE_BANNED_TERMS',
     'LEAGUE_CHANGE_PRIORITY',
     'attach_change_refs',
     'build_league_changes',
+    'apply_featured_games',
     'build_matchup_context',
+    'featured_reasons_for_game',
     'build_tonight_v1',
     'content_sha256',
     'game_state',
@@ -1106,5 +1210,6 @@ __all__ = [
     'generate_tonight_v1_for_snapshot',
     'load_slate_games',
     'present_matchup_context',
+    'select_featured_games',
     'read_tonight_v1',
 ]
