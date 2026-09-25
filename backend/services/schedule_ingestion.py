@@ -14,9 +14,12 @@ MLB status code is preserved verbatim.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timezone
 from time import perf_counter
+
+from sqlalchemy import text
 
 from models.scheduled_game import ScheduledGame
 from services.game_finality import normalize_schedule_status_state
@@ -73,8 +76,14 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         'errors': 0,
     }
     synced_at = utc_now_naive()
+    games = list(games or [])
+    owned_game_pks = [
+        parsed['game_pk'] for parsed in (_parse_game(game) for game in games)
+        if parsed is not None
+    ]
+    _declare_schedule_ownership(owned_game_pks)
 
-    for game in games or []:
+    for game in games:
         summary['games_seen'] += 1
         parsed = _parse_game(game)
         if parsed is None:
@@ -94,6 +103,9 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
             summary['games_ingested'] += 1
         except Exception:  # noqa: BLE001 — one bad game never sinks the window
             db.session.rollback()
+            # The ownership declaration is transaction-local; the rollback
+            # ended that transaction, so re-declare for the remaining writes.
+            _declare_schedule_ownership(owned_game_pks)
             summary['errors'] += 1
             logger.warning('Schedule ingest failed for game %s',
                            parsed.get('game_pk'), exc_info=True)
@@ -175,6 +187,31 @@ def refresh_non_final_games_for_slate(
 
 
 # ── Parsing ───────────────────────────────────────────────────────────────────
+
+def _declare_schedule_ownership(game_pks):
+    """Declare this transaction the schedule writer for the games it ingests.
+
+    Production PostgreSQL carries the ``baseballos_schedule_projection_fence``
+    trigger (migration ``e3f6a9b2c5d8``). Once any row of a game has an
+    ``operational_state`` (a game adopted by the sync-pipeline runtime), the
+    trigger silently returns the OLD row for every UPDATE from a session that
+    has not declared schedule ownership of that game. Main's schedule writers
+    never declared it, so authoritative MLB transitions (Scheduled -> Final)
+    for adopted games were discarded while the ORM still counted the rows as
+    updated. Main is the production schedule owner, and these writes carry the
+    MLB schedule payload fetched for exactly these games, so it declares
+    ownership through the trigger's own protocol. The setting is
+    transaction-local and names only the games in this ingest. Values are
+    never inferred; every stored field still comes from the MLB payload.
+    """
+    keys = sorted({str(int(game_pk)) for game_pk in game_pks or ()})
+    if not keys or db.session.get_bind().dialect.name != 'postgresql':
+        return
+    db.session.execute(
+        text("SELECT set_config('baseballos.schedule_owners', :keys, true)"),
+        {'keys': json.dumps(keys)},
+    )
+
 
 def _parse_game(game):
     """Normalize one raw MLB schedule game into the fields we store.
