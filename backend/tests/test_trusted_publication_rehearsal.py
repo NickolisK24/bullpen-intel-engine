@@ -1937,3 +1937,142 @@ def test_rehearsal_withheld_candidate_never_becomes_a_publication(monkeypatch):
         finally:
             db.session.remove()
             drop_test_schema(app)
+
+
+def _inject_exact_predecessor(monkeypatch):
+    """At the real proof seam, add one exact trusted predecessor for TB-09.
+
+    The same technique as the main rehearsal: the predecessor is disposable,
+    never current, and differs from the candidate in three governed ways so the
+    real proof freezes a Team State change, an active-bullpen join and a
+    workload-pattern start. Tonight then only aggregates what TB-09 froze.
+    """
+    from services import team_state_vnext_production_proof as proof_module
+
+    original = proof_module.require_transactional_publication_proof
+    seen = {}
+
+    def with_predecessor(snapshot, *args, **kwargs):
+        previous = DashboardSnapshot(
+            snapshot_type=snapshot.snapshot_type, sync_run_id=snapshot.sync_run_id,
+            status=dashboard_snapshot.SNAPSHOT_STATUS_READY, is_published=False,
+            published_at=utc_now_naive() - timedelta(days=1),
+            payload=deepcopy(snapshot.payload), payload_version=snapshot.payload_version,
+            data_through=snapshot.data_through - timedelta(days=1),
+            availability_reference_date=snapshot.availability_reference_date - timedelta(days=1),
+            snapshot_generated_at=utc_now_naive() - timedelta(days=1),
+            source='tonight_rehearsal_previous',
+        )
+        db.session.add(previous)
+        db.session.flush()
+        package = deepcopy(previous.payload['trusted_team_boards'])
+        package['data_through'] = previous.data_through.isoformat()
+        for team_id, team in package['by_team_id'].items():
+            # Everyone was Fresh yesterday: the Stretched club changed state.
+            team['frozen_team_state'] = make_receipt(previous, int(team_id), {
+                'readiness': {'status_code': 'operationally_stable'},
+                'freshness': {'data_through': previous.data_through.isoformat()},
+            }, method_version=EXPECTED_METHOD_VERSION)
+        joined_team = package['by_team_id'][str(TEAM_IDS[2])]
+        seen['joined_ids'] = list(joined_team.get('default_pitcher_ids') or ())
+        joined_team['default_pitcher_ids'] = []
+        usage = package['by_team_id'][str(TEAM_IDS[0])]['recent_usage_rest']
+        for item in usage.get('active_pitchers') or ():
+            item['back_to_back'] = {**item['back_to_back'], 'value': False}
+        previous.payload = {**deepcopy(previous.payload), 'trusted_team_boards': package}
+        payload = deepcopy(snapshot.payload)
+        payload['what_changed_since_yesterday'] = {
+            'comparison': {'identity': build_comparison_identity(snapshot, previous)},
+        }
+        snapshot.payload = payload
+        seen['previous_id'] = previous.id
+        return original(snapshot, *args, **kwargs)
+
+    monkeypatch.setattr(proof_module, 'require_transactional_publication_proof', with_predecessor)
+    return seen
+
+
+def test_rehearsal_tonight_v1_league_changes(monkeypatch):
+    from models.slate_game import SlateGame
+    from models.tonight_publication import TonightPublication
+    from services import tonight_read_model
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='Tonight v1 league changes rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            seen = _inject_exact_predecessor(monkeypatch)
+            snapshot = rehearsal.publish('tonight_rehearsal_changes')
+            assert seen['joined_ids'], 'the joined club needs an active bullpen arm'
+            row = tonight_read_model.read_tonight_v1(snapshot.availability_reference_date, snapshot.id)
+            assert row is not None
+            stored = deepcopy(row.payload)
+            changes = stored['league_changes']
+            classes = {item['change_class'] for item in changes}
+            assert {'team_state_changed', 'active_bullpen_joined', 'back_to_back_started'} <= classes
+            assert stored['summary']['change_count'] == len(changes)
+            assert len(changes) <= 12
+            # Parity: each item is one frozen TB-09 event of this exact snapshot.
+            teams = snapshot.payload['trusted_team_boards']['by_team_id']
+            for item in changes:
+                carrier = teams[str(item['team_id'])]['frozen_what_changed']
+                assert carrier['current_snapshot_id'] == snapshot.id
+                assert carrier['previous_snapshot_id'] == seen['previous_id']
+                assert item['change_class'] in {event['event_type'] for event in carrier['events']}
+                assert item['source_ref'].startswith(
+                    f"team_board_what_changed_v1:{snapshot.id}:{seen['previous_id']}:{item['team_id']}"
+                )
+            # TeamSide refs resolve to retained items only, in list order.
+            ids = [item['change_id'] for item in changes]
+            for game in stored['games']:
+                for key in ('away', 'home'):
+                    side = game[key]
+                    assert side['change_refs'] == [
+                        item['change_id'] for item in changes if item['team_id'] == side['team_id']
+                    ]
+                    assert set(side['change_refs']) <= set(ids)
+            # Deterministic rebuild of the same trusted snapshot reuses the row.
+            again, outcome = tonight_read_model.generate_tonight_v1_for_snapshot(snapshot)
+            assert (outcome, again.id, again.content_sha256) == ('reused', row.id, row.content_sha256)
+
+            # Serving through scheduled -> live -> final never alters the changes.
+            client = rehearsal.app.test_client()
+            engines = {'on': True}
+            _forbid_live_tonight_engines(monkeypatch, engines)
+            game = next(g for g in stored['games'] if g['game_pk'] == 7600001)
+            as_of = datetime.fromisoformat(game['state_as_of'].rstrip('Z'))
+            served_changes = []
+            for minutes, normalized, detailed in (
+                (None, None, None), (5, 'live', 'In Progress'), (190, 'completed', 'Final'),
+            ):
+                if minutes is not None:
+                    slate_row = db.session.get(SlateGame, 7600001)
+                    slate_row.normalized_state, slate_row.status_detailed = normalized, detailed
+                    slate_row.last_synced = as_of + timedelta(minutes=minutes)
+                    db.session.commit()
+                with _SqlRecorder() as serve_sql:
+                    body = client.get(TONIGHT_V1_URL).get_json()
+                assert serve_sql.count('game_logs', 'fatigue_scores') == 0
+                assert serve_sql.writes() == []
+                assert len(serve_sql.statements) <= 3, serve_sql.statements
+                served_changes.append(json.dumps(body['league_changes'], sort_keys=True))
+                served_game = next(g for g in body['games'] if g['game_pk'] == 7600001)
+                assert served_game['away']['change_refs'] == game['away']['change_refs']
+                assert served_game['home']['change_refs'] == game['home']['change_refs']
+                assert body['summary']['change_count'] == len(changes)
+            engines['on'] = False
+            assert len(set(served_changes)) == 1
+            assert served_changes[0] == json.dumps(changes, sort_keys=True)
+            db.session.expire_all()
+            assert db.session.get(TonightPublication, row.id).payload == stored
+            print(
+                'REHEARSAL tonight_v1_league_changes '
+                f'snapshot={snapshot.id} previous={seen["previous_id"]} row={row.id} '
+                f'change_count={len(changes)} classes={sorted(classes)} '
+                f'headlines={[item["headline"] for item in changes]} '
+                'overlay_scheduled_live_final=byte_identical rebuild=reused'
+            )
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)

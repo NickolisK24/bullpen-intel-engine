@@ -7,7 +7,7 @@ facts of that one snapshot, and read no FatigueScore or GameLog doing it.
 """
 
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import importlib
 from types import SimpleNamespace
 
@@ -1067,3 +1067,429 @@ def test_production_shaped_vulnerable_matchup():
         'evidence_state': 'complete',
     }
     _assert_clean_copy(context['sentence'])
+
+
+# ── TN-05: league What Changed aggregation ───────────────────────────────────
+# Tonight only aggregates each team's frozen TB-09 What Changed events; it
+# never compares snapshots. Synthetic carriers exercise the pure helper, and
+# real TB-09 carriers built over an exact snapshot pair prove parity.
+
+from services.team_board_snapshot_team_state import make_receipt  # noqa: E402
+from services.team_board_what_changed import attach_frozen_what_changed  # noqa: E402
+from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION  # noqa: E402
+from services.what_changed_comparison_identity import build_comparison_identity  # noqa: E402
+
+_ABBR = {108: 'LAA', 109: 'AZ', 110: 'BAL', 111: 'BOS', 112: 'CHC', 113: 'CIN',
+         114: 'CLE', 115: 'COL', 116: 'DET', 117: 'HOU', 118: 'KC', 119: 'LAD',
+         120: 'WSH', 121: 'NYM', 133: 'ATH', 134: 'PIT'}
+
+
+def _wc_event(team_id, event_type, *, subject_id=None, event_date=None, summary=None,
+              previous_value=None, current_value=None, facts=None, domain=None):
+    domains = {
+        'team_state_changed': 'team_state', 'active_bullpen_joined': 'roster',
+        'active_bullpen_left': 'roster', 'verified_transaction': 'transactions',
+        'new_short_start': 'rotation',
+    }
+    return {
+        'event_type': event_type,
+        'domain': domain or domains.get(event_type, 'workload_rest'),
+        'team_id': team_id, 'subject_id': subject_id, 'event_date': event_date,
+        'previous_value': previous_value, 'current_value': current_value,
+        'facts': facts or {}, 'summary': summary or f'Arm {subject_id} changed.',
+        'evidence_status': 'complete', 'current_snapshot_id': 2,
+        'previous_snapshot_id': 1, 'method_version': 'team_board_what_changed_event_v1',
+    }
+
+
+def _wc_carrier(team_id, events, *, state=None):
+    return {'abbreviation': _ABBR[team_id], 'carrier': {
+        'contract': 'team_board_what_changed_v1', 'team_id': team_id,
+        'current_snapshot_id': 2, 'previous_snapshot_id': 1,
+        'state': state or ('changes' if events else 'quiet'),
+        'events': events,
+    }}
+
+
+def _state_change(team_id, previous='Fresh', current='Stretched'):
+    return _wc_event(team_id, 'team_state_changed', previous_value=previous,
+                     current_value=current,
+                     summary=f'Team State changed from {previous} to {current}.')
+
+
+def _joined(team_id, pitcher_id, name='Arm', transaction=None, date_=None):
+    facts = {'pitcher_name': name}
+    summary = f'{name} joined the active bullpen.'
+    if transaction:
+        facts['verified_transaction'] = {'transaction_id': transaction, 'label': 'Recalled',
+                                         'direction': 'addition'}
+        summary += ' Verified transaction: Recalled.'
+    return _wc_event(team_id, 'active_bullpen_joined', subject_id=pitcher_id,
+                     event_date=date_, current_value='active', summary=summary, facts=facts)
+
+
+def _left(team_id, pitcher_id, name='Arm'):
+    return _wc_event(team_id, 'active_bullpen_left', subject_id=pitcher_id,
+                     previous_value='active', summary=f'{name} left the active bullpen.',
+                     facts={'pitcher_name': name})
+
+
+def _transaction(team_id, pitcher_id, transaction_id, label='Recalled', name='Arm',
+                 date_='2026-09-24', direction='addition'):
+    return _wc_event(team_id, 'verified_transaction', subject_id=pitcher_id, event_date=date_,
+                     current_value=direction, summary=f'{name}: {label}.',
+                     facts={'transaction_id': transaction_id, 'pitcher_name': name,
+                            'label': label, 'direction': direction})
+
+
+def _pattern(team_id, pitcher_id, key, label, date_='2026-09-24', name='Arm'):
+    return _wc_event(team_id, f'{key}_started', subject_id=pitcher_id, event_date=date_,
+                     previous_value=False, current_value=True,
+                     summary=f'{name} now has {label}.',
+                     facts={'pitcher_name': name, 'pattern': key, 'value': True,
+                            'status': 'complete', 'most_recent_date': date_})
+
+
+def _short_start(team_id, starter_id=42, game_pk=900, date_='2026-09-24'):
+    return _wc_event(team_id, 'new_short_start', subject_id=starter_id, event_date=date_,
+                     current_value=True,
+                     summary='Starter worked 3.2 innings; the bullpen covered 5.1.',
+                     facts={'mlb_game_pk': game_pk, 'game_date': date_})
+
+
+def _league(*carriers, **caps):
+    return tonight_read_model.build_league_changes(
+        {team_id: entry for team_id, entry in carriers}, **caps,
+    )
+
+
+def _entry(team_id, events, **kwargs):
+    return team_id, _wc_carrier(team_id, events, **kwargs)
+
+
+def _assert_clean_change(item):
+    for text in (item['headline'], item['detail']):
+        if text:
+            assert find_editorial_violations(
+                text, terms=tuple(
+                    term for term in tonight_read_model.LEAGUE_CHANGE_BANNED_TERMS
+                    if term not in ('injured', 'hurt')
+                ),
+            ) == []
+
+
+@pytest.mark.parametrize(('event', 'change_class', 'headline', 'detail'), [
+    (_state_change(110), 'team_state_changed', 'BAL moved from Fresh to Stretched.', None),  # 1
+    (_joined(110, 7, 'Arm 7'), 'active_bullpen_joined',
+     'Arm 7 joined the active bullpen.', None),                                                # 2
+    (_left(110, 8, 'Arm 8'), 'active_bullpen_left', 'Arm 8 left the active bullpen.', None),   # 3
+    (_transaction(110, 9, 'tx-9', name='Arm 9'), 'verified_transaction',
+     'Arm 9: Recalled.', None),                                                                # 4
+    (_pattern(110, 7, 'back_to_back', 'back-to-back usage', name='Arm 7'),
+     'back_to_back_started', 'Arm 7 now has back-to-back usage.', None),                       # 5
+    (_pattern(110, 7, 'three_in_four', '3-in-4 usage', name='Arm 7'),
+     'three_in_four_started', 'Arm 7 now has 3-in-4 usage.', None),                            # 6
+    (_pattern(110, 7, 'high_pitch_outing', 'a qualifying high-pitch outing', name='Arm 7'),
+     'high_pitch_outing_started', 'Arm 7 now has a qualifying high-pitch outing.', None),      # 7
+    (_short_start(110), 'new_short_start',
+     'Starter worked 3.2 innings; the bullpen covered 5.1.', None),                            # 8
+])
+def test_each_supported_change_class_maps_one_frozen_event(event, change_class, headline, detail):
+    changes = _league(_entry(110, [event]))
+    assert len(changes) == 1
+    item = changes[0]
+    assert set(item) == {
+        'change_id', 'team_id', 'team_abbreviation', 'change_class', 'headline',
+        'detail', 'occurred_on', 'evidence_state', 'source_ref', 'game_pks',
+    }
+    assert (item['team_id'], item['team_abbreviation']) == (110, 'BAL')
+    assert (item['change_class'], item['headline'], item['detail']) == (change_class, headline, detail)
+    assert item['occurred_on'] == event['event_date']
+    assert item['evidence_state'] == 'complete'
+    assert item['source_ref'].startswith('team_board_what_changed_v1:2:1:110')
+    assert item['game_pks'] == ([900] if change_class == 'new_short_start' else [])
+    _assert_clean_change(item)
+
+
+def test_linked_membership_keeps_transaction_detail_and_trace():
+    item = _league(_entry(111, [_joined(111, 5, 'Arm 5', transaction='tx-5')]))[0]
+    assert item['headline'] == 'Arm 5 joined the active bullpen.'
+    assert item['detail'] == 'Verified transaction: Recalled.'
+    assert item['source_ref'] == 'team_board_what_changed_v1:2:1:111#transaction:tx-5'
+
+
+def test_unsupported_malformed_and_noncanonical_are_excluded():  # 9, 11, 12
+    unsupported = _pattern(110, 7, 'four_in_six', '4-in-6 usage')
+    unknown = _wc_event(110, 'closer_changed', summary='Arm is the closer.')
+    blank = _wc_event(110, 'back_to_back_started', subject_id=3, summary='  ')
+    incomplete = dict(_pattern(110, 4, 'back_to_back', 'back-to-back usage'),
+                      evidence_status='partial')
+    other_team = _pattern(111, 4, 'back_to_back', 'back-to-back usage')
+    no_labels = _wc_event(110, 'team_state_changed', summary='Team State changed.')
+    assert _league(_entry(110, [unsupported, unknown, blank, incomplete, other_team, no_labels])) == []
+    fake_team = (5555, {'abbreviation': 'XXX', 'carrier': {
+        'team_id': 5555, 'state': 'changes',
+        'events': [_pattern(5555, 1, 'back_to_back', 'back-to-back usage')],
+    }})
+    assert _league(fake_team) == []
+
+
+def test_unavailable_or_quiet_frozen_what_changed_yields_no_item():  # 10, 23
+    unavailable = _entry(110, [], state='unavailable')
+    quiet = _entry(111, [])
+    assert _league(unavailable, quiet) == []
+    # Events on a carrier that is not in 'changes' state are never read.
+    assert _league(_entry(112, [_state_change(112)], state='unavailable')) == []
+
+
+def test_duplicate_source_event_is_deduped_by_identity():  # 13
+    joined = _joined(111, 5, 'Arm 5', transaction='tx-5')
+    same_move = _transaction(111, 5, 'tx-5', name='Arm 5')
+    repeated = deepcopy(joined)
+    changes = _league(_entry(111, [joined, same_move, repeated]))
+    assert [item['change_class'] for item in changes] == ['active_bullpen_joined']
+
+
+def test_same_copy_distinct_events_stay_distinct():  # 14
+    first = _transaction(111, 5, 'tx-a', label='Recalled', name='Arm')
+    second = _transaction(111, 6, 'tx-b', label='Recalled', name='Arm')
+    changes = _league(_entry(111, [first, second]))
+    assert [item['headline'] for item in changes] == ['Arm: Recalled.', 'Arm: Recalled.']
+    assert len({item['change_id'] for item in changes}) == 2
+
+
+def test_team_priority_and_team_cap_without_a_score():  # 15 + priority test
+    events = [
+        _short_start(110), _pattern(110, 7, 'high_pitch_outing', 'a qualifying high-pitch outing'),
+        _pattern(110, 7, 'three_in_four', '3-in-4 usage'),
+        _pattern(110, 7, 'back_to_back', 'back-to-back usage'),
+        _transaction(110, 9, 'tx-9'), _joined(110, 8, 'Arm 8'), _state_change(110),
+    ]
+    changes = _league(_entry(110, events))
+    assert [item['change_class'] for item in changes] == [
+        'team_state_changed', 'active_bullpen_joined',
+    ]
+    assert len(_league(_entry(110, events), max_per_team=7)) == 7
+
+
+def _many_teams():
+    entries = []
+    for index, team_id in enumerate(sorted(_ABBR)):
+        entries.append(_entry(team_id, [
+            _pattern(team_id, 1, 'back_to_back', 'back-to-back usage',
+                     date_=f'2026-09-2{index % 5}'),
+            _pattern(team_id, 2, 'three_in_four', '3-in-4 usage'),
+            _pattern(team_id, 3, 'high_pitch_outing', 'a qualifying high-pitch outing'),
+        ] + ([_state_change(team_id)] if index % 4 == 0 else [])))
+    return entries
+
+
+def test_league_cap_ordering_and_refs():  # 16, 18, 20, 21, 22
+    entries = _many_teams()
+    changes = _league(*entries)
+    assert len(changes) == 12
+    per_team = {}
+    for item in changes:
+        per_team[item['team_id']] = per_team.get(item['team_id'], 0) + 1
+    assert max(per_team.values()) <= 2
+    ranks = [tonight_read_model._LEAGUE_CHANGE_RANK[item['change_class']] for item in changes]
+    assert ranks == sorted(ranks)
+    assert changes[:4] == [item for item in changes if item['change_class'] == 'team_state_changed']
+    b2b = [item for item in changes if item['change_class'] == 'back_to_back_started']
+    keys = [(-date.fromisoformat(item['occurred_on']).toordinal(), item['team_abbreviation'])
+            for item in b2b]
+    assert keys == sorted(keys)
+    # Deterministic: same input, same list.
+    assert _league(*reversed(entries)) == changes
+    sides = [{'team_id': team_id} for team_id in sorted(_ABBR)]
+    tonight_read_model.attach_change_refs(sides, changes)
+    retained = {item['change_id'] for item in changes}
+    for side in sides:
+        assert side['change_refs'] == [
+            item['change_id'] for item in changes if item['team_id'] == side['team_id']
+        ]
+        assert set(side['change_refs']) <= retained
+    capped_out = {
+        item['change_id'] for item in _league(*entries, max_total=100)
+    } - retained
+    assert capped_out
+    assert not capped_out & {ref for side in sides for ref in side['change_refs']}
+
+
+def test_fewer_than_cap_is_not_padded():  # 17
+    changes = _league(_entry(110, [_state_change(110)]), _entry(111, [_short_start(111)]))
+    assert [item['team_abbreviation'] for item in changes] == ['BAL', 'BOS']
+
+
+def test_change_id_is_deterministic_and_positional_free():  # 19
+    event = _pattern(110, 7, 'back_to_back', 'back-to-back usage')
+    first = _league(_entry(110, [event]))[0]['change_id']
+    shuffled = _league(_entry(110, [_short_start(110), deepcopy(event)]), max_per_team=5)
+    assert first in [item['change_id'] for item in shuffled]
+    other_pair = _wc_carrier(110, [event])
+    other_pair['carrier']['current_snapshot_id'] = 3
+    assert tonight_read_model.build_league_changes({110: other_pair})[0]['change_id'] != first
+
+
+def test_league_change_copy_guard():  # 24
+    bad = _transaction(110, 9, 'tx-9', label='Pick up for a favorable edge')
+    assert _league(_entry(110, [bad])) == []
+    il = _transaction(110, 9, 'tx-10', label='Placed on the 15-day injured list')
+    assert _league(_entry(110, [il]))[0]['headline'] == 'Arm: Placed on the 15-day injured list.'
+    speculative = _pattern(110, 7, 'back_to_back', 'back-to-back usage')
+    speculative['summary'] = 'Arm is gassed and will likely sit.'
+    assert _league(_entry(110, [speculative])) == []
+
+
+# Real TB-09 carriers over one exact snapshot pair (parity + production shape).
+
+def _real_team(snapshot, team_id, state_code, pitcher_ids):
+    readiness = {
+        'readiness': {'status_code': state_code},
+        'freshness': {'data_through': snapshot.data_through.isoformat()},
+    }
+    return {
+        'team': {'team_id': team_id, 'team_abbreviation': _ABBR[team_id]},
+        'default_pitcher_ids': list(pitcher_ids),
+        'records': [{'pitcher_id': pid, 'name': f'Arm {pid}'} for pid in pitcher_ids],
+        'frozen_team_state': make_receipt(
+            snapshot, team_id, readiness, method_version=EXPECTED_METHOD_VERSION,
+        ),
+        'recent_usage_rest': {
+            'status': 'complete',
+            'active_pitchers': [{
+                'pitcher_id': pid, 'pitcher_name': f'Arm {pid}',
+                'back_to_back': _wc_fact(False), 'three_in_four': _wc_fact(False),
+                'four_in_six': _wc_fact(False), 'high_pitch_outing': _wc_fact(False),
+            } for pid in pitcher_ids],
+            'off_active_historical_contributors': [],
+        },
+        'frozen_roster_transactions': {'status': 'available', 'events': []},
+        'frozen_rotation_impact': {'status': 'complete', 'starts': []},
+    }
+
+
+def _wc_fact(value, most_recent_date=None):
+    return {'value': value, 'status': 'complete', 'reason_codes': [],
+            'most_recent_date': most_recent_date}
+
+
+PRODUCTION_TEAMS = (110, 111, 112, 113, 114, 116)  # A..F
+
+
+def _real_pair():
+    def snap(snapshot_id, represented):
+        return SimpleNamespace(
+            id=snapshot_id, sync_run_id=snapshot_id + 1000,
+            data_through=date.fromisoformat(represented), payload_version=1,
+            snapshot_type='bullpen_dashboard', status='ready', is_published=True,
+            published_at=datetime(2026, 9, 24, 12), payload={},
+            availability_reference_date=date.fromisoformat(represented) + timedelta(days=1),
+        )
+    previous, current = snap(1, '2026-09-23'), snap(2, '2026-09-24')
+    for snapshot in (previous, current):
+        snapshot.payload = {'trusted_team_boards': {
+            'contract': 'trusted_team_board_publication_v1',
+            'data_through': snapshot.data_through.isoformat(), 'by_team_id': {},
+        }}
+    states = {110: ('operationally_stable', 'operationally_constrained')}
+    for team_id in PRODUCTION_TEAMS:
+        before, after = states.get(team_id, ('operationally_stable', 'operationally_stable'))
+        prior_ids, now_ids = (7, 8), (7, 8)
+        if team_id == 111:
+            now_ids = (7, 8, 9)
+        previous.payload['trusted_team_boards']['by_team_id'][str(team_id)] = _real_team(
+            previous, team_id, before, prior_ids)
+        current.payload['trusted_team_boards']['by_team_id'][str(team_id)] = _real_team(
+            current, team_id, after, now_ids)
+    teams = current.payload['trusted_team_boards']['by_team_id']
+    usage = lambda team_id: teams[str(team_id)]['recent_usage_rest']['active_pitchers'][0]  # noqa: E731
+    usage(110)['back_to_back'] = _wc_fact(True, '2026-09-24')                    # A: B2B
+    teams['111']['frozen_roster_transactions']['events'] = [{                      # B: join + tx
+        'event_id': 'tx-111-9', 'evidence_status': 'complete', 'player_id': 9,
+        'player_name': 'Arm 9', 'date': '2026-09-24', 'label': 'Recalled',
+        'direction': 'addition',
+    }]
+    usage(112)['three_in_four'] = _wc_fact(True, '2026-09-24')                   # C: 3-in-4
+    usage(113)['high_pitch_outing'] = _wc_fact(True, '2026-09-23')               # D: high pitch
+    teams['114']['frozen_rotation_impact']['starts'] = [{                          # E: short start
+        'mlb_game_pk': 4401, 'status': 'complete', 'short_start': True,
+        'short_start_evidence': {'status': 'complete'}, 'starter_pitcher_id': 42,
+        'starter_name': 'Starter', 'starter_innings': '3.1',
+        'bullpen_innings': '5.2', 'game_date': '2026-09-24',
+    }]
+    identity = build_comparison_identity(current, previous)
+    current.payload['what_changed_since_yesterday'] = {'comparison': {'identity': identity}}
+    attach_frozen_what_changed(current, previous)
+    return previous, current
+
+
+def test_production_shaped_league_changes_and_parity():
+    _previous, current = _real_pair()
+    package = current.payload['trusted_team_boards']
+    carriers = tonight_read_model._frozen_what_changed_by_team(current, package)
+    changes = tonight_read_model.build_league_changes(carriers)
+
+    assert [(item['team_abbreviation'], item['change_class']) for item in changes] == [
+        ('BAL', 'team_state_changed'),
+        ('BOS', 'active_bullpen_joined'),
+        ('BAL', 'back_to_back_started'),
+        ('CHC', 'three_in_four_started'),
+        ('CIN', 'high_pitch_outing_started'),
+        ('CLE', 'new_short_start'),
+    ]
+    assert changes[0]['headline'] == 'BAL moved from Fresh to Stretched.'
+    joined = changes[1]
+    assert joined['detail'] == 'Verified transaction: Recalled.'
+    assert joined['source_ref'].endswith('#transaction:tx-111-9')
+    # The same move is not repeated as a standalone transaction item.
+    assert not [item for item in changes if item['change_class'] == 'verified_transaction']
+    assert changes[-1]['game_pks'] == [4401]
+    assert 116 not in {item['team_id'] for item in changes}           # F: quiet
+    for item in changes:
+        _assert_clean_change(item)
+
+    # Parity: every item is one event of that team's frozen carrier in this snapshot.
+    for item in changes:
+        carrier = package['by_team_id'][str(item['team_id'])]['frozen_what_changed']
+        assert carrier['current_snapshot_id'] == current.id
+        matches = [
+            event for event in carrier['events']
+            if event['event_type'] == item['change_class']
+            and (event.get('event_date') == item['occurred_on'])
+        ]
+        assert len(matches) == 1, item
+        if item['change_class'] != 'team_state_changed':
+            assert matches[0]['summary'].startswith(item['headline'])
+    assert tonight_read_model.build_league_changes(carriers) == changes
+
+
+def test_build_populates_league_changes_refs_and_count_frozen():
+    _previous, current = _real_pair()
+    slate = [
+        SimpleNamespace(game_pk=1, game_time_utc=datetime(2026, 9, 25, 23, 5),
+                        away_team_id=110, home_team_id=111, normalized_state='upcoming',
+                        status_detailed='Scheduled', game_number=1, last_synced=None),
+        SimpleNamespace(game_pk=2, game_time_utc=datetime(2026, 9, 25, 23, 10),
+                        away_team_id=116, home_team_id=114, normalized_state='upcoming',
+                        status_detailed='Scheduled', game_number=1, last_synced=None),
+    ]
+    payload = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 25))
+    changes = payload['league_changes']
+    assert payload['summary']['change_count'] == len(changes) == 6
+    ids = {item['team_id']: [c['change_id'] for c in changes if c['team_id'] == item['team_id']]
+           for item in changes}
+    games = {game['game_pk']: game for game in payload['games']}
+    assert games[1]['away']['change_refs'] == ids[110] and len(ids[110]) == 2
+    assert games[1]['home']['change_refs'] == ids[111]
+    assert games[2]['away']['change_refs'] == []                       # quiet team
+    assert games[2]['home']['change_refs'] == ids[114]
+    # TN-04 context is authored from the TeamSides alone, independent of changes.
+    for game in payload['games']:
+        assert game['context'] == tonight_read_model.present_matchup_context(
+            tonight_read_model.build_matchup_context(
+                {**game['away'], 'change_refs': []}, {**game['home'], 'change_refs': []},
+            ), game['state'],
+        )
+    again = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 26))
+    assert tonight_read_model.content_sha256(again) == tonight_read_model.content_sha256(payload)
