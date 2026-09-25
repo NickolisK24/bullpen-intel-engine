@@ -159,13 +159,16 @@ anything that assumes it:
 Lane policy for a withheld candidate is unchanged in intent:
 
 - **Daily Primary** (and other default callers) raises
-  `DashboardSnapshotPublicationWithheld`. The run fails at `dashboard_snapshot`
+  `sync.DashboardSnapshotPublicationWithheld`. The run fails at `dashboard_snapshot`
   with the true reason, because trusted currentness did not advance.
 - **Postgame** passes `raise_on_withheld=False` and receives the pending
   candidate. The run keeps its lane status and records the true reason in
   `publication_withheld_reason` and the run error. Post-publication internal
   enrichment is skipped. The runner's candidate publication proof still decides
   between an expected active-slate pending and a genuine withhold.
+- **Operator sync** (`POST /api/bullpen/sync`) keeps its refresh-oriented
+  contract the same way. It returns the run status and adds
+  `publication_withheld_reason`; the run is never marked published.
 
 The fix is forward-only. Historical SyncRun 92585 and pending snapshot 3562 are
 left as recorded; the next trusted publication supersedes 3562 through the

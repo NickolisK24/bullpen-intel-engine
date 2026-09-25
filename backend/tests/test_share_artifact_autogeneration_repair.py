@@ -353,7 +353,7 @@ def test_withheld_daily_candidate_fails_with_its_true_reason(app, monkeypatch, r
     candidate = _withheld_candidate(reason)
     spies = _CompletionSpies(monkeypatch, candidate)
 
-    with pytest.raises(ds.DashboardSnapshotPublicationWithheld) as raised:
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
         sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
 
     assert str(raised.value) == reason
@@ -383,12 +383,12 @@ def test_withheld_candidate_without_reason_uses_stable_fallback(app, monkeypatch
     candidate = _withheld_candidate(reason=None)
     spies = _CompletionSpies(monkeypatch, candidate)
 
-    with pytest.raises(ds.DashboardSnapshotPublicationWithheld) as raised:
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
         sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
 
-    assert str(raised.value) == ds.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
+    assert str(raised.value) == sync_service.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
     assert spies.finish_calls[-1]['error_message'] == (
-        ds.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
+        sync_service.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
     )
     assert spies.artifact_gate == []
 
@@ -404,7 +404,7 @@ def test_publication_requires_both_published_flag_and_ready_status(app, monkeypa
     )
     spies = _CompletionSpies(monkeypatch, candidate)
 
-    with pytest.raises(ds.DashboardSnapshotPublicationWithheld):
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
         sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
 
     assert spies.run.published_dashboard_snapshot_id is None
@@ -466,7 +466,7 @@ def test_withheld_candidate_reports_true_reason_with_autogeneration_disabled(
     candidate = _withheld_candidate()
     spies = _CompletionSpies(monkeypatch, candidate)
 
-    with pytest.raises(ds.DashboardSnapshotPublicationWithheld) as raised:
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
         sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
 
     assert str(raised.value) == ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE

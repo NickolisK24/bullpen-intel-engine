@@ -336,6 +336,14 @@ class TestPartialFailure:
             # The domain still refreshed despite the dead-letter.
             assert run.latest_workload_date is not None
             assert run.new_logs_added == 29
+            # Run lineage never points at a candidate that did not publish; a
+            # withheld candidate is reported with its own reason instead.
+            if body['publication_withheld_reason'] is None:
+                assert run.published_dashboard_snapshot_id == body['dashboard_snapshot_id']
+            else:
+                assert run.published_dashboard_snapshot_id is None
+                assert run.error_message == body['publication_withheld_reason']
+                assert 'league_team_state_artifact' not in run.error_message
 
         # Freshness still updates: a partial run counts as a successful write.
         status = client.get('/api/bullpen/sync/status').get_json()

@@ -1823,7 +1823,7 @@ def test_rehearsal_withheld_candidate_never_becomes_a_publication(monkeypatch):
                 lambda *_a, **_k: side_effects.append('team_state_generation'),
             )
 
-            with pytest.raises(dashboard_snapshot.DashboardSnapshotPublicationWithheld) as raised:
+            with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
                 sync_service.complete_sync_run_with_snapshot(
                     run_id, final_status='success', source='scheduled',
                     snapshot_source='scheduled_sync',

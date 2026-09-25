@@ -5586,6 +5586,40 @@ def _log_daily_sync_phase_summary(run_logger, timings):
     )
 
 
+DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED = 'dashboard_snapshot_pending_not_published'
+
+
+class DashboardSnapshotPublicationWithheld(RuntimeError):
+    """A candidate was stored but a publication gate withheld it from serving.
+
+    The message is the candidate's own withhold reason (for example
+    ``dashboard_snapshot_slate_coverage_incomplete``) so run lineage reports why
+    trusted currentness did not advance, never a post-publication symptom.
+    """
+
+    def __init__(self, reason_code, *, snapshot_id=None):
+        self.reason_code = reason_code
+        self.snapshot_id = snapshot_id
+        super().__init__(reason_code)
+
+
+def is_trusted_publication(snapshot):
+    """True only when this snapshot durably became the published, ready snapshot."""
+    from services.dashboard_snapshot import SNAPSHOT_STATUS_READY
+
+    return bool(
+        snapshot is not None
+        and getattr(snapshot, 'is_published', False) is True
+        and getattr(snapshot, 'status', None) == SNAPSHOT_STATUS_READY
+    )
+
+
+def publication_withheld_reason(snapshot):
+    """The stored withhold reason of an unpublished candidate, with a stable fallback."""
+    reason = getattr(snapshot, 'error_message', None) if snapshot is not None else None
+    return reason or DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
+
+
 def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
@@ -5648,19 +5682,17 @@ def complete_sync_run_with_snapshot(
             raise_errors=True,
             publication_critical_complete=publication_critical_complete,
         )
-        published = dashboard_snapshot_service.is_trusted_publication(snapshot)
+        published = is_trusted_publication(snapshot)
         if not published:
             # The pending candidate row is diagnostic evidence: commit it, but do
             # not advance run lineage, run publication hooks, or apply the
             # post-publication artifact invariant to something never published.
-            withheld_reason = dashboard_snapshot_service.publication_withheld_reason(
-                snapshot,
-            )
+            withheld_reason = publication_withheld_reason(snapshot)
             if run is not None:
                 run.error_message = withheld_reason
             db.session.commit()
             if raise_on_withheld:
-                raise dashboard_snapshot_service.DashboardSnapshotPublicationWithheld(
+                raise DashboardSnapshotPublicationWithheld(
                     withheld_reason,
                     snapshot_id=getattr(snapshot, 'id', None),
                 )
@@ -6449,11 +6481,8 @@ def run_postgame_refresh(
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                     raise_on_withheld=False,
                 )
-                from services import dashboard_snapshot as dashboard_snapshot_service
                 status['dashboard_snapshot_id'] = snapshot.id
-                postgame_published = (
-                    dashboard_snapshot_service.is_trusted_publication(snapshot)
-                )
+                postgame_published = is_trusted_publication(snapshot)
                 status['intelligence_snapshot'] = (
                     'publication_bound' if postgame_published
                     else 'publication_withheld'
@@ -6464,11 +6493,7 @@ def run_postgame_refresh(
                     # is returned (not failed) so the runner's publication proof can
                     # classify an active-slate pending versus a genuine withhold.
                     # The run is never marked published and carries the true reason.
-                    withheld_reason = (
-                        dashboard_snapshot_service.publication_withheld_reason(
-                            snapshot,
-                        )
-                    )
+                    withheld_reason = publication_withheld_reason(snapshot)
                     status['publication_withheld_reason'] = withheld_reason
                     status['internal_enrichment'] = 'skipped_publication_withheld'
                     status['message'] = (
@@ -7064,9 +7089,6 @@ def run_daily_sync(
                 status['publication_critical'] = publication_critical
                 api_metrics = mlb_client.metrics.snapshot()
                 changed_log_count = pull['new_logs_added'] + logs_corrected
-                from services.dashboard_snapshot import (
-                    DashboardSnapshotPublicationWithheld,
-                )
                 try:
                     completed_run, snapshot = complete_sync_run_with_snapshot(
                         sync_run_id,
