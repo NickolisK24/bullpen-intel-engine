@@ -1498,6 +1498,8 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
             assert edition['baseball_date'] == row.reference_date.isoformat()
             assert row.payload['summary']['games_by_state']['postponed'] == 1
             assert row.payload['summary']['game_count'] == 2
+            # TN-07 quiet case: no retained change and no heavy condition, so no lead.
+            assert row.payload['lead'] is None
 
             # Phase 5: no second bullpen engine during generation.
             gen_sql = generation['sql']
@@ -2054,6 +2056,20 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                     tonight_read_model.featured_reasons_for_game(game, change_index)
                     if game['featured'] else []
                 )
+            # TN-07: one frozen lead from the retained Team State change of a club
+            # playing tonight in a pregame game.
+            lead = stored['lead']
+            state_change = next(
+                item for item in changes if item['change_class'] == 'team_state_changed')
+            assert lead == {
+                'lead_type': 'team_state_change',
+                'headline': 'R01 moved from Fresh to Stretched entering tonight.',
+                'detail': 'R01 is scheduled to face R00.',
+                'team_ids': [TEAM_IDS[1]], 'game_pk': 7600001,
+                'change_refs': [state_change['change_id']],
+                'reason_codes': ['team_state_change'], 'evidence_state': 'complete',
+            }
+            assert state_change['state_change'] == {'from': 'Fresh', 'to': 'Stretched'}
             # Deterministic rebuild of the same trusted snapshot reuses the row.
             again, outcome = tonight_read_model.generate_tonight_v1_for_snapshot(snapshot)
             assert (outcome, again.id, again.content_sha256) == ('reused', row.id, row.content_sha256)
@@ -2079,8 +2095,13 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                 assert serve_sql.writes() == []
                 assert len(serve_sql.statements) <= 3, serve_sql.statements
                 served_changes.append(json.dumps(body['league_changes'], sort_keys=True))
-                # Serving never reselects: featured identity stays frozen.
+                # Serving never reselects: featured identity and the lead stay frozen.
                 assert body['featured_game_pks'] == featured
+                served_lead = body['lead']
+                assert {k: v for k, v in served_lead.items() if k != 'reason_codes'} == {
+                    k: v for k, v in lead.items() if k != 'reason_codes'}
+                assert served_lead['reason_codes'] == ['team_state_change'] + (
+                    ['pregame_context'] if minutes is not None else [])
                 assert [
                     (g['game_pk'], g['featured'], g['featured_reason_codes']) for g in body['games']
                 ] == [
@@ -2100,6 +2121,7 @@ def test_rehearsal_tonight_v1_league_changes(monkeypatch):
                 f'snapshot={snapshot.id} previous={seen["previous_id"]} row={row.id} '
                 f'change_count={len(changes)} classes={sorted(classes)} '
                 f'featured={featured} '
+                f'lead={lead["lead_type"]}:{lead["game_pk"]}:"{lead["headline"]}" '
                 f'featured_reasons={[by_pk[pk]["featured_reason_codes"] for pk in featured]} '
                 f'headlines={[item["headline"] for item in changes]} '
                 'overlay_scheduled_live_final=byte_identical rebuild=reused'

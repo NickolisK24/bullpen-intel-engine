@@ -1206,8 +1206,12 @@ def test_each_supported_change_class_maps_one_frozen_event(event, change_class, 
     item = changes[0]
     assert set(item) == {
         'change_id', 'team_id', 'team_abbreviation', 'change_class', 'headline',
-        'detail', 'occurred_on', 'evidence_state', 'source_ref', 'game_pks',
+        'detail', 'occurred_on', 'evidence_state', 'source_ref', 'game_pks', 'state_change',
     }
+    # TN-07 reads Team State leads from this frozen field, never from prose.
+    assert item['state_change'] == (
+        {'from': 'Fresh', 'to': 'Stretched'} if change_class == 'team_state_changed' else None
+    )
     assert (item['team_id'], item['team_abbreviation']) == (110, 'BAL')
     assert (item['change_class'], item['headline'], item['detail']) == (change_class, headline, detail)
     assert item['occurred_on'] == event['event_date']
@@ -1720,3 +1724,287 @@ def test_build_features_from_the_same_frozen_payload():
                 game, changes)
     again = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 26))
     assert tonight_read_model.content_sha256(again) == tonight_read_model.content_sha256(payload)
+
+
+# ── TN-07: lead development ──────────────────────────────────────────────────
+# Zero or one lead, strict rule priority, retained TN-05 changes only.
+
+def _state_item(change_id, team_id, previous, current, occurred_on=None):
+    return {
+        'change_id': change_id, 'team_id': team_id, 'change_class': 'team_state_changed',
+        'state_change': {'from': previous, 'to': current}, 'occurred_on': occurred_on,
+        'evidence_state': 'complete',
+    }
+
+
+def _rotation(side, *, short=1, innings='6.0', status='complete'):
+    side['rotation'] = {'short_start_count': short, 'bullpen_innings': innings,
+                        'games_analyzed': 5, 'status': status}
+    return side
+
+
+def _lead(games, changes=()):
+    return tonight_read_model.select_lead(games, list(changes))
+
+
+def _team_game(game_pk, team_id, abbr, team_state='fresh', *, opp='OPP', state='scheduled',
+               first_pitch='2026-09-25T23:05:00Z', **side_kwargs):
+    return _fgame(game_pk, _fside(abbr, team_state, team_id=team_id, **side_kwargs),
+                  _fside(opp), state=state, first_pitch=first_pitch)
+
+
+@pytest.mark.parametrize(('previous', 'current', 'lead_type', 'headline'), [
+    ('Fresh', 'Vulnerable', 'team_state_to_vulnerable',
+     'SEA moved into a Vulnerable bullpen state entering tonight.'),        # 1
+    ('Stretched', 'Vulnerable', 'team_state_to_vulnerable',
+     'SEA moved into a Vulnerable bullpen state entering tonight.'),        # 2
+    ('Fresh', 'Stretched', 'team_state_change',
+     'SEA moved from Fresh to Stretched entering tonight.'),                # 3
+    ('Vulnerable', 'Stretched', 'team_state_change',
+     'SEA moved from Vulnerable to Stretched entering tonight.'),           # 4
+])
+def test_team_state_leads_use_the_retained_change(previous, current, lead_type, headline):
+    game = _team_game(1, 300, 'SEA', opp='HOU')
+    lead = _lead([game], [_state_item('s1', 300, previous, current)])
+    assert lead == {
+        'lead_type': lead_type, 'headline': headline,
+        'detail': 'SEA is scheduled to face HOU.', 'team_ids': [300], 'game_pk': 1,
+        'change_refs': ['s1'], 'reason_codes': [lead_type], 'evidence_state': 'complete',
+    }
+
+
+def test_heavy_back_to_back_threshold_is_three():  # 5, 6
+    lead = _lead([_team_game(1, 301, 'SEA', b2b=3)])
+    assert lead['lead_type'] == 'heavy_back_to_back_pressure'
+    assert lead['headline'] == 'SEA has 3 bullpen arms coming off back-to-back usage tonight.'
+    assert lead['change_refs'] == []
+    assert _lead([_team_game(1, 302, 'SEA', b2b=2)]) is None
+
+
+@pytest.mark.parametrize(('short', 'innings', 'expected'), [
+    (1, '5.0', "SEA's bullpen has absorbed 5.0 innings after a recent short start."),  # 7
+    (2, '6.1', "SEA's bullpen has absorbed 6.1 innings after 2 recent short starts."),
+    (1, 5.0, "SEA's bullpen has absorbed 5.0 innings after a recent short start."),
+    (1, '4.2', None),                                                                  # 8
+    (1, 4.9, None),                                                                    # 8
+    (0, '8.0', None),                                                                  # 9
+])
+def test_short_start_transfer_threshold(short, innings, expected):
+    side = _rotation(_fside('SEA', team_id=303), short=short, innings=innings)
+    lead = _lead([_fgame(1, side, _fside('HOU'))])
+    assert (lead['headline'] if lead else None) == expected
+
+
+@pytest.mark.parametrize('status', ['partial', 'unavailable'])
+def test_incomplete_rotation_is_not_a_lead(status):  # 20
+    side = _rotation(_fside('SEA', team_id=304), innings='9.0', status=status)
+    assert _lead([_fgame(1, side, _fside('HOU'))]) is None
+    missing = _fside('SEA', team_id=305)
+    missing['rotation'] = None
+    assert _lead([_fgame(1, missing, _fside('HOU'))]) is None
+
+
+def test_other_conditions_never_lead():  # 10, 11, 12, 13
+    changes = [
+        _fchange('h', 306, 'high_pitch_outing_started'),
+        _fchange('j', 306, 'active_bullpen_joined'),
+        _fchange('t', 306, 'verified_transaction'),
+    ]
+    games = [
+        _team_game(1, 306, 'SEA', three=3, refs=['h', 'j', 't']),         # 3-in-4, high pitch, membership
+        _team_game(2, 307, 'BOS', 'vulnerable'),                            # Vulnerable, no change event
+        _team_game(3, 308, 'NYY', b2b=1),
+    ]
+    tonight_read_model.apply_featured_games(games, changes)
+    assert games[0]['featured'] is True
+    assert _lead(games, changes) is None
+
+
+def test_off_day_team_change_cannot_lead():  # 14
+    game = _team_game(1, 309, 'SEA')
+    assert _lead([game], [_state_item('s', 999, 'Fresh', 'Vulnerable')]) is None
+
+
+@pytest.mark.parametrize('state', ['live', 'final', 'postponed', 'suspended'])
+def test_only_pregame_games_can_lead(state):  # 15-18
+    changes = [_state_item('s', 310, 'Fresh', 'Vulnerable')]
+    assert _lead([_team_game(1, 310, 'SEA', state=state, b2b=5)], changes) is None
+    assert _lead([_team_game(1, 310, 'SEA', state='uncertain')], changes)['game_pk'] == 1
+
+
+def test_unavailable_rest_is_never_a_b2b_lead():  # 19
+    assert _lead([_team_game(1, 311, 'SEA', b2b=6, rest=False)]) is None
+
+
+def test_tie_breaks_date_first_pitch_then_team():  # 21, 22, 23
+    games = [
+        _team_game(1, 312, 'SEA', first_pitch='2026-09-25T17:05:00Z'),
+        _team_game(2, 313, 'BOS', first_pitch='2026-09-25T23:05:00Z'),
+        _team_game(3, 314, 'ATL', first_pitch='2026-09-25T23:05:00Z'),
+    ]
+    dated = [
+        _state_item('a', 312, 'Fresh', 'Vulnerable', occurred_on='2026-09-23'),
+        _state_item('b', 313, 'Fresh', 'Vulnerable', occurred_on='2026-09-24'),
+    ]
+    assert _lead(games, dated)['team_ids'] == [313]                    # newer date wins
+    undated = [
+        _state_item('a', 312, 'Fresh', 'Vulnerable'),
+        _state_item('b', 313, 'Fresh', 'Vulnerable'),
+    ]
+    assert _lead(games, undated)['team_ids'] == [312]                  # earlier first pitch
+    same_time = [
+        _state_item('b', 313, 'Fresh', 'Vulnerable'),
+        _state_item('c', 314, 'Fresh', 'Vulnerable'),
+    ]
+    assert _lead(games, same_time)['team_ids'] == [314]                # ATL before BOS
+    assert _lead(list(reversed(games)), list(reversed(same_time))) == _lead(games, same_time)
+
+
+def test_lead_copy_guard_and_lengths():  # 24, 25
+    long_name = 'X' * 130
+    side = _fside(long_name, team_id=315, b2b=4)
+    assert _lead([_fgame(1, side, _fside('HOU'))]) is None
+    headlines = []
+    for rule_games, changes in (
+        ([_team_game(1, 316, 'SEA')], [_state_item('s', 316, 'Fresh', 'Vulnerable')]),
+        ([_team_game(1, 316, 'SEA')], [_state_item('s', 316, 'Vulnerable', 'Fresh')]),
+        ([_team_game(1, 317, 'SEA', b2b=12)], []),
+        ([_fgame(1, _rotation(_fside('SEA', team_id=318), short=3, innings='14.2'), _fside('HOU'))], []),
+    ):
+        lead = _lead(rule_games, changes)
+        headlines.append(lead['lead_type'])
+        for text, limit in ((lead['headline'], 120), (lead['detail'], 140)):
+            assert len(text) <= limit
+            assert find_editorial_violations(
+                text, terms=tonight_read_model.LEAD_BANNED_TERMS) == []
+            assert find_editorial_violations(text) == []
+            assert text.endswith('.') and '. ' not in text
+    assert headlines == list(tonight_read_model.LEAD_RULE_PRIORITY)
+    assert find_editorial_violations(
+        'SEA is the best game and will likely win', terms=tonight_read_model.LEAD_BANNED_TERMS)
+
+
+def test_lead_selection_has_no_numeric_score():  # 26
+    identifiers = set()
+    for helper in (tonight_read_model.select_lead, tonight_read_model._lead_candidate,
+                   tonight_read_model.present_lead):
+        tree = _ast.parse(_inspect.getsource(helper))
+        identifiers |= {node.id for node in _ast.walk(tree) if isinstance(node, _ast.Name)}
+        identifiers |= {node.attr for node in _ast.walk(tree) if isinstance(node, _ast.Attribute)}
+        identifiers |= {node.arg for node in _ast.walk(tree) if isinstance(node, _ast.arg)}
+    assert not {name for name in identifiers
+                if any(word in name.lower() for word in ('score', 'weight', 'rank('))}
+    assert 'sum' not in identifiers and 'max' not in identifiers
+
+
+def test_lead_priority_ladder_down_to_null():
+    a = _team_game(1, 320, 'ATL', first_pitch='2026-09-26T02:05:00Z')
+    b = _team_game(2, 321, 'BOS', first_pitch='2026-09-25T17:05:00Z')
+    c = _team_game(3, 322, 'CHC', b2b=4, first_pitch='2026-09-25T16:05:00Z')
+    d = _fgame(4, _rotation(_fside('DET', team_id=323), innings='6.0'), _fside('KC'),
+               first_pitch='2026-09-25T15:05:00Z')
+    changes = [_state_item('a', 320, 'Fresh', 'Vulnerable'), _state_item('b', 321, 'Fresh', 'Stretched')]
+    games = [a, b, c, d]
+    assert _lead(games, changes)['game_pk'] == 1                      # A
+    assert _lead([b, c, d], changes)['game_pk'] == 2                  # B
+    assert _lead([c, d], changes)['game_pk'] == 3                     # C
+    assert _lead([d], changes)['game_pk'] == 4                        # D
+    assert _lead([], changes) is None                                 # quiet: null
+
+
+def test_capped_out_team_state_change_never_leads():
+    """TN-05 drops the 13th Team State change; the lead must not reconstruct it."""
+    team_ids = sorted(_ABBR, key=lambda team_id: _ABBR[team_id])[:12] + [120]  # WSH sorts last
+    entries = [_entry(team_id, [_state_change(team_id, 'Fresh',
+                                              'Vulnerable' if team_id == 120 else 'Stretched')])
+               for team_id in team_ids]
+    changes = _league(*entries)
+    assert len(changes) == 12 and 120 not in {item['team_id'] for item in changes}
+    raw = dict(entries)[120]['carrier']['events'][0]
+    assert raw['current_value'] == 'Vulnerable'          # present in the raw carrier
+    wsh_game = _team_game(1, 120, 'WSH', opp='NYM')
+    assert _lead([wsh_game], changes) is None
+    other = _team_game(2, team_ids[0], _ABBR[team_ids[0]])
+    assert _lead([wsh_game, other], changes)['lead_type'] == 'team_state_change'
+
+
+def test_production_shaped_lead_and_parity():
+    changes = _league(
+        _entry(110, [_state_change(110, 'Fresh', 'Vulnerable')]),
+        _entry(111, [_state_change(111, 'Fresh', 'Stretched')]),
+    )
+    games = [
+        _fgame(1, _fside('BAL', team_id=110), _fside('NYY', team_id=147),
+               first_pitch='2026-09-25T23:05:00Z'),
+        _fgame(2, _fside('BOS', team_id=111), _fside('TB', team_id=139),
+               first_pitch='2026-09-25T22:05:00Z'),
+        _fgame(3, _fside('ATL', team_id=144, b2b=3), _fside('PHI', team_id=143),
+               first_pitch='2026-09-25T21:05:00Z'),
+        _fgame(4, _rotation(_fside('CLE', team_id=114), innings='6.0'), _fside('DET', team_id=116),
+               first_pitch='2026-09-25T20:05:00Z'),
+        _fgame(5, _fside('CHC', team_id=112, three=1), _fside('MIL', team_id=158),
+               first_pitch='2026-09-25T19:05:00Z'),
+        _fgame(6, _fside('TEX', team_id=140), _fside('KC', team_id=118),
+               first_pitch='2026-09-25T18:05:00Z'),
+    ]
+    tonight_read_model.attach_change_refs([g[k] for g in games for k in ('away', 'home')], changes)
+    featured = tonight_read_model.apply_featured_games(games, changes)
+    before = deepcopy((games, changes, featured))
+
+    lead = _lead(games, changes)
+
+    assert lead['lead_type'] == 'team_state_to_vulnerable'
+    assert (lead['game_pk'], lead['team_ids']) == (1, [110])
+    assert lead['headline'] == 'BAL moved into a Vulnerable bullpen state entering tonight.'
+    assert lead['detail'] == 'BAL is scheduled to face NYY.'
+    # Parity: the lead's change ref is a retained change whose frozen labels drive the rule.
+    ref = next(item for item in changes if item['change_id'] == lead['change_refs'][0])
+    assert ref['team_id'] == 110 and ref['state_change'] == {'from': 'Fresh', 'to': 'Vulnerable'}
+    assert lead['change_refs'] == games[0]['away']['change_refs']
+    # Selecting the lead changes nothing else.
+    assert deepcopy((games, changes, featured)) == before
+    # Parity for the lower rules: each is a frozen TeamSide field.
+    assert _lead(games[2:], changes)['headline'] == (
+        'ATL has 3 bullpen arms coming off back-to-back usage tonight.')
+    assert games[2]['away']['rest'] == {**games[2]['away']['rest'], 'available': True,
+                                        'back_to_back_count': 3}
+    assert _lead(games[3:], changes)['headline'] == (
+        "CLE's bullpen has absorbed 6.0 innings after a recent short start.")
+    assert games[3]['away']['rotation']['bullpen_innings'] == '6.0'
+    assert _lead(games[4:], changes) is None             # 3-in-4 featured only, and a quiet game
+
+
+def test_present_lead_marks_pregame_without_reselection():
+    lead = _lead([_team_game(1, 330, 'SEA', b2b=3)])
+    frozen = deepcopy(lead)
+    for state, marked in (('scheduled', False), ('uncertain', False), ('live', True),
+                          ('final', True), ('postponed', True), ('suspended', True)):
+        shown = tonight_read_model.present_lead(lead, state)
+        assert {k: v for k, v in shown.items() if k != 'reason_codes'} == {
+            k: v for k, v in frozen.items() if k != 'reason_codes'}
+        assert shown['reason_codes'] == ['heavy_back_to_back_pressure'] + (
+            ['pregame_context'] if marked else [])
+        assert tonight_read_model.present_lead(shown, state) == shown
+    assert lead == frozen
+    assert tonight_read_model.present_lead(None, 'final') is None
+
+
+def test_real_build_lead_from_tb09_pair():
+    _previous, current = _real_pair()
+    slate = [SimpleNamespace(
+        game_pk=pk, game_time_utc=datetime(2026, 9, 25, 17 + pk), away_team_id=away,
+        home_team_id=home, normalized_state='upcoming', status_detailed='Scheduled',
+        game_number=1, last_synced=None,
+    ) for pk, away, home in ((1, 110, 117), (2, 111, 118))]
+    payload = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 25))
+    lead = payload['lead']
+    assert lead['lead_type'] == 'team_state_change'
+    assert lead['headline'] == 'BAL moved from Fresh to Stretched entering tonight.'
+    assert lead['change_refs'] == payload['games'][0]['away']['change_refs'][:1]
+    assert lead['game_pk'] == 1 and lead['team_ids'] == [110]
+    # BOS's joined change and BAL's B2B start never lead; only the retained state change does.
+    assert payload['featured_game_pks'] == [1, 2]
+    again = tonight_read_model.build_tonight_v1(current, slate, generated_at=datetime(2026, 9, 26))
+    assert again['lead'] == lead
+    quiet = tonight_read_model.build_tonight_v1(current, slate[1:], generated_at=datetime(2026, 9, 25))
+    assert quiet['lead'] is None                                        # no filler

@@ -21,7 +21,9 @@ the two frozen TeamSides only, by ``build_matchup_context``. ``league_changes``
 (TN-05) aggregates each team's frozen Team Board What Changed events from the
 same snapshot, by ``build_league_changes``; it never detects a change itself.
 Featured games (TN-06) are selected from those frozen facts by fixed rule
-priority, by ``select_featured_games``. The lead is present and empty.
+priority, by ``select_featured_games``. The lead (TN-07) is zero or one frozen
+development chosen by strict rule priority, by ``select_lead``; a quiet day
+has no lead.
 """
 
 from __future__ import annotations
@@ -167,6 +169,30 @@ FEATURED_MAX = 4
 # Selection is frozen at publication; only a game not yet underway is eligible.
 FEATURED_ELIGIBLE_STATES = frozenset({'scheduled', 'uncertain'})
 
+# TN-07 lead development: zero or one, strict rule priority, never filler.
+LEAD_TEAM_STATE_TO_VULNERABLE = 'team_state_to_vulnerable'
+LEAD_TEAM_STATE_CHANGE = 'team_state_change'
+LEAD_HEAVY_BACK_TO_BACK = 'heavy_back_to_back_pressure'
+LEAD_SHORT_START_TRANSFER = 'short_start_bullpen_transfer'
+LEAD_RULE_PRIORITY = (
+    LEAD_TEAM_STATE_TO_VULNERABLE,
+    LEAD_TEAM_STATE_CHANGE,
+    LEAD_HEAVY_BACK_TO_BACK,
+    LEAD_SHORT_START_TRANSFER,
+)
+LEAD_BACK_TO_BACK_MIN = 3
+LEAD_BULLPEN_OUTS_MIN = 15          # 5.0 innings, read from the frozen innings field
+LEAD_HEADLINE_MAX_CHARS = 120
+LEAD_DETAIL_MAX_CHARS = 140
+LEAD_PREGAME = 'pregame_context'
+LEAD_BANNED_TERMS = (
+    'advantage', 'edge', 'favorite', 'favored', 'likely', 'will', 'should',
+    'should win', 'target', 'fade', 'bet', 'betting', 'fantasy', 'pick',
+    'prediction', 'must watch', 'best game', 'top game', 'gassed', 'exhausted',
+    'tired', 'danger', 'trouble',
+)
+_INNINGS_THIRDS = re.compile(r'^(\d+)\.([012])$')
+
 _CLUBS_BY_ID = {club.team_id: club for club in MLB_CLUBS}
 _CANONICAL_TEAM_IDS = frozenset(MLB_TEAM_IDS)
 
@@ -213,6 +239,7 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
     league_changes = build_league_changes(_frozen_what_changed_by_team(snapshot, package))
     attach_change_refs(sides.values(), league_changes)
     featured_game_pks = apply_featured_games(games, league_changes)
+    lead = select_lead(games, league_changes)
     return {
         'contract': CONTRACT,
         'edition': {
@@ -230,8 +257,7 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
             'schedule_as_of': _schedule_as_of(slate_games),
         },
         'summary': _summary(games, sides, league_changes),
-        # Authored by later packages; present and empty so the contract is stable.
-        'lead': None,
+        'lead': lead,
         'featured_game_pks': featured_game_pks,
         'games': games,
         'league_changes': league_changes,
@@ -847,8 +873,10 @@ def _league_change(team_id, abbreviation, carrier, event):
         if not (isinstance(previous, str) and previous and isinstance(current, str) and current):
             return None
         headline, detail = f'{abbreviation} moved from {previous} to {current}.', None
+        state_change = {'from': previous, 'to': current}
     else:
         headline, detail = _split_summary(summary)
+        state_change = None
     occurred_on = _iso_date_or_none(event.get('event_date'))
     transaction_id = _transaction_id(event)
     receipt = (
@@ -874,6 +902,8 @@ def _league_change(team_id, abbreviation, carrier, event):
         'evidence_state': event.get('evidence_status'),
         'source_ref': receipt + (f'#transaction:{transaction_id}' if transaction_id else ''),
         'game_pks': _game_pks(event.get('facts')),
+        # The frozen TB-09 labels of a Team State change; null for every other class.
+        'state_change': state_change,
     }
     allowed = _TRANSACTION_ALLOWED_TERMS if transaction_id else frozenset()
     terms = tuple(term for term in LEAGUE_CHANGE_BANNED_TERMS if term not in allowed)
@@ -1011,6 +1041,178 @@ def apply_featured_games(games, league_changes, *, max_featured=FEATURED_MAX):
         game['featured'] = reasons is not None
         game['featured_reason_codes'] = list(reasons or ())
     return [game_pk for game_pk, _reasons in selected]
+
+
+# ── Lead development (TN-07) ─────────────────────────────────────────────────
+
+def select_lead(games, league_changes):
+    """Zero or one lead from the frozen edition. Pure; ``None`` is a valid result.
+
+    Rules, in fixed priority (the first rule with any candidate wins):
+
+    1. ``team_state_to_vulnerable``: a retained TN-05 Team State change whose
+       frozen ``state_change`` moved into Vulnerable.
+    2. ``team_state_change``: any other retained TN-05 Team State change.
+    3. ``heavy_back_to_back_pressure``: available rest with at least 3 arms
+       coming off back-to-back usage.
+    4. ``short_start_bullpen_transfer``: a complete frozen rotation with at
+       least one short start and at least 5.0 bullpen innings.
+
+    The team must be playing tonight in a game that was scheduled or uncertain
+    at publication. Team State leads use only retained league changes; a change
+    capped out by TN-05 is never reconstructed. Ties break on occurred_on
+    (newest first), first pitch, team abbreviation, team_id and game_pk. There is
+    no score and no fallback lead.
+    """
+    eligible_games = [
+        game for game in games or ()
+        if isinstance(game, Mapping)
+        and game.get('state') in FEATURED_ELIGIBLE_STATES
+        and type(game.get('game_pk')) is int
+    ]
+    games_by_team = {}
+    for game in sorted(eligible_games, key=_game_order):
+        for key, other in (('away', 'home'), ('home', 'away')):
+            side = game.get(key)
+            if isinstance(side, Mapping) and type(side.get('team_id')) is int:
+                games_by_team.setdefault(side['team_id'], (game, side, game.get(other) or {}))
+
+    candidates = {rule: [] for rule in LEAD_RULE_PRIORITY}
+    for item in league_changes or ():
+        if not isinstance(item, Mapping) or item.get('change_class') != 'team_state_changed':
+            continue
+        match = games_by_team.get(item.get('team_id'))
+        change = item.get('state_change')
+        if match is None or not isinstance(change, Mapping):
+            continue
+        previous, current = change.get('from'), change.get('to')
+        if not (isinstance(previous, str) and previous and isinstance(current, str) and current):
+            continue
+        if previous == current or item.get('evidence_state') != 'complete':
+            continue
+        game, side, other = match
+        if current == PUBLIC_LABEL_VULNERABLE and previous != PUBLIC_LABEL_VULNERABLE:
+            rule = LEAD_TEAM_STATE_TO_VULNERABLE
+            headline = f'{_name(side)} moved into a Vulnerable bullpen state entering tonight.'
+        else:
+            rule = LEAD_TEAM_STATE_CHANGE
+            headline = f'{_name(side)} moved from {previous} to {current} entering tonight.'
+        candidates[rule].append(_lead_candidate(
+            rule, headline, game, side, other,
+            change_refs=[item['change_id']], occurred_on=item.get('occurred_on'),
+        ))
+
+    for game, side, other in games_by_team.values():
+        count = _back_to_back_fact(side)
+        if count is not None and count >= LEAD_BACK_TO_BACK_MIN:
+            candidates[LEAD_HEAVY_BACK_TO_BACK].append(_lead_candidate(
+                LEAD_HEAVY_BACK_TO_BACK,
+                f'{_name(side)} has {count} bullpen arms coming off back-to-back usage tonight.',
+                game, side, other,
+            ))
+        transfer = _short_start_transfer_fact(side)
+        if transfer is not None:
+            short_starts, innings = transfer
+            recent = (
+                'a recent short start' if short_starts == 1
+                else f'{short_starts} recent short starts'
+            )
+            candidates[LEAD_SHORT_START_TRANSFER].append(_lead_candidate(
+                LEAD_SHORT_START_TRANSFER,
+                f"{_name(side)}'s bullpen has absorbed {innings} innings after {recent}.",
+                game, side, other,
+            ))
+
+    for rule in LEAD_RULE_PRIORITY:
+        ranked = sorted(
+            (candidate for candidate in candidates[rule] if candidate is not None),
+            key=lambda candidate: candidate[0],
+        )
+        if ranked:
+            return ranked[0][1]
+    return None
+
+
+def present_lead(lead, state):
+    """The frozen lead as served for its game's current state; never reselected.
+
+    Once the lead's game is no longer scheduled or uncertain, the same lead is
+    marked ``pregame_context``. Idempotent; never mutates ``lead``.
+    """
+    if not isinstance(lead, Mapping):
+        return lead
+    reason_codes = [code for code in lead.get('reason_codes') or () if code != LEAD_PREGAME]
+    if state is not None and state not in FEATURED_ELIGIBLE_STATES:
+        reason_codes.append(LEAD_PREGAME)
+    return {**lead, 'reason_codes': reason_codes}
+
+
+PUBLIC_LABEL_VULNERABLE = 'Vulnerable'
+
+
+def _lead_candidate(rule, headline, game, side, other, *, change_refs=(), occurred_on=None):
+    detail = (
+        f'{_name(side)} is scheduled to face {_name(other)}.'
+        if isinstance(other, Mapping) and _name(other) else None
+    )
+    if len(headline) > LEAD_HEADLINE_MAX_CHARS or _lead_copy_violations(headline):
+        return None
+    if detail is not None and (
+        len(detail) > LEAD_DETAIL_MAX_CHARS or _lead_copy_violations(detail)
+    ):
+        detail = None
+    occurred = _iso_date_or_none(occurred_on)
+    first_pitch = game.get('first_pitch_utc')
+    order = (
+        occurred is None,
+        -date.fromisoformat(occurred).toordinal() if occurred else 0,
+        first_pitch is None,
+        first_pitch or '',
+        str(_name(side) or ''),
+        side['team_id'],
+        game['game_pk'],
+    )
+    return order, {
+        'lead_type': rule,
+        'headline': headline,
+        'detail': detail,
+        'team_ids': [side['team_id']],
+        'game_pk': game['game_pk'],
+        'change_refs': list(change_refs),
+        'reason_codes': [rule],
+        'evidence_state': EVIDENCE_COMPLETE,
+    }
+
+
+def _lead_copy_violations(text):
+    return find_editorial_violations(text, terms=LEAD_BANNED_TERMS)
+
+
+def _short_start_transfer_fact(side):
+    """``(short_start_count, bullpen_innings)`` from a complete frozen rotation."""
+    rotation = side.get('rotation') if side.get('available') else None
+    if not isinstance(rotation, Mapping) or rotation.get('status') != 'complete':
+        return None
+    short_starts = rotation.get('short_start_count')
+    innings = rotation.get('bullpen_innings')
+    if type(short_starts) is not int or short_starts < 1:
+        return None
+    outs = _innings_outs(innings)
+    if outs is None or outs < LEAD_BULLPEN_OUTS_MIN:
+        return None
+    return short_starts, innings
+
+
+def _innings_outs(value):
+    """Outs from the frozen innings field: box-score thirds ("5.1") or a number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value * 3 if value >= 0 else None
+    match = _INNINGS_THIRDS.match(value) if isinstance(value, str) else None
+    if match is None:
+        return None
+    return int(match.group(1)) * 3 + int(match.group(2))
 
 
 def _team_board_link(side):
@@ -1196,6 +1398,8 @@ __all__ = [
     'CONTEXT_SENTENCE_MAX_CHARS',
     'FEATURED_MAX',
     'FEATURED_RULE_PRIORITY',
+    'LEAD_BANNED_TERMS',
+    'LEAD_RULE_PRIORITY',
     'LEAGUE_CHANGE_BANNED_TERMS',
     'LEAGUE_CHANGE_PRIORITY',
     'attach_change_refs',
@@ -1209,7 +1413,9 @@ __all__ = [
     'generate_tonight_v1_after_publication',
     'generate_tonight_v1_for_snapshot',
     'load_slate_games',
+    'present_lead',
     'present_matchup_context',
     'select_featured_games',
+    'select_lead',
     'read_tonight_v1',
 ]

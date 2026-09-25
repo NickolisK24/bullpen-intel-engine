@@ -356,6 +356,8 @@ def test_serving_module_cannot_build():
         'services.tonight_read_model.game_state',
         # TN-04: the stored context is only re-presented for the served state.
         'services.tonight_read_model.present_matchup_context',
+        # TN-07: the frozen lead is only marked pregame at serve time.
+        'services.tonight_read_model.present_lead',
         'models.slate_game.SlateGame',
         'hashlib.sha256',
         '__future__.annotations',
@@ -455,8 +457,9 @@ def test_original_view_negotiates_the_same_contracts(tonight_app, monkeypatch):
 # state, first pitch and state_as_of may change, from a strictly newer
 # slate_games row for the same game_pk on the same baseball date.
 
-from datetime import datetime, timedelta  # noqa: E402
+from datetime import date, datetime, timedelta  # noqa: E402
 import json  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
 
 T0 = datetime(2026, 9, 25, 15, 0, 0)
 OVERLAY_FIELDS = {'state', 'first_pitch_utc', 'state_as_of', 'context'}
@@ -821,3 +824,59 @@ def test_context_presentation_changes_the_served_etag(tonight_app, mutable_reads
     assert len(live_reads) <= 3, live_reads
     assert not [sql for sql in live_reads if 'game_logs' in sql or 'fatigue_scores' in sql]
     assert _writes(live_reads) == []
+
+
+# ── TN-07: the frozen lead is served, marked pregame, never reselected ───────
+
+def _lead_payload():
+    lead = {
+        'lead_type': 'team_state_change', 'headline': 'SEA moved from Fresh to Stretched entering tonight.',
+        'detail': 'SEA is scheduled to face HOU.', 'team_ids': [136], 'game_pk': 11,
+        'change_refs': ['c1'], 'reason_codes': ['team_state_change'], 'evidence_state': 'complete',
+    }
+    games = [
+        {'game_pk': pk, 'state': 'scheduled', 'first_pitch_utc': '2026-09-25T23:05:00Z',
+         'state_as_of': '2026-09-25T15:00:00Z', 'game_number': 1,
+         'context': {'sentence': None, 'reason_codes': [], 'evidence_state': 'withheld'},
+         'featured': pk == 11, 'featured_reason_codes': ['team_state_change'] if pk == 11 else []}
+        for pk in (11, 12)
+    ]
+    return {
+        'edition': {'baseball_date': '2026-09-25'},
+        'summary': {'game_count': 2, 'games_by_state': {state: 0 for state in (
+            'scheduled', 'live', 'final', 'postponed', 'suspended', 'uncertain')}},
+        'games': games, 'lead': lead, 'featured_game_pks': [11], 'league_changes': [],
+        'limitations': [],
+    }
+
+
+def _row(game_pk, normalized, detailed, minutes):
+    return SimpleNamespace(
+        game_pk=game_pk, game_date_et=date(2026, 9, 25),
+        game_time_utc=datetime(2026, 9, 25, 23, 5), normalized_state=normalized,
+        status_detailed=detailed, last_synced=datetime(2026, 9, 25, 15, minutes),
+    )
+
+
+def test_overlay_marks_the_frozen_lead_and_changes_the_etag():
+    payload = _lead_payload()
+    frozen = deepcopy(payload)
+    unchanged, identity = tonight_v1_serving.overlay_game_state(
+        payload, {11: _row(11, 'upcoming', 'Scheduled', 0), 12: _row(12, 'upcoming', 'Scheduled', 0)})
+    assert unchanged is payload and identity == ()
+
+    etags = []
+    for normalized, detailed in (('live', 'In Progress'), ('completed', 'Final')):
+        served, identity = tonight_v1_serving.overlay_game_state(
+            payload, {11: _row(11, normalized, detailed, 30), 12: _row(12, 'completed', 'Final', 30)})
+        assert served['lead']['reason_codes'] == ['team_state_change', 'pregame_context']
+        assert {k: v for k, v in served['lead'].items() if k != 'reason_codes'} == {
+            k: v for k, v in frozen['lead'].items() if k != 'reason_codes'}
+        assert served['featured_game_pks'] == [11]
+        etags.append(tonight_v1_serving.served_validator('a' * 64, identity))
+    assert len(set(etags)) == 2
+    # Another game moving never touches the lead.
+    other, _identity = tonight_v1_serving.overlay_game_state(
+        payload, {11: _row(11, 'upcoming', 'Scheduled', 0), 12: _row(12, 'live', 'In Progress', 30)})
+    assert other['lead'] == frozen['lead']
+    assert payload == frozen
