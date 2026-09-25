@@ -416,6 +416,35 @@ It was:
 The retired workflow must not be dispatched or reintroduced. It grants no
 broader correction, game-driven write, or publication authority.
 
+## 15A. Schedule Ownership Fence (September 25 currentness incident)
+
+Production PostgreSQL carries `baseballos_schedule_projection_fence` on
+`scheduled_games` and `slate_games` (migration `e3f6a9b2c5d8`). It guards games
+that the sync-pipeline runtime has adopted, meaning any row of the game has a
+non-null `operational_state`. For those games, an INSERT or UPDATE from a session
+that has not declared `baseballos.schedule_owners` is suppressed: the trigger
+returns the OLD row and logs `compatibility_write_events` with outcome
+`stale_suppressed`. The ORM still counts each such row as `rows_updated`. The
+counters are matched rows, not proof that a value changed.
+
+The sync-pipeline shadow refuses to run unless the database head equals its own
+pinned head. When a later `main` migration advanced production, the shadow
+stopped. It had adopted the 2026-09-24 slate at 06:12 UTC, and those games
+could then never move from Scheduled to Final: the shadow no longer ran, and
+every `main` schedule write was suppressed. The slate gate therefore correctly
+withheld candidate 3562 with `scheduled_games_not_final`.
+
+`main` is the production schedule owner. `schedule_ingestion.ingest_games` now
+declares transaction-local ownership of exactly the games in the MLB payload it
+is writing, then stores that payload unchanged. This path is shared by the
+daily finality preflight, the rolling slate refresh, the postgame finality
+refresh and the snapshot finality refresh. No state is inferred, and the slate
+gate is unchanged.
+
+Diagnosis query: count `compatibility_write_events` rows with
+`resource_type='schedule'` and `outcome='stale_suppressed'` for the affected
+`game_pk` values.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:

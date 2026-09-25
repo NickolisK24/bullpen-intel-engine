@@ -341,16 +341,18 @@ def test_125_the_existing_no_op_qualification_is_unchanged(relative):
 
 
 def test_126_this_package_changes_only_the_approved_canonical_module():
-    """Exactly two authorities were modified by named governed packages.
+    """Exactly three authorities were modified by named governed packages.
 
     The completeness service gained a read-only membership helper so the audit
     could classify the canonical unresolved set instead of inventing a second
     definition. D-054 later extracted the existing Dashboard snapshot selectors
     and added guarded read entry points. Later governed work made durable Team
     State proof a prerequisite for advancing a trusted/current publication.
-    Every other authority stays byte-identical to the incident tree, and both
-    exceptions must match their recorded digest — an unrecorded edit to any
-    canonical module still fails here."""
+    Schedule finality persistence then made schedule ingestion declare
+    ownership through the production fence. Every other authority stays
+    byte-identical to the incident tree, and each exception must match its
+    recorded digest — an unrecorded edit to any canonical module still fails
+    here."""
     for relative, expected in audit.INCIDENT_CANONICAL_MODULE_DIGESTS.items():
         current = _digest(f'backend/{relative}')
         approved = audit.PACKAGE_MODIFIED_MODULES.get(relative)
@@ -362,7 +364,11 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     assert set(audit.PACKAGE_MODIFIED_MODULES) == {
         'services/dashboard_snapshot.py',
         'services/game_ingestion_completeness.py',
+        'services/schedule_ingestion.py',
     }
+    schedule = audit.PACKAGE_MODIFIED_MODULES['services/schedule_ingestion.py']
+    assert schedule['behaviour_changed'] is True
+    assert 'SyncRun 92585' in schedule['change']
     dashboard = audit.PACKAGE_MODIFIED_MODULES['services/dashboard_snapshot.py']
     assert dashboard['digest_after'] == (
         'f35619014d1109fcb16057c0fba7015b48077cccdde753f5fbc7ccb762c873df'
@@ -387,7 +393,8 @@ def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
     drift = audit.canonical_module_drift(observed)
     assert drift['changed_by_this_package'] == [
         'services/dashboard_snapshot.py',
-        'services/game_ingestion_completeness.py'
+        'services/game_ingestion_completeness.py',
+        'services/schedule_ingestion.py',
     ]
     assert drift['changed_upstream_since_incident'] == []
     assert drift['any_upstream_change_since_incident'] is False

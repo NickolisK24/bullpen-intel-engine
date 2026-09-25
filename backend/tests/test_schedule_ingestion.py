@@ -471,3 +471,300 @@ def test_script_arg_parser_accepts_expected_flags():
     assert args.start_date == '2026-06-01'
     assert args.end_date == '2026-06-05'
     assert args.source == 'manual'
+
+
+# ── Production schedule-ownership fence (SyncRun 92585 / Sep. 24 slate) ───────
+#
+# Production PostgreSQL carries ``baseballos_schedule_projection_fence``
+# (migration e3f6a9b2c5d8). Once the sync-pipeline runtime adopts a game
+# (``operational_state`` set), the trigger returns the OLD row for every
+# schedule write from a session that has not declared schedule ownership. Main
+# never declared it, so after that runtime stopped (its verify-only head check
+# refuses any head but its own), every authoritative Scheduled -> Final
+# transition for adopted games was silently discarded while ingestion still
+# counted rows as updated. These tests run against the real migrated schema.
+
+import importlib
+import json
+import os
+import subprocess
+import sys
+import uuid
+from datetime import timedelta
+from pathlib import Path
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+
+from tests.db_config import assert_disposable_test_target
+from tests.db_config import test_database_url as _test_database_url
+
+_BACKEND = Path(__file__).resolve().parents[1]
+_SEP_24 = date(2026, 9, 24)
+_SEP_25 = date(2026, 9, 25)
+_ADOPTED_FINAL_PKS = (822842, 823087, 823326)
+
+
+def _migration_env(url):
+    env = {**os.environ, 'APP_ENV': 'production', 'AUTO_SYNC': 'false',
+           'DATABASE_URL': url, 'TEST_DATABASE_URL': url,
+           'DATABASE_MIGRATION_MODE': 'owner', 'RENDER_GIT_BRANCH': 'main',
+           'SECRET_KEY': 'isolated-schedule-fence-test-secret-key-32chars',
+           'ADMIN_API_TOKEN': 'isolated-schedule-fence-test-admin-token-32ch',
+           'SYNC_PIPELINE_SHADOW_MODE': 'false'}
+    env.pop('GITHUB_REF', None)
+    env.pop('SKIP_STARTUP_MIGRATIONS', None)
+    return env
+
+
+@pytest.fixture
+def fenced_database_url():
+    """A disposable database built by the real migration chain (fence included)."""
+    url = _test_database_url()
+    assert_disposable_test_target(url, operation='schedule ownership fence proof')
+    parsed = make_url(url)
+    if parsed.get_backend_name() != 'postgresql':
+        pytest.skip('The schedule fence is a PostgreSQL trigger; CI backend shards provide it')
+    admin = create_engine(parsed.set(database='postgres'), isolation_level='AUTOCOMMIT')
+    name = f'schedule_fence_test_{uuid.uuid4().hex[:12]}'
+    with admin.connect() as connection:
+        connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
+    target = parsed.set(database=name).render_as_string(hide_password=False)
+    try:
+        result = subprocess.run(
+            [sys.executable, '-m', 'flask', '--app', 'app', 'db', 'upgrade'],
+            cwd=_BACKEND, env=_migration_env(target), capture_output=True, text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        yield target
+    finally:
+        with admin.connect() as connection:
+            connection.exec_driver_sql(f'DROP DATABASE "{name}" WITH (FORCE)')
+        admin.dispose()
+
+
+@pytest.fixture
+def fenced_app(fenced_database_url, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', fenced_database_url)
+    monkeypatch.setenv('TEST_DATABASE_URL', fenced_database_url)
+    flask_app = importlib.import_module('app').create_app('test')
+    flask_app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = True
+    flask_app.config['TONIGHT_V1_PROJECTION_ENABLED'] = True
+    with flask_app.app_context():
+        assert db.session.execute(text(
+            "SELECT count(*) FROM pg_trigger WHERE tgname='baseballos_schedule_projection_fence'"
+        )).scalar() == 2
+        try:
+            yield flask_app
+        finally:
+            db.session.remove()
+
+
+def _adopt_like_sync_pipeline(game_pks, *, state='scheduled'):
+    """Adopt games exactly as the sync-pipeline runtime does: declared owner."""
+    keys = json.dumps(sorted(str(pk) for pk in game_pks))
+    db.session.execute(text(
+        "SELECT set_config('baseballos.schedule_owners', :keys, true)"
+    ), {'keys': keys})
+    db.session.execute(text(
+        'UPDATE scheduled_games SET operational_state=:state, '
+        "status_detailed_state='Scheduled', status_abstract_state='Preview' "
+        'WHERE game_pk = ANY(:pks)'
+    ), {'state': state, 'pks': list(game_pks)})
+    db.session.commit()
+
+
+def _sep_24_game(game_pk, index, **status):
+    return _game(
+        game_pk=game_pk, home_id=108 + 2 * index, away_id=109 + 2 * index,
+        official_date=_SEP_24.isoformat(), game_date='2026-09-24T23:05:00Z',
+        **status,
+    )
+
+
+_FINAL = {'status_code': 'F', 'detailed_state': 'Final', 'abstract_state': 'Final'}
+
+
+def _fresh_rows(url, table, columns, game_pks):
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return connection.execute(text(
+                f'SELECT game_pk, {columns} FROM {table} '
+                'WHERE game_pk = ANY(:pks) ORDER BY game_pk'
+            ), {'pks': list(game_pks)}).all()
+    finally:
+        engine.dispose()
+
+
+def test_ingest_declares_schedule_ownership_for_adopted_games(fenced_app, monkeypatch):
+    with fenced_app.app_context():
+        ingest_games([_sep_24_game(pk, i) for i, pk in enumerate(_ADOPTED_FINAL_PKS)])
+        _adopt_like_sync_pipeline(_ADOPTED_FINAL_PKS)
+
+        summary = ingest_games([
+            _sep_24_game(pk, i, **_FINAL) for i, pk in enumerate(_ADOPTED_FINAL_PKS)
+        ], source='daily_finality_preflight')
+
+        assert summary['rows_updated'] == 6
+        assert db.session.execute(text(
+            "SELECT count(*) FROM compatibility_write_events WHERE outcome='stale_suppressed'"
+        )).scalar() == 0
+        # The declaration is transaction-local: nothing leaks past the commit.
+        assert db.session.execute(text(
+            "SELECT coalesce(current_setting('baseballos.schedule_owners', true), '')"
+        )).scalar() == ''
+        db.session.commit()
+
+    url = os.environ['DATABASE_URL']
+    scheduled = _fresh_rows(url, 'scheduled_games', 'status_state, status_code, operational_state',
+                            _ADOPTED_FINAL_PKS)
+    assert {(pk, state, code) for pk, state, code, _op in scheduled} == {
+        (pk, ScheduledGame.STATE_FINAL, 'F') for pk in _ADOPTED_FINAL_PKS
+    }
+    assert len(scheduled) == 6
+    slate = _fresh_rows(url, 'slate_games', 'normalized_state, status_code', _ADOPTED_FINAL_PKS)
+    assert {row[1] for row in slate} == {'completed'}
+    assert {row[2] for row in slate} == {'F'}
+
+
+def test_ingest_follows_mlb_state_without_over_correcting(fenced_app):
+    future = _game(game_pk=900001, home_id=110, away_id=111, official_date='2026-09-26',
+                   game_date='2026-09-26T23:05:00Z')
+    postponed = _sep_24_game(900002, 3, status_code='D', detailed_state='Postponed',
+                             abstract_state='Final')
+    suspended = _sep_24_game(900003, 4, status_code='U', detailed_state='Suspended',
+                             abstract_state='Live') | {
+        'rescheduledGamePk': 900099, 'rescheduleDate': '2026-09-25'}
+    final = _sep_24_game(900004, 5, **_FINAL)
+    resumed = _game(game_pk=900099, home_id=116, away_id=117, official_date='2026-09-25',
+                    game_date='2026-09-25T17:05:00Z') | {
+        'resumedFrom': 900003, 'resumedFromDate': '2026-09-24'}
+    pks = (900001, 900002, 900003, 900004, 900099)
+    with fenced_app.app_context():
+        ingest_games([_game(game_pk=pk, home_id=120 + i, away_id=130 + i,
+                            official_date=_SEP_24.isoformat())
+                      for i, pk in enumerate(pks)])
+        _adopt_like_sync_pipeline(pks)
+
+        ingest_games([future, postponed, suspended, final, resumed])
+
+        states = {
+            row.game_pk: row for row in ScheduledGame.query.filter(
+                ScheduledGame.game_pk.in_(pks)).all()
+        }
+        assert states[900001].status_state == ScheduledGame.STATE_SCHEDULED
+        assert states[900001].game_date == date(2026, 9, 26)
+        assert states[900002].status_state == ScheduledGame.STATE_POSTPONED
+        assert states[900003].status_state == ScheduledGame.STATE_SUSPENDED
+        assert states[900003].resumed_to_game_pk == 900099
+        assert states[900004].status_state == ScheduledGame.STATE_FINAL
+        assert states[900099].status_state == ScheduledGame.STATE_SCHEDULED
+        assert states[900099].resumed_from_game_pk == 900003
+        assert states[900099].original_game_date == _SEP_24
+
+
+def test_daily_finality_survives_withheld_publication_and_clears_coverage(
+    fenced_app, monkeypatch,
+):
+    """SyncRun 92585 shape: finality preflight, then a withheld candidate."""
+    from datetime import datetime as _dt
+
+    from api import bullpen as bullpen_api
+    from models.dashboard_snapshot import DashboardSnapshot
+    from models.postgame_processed_game import PostgameProcessedGame
+    from models.sync_run import SyncRun
+    from services import dashboard_snapshot, slate_coverage
+    from services import sync as sync_service
+
+    sep_24_games = [_sep_24_game(pk, i) for i, pk in enumerate(_ADOPTED_FINAL_PKS)]
+    final_games = [_sep_24_game(pk, i, **_FINAL) for i, pk in enumerate(_ADOPTED_FINAL_PKS)]
+    source = {'games': sep_24_games}
+
+    def mlb_schedule(start_date=None, end_date=None, team_id=None):
+        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+        return [g for g in source['games'] if start <= date.fromisoformat(g['officialDate']) <= end]
+
+    monkeypatch.setattr(schedule_ingestion.mlb_client, 'get_schedule', mlb_schedule)
+    with fenced_app.app_context():
+        ingest_games(sep_24_games, source='daily_slate_schedule')
+        _adopt_like_sync_pipeline(_ADOPTED_FINAL_PKS)
+        before = slate_coverage.compute_slate_coverage(_SEP_24)
+        assert 'scheduled_games_not_final' in before['reason_codes']
+
+        prior_run = SyncRun(job_name='daily_sync', status='success', stage='published',
+                            source='test')
+        db.session.add(prior_run)
+        db.session.flush()
+        trusted = DashboardSnapshot(
+            snapshot_type='bullpen_dashboard', sync_run_id=prior_run.id,
+            status=dashboard_snapshot.SNAPSHOT_STATUS_READY, is_published=True,
+            published_at=_dt(2026, 9, 24, 6, 3), payload={'trusted': True},
+            payload_version=1, data_through=_SEP_24 - timedelta(days=1),
+            snapshot_generated_at=_dt(2026, 9, 24, 6, 2), source='scheduled_sync',
+        )
+        db.session.add(trusted)
+        run = SyncRun(job_name='daily_sync', status='running', stage='started',
+                      source='scheduled')
+        db.session.add(run)
+        db.session.commit()
+        trusted_id, run_id = trusted.id, run.id
+
+        # MLB now reports every game Final; the real Daily preflight and slate
+        # refresh run exactly as in the Sep. 25 Daily Primary.
+        source['games'] = final_games
+        preflight = sync_service._refresh_daily_schedule_finality_window(_SEP_25, 7)
+        slate = sync_service._refresh_daily_slate_schedule_window(_SEP_25)
+        assert preflight['status'] == 'ok' and slate['status'] == 'ok'
+
+        # Postgame markers are not written yet, so the real slate gate still
+        # withholds this candidate for a genuine reason.
+        monkeypatch.setattr(bullpen_api, 'build_bullpen_dashboard_payload',
+                            lambda *_a, **_k: {'freshness': {
+                                'data_through': _SEP_24.isoformat(),
+                                'availability_reference_date': _SEP_25.isoformat()}})
+        with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as withheld:
+            sync_service.complete_sync_run_with_snapshot(
+                run_id, final_status='success', source='scheduled',
+                snapshot_source='scheduled_sync',
+            )
+        assert str(withheld.value) == dashboard_snapshot.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+        candidate_id = withheld.value.snapshot_id
+        db.session.remove()
+
+    url = os.environ['DATABASE_URL']
+    scheduled = _fresh_rows(url, 'scheduled_games', 'status_state', _ADOPTED_FINAL_PKS)
+    assert len(scheduled) == 6
+    assert {row[1] for row in scheduled} == {ScheduledGame.STATE_FINAL}
+    slate_rows = _fresh_rows(url, 'slate_games', 'normalized_state', _ADOPTED_FINAL_PKS)
+    assert {row[1] for row in slate_rows} == {'completed'}
+
+    with fenced_app.app_context():
+        assert db.session.get(DashboardSnapshot, trusted_id).is_published is True
+        candidate = db.session.get(DashboardSnapshot, candidate_id)
+        assert candidate.is_published is False
+        coverage = candidate.payload['freshness']['slate_coverage']
+        assert 'scheduled_games_not_final' not in coverage['reason_codes']
+        assert 'postgame_markers_incomplete' in coverage['reason_codes']
+        failed = db.session.get(SyncRun, run_id)
+        assert failed.status == 'failed'
+        assert failed.published_dashboard_snapshot_id is None
+        assert db.session.execute(text(
+            'SELECT count(*) FROM tonight_publications WHERE dashboard_snapshot_id=:id'
+        ), {'id': candidate_id}).scalar() == 0
+
+        # Once every final game is fully ingested, the real evaluator clears.
+        for index, pk in enumerate(_ADOPTED_FINAL_PKS):
+            db.session.add(PostgameProcessedGame(
+                mlb_game_pk=pk, game_date=_SEP_24, game_type='R',
+                home_team_id=108 + 2 * index, away_team_id=109 + 2 * index,
+                processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+                processed_at=_dt(2026, 9, 25, 4, 0),
+            ))
+        db.session.commit()
+        after = slate_coverage.compute_slate_coverage(_SEP_24)
+        assert after['validations_passed'] is True
+        assert after['complete_enough_to_publish'] is True
+        assert after['reason_codes'] == ['slate_complete']
