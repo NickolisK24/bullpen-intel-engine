@@ -407,3 +407,141 @@ def test_roster_sync_feeds_default_board_filtering_and_context_labels(client):
     assert by_name['Connor Phillips']['roster_status']['label'] == 'Optioned / Minors'
     assert by_name['Jose Franco']['roster_status']['label'] == 'Optioned / Minors'
     assert all(card['availability_status'] != 'Available' for name, card in by_name.items() if name != 'Reds Active Relief Context')
+
+
+# ── Pitcher projection fence (migration e3f6a9b2c5d8) ─────────────────────────
+# Production PostgreSQL restores the OLD roster-status cache of a pitcher that
+# has a current active/40-man roster_membership_intervals row unless the writing
+# transaction declares baseballos.roster_owner for the pitcher's team. These
+# tests run the real sync against the real migrated schema.
+
+from sqlalchemy import text  # noqa: E402
+
+import services.roster_status_sync as roster_status_sync_module  # noqa: E402
+from services import public_roster_readiness, source_readiness  # noqa: E402
+from tests.test_schedule_ingestion import fenced_app, fenced_database_url  # noqa: E402,F401
+
+_FENCE_TIMESTAMP = datetime(2026, 9, 25, 15, 20, 0)
+
+
+def _seed_adopted_pitcher(mlb_id, name, team_id):
+    """A pitcher adopted by the sync-pipeline runtime: current active interval."""
+    pitcher = Pitcher(
+        mlb_id=mlb_id, full_name=name, team_id=team_id, position='P', active=True,
+        roster_status=STATUS_ACTIVE, roster_status_source='mlb_stats_api:roster_sync:active',
+        roster_status_raw_code='A', roster_status_raw_description='Active',
+        roster_status_updated_at=_FENCE_TIMESTAMP - timedelta(days=2),
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+    # The interval's evidence lineage is irrelevant to the trigger under test;
+    # this disposable database drops that foreign key instead of fabricating
+    # source-observation evidence.
+    db.session.execute(text(
+        'ALTER TABLE roster_membership_intervals DROP CONSTRAINT IF EXISTS '
+        'roster_membership_intervals_opened_by_observation_id_fkey'
+    ))
+    db.session.execute(text(
+        "INSERT INTO roster_membership_intervals (pitcher_id, player_mlb_id, team_id,"
+        " membership_type, effective_start_date, authority_type, opened_by_observation_id,"
+        " is_current_version, is_void, created_at, updated_at) "
+        "VALUES (:pitcher, :mlb, :team, 'active_roster', '2026-09-01', 'official_roster',"
+        " 1, true, false, now(), now())"
+    ), {'pitcher': pitcher.id, 'mlb': mlb_id, 'team': team_id})
+    db.session.commit()
+    return pitcher.id
+
+
+def _fenced_rosters():
+    injured = {'code': 'D15', 'description': '15-day IL'}
+    active = {'code': 'A', 'description': 'Active'}
+    return {
+        (108, ROSTER_TYPE_ACTIVE): [roster_entry(910801, 'Angels Active Arm', status=active)],
+        (108, ROSTER_TYPE_40_MAN): [
+            roster_entry(910801, 'Angels Active Arm', status=active),
+            roster_entry(910802, 'Angels Injured Arm', status=injured),
+        ],
+        (109, ROSTER_TYPE_ACTIVE): [],
+        (109, ROSTER_TYPE_40_MAN): [roster_entry(910901, 'Diamondbacks Injured Arm', status=injured)],
+    }
+
+
+def _stale_suppressed_pitcher_ids():
+    return {
+        int(key) for (key,) in db.session.execute(text(
+            "SELECT resource_key FROM compatibility_write_events "
+            "WHERE resource_type='pitcher_projection' AND outcome='stale_suppressed'"
+        ))
+    }
+
+
+def _team_roster_claims_available(team_id):
+    family = {
+        'status': source_readiness.DEGRADED,
+        'fail_closed': True,
+        'reason_codes': ['roster_status_cache_divergence'],
+    }
+    readiness = public_roster_readiness.build_public_roster_readiness(
+        team_id=team_id, family=family,
+    )
+    return public_roster_readiness.roster_claims_available(readiness)
+
+
+def _run_fenced_sync():
+    return sync_roster_statuses(
+        team_ids=[108, 109],
+        client=FakeRosterClient(_fenced_rosters()),
+        timestamp=_FENCE_TIMESTAMP,
+    )
+
+
+def test_fenced_roster_sync_persists_official_status_for_adopted_pitchers(fenced_app):
+    assert db.session.execute(text(
+        "SELECT count(*) FROM pg_trigger WHERE tgname='baseballos_pitcher_projection_fence'"
+    )).scalar() == 1
+    active_id = _seed_adopted_pitcher(910801, 'Angels Active Arm', 108)
+    injured_id = _seed_adopted_pitcher(910802, 'Angels Injured Arm', 108)
+    other_id = _seed_adopted_pitcher(910901, 'Diamondbacks Injured Arm', 109)
+
+    result = _run_fenced_sync()
+    db.session.remove()
+
+    assert result['errors'] == 0
+    assert db.session.get(Pitcher, active_id).roster_status == STATUS_ACTIVE
+    injured = db.session.get(Pitcher, injured_id)
+    assert injured.roster_status == STATUS_IL_15
+    assert injured.roster_status_raw_code == 'D15'
+    assert db.session.get(Pitcher, other_id).roster_status == STATUS_IL_15
+    assert _stale_suppressed_pitcher_ids() == set()
+    assert roster_status_sync_module.roster_status_cache_divergences(team_ids=[108, 109]) == []
+    assert _team_roster_claims_available(108) is True
+
+
+def test_undeclared_fenced_roster_write_is_the_team_state_108_failure(fenced_app, monkeypatch):
+    """Without the ownership declaration the fence reproduces production run 718."""
+    _seed_adopted_pitcher(910801, 'Angels Active Arm', 108)
+    injured_id = _seed_adopted_pitcher(910802, 'Angels Injured Arm', 108)
+    monkeypatch.setattr(roster_status_sync_module, '_declare_roster_ownership', lambda _team_id: None)
+
+    result = _run_fenced_sync()
+    db.session.remove()
+
+    # The ORM counted the write; the trigger silently restored the old cache.
+    assert result['pitchers_changed'] >= 1
+    assert db.session.get(Pitcher, injured_id).roster_status == STATUS_ACTIVE
+    assert injured_id in _stale_suppressed_pitcher_ids()
+    divergences = roster_status_sync_module.roster_status_cache_divergences(team_ids=[108])
+    assert [row['pitcher_id'] for row in divergences] == [injured_id]
+    assert _team_roster_claims_available(108) is False
+
+
+def test_roster_ownership_declaration_is_scoped_to_one_team(fenced_app):
+    other_id = _seed_adopted_pitcher(910901, 'Diamondbacks Injured Arm', 109)
+    roster_status_sync_module._declare_roster_ownership(108)
+    pitcher = db.session.get(Pitcher, other_id)
+    pitcher.roster_status = STATUS_IL_15
+    db.session.commit()
+    db.session.remove()
+
+    assert db.session.get(Pitcher, other_id).roster_status == STATUS_ACTIVE
+    assert other_id in _stale_suppressed_pitcher_ids()

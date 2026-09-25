@@ -10,6 +10,8 @@ freshness and local tracking state.
 from collections import Counter, defaultdict
 import logging
 
+from sqlalchemy import text
+
 from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
@@ -783,6 +785,32 @@ def _cache_timestamp(snapshot):
     )
 
 
+def _declare_roster_ownership(team_id):
+    """Declare this transaction the roster-cache writer for one team's pitchers.
+
+    Production PostgreSQL carries the ``baseballos_pitcher_projection_fence``
+    trigger (migration ``e3f6a9b2c5d8``). For a pitcher with a current
+    active/40-man ``roster_membership_intervals`` row (a pitcher adopted by the
+    sync-pipeline runtime), the trigger silently restores the OLD roster-status
+    cache fields on every UPDATE from a session that has not declared
+    ``baseballos.roster_owner`` for the row's team. Main never declared it, so
+    today's official snapshot landed while the pitcher cache kept the prior
+    status: a ``roster_status_cache_divergence`` that withholds the team's
+    roster claims and, with them, its Team State. Pending writes for the
+    previous team are flushed first so each team's rows are written under that
+    team's declaration only; the pitchers written next are exactly those whose
+    ``team_id`` is this team. The setting is transaction-local, and every value
+    written still comes from this run's official roster snapshot.
+    """
+    if team_id is None or db.session.get_bind().dialect.name != 'postgresql':
+        return
+    db.session.flush()
+    db.session.execute(
+        text("SELECT set_config('baseballos.roster_owner', :team, true)"),
+        {'team': str(int(team_id))},
+    )
+
+
 def _apply_snapshot_to_pitcher_cache(pitcher, snapshot):
     before = (
         pitcher.roster_status,
@@ -923,6 +951,7 @@ def sync_roster_statuses(
                 team_id,
                 job_name='daily_sync',
             )
+        _declare_roster_ownership(team_id)
         pitchers = (
             Pitcher.query
             .filter(Pitcher.team_id == team_id)
