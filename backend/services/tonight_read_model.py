@@ -17,14 +17,17 @@ that publication describes before first pitch.
 
 The builder reads no FatigueScore, GameLog, live roster or legacy
 ``bullpen_context``. Each game's ``context`` sentence (TN-04) is authored from
-the two frozen TeamSides only, by ``build_matchup_context``. Featured games,
-lead and the change list are present and empty.
+the two frozen TeamSides only, by ``build_matchup_context``. ``league_changes``
+(TN-05) aggregates each team's frozen Team Board What Changed events from the
+same snapshot, by ``build_league_changes``; it never detects a change itself.
+Featured games and lead are present and empty.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 import hashlib
+import re
 import json
 import logging
 from typing import Any, Mapping
@@ -34,6 +37,7 @@ from models.tonight_publication import TonightPublication
 from services import bullpen_board
 from services import public_serving_authority as psa
 from services import team_board_v2
+from services.editorial_voice_contract_v1 import find_editorial_violations
 from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS
 from services.team_board_snapshot_team_state import receipt_value
 from utils.db import db
@@ -108,6 +112,41 @@ CONTEXT_BANNED_TERMS = (
     'prediction', 'gassed', 'tired', 'exhausted',
 )
 
+# TN-05 league What Changed. Canonical TB-09 event types, in product priority.
+# ``four_in_six_started`` and any other type are not Tonight change classes.
+LEAGUE_CHANGE_PRIORITY = (
+    'team_state_changed',
+    'active_bullpen_joined',
+    'active_bullpen_left',
+    'verified_transaction',
+    'back_to_back_started',
+    'three_in_four_started',
+    'high_pitch_outing_started',
+    'new_short_start',
+)
+# Joined and left share one class rank: membership.
+_LEAGUE_CHANGE_RANK = {
+    'team_state_changed': 1,
+    'active_bullpen_joined': 2,
+    'active_bullpen_left': 2,
+    'verified_transaction': 3,
+    'back_to_back_started': 4,
+    'three_in_four_started': 5,
+    'high_pitch_outing_started': 6,
+    'new_short_start': 7,
+}
+LEAGUE_CHANGES_PER_TEAM = 2
+LEAGUE_CHANGES_TOTAL = 12
+LEAGUE_CHANGE_ID_VERSION = 'tonight_league_change_v1'
+LEAGUE_CHANGE_BANNED_TERMS = (
+    'advantage', 'edge', 'favorite', 'favored', 'likely', 'will', 'should win',
+    'target', 'fade', 'bet', 'betting', 'fantasy', 'pick', 'prediction',
+    'gassed', 'exhausted', 'hurt', 'injured',
+)
+# A verified transaction may state an injured-list move factually.
+_TRANSACTION_ALLOWED_TERMS = frozenset({'injured', 'hurt'})
+_ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
 _CLUBS_BY_ID = {club.team_id: club for club in MLB_CLUBS}
 _CANONICAL_TEAM_IDS = frozenset(MLB_TEAM_IDS)
 
@@ -151,6 +190,8 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
             limitations.append(side['reason_code'])
 
     games.sort(key=_game_order)
+    league_changes = build_league_changes(_frozen_what_changed_by_team(snapshot, package))
+    attach_change_refs(sides.values(), league_changes)
     return {
         'contract': CONTRACT,
         'edition': {
@@ -167,12 +208,12 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
             },
             'schedule_as_of': _schedule_as_of(slate_games),
         },
-        'summary': _summary(games, sides),
+        'summary': _summary(games, sides, league_changes),
         # Authored by later packages; present and empty so the contract is stable.
         'lead': None,
         'featured_game_pks': [],
         'games': games,
-        'league_changes': [],
+        'league_changes': league_changes,
         # Temporary contract: a day with no games. Semantic quiet-day rules
         # arrive with lead, featured, and change selection.
         'quiet_day': len(games) == 0,
@@ -679,6 +720,199 @@ def _rested_sentence(sides, facts):
     ), False
 
 
+# ── League What Changed (TN-05) ──────────────────────────────────────────────
+
+def _frozen_what_changed_by_team(snapshot, package):
+    """Every canonical team's validated TB-09 carrier from this exact snapshot.
+
+    Uses the Team Board serving validator, so a carrier that does not match this
+    publication, or holds any malformed event, contributes nothing. Reads only
+    the already-loaded package; no query, no predecessor lookup.
+    """
+    if package is None:
+        return {}
+    carriers = {}
+    for key, team_package in sorted(package['by_team_id'].items()):
+        try:
+            team_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        if team_id not in _CANONICAL_TEAM_IDS or not isinstance(team_package, Mapping):
+            continue
+        carrier = psa._frozen_what_changed_for_view(snapshot, team_package, team_id)
+        if carrier is None:
+            continue
+        identity = team_package.get('team') if isinstance(team_package.get('team'), Mapping) else {}
+        carriers[team_id] = {
+            'abbreviation': identity.get('team_abbreviation') or _CLUBS_BY_ID[team_id].abbreviation,
+            'carrier': carrier,
+        }
+    return carriers
+
+
+def build_league_changes(carriers_by_team_id, *, max_per_team=LEAGUE_CHANGES_PER_TEAM,
+                         max_total=LEAGUE_CHANGES_TOTAL):
+    """Aggregate frozen TB-09 events into the bounded league list. Pure.
+
+    ``carriers_by_team_id`` maps a canonical team id to ``{'abbreviation',
+    'carrier'}`` where ``carrier`` is that team's validated frozen What Changed.
+    This only filters, normalizes, dedupes, orders and caps: every item is one
+    frozen event, and nothing is compared or inferred here.
+    """
+    per_team = []
+    for team_id in sorted(carriers_by_team_id):
+        entry = carriers_by_team_id[team_id]
+        items = _team_league_changes(team_id, entry.get('abbreviation'), entry.get('carrier'))
+        items.sort(key=_league_change_order)
+        per_team.extend(items[:max_per_team])
+    per_team.sort(key=_league_change_order)
+    return per_team[:max_total]
+
+
+def attach_change_refs(sides, league_changes):
+    """Point each TeamSide at its own retained league changes, in list order."""
+    by_team = {}
+    for item in league_changes:
+        by_team.setdefault(item['team_id'], []).append(item['change_id'])
+    for side in sides:
+        side['change_refs'] = list(by_team.get(side.get('team_id'), ()))
+
+
+def _team_league_changes(team_id, abbreviation, carrier):
+    if (
+        team_id not in _CANONICAL_TEAM_IDS
+        or not isinstance(carrier, Mapping)
+        or carrier.get('state') != 'changes'
+        or carrier.get('team_id') != team_id
+    ):
+        return []
+    abbreviation = abbreviation or _CLUBS_BY_ID[team_id].abbreviation
+    items = []
+    seen_ids = set()
+    linked_transactions = set()
+    events = [event for event in carrier.get('events') or () if isinstance(event, Mapping)]
+    for event in events:
+        verified = _mapping_or_empty(_mapping_or_empty(event.get('facts')).get('verified_transaction'))
+        if event.get('event_type') in ('active_bullpen_joined', 'active_bullpen_left') and verified.get('transaction_id'):
+            linked_transactions.add(verified['transaction_id'])
+    for event in events:
+        item = _league_change(team_id, abbreviation, carrier, event)
+        if item is None:
+            continue
+        transaction_id = _transaction_id(event)
+        # One verified move already carried by its membership change is the same event.
+        if event.get('event_type') == 'verified_transaction' and transaction_id in linked_transactions:
+            continue
+        if item['change_id'] in seen_ids:
+            continue
+        seen_ids.add(item['change_id'])
+        items.append(item)
+    return items
+
+
+def _league_change(team_id, abbreviation, carrier, event):
+    event_type = event.get('event_type')
+    summary = event.get('summary')
+    if (
+        event_type not in _LEAGUE_CHANGE_RANK
+        or event.get('team_id') != team_id
+        or event.get('evidence_status') != 'complete'
+        or not isinstance(summary, str) or not summary.strip()
+    ):
+        return None
+    if event_type == 'team_state_changed':
+        previous, current = event.get('previous_value'), event.get('current_value')
+        if not (isinstance(previous, str) and previous and isinstance(current, str) and current):
+            return None
+        headline, detail = f'{abbreviation} moved from {previous} to {current}.', None
+    else:
+        headline, detail = _split_summary(summary)
+    occurred_on = _iso_date_or_none(event.get('event_date'))
+    transaction_id = _transaction_id(event)
+    receipt = (
+        f"{carrier.get('contract')}:{carrier.get('current_snapshot_id')}:"
+        f"{carrier.get('previous_snapshot_id')}:{team_id}"
+    )
+    identity = [
+        LEAGUE_CHANGE_ID_VERSION, receipt, event_type,
+        event.get('subject_id'), event.get('event_date'),
+        event.get('previous_value'), event.get('current_value'), transaction_id,
+    ]
+    change_id = hashlib.sha256(
+        json.dumps(identity, separators=(',', ':'), default=str).encode('utf-8')
+    ).hexdigest()[:24]
+    item = {
+        'change_id': change_id,
+        'team_id': team_id,
+        'team_abbreviation': abbreviation,
+        'change_class': event_type,
+        'headline': headline,
+        'detail': detail,
+        'occurred_on': occurred_on,
+        'evidence_state': event.get('evidence_status'),
+        'source_ref': receipt + (f'#transaction:{transaction_id}' if transaction_id else ''),
+        'game_pks': _game_pks(event.get('facts')),
+    }
+    allowed = _TRANSACTION_ALLOWED_TERMS if transaction_id else frozenset()
+    terms = tuple(term for term in LEAGUE_CHANGE_BANNED_TERMS if term not in allowed)
+    if any(find_editorial_violations(text, terms=terms) for text in (headline, detail) if text):
+        return None
+    return item
+
+
+def _split_summary(summary):
+    """Frozen TB-09 copy: the first sentence is the headline; a second is detail."""
+    text = ' '.join(summary.split())
+    head, sep, rest = text.partition('. ')
+    if not sep:
+        return text, None
+    return head + '.', rest or None
+
+
+def _transaction_id(event):
+    facts = _mapping_or_empty(event.get('facts'))
+    if event.get('event_type') == 'verified_transaction':
+        value = facts.get('transaction_id')
+    else:
+        value = _mapping_or_empty(facts.get('verified_transaction')).get('transaction_id')
+    return value if isinstance(value, (str, int)) and value != '' else None
+
+
+def _game_pks(facts):
+    facts = _mapping_or_empty(facts)
+    values = []
+    if type(facts.get('mlb_game_pk')) is int:
+        values.append(facts['mlb_game_pk'])
+    values.extend(value for value in facts.get('game_pks') or () if type(value) is int)
+    return sorted(set(values))
+
+
+def _league_change_order(item):
+    occurred = item['occurred_on']
+    return (
+        _LEAGUE_CHANGE_RANK[item['change_class']],
+        # Most recent first; undated after dated within a class.
+        occurred is None,
+        -date.fromisoformat(occurred).toordinal() if occurred else 0,
+        item['team_abbreviation'],
+        item['change_id'],
+    )
+
+
+def _iso_date_or_none(value):
+    if not isinstance(value, str) or not _ISO_DATE.match(value):
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value
+
+
+def _mapping_or_empty(value):
+    return value if isinstance(value, Mapping) else {}
+
+
 def _team_board_link(side):
     abbreviation = side.get('abbreviation')
     return f'/bullpen?view=board&team={abbreviation}' if abbreviation else None
@@ -694,7 +928,7 @@ def _game_order(game):
     )
 
 
-def _summary(games, sides):
+def _summary(games, sides, league_changes=()):
     by_state = {state: 0 for state in GAME_STATES}
     for game in games:
         by_state[game['state']] += 1
@@ -711,7 +945,7 @@ def _summary(games, sides):
         'games_by_state': by_state,
         'team_state_counts': team_states,
         'clubs_with_back_to_back_arms': back_to_back_clubs,
-        'change_count': 0,
+        'change_count': len(league_changes),
     }
 
 
@@ -860,6 +1094,10 @@ __all__ = [
     'CONTEXT_BANNED_TERMS',
     'CONTEXT_PRIORITY',
     'CONTEXT_SENTENCE_MAX_CHARS',
+    'LEAGUE_CHANGE_BANNED_TERMS',
+    'LEAGUE_CHANGE_PRIORITY',
+    'attach_change_refs',
+    'build_league_changes',
     'build_matchup_context',
     'build_tonight_v1',
     'content_sha256',
