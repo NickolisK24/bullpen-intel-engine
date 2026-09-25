@@ -1,7 +1,7 @@
 """A bounded, isolated rehearsal of the installed trusted publication builder."""
 
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 import importlib
 import json
 import os
@@ -1597,7 +1597,8 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
             assert serve_sql.count('fatigue_scores') == 0
             assert serve_sql.writes() == []
             serving_query_count = len(serve_sql.statements)
-            assert serving_query_count <= 2, serve_sql.statements
+            # Trusted snapshot + tonight_publications row + one slate_games overlay read.
+            assert serving_query_count <= 3, serve_sql.statements
 
             with _SqlRecorder() as not_modified_sql:
                 not_modified = client.get(
@@ -1608,6 +1609,46 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
             assert not_modified.get_data() == b''
             assert not_modified_sql.count('game_logs', 'fatigue_scores') == 0
             assert not_modified_sql.writes() == []
+            assert _tonight_pointer() == pointer_before_serving
+
+            # Phase 9 (TN-03): only canonical slate_games moves; the served card's
+            # game state follows it while every bullpen fact stays frozen.
+            from models.slate_game import SlateGame
+            engines['on'] = True
+            stored_game = next(g for g in stored_payload['games'] if g['game_pk'] == 7600001)
+            assert stored_game['state'] == 'scheduled'
+            stored_as_of = datetime.fromisoformat(stored_game['state_as_of'].rstrip('Z'))
+            overlay_etags = [response.headers['ETag']]
+            for minutes, normalized, detailed, public_state in (
+                (5, 'live', 'In Progress', 'live'),
+                (190, 'completed', 'Final', 'final'),
+            ):
+                slate_row = db.session.get(SlateGame, 7600001)
+                slate_row.normalized_state, slate_row.status_detailed = normalized, detailed
+                slate_row.last_synced = stored_as_of + timedelta(minutes=minutes)
+                db.session.commit()
+                with _SqlRecorder() as overlay_sql:
+                    overlay = client.get(TONIGHT_V1_URL)
+                served_game = next(
+                    g for g in overlay.get_json()['games'] if g['game_pk'] == 7600001
+                )
+                assert overlay.status_code == 200
+                assert served_game['state'] == public_state
+                assert {key: value for key, value in served_game.items()
+                        if key not in ('state', 'state_as_of')} == {
+                    key: value for key, value in stored_game.items()
+                    if key not in ('state', 'state_as_of')
+                }
+                assert overlay.headers['X-BaseballOS-Snapshot-ID'] == str(snapshot.id)
+                assert overlay_sql.count('game_logs', 'fatigue_scores') == 0
+                assert overlay_sql.writes() == []
+                assert len(overlay_sql.statements) <= 3, overlay_sql.statements
+                overlay_etags.append(overlay.headers['ETag'])
+            engines['on'] = False
+            assert len(set(overlay_etags)) == 3
+            db.session.expire_all()
+            assert db.session.get(TonightPublication, row.id).payload == stored_payload
+            assert db.session.get(TonightPublication, row.id).content_sha256 == row.content_sha256
             assert _tonight_pointer() == pointer_before_serving
 
             # Phase 11: legacy tonight_v5 storage untouched.
@@ -1626,7 +1667,8 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
                 f'serving_queries={serving_query_count} '
                 f'game_log_queries=0 fatigue_score_queries=0 '
                 f'tonight_pointer_moves=0 parity_teams={len(parity_teams)} '
-                f'delivery_headers=PASS etag=PASS not_modified=PASS'
+                f'delivery_headers=PASS etag=PASS not_modified=PASS '
+                f'overlay=scheduled->live->final overlay_etags_distinct={len(set(overlay_etags))}'
             )
         finally:
             db.session.rollback()
