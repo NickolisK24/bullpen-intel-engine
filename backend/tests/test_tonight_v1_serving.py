@@ -354,6 +354,8 @@ def test_serving_module_cannot_build():
         # TN-03: the shared state mapping and the schedule overlay source.
         'services.tonight_read_model.GAME_STATES',
         'services.tonight_read_model.game_state',
+        # TN-04: the stored context is only re-presented for the served state.
+        'services.tonight_read_model.present_matchup_context',
         'models.slate_game.SlateGame',
         'hashlib.sha256',
         '__future__.annotations',
@@ -457,7 +459,7 @@ from datetime import datetime, timedelta  # noqa: E402
 import json  # noqa: E402
 
 T0 = datetime(2026, 9, 25, 15, 0, 0)
-OVERLAY_FIELDS = {'state', 'first_pitch_utc', 'state_as_of'}
+OVERLAY_FIELDS = {'state', 'first_pitch_utc', 'state_as_of', 'context'}
 BULLPEN_SUMMARY_FIELDS = (
     'game_count', 'team_state_counts', 'clubs_with_back_to_back_arms', 'change_count',
 )
@@ -515,7 +517,11 @@ def _assert_only_overlay_fields_differ(stored, served):
         assert changed <= OVERLAY_FIELDS, changed
         assert json.dumps(after['away'], sort_keys=True) == json.dumps(before['away'], sort_keys=True)
         assert json.dumps(after['home'], sort_keys=True) == json.dumps(before['home'], sort_keys=True)
-        assert after['context'] == before['context'] and after['featured'] == before['featured']
+        assert after['featured'] == before['featured']
+        assert after['context'] == tonight_read_model.present_matchup_context(
+            before['context'], after['state'],
+        )
+        assert after['context']['evidence_state'] == before['context']['evidence_state']
     for key in ('contract', 'edition', 'lead', 'featured_game_pks', 'league_changes', 'quiet_day'):
         assert served[key] == stored[key]
     for key in BULLPEN_SUMMARY_FIELDS:
@@ -764,3 +770,54 @@ def test_production_shaped_overlay_and_304(tonight_app, mutable_reads, monkeypat
     assert _stored_bytes(row.id) == (stored_bytes, stored_digest)
     assert [row_.to_dict() for row_ in SlateGame.query.order_by(SlateGame.game_pk)] == slate_before
     assert TonightPublication.query.count() == 1
+
+
+# ── TN-04: the stored pregame sentence follows the served game state ─────────
+
+B2B_SENTENCE = 'SF has 2 bullpen arms coming off back-to-back usage.'
+
+
+@pytest.mark.parametrize(('current_state', 'shown', 'marker'), [
+    ('scheduled', True, None),
+    ('delayed', True, None),          # served as uncertain
+    ('live', True, 'pregame_context'),
+    ('final', False, 'pregame_context_hidden'),
+    ('postponed', False, 'pregame_context_hidden'),
+    ('suspended', False, 'pregame_context_hidden'),
+])
+def test_stored_sentence_is_presented_for_the_served_state(
+    tonight_app, monkeypatch, current_state, shown, marker,
+):
+    row = _generate_at_t0(tonight_app)
+    stored_bytes, stored_digest = _stored_bytes(row.id)
+    assert _game(row.payload, 801)['context']['sentence'] == B2B_SENTENCE
+    if current_state != 'scheduled':
+        _set_slate(801, current_state, synced=T0 + timedelta(minutes=30))
+
+    response = _served(tonight_app, monkeypatch)
+    context = _game(response.get_json(), 801)['context']
+
+    assert context['sentence'] == (B2B_SENTENCE if shown else None)
+    assert context['reason_codes'] == ['back_to_back_pressure'] + ([marker] if marker else [])
+    assert context['evidence_state'] == 'complete'
+    assert _stored_bytes(row.id) == (stored_bytes, stored_digest)
+
+
+def test_context_presentation_changes_the_served_etag(tonight_app, mutable_reads, monkeypatch):
+    row = _generate_at_t0(tonight_app)
+    scheduled = _served(tonight_app, monkeypatch)
+    _set_slate(801, 'live', synced=T0 + timedelta(minutes=20))
+    del mutable_reads[:]
+    live = _get(tonight_app)
+    live_reads = list(mutable_reads)
+    _set_slate(801, 'final', synced=T0 + timedelta(minutes=200))
+    final = _get(tonight_app)
+
+    assert scheduled.headers['ETag'] == f'"{row.content_sha256}"'
+    assert len({scheduled.headers['ETag'], live.headers['ETag'], final.headers['ETag']}) == 3
+    assert _game(live.get_json(), 801)['context']['reason_codes'][-1] == 'pregame_context'
+    assert _game(final.get_json(), 801)['context']['sentence'] is None
+    # Context presentation adds no query: still the TN-03 three.
+    assert len(live_reads) <= 3, live_reads
+    assert not [sql for sql in live_reads if 'game_logs' in sql or 'fatigue_scores' in sql]
+    assert _writes(live_reads) == []
