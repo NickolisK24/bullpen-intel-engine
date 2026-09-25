@@ -445,6 +445,43 @@ Diagnosis query: count `compatibility_write_events` rows with
 `resource_type='schedule'` and `outcome='stale_suppressed'` for the affected
 `game_pk` values.
 
+## 15B. Roster Ownership Fence (September 25 Team State 108 incident)
+
+The same migration installs `baseballos_pitcher_projection_fence` on `pitchers`.
+It guards pitchers that have a current, non-void, open-ended
+`roster_membership_intervals` row of type `active_roster` or `forty_man_roster`,
+which marks them as adopted by the sync-pipeline runtime. For those pitchers, an
+UPDATE of the team or roster-status cache fields is reverted to the OLD values
+unless the session has declared `baseballos.roster_owner` equal to the row's
+`team_id`. Each reverted write logs `compatibility_write_events` with
+`resource_type='pitcher_projection'` and outcome `stale_suppressed`.
+
+`main`'s daily roster sync never made that declaration. It stored today's
+official `roster_status_snapshots`, but an adopted pitcher's cache kept the
+earlier status. The mismatch is a team-scoped `roster_status_cache_divergence`,
+and it has these consequences:
+
+1. The team's public roster claims are withheld, and with them its
+   active-bullpen membership.
+2. Team State resolves to `unknown`/`missing`/`data_limited`.
+3. The trusted publication proof refuses the candidate:
+   `snapshot_team_state_ineligible:108:data_state:missing,confidence:unknown,status_code_unsupported:data_limited`
+   (SyncRun 92607).
+4. The prospective Arm Read capture is withheld with a `DeltaStampError`
+   (`arm_read_population_authority_unproven`). This is a co-symptom of the same
+   empty membership, not a cause.
+
+`roster_status_sync.sync_roster_statuses` now declares transaction-local
+ownership for one team at a time. It flushes the previous team's writes, then
+writes only the pitchers whose `team_id` is that team. Every value written still
+comes from that run's official roster snapshot. The declaration does not cover a
+write to a pitcher on another team, and the readiness, divergence and Team State
+gates are unchanged.
+
+Diagnosis query: count `compatibility_write_events` rows with
+`resource_type='pitcher_projection'` and `outcome='stale_suppressed'`, then
+compare with `roster_status_cache_divergences(team_ids=[...])`.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:
