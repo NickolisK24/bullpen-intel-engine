@@ -21,6 +21,9 @@ import models.prospect  # noqa: F401
 
 
 _DEFAULT_PBP = object()
+# The fixture replaces completion with a fake; withheld-candidate tests need the
+# real orchestration, captured before any fixture runs.
+_REAL_COMPLETE_SYNC_RUN_WITH_SNAPSHOT = sync_service.complete_sync_run_with_snapshot
 
 
 @pytest.fixture
@@ -56,7 +59,7 @@ def app(tmp_path, monkeypatch):
             started_at=kwargs.get('started_at'),
             job_name=kwargs.get('job_name', sync_metadata.JOB_POSTGAME_REFRESH),
         )
-        return run, SimpleNamespace(id=123)
+        return run, SimpleNamespace(id=123, is_published=True, status='ready')
 
     monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot', fake_complete)
 
@@ -362,7 +365,7 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
             job_name=kwargs.get('job_name', sync_metadata.JOB_POSTGAME_REFRESH),
             published_dashboard_snapshot_id=456,
         )
-        return run, SimpleNamespace(id=456)
+        return run, SimpleNamespace(id=456, is_published=True, status='ready')
 
     def fake_completed_game_context(*args, **kwargs):
         kwargs['status']['completed_game_contexts_upserted'] += 1
@@ -439,6 +442,71 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
         run = SyncRun.query.order_by(SyncRun.id.desc()).first()
         assert run.stage == sync_metadata.STAGE_PUBLISHED
         assert run.published_dashboard_snapshot_id == 456
+
+
+def test_postgame_withheld_candidate_keeps_lane_policy_and_true_reason(
+    app,
+    monkeypatch,
+):
+    """SyncRun 92585 regression, postgame lane: a slate-withheld candidate is
+    returned as pending evidence, never reported as a League Board artifact
+    failure, never marked published, and post-publication work does not run."""
+    from services import dashboard_snapshot as dashboard_snapshot_service
+
+    events = []
+    with app.app_context():
+        _seed_pitchers()
+        morning_id = _seed_published_morning_snapshot()
+    _patch_mlb(monkeypatch, [_game()])
+    withheld = SimpleNamespace(
+        id=3562, status='pending', is_published=False, published_at=None,
+        error_message=dashboard_snapshot_service.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
+    )
+    monkeypatch.setattr(
+        sync_service, 'complete_sync_run_with_snapshot',
+        _REAL_COMPLETE_SYNC_RUN_WITH_SNAPSHOT,
+    )
+    monkeypatch.setattr(
+        dashboard_snapshot_service, 'build_bullpen_dashboard_snapshot',
+        lambda **_kwargs: events.append('dashboard_snapshot_candidate') or withheld,
+    )
+    monkeypatch.setattr(
+        dashboard_snapshot_service, 'run_post_commit_snapshot_publication',
+        lambda *_args, **_kwargs: pytest.fail('withheld candidate ran publication hooks'),
+    )
+    monkeypatch.setattr(
+        'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+        lambda *_args, **_kwargs: pytest.fail('withheld candidate reached artifact gate'),
+    )
+    for stage_function in (
+        '_safe_build_workload_recovery_evidence_stage',
+        '_safe_build_composed_reads_stage',
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+    ):
+        monkeypatch.setattr(
+            sync_service, stage_function,
+            lambda *_args, _name=stage_function, **_kwargs: events.append(_name),
+        )
+
+    status = _run(app)
+
+    reason = dashboard_snapshot_service.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    assert events == ['dashboard_snapshot_candidate']
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['dashboard_snapshot_id'] == 3562
+    assert status['publication_withheld_reason'] == reason
+    assert status['intelligence_snapshot'] == 'publication_withheld'
+    assert status['internal_enrichment'] == 'skipped_publication_withheld'
+    assert reason in status['message']
+    assert 'league_team_state_artifact' not in status['message']
+    with app.app_context():
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert run.status == sync_metadata.STATUS_SUCCESS
+        assert run.stage != sync_metadata.STAGE_PUBLISHED
+        assert run.published_dashboard_snapshot_id is None
+        assert run.error_message == reason
+        serving = DashboardSnapshot.query.filter_by(is_published=True).one()
+        assert serving.id == morning_id
 
 
 def test_postgame_refresh_public_only_skips_internal_enrichment(app, monkeypatch):

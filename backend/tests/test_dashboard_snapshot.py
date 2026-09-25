@@ -2306,13 +2306,22 @@ def test_daily_sync_with_unresolved_person_identity_stays_partial_and_withholds(
 
     status = sync_service.run_daily_sync(app, days_back=7)
 
-    assert status['status'] == 'partial'
+    # Daily Primary policy: a withheld candidate fails the run with the
+    # candidate's own gate reason (never a post-publication artifact symptom).
+    assert status['status'] == 'failed'
     assert status['records_failed'] == 1
 
     with app.app_context():
         newest = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
         assert newest.is_published is False
         assert newest.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+        assert status['publication_withheld_reason'] == newest.error_message
+        assert status['message'] == newest.error_message
+        assert status['dashboard_snapshot_id'] == newest.id
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert run.status == 'failed'
+        assert run.error_message == newest.error_message
+        assert run.published_dashboard_snapshot_id is None
         # The previous trusted snapshot keeps serving; publication is withheld.
         assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == prior_snapshot_id
 

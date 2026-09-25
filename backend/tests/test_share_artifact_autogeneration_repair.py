@@ -22,6 +22,9 @@ from flask import Flask
 
 from services import dashboard_snapshot as ds
 from services import share_artifact_publication_hook as hook_module
+from services.league_team_state_artifact_recovery import (
+    require_complete_artifact_set as _real_require_complete_artifact_set,
+)
 from services import sync as sync_service
 from tests.db_config import (
     configure_test_database,
@@ -269,3 +272,229 @@ def test_operator_overview_reports_the_same_config_state(app):
     assert ops.autogeneration_enabled() is True
     app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = False
     assert ops.autogeneration_enabled() is False
+
+
+# -- SyncRun 92585: a withheld candidate is never a publication -------------------
+#
+# Production symptom: Daily Primary SyncRun 92585 built candidate 3562, which the
+# slate-coverage gate correctly withheld (pending, unpublished,
+# ``dashboard_snapshot_slate_coverage_incomplete``). Completion then marked the run
+# published, pointed it at the unpublished candidate, and applied the
+# post-publication League Board artifact invariant, which reported
+# ``league_team_state_artifact_set_incomplete`` and hid the real reason. Publication
+# is now proven from the candidate before any published lineage, hook, or artifact
+# gate runs.
+
+
+_WITHHELD_REASONS = (
+    ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
+    ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING,
+    ds.DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE,
+)
+
+
+def _withheld_candidate(reason=ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE):
+    return SimpleNamespace(
+        id=3562, sync_run_id=92585, status=ds.SNAPSHOT_STATUS_PENDING,
+        is_published=False, published_at=None, error_message=reason,
+        data_through=date(2026, 9, 24),
+    )
+
+
+class _CompletionSpies:
+    """Record every publication-side effect completion could trigger."""
+
+    def __init__(self, monkeypatch, snapshot, *, artifact_gate=None):
+        self.finish_calls = []
+        self.post_commit = []
+        self.team_state_hook = []
+        self.tonight_hook = []
+        self.artifact_gate = []
+        self.run = SimpleNamespace(
+            id=92585, stage=None, published_dashboard_snapshot_id=None,
+            error_message=None,
+        )
+
+        def finish(*_args, **kwargs):
+            self.finish_calls.append(kwargs)
+            return self.run
+
+        real_post_commit = ds.run_post_commit_snapshot_publication
+
+        def post_commit(candidate):
+            self.post_commit.append(candidate)
+            return real_post_commit(candidate)
+
+        def gate(candidate, **_kwargs):
+            self.artifact_gate.append(candidate)
+            if artifact_gate is not None:
+                return artifact_gate(candidate)
+            return {}
+
+        monkeypatch.setattr(sync_service.sync_metadata, 'finish_sync_run', finish)
+        monkeypatch.setattr(ds, 'build_bullpen_dashboard_snapshot', lambda **_k: snapshot)
+        monkeypatch.setattr(ds, 'run_post_commit_snapshot_publication', post_commit)
+        monkeypatch.setattr(
+            ds, '_maybe_generate_team_state_artifacts_after_publication',
+            lambda candidate: self.team_state_hook.append(candidate),
+        )
+        monkeypatch.setattr(
+            ds, '_maybe_generate_tonight_v1_after_publication',
+            lambda candidate: self.tonight_hook.append(candidate),
+        )
+        monkeypatch.setattr(
+            'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+            gate,
+        )
+
+
+@pytest.mark.parametrize('reason', _WITHHELD_REASONS)
+def test_withheld_daily_candidate_fails_with_its_true_reason(app, monkeypatch, reason):
+    candidate = _withheld_candidate(reason)
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
+        sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
+
+    assert str(raised.value) == reason
+    assert raised.value.reason_code == reason
+    assert raised.value.snapshot_id == 3562
+    # Run lineage never claims a publication.
+    assert spies.run.stage != sync_service.sync_metadata.STAGE_PUBLISHED
+    assert spies.run.published_dashboard_snapshot_id is None
+    failed = spies.finish_calls[-1]
+    assert failed['status'] == sync_service.sync_metadata.STATUS_FAILED
+    assert failed['failed_stage'] == sync_service.sync_metadata.STAGE_DASHBOARD_SNAPSHOT
+    assert failed['error_message'] == reason
+    assert failed.get('published_dashboard_snapshot_id') is None
+    assert 'league_team_state_artifact' not in failed['error_message']
+    # No post-publication work for an unpublished candidate.
+    assert spies.post_commit == []
+    assert spies.team_state_hook == []
+    assert spies.tonight_hook == []
+    assert spies.artifact_gate == []
+    # The candidate itself is never rewritten by completion.
+    assert candidate.status == ds.SNAPSHOT_STATUS_PENDING
+    assert candidate.is_published is False
+    assert candidate.error_message == reason
+
+
+def test_withheld_candidate_without_reason_uses_stable_fallback(app, monkeypatch):
+    candidate = _withheld_candidate(reason=None)
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
+        sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
+
+    assert str(raised.value) == sync_service.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
+    assert spies.finish_calls[-1]['error_message'] == (
+        sync_service.DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
+    )
+    assert spies.artifact_gate == []
+
+
+@pytest.mark.parametrize('shape', [
+    {'is_published': True, 'status': ds.SNAPSHOT_STATUS_PENDING},
+    {'is_published': False, 'status': ds.SNAPSHOT_STATUS_READY},
+])
+def test_publication_requires_both_published_flag_and_ready_status(app, monkeypatch, shape):
+    candidate = SimpleNamespace(
+        id=3562, sync_run_id=92585, published_at=None,
+        error_message=ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE, **shape,
+    )
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
+        sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
+
+    assert spies.run.published_dashboard_snapshot_id is None
+    assert spies.artifact_gate == []
+    assert spies.post_commit == []
+
+
+def test_published_candidate_keeps_lineage_hooks_and_artifact_gate(app, monkeypatch):
+    candidate = _published_snapshot(snapshot_id=3600, data_through=date(2026, 9, 24))
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    run, snapshot = sync_service.complete_sync_run_with_snapshot(
+        92585, final_status='success',
+    )
+
+    assert (run, snapshot) == (spies.run, candidate)
+    assert run.stage == sync_service.sync_metadata.STAGE_PUBLISHED
+    assert run.published_dashboard_snapshot_id == 3600
+    assert spies.post_commit == [candidate]
+    # PR #869 order: Team State generation, then Tonight v1, then the gate.
+    assert spies.team_state_hook == [candidate]
+    assert spies.tonight_hook == [candidate]
+    assert spies.artifact_gate == [candidate]
+
+
+def test_published_candidate_with_29_artifacts_still_fails_closed(app, monkeypatch):
+    from services import league_team_state_artifact_recovery as recovery
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    candidate = _published_snapshot(snapshot_id=3600, data_through=date(2026, 9, 24))
+    artifacts = [
+        SimpleNamespace(team_id=team_id, subject_type=recovery.SUBJECT_TYPE_LEAGUE_SNAPSHOT)
+        for team_id in sorted(MLB_TEAM_IDS)[:29]
+    ]
+    monkeypatch.setattr(
+        recovery, 'list_team_state_artifacts_for_snapshot',
+        lambda *_a, **_k: artifacts,
+    )
+    spies = _CompletionSpies(
+        monkeypatch, candidate, artifact_gate=_real_require_complete_artifact_set,
+    )
+
+    with pytest.raises(recovery.LeagueTeamStateArtifactRecoveryError) as raised:
+        sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
+
+    assert str(raised.value) == 'league_team_state_artifact_set_incomplete'
+    assert spies.finish_calls[-1]['error_message'] == (
+        'league_team_state_artifact_set_incomplete'
+    )
+    assert spies.artifact_gate == [candidate]
+    # A published candidate still ran its post-publication generation first.
+    assert spies.team_state_hook == [candidate]
+
+
+def test_withheld_candidate_reports_true_reason_with_autogeneration_disabled(
+    app, monkeypatch,
+):
+    app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = False
+    candidate = _withheld_candidate()
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld) as raised:
+        sync_service.complete_sync_run_with_snapshot(92585, final_status='success')
+
+    assert str(raised.value) == ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    assert spies.finish_calls[-1]['error_message'] == (
+        ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    )
+    assert spies.run.published_dashboard_snapshot_id is None
+    assert spies.artifact_gate == []
+    assert spies.post_commit == []
+
+
+def test_postgame_policy_returns_withheld_candidate_without_publication(app, monkeypatch):
+    candidate = _withheld_candidate()
+    spies = _CompletionSpies(monkeypatch, candidate)
+
+    run, snapshot = sync_service.complete_sync_run_with_snapshot(
+        92585,
+        final_status='success',
+        job_name=sync_service.sync_metadata.JOB_POSTGAME_REFRESH,
+        raise_on_withheld=False,
+    )
+
+    assert snapshot is candidate
+    assert run.stage != sync_service.sync_metadata.STAGE_PUBLISHED
+    assert run.published_dashboard_snapshot_id is None
+    assert run.error_message == ds.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    # The run keeps its lane status; the runner's publication proof classifies it.
+    assert spies.finish_calls[-1]['status'] == 'success'
+    assert spies.post_commit == []
+    assert spies.tonight_hook == []
+    assert spies.artifact_gate == []

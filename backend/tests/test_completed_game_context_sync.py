@@ -349,7 +349,13 @@ def test_postgame_refresh_binds_intelligence_snapshot_to_publication(app, monkey
     status = _run(app)
 
     assert status['completed_game_contexts_upserted'] == 2
-    assert status['intelligence_snapshot'] == 'publication_bound'
+    # This fixture's slate has no postgame markers, so the real slate gate
+    # withholds the candidate; completion reports that truthfully instead of
+    # calling an unpublished candidate publication-bound.
+    assert status['intelligence_snapshot'] == 'publication_withheld'
+    assert status['publication_withheld_reason'] == (
+        'dashboard_snapshot_slate_coverage_incomplete'
+    )
     with app.app_context():
         assert IntelligenceSurfaceSnapshot.query.count() == 0
 
@@ -374,7 +380,7 @@ def test_retired_postgame_snapshot_tail_is_not_called(
     # Contexts were still derived and committed; the run still succeeds.
     assert status['completed_game_contexts_upserted'] == 2
     assert status['status'] == sync_metadata.STATUS_SUCCESS
-    assert status['intelligence_snapshot'] == 'publication_bound'
+    assert status['intelligence_snapshot'] == 'publication_withheld'
     assert 'intelligence_snapshot_error' not in status
     messages = [r.getMessage() for r in caplog.records]
     assert not any('snapshot build exploded' in m for m in messages), messages
@@ -406,7 +412,7 @@ def test_retired_postgame_snapshot_timeout_path_is_not_called(
 
     assert status['completed_game_contexts_upserted'] == 2
     assert status['status'] == sync_metadata.STATUS_SUCCESS
-    assert status['intelligence_snapshot'] == 'publication_bound'
+    assert status['intelligence_snapshot'] == 'publication_withheld'
     assert 'intelligence_snapshot_error' not in status
     messages = [r.getMessage() for r in caplog.records]
     assert not any('Intelligence surface snapshot refresh timed out' in m for m in messages)

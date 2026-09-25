@@ -1048,6 +1048,9 @@ def sync_recent_logs():
             source=source,
             started_at=started.replace(tzinfo=None),
             snapshot_source='manual_sync',
+            # Operator sync keeps its refresh-oriented contract: a withheld
+            # candidate is reported (never failed, never marked published).
+            raise_on_withheld=False,
         )
     except Exception as exc:
         db.session.rollback()
@@ -1138,6 +1141,10 @@ def sync_recent_logs():
         'sync_run_id':          persisted_run_id,
         'sync_run_persisted':   persisted_run_id is not None,
         'dashboard_snapshot_id': snapshot.id if snapshot is not None else None,
+        'publication_withheld_reason': (
+            None if sync_service.is_trusted_publication(snapshot)
+            else sync_service.publication_withheld_reason(snapshot)
+        ),
         'availability_backtest_status': backtest.get('status'),
         'availability_backtest_computed_at': backtest.get('computed_at'),
         'days_back':            days_back,
