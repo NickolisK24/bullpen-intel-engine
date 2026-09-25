@@ -368,6 +368,23 @@ PACKAGE_MODIFIED_MODULES = {
         # as unexplained drift or unchanged behavior.
         'behaviour_changed': True,
     },
+    'services/schedule_ingestion.py': {
+        'digest_after':
+            'ac5e40b1f882d4ebcc0bd35fba1ac357285bb8d834365dc59733d3af9ebcf96e',
+        'change': (
+            'Schedule finality persistence (SyncRun 92585): ingest_games now '
+            'declares transaction-local schedule ownership '
+            '(baseballos.schedule_owners) for exactly the games in the MLB '
+            'payload it writes, so the production schedule projection fence no '
+            'longer silently returns the OLD row for games the sync-pipeline '
+            'runtime adopted. Parsing, normalization, stored values, window '
+            'selection, and the slate gate are unchanged; no state is inferred'
+        ),
+        # Stored schedule facts for adopted games now follow authoritative MLB
+        # transitions instead of freezing at their pre-adoption state, which is
+        # what the slate gate reads. That is a real behaviour change.
+        'behaviour_changed': True,
+    },
 }
 
 # ── Stored schedule row agreement (Question 2 / Blocker 5) ──────────────────
