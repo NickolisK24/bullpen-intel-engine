@@ -1617,6 +1617,17 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
             engines['on'] = True
             stored_game = next(g for g in stored_payload['games'] if g['game_pk'] == 7600001)
             assert stored_game['state'] == 'scheduled'
+            # TN-04: one frozen, descriptive sentence authored from the two TeamSides.
+            stored_context = stored_game['context']
+            assert stored_context == tonight_read_model.present_matchup_context(
+                tonight_read_model.build_matchup_context(stored_game['away'], stored_game['home']),
+                'scheduled',
+            )
+            assert stored_context['sentence'] is not None
+            assert stored_context['reason_codes'][0] in tonight_read_model.CONTEXT_PRIORITY
+            assert next(
+                g for g in body['games'] if g['game_pk'] == 7600001
+            )['context'] == stored_context
             stored_as_of = datetime.fromisoformat(stored_game['state_as_of'].rstrip('Z'))
             overlay_etags = [response.headers['ETag']]
             for minutes, normalized, detailed, public_state in (
@@ -1635,10 +1646,17 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
                 assert overlay.status_code == 200
                 assert served_game['state'] == public_state
                 assert {key: value for key, value in served_game.items()
-                        if key not in ('state', 'state_as_of')} == {
+                        if key not in ('state', 'state_as_of', 'context')} == {
                     key: value for key, value in stored_game.items()
-                    if key not in ('state', 'state_as_of')
+                    if key not in ('state', 'state_as_of', 'context')
                 }
+                if public_state == 'live':
+                    assert served_game['context']['sentence'] == stored_context['sentence']
+                    assert served_game['context']['reason_codes'][-1] == 'pregame_context'
+                else:
+                    assert served_game['context']['sentence'] is None
+                    assert served_game['context']['reason_codes'][-1] == 'pregame_context_hidden'
+                assert served_game['context']['evidence_state'] == stored_context['evidence_state']
                 assert overlay.headers['X-BaseballOS-Snapshot-ID'] == str(snapshot.id)
                 assert overlay_sql.count('game_logs', 'fatigue_scores') == 0
                 assert overlay_sql.writes() == []
@@ -1668,7 +1686,10 @@ def test_rehearsal_certifies_tonight_v1_publication_and_serving(monkeypatch):
                 f'game_log_queries=0 fatigue_score_queries=0 '
                 f'tonight_pointer_moves=0 parity_teams={len(parity_teams)} '
                 f'delivery_headers=PASS etag=PASS not_modified=PASS '
-                f'overlay=scheduled->live->final overlay_etags_distinct={len(set(overlay_etags))}'
+                f'overlay=scheduled->live->final overlay_etags_distinct={len(set(overlay_etags))} '
+                f'context_reason={stored_context["reason_codes"][0]} '
+                f'context_sentence="{stored_context["sentence"]}" '
+                'context_live=pregame context_final=hidden'
             )
         finally:
             db.session.rollback()

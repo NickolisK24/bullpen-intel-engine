@@ -16,8 +16,9 @@ publication's availability reference date, which is the date of the games
 that publication describes before first pitch.
 
 The builder reads no FatigueScore, GameLog, live roster or legacy
-``bullpen_context``. It authors no sentences, featured games, lead, or change
-list in this version: those fields are present and empty.
+``bullpen_context``. Each game's ``context`` sentence (TN-04) is authored from
+the two frozen TeamSides only, by ``build_matchup_context``. Featured games,
+lead and the change list are present and empty.
 """
 
 from __future__ import annotations
@@ -72,6 +73,40 @@ REASON_USAGE_INCOMPLETE = 'recent_usage_incomplete'
 REASON_TIME_UNCONFIRMED = 'first_pitch_time_unconfirmed'
 REASON_NONCANONICAL_GAME = 'noncanonical_team_game_excluded'
 REASON_TEAM_BOARD_PACKAGE_MISSING = 'trusted_team_board_package_missing'
+
+# TN-04 matchup context. One primary reason per game, chosen by fixed priority.
+CONTEXT_TEAM_STATE_VULNERABLE = 'team_state_vulnerable'
+CONTEXT_BACK_TO_BACK = 'back_to_back_pressure'
+CONTEXT_THREE_IN_FOUR = 'three_in_four_pressure'
+CONTEXT_SHORT_START = 'short_start_transfer'
+CONTEXT_TEAM_STATE_CONTRAST = 'team_state_contrast'
+CONTEXT_RESTED_ARMS = 'rested_arm_snapshot'
+CONTEXT_PRIORITY = (
+    CONTEXT_TEAM_STATE_VULNERABLE,
+    CONTEXT_BACK_TO_BACK,
+    CONTEXT_THREE_IN_FOUR,
+    CONTEXT_SHORT_START,
+    CONTEXT_TEAM_STATE_CONTRAST,
+    CONTEXT_RESTED_ARMS,
+)
+# Serving presentation markers: the sentence is pregame context once a game is
+# underway, and is hidden once the game is over or off.
+CONTEXT_PREGAME = 'pregame_context'
+CONTEXT_PREGAME_HIDDEN = 'pregame_context_hidden'
+_CONTEXT_MARKERS = (CONTEXT_PREGAME, CONTEXT_PREGAME_HIDDEN)
+
+EVIDENCE_COMPLETE = FACT_COMPLETE
+EVIDENCE_PARTIAL = 'partial'
+EVIDENCE_UNAVAILABLE = 'unavailable'
+BACK_TO_BACK_CONTEXT_MIN = 2
+CONTEXT_SENTENCE_MAX_CHARS = 160
+# Descriptive copy only: no prediction, ranking, betting or condition words.
+CONTEXT_BANNED_TERMS = (
+    'advantage', 'edge', 'favored', 'favorite', 'better spot', 'worse spot',
+    'should win', 'likely to win', 'likely', 'will', 'should', 'trouble',
+    'danger', 'exploit', 'target', 'fade', 'bet', 'betting', 'fantasy', 'pick',
+    'prediction', 'gassed', 'tired', 'exhausted',
+)
 
 _CLUBS_BY_ID = {club.team_id: club for club in MLB_CLUBS}
 _CANONICAL_TEAM_IDS = frozenset(MLB_TEAM_IDS)
@@ -401,26 +436,19 @@ def game_state(row):
 def _game_card(row, away, home):
     game_pk = _int(getattr(row, 'game_pk', None))
     first_pitch = getattr(row, 'game_time_utc', None)
-    reason_codes = [] if first_pitch is not None else [REASON_TIME_UNCONFIRMED]
-    evidence = (
-        FACT_COMPLETE
-        if away['available'] and home['available']
-        and away['team_state']['available'] and home['team_state']['available']
-        else EVIDENCE_WITHHELD
-    )
+    state = game_state(row)
+    context = build_matchup_context(away, home)
+    if first_pitch is None:
+        context['reason_codes'].append(REASON_TIME_UNCONFIRMED)
     return {
         'game_pk': game_pk,
         'game_number': _int(getattr(row, 'game_number', None)),
         'first_pitch_utc': _utc_iso(first_pitch),
-        'state': game_state(row),
+        'state': state,
         'state_as_of': _utc_iso(getattr(row, 'last_synced', None)),
         'away': away,
         'home': home,
-        'context': {
-            'sentence': None,
-            'reason_codes': reason_codes,
-            'evidence_state': evidence,
-        },
+        'context': present_matchup_context(context, state),
         'featured': False,
         'links': {
             'away_team_board': _team_board_link(away),
@@ -428,6 +456,227 @@ def _game_card(row, away, home):
             'matchup': f'/matchup/{game_pk}' if game_pk is not None else None,
         },
     }
+
+
+# ── Matchup context (TN-04) ──────────────────────────────────────────────────
+
+def build_matchup_context(away, home):
+    """One descriptive, deterministic sentence from two frozen TeamSides.
+
+    Pure: no database access and no baseball derivation. The first condition in
+    ``CONTEXT_PRIORITY`` that the frozen facts support is rendered from a fixed
+    template; nothing is concatenated. A fact whose TeamSide marks it
+    unavailable (or ``None``) is never used and never read as zero. Sides are
+    always named away first, then home.
+
+    ``evidence_state``:
+      complete     a sentence, every fact it and the higher-priority checks read
+                   was available;
+      partial      a sentence, but it uses a partial rotation fact, or an input
+                   of the selected or a higher-priority check was withheld on a
+                   side (the sentence is true but may not be the top condition);
+      withheld     no sentence: some usable fact exists, but the facts a
+                   sentence needs were withheld;
+      unavailable  no sentence and no usable fact on either side.
+    """
+    sides = (away, home)
+    checks = (
+        (CONTEXT_TEAM_STATE_VULNERABLE, _team_state_fact, _vulnerable_sentence),
+        (CONTEXT_BACK_TO_BACK, _back_to_back_fact, _back_to_back_sentence),
+        (CONTEXT_THREE_IN_FOUR, _three_in_four_fact_for_side, _three_in_four_sentence),
+        (CONTEXT_SHORT_START, _short_start_fact, _short_start_sentence),
+        (CONTEXT_TEAM_STATE_CONTRAST, _team_state_fact, _contrast_sentence),
+        (CONTEXT_RESTED_ARMS, _rested_fact, _rested_sentence),
+    )
+    withheld = False
+    for reason, fact, render in checks:
+        facts = [fact(side) for side in sides]
+        if reason != CONTEXT_SHORT_START and any(value is None for value in facts):
+            withheld = True
+        rendered = render(sides, facts)
+        if rendered is None:
+            continue
+        sentence, partial = rendered
+        return {
+            'sentence': sentence,
+            'reason_codes': [reason],
+            'evidence_state': (
+                EVIDENCE_PARTIAL if partial or withheld else EVIDENCE_COMPLETE
+            ),
+        }
+    usable = any(
+        fact(side) is not None
+        for side in sides
+        for fact in (_team_state_fact, _back_to_back_fact,
+                     _three_in_four_fact_for_side, _short_start_fact, _rested_fact)
+    )
+    return {
+        'sentence': None,
+        'reason_codes': [],
+        'evidence_state': EVIDENCE_WITHHELD if usable else EVIDENCE_UNAVAILABLE,
+    }
+
+
+def present_matchup_context(context, state):
+    """The context as shown for one game state; never mutates ``context``.
+
+    scheduled / uncertain: unchanged. live: the sentence stays, marked
+    ``pregame_context``. final / postponed / suspended: the sentence is hidden
+    and marked ``pregame_context_hidden``. A hidden sentence stays hidden. Any
+    earlier marker is replaced, so presenting a stored context for a new state
+    is idempotent. ``evidence_state`` never changes.
+    """
+    context = context if isinstance(context, Mapping) else {}
+    original_codes = list(context.get('reason_codes') or ())
+    reason_codes = [code for code in original_codes if code not in _CONTEXT_MARKERS]
+    sentence = context.get('sentence')
+    if sentence is None:
+        # Already hidden (or never authored): stays exactly as it was stored.
+        if CONTEXT_PREGAME_HIDDEN in original_codes:
+            reason_codes.append(CONTEXT_PREGAME_HIDDEN)
+    elif state == STATE_LIVE:
+        reason_codes.append(CONTEXT_PREGAME)
+    elif state in (STATE_FINAL, STATE_POSTPONED, STATE_SUSPENDED):
+        sentence = None
+        reason_codes.append(CONTEXT_PREGAME_HIDDEN)
+    return {
+        'sentence': sentence,
+        'reason_codes': reason_codes,
+        'evidence_state': context.get('evidence_state'),
+    }
+
+
+def _name(side):
+    return side.get('abbreviation') or side.get('name')
+
+
+def _plural(count, noun):
+    return noun if count == 1 else f'{noun}s'
+
+
+def _team_state_fact(side):
+    team_state = side.get('team_state') if side.get('available') else None
+    if not isinstance(team_state, Mapping) or team_state.get('available') is not True:
+        return None
+    if team_state.get('public_state') not in ('fresh', 'stretched', 'vulnerable'):
+        return None
+    if not team_state.get('public_label'):
+        return None
+    return (team_state['public_state'], team_state['public_label'])
+
+
+def _rest_count(side, field):
+    rest = side.get('rest') if side.get('available') else None
+    if not isinstance(rest, Mapping) or rest.get('available') is not True:
+        return None
+    value = rest.get(field)
+    return value if type(value) is int and value >= 0 else None
+
+
+def _back_to_back_fact(side):
+    return _rest_count(side, 'back_to_back_count')
+
+
+def _rested_fact(side):
+    return _rest_count(side, 'rested_arm_count')
+
+
+def _three_in_four_fact_for_side(side):
+    usage = side.get('multi_day_usage') if side.get('available') else None
+    value = usage.get('three_in_four_count') if isinstance(usage, Mapping) else None
+    return value if type(value) is int and value >= 0 else None
+
+
+def _short_start_fact(side):
+    rotation = side.get('rotation') if side.get('available') else None
+    if not isinstance(rotation, Mapping) or rotation.get('status') not in ('complete', 'partial'):
+        return None
+    count = rotation.get('short_start_count')
+    if type(count) is not int or count < 1:
+        return None
+    return (count, rotation['status'] == 'partial')
+
+
+def _vulnerable_sentence(sides, facts):
+    flagged = [i for i, fact in enumerate(facts) if fact is not None and fact[0] == 'vulnerable']
+    if len(flagged) == 2:
+        return (
+            f'{_name(sides[0])} and {_name(sides[1])} both enter tonight with '
+            f'{facts[0][1]} bullpen states.'
+        ), False
+    if len(flagged) == 1:
+        team, other = flagged[0], 1 - flagged[0]
+        sentence = (
+            f'{_name(sides[team])} enters tonight with a {facts[team][1]} bullpen state'
+        )
+        if facts[other] is not None:
+            sentence += f', while {_name(sides[other])} is {facts[other][1]}'
+        return sentence + '.', False
+    return None
+
+
+def _back_to_back_sentence(sides, facts):
+    flagged = [
+        i for i, count in enumerate(facts)
+        if count is not None and count >= BACK_TO_BACK_CONTEXT_MIN
+    ]
+    if not flagged:
+        return None
+    first = flagged[0]
+    sentence = (
+        f'{_name(sides[first])} has {facts[first]} bullpen arms coming off '
+        'back-to-back usage'
+    )
+    if len(flagged) == 2:
+        sentence += f'; {_name(sides[1])} has {facts[1]}'
+    return sentence + '.', False
+
+
+def _three_in_four_sentence(sides, facts):
+    flagged = [i for i, count in enumerate(facts) if count is not None and count >= 1]
+    if not flagged:
+        return None
+    first = flagged[0]
+    sentence = (
+        f'{_name(sides[first])} has {facts[first]} '
+        f'{_plural(facts[first], "reliever")} carrying a 3-in-4 workload pattern'
+    )
+    if len(flagged) == 2:
+        sentence += f'; {_name(sides[1])} has {facts[1]}'
+    return sentence + '.', False
+
+
+def _short_start_sentence(sides, facts):
+    flagged = [i for i, fact in enumerate(facts) if fact is not None]
+    if not flagged:
+        return None
+    first = flagged[0]
+    count = facts[first][0]
+    sentence = (
+        f"{_name(sides[first])}'s bullpen has absorbed {count} short "
+        f"{_plural(count, 'start')} in the recent rotation window"
+    )
+    if len(flagged) == 2:
+        sentence += f"; {_name(sides[1])}'s has absorbed {facts[1][0]}"
+    return sentence + '.', any(facts[i][1] for i in flagged)
+
+
+def _contrast_sentence(sides, facts):
+    if facts[0] is None or facts[1] is None or facts[0][0] == facts[1][0]:
+        return None
+    return (
+        f'{_name(sides[0])} is {facts[0][1]} entering tonight; '
+        f'{_name(sides[1])} is {facts[1][1]}.'
+    ), False
+
+
+def _rested_sentence(sides, facts):
+    if facts[0] is None or facts[1] is None:
+        return None
+    return (
+        f'{_name(sides[0])} has {facts[0]} rested bullpen '
+        f'{_plural(facts[0], "arm")}; {_name(sides[1])} has {facts[1]}.'
+    ), False
 
 
 def _team_board_link(side):
@@ -608,11 +857,16 @@ __all__ = [
     'CONTRACT',
     'GAME_STATES',
     'TonightPublicationConflict',
+    'CONTEXT_BANNED_TERMS',
+    'CONTEXT_PRIORITY',
+    'CONTEXT_SENTENCE_MAX_CHARS',
+    'build_matchup_context',
     'build_tonight_v1',
     'content_sha256',
     'game_state',
     'generate_tonight_v1_after_publication',
     'generate_tonight_v1_for_snapshot',
     'load_slate_games',
+    'present_matchup_context',
     'read_tonight_v1',
 ]

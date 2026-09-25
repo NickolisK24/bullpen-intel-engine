@@ -17,7 +17,8 @@ caller that asked for tonight_v1 never receives legacy tonight_v5 instead.
 
 Bullpen intelligence stays frozen to the stored row. Only schedule facts of
 the stored games (state, first pitch, state_as_of) may change at serve time,
-read in one bounded ``slate_games`` query. The stored row is never mutated;
+read in one bounded ``slate_games`` query; the stored context sentence is only
+re-presented for that state (TN-04). The stored row is never mutated;
 the overlay works on a copy. Nothing here reads GameLog, FatigueScore,
 pitchers, or the Team Board package, and nothing writes.
 """
@@ -33,7 +34,12 @@ import re
 from models.slate_game import SlateGame
 from models.tonight_publication import TonightPublication
 from services import dashboard_snapshot as dashboard_snapshot_service
-from services.tonight_read_model import CONTRACT, GAME_STATES, game_state
+from services.tonight_read_model import (
+    CONTRACT,
+    GAME_STATES,
+    game_state,
+    present_matchup_context,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -183,8 +189,10 @@ def overlay_game_state(payload, current_rows):
     * it changes the served state or first pitch;
     * the stored -> current state transition is in ``ALLOWED_TRANSITIONS``.
 
-    Game membership and order, both TeamSides, context, links, lead, featured
-    and every bullpen summary field stay exactly as stored.
+    Game membership and order, both TeamSides, links, lead, featured and every
+    bullpen summary field stay exactly as stored. The stored context sentence
+    is only re-presented for the served state (``present_matchup_context``):
+    marked pregame when live, hidden when final, postponed or suspended.
     ``summary.games_by_state`` is recounted from the served games. The overlay
     identity lists every served difference; it is empty when the served body
     equals the stored one.
@@ -210,9 +218,12 @@ def overlay_game_state(payload, current_rows):
             identity.append((game.get('game_pk'), outcome))
         if fields:
             game = {**game, **fields}
+            context = game.get('context') or {}
             identity.append((
                 game.get('game_pk'), 'overlaid',
                 game['state'], game['first_pitch_utc'], game['state_as_of'],
+                'context:' + ','.join(context.get('reason_codes') or ())
+                + ('' if context.get('sentence') is not None else ':hidden'),
             ))
         served_games.append(game)
 
@@ -250,11 +261,17 @@ def _overlay_one(game, row, baseball_date):
         return 'unchanged', None
     if current_state not in ALLOWED_TRANSITIONS.get(game.get('state'), frozenset()):
         return 'conflict', None
-    return 'overlaid', {
+    fields = {
         'state': current_state,
         'first_pitch_utc': first_pitch,
         'state_as_of': _utc_iso(row.last_synced),
     }
+    # TN-04: the stored pregame sentence is marked once live and hidden once
+    # the game is over or off. The stored context itself is never changed.
+    context = present_matchup_context(game.get('context'), current_state)
+    if context != game.get('context'):
+        fields['context'] = context
+    return 'overlaid', fields
 
 
 def served_validator(content_sha256, overlay_identity):

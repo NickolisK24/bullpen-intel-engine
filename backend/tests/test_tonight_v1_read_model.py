@@ -334,8 +334,16 @@ def test_slate_uses_game_date_et_and_orders_every_game(tonight_app):
         'matchup': '/matchup/801',
     }
     assert games[801]['featured'] is False
+    # TN-04: one descriptive sentence authored from the frozen TeamSides.
     assert games[801]['context'] == {
-        'sentence': None, 'reason_codes': [], 'evidence_state': 'complete',
+        'sentence': 'SF has 2 bullpen arms coming off back-to-back usage.',
+        'reason_codes': ['back_to_back_pressure'], 'evidence_state': 'complete',
+    }
+    # A game already postponed at build time never shows its pregame sentence.
+    assert games[802]['context'] == {
+        'sentence': None,
+        'reason_codes': ['team_state_vulnerable', 'pregame_context_hidden'],
+        'evidence_state': 'complete',
     }
     assert games[802]['state'] == 'postponed'
     # Doubleheader: two distinct cards for the same clubs.
@@ -406,7 +414,10 @@ def test_missing_first_pitch_keeps_the_game_and_orders_it_last(tonight_app):
     last = payload['games'][-1]
     assert last['game_pk'] == 899
     assert last['first_pitch_utc'] is None
-    assert last['context']['reason_codes'] == [tonight_read_model.REASON_TIME_UNCONFIRMED]
+    # BOS Fresh vs NYY Vulnerable: the primary reason, then the time limitation.
+    assert last['context']['reason_codes'] == [
+        'team_state_vulnerable', tonight_read_model.REASON_TIME_UNCONFIRMED,
+    ]
 
 
 @pytest.mark.parametrize('normalized, detailed, expected', [
@@ -500,7 +511,11 @@ def test_missing_team_state_receipt_withholds_that_side(tonight_app):
         'reason_code': 'snapshot_team_state_receipt_missing',
     }
     assert payload['summary']['team_state_counts']['withheld'] == 1
-    assert _games(payload)[801]['context']['evidence_state'] == 'withheld'
+    # SF's Team State is unknown, so the lower-priority B2B sentence is partial.
+    assert _games(payload)[801]['context'] == {
+        'sentence': 'SF has 2 bullpen arms coming off back-to-back usage.',
+        'reason_codes': ['back_to_back_pressure'], 'evidence_state': 'partial',
+    }
 
 
 def test_package_without_receipts_never_falls_back(tonight_app):
@@ -578,7 +593,8 @@ def test_missing_team_package_keeps_the_game_with_an_unavailable_side(tonight_ap
     assert away['rest']['rested_arm_count'] is None
     assert away['workload_7d']['status'] == 'unavailable'
     assert away['key_arms'] == []
-    assert game['context']['evidence_state'] == 'withheld'
+    assert game['context']['evidence_state'] == 'partial'
+    assert game['context']['reason_codes'] == ['back_to_back_pressure']
     assert tonight_read_model.REASON_TEAM_PACKAGE_UNAVAILABLE in payload['limitations']
     assert game['home']['available'] is True
 
@@ -797,3 +813,257 @@ def test_real_publication_creates_its_bound_tonight_row(tonight_app):
     assert row.payload['summary']['game_count'] == 4
     # The projection is a post-commit step: it never moves the trusted pointer.
     assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == newer.id
+
+
+# ── TN-04: matchup context sentence ──────────────────────────────────────────
+# Pure-helper matrix on TeamSide-shaped inputs, plus parity against real
+# frozen TeamSides. The helper reads only the two sides it is given.
+
+from services.editorial_voice_contract_v1 import find_editorial_violations  # noqa: E402
+
+_LABELS = {'fresh': 'Fresh', 'stretched': 'Stretched', 'vulnerable': 'Vulnerable'}
+
+
+def _ctx_side(abbr, state='fresh', *, b2b=0, rested=5, three=0, short=None,
+              rotation_status='complete', team_state=True, rest=True, available=True):
+    return {
+        'team_id': 100, 'abbreviation': abbr, 'name': f'{abbr} Club', 'available': available,
+        'team_state': {
+            'public_state': state if team_state else None,
+            'public_label': _LABELS.get(state) if team_state else None,
+            'available': team_state, 'reason_code': None,
+        },
+        'rest': {
+            'active_arm_count': 8 if rest else None,
+            'rested_arm_count': rested if rest else None,
+            'worked_yesterday_count': 1 if rest else None,
+            'back_to_back_count': b2b if rest else None,
+            'available': rest, 'reason_code': None if rest else 'withheld',
+        },
+        'multi_day_usage': {'three_in_four_count': three},
+        'rotation': None if short is None else {
+            'short_start_count': short, 'bullpen_innings': 11.2,
+            'games_analyzed': 5, 'status': rotation_status,
+        },
+    }
+
+
+def _ctx(away, home):
+    return tonight_read_model.build_matchup_context(away, home)
+
+
+def _assert_clean_copy(sentence):
+    assert sentence and len(sentence) <= tonight_read_model.CONTEXT_SENTENCE_MAX_CHARS
+    assert len(sentence.split()) <= 35
+    assert find_editorial_violations(
+        sentence, terms=tonight_read_model.CONTEXT_BANNED_TERMS,
+    ) == []
+    # The shared editorial voice contract accepts it too.
+    assert find_editorial_violations(sentence) == []
+    assert sentence.endswith('.') and sentence.count('. ') == 0
+
+
+@pytest.mark.parametrize(('away', 'home', 'reason', 'sentence'), [
+    (_ctx_side('SEA', 'vulnerable'), _ctx_side('HOU', 'stretched'),
+     'team_state_vulnerable',
+     'SEA enters tonight with a Vulnerable bullpen state, while HOU is Stretched.'),   # 1
+    (_ctx_side('SEA', 'vulnerable'), _ctx_side('HOU', 'vulnerable'),
+     'team_state_vulnerable',
+     'SEA and HOU both enter tonight with Vulnerable bullpen states.'),                # 2
+    (_ctx_side('SEA', b2b=3), _ctx_side('HOU', b2b=1),
+     'back_to_back_pressure', 'SEA has 3 bullpen arms coming off back-to-back usage.'),  # 3
+    (_ctx_side('SEA', b2b=2), _ctx_side('HOU', b2b=4),
+     'back_to_back_pressure',
+     'SEA has 2 bullpen arms coming off back-to-back usage; HOU has 4.'),              # 4
+    (_ctx_side('SEA'), _ctx_side('HOU', three=1),
+     'three_in_four_pressure', 'HOU has 1 reliever carrying a 3-in-4 workload pattern.'),  # 5
+    (_ctx_side('SEA', three=2), _ctx_side('HOU', three=3),
+     'three_in_four_pressure',
+     'SEA has 2 relievers carrying a 3-in-4 workload pattern; HOU has 3.'),
+    (_ctx_side('SEA', short=2), _ctx_side('HOU'),
+     'short_start_transfer',
+     "SEA's bullpen has absorbed 2 short starts in the recent rotation window."),      # 6
+    (_ctx_side('SEA', 'fresh'), _ctx_side('HOU', 'stretched'),
+     'team_state_contrast', 'SEA is Fresh entering tonight; HOU is Stretched.'),      # 7
+    (_ctx_side('SEA', rested=6), _ctx_side('HOU', rested=1),
+     'rested_arm_snapshot', 'SEA has 6 rested bullpen arms; HOU has 1.'),              # 8
+])
+def test_matchup_context_templates(away, home, reason, sentence):
+    context = _ctx(away, home)
+    assert context == {
+        'sentence': sentence, 'reason_codes': [reason], 'evidence_state': 'complete',
+    }
+    _assert_clean_copy(context['sentence'])
+
+
+def test_priority_is_deterministic_and_never_concatenates():
+    away = _ctx_side('SEA', 'vulnerable', b2b=3, three=2, short=1)
+    home = _ctx_side('HOU', 'fresh')
+    first = _ctx(away, home)
+    assert first['reason_codes'] == ['team_state_vulnerable']
+    assert first['sentence'] == (
+        'SEA enters tonight with a Vulnerable bullpen state, while HOU is Fresh.'
+    )
+    assert _ctx(away, home) == first
+    # Remove Vulnerable: the next true condition, B2B, is selected alone.
+    away = _ctx_side('SEA', 'stretched', b2b=3, three=2, short=1)
+    second = _ctx(away, home)
+    assert second['reason_codes'] == ['back_to_back_pressure']
+    assert second['sentence'] == 'SEA has 3 bullpen arms coming off back-to-back usage.'
+    for text in (first['sentence'], second['sentence']):
+        assert '3-in-4' not in text and 'short start' not in text
+
+
+def test_single_back_to_back_arm_is_not_context():
+    context = _ctx(_ctx_side('SEA', b2b=1), _ctx_side('HOU', b2b=0, rested=4))
+    assert context['reason_codes'] == ['rested_arm_snapshot']
+
+
+def test_unavailable_team_state_is_never_used():  # 9
+    context = _ctx(_ctx_side('SEA', 'vulnerable', team_state=False), _ctx_side('HOU', 'fresh'))
+    assert 'Vulnerable' not in context['sentence']
+    assert context['reason_codes'] == ['rested_arm_snapshot']
+    # A Team State input was withheld, so the lower-priority line is partial.
+    assert context['evidence_state'] == 'partial'
+    one_sided = _ctx(_ctx_side('SEA', 'vulnerable'), _ctx_side('HOU', team_state=False))
+    assert one_sided['sentence'] == 'SEA enters tonight with a Vulnerable bullpen state.'
+    assert one_sided['evidence_state'] == 'partial'
+
+
+def test_unavailable_rest_is_never_zero():  # 10
+    context = _ctx(_ctx_side('SEA', b2b=3, rest=False), _ctx_side('HOU', rest=False))
+    assert context == {'sentence': None, 'reason_codes': [], 'evidence_state': 'withheld'}
+    side = _ctx_side('SEA', rest=False)
+    side['rest']['back_to_back_count'] = 0  # a stray value behind available=False
+    assert _ctx(side, _ctx_side('HOU'))['sentence'] is None
+
+
+def test_unknown_three_in_four_is_never_zero():  # 11
+    away = _ctx_side('SEA', three=None)
+    context = _ctx(away, _ctx_side('HOU', three=None))
+    assert context['reason_codes'] == ['rested_arm_snapshot']
+    assert context['evidence_state'] == 'partial'
+    assert '3-in-4' not in context['sentence']
+
+
+def test_null_rotation_is_not_short_start_context():  # 12
+    context = _ctx(_ctx_side('SEA', short=None), _ctx_side('HOU'))
+    assert context['reason_codes'] == ['rested_arm_snapshot']
+    partial = _ctx(_ctx_side('SEA', short=1, rotation_status='partial'), _ctx_side('HOU'))
+    assert partial['sentence'] == (
+        "SEA's bullpen has absorbed 1 short start in the recent rotation window."
+    )
+    assert partial['evidence_state'] == 'partial'
+
+
+def test_no_authoritative_context_is_null():  # 13
+    unavailable = {
+        'team_id': 1, 'abbreviation': 'SEA', 'name': 'SEA', 'available': False,
+        'team_state': {'public_state': None, 'public_label': None, 'available': False,
+                       'reason_code': 'x'},
+        'rest': {'available': False, 'back_to_back_count': None, 'rested_arm_count': None},
+        'multi_day_usage': {'three_in_four_count': None}, 'rotation': None,
+    }
+    other = dict(unavailable, abbreviation='HOU')
+    assert _ctx(unavailable, other) == {
+        'sentence': None, 'reason_codes': [], 'evidence_state': 'unavailable',
+    }
+
+
+def test_singular_and_plural_grammar():  # 14
+    assert _ctx(_ctx_side('SEA', three=1), _ctx_side('HOU'))['sentence'].startswith(
+        'SEA has 1 reliever carrying'
+    )
+    assert _ctx(_ctx_side('SEA', short=1), _ctx_side('HOU'))['sentence'] == (
+        "SEA's bullpen has absorbed 1 short start in the recent rotation window."
+    )
+    assert _ctx(_ctx_side('SEA', rested=1), _ctx_side('HOU', rested=1))['sentence'] == (
+        'SEA has 1 rested bullpen arm; HOU has 1.'
+    )
+
+
+def test_team_order_is_away_then_home():  # 15
+    assert _ctx(_ctx_side('SEA', b2b=2), _ctx_side('HOU', b2b=5))['sentence'].startswith('SEA')
+    assert _ctx(_ctx_side('HOU', b2b=5), _ctx_side('SEA', b2b=2))['sentence'].startswith('HOU')
+    assert _ctx(_ctx_side('SEA'), _ctx_side('HOU', 'vulnerable'))['sentence'].startswith('HOU')
+
+
+def test_every_template_passes_the_banned_language_guard():  # 16
+    sentences = [
+        _ctx(_ctx_side('SEA', state), _ctx_side('HOU', other))['sentence']
+        for state in _LABELS for other in _LABELS
+    ]
+    sentences += [
+        _ctx(_ctx_side('SEA', b2b=n), _ctx_side('HOU', b2b=m))['sentence']
+        for n in (2, 12) for m in (0, 11)
+    ]
+    sentences += [
+        _ctx(_ctx_side('SEA', three=n, short=n), _ctx_side('HOU', three=n, short=n))['sentence']
+        for n in (1, 10)
+    ]
+    sentences.append(_ctx(_ctx_side('SEA', short=3), _ctx_side('HOU', short=12))['sentence'])
+    for sentence in filter(None, sentences):
+        _assert_clean_copy(sentence)
+    # The guard itself catches the forbidden concepts.
+    assert find_editorial_violations(
+        'SEA has the edge and will likely win', terms=tonight_read_model.CONTEXT_BANNED_TERMS,
+    )
+
+
+@pytest.mark.parametrize(('state', 'sentence_shown', 'marker'), [
+    ('scheduled', True, None),
+    ('uncertain', True, None),
+    ('live', True, 'pregame_context'),
+    ('final', False, 'pregame_context_hidden'),
+    ('postponed', False, 'pregame_context_hidden'),
+    ('suspended', False, 'pregame_context_hidden'),
+])
+def test_context_presentation_by_game_state(state, sentence_shown, marker):
+    stored = _ctx(_ctx_side('SEA', b2b=2), _ctx_side('HOU'))
+    frozen = deepcopy(stored)
+    shown = tonight_read_model.present_matchup_context(stored, state)
+    assert stored == frozen
+    assert (shown['sentence'] == stored['sentence']) is sentence_shown
+    assert shown['evidence_state'] == stored['evidence_state']
+    expected = ['back_to_back_pressure'] + ([marker] if marker else [])
+    assert shown['reason_codes'] == expected
+    # Idempotent from any earlier presentation.
+    assert tonight_read_model.present_matchup_context(shown, state) == shown
+
+
+def test_context_parity_with_frozen_team_sides(tonight_app):
+    """Every number and label in a stored sentence is its TeamSide field verbatim."""
+    payload = _build(tonight_app)
+    checked = 0
+    for game in payload['games']:
+        context = game['context']
+        sides = (game['away'], game['home'])
+        assert context == tonight_read_model.present_matchup_context(
+            tonight_read_model.build_matchup_context(*sides), game['state'],
+        )
+        sentence = context['sentence']
+        if sentence is None:
+            continue
+        _assert_clean_copy(sentence)
+        reason = context['reason_codes'][0]
+        if reason == 'back_to_back_pressure':
+            side = next(s for s in sides if (s['rest']['back_to_back_count'] or 0) >= 2)
+            assert f"{side['abbreviation']} has {side['rest']['back_to_back_count']} bullpen" in sentence
+        elif reason == 'team_state_contrast':
+            for side in sides:
+                assert f"{side['abbreviation']} is {side['team_state']['public_label']}" in sentence
+        checked += 1
+    assert checked >= 3
+
+
+def test_production_shaped_vulnerable_matchup():
+    """Team A Vulnerable with 2 B2B and 1 3-in-4 arm; Team B Fresh: one line only."""
+    away = _ctx_side('ATL', 'vulnerable', b2b=2, three=1)
+    home = _ctx_side('PHI', 'fresh', b2b=0)
+    context = _ctx(away, home)
+    assert context == {
+        'sentence': 'ATL enters tonight with a Vulnerable bullpen state, while PHI is Fresh.',
+        'reason_codes': ['team_state_vulnerable'],
+        'evidence_state': 'complete',
+    }
+    _assert_clean_copy(context['sentence'])
