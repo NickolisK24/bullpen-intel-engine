@@ -78,7 +78,7 @@ def app(tmp_path, monkeypatch):
             started_at=kwargs.get('started_at'),
             job_name=kwargs.get('job_name', sync_metadata.JOB_POSTGAME_REFRESH),
         )
-        return run, SimpleNamespace(id=123)
+        return run, SimpleNamespace(id=123, is_published=True, status='ready')
 
     monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot', fake_complete)
 

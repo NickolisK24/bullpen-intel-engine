@@ -38,6 +38,36 @@ _PUBLISH_WITHHELD_REASONS = {
     DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
     DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE,
 }
+DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED = 'dashboard_snapshot_pending_not_published'
+
+
+class DashboardSnapshotPublicationWithheld(RuntimeError):
+    """A candidate was stored but a publication gate withheld it from serving.
+
+    The message is the candidate's own withhold reason (for example
+    ``dashboard_snapshot_slate_coverage_incomplete``) so run lineage reports why
+    trusted currentness did not advance, never a post-publication symptom.
+    """
+
+    def __init__(self, reason_code, *, snapshot_id=None):
+        self.reason_code = reason_code
+        self.snapshot_id = snapshot_id
+        super().__init__(reason_code)
+
+
+def is_trusted_publication(snapshot):
+    """True only when this snapshot durably became the published, ready snapshot."""
+    return bool(
+        snapshot is not None
+        and getattr(snapshot, 'is_published', False) is True
+        and getattr(snapshot, 'status', None) == SNAPSHOT_STATUS_READY
+    )
+
+
+def publication_withheld_reason(snapshot):
+    """The stored withhold reason of an unpublished candidate, with a stable fallback."""
+    reason = getattr(snapshot, 'error_message', None) if snapshot is not None else None
+    return reason or DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
 
 
 def _elapsed_ms(started):
@@ -744,7 +774,7 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
         reason = (
             snapshot.error_message
             if snapshot.error_message in _PUBLISH_WITHHELD_REASONS
-            else 'dashboard_snapshot_pending_not_published'
+            else DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
         )
     elif reason is None:
         status = 'ready'

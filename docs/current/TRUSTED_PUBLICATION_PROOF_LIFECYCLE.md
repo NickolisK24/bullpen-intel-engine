@@ -124,6 +124,53 @@ only from frozen inputs and receipts, then verified. Immutable artifact
 deduplication prevents duplicates, and any extra, missing, mismatched,
 noncanonical, draft, or receipt-disagreeing artifact fails the recovery lane.
 
+## Withheld candidates are not publications
+
+The artifact-set check is a post-publication invariant. It applies only to a
+candidate that durably became the trusted publication: `is_published` is true
+and `status` is `ready`. A row existing is never evidence of publication.
+
+Daily Primary SyncRun 92585 exposed the ordering gap. Its candidate 3562 was
+correctly withheld by the slate-coverage gate: stored `pending`, unpublished,
+with `dashboard_snapshot_slate_coverage_incomplete`. Completion then marked the
+run published, pointed `published_dashboard_snapshot_id` at the unpublished
+candidate, and ran the artifact check. That check found zero artifacts, because
+generation only follows a real publication, and reported
+`league_team_state_artifact_set_incomplete`, which hid the real reason.
+
+`sync.complete_sync_run_with_snapshot` now proves publication before doing
+anything that assumes it:
+
+- **Trusted publication.** The run is marked published and points at the
+  snapshot. Post-commit hooks run: Team State generation, then Tonight v1. The
+  30-team artifact set is then required exactly as before; 29 of 30 still fails
+  with `league_team_state_artifact_set_incomplete`.
+- **Withheld candidate.** The pending row is committed and never modified again.
+  The run is not marked published, and `published_dashboard_snapshot_id` stays
+  unset. The run's error is the candidate's own withhold reason, one of:
+  - `dashboard_snapshot_slate_coverage_incomplete`
+  - `dashboard_snapshot_slate_coverage_missing`
+  - `dashboard_snapshot_appearance_ledger_incomplete`
+  - the fallback `dashboard_snapshot_pending_not_published`
+
+  No post-commit hook, Team State generation, Tonight v1 projection, or artifact
+  check runs. This holds whatever `SHARE_ARTIFACT_AUTOGENERATION_ENABLED` says.
+
+Lane policy for a withheld candidate is unchanged in intent:
+
+- **Daily Primary** (and other default callers) raises
+  `DashboardSnapshotPublicationWithheld`. The run fails at `dashboard_snapshot`
+  with the true reason, because trusted currentness did not advance.
+- **Postgame** passes `raise_on_withheld=False` and receives the pending
+  candidate. The run keeps its lane status and records the true reason in
+  `publication_withheld_reason` and the run error. Post-publication internal
+  enrichment is skipped. The runner's candidate publication proof still decides
+  between an expected active-slate pending and a genuine withhold.
+
+The fix is forward-only. Historical SyncRun 92585 and pending snapshot 3562 are
+left as recorded; the next trusted publication supersedes 3562 through the
+normal lifecycle.
+
 ## Artifact lifecycle and statuses
 
 `public-sync` exports `team-state-vnext-production-proof.json` and

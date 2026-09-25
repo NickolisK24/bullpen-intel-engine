@@ -5604,7 +5604,19 @@ def complete_sync_run_with_snapshot(
     started_at=None,
     snapshot_source='sync_completion',
     job_name=sync_metadata.JOB_DAILY_SYNC,
+    raise_on_withheld=True,
 ):
+    """Finish a sync run and publish its Dashboard candidate.
+
+    Publication is proven from the candidate itself, never inferred from a row
+    existing. A candidate withheld by a publication gate stays stored as pending
+    evidence; the run is not marked published, and its reason is the candidate's
+    own withhold reason. By default that raises ``DashboardSnapshotPublicationWithheld``
+    (the run fails with that reason); ``raise_on_withheld=False`` returns the
+    pending candidate so a lane with its own withheld policy (postgame
+    active-slate pending) can classify it. Post-publication hooks and the League
+    Board artifact gate run only for a trusted publication.
+    """
     from services import dashboard_snapshot as dashboard_snapshot_service
 
     completed_at = completed_at or datetime.now(timezone.utc).replace(tzinfo=None)
@@ -5636,6 +5648,23 @@ def complete_sync_run_with_snapshot(
             raise_errors=True,
             publication_critical_complete=publication_critical_complete,
         )
+        published = dashboard_snapshot_service.is_trusted_publication(snapshot)
+        if not published:
+            # The pending candidate row is diagnostic evidence: commit it, but do
+            # not advance run lineage, run publication hooks, or apply the
+            # post-publication artifact invariant to something never published.
+            withheld_reason = dashboard_snapshot_service.publication_withheld_reason(
+                snapshot,
+            )
+            if run is not None:
+                run.error_message = withheld_reason
+            db.session.commit()
+            if raise_on_withheld:
+                raise dashboard_snapshot_service.DashboardSnapshotPublicationWithheld(
+                    withheld_reason,
+                    snapshot_id=getattr(snapshot, 'id', None),
+                )
+            return run, snapshot
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
@@ -6418,11 +6447,35 @@ def run_postgame_refresh(
                     started_at=started_at.replace(tzinfo=None),
                     snapshot_source='postgame_refresh',
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    raise_on_withheld=False,
                 )
+                from services import dashboard_snapshot as dashboard_snapshot_service
                 status['dashboard_snapshot_id'] = snapshot.id
-                status['intelligence_snapshot'] = 'publication_bound'
+                postgame_published = (
+                    dashboard_snapshot_service.is_trusted_publication(snapshot)
+                )
+                status['intelligence_snapshot'] = (
+                    'publication_bound' if postgame_published
+                    else 'publication_withheld'
+                )
 
-                if include_internal_enrichment:
+                if not postgame_published:
+                    # Postgame keeps its own withheld policy: the pending candidate
+                    # is returned (not failed) so the runner's publication proof can
+                    # classify an active-slate pending versus a genuine withhold.
+                    # The run is never marked published and carries the true reason.
+                    withheld_reason = (
+                        dashboard_snapshot_service.publication_withheld_reason(
+                            snapshot,
+                        )
+                    )
+                    status['publication_withheld_reason'] = withheld_reason
+                    status['internal_enrichment'] = 'skipped_publication_withheld'
+                    status['message'] = (
+                        'Postgame workload was refreshed, but the replacement '
+                        f'Dashboard snapshot was withheld: {withheld_reason}.'
+                    )
+                elif include_internal_enrichment:
                     enrichment_slate_dates = (
                         sorted(changed_slate_dates) or [schedule_date]
                     )
@@ -7011,29 +7064,40 @@ def run_daily_sync(
                 status['publication_critical'] = publication_critical
                 api_metrics = mlb_client.metrics.snapshot()
                 changed_log_count = pull['new_logs_added'] + logs_corrected
-                completed_run, snapshot = complete_sync_run_with_snapshot(
-                    sync_run_id,
-                    publication_critical_complete=publication_critical['complete'],
-                    final_status=final_status,
-                    records_processed=changed_log_count,
-                    records_failed=records_failed,
-                    new_logs_added=pull['new_logs_added'],
-                    pitchers_updated=pitchers_updated,
-                    errors=(
-                        pull['errors']
-                        + roster['errors']
-                        + team_assignment['errors']
-                        + transactions['errors']
-                        + schedule_finality_records_failed
-                        + slate_schedule_records_failed
-                    ),
-                    api_calls_made=api_metrics['api_calls'],
-                    retries_used=api_metrics['retries'],
-                    error_message=status['message'] or None,
-                    source=source,
-                    started_at=started_at.replace(tzinfo=None),
-                    snapshot_source='scheduled_sync',
+                from services.dashboard_snapshot import (
+                    DashboardSnapshotPublicationWithheld,
                 )
+                try:
+                    completed_run, snapshot = complete_sync_run_with_snapshot(
+                        sync_run_id,
+                        publication_critical_complete=publication_critical['complete'],
+                        final_status=final_status,
+                        records_processed=changed_log_count,
+                        records_failed=records_failed,
+                        new_logs_added=pull['new_logs_added'],
+                        pitchers_updated=pitchers_updated,
+                        errors=(
+                            pull['errors']
+                            + roster['errors']
+                            + team_assignment['errors']
+                            + transactions['errors']
+                            + schedule_finality_records_failed
+                            + slate_schedule_records_failed
+                        ),
+                        api_calls_made=api_metrics['api_calls'],
+                        retries_used=api_metrics['retries'],
+                        error_message=status['message'] or None,
+                        source=source,
+                        started_at=started_at.replace(tzinfo=None),
+                        snapshot_source='scheduled_sync',
+                    )
+                except DashboardSnapshotPublicationWithheld as withheld:
+                    # The Daily Primary requires trusted currentness to advance: the
+                    # run fails with the candidate's own gate reason, and the
+                    # pending candidate stays identifiable for publication proof.
+                    status['dashboard_snapshot_id'] = withheld.snapshot_id
+                    status['publication_withheld_reason'] = withheld.reason_code
+                    raise
                 status['dashboard_snapshot_id'] = snapshot.id
                 return {'status': final_status, 'snapshot_id': snapshot.id}
 

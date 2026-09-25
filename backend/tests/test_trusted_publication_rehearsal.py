@@ -1732,3 +1732,145 @@ def test_rehearsal_tonight_v1_failure_never_invalidates_publication(monkeypatch,
             db.session.rollback()
             db.session.remove()
             drop_test_schema(rehearsal.app)
+
+
+def test_rehearsal_withheld_candidate_never_becomes_a_publication(monkeypatch):
+    """SyncRun 92585 rehearsal: the real completion path, the real candidate
+    store, and the real slate-coverage gate withhold a candidate whose final game
+    is not fully ingested. The pending row survives as evidence, the trusted
+    pointer never moves, and the run reports the slate reason instead of a League
+    Board artifact failure."""
+    from datetime import datetime
+
+    from api import bullpen as bullpen_api
+    from models.share_artifact import ShareArtifact
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from models.tonight_publication import TonightPublication
+    from services import sync as sync_service
+    from services import sync_metadata
+
+    url = _test_database_url()
+    assert url.startswith(('postgres://', 'postgresql://'))
+    assert_disposable_test_target(url, operation='withheld publication rehearsal')
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', url)
+    app = importlib.import_module('app').create_app('test')
+    app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = True
+    app.config['TONIGHT_V1_PROJECTION_ENABLED'] = True
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            data_through = public_serving_authority.product_current_date() - timedelta(days=1)
+            prior_run = SyncRun(
+                job_name='daily_sync', status='success', stage='published', source='test',
+            )
+            db.session.add(prior_run)
+            db.session.flush()
+            trusted = DashboardSnapshot(
+                snapshot_type='bullpen_dashboard', sync_run_id=prior_run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY, is_published=True,
+                published_at=datetime(2026, 9, 24, 6, 3), payload={'trusted': True},
+                payload_version=1, data_through=data_through - timedelta(days=1),
+                snapshot_generated_at=datetime(2026, 9, 24, 6, 2),
+                source='scheduled_sync',
+            )
+            db.session.add(trusted)
+            db.session.flush()
+            prior_run.published_dashboard_snapshot_id = trusted.id
+            # One final game on the represented slate with no postgame marker:
+            # final_games_not_fully_ingested -> the slate gate must withhold.
+            for team_id, opponent_id, side in ((147, 141, 'home'), (141, 147, 'away')):
+                db.session.add(ScheduledGame(
+                    team_id=team_id, opponent_team_id=opponent_id, home_away=side,
+                    game_pk=776001, game_date=data_through, game_type='R',
+                    status_code='F', status_state=ScheduledGame.STATE_FINAL,
+                ))
+            run = SyncRun(
+                job_name='daily_sync', status='running', stage='started',
+                source='scheduled', started_at=utc_now_naive(),
+            )
+            db.session.add(run)
+            db.session.commit()
+            trusted_id, run_id, prior_run_id = trusted.id, run.id, prior_run.id
+            published_before = {
+                row.id for row in DashboardSnapshot.query.filter_by(is_published=True)
+            }
+
+            # The heavy league payload is not under test; the gate reads only the
+            # represented date, then computes coverage from the seeded schedule.
+            monkeypatch.setattr(
+                bullpen_api, 'build_bullpen_dashboard_payload',
+                lambda *_args, **_kwargs: {
+                    'freshness': {
+                        'data_through': data_through.isoformat(),
+                        'availability_reference_date': (
+                            data_through + timedelta(days=1)
+                        ).isoformat(),
+                    },
+                },
+            )
+            side_effects = []
+            monkeypatch.setattr(
+                'services.league_team_state_artifact_recovery.require_complete_artifact_set',
+                lambda *_a, **_k: side_effects.append('artifact_gate'),
+            )
+            monkeypatch.setattr(
+                'services.tonight_read_model.generate_tonight_v1_after_publication',
+                lambda *_a, **_k: side_effects.append('tonight_v1'),
+            )
+            monkeypatch.setattr(
+                'services.team_state_vnext_production_proof.capture_publication_proof',
+                lambda *_a, **_k: side_effects.append('team_state_generation'),
+            )
+
+            with pytest.raises(dashboard_snapshot.DashboardSnapshotPublicationWithheld) as raised:
+                sync_service.complete_sync_run_with_snapshot(
+                    run_id, final_status='success', source='scheduled',
+                    snapshot_source='scheduled_sync',
+                )
+
+            reason = dashboard_snapshot.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+            assert str(raised.value) == reason
+            assert side_effects == []
+            db.session.remove()
+
+            candidate = DashboardSnapshot.query.filter_by(sync_run_id=run_id).one()
+            assert raised.value.snapshot_id == candidate.id
+            assert candidate.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert candidate.is_published is False
+            assert candidate.published_at is None
+            assert candidate.error_message == reason
+            assert candidate.data_through == data_through
+            coverage = candidate.payload['freshness']['slate_coverage']
+            assert coverage['validations_passed'] is False
+            assert 'final_games_not_fully_ingested' in coverage['reason_codes']
+
+            published_after = {
+                row.id for row in DashboardSnapshot.query.filter_by(is_published=True)
+            }
+            assert published_after == published_before == {trusted_id}
+            assert db.session.get(DashboardSnapshot, trusted_id).is_published is True
+            assert dashboard_snapshot.get_latest_dashboard_snapshot().id == trusted_id
+
+            assert TeamStatePublicationProof.query.filter_by(
+                snapshot_id=candidate.id,
+            ).count() == 0
+            assert ShareArtifact.query.filter_by(
+                source_snapshot_id=candidate.id,
+            ).count() == 0
+            assert TonightPublication.query.filter_by(
+                dashboard_snapshot_id=candidate.id,
+            ).count() == 0
+
+            completed = db.session.get(SyncRun, run_id)
+            assert completed.status == sync_metadata.STATUS_FAILED
+            assert completed.stage == sync_metadata.STAGE_FAILED
+            assert completed.failed_stage == sync_metadata.STAGE_DASHBOARD_SNAPSHOT
+            assert completed.error_message == reason
+            assert completed.published_dashboard_snapshot_id is None
+            assert db.session.get(SyncRun, prior_run_id).published_dashboard_snapshot_id == (
+                trusted_id
+            )
+        finally:
+            db.session.remove()
+            drop_test_schema(app)
