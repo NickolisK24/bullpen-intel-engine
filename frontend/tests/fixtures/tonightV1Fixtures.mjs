@@ -283,3 +283,101 @@ export function unavailablePayload({ withPublication = true } = {}) {
     limitations: ['Tonight v1 publication row is missing.'],
   }
 }
+
+// TN-09 stress edition: 17 games, 4 featured, 12 changes, every game state,
+// maximum-length lead/context/change copy, long names, withheld and
+// rest-limited sides, double-digit counts and three key arms.
+export const LONG_TEAM_NAME = 'Commonwealth Riverfront Metropolitans'
+export const LONG_PLAYER_NAME = 'Maximiliano Bartholomew Santiago-Villanueva'
+export const LONG_ROLE_LABEL = 'Late-inning trust arm in leverage'
+export const MAX_LEAD_HEADLINE = 'CRM moved into a Vulnerable bullpen state entering tonight after a heavy week of relief work across two series.'.padEnd(120, '.')
+export const MAX_LEAD_DETAIL = 'CRM is scheduled to face SEA in the second game of a split doubleheader at the home ballpark this evening tonight ok.'.padEnd(140, '.')
+export const LONG_CONTEXT = 'CRM enters tonight with a Vulnerable bullpen state, while SEA is Stretched after absorbing a long relief night in the series opener yesterday.'
+export const LONG_CHANGE_HEADLINE = `${LONG_PLAYER_NAME} joined the active bullpen after a verified transaction.`
+export const LONG_CHANGE_DETAIL = 'Verified transaction: Recalled from Triple-A affiliate following a roster move to cover depleted relief innings.'
+
+export function stressPayload() {
+  const states = ['scheduled', 'scheduled', 'live', 'final', 'postponed', 'suspended', 'uncertain']
+  const games = Array.from({ length: 17 }, (_, i) => {
+    let away = teamSide(i * 2)
+    let home = teamSide(i * 2 + 1)
+    if (i === 0) {
+      away = teamSide(0, {
+        abbreviation: 'CRM',
+        name: LONG_TEAM_NAME,
+        team_state: { public_state: 'vulnerable', public_label: 'Vulnerable', available: true, reason_code: null },
+        rest: { active_arm_count: 14, rested_arm_count: 12, worked_yesterday_count: 6, back_to_back_count: 11, available: true, reason_code: null },
+        multi_day_usage: { three_in_four_count: 10 },
+        key_arms: [
+          { pitcher_id: 1, name: LONG_PLAYER_NAME, role_key: 'trust_arm', role_label: LONG_ROLE_LABEL, days_since_last_appearance: 0, pattern: 'B2B' },
+          { pitcher_id: 2, name: 'Christopher Alexander Montgomery-Whitfield', role_key: 'trust_arm', role_label: 'Trust arm', days_since_last_appearance: 1, pattern: '3-in-4' },
+          { pitcher_id: 3, name: 'Jonathan Fitzgerald Oyelaran', role_key: 'bridge_arm', role_label: 'Bridge arm', days_since_last_appearance: 2, pattern: null },
+        ],
+        rotation: { short_start_count: 12, bullpen_innings: '41.2', games_analyzed: 15, status: 'partial' },
+      })
+    }
+    if (i === 1) home = withheldSide(3)
+    if (i === 2) {
+      home = teamSide(5)
+      home.rest = { ...home.rest, rested_arm_count: 0 }
+    }
+    if (i === 5) {
+      away = teamSide(10)
+      away.rest = { ...away.rest, available: false, rested_arm_count: null, back_to_back_count: null, reason_code: 'rest_unavailable' }
+      away.multi_day_usage = { three_in_four_count: null }
+    }
+    const pk = 777000 + i * 3
+    const game = gameCard(pk, away, home, {
+      first_pitch_utc: i === 7 ? null : `2026-09-26T${String(16 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '40' : '05'}:00Z`,
+      state: states[i % states.length],
+    })
+    if (i === 0) {
+      game.context = { sentence: LONG_CONTEXT, reason_codes: ['team_state_vulnerable'], evidence_state: 'complete' }
+    }
+    if (game.state === 'live') {
+      game.context = { ...game.context, reason_codes: [...game.context.reason_codes, 'pregame_context'] }
+    }
+    if (['final', 'postponed', 'suspended'].includes(game.state)) {
+      game.context = { sentence: null, reason_codes: ['pregame_context_hidden'], evidence_state: 'complete' }
+    }
+    return game
+  })
+  const featuredPks = [games[0].game_pk, games[8].game_pk, games[1].game_pk, games[14].game_pk]
+  for (const game of games) {
+    if (featuredPks.includes(game.game_pk)) {
+      game.featured = true
+      game.featured_reason_codes = ['vulnerable_team']
+    }
+  }
+  const changes = Array.from({ length: 12 }, (_, i) => {
+    const side = i === 0 ? games[0].away : games[i].home
+    return {
+      change_id: `c${String(i).padStart(23, '0')}`,
+      team_id: side.team_id,
+      team_abbreviation: side.abbreviation,
+      change_class: i === 0 ? 'active_bullpen_joined' : 'back_to_back_started',
+      headline: i === 0 ? LONG_CHANGE_HEADLINE : `${side.abbreviation} Reliever ${i} started a back-to-back.`,
+      detail: i === 0 ? LONG_CHANGE_DETAIL : null,
+      occurred_on: i % 3 === 2 ? null : '2026-09-25',
+      evidence_state: 'complete',
+      source_ref: `team_board_what_changed_v1:3601:3590:${side.team_id}`,
+      game_pks: [],
+      state_change: null,
+    }
+  })
+  const base = productionPayload()
+  return {
+    ...base,
+    summary: { ...summaryFor(games, changes) },
+    lead: {
+      ...base.lead,
+      headline: MAX_LEAD_HEADLINE,
+      detail: MAX_LEAD_DETAIL,
+      game_pk: games[0].game_pk,
+      reason_codes: ['team_state_to_vulnerable'],
+    },
+    featured_game_pks: featuredPks,
+    games,
+    league_changes: changes,
+  }
+}
