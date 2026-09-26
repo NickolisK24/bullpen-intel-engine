@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
-import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import BullpenRoute from './components/bullpen/BullpenRoute'
@@ -31,7 +30,10 @@ import RouteMetadata from './components/RouteMetadata'
 import RouteAccessibility from './components/RouteAccessibility'
 
 export const APP_ROUTES = [
-  { path: '/', Component: Home },
+  // Tonight v1 is the BaseballOS home (TN-10). /tonight renders the same page;
+  // /today stays an alias of the canonical root. The legacy Home composition is
+  // unrouted and dormant until TN-11 decides its retirement.
+  { path: '/', Component: TonightPage },
   { path: '/today', redirectTo: '/' },
   { path: '/dashboard', Component: Dashboard },
   { path: '/bullpen', Component: BullpenRoute },

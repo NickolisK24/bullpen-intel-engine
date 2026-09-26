@@ -245,8 +245,8 @@ test('source of truth: hardening adds no sorting, arithmetic, timers or extra da
   )
 })
 
-test('root routing is unchanged: / is Home, /today redirects, /tonight is TonightPage', () => {
-  assert.equal(APP_ROUTES.find(route => route.path === '/')?.Component?.name, 'Home')
+test('root routing (TN-10): / and /tonight are TonightPage, /today redirects to /', () => {
+  assert.equal(APP_ROUTES.find(route => route.path === '/')?.Component?.name, 'TonightPage')
   assert.equal(APP_ROUTES.find(route => route.path === '/today')?.redirectTo, '/')
   assert.equal(APP_ROUTES.find(route => route.path === '/tonight')?.Component?.name, 'TonightPage')
   const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))

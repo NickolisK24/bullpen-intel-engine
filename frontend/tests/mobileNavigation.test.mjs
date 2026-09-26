@@ -35,7 +35,7 @@ const renderAt = (el, path = '/') => renderToStaticMarkup(
 test('primary navigation includes the global discovery destination in order', () => {
   assert.deepEqual(
     PRIMARY_NAV.map(item => item.label),
-    ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories'],
+    ['Tonight', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories'],
   )
 })
 
@@ -48,7 +48,7 @@ test('supporting navigation keeps the trust and explainer pages', () => {
 
 test('primary destinations map to canonical product routes', () => {
   const byLabel = Object.fromEntries(PRIMARY_NAV.map(item => [item.label, item.to]))
-  assert.equal(byLabel['Today'], '/')
+  assert.equal(byLabel['Tonight'], '/')
   assert.equal(byLabel['League Board'], '/dashboard')
   assert.equal(byLabel['Team Bullpens'], '/bullpen')
   assert.equal(byLabel['Compare Bullpens'], '/bullpen?view=compare')
@@ -80,7 +80,8 @@ function activeLabels(path) {
 }
 
 test('exactly one primary destination is active per route, including bullpen views', () => {
-  assert.deepEqual(activeLabels('/'), ['Today'])
+  assert.deepEqual(activeLabels('/'), ['Tonight'])
+  assert.deepEqual(activeLabels('/tonight'), ['Tonight'])
   assert.deepEqual(activeLabels('/dashboard'), ['League Board'])
   assert.deepEqual(activeLabels('/bullpen'), ['Team Bullpens'])
   assert.deepEqual(activeLabels('/bullpen?view=board'), ['Team Bullpens'])
@@ -90,10 +91,13 @@ test('exactly one primary destination is active per route, including bullpen vie
   assert.deepEqual(activeLabels('/stories'), ['Stories'])
 })
 
-test('Today only matches the root, never a deeper route', () => {
-  const today = PRIMARY_NAV.find(item => item.label === 'Today')
-  assert.equal(isNavDestinationActive(today, { pathname: '/', search: '' }), true)
-  assert.equal(isNavDestinationActive(today, { pathname: '/dashboard', search: '' }), false)
+test('Tonight matches the root and its /tonight alias, never a deeper route', () => {
+  const tonight = PRIMARY_NAV.find(item => item.label === 'Tonight')
+  assert.equal(isNavDestinationActive(tonight, { pathname: '/', search: '' }), true)
+  assert.equal(isNavDestinationActive(tonight, { pathname: '/tonight', search: '' }), true)
+  assert.equal(isNavDestinationActive(tonight, { pathname: '/tonight/extra', search: '' }), false)
+  assert.equal(isNavDestinationActive(tonight, { pathname: '/dashboard', search: '' }), false)
+  assert.equal(PRIMARY_NAV.some(item => item.label === 'Today' || item.label === 'Home'), false)
 })
 
 // ── Sidebar rendering: accessible menu control + active state ──────────────
@@ -128,8 +132,14 @@ test('the current route receives an active state on the matching destination', (
   assert.ok(anchorFor(comparePage, '/bullpen?view=compare').includes('aria-current="page"'))
   assert.equal(anchorFor(comparePage, '/bullpen').includes('aria-current="page"'), false)
 
-  const todayPage = renderAt(React.createElement(Sidebar), '/')
-  assert.ok(anchorFor(todayPage, '/').includes('aria-current="page"'))
+  // The brand link also targets / but is not a nav destination, so match the
+  // Tonight item by its nav-item class.
+  const tonightItem = (html) => (html.match(/<a[^>]*class="nav-item[^"]*"[^>]*href="\/"[^>]*>|<a[^>]*href="\/"[^>]*class="nav-item[^"]*"[^>]*>/) || [''])[0]
+  const rootPage = renderAt(React.createElement(Sidebar), '/')
+  assert.ok(tonightItem(rootPage).includes('aria-current="page"'))
+  const tonightPage = renderAt(React.createElement(Sidebar), '/tonight')
+  assert.ok(tonightItem(tonightPage).includes('aria-current="page"'))
+  assert.equal(tonightItem(renderAt(React.createElement(Sidebar), '/dashboard')).includes('aria-current'), false)
 
   const searchPage = renderAt(React.createElement(Sidebar), '/search')
   assert.ok(anchorFor(searchPage, '/search').includes('aria-current="page"'))

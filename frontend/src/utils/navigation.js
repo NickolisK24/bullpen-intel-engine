@@ -12,7 +12,7 @@
 import { BULLPEN_VIEWS, readBullpenLocation } from './evidenceLinks'
 
 export const PRIMARY_NAV = [
-  { key: 'today', to: '/', icon: '☀', label: 'Today' },
+  { key: 'tonight', to: '/', icon: '☾', label: 'Tonight', aliases: ['/tonight'] },
   { key: 'league-board', to: '/dashboard', icon: '⬡', label: 'League Board' },
   { key: 'team-bullpens', to: '/bullpen', icon: '🔥', label: 'Team Bullpens', bullpenView: BULLPEN_VIEWS.BOARD },
   { key: 'compare-bullpens', to: '/bullpen?view=compare', icon: '⚖', label: 'Compare Bullpens', bullpenView: BULLPEN_VIEWS.COMPARE },
@@ -38,6 +38,6 @@ export function isNavDestinationActive(item, location = {}) {
     const { view } = readBullpenLocation(location.search || '', '')
     return view === item.bullpenView
   }
-  if (item.to === '/') return pathname === '/'
+  if (item.to === '/') return pathname === '/' || (item.aliases || []).includes(pathname)
   return pathname === item.to || pathname.startsWith(`${item.to}/`)
 }
