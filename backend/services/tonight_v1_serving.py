@@ -38,6 +38,7 @@ from services.tonight_read_model import (
     CONTRACT,
     GAME_STATES,
     game_state,
+    present_lead,
     present_matchup_context,
 )
 
@@ -227,10 +228,21 @@ def overlay_game_state(payload, current_rows):
             ))
         served_games.append(game)
 
+    # TN-07: the frozen lead is never reselected; once its game is underway or
+    # over it is only marked as pregame context.
+    lead = payload.get('lead')
+    served_lead = lead
+    if isinstance(lead, dict) and type(lead.get('game_pk')) is int:
+        lead_game = next((g for g in served_games if g.get('game_pk') == lead['game_pk']), None)
+        served_lead = present_lead(lead, lead_game.get('state') if lead_game else None)
+        if served_lead != lead:
+            identity.append((lead['game_pk'], 'lead', ','.join(served_lead['reason_codes'])))
+
     if not identity:
         return payload, ()
 
     served = dict(payload)
+    served['lead'] = served_lead
     served['games'] = served_games
     summary = payload.get('summary')
     if isinstance(summary, dict) and isinstance(summary.get('games_by_state'), dict):
