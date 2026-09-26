@@ -147,7 +147,7 @@ test('valid direct-entry routes are bounded and invalid parameters reach the sit
 
 test('ordinary slash redirects are permanent while the F-008 share policy remains exact', () => {
   assert.ok((config.routes || []).some(route => (
-    route.src === '^/(dashboard|bullpen|search|stories|about|how-to-read|methodology|trust|signin|auth/verify)/$'
+    route.src === '^/(dashboard|bullpen|search|stories|tonight|about|how-to-read|methodology|trust|signin|auth/verify)/$'
     && route.status === 308
     && route.headers?.Location === '/$1'
   )))

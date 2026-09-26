@@ -35,6 +35,13 @@ export const ROUTE_ENTRY_METADATA = Object.freeze([
     canonical: '/stories',
   },
   {
+    key: 'tonight',
+    path: '/tonight',
+    title: 'Tonight in MLB Bullpens | BaseballOS',
+    description: 'See how every MLB bullpen enters tonight’s games: published Team State, rest, recent usage patterns, and what changed.',
+    canonical: '/tonight',
+  },
+  {
     key: 'how-to-read',
     path: '/how-to-read',
     title: 'How to Read BaseballOS',
