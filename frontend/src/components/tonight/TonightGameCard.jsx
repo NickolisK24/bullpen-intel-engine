@@ -22,11 +22,12 @@ function TeamBoardAction({ side }) {
 
 // Reading order: matchup, status, each club's Team State and facts, the
 // backend context sentence, then one shared action row.
-export default function TonightGameCard({ game, idPrefix = 'game' }) {
+export default function TonightGameCard({ game, idPrefix = 'game', headingLevel = 3 }) {
   const view = gameView(game)
   const headingId = `${idPrefix}-${view.gamePk ?? 'unknown'}-heading`
   const matchupName = `${view.away.abbreviation || view.away.name} at ${view.home.abbreviation || view.home.name}`
   const hasActions = Boolean(view.away.boardHref || view.home.boardHref || view.matchupHref)
+  const Heading = headingLevel === 4 ? 'h4' : 'h3'
   return (
     <article
       className="card flex min-w-0 flex-col p-3 sm:p-4"
@@ -36,12 +37,12 @@ export default function TonightGameCard({ game, idPrefix = 'game' }) {
       data-game-state={view.state}
     >
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h3 id={headingId} className="min-w-0 break-words font-display text-xl leading-tight tracking-wide text-chalk100">
+        <Heading id={headingId} className="min-w-0 break-words font-display text-xl leading-tight tracking-wide text-chalk100">
           {view.away.name} at {view.home.name}
           {view.gameNumber && view.gameNumber > 1 ? (
             <span className="ml-2 font-mono text-xs text-chalk400">Game {view.gameNumber}</span>
           ) : null}
-        </h3>
+        </Heading>
         <p className="shrink-0 font-mono text-xs uppercase tracking-wider text-chalk300" data-testid="tonight-game-status">
           {view.statusLabel}
         </p>
