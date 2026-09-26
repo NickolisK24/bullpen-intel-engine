@@ -381,3 +381,56 @@ export function stressPayload() {
     league_changes: changes,
   }
 }
+
+// TN-11.5 lifecycle fixtures. States are interleaved so bucket order can be
+// checked against backend order. Context markers follow TN-03/TN-04 serving:
+// live keeps its sentence with pregame_context; final/postponed/suspended hide
+// it with pregame_context_hidden.
+export const MIXED_LIFECYCLE_STATES = Object.freeze([
+  'final', 'scheduled', 'live', 'final', 'uncertain', 'scheduled', 'suspended',
+  'final', 'postponed', 'scheduled', 'final', 'live', 'scheduled', 'final',
+  'scheduled', 'final', 'final',
+])
+
+function withServedState(game, state) {
+  const hidden = ['final', 'postponed', 'suspended'].includes(state)
+  const baseCodes = (game.context.reason_codes || []).filter(code => !code.startsWith('pregame_context'))
+  const sentence = hidden ? null : (game.context.sentence || `${game.away.abbreviation} has rested bullpen arms; ${game.home.abbreviation} too.`)
+  return {
+    ...game,
+    state,
+    context: {
+      ...game.context,
+      sentence,
+      reason_codes: hidden
+        ? [...baseCodes, 'pregame_context_hidden']
+        : state === 'live' ? [...baseCodes, 'pregame_context'] : baseCodes,
+    },
+  }
+}
+
+function lifecyclePayload(states) {
+  const base = stressPayload()
+  const games = base.games.map((game, index) => withServedState(game, states[index]))
+  const byState = { scheduled: 0, live: 0, final: 0, postponed: 0, suspended: 0, uncertain: 0 }
+  for (const game of games) byState[game.state] += 1
+  const leadGame = games.find(game => game.game_pk === base.lead.game_pk)
+  const leadServedPregame = leadGame && !['scheduled', 'uncertain'].includes(leadGame.state)
+  return {
+    ...base,
+    summary: { ...base.summary, games_by_state: byState },
+    lead: {
+      ...base.lead,
+      reason_codes: leadServedPregame ? [...base.lead.reason_codes, 'pregame_context'] : base.lead.reason_codes,
+    },
+    games,
+  }
+}
+
+export function mixedLifecyclePayload() {
+  return lifecyclePayload(MIXED_LIFECYCLE_STATES)
+}
+
+export function allFinalPayload() {
+  return lifecyclePayload(Array(17).fill('final'))
+}

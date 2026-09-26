@@ -26,7 +26,7 @@ function GoDeeper() {
   )
 }
 
-function TonightBody({ payload, loading, error, onRetry }) {
+function TonightBody({ payload, loading, error, onRetry, completedInitiallyExpanded }) {
   if (loading && !payload) return <TonightLoading />
   if (error && !payload) return <TonightEmptyState variant="error" onRetry={onRetry} />
   const kind = classifyTonightResponse(payload)
@@ -46,14 +46,16 @@ function TonightBody({ payload, loading, error, onRetry }) {
     <>
       <LeadDevelopment lead={payload.lead} games={payload.games} />
       <FeaturedGames payload={payload} />
-      <TonightSlate games={payload.games} />
+      <TonightSlate games={payload.games} initialCompletedExpanded={completedInitiallyExpanded} />
       <LeagueChanges changes={payload.league_changes} />
       <GoDeeper />
     </>
   )
 }
 
-export function TonightPageView({ payload, loading = false, error = null, onRetry = null, headingRef = null }) {
+// completedInitiallyExpanded exists for server-rendered inspection only; the
+// routed page never sets it, so Completed Games is collapsed on every load.
+export function TonightPageView({ payload, loading = false, error = null, onRetry = null, headingRef = null, completedInitiallyExpanded = false }) {
   const available = classifyTonightResponse(payload) !== 'unavailable'
   return (
     <div className="mx-auto min-w-0 max-w-6xl px-4 py-5 sm:px-6 lg:px-8" data-testid="tonight-page">
@@ -63,7 +65,7 @@ export function TonightPageView({ payload, loading = false, error = null, onRetr
         summary={available ? payload.summary : null}
         loading={loading && !payload}
       />
-      <TonightBody payload={payload} loading={loading} error={error} onRetry={onRetry} />
+      <TonightBody payload={payload} loading={loading} error={error} onRetry={onRetry} completedInitiallyExpanded={completedInitiallyExpanded} />
     </div>
   )
 }

@@ -87,11 +87,18 @@ for (const width of VIEWPORTS) {
     await page.goto('/tonight')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Tonight in MLB Bullpens' })).toBeVisible()
-    await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(17)
+    await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
     await expect(page.getByTestId('tonight-featured').getByTestId('tonight-game-card')).toHaveCount(4)
     await expect(page.getByTestId('tonight-change')).toHaveCount(12)
 
-    expect(await pksIn(page, 'tonight-slate')).toEqual(payload.games.map(game => game.game_pk))
+    // TN-11.5: mounted slate cards follow lifecycle groups in backend order;
+    // the two final games sit behind the collapsed Completed Games (2).
+    const byStates = (states) => payload.games.filter(game => states.includes(game.state)).map(game => game.game_pk)
+    expect(await pksIn(page, 'tonight-slate')).toEqual([
+      ...byStates(['live', 'suspended']),
+      ...byStates(['scheduled', 'uncertain', 'postponed']),
+    ])
+    await expect(page.getByRole('heading', { level: 3, name: 'Completed Games (2)' })).toBeVisible()
     expect(await pksIn(page, 'tonight-featured')).toEqual(payload.featured_game_pks)
     const changeHeadlines = await page.getByTestId('tonight-change').evaluateAll(nodes => nodes.map(node => node.querySelector('p.text-sm')?.textContent))
     expect(changeHeadlines).toEqual(payload.league_changes.map(change => change.headline))
@@ -177,7 +184,7 @@ test('TN-09 error retry fires once per activation and keeps focus on the page he
   // Keyboard activation: the next response succeeds and nothing re-polls.
   await page.getByRole('button', { name: 'Try again' }).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(14)
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused()
   await page.waitForTimeout(500)
   expect(requests).toEqual([TONIGHT_REQUEST, TONIGHT_REQUEST, TONIGHT_REQUEST])
@@ -209,7 +216,7 @@ test('TN-09 loading shows shape-only skeletons, keeps the heading, and settles w
 
   const released = Date.now()
   release()
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(17)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
   const renderMs = Date.now() - released
   await expect(loading).toHaveCount(0)
   const shift = await page.evaluate(() => window.__tonightShift)
@@ -231,7 +238,7 @@ test('TN-09 keyboard order follows visual order with visible focus and no traps'
   await page.setViewportSize({ width: 1440, height: 900 })
   await installTonightFixture(page, { body: stressPayload() })
   await page.goto('/tonight')
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(17)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
 
   const expected = await page.evaluate(() => [...document.querySelectorAll('[data-testid="tonight-page"] a[href], [data-testid="tonight-page"] button')]
     .map(el => `${el.getAttribute('href')}|${el.getAttribute('aria-label') || el.textContent.trim()}`))
@@ -264,7 +271,7 @@ test('TN-09 200% zoom, text-spacing stress, and reduced motion stay usable', asy
 
   await page.setViewportSize({ width: 720, height: 900 })
   await page.goto('/tonight')
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(17)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
   await page.locator('html').evaluate(element => { element.style.fontSize = '200%' })
   await expectNoPageOverflow(page)
   await expectNoTonightElementOverflow(page)
@@ -283,13 +290,14 @@ test('TN-09 direct entry, refresh, and handoff links reach their destinations', 
   await page.setViewportSize({ width: 390, height: 900 })
   const requests = await installTonightFixture(page)
   await page.goto('/tonight')
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(14)
   await page.reload()
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(14)
   expect(requests).toEqual([TONIGHT_REQUEST, TONIGHT_REQUEST])
 
   const payload = productionPayload()
-  const card = page.getByTestId('tonight-slate').getByTestId('tonight-game-card').first()
+  // games[0] is scheduled, so it is mounted in Upcoming (lifecycle grouping).
+  const card = page.getByTestId('tonight-slate').locator(`[data-game-pk="${payload.games[0].game_pk}"]`)
   await expect(card.locator('[data-link="team-board"]').nth(0)).toHaveAttribute('href', payload.games[0].links.away_team_board)
   await expect(card.locator('[data-link="team-board"]').nth(1)).toHaveAttribute('href', payload.games[0].links.home_team_board)
   await expect(card.locator('[data-link="matchup"]')).toHaveAttribute('href', payload.games[0].links.matchup)
@@ -300,6 +308,6 @@ test('TN-09 direct entry, refresh, and handoff links reach their destinations', 
   await expect(page).toHaveURL(new RegExp(`${payload.games[0].links.matchup}$`))
   await page.goBack()
   await expect(page).toHaveURL(/\/tonight$/)
-  await page.getByTestId('tonight-slate').getByTestId('tonight-game-card').first().locator('[data-link="team-board"]').first().click()
+  await page.getByTestId('tonight-slate').locator(`[data-game-pk="${payload.games[0].game_pk}"]`).locator('[data-link="team-board"]').first().click()
   await expect(page).toHaveURL(/\/bullpen\?view=board&team=NYY$/)
 })

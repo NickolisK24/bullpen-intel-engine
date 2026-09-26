@@ -205,7 +205,8 @@ test('13. featured and slate use the same TonightGameCard markup', () => {
   const html = renderPage({ payload })
   const pk = payload.featured_game_pks[0]
   const cards = [...html.matchAll(new RegExp(`<article[^>]*data-game-pk="${pk}"[\\s\\S]*?</article>`, 'g'))]
-    .map(match => match[0].replace(/(featured|slate)-\d+-heading/g, 'ID'))
+    // Slate cards sit under lifecycle h3 groups, so their card heading is h4.
+    .map(match => match[0].replace(/(featured|slate)-\d+-heading/g, 'ID').replace(/<(\/?)h[34]\b/g, '<$1hN'))
   assert.equal(cards.length, 2)
   assert.equal(cards[0], cards[1])
 })
@@ -213,9 +214,16 @@ test('13. featured and slate use the same TonightGameCard markup', () => {
 test('14. Tonight\'s Slate renders every game in backend order, never re-sorted', () => {
   const payload = productionPayload()
   payload.games = [...payload.games].reverse()
-  const slate = section(renderPage({ payload }), 'tonight-slate')
+  const slate = section(renderPage({ payload, completedInitiallyExpanded: true }), 'tonight-slate')
   assert.match(slate, /<h2[^>]*>Tonight&#x27;s Slate<\/h2>/)
-  assert.deepEqual(gamePksIn(slate), payload.games.map(game => game.game_pk))
+  // TN-11.5: grouped by served state (In Progress, Upcoming, Completed), and
+  // backend order is preserved inside each group.
+  const byStates = (states) => payload.games.filter(game => states.includes(game.state)).map(game => game.game_pk)
+  assert.deepEqual(gamePksIn(slate), [
+    ...byStates(['live', 'suspended']),
+    ...byStates(['scheduled', 'uncertain', 'postponed']),
+    ...byStates(['final']),
+  ])
 })
 
 // ── 15–21 game state labels ──────────────────────────────────────────────
@@ -443,7 +451,7 @@ test('40. network error offers retry; loading renders skeletons', () => {
 
 test('production-shaped 15-game edition renders every section in order', () => {
   const payload = productionPayload()
-  const html = renderPage({ payload })
+  const html = renderPage({ payload, completedInitiallyExpanded: true })
   const order = ['tonight-header', 'tonight-lead', 'tonight-featured', 'tonight-slate', 'tonight-changes', 'tonight-go-deeper']
     .map(id => html.indexOf(`data-testid="${id}"`))
   assert.ok(order.every(index => index >= 0), String(order))
@@ -461,12 +469,13 @@ test('production-shaped 15-game edition renders every section in order', () => {
 
 test('source of truth: every rendered fact is the backend value, not a recomputation', () => {
   const payload = productionPayload()
-  const html = renderPage({ payload })
+  const html = renderPage({ payload, completedInitiallyExpanded: true })
   const slate = section(html, 'tonight-slate')
   const cards = [...slate.matchAll(/<article[\s\S]*?<\/article>/g)].map(m => m[0])
   assert.equal(cards.length, payload.games.length)
-  cards.forEach((card, index) => {
-    const game = payload.games[index]
+  const cardByPk = new Map(cards.map(card => [Number(card.match(/data-game-pk="(\d+)"/)[1]), card]))
+  payload.games.forEach((game) => {
+    const card = cardByPk.get(game.game_pk)
     const sides = [...card.matchAll(/data-testid="tonight-team-side"[\s\S]*?(?=data-testid="tonight-team-side"|data-testid="tonight-context"|data-link="matchup"|$)/g)]
       .map(m => m[0])
     ;[game.away, game.home].forEach((side, sideIndex) => {

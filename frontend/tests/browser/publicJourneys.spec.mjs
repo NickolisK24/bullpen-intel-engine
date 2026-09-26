@@ -261,7 +261,7 @@ test('cold root renders Tonight v1, not the legacy Daily Edition (TN-10)', async
   await page.goto('/')
 
   await expect(page.getByRole('heading', { level: 1, name: 'Tonight in MLB Bullpens' })).toBeVisible()
-  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(15)
+  await expect(page.getByTestId('tonight-slate').getByTestId('tonight-game-card')).toHaveCount(14)
   await expect(page.getByText('Lead disappeared late')).toHaveCount(0)
   await expect(page.locator('#daily-edition')).toHaveCount(0)
   expect(todayRequests).toBe(0)

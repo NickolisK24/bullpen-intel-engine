@@ -28,6 +28,12 @@ export const TONIGHT_COPY = Object.freeze({
   teamStateWithheld: 'Team State withheld',
   restUnavailable: 'Rest read unavailable',
   sideUnavailable: 'Bullpen read unavailable for this club.',
+  inProgress: 'In Progress',
+  upcoming: 'Upcoming',
+  completedGames: 'Completed Games',
+  showCompleted: 'Show completed games',
+  hideCompleted: 'Hide completed games',
+  allFinal: "All of tonight's games are complete.",
 })
 
 // Served game state -> public status text. Scheduled uses the first pitch time;
@@ -245,4 +251,27 @@ export function leagueChangeView(change, boardHref) {
     occurredOn: formatDateOnly(isoDate(change.occurred_on), { month: 'short' }),
     boardHref: text(boardHref),
   }
+}
+
+// Slate lifecycle presentation (TN-11.5). The only input is the served
+// game.state; nothing else is inferred. Unfinished states never read as
+// complete: an unknown or unexpected state falls to Upcoming, the same
+// conservative reading as its "Status not confirmed" label.
+export const LIFECYCLE_BY_STATE = Object.freeze({
+  live: 'inProgress',
+  suspended: 'inProgress',
+  scheduled: 'upcoming',
+  uncertain: 'upcoming',
+  postponed: 'upcoming',
+  final: 'completed',
+})
+
+// One pass in backend order; each game is appended to its bucket, so the
+// served order is preserved inside every bucket. No sorting.
+export function groupGamesByLifecycle(games) {
+  const groups = { inProgress: [], upcoming: [], completed: [] }
+  for (const game of list(games)) {
+    groups[LIFECYCLE_BY_STATE[game?.state] || 'upcoming'].push(game)
+  }
+  return groups
 }

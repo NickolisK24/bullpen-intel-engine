@@ -99,14 +99,15 @@ test('/ and /tonight render equivalent Tonight content from the same payload', (
   const pick = (html) => ({
     lead: (html.match(/data-testid="tonight-lead"[\s\S]*?<\/section>/) || [''])[0],
     featured: [...(html.match(/data-testid="tonight-featured"[\s\S]*?<\/section>/) || [''])[0].matchAll(/data-game-pk="(\d+)"/g)].map(m => m[1]),
-    slate: [...(html.match(/data-testid="tonight-slate"[\s\S]*?<\/section>/) || [''])[0].matchAll(/data-game-pk="(\d+)"/g)].map(m => m[1]),
+    slate: [...html.slice(html.indexOf('data-testid="tonight-slate"'), html.indexOf('data-testid="tonight-changes"')).matchAll(/data-game-pk="(\d+)"/g)].map(m => m[1]),
     changes: [...html.matchAll(/data-testid="tonight-change"/g)].length,
     links: [...html.matchAll(/data-link="[a-z-]+" href="([^"]+)"/g)].map(m => m[1]),
   })
   const root = pick(renderPath('/'))
   const tonight = pick(renderPath('/tonight'))
   assert.deepEqual(root, tonight)
-  assert.equal(root.slate.length, 15)
+  // 15 games; the one final game sits behind the collapsed Completed Games.
+  assert.equal(root.slate.length, 14)
   assert.ok(root.lead.length > 0)
 })
 

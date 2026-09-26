@@ -62,20 +62,27 @@ function section(html, testId) {
 
 const cards = (html, testId) => [...section(html, testId).matchAll(/<article[\s\S]*?<\/article>/g)].map(m => m[0])
 const stress = stressPayload()
-const stressHtml = renderPage({ payload: stress })
+// Completed games are collapsed by default (TN-11.5); inspect every card with
+// the disclosure open and look cards up by game_pk.
+const stressHtml = renderPage({ payload: stress, completedInitiallyExpanded: true })
 const slateCards = cards(stressHtml, 'tonight-slate')
+const pkOf = (card) => Number(card.match(/data-game-pk="(\d+)"/)[1])
+const cardByPk = new Map(slateCards.map(card => [pkOf(card), card]))
+const cardFor = (index) => cardByPk.get(stress.games[index].game_pk)
+const LIFECYCLE_STATES = [['live', 'suspended'], ['scheduled', 'uncertain', 'postponed'], ['final']]
+const lifecycleOrder = (games) => LIFECYCLE_STATES.flatMap(states => games.filter(game => states.includes(game.state)))
 
 test('stress edition renders 17 games, 4 featured and 12 changes in backend order', () => {
   assert.equal(slateCards.length, 17)
-  const pk = (card) => Number(card.match(/data-game-pk="(\d+)"/)[1])
-  assert.deepEqual(slateCards.map(pk), stress.games.map(game => game.game_pk))
+  const pk = pkOf
+  assert.deepEqual(slateCards.map(pk), lifecycleOrder(stress.games).map(game => game.game_pk))
   assert.deepEqual(cards(stressHtml, 'tonight-featured').map(pk), stress.featured_game_pks)
   const headlines = [...section(stressHtml, 'tonight-changes').matchAll(/<p class="-mt-1[^"]*">([\s\S]*?)<\/p>/g)].map(m => decode(m[1]))
   assert.deepEqual(headlines, stress.league_changes.map(change => change.headline))
 })
 
 test('every served game state has its label across the stress slate', () => {
-  const labels = slateCards.map(card => textOf(card.match(/data-testid="tonight-game-status"[^>]*>([^<]*)</)[1]))
+  const labels = stress.games.map((_, index) => textOf(cardFor(index).match(/data-testid="tonight-game-status"[^>]*>([^<]*)</)[1]))
   const byState = {}
   stress.games.forEach((game, index) => { (byState[game.state] ||= new Set()).add(labels[index]) })
   assert.deepEqual([...byState.live], ['In progress'])
@@ -87,7 +94,7 @@ test('every served game state has its label across the stress slate', () => {
 })
 
 test('long team and player names, roles, context and change copy render in full', () => {
-  const first = textOf(slateCards[0])
+  const first = textOf(cardFor(0))
   assert.ok(first.includes(`${LONG_TEAM_NAME} at Boston Red Sox`))
   assert.ok(first.includes(LONG_PLAYER_NAME))
   assert.ok(first.includes(LONG_ROLE_LABEL))
@@ -119,15 +126,15 @@ test('a lead whose game is missing renders without a handoff link', () => {
 })
 
 test('withheld, zero-rested and null-rested sides keep their meaning', () => {
-  assert.match(slateCards[1], /data-team-state="withheld"[^>]*>Team State withheld</)
-  assert.match(slateCards[2], /data-fact="rested">0 rested</)
-  const restLimited = slateCards[5].match(/data-testid="tonight-team-side"[\s\S]*?(?=data-testid="tonight-team-side")/)[0]
+  assert.match(cardFor(1), /data-team-state="withheld"[^>]*>Team State withheld</)
+  assert.match(cardFor(2), /data-fact="rested">0 rested</)
+  const restLimited = cardFor(5).match(/data-testid="tonight-team-side"[\s\S]*?(?=data-testid="tonight-team-side")/)[0]
   assert.match(restLimited, /Rest read unavailable/)
   assert.doesNotMatch(restLimited, /\d+ rested|B2B<|in 3-in-4/)
 })
 
 test('large counts, three key arms and wrapping rotation render as frozen', () => {
-  const card = slateCards[0]
+  const card = cardFor(0)
   assert.match(card, /data-fact="rested">12 rested</)
   assert.match(card, /data-fact="b2b">11 B2B</)
   assert.match(card, /data-fact="three_in_four">10 in 3-in-4</)
@@ -137,7 +144,7 @@ test('large counts, three key arms and wrapping rotation render as frozen', () =
 })
 
 test('only Team State reads as a badge; usage facts are plain text', () => {
-  const side = slateCards[0].match(/data-testid="tonight-team-side"[\s\S]*?(?=data-testid="tonight-team-side")/)[0]
+  const side = cardFor(0).match(/data-testid="tonight-team-side"[\s\S]*?(?=data-testid="tonight-team-side")/)[0]
   const bordered = [...side.matchAll(/<(?:span|li|p)[^>]*class="[^"]*\bborder\b[^"]*"/g)]
   assert.equal(bordered.length, 1, 'one bordered element per side: the Team State badge')
   assert.match(bordered[0][0], /min-h-8/)
@@ -145,8 +152,8 @@ test('only Team State reads as a badge; usage facts are plain text', () => {
 })
 
 test('each card has one action row: away Team Board, home Team Board, Matchup, with distinct names', () => {
-  for (const [index, card] of slateCards.entries()) {
-    const game = stress.games[index]
+  for (const [index, game] of stress.games.entries()) {
+    const card = cardFor(index)
     const row = card.match(/data-testid="tonight-card-actions"[\s\S]*$/)[0]
     const links = [...row.matchAll(/<a [^>]*aria-label="([^"]+)"[^>]*href="([^"]+)"/g)].map(m => [decode(m[1]), decode(m[2])])
     assert.deepEqual(links.map(([, href]) => href), [
@@ -159,7 +166,7 @@ test('each card has one action row: away Team Board, home Team Board, Matchup, w
 
 test('null context consumes no space; pregame marker only on live context', () => {
   stress.games.forEach((game, index) => {
-    const card = slateCards[index]
+    const card = cardFor(index)
     if (game.context.sentence) {
       assert.match(card, /data-testid="tonight-context"/)
     } else {
@@ -175,7 +182,9 @@ test('lead null, no featured section and no changes section render cleanly', () 
   for (const id of ['tonight-lead', 'tonight-featured', 'tonight-changes']) {
     assert.equal(html.includes(`data-testid="${id}"`), false, id)
   }
-  assert.equal(cards(html, 'tonight-slate').length, 15)
+  // 15 games, one final: 14 mounted, the final one behind Completed Games (1).
+  assert.equal(cards(html, 'tonight-slate').length, 14)
+  assert.match(html, /Completed Games \(1\)/)
 })
 
 test('quiet day with backend changes keeps the edition header and What Changed', () => {
