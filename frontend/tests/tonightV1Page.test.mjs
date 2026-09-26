@@ -385,9 +385,9 @@ test('35. card links are the backend-authored Team Board and Matchup links', () 
 test('36. What Changed shows team, headline, detail, date and a Team Board link', () => {
   const changes = section(renderPage({ payload: productionPayload() }), 'tonight-changes')
   assert.match(changes, /<h2[^>]*>What Changed<\/h2>/)
-  const text = textOf(changes)
-  assert.match(text, /SEA · Sep 25, 2026 SEA moved from Stretched to Vulnerable\./)
-  assert.match(text, /NYY NYY Call-Up joined the active bullpen\. Verified transaction: Recalled\./)
+  const items = [...changes.matchAll(/data-testid="tonight-change">([\s\S]*?)<\/li>/g)].map(m => textOf(m[1]))
+  assert.equal(items[0], 'SEA · Sep 25, 2026 Team Board SEA moved from Stretched to Vulnerable.')
+  assert.equal(items[1], 'NYY Team Board NYY Call-Up joined the active bullpen. Verified transaction: Recalled.')
   const hrefs = [...changes.matchAll(/href="([^"]+)"/g)].map(m => decode(m[1]))
   assert.deepEqual(hrefs, ['/bullpen?view=board&team=SEA', '/bullpen?view=board&team=NYY'])
   const order = [...changes.matchAll(/data-testid="tonight-change"/g)].length

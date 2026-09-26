@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getTonightV1 } from '../../utils/api'
@@ -8,19 +8,7 @@ import LeagueChanges from './LeagueChanges'
 import TonightEmptyState, { TonightLoading } from './TonightEmptyState'
 import TonightHeader from './TonightHeader'
 import TonightSlate from './TonightSlate'
-import { TONIGHT_COPY, classifyTonightResponse, unavailableDetail } from './tonightView'
-
-function PageShell({ children }) {
-  return <div className="mx-auto min-w-0 max-w-6xl px-4 py-5 sm:px-6 lg:px-8" data-testid="tonight-page">{children}</div>
-}
-
-function StateHeading() {
-  return (
-    <h1 className="font-display text-3xl leading-none tracking-wide text-chalk100 sm:text-4xl lg:text-5xl">
-      {TONIGHT_COPY.title}
-    </h1>
-  )
-}
+import { classifyTonightResponse, unavailableDetail } from './tonightView'
 
 function GoDeeper() {
   return (
@@ -38,46 +26,57 @@ function GoDeeper() {
   )
 }
 
-export function TonightPageView({ payload, loading = false, error = null, onRetry = null }) {
-  if (loading && !payload) {
-    return <PageShell><StateHeading /><TonightLoading /></PageShell>
-  }
-  if (error && !payload) {
-    return <PageShell><StateHeading /><TonightEmptyState variant="error" onRetry={onRetry} /></PageShell>
-  }
+function TonightBody({ payload, loading, error, onRetry }) {
+  if (loading && !payload) return <TonightLoading />
+  if (error && !payload) return <TonightEmptyState variant="error" onRetry={onRetry} />
   const kind = classifyTonightResponse(payload)
   if (kind === 'unavailable') {
-    return (
-      <PageShell>
-        <StateHeading />
-        <TonightEmptyState variant="unavailable" detail={unavailableDetail(payload)} />
-      </PageShell>
-    )
+    return <TonightEmptyState variant="unavailable" detail={unavailableDetail(payload)} />
   }
   if (kind === 'quiet') {
     return (
-      <PageShell>
-        <TonightHeader edition={payload.edition} summary={payload.summary} />
+      <>
         <TonightEmptyState variant="quiet" />
         <LeagueChanges changes={payload.league_changes} />
         <GoDeeper />
-      </PageShell>
+      </>
     )
   }
   return (
-    <PageShell>
-      <TonightHeader edition={payload.edition} summary={payload.summary} />
-      <LeadDevelopment lead={payload.lead} />
+    <>
+      <LeadDevelopment lead={payload.lead} games={payload.games} />
       <FeaturedGames payload={payload} />
       <TonightSlate games={payload.games} />
       <LeagueChanges changes={payload.league_changes} />
       <GoDeeper />
-    </PageShell>
+    </>
+  )
+}
+
+export function TonightPageView({ payload, loading = false, error = null, onRetry = null, headingRef = null }) {
+  const available = classifyTonightResponse(payload) !== 'unavailable'
+  return (
+    <div className="mx-auto min-w-0 max-w-6xl px-4 py-5 sm:px-6 lg:px-8" data-testid="tonight-page">
+      <TonightHeader
+        ref={headingRef}
+        edition={available ? payload.edition : null}
+        summary={available ? payload.summary : null}
+        loading={loading && !payload}
+      />
+      <TonightBody payload={payload} loading={loading} error={error} onRetry={onRetry} />
+    </div>
   )
 }
 
 export default function TonightPage() {
+  const headingRef = useRef(null)
   const fetchTonight = useCallback(options => getTonightV1(options), [])
   const { data, loading, error, refetch } = useFetch(fetchTonight, [fetchTonight])
-  return <TonightPageView payload={data} loading={loading} error={error} onRetry={refetch} />
+  // Retry keeps keyboard focus on the stable page heading rather than on a
+  // button that unmounts once the request starts.
+  const retry = useCallback(() => {
+    headingRef.current?.focus()
+    refetch()
+  }, [refetch])
+  return <TonightPageView payload={data} loading={loading} error={error} onRetry={retry} headingRef={headingRef} />
 }

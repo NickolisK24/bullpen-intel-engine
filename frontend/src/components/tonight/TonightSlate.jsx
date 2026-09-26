@@ -4,7 +4,7 @@ export default function TonightSlate({ games }) {
   const list = Array.isArray(games) ? games : []
   if (list.length === 0) return null
   return (
-    <section className="mt-section min-w-0" aria-labelledby="tonight-slate-heading" data-testid="tonight-slate">
+    <section className="mt-section-lg min-w-0 border-t border-dirt pt-section" aria-labelledby="tonight-slate-heading" data-testid="tonight-slate">
       <h2 id="tonight-slate-heading" className="font-mono text-xs uppercase tracking-widest text-chalk300">
         Tonight&apos;s Slate
       </h2>
