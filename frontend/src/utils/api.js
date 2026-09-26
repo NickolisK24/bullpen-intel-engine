@@ -661,6 +661,15 @@ export const getTonightIntelligence = (params = {}, options = {}) => (
     ...options,
   })
 )
+// Tonight v1 — the stored, publication-bound Tonight edition for /tonight.
+// Explicit contract only: this helper never falls back to legacy tonight_v5,
+// and it uses no client response cache so each load reads the served edition.
+export const getTonightV1 = (options = {}) => (
+  request(`/bullpen/intelligence/tonight${buildQuery({ contract: 'tonight_v1' })}`, {
+    timeoutMs: TONIGHT_INTELLIGENCE_TIMEOUT_MS,
+    ...options,
+  })
+)
 // Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
 export const getSyncStatus     = (options = {}) => request('/bullpen/sync/status', {

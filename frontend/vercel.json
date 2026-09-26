@@ -66,7 +66,7 @@
       "status": 308
     },
     {
-      "src": "^/(dashboard|bullpen|search|stories|about|how-to-read|methodology|trust|signin|auth/verify)/$",
+      "src": "^/(dashboard|bullpen|search|stories|tonight|about|how-to-read|methodology|trust|signin|auth/verify)/$",
       "headers": {
         "Location": "/$1"
       },
@@ -94,6 +94,7 @@
     { "src": "^/bullpen$", "dest": "/route-entry/bullpen.html" },
     { "src": "^/search$", "dest": "/route-entry/search.html" },
     { "src": "^/stories$", "dest": "/route-entry/stories.html" },
+    { "src": "^/tonight$", "dest": "/route-entry/tonight.html" },
     { "src": "^/about$", "dest": "/route-entry/about.html" },
     { "src": "^/how-to-read$", "dest": "/route-entry/how-to-read.html" },
     { "src": "^/methodology$", "dest": "/route-entry/methodology.html" },
