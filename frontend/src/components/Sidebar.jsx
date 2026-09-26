@@ -48,13 +48,18 @@ export default function Sidebar() {
     <aside className="w-full bg-dugout border-b border-dirt xl:fixed xl:inset-y-0 xl:left-0 xl:z-30 xl:w-56 xl:border-b-0 xl:border-r flex flex-col xl:h-screen xl:overflow-y-auto">
       {/* Header row: logo + (mobile) hamburger */}
       <div className="flex items-center justify-between px-5 py-4 xl:py-6 xl:border-b xl:border-dirt">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xl">⚾</span>
+        <Link
+          to="/"
+          aria-label="BaseballOS home"
+          data-testid="brand-home-link"
+          className="flex items-center gap-2.5 min-w-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+        >
+          <span className="text-2xl" aria-hidden="true">⚾</span>
           <div className="min-w-0">
             <div className="font-display text-2xl tracking-widest text-chalk100 leading-none truncate">BaseballOS</div>
             <div className="text-chalk600 text-[10px] font-mono uppercase tracking-widest mt-0.5">Bullpen Intelligence</div>
           </div>
-        </div>
+        </Link>
 
         <button
           type="button"

@@ -38,7 +38,7 @@ const internalShareTitleLabels = [
   'Thinning Trust Lane',
 ]
 const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/search', '/stories', '/methodology', '/trust']
-const safeHeroDescription = 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'
+const safeHeroDescription = 'See how every MLB bullpen enters tonight’s games: published Team State, rest, recent usage, and what changed, with the data date always shown.'
 const blockedEvidenceCopyPatterns = [
   /see the evidence behind/i,
   /evidence behind (?:each|every) read/i,
@@ -51,7 +51,7 @@ function routeByPath(path) {
 test('root HTML uses the public BaseballOS domain for canonical and social metadata', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
-  assert.ok(htmlIncludes(html, '<title>BaseballOS | MLB Bullpen Intelligence</title>'))
+  assert.ok(htmlIncludes(html, '<title>BaseballOS | Tonight in MLB Bullpens</title>'))
   assert.ok(htmlIncludes(html, safeHeroDescription))
   assert.ok(htmlIncludes(html, '<link rel="canonical" href="https://baseballos.app/" />'))
   assert.ok(htmlIncludes(html, '<meta property="og:url" content="https://baseballos.app/" />'))
@@ -77,8 +77,9 @@ test('public homepage and README copy do not imply evidence surfacing', () => {
   }
 })
 
-test('/today redirects to the Today surface and the client catch-all renders not found', () => {
-  assert.equal(routeByPath('/')?.Component?.name, 'Home')
+test('/ is Tonight, /today redirects to it, and the client catch-all renders not found', () => {
+  assert.equal(routeByPath('/')?.Component?.name, 'TonightPage')
+  assert.equal(routeByPath('/tonight')?.Component, routeByPath('/')?.Component)
   assert.equal(routeByPath('/today')?.redirectTo, '/')
   assert.equal(routeByPath('*')?.Component?.name, 'NotFound')
   assert.equal(routeByPath('*')?.redirectTo, undefined)
@@ -253,7 +254,7 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   const html = render(React.createElement(Sidebar))
   // Primary destinations use plain baseball labels; the old ambiguous
   // "Dashboard"/"Bullpen" and population-overstating "All Pitchers" are gone.
-  const primaryLabels = ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories']
+  const primaryLabels = ['Tonight', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Search', 'Stories']
   const supportingLabels = ['How to Read', 'Methodology', 'Data &amp; Trust', 'About']
   const routeIndexes = publicProductRoutes.map(route => html.indexOf(`href="${route}"`))
 

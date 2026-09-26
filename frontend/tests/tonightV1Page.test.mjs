@@ -84,8 +84,8 @@ test('1. /tonight is a first-class route rendered by TonightPage', () => {
   assert.equal(route?.redirectTo, undefined)
 })
 
-test('2. / stays Home and /today still redirects to /', () => {
-  assert.equal(APP_ROUTES.find(item => item.path === '/')?.Component?.name, 'Home')
+test('2. / renders TonightPage (TN-10 cutover) and /today redirects to /', () => {
+  assert.equal(APP_ROUTES.find(item => item.path === '/')?.Component?.name, 'TonightPage')
   assert.equal(APP_ROUTES.find(item => item.path === '/today')?.redirectTo, '/')
 })
 
@@ -492,8 +492,11 @@ test('source of truth: every rendered fact is the backend value, not a recomputa
 
 test('route entry metadata describes /tonight without mutable baseball claims', () => {
   const meta = metadataForLocation('/tonight')
-  assert.equal(meta?.title, 'Tonight in MLB Bullpens | BaseballOS')
-  assert.equal(meta?.canonicalUrl, 'https://baseballos.app/tonight')
+  // TN-10: /tonight is the same product as the root, so it shares the root
+  // title and canonicalizes to / (no duplicate indexable page).
+  assert.equal(meta?.title, 'BaseballOS | Tonight in MLB Bullpens')
+  assert.equal(meta?.title, metadataForLocation('/')?.title)
+  assert.equal(meta?.canonicalUrl, 'https://baseballos.app/')
   assert.doesNotMatch(meta.description, /\b\d+\b|Fresh|Stretched|Vulnerable/)
   const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   assert.ok(vercel.routes.some(route => route.src === '^/tonight$' && route.dest === '/route-entry/tonight.html'))

@@ -5,6 +5,10 @@ export const PUBLIC_TEAM_ABBREVIATIONS = Object.freeze([
   'PHI', 'PIT', 'SD', 'SEA', 'SF', 'STL', 'TB', 'TEX', 'TOR', 'WSH',
 ])
 
+// Tonight v1 is the home surface; / and /tonight share this identity.
+export const ROOT_TITLE = 'BaseballOS | Tonight in MLB Bullpens'
+export const ROOT_DESCRIPTION = 'See how every MLB bullpen enters tonight’s games: published Team State, rest, recent usage, and what changed, with the data date always shown.'
+
 export const ROUTE_ENTRY_METADATA = Object.freeze([
   {
     key: 'dashboard',
@@ -37,9 +41,10 @@ export const ROUTE_ENTRY_METADATA = Object.freeze([
   {
     key: 'tonight',
     path: '/tonight',
-    title: 'Tonight in MLB Bullpens | BaseballOS',
-    description: 'See how every MLB bullpen enters tonight’s games: published Team State, rest, recent usage patterns, and what changed.',
-    canonical: '/tonight',
+    // Same product as the root: one title/description, canonical to /.
+    title: ROOT_TITLE,
+    description: ROOT_DESCRIPTION,
+    canonical: '/',
   },
   {
     key: 'how-to-read',
@@ -146,8 +151,8 @@ export function metadataForLocation(pathname = '/', search = '') {
 
   if (pathname === '/') {
     return {
-      title: 'BaseballOS | MLB Bullpen Intelligence',
-      description: 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.',
+      title: ROOT_TITLE,
+      description: ROOT_DESCRIPTION,
       canonicalUrl: canonicalUrl('/'),
     }
   }
