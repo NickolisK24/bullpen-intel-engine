@@ -218,11 +218,21 @@ export function gameView(game) {
   }
 }
 
-export function featuredGames(payload) {
-  const byPk = new Map(list(payload?.games).map(game => [game?.game_pk, game]))
-  return list(payload?.featured_game_pks)
-    .filter(pk => byPk.has(pk))
-    .map(pk => byPk.get(pk))
+// Featured lifecycle presentation (TN-11.6). Games to Watch is a current-
+// attention surface: walk featured_game_pks in backend order, resolve each pk
+// to its served game, skip missing games and hide only state === 'final'.
+// Every other state (including unknown ones) stays visible, because final is
+// the only state known to be complete. No replacement, reordering or other
+// inputs: the frozen featured selection and each game's featured marker are
+// untouched, and final featured games remain in Completed Games.
+export function getVisibleFeaturedGames(games, featuredGamePks) {
+  const byPk = new Map(list(games).map(game => [game?.game_pk, game]))
+  const visible = []
+  for (const pk of list(featuredGamePks)) {
+    const game = byPk.get(pk)
+    if (game && game.state !== 'final') visible.push(game)
+  }
+  return visible
 }
 
 export function leadView(lead) {
