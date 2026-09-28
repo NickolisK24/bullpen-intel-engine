@@ -2050,6 +2050,16 @@ def test_rehearsal_withholds_other_state_without_cancellation_evidence(monkeypat
             rehearsal.setup()
             represented = rehearsal.reference_date - timedelta(days=1)
             _seed_represented_cancellation(represented, slate_evidence=False)
+            # An unpublishable candidate triggers the real stale-finality refresh,
+            # which re-fetches the represented slate from MLB. Keep the rehearsal
+            # hermetic: the refresh runs, but MLB returns nothing new, so the only
+            # schedule evidence is what this test seeded.
+            from services import schedule_ingestion
+            schedule_fetches = []
+            monkeypatch.setattr(
+                schedule_ingestion.mlb_client, 'get_schedule',
+                lambda **kwargs: schedule_fetches.append(kwargs) or [],
+            )
             published_before = {
                 row.id for row in DashboardSnapshot.query.filter_by(is_published=True)
             }
@@ -2072,6 +2082,11 @@ def test_rehearsal_withholds_other_state_without_cancellation_evidence(monkeypat
             assert candidate.is_published is False
             assert candidate.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
             assert candidate.error_message == reason
+            # The stale-finality refresh really ran for the represented slate.
+            assert {
+                'start_date': represented.isoformat(),
+                'end_date': represented.isoformat(),
+            } in schedule_fetches
             coverage = candidate.payload['freshness']['slate_coverage']
             assert coverage['games_cancelled'] == 0
             assert 'scheduled_games_not_final' in coverage['reason_codes']
