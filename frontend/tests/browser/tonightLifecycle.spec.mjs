@@ -58,7 +58,8 @@ for (const width of [390, 768, 1440]) {
     expect(await cardPks(page.getByTestId('tonight-slate-upcoming'))).toEqual(pksWhere(payload, ['scheduled', 'uncertain', 'postponed']))
     const completed = page.getByTestId('tonight-slate-completed')
     await expect(completed.getByTestId('tonight-game-card')).toHaveCount(0)
-    await expect(page.getByTestId('tonight-featured').getByTestId('tonight-game-card')).toHaveCount(4)
+    // TN-11.6: the one final featured game is hidden from Games to Watch.
+    await expect(page.getByTestId('tonight-featured').getByTestId('tonight-game-card')).toHaveCount(3)
 
     const toggle = page.getByRole('button', { name: 'Show completed games' })
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')

@@ -138,9 +138,11 @@ test('15–17. all-final slate: helper text, Completed Games (17), zero cards be
   assert.match(slate, /Completed Games \(17\)/)
   assert.equal(pks(slate).length, 0)
   assert.doesNotMatch(slate, />In Progress<|>Upcoming</)
-  for (const id of ['tonight-header', 'tonight-lead', 'tonight-featured', 'tonight-changes', 'tonight-go-deeper']) {
+  for (const id of ['tonight-header', 'tonight-lead', 'tonight-changes', 'tonight-go-deeper']) {
     assert.ok(html.includes(`data-testid="${id}"`), id)
   }
+  // TN-11.6: every featured game is final, so Games to Watch is absent.
+  assert.equal(html.includes('data-testid="tonight-featured"'), false)
 })
 
 test('23, 25, 37. expanded completed cards use TonightGameCard and still read Final', () => {
@@ -185,7 +187,9 @@ test('32–36. lead, featured, What Changed and handoff links are unchanged by l
   const html = renderPage({ payload: mixed, completedInitiallyExpanded: true })
   const lead = region(html, 'tonight-lead')
   assert.match(lead, /data-testid="tonight-lead-pregame"/, 'lead keeps its served pregame marker')
-  assert.deepEqual(pks(region(html, 'tonight-featured')), mixed.featured_game_pks, 'featured keeps final games')
+  // TN-11.6: Games to Watch hides final featured games, keeping backend order.
+  const visibleFeatured = mixed.featured_game_pks.filter(pk => mixed.games.find(g => g.game_pk === pk).state !== 'final')
+  assert.deepEqual(pks(region(html, 'tonight-featured')), visibleFeatured)
   assert.equal((html.match(/data-testid="tonight-change"/g) || []).length, 12)
   for (const g of mixed.games) {
     const card = region(html, 'tonight-slate').match(new RegExp(`<article[^>]*data-game-pk="${g.game_pk}"[\\s\\S]*?</article>`))[0]

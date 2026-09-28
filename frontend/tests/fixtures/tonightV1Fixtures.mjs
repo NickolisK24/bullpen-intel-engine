@@ -434,3 +434,52 @@ export function mixedLifecyclePayload() {
 export function allFinalPayload() {
   return lifecyclePayload(Array(17).fill('final'))
 }
+
+// TN-11.6 featured lifecycle fixtures, modelled on the observed late-night
+// page: 15 games, 14 final. featured_game_pks keeps its frozen backend order
+// and each card keeps featured=true; only served state differs.
+function servedLateState(game, state) {
+  const hidden = state === 'final'
+  const baseCodes = (game.context.reason_codes || []).filter(code => !code.startsWith('pregame_context'))
+  return {
+    ...game,
+    state,
+    context: {
+      ...game.context,
+      sentence: hidden ? null : game.context.sentence,
+      reason_codes: hidden ? [...baseCodes, 'pregame_context_hidden'] : baseCodes,
+    },
+  }
+}
+
+function featuredLifecyclePayload({ uncertainIndex }) {
+  const base = productionPayload()
+  const games = base.games.map((game, index) => servedLateState(
+    { ...game, featured: false, featured_reason_codes: [] },
+    index === uncertainIndex ? 'uncertain' : 'final',
+  ))
+  // Frozen featured order: final, (uncertain or final), final, final.
+  const featuredIndexes = [9, 5, 2, 12]
+  for (const index of featuredIndexes) {
+    games[index] = { ...games[index], featured: true, featured_reason_codes: ['vulnerable_team'] }
+  }
+  const byState = { scheduled: 0, live: 0, final: 0, postponed: 0, suspended: 0, uncertain: 0 }
+  for (const game of games) byState[game.state] += 1
+  return {
+    ...base,
+    summary: { ...base.summary, games_by_state: byState },
+    lead: { ...base.lead, reason_codes: [...base.lead.reason_codes, 'pregame_context'] },
+    featured_game_pks: featuredIndexes.map(index => games[index].game_pk),
+    games,
+  }
+}
+
+// 1 uncertain + 14 final; featured = [final, uncertain, final, final].
+export function lateNightFeaturedPayload() {
+  return featuredLifecyclePayload({ uncertainIndex: 5 })
+}
+
+// 15 final; all 4 featured games final.
+export function allFinalFeaturedPayload() {
+  return featuredLifecyclePayload({ uncertainIndex: -1 })
+}
