@@ -207,18 +207,6 @@ def normalize_schedule_status_state(game_or_status: dict | None) -> str:
     return classify_status(status).status_state
 
 
-def is_cancelled_status(status: dict | None) -> bool:
-    """True only when raw MLB status classifies as an authoritative cancellation.
-
-    A cancelled game is terminal but never played: it is not final, postponed,
-    or suspended. The stored ``scheduled_games.status_state`` collapses it into
-    ``other`` alongside live and unrecognized states, so callers that need to
-    tell a cancellation apart must re-classify the raw MLB status here instead
-    of treating ``other`` as terminal.
-    """
-    return classify_status(status).state == CANCELLED
-
-
 def has_safe_final_status(game: dict | None) -> bool:
     """Return True only when status is final by code/detail precedence."""
     return classify_game_finality(game).has_safe_final_status

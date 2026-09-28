@@ -38,10 +38,13 @@ distinguish cancelled from live or unrecognized.
 
 ## Fix: cancelled is terminal non-played, proven by evidence
 
-There is no migration and no rewrite of any stored state.
+There is no migration and no rewrite of any stored state. The canonical
+modules `game_finality.py` and `dashboard_snapshot.py` are byte-identical to
+main.
 
-- `game_finality.is_cancelled_status(status)` is the one predicate. It is True
-  only when the existing `classify_status` authority returns `cancelled`.
+- `slate_coverage.is_cancelled_status(status)` is the one predicate. It is True
+  only when the existing `game_finality.classify_status` authority returns
+  `cancelled`.
 - `slate_coverage` marks a game cancelled only when all of the following hold:
   1. Every `scheduled_games` row for the game is `other`.
   2. Those rows carry one agreeing, non-empty raw `status_code`.
@@ -57,8 +60,11 @@ There is no migration and no rewrite of any stored state.
 - The payload adds `games_cancelled` and `cancelled_game_pks`, plus the
   evidence code `cancelled_games_excluded` (not a blocker). Diagnostics no
   longer list a cancelled game as non-final.
-- `dashboard_snapshot` logs one line per candidate when a cancellation was
-  excluded.
+- `sync.complete_sync_run_with_snapshot` logs one line per candidate when a
+  cancellation was excluded.
+- `slate_coverage.py` is a frozen surface. The change carries the exact-path,
+  decision-linked exception `CANCELLED_GAME_SLATE_COVERAGE_PATHS`; see
+  `docs/decisions/2026-09-28-cancelled-game-slate-coverage-terminality.md`.
 
 Everything else is unchanged:
 

@@ -296,6 +296,7 @@ def test_frozen_legacy_what_changed_files_untouched():
             + freeze_policy.GAP51_REST_STATUS_FROZEN_READER_PATHS
             + freeze_policy.GAP30_TEAM_STATE_DELTA_PATHS
             + freeze_policy.GAP31_REST_STATUS_DELTA_PATHS
+            + freeze_policy.CANCELLED_GAME_SLATE_COVERAGE_PATHS
         ),
     )
     assert moved == [], (

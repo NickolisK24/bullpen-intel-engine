@@ -507,6 +507,19 @@ CU06_INCREMENTAL_READ_MODEL_PATHS = (
     'backend/services/bullpen_context.py',
 )
 
+# Cancelled game terminality, September 28 2026. Slate coverage counted an
+# MLB-cancelled game (stored ``status_state='other'``) as non-final, so a slate
+# holding one could never publish (candidate 3954, game 823490). The coverage
+# owner may now exclude a game as terminal non-played ONLY on positive schedule
+# evidence re-classified by the shared game_finality authority; ``other``
+# without that evidence, suspended, scheduled, live, postponed and every final
+# marker rule are unchanged. Decision authority:
+# docs/decisions/2026-09-28-cancelled-game-slate-coverage-terminality.md.
+# This exact-path approval becomes inert after merge.
+CANCELLED_GAME_SLATE_COVERAGE_PATHS = (
+    'backend/services/slate_coverage.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

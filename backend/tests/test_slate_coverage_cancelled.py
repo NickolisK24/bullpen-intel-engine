@@ -16,11 +16,8 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.slate_game import SlateGame
 from services import dashboard_snapshot, slate_coverage
-from services.game_finality import (
-    classify_status,
-    is_cancelled_status,
-    normalize_schedule_status_state,
-)
+from services.game_finality import classify_status, normalize_schedule_status_state
+from services.slate_coverage import is_cancelled_status
 from tests.test_slate_coverage import _marker, _schedule_game, app  # noqa: F401
 from utils.db import db
 

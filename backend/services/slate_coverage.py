@@ -9,7 +9,8 @@ from models.scheduled_game import ScheduledGame
 from models.slate_game import SlateGame
 from models.sync_failure import SyncFailure
 from services.game_finality import (
-    is_cancelled_status,
+    CANCELLED,
+    classify_status,
     scheduled_rows_have_unresolved_resumed_linkage,
 )
 from utils.db import db
@@ -259,6 +260,18 @@ def _scheduled_games(schedule_rows):
         })
     games.sort(key=lambda item: item['game_pk'])
     return games
+
+
+def is_cancelled_status(status):
+    """True only when raw MLB status is an authoritative cancellation.
+
+    Delegates to the shared ``game_finality.classify_status`` authority; no
+    second status vocabulary is introduced. A cancelled game is terminal but
+    never played: not final, postponed, or suspended. ``scheduled_games``
+    stores it as ``status_state='other'`` alongside live and unrecognized
+    states, so ``other`` alone is never treated as terminal.
+    """
+    return classify_status(status).state == CANCELLED
 
 
 def _normalized_code(value):

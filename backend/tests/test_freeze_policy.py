@@ -773,3 +773,35 @@ def test_f019_exception_is_exact_and_decision_linked():
     for exact_path in approved:
         assert f'`{exact_path}`' in decision
     assert 'Existing immutable artifacts are not rewritten.' in decision
+
+
+def test_cancelled_game_slate_coverage_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.CANCELLED_GAME_SLATE_COVERAGE_PATHS
+    assert approved == ('backend/services/slate_coverage.py',)
+    assert freeze_policy.protected_hits(
+        ['backend/services/slate_coverage.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == []
+    for neighbour in (
+        'backend/services/board_freshness.py',
+        'backend/services/team_changes.py',
+    ):
+        assert freeze_policy.protected_hits(
+            [neighbour],
+            exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+            approved=approved,
+        ) == [neighbour]
+    assert freeze_policy.protected_hits(
+        ['backend/services/dashboard_snapshot.py'],
+        exact=freeze_policy.FROZEN_PHASE0E_LEGACY_PUBLIC_PATHS,
+        approved=approved,
+    ) == ['backend/services/dashboard_snapshot.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-09-28-cancelled-game-slate-coverage-terminality.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/slate_coverage.py`' in decision
+    assert 'A cancelled game is never counted as final.' in decision
+    assert "`other` without cancellation evidence still blocks." in decision
