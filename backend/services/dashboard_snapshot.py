@@ -154,11 +154,25 @@ def _compute_payload_slate_coverage(
                 exc,
             )
     try:
-        return slate_coverage.compute_slate_coverage(
+        coverage = slate_coverage.compute_slate_coverage(
             data_through,
             sync_status=freshness.get('sync_status'),
             publication_critical_complete=publication_critical_complete,
         )
+        if coverage.get('games_cancelled'):
+            # One line per candidate: an authoritative cancellation is a terminal
+            # exclusion, distinct from a true non-final slate blocker.
+            logger.info(
+                'Dashboard snapshot slate coverage excluded cancelled games '
+                'slate_date=%s games_cancelled=%s cancelled_game_pks=%s '
+                'complete_enough_to_publish=%s reason_codes=%s.',
+                coverage.get('slate_date'),
+                coverage.get('games_cancelled'),
+                coverage.get('cancelled_game_pks'),
+                coverage.get('complete_enough_to_publish'),
+                coverage.get('reason_codes'),
+            )
+        return coverage
     except Exception as exc:  # noqa: BLE001 - snapshot coverage must fail closed
         logger.warning(
             'Could not compute dashboard snapshot slate coverage for %s: %s',
