@@ -5620,6 +5620,31 @@ def publication_withheld_reason(snapshot):
     return reason or DASHBOARD_SNAPSHOT_PENDING_NOT_PUBLISHED
 
 
+def _log_cancelled_slate_exclusions(snapshot, *, published):
+    """One line per candidate when authoritative cancellations were excluded.
+
+    Distinguishes a terminal cancelled-game exclusion from a true non-final
+    slate blocker in run logs without per-game noise.
+    """
+    payload = getattr(snapshot, 'payload', None)
+    freshness = payload.get('freshness') if isinstance(payload, dict) else None
+    coverage = freshness.get('slate_coverage') if isinstance(freshness, dict) else None
+    if not isinstance(coverage, dict) or not coverage.get('games_cancelled'):
+        return
+    logger.info(
+        'Dashboard snapshot slate coverage excluded cancelled games '
+        'snapshot_id=%s slate_date=%s games_cancelled=%s cancelled_game_pks=%s '
+        'complete_enough_to_publish=%s published=%s reason_codes=%s.',
+        getattr(snapshot, 'id', None),
+        coverage.get('slate_date'),
+        coverage.get('games_cancelled'),
+        coverage.get('cancelled_game_pks'),
+        coverage.get('complete_enough_to_publish'),
+        published,
+        coverage.get('reason_codes'),
+    )
+
+
 def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
@@ -5683,6 +5708,7 @@ def complete_sync_run_with_snapshot(
             publication_critical_complete=publication_critical_complete,
         )
         published = is_trusted_publication(snapshot)
+        _log_cancelled_slate_exclusions(snapshot, published=published)
         if not published:
             # The pending candidate row is diagnostic evidence: commit it, but do
             # not advance run lineage, run publication hooks, or apply the

@@ -6,8 +6,11 @@ from typing import Iterable, Mapping
 
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
+from models.slate_game import SlateGame
 from models.sync_failure import SyncFailure
 from services.game_finality import (
+    CANCELLED,
+    classify_status,
     scheduled_rows_have_unresolved_resumed_linkage,
 )
 from utils.db import db
@@ -25,6 +28,10 @@ REASON_COMPLETENESS_UNKNOWN = 'completeness_unknown'
 REASON_SCHEDULED_GAMES_NOT_FINAL = 'scheduled_games_not_final'
 REASON_SUSPENDED_GAMES_NOT_FINAL = 'suspended_games_not_final'
 REASON_RESUMED_LINKAGE_UNRESOLVED = 'resumed_linkage_unresolved'
+# Evidence code, not a blocker: one or more games on the slate were
+# authoritatively cancelled (terminal, never played) and excluded from the
+# finality and postgame-marker requirements.
+REASON_CANCELLED_GAMES_EXCLUDED = 'cancelled_games_excluded'
 
 DIAGNOSTIC_MISSING_MARKER = 'missing_marker'
 DIAGNOSTIC_INCOMPLETE_MARKER = 'incomplete_marker'
@@ -150,6 +157,7 @@ def _game_diagnostic(game):
         'status_state': game.get('status_state'),
         'game_type': game.get('game_type'),
         'resumed_linkage_unresolved': bool(game.get('resumed_linkage_unresolved')),
+        'cancelled': bool(game.get('cancelled')),
     }
 
 
@@ -234,6 +242,14 @@ def _scheduled_games(schedule_rows):
             'game_pk': game_pk,
             'status_state': status,
             'status_code': _collapsed_field(rows, 'status_code'),
+            'all_rows_other': all(
+                getattr(row, 'status_state', None) == ScheduledGame.STATE_OTHER
+                for row in rows
+            ),
+            'row_status_codes': {
+                _normalized_code(getattr(row, 'status_code', None)) for row in rows
+            },
+            'cancelled': False,
             'game_type': _collapsed_field(rows, 'game_type'),
             'home_team': _side_team_id(rows, 'home'),
             'away_team': _side_team_id(rows, 'away'),
@@ -244,6 +260,79 @@ def _scheduled_games(schedule_rows):
         })
     games.sort(key=lambda item: item['game_pk'])
     return games
+
+
+def is_cancelled_status(status):
+    """True only when raw MLB status is an authoritative cancellation.
+
+    Delegates to the shared ``game_finality.classify_status`` authority; no
+    second status vocabulary is introduced. A cancelled game is terminal but
+    never played: not final, postponed, or suspended. ``scheduled_games``
+    stores it as ``status_state='other'`` alongside live and unrecognized
+    states, so ``other`` alone is never treated as terminal.
+    """
+    return classify_status(status).state == CANCELLED
+
+
+def _normalized_code(value):
+    text = str(value or '').strip().upper()
+    return text or None
+
+
+def _slate_rows_by_game_pk(game_pks, slate_rows=None):
+    if slate_rows is None:
+        slate_rows = (
+            SlateGame.query
+            .filter(SlateGame.game_pk.in_(list(game_pks)))
+            .all()
+            if game_pks
+            else []
+        )
+    return {
+        int(row.game_pk): row
+        for row in slate_rows or []
+        if getattr(row, 'game_pk', None) is not None
+    }
+
+
+def _mark_authoritatively_cancelled_games(games, slate_rows=None):
+    """Flag games whose stored schedule evidence proves an MLB cancellation.
+
+    ``scheduled_games`` stores a cancellation as ``status_state='other'``, the
+    same bucket as live and unrecognized states, so ``other`` alone never
+    counts. A game is cancelled only when every one of its schedule rows is
+    ``other`` with one agreeing raw ``status_code``, its resumed linkage is
+    resolved, and the ``slate_games`` row written by the same schedule ingest
+    (same game_pk, same raw status_code) classifies as cancelled under the
+    shared ``game_finality`` authority. Anything short of that stays blocking.
+    """
+    candidates = [
+        game for game in games
+        if game['status_state'] == ScheduledGame.STATE_OTHER
+        and game.get('all_rows_other')
+        and not game.get('resumed_linkage_unresolved')
+        and len(game.get('row_status_codes') or ()) == 1
+        and None not in game['row_status_codes']
+    ]
+    if not candidates:
+        return
+    slate_by_pk = _slate_rows_by_game_pk(
+        {game['game_pk'] for game in candidates},
+        slate_rows,
+    )
+    for game in candidates:
+        slate_row = slate_by_pk.get(game['game_pk'])
+        if slate_row is None:
+            continue
+        (schedule_code,) = game['row_status_codes']
+        if _normalized_code(getattr(slate_row, 'status_code', None)) != schedule_code:
+            continue
+        if is_cancelled_status({
+            'statusCode': slate_row.status_code,
+            'detailedState': slate_row.status_detailed,
+            'abstractGameState': slate_row.status_abstract,
+        }):
+            game['cancelled'] = True
 
 
 def _markers_by_game_pk(game_pks, markers=None):
@@ -399,6 +488,7 @@ def _slate_diagnostics(
         if (
             game.get('status_state') != ScheduledGame.STATE_FINAL
             and game.get('status_state') != ScheduledGame.STATE_POSTPONED
+            and not game.get('cancelled')
         )
         or game.get('resumed_linkage_unresolved')
     ]
@@ -423,6 +513,9 @@ def _slate_diagnostics(
         'postgame_blockers': blockers,
         'non_final_game_count': len(non_final_games),
         'non_final_games': non_final_games,
+        'cancelled_game_pks': [
+            game['game_pk'] for game in games if game.get('cancelled')
+        ],
     }
 
 
@@ -437,6 +530,7 @@ def unknown_slate_coverage(slate_date=None, *, reason_code=REASON_COMPLETENESS_U
         'games_incomplete': 0,
         'games_failed': 0,
         'games_postponed': 0,
+        'games_cancelled': 0,
         'games_suspended': 0,
         'games_unresolved': 0,
         'games_included': 0,
@@ -461,6 +555,7 @@ def compute_slate_coverage(
     publication_critical_complete=None,
     schedule_rows: Iterable[ScheduledGame] | None = None,
     postgame_markers: Iterable[PostgameProcessedGame] | None = None,
+    slate_game_rows: Iterable[SlateGame] | None = None,
     schedule_material_available: bool | None = None,
     include_diagnostics: bool = False,
 ):
@@ -505,6 +600,7 @@ def compute_slate_coverage(
                 'games_incomplete': 0,
                 'games_failed': 0,
                 'games_postponed': 0,
+                'games_cancelled': 0,
                 'games_suspended': 0,
                 'games_unresolved': 0,
                 'games_included': 0,
@@ -537,9 +633,15 @@ def compute_slate_coverage(
             )
         return payload
 
+    # Postponed and authoritatively cancelled games are both terminal for this
+    # slate and excluded from finality/marker requirements; a cancelled game is
+    # counted as cancelled, never as final.
+    _mark_authoritatively_cancelled_games(games, slate_game_rows)
+    cancelled_games = [game for game in games if game.get('cancelled')]
     included_games = [
         game for game in games
         if game['status_state'] != ScheduledGame.STATE_POSTPONED
+        and not game.get('cancelled')
     ]
     final_games = [
         game for game in included_games
@@ -624,6 +726,9 @@ def compute_slate_coverage(
     else:
         reason_codes.append(REASON_VALIDATIONS_FAILED)
 
+    if cancelled_games:
+        reason_codes.append(REASON_CANCELLED_GAMES_EXCLUDED)
+
     reason_codes = _unique(reason_codes)
     complete_enough = validations_passed and not _partial_blocks
 
@@ -638,6 +743,8 @@ def compute_slate_coverage(
             1 for game in games
             if game['status_state'] == ScheduledGame.STATE_POSTPONED
         ),
+        'games_cancelled': len(cancelled_games),
+        'cancelled_game_pks': [game['game_pk'] for game in cancelled_games],
         'games_suspended': sum(
             1 for game in games
             if game['status_state'] == ScheduledGame.STATE_SUSPENDED

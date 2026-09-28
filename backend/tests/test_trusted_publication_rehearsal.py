@@ -1941,6 +1941,168 @@ def test_rehearsal_withheld_candidate_never_becomes_a_publication(monkeypatch):
             drop_test_schema(app)
 
 
+CANCELLED_REHEARSAL_PK = 7823490
+
+
+def _seed_represented_cancellation(represented, *, slate_evidence=True):
+    """An MLB-cancelled game on the represented slate (2026-09-27 shape).
+
+    Both team rows store ``status_state='other'`` with raw statusCode ``CR``,
+    exactly as schedule ingestion writes a cancellation; the same ingest writes
+    the ``slate_games`` row carrying MLB's detailedState. No marker, game log or
+    final state is written for it.
+    """
+    from models.slate_game import SlateGame
+
+    home, away = TEAM_IDS[4], TEAM_IDS[5]
+    for team_id, opponent_id, side in ((home, away, 'home'), (away, home, 'away')):
+        db.session.add(ScheduledGame(
+            team_id=team_id, opponent_team_id=opponent_id, home_away=side,
+            game_pk=CANCELLED_REHEARSAL_PK, game_date=represented, game_type='R',
+            status_code='CR', status_state=ScheduledGame.STATE_OTHER,
+        ))
+    if slate_evidence:
+        db.session.add(SlateGame(
+            game_pk=CANCELLED_REHEARSAL_PK, game_date_et=represented,
+            game_time_utc=utc_now_naive().replace(
+                year=represented.year, month=represented.month, day=represented.day,
+                hour=19, minute=10, second=0, microsecond=0,
+            ),
+            home_team_id=home, away_team_id=away,
+            status_abstract='Final', status_detailed='Cancelled', status_code='CR',
+            normalized_state='cancelled', game_number=1,
+        ))
+    db.session.commit()
+
+
+def test_rehearsal_publishes_a_slate_with_an_authoritative_cancellation(monkeypatch):
+    """2026-09-27 incident rehearsal: every final game on the represented slate
+    is fully ingested and one game was cancelled by MLB. The real publication
+    path must publish, keep the 30-team Team State proof, and project Tonight
+    v1 for the availability date without the cancelled game."""
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from models.tonight_publication import TonightPublication
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='cancelled game publication rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            represented = rehearsal.reference_date - timedelta(days=1)
+            _seed_represented_cancellation(represented)
+
+            snapshot = rehearsal.publish('cancelled_game_rehearsal')
+
+            assert snapshot.error_message is None
+            assert snapshot.data_through == represented
+            assert snapshot.availability_reference_date == rehearsal.reference_date
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert coverage['slate_date'] == represented.isoformat()
+            assert coverage['games_cancelled'] == 1
+            assert coverage['cancelled_game_pks'] == [CANCELLED_REHEARSAL_PK]
+            assert coverage['games_incomplete'] == 0
+            assert coverage['games_final'] == coverage['games_included']
+            assert coverage['games_final'] == coverage['games_fully_ingested']
+            assert coverage['complete_enough_to_publish'] is True
+            assert coverage['reason_codes'] == ['slate_complete', 'cancelled_games_excluded']
+            # The cancelled game is never rewritten as final.
+            assert {
+                row.status_state
+                for row in ScheduledGame.query.filter_by(game_pk=CANCELLED_REHEARSAL_PK)
+            } == {ScheduledGame.STATE_OTHER}
+            assert PostgameProcessedGame.query.filter_by(
+                mlb_game_pk=CANCELLED_REHEARSAL_PK,
+            ).count() == 0
+
+            # Team State proof and receipts are unchanged: 30/30.
+            receipts = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+            assert set(receipts) == {str(team_id) for team_id in TEAM_IDS}
+            proof = TeamStatePublicationProof.query.filter_by(snapshot_id=snapshot.id).one()
+            assert proof.captured_team_count == len(TEAM_IDS) == 30
+
+            # Tonight v1 is projected for the availability date, bound to this
+            # publication; the represented-date cancellation is not in it.
+            row = TonightPublication.query.filter_by(dashboard_snapshot_id=snapshot.id).one()
+            assert row.reference_date == rehearsal.reference_date
+            assert row.data_through == represented
+            game_pks = {game['game_pk'] for game in row.payload['games']}
+            assert CANCELLED_REHEARSAL_PK not in game_pks
+            assert row.payload['summary']['game_count'] == 2
+            print(
+                'REHEARSAL cancelled_game_publication '
+                f'snapshot={snapshot.id} data_through={represented} '
+                f'games_cancelled={coverage["games_cancelled"]} '
+                f'tonight_v1={row.id}'
+            )
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
+
+
+def test_rehearsal_withholds_other_state_without_cancellation_evidence(monkeypatch):
+    """The same slate without the slate_games cancellation evidence: an
+    ``other`` game alone is still a non-final blocker and nothing publishes."""
+    from models.tonight_publication import TonightPublication
+
+    rehearsal = _TonightRehearsal(monkeypatch, name='uncertified other rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            represented = rehearsal.reference_date - timedelta(days=1)
+            _seed_represented_cancellation(represented, slate_evidence=False)
+            # An unpublishable candidate triggers the real stale-finality refresh,
+            # which re-fetches the represented slate from MLB. Keep the rehearsal
+            # hermetic: the refresh runs, but MLB returns nothing new, so the only
+            # schedule evidence is what this test seeded.
+            from services import schedule_ingestion
+            schedule_fetches = []
+            monkeypatch.setattr(
+                schedule_ingestion.mlb_client, 'get_schedule',
+                lambda **kwargs: schedule_fetches.append(kwargs) or [],
+            )
+            published_before = {
+                row.id for row in DashboardSnapshot.query.filter_by(is_published=True)
+            }
+            run = SyncRun(
+                job_name='daily_sync', started_at=utc_now_naive() - timedelta(minutes=2),
+                completed_at=utc_now_naive(), status='success', stage='published',
+                source='test', latest_game_date=represented,
+                latest_workload_date=represented,
+                latest_fatigue_calculated_at=utc_now_naive(),
+            )
+            db.session.add(run)
+            db.session.commit()
+
+            candidate = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+                sync_run_id=run.id, source='uncertified_other', publish=True,
+                raise_errors=True,
+            )
+
+            reason = dashboard_snapshot.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+            assert candidate.is_published is False
+            assert candidate.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert candidate.error_message == reason
+            # The stale-finality refresh really ran for the represented slate.
+            assert {
+                'start_date': represented.isoformat(),
+                'end_date': represented.isoformat(),
+            } in schedule_fetches
+            coverage = candidate.payload['freshness']['slate_coverage']
+            assert coverage['games_cancelled'] == 0
+            assert 'scheduled_games_not_final' in coverage['reason_codes']
+            assert 'cancelled_games_excluded' not in coverage['reason_codes']
+            assert {
+                row.id for row in DashboardSnapshot.query.filter_by(is_published=True)
+            } == published_before
+            assert TonightPublication.query.filter_by(
+                dashboard_snapshot_id=candidate.id,
+            ).count() == 0
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
+
+
 def _inject_exact_predecessor(monkeypatch):
     """At the real proof seam, add one exact trusted predecessor for TB-09.
 
