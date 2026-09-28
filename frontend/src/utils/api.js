@@ -448,15 +448,6 @@ export const requestMagicLink = (email) => request('/auth/request-link', {
   body: JSON.stringify({ email }),
 })
 
-export const signupAudience = (email, options = {}) => request('/audience/signup', {
-  method: 'POST',
-  authToken: null,
-  body: JSON.stringify({
-    email,
-    source: options.source || 'homepage_hero',
-  }),
-})
-
 export const verifyMagicLink = async (token) => {
   const response = await request('/auth/verify', {
     method: 'POST',
@@ -599,9 +590,6 @@ export const getTeamStory = (teamId, params = {}) => {
 export const getTeamShareCard = (teamId, params = {}) => {
   return request(`/share-cards/team-state/${encodeURIComponent(teamId)}${buildQuery(params)}`)
 }
-export const getSinceYesterdayShareArtifact = (teamId, params = {}) => (
-  request(`/share-cards/since-yesterday/${encodeURIComponent(teamId)}${buildQuery(params)}`)
-)
 // What Changed Since Last Game — followed-team change summary.
 // Descriptive only (no ranking/selection/recommendation).
 export const getTeamChanges = (teamId) => request(`/bullpen/teams/${teamId}/changes`)
@@ -631,7 +619,6 @@ const currentProjectionOptions = options => ({
   },
   ...options,
 })
-export const getHomeProjection = (options = {}) => request('/bullpen/home', currentProjectionOptions(options))
 export const getLeagueProjection = (options = {}) => request('/bullpen/league', currentProjectionOptions(options))
 export const getStoriesProjection = (options = {}) => request('/bullpen/stories', currentProjectionOptions(options))
 export const getTrustProjection = (options = {}) => request('/bullpen/trust', currentProjectionOptions(options))
@@ -647,20 +634,6 @@ export const markSlateBriefingPosted = (payload) => request('/slate-briefing/mar
 })
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
-// Intelligence Surface — the single league lead story for the homepage.
-export const getTodayIntelligence = (params = {}, options = {}) => (
-  request(`/bullpen/intelligence/today${buildQuery(params)}`, {
-    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
-    ...options,
-  })
-)
-// Intelligence Surface — pregame bullpen cards for the homepage Tonight rail.
-export const getTonightIntelligence = (params = {}, options = {}) => (
-  request(`/bullpen/intelligence/tonight${buildQuery(params)}`, {
-    timeoutMs: TONIGHT_INTELLIGENCE_TIMEOUT_MS,
-    ...options,
-  })
-)
 // Tonight v1 — the stored, publication-bound Tonight edition for /tonight.
 // Explicit contract only: this helper never falls back to legacy tonight_v5,
 // and it uses no client response cache so each load reads the served edition.

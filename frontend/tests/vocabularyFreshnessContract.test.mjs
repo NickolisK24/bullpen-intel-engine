@@ -74,7 +74,9 @@ test('the glossary teaches exactly the labels the product renders', () => {
 // context strip rendered a bare Read Confidence value. A surface list that a
 // reader-facing component can be absent from is not a contract.
 const GOVERNED_SURFACES = [
-  '../src/components/home/IntelligenceSurface.jsx',
+  // TN-11: the Tonight home replaces the retired Home surface.
+  '../src/components/tonight/TonightHeader.jsx',
+  '../src/components/tonight/tonightView.js',
   '../src/components/Sidebar.jsx',
   '../src/components/dashboard/SyncStatus.jsx',
   '../src/components/dashboard/syncStatusView.js',
@@ -234,8 +236,8 @@ test('Data Status and Workload Data stay separate families', () => {
   }
 })
 
-test('Today no longer title-cases backend enums into reader copy', async () => {
-  const source = await read('../src/components/home/IntelligenceSurface.jsx')
+test('the Tonight home does not title-case backend enums into reader copy', async () => {
+  const source = await read('../src/components/tonight/tonightView.js')
   assert.equal(source.includes('function displayKey'), false)
   assert.equal(/\bdisplayKey\(/.test(source), false)
 })

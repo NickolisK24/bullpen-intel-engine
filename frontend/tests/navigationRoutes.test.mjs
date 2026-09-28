@@ -68,7 +68,9 @@ test('root HTML uses the public BaseballOS domain for canonical and social metad
 test('public homepage and README copy do not imply evidence surfacing', () => {
   const publicCopy = [
     readFileSync(new URL('../index.html', import.meta.url), 'utf8'),
-    readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8'),
+    // TN-11: the homepage is Tonight v1; the retired Home surface is gone.
+    readFileSync(new URL('../src/components/tonight/TonightPage.jsx', import.meta.url), 'utf8'),
+    readFileSync(new URL('../src/components/tonight/tonightView.js', import.meta.url), 'utf8'),
     readFileSync(new URL('../../README.md', import.meta.url), 'utf8'),
   ].join('\n')
 

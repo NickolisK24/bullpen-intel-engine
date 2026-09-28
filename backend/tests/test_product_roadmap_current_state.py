@@ -375,32 +375,23 @@ def test_history_closeout_pins_deployed_proof_and_expansion_boundary():
 
 
 def test_today_01_completion_integrates_the_existing_lead_owner_once():
-    """The completed package consumes its existing owner without request fan-out."""
-    today_surface = TODAY_SURFACE_PATH.read_text(encoding='utf-8')
+    """TODAY-01's lead owner remains served; its Home consumer was retired.
+
+    The completed package consumed its existing owner without request fan-out.
+    TN-10 moved the public root to Tonight v1 and TN-11 deleted the dormant Home
+    surface together with its Home-only clients, so the frontend half of this
+    contract is now the absence of that surface. The backend owner is unchanged.
+    """
     frontend_api = FRONTEND_API_PATH.read_text(encoding='utf-8')
     bullpen_api = BULLPEN_API_PATH.read_text(encoding='utf-8')
 
     assert "@bullpen_bp.route('/intelligence/today', methods=['GET'])" in bullpen_api
     assert 'serve_today_lead_story(reference_date=reference_date)' in bullpen_api
-    assert 'export const getTodayIntelligence' in frontend_api
-    today_owner = 'useFetch(options => getTodayIntelligence({}, options))'
-    assert today_surface.count(today_owner) == 1
-    assert 'getTeamBoardV2' not in today_surface
-    assert 'getTeamBullpen' not in today_surface
 
-    # TODAY-01 composes the lead into a functioning Daily Edition; it is not a
-    # replacement for the already-adopted Tonight and league sections. F-007
-    # makes the trusted publication the Home Landscape authority, while F-004
-    # projects that same governed value without the comprehensive carrier.
-    for existing_owner in (
-        'getTonightIntelligence',
-        'getHomeProjection',
-        'getTeams',
-    ):
-        assert existing_owner in today_surface, existing_owner
-    assert 'getBullpenLandscape' not in today_surface
-    assert 'getBullpenDashboard' not in today_surface
-    assert 'const landscape = home.data?.landscape || null' in today_surface
+    assert not TODAY_SURFACE_PATH.exists()
+    for retired_client in ('getTodayIntelligence', 'getTonightIntelligence', 'getHomeProjection'):
+        assert f'export const {retired_client}' not in frontend_api, retired_client
+    assert 'export const getTonightV1' in frontend_api
 
 
 def test_core_loop_closeout_preserves_every_authority_boundary():

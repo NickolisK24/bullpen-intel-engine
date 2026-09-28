@@ -151,9 +151,9 @@ test('the canonical StoryCard preserves trust lane, bridge, and availability dep
 })
 
 // ── Home and Stories untouched by the retirement ─────────────────────────────
-test('Home and Stories do not reference the retired panel or flag', () => {
+test('the Tonight home and Stories do not reference the retired panel or flag', () => {
   for (const rel of [
-    'components/home/Home.jsx',
+    'components/tonight/TonightPage.jsx',
     'components/stories/Stories.jsx',
     'components/stories/storiesCanonicalFeedView.js',
   ]) {

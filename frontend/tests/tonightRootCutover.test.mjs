@@ -68,11 +68,12 @@ test('/today redirects to the canonical root in the client and on the host, with
   assert.equal(vercel.routes.some(item => item.src === '^/$' || item.headers?.Location === '/today'), false)
 })
 
-test('Home is unrouted and dormant; App no longer imports it', () => {
+test('legacy Home is retired: unrouted, unimported and deleted (TN-11)', () => {
   const app = read('../src/App.jsx')
   assert.doesNotMatch(app, /components\/home\/Home/)
   assert.equal(APP_ROUTES.some(item => item.Component?.name === 'Home'), false)
-  assert.equal(existsSync(new URL('../src/components/home/Home.jsx', import.meta.url)), true, 'kept for TN-11')
+  assert.equal(existsSync(new URL('../src/components/home/Home.jsx', import.meta.url)), false, 'deleted in TN-11')
+  assert.equal(existsSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url)), false, 'deleted in TN-11')
 })
 
 test('Matchup, Pitcher, Team Board and History routes are unchanged', () => {

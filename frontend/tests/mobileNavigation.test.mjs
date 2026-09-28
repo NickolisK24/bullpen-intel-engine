@@ -18,7 +18,6 @@ after(async () => {
 })
 
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
-const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const { PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } = await server.ssrLoadModule('/src/utils/navigation.js')
 
 const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
@@ -170,27 +169,4 @@ test('persistent navigation begins at xl while the top-bar path remains active b
   assert.ok(appSource.includes('xl:flex-row'))
   assert.ok(appSource.includes('xl:ml-56'))
   assert.equal(appSource.includes('lg:ml-56'), false)
-})
-
-// ── First-use entry path on Today ──────────────────────────────────────────
-
-test('the first-use entry area offers the four primary actions with existing routes', () => {
-  const html = renderAt(React.createElement(IntelligenceSurfaceView, {}))
-  // ("Today's" has an apostrophe React escapes to &#x27;, so match the rest.)
-  for (const title of ['League Board', 'Find a Team', 'Compare Two Bullpens', 'Find a Reliever']) {
-    assert.ok(htmlIncludes(html, title), `missing action: ${title}`)
-  }
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen"'))
-  assert.ok(htmlIncludes(html, 'href="/dashboard"'))
-})
-
-test('the entry area sits after the daily read and does not replace it', () => {
-  const html = renderAt(React.createElement(IntelligenceSurfaceView, {}))
-  const dailyRead = html.indexOf('id="bullpen-picture"')
-  const entryArea = html.indexOf('id="explore-baseballos"')
-  assert.ok(dailyRead > -1, 'primary daily read is still rendered')
-  assert.ok(entryArea > -1, 'first-use entry area is rendered')
-  assert.ok(dailyRead < entryArea, 'entry area follows the daily read')
 })

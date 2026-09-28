@@ -182,11 +182,12 @@ test('all supported evidence targets are focusable and asynchronous navigation i
   assert.equal(hook.includes('setTimeout'), false)
 })
 
-test('Dashboard, Stories, Today, Compare, and preferred-team links use the canonical helper', () => {
+test('Dashboard, Stories, Tonight, Compare, and preferred-team links use the canonical helper', () => {
   const files = [
     '../src/components/dashboard/bullpenLandscapeView.js',
     '../src/components/stories/storiesCanonicalFeedView.js',
-    '../src/components/home/IntelligenceSurface.jsx',
+    // TN-11: the retired Home surface is replaced by the Tonight home.
+    '../src/components/tonight/LeagueChanges.jsx',
     '../src/components/bullpen/board/BullpenComparisonView.jsx',
     '../src/utils/preferredTeam.js',
   ]

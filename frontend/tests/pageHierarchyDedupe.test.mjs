@@ -17,7 +17,7 @@ after(async () => {
   await server.close()
 })
 
-const { default: Home } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { default: TonightPage } = await server.ssrLoadModule('/src/components/tonight/TonightPage.jsx')
 const { MethodologyView } = await server.ssrLoadModule('/src/components/methodology/Methodology.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
@@ -211,12 +211,11 @@ test('Methodology and Data & Trust rendered text does not leak internal labels',
   assert.ok(methodologyText.includes('On Watch'))
 })
 
-test('Today route stays pointed at the Intelligence Surface', () => {
-  const source = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
-  const html = render(React.createElement(Home))
+test('the home route renders the Tonight page, never a legacy report (TN-11)', () => {
+  const source = readFileSync(new URL('../src/components/tonight/TonightPage.jsx', import.meta.url), 'utf8')
+  const html = render(React.createElement(TonightPage))
 
-  assert.ok(source.includes("import IntelligenceSurfacePage from './IntelligenceSurface'"))
-  assert.ok(source.includes('return <IntelligenceSurfacePage />'))
+  assert.ok(source.includes('getTonightV1('))
   assert.equal(source.includes('LegacyMorningBullpenReport'), false)
   assert.equal(source.includes('getBullpenDashboard'), false)
   assert.equal(html.includes('Upcoming Games'), false)

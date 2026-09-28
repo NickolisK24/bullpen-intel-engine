@@ -63,7 +63,7 @@ test('no public-copy component carries a vocabulary replacement table', async ()
     '../src/components/dashboard/DashboardStorylines.jsx',
     '../src/components/dashboard/LeagueTeamStateLandscape.jsx',
     '../src/components/trust/AvailabilityBacktestCard.jsx',
-    '../src/components/home/IntelligenceSurface.jsx',
+    '../src/components/tonight/tonightView.js',
   ]
   const forbidden = [
     "'On Watch')", "'Unavailable')", "'stretched')", "'Stretched')",
