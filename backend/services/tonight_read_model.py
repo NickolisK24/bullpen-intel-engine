@@ -1367,6 +1367,64 @@ def generate_tonight_v1_after_publication(snapshot):
     return {'status': outcome, 'tonight_publication_id': row.id}
 
 
+def ensure_tonight_v1_for_publication(snapshot, *, source):
+    """Ensure the trusted publication has its one tonight_v1 row (TN-11.7).
+
+    Operational jobs call this after a trusted Dashboard publication instead of
+    rebuilding the legacy tonight_v5 cache. An existing row for the exact
+    publication identity is reused as-is: it is never rebuilt, compared or
+    overwritten, so a later schedule change cannot mutate or conflict with an
+    immutable row. A missing row is created through the same post-publication
+    generator the publication hook uses. Never raises; one log line.
+    """
+    snapshot_id = getattr(snapshot, 'id', None)
+    reference_date = getattr(snapshot, 'availability_reference_date', None)
+    if not _projection_enabled():
+        result = {'status': 'skipped', 'reason': 'tonight_v1_projection_disabled'}
+    elif snapshot_id is None or reference_date is None:
+        result = {'status': 'skipped', 'reason': 'publication_identity_missing'}
+    else:
+        try:
+            existing = read_tonight_v1(reference_date, snapshot_id)
+        except Exception as exc:  # noqa: BLE001 - reported, never re-raised
+            db.session.rollback()
+            existing = None
+            result = {'status': 'failed', 'error': type(exc).__name__}
+        else:
+            result = None
+        if existing is not None:
+            result = {'status': 'reused', 'tonight_publication_id': existing.id}
+        elif result is None:
+            result = generate_tonight_v1_after_publication(snapshot)
+    result = dict(result or {'status': 'failed', 'error': 'no_result'})
+    result['dashboard_snapshot_id'] = snapshot_id
+    result['reference_date'] = reference_date.isoformat() if reference_date else None
+    logger.info(
+        'tonight_v1 ensure source=%s snapshot_id=%s reference_date=%s status=%s '
+        'tonight_publication_id=%s legacy_tonight_v5=not_generated',
+        source, snapshot_id, result['reference_date'], result.get('status'),
+        result.get('tonight_publication_id'),
+    )
+    return result
+
+
+def _projection_enabled():
+    """The same operational off-switch the post-publication hook honors."""
+    try:
+        from flask import current_app
+        return bool(
+            current_app
+            and current_app.config.get('TONIGHT_V1_PROJECTION_ENABLED', False)
+        )
+    except Exception:
+        return False
+
+
+def tonight_v1_ensured(result):
+    """True when the publication's tonight_v1 row exists (created or reused)."""
+    return (result or {}).get('status') in ('created', 'reused')
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _int(value):

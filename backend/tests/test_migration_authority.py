@@ -213,11 +213,16 @@ def test_head_inspection_emits_no_mutation(tmp_path, monkeypatch):
     assert database.read_bytes() == before
 
 
-def test_startup_shell_keeps_strict_failure_and_preparation_order():
+def test_startup_shell_keeps_strict_failure_and_migration_order():
     script = (BACKEND / 'scripts/render_start.sh').read_text()
-    assert 'set -euo pipefail' in script
-    assert script.index('python -m scripts.database_migrations startup') < script.index(
-        'python -m scripts.prepare_daily_edition_snapshot') < script.index('exec gunicorn')
+    code = '\n'.join(
+        line for line in script.splitlines() if not line.lstrip().startswith('#')
+    )
+    assert 'set -euo pipefail' in code
+    assert code.index('python -m scripts.database_migrations startup') < code.index(
+        'exec gunicorn')
+    # TN-11.7: legacy Daily Edition (Today) is no longer a startup prerequisite.
+    assert 'prepare_daily_edition_snapshot' not in code
 
 
 def test_repository_upgrade_calls_have_named_owners():

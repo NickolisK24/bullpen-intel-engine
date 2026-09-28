@@ -146,16 +146,7 @@ def _builders(calls):
             'states': deepcopy(states),
         }
 
-    def tonight(game, _snapshot, states, _records, _listing):
-        calls.append(('tonight', game.game_pk))
-        return {
-            'games': [{
-                'game_pk': game.game_pk,
-                'away': {'team_state': deepcopy(states.get(game.away_team_id))},
-                'home': {'team_state': deepcopy(states.get(game.home_team_id))},
-            }]
-        }
-    return board, listing, matchup, tonight
+    return board, listing, matchup
 
 
 def _seed_game():
@@ -179,7 +170,7 @@ def test_untrusted_or_noop_cu05_performs_zero_cu06_work(app):
         result = cu06.rebuild_read_model_impact(
             _cu05(performed=False), source_snapshot=_snapshot(),
             team_board_builder=builders[0], league_listing_builder=builders[1],
-            matchup_builder=builders[2], tonight_builder=builders[3],
+            matchup_builder=builders[2],
         )
         assert result.status == cu06.STATUS_NO_ACTION
         assert result.rebuild_performed is False
@@ -196,7 +187,7 @@ def test_rebuild_is_bounded_deduplicated_and_matches(app):
         result = cu06.rebuild_read_model_impact(
             source, source_snapshot=_snapshot(),
             team_board_builder=builders[0], league_listing_builder=builders[1],
-            matchup_builder=builders[2], tonight_builder=builders[3],
+            matchup_builder=builders[2],
         )
         assert result.status == 'complete'
         assert result.parity_status == PARITY_MATCH
@@ -205,21 +196,22 @@ def test_rebuild_is_bounded_deduplicated_and_matches(app):
         assert result.team_boards_rebuilt == (10, 20)
         assert result.league_rows_rebuilt == (10, 20)
         assert result.matchups_rebuilt == (777001,)
-        assert result.tonight_entries_rebuilt == (777001,)
+        # TN-11.7: the bounded rebuild no longer maintains a tonight_v5 entry.
+        assert not hasattr(result, 'tonight_entries_rebuilt')
         assert result.pitcher_models_rebuilt == ()
         assert calls.count(('matchup', 777001)) == 2  # rebuild + parity
-        assert calls.count(('tonight', 777001)) == 2
+        assert not any(call[0] == 'tonight' for call in calls)
 
 
 def test_incidental_metadata_is_excluded_but_baseball_values_are_not(app):
     with app.app_context():
         _seed_game()
         calls = []
-        board, listing, matchup, tonight = _builders(calls)
+        board, listing, matchup = _builders(calls)
         result = cu06.rebuild_read_model_impact(
             _cu05(), source_snapshot=_snapshot(),
             team_board_builder=board, league_listing_builder=listing,
-            matchup_builder=matchup, tonight_builder=tonight,
+            matchup_builder=matchup,
         )
         assert result.parity_status == PARITY_MATCH
         assert all(
@@ -236,19 +228,18 @@ def test_unrelated_team_and_unrelated_game_are_not_rebuilt(app):
         result = cu06.rebuild_read_model_impact(
             _cu05(teams=(30,), pitchers=()), source_snapshot=_snapshot(),
             team_board_builder=builders[0], league_listing_builder=builders[1],
-            matchup_builder=builders[2], tonight_builder=builders[3],
+            matchup_builder=builders[2],
         )
         assert result.team_boards_rebuilt == (30,)
         assert result.league_rows_rebuilt == (30,)
         assert result.matchups_rebuilt == ()
-        assert result.tonight_entries_rebuilt == ()
-        assert not any(call[0] in ('matchup', 'tonight') for call in calls)
+        assert not any(call[0] == 'matchup' for call in calls)
 
 
 def test_builder_failure_is_partial_and_never_publishes(app):
     with app.app_context():
         calls = []
-        _board, listing, _matchup, _tonight = _builders(calls)
+        _board, listing, _matchup = _builders(calls)
         result = cu06.rebuild_read_model_impact(
             _cu05(teams=(10,), pitchers=()), source_snapshot=_snapshot(),
             team_board_builder=lambda *_args: (_ for _ in ()).throw(RuntimeError()),
@@ -269,7 +260,7 @@ def test_direct_rebuild_is_deterministic_across_fresh_service_calls(app):
         kwargs = dict(
             source_snapshot=_snapshot(),
             team_board_builder=builders[0], league_listing_builder=builders[1],
-            matchup_builder=builders[2], tonight_builder=builders[3],
+            matchup_builder=builders[2],
         )
         first = cu06.rebuild_read_model_impact(_cu05(), **kwargs)
         second = cu06.rebuild_read_model_impact(_cu05(), **kwargs)
@@ -278,7 +269,6 @@ def test_direct_rebuild_is_deterministic_across_fresh_service_calls(app):
         )
         assert first.league_row_results == second.league_row_results
         assert first.matchup_results == second.matchup_results
-        assert first.tonight_results == second.tonight_results
 
 
 def test_shadow_snapshot_overlays_only_affected_team_and_pitcher(app):
@@ -462,7 +452,6 @@ def test_strongest_cu02_through_cu06_chain_rebuilds_then_stops(app, monkeypatch)
             team_board_builder=builders[0],
             league_listing_builder=builders[1],
             matchup_builder=builders[2],
-            tonight_builder=builders[3],
         )
 
         assert canonical.game_log_inserted == 4
@@ -477,7 +466,7 @@ def test_strongest_cu02_through_cu06_chain_rebuilds_then_stops(app, monkeypatch)
             sorted(canonical.affected_team_ids)
         )
         assert result.matchups_rebuilt == (GAME_PK,)
-        assert result.tonight_entries_rebuilt == (GAME_PK,)
+        assert not hasattr(result, 'tonight_results')
         assert result.publication_affected is False
         assert result.cache_invalidation_triggered is False
 

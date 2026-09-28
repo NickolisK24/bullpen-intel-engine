@@ -17,17 +17,41 @@ from services.tonight_intelligence_snapshot import (
 TONIGHT_REFRESH_PURPOSE = 'schedule_coherence'
 
 
+def refresh_schedule(
+    reference_date: date | None = None,
+    *,
+    source: str = 'morning_slate_schedule',
+) -> dict:
+    """Refresh schedule authority only (TN-11.7).
+
+    Updates ``scheduled_games`` / ``slate_games`` for the rolling window around
+    the product day. It builds no legacy tonight_v5 snapshot: the public Tonight
+    authority is the immutable tonight_v1 row projected from each trusted
+    Dashboard publication, so schedule coherence no longer requires a second,
+    mutable Tonight cache. Partial ingestion reports ``partial`` and fails the
+    caller closed exactly as before.
+    """
+    ref = _reference_date(reference_date)
+    schedule = schedule_authority.ingest_rolling_window(ref, source=source)
+    return {
+        'status': schedule.get('status'),
+        'reference_date': ref.isoformat(),
+        'schedule': schedule,
+        'legacy_tonight_v5': 'not_generated',
+    }
+
+
 def refresh_schedule_and_tonight(
     reference_date: date | None = None,
     *,
     source: str = 'morning_slate_schedule',
 ) -> dict:
-    """Refresh schedule authority, then rebuild Tonight for the same product day.
+    """Legacy compatibility: refresh schedule, then rebuild the tonight_v5 cache.
 
-    A schedule refresh is not successful for public-serving purposes until the
-    Tonight cache has been regenerated from the newly committed schedule rows.
-    Partial schedule ingestion fails closed and does not publish a new Tonight
-    snapshot.
+    Deprecated (TN-11.7). No scheduler, publication or repair path calls this;
+    they use :func:`refresh_schedule`. It remains only so an operator can
+    explicitly warm the deprecated ``contract=tonight_v5`` compatibility cache.
+    Partial schedule ingestion fails closed and does not write a v5 snapshot.
     """
     ref = _reference_date(reference_date)
     schedule = schedule_authority.ingest_rolling_window(ref, source=source)

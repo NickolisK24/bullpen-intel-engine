@@ -15,8 +15,9 @@ from uuid import uuid4
 
 from services import dashboard_snapshot, continuous_publication_admission
 from services.availability_reference_date import product_current_date
-from services.tonight_intelligence_snapshot import (
-    generate_tonight_snapshot_for_date,
+from services.tonight_read_model import (
+    ensure_tonight_v1_for_publication,
+    tonight_v1_ensured,
 )
 
 
@@ -67,7 +68,7 @@ def publish_continuous_update(
         current = None
     receipt = _published_receipt(sync_run_id, current=current)
     if receipt is not None:
-        cache_status, errors = _refresh_tonight()
+        cache_status, errors = _ensure_tonight_v1(receipt)
         return ContinuousProductionPublicationResult(
             status='already_committed',
             reason_code='production_snapshot_already_committed',
@@ -137,7 +138,7 @@ def publish_continuous_update(
             dependency_signature=signature,
         )
 
-    cache_status, errors = _refresh_tonight()
+    cache_status, errors = _ensure_tonight_v1(snapshot)
     return ContinuousProductionPublicationResult(
         status='committed',
         reason_code='production_snapshot_published',
@@ -177,12 +178,19 @@ def _published_receipt(sync_run_id, *, current=None):
         return None
 
 
-def _refresh_tonight():
-    try:
-        generate_tonight_snapshot_for_date(
-            product_current_date(),
-            source=PUBLICATION_SOURCE,
-        )
-    except Exception as exc:  # Dashboard authority is already durable.
-        return 'retry_required', (type(exc).__name__,)
-    return 'complete', ()
+def _ensure_tonight_v1(publication):
+    """Ensure this committed publication has its immutable tonight_v1 row.
+
+    TN-11.7: the cache handoff after a continuous publication no longer
+    rebuilds the legacy tonight_v5 cache. It ensures the publication-bound
+    tonight_v1 row (created by the publication hook, reused here, created once
+    if missing). A disabled projection is not a handoff failure; a projection
+    that should exist but could not be ensured asks for a retry. The Dashboard
+    authority is already durable either way.
+    """
+    result = ensure_tonight_v1_for_publication(
+        publication, source=PUBLICATION_SOURCE,
+    )
+    if tonight_v1_ensured(result) or result.get('status') == 'skipped':
+        return 'complete', ()
+    return 'retry_required', (str(result.get('error') or result.get('status')),)

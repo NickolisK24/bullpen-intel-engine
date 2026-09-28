@@ -22,8 +22,9 @@ PRODUCTION_MORNING_TRIGGER_REFUSAL = (
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=(
-            'Refresh the BaseballOS rolling slate schedule authority and rebuild '
-            'the Tonight public snapshot from the same schedule state.'
+            'Refresh the BaseballOS rolling slate schedule authority. Builds no '
+            'legacy tonight_v5 snapshot; public Tonight is the publication-bound '
+            'tonight_v1 row.'
         )
     )
     parser.add_argument('--reference-date', help='Eastern slate date, YYYY-MM-DD.')
@@ -47,7 +48,7 @@ def main(argv=None):
         return 2
 
     from app import app
-    from services.schedule_tonight_refresh import refresh_schedule_and_tonight
+    from services.schedule_tonight_refresh import refresh_schedule
 
     try:
         with app.app_context():
@@ -57,7 +58,7 @@ def main(argv=None):
             # value downstream, so the clip shortened the truth without
             # protecting anything. Oversized values now fail as a named
             # application error at composition time.
-            result = refresh_schedule_and_tonight(
+            result = refresh_schedule(
                 reference_date,
                 source=str(args.source),
             )

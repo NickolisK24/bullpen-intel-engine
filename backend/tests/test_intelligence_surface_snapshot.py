@@ -806,18 +806,18 @@ def test_deployment_startup_prepares_new_writer_before_public_serving(
     assert served['lead_story']['publication_identity']['dashboard_snapshot_id'] == 52
 
 
-def test_render_start_invokes_daily_edition_helper_as_importable_module():
+def test_render_start_no_longer_prepares_daily_edition_but_helper_stays_importable():
+    """TN-11.7: legacy Today is not a deploy prerequisite; the helper is manual."""
     backend_dir = Path(__file__).resolve().parents[1]
     startup = (backend_dir / 'scripts' / 'render_start.sh').read_text(
         encoding='utf-8',
     )
-    module_command = 'python -m scripts.prepare_daily_edition_snapshot'
-    direct_command = 'python scripts/prepare_daily_edition_snapshot.py'
-    gunicorn_command = 'exec gunicorn app:app'
+    code = '\n'.join(
+        line for line in startup.splitlines() if not line.lstrip().startswith('#')
+    )
 
-    assert module_command in startup
-    assert direct_command not in startup
-    assert startup.index(module_command) < startup.index(gunicorn_command)
+    assert 'prepare_daily_edition_snapshot' not in code
+    assert 'exec gunicorn app:app' in code
 
     env = os.environ.copy()
     env.update({
@@ -1091,11 +1091,12 @@ exec bash backend/scripts/render_start.sh "$@"
 
 
 @pytest.mark.parametrize('skip', [None, 'false', '', 'True', 'TRUE', 'yes', '1', 'whatever', ' true', 'true '])
-def test_default_and_non_true_values_run_migrations_before_preparation_and_server(startup, skip):
+def test_default_and_non_true_values_run_migrations_before_server(startup, skip):
     result = startup(skip)
     assert result.returncode == 0, result.stderr
     output = result.stdout
-    assert output.index('CALL flask db upgrade FLASK_APP=app.py') < output.index('CALL python -m scripts.prepare_daily_edition_snapshot') < output.index('CALL server')
+    assert output.index('CALL flask db upgrade FLASK_APP=app.py') < output.index('CALL server')
+    assert 'prepare_daily_edition_snapshot' not in output
     assert '<app:app> <--bind> <0.0.0.0:10000> <--workers> <2> <--timeout> <60> <--graceful-timeout> <30>' in output
     assert 'WARNING' not in output
 
@@ -1106,7 +1107,8 @@ def test_exact_true_skips_only_migrations(startup):
     assert 'CALL flask' not in result.stdout
     assert 'Database migrations applied successfully' not in result.stdout
     assert 'WARNING: startup database migrations explicitly skipped via SKIP_STARTUP_MIGRATIONS=true' in result.stdout
-    assert result.stdout.index('CALL python -m scripts.prepare_daily_edition_snapshot') < result.stdout.index('CALL server')
+    assert 'prepare_daily_edition_snapshot' not in result.stdout
+    assert 'CALL server' in result.stdout
 
 
 @pytest.mark.parametrize('skip', [None, 'false', 'yes', 'TRUE', '1'])
@@ -1119,11 +1121,13 @@ def test_migration_failure_prevents_preparation_and_server(startup, skip):
 
 
 @pytest.mark.parametrize('skip', [None, 'true'])
-def test_preparation_failure_still_prevents_server(startup, skip):
+def test_daily_edition_failure_can_no_longer_block_server_start(startup, skip):
+    # TN-11.7: startup runs no Today preparation, so a Today failure cannot
+    # keep the API from starting.
     result = startup(skip, preparation_exit=23)
-    assert result.returncode == 23
-    assert 'CALL python -m scripts.prepare_daily_edition_snapshot' in result.stdout
-    assert 'CALL server' not in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert 'prepare_daily_edition_snapshot' not in result.stdout
+    assert 'CALL server' in result.stdout
 
 
 @pytest.mark.parametrize('skip', [None, 'true'])
@@ -1131,4 +1135,4 @@ def test_custom_server_arguments_are_preserved(startup, skip):
     result = startup(skip, args=('custom-server', '--label', 'two words'))
     assert result.returncode == 0, result.stderr
     assert '<--label> <two words>' in result.stdout
-    assert result.stdout.index('CALL python') < result.stdout.index('CALL server')
+    assert 'prepare_daily_edition_snapshot' not in result.stdout

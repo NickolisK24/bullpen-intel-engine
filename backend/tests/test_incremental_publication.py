@@ -82,7 +82,6 @@ def _cu06(*, marker='new', teams=(TEAM_A, TEAM_B), game_pk=GAME_PK):
     boards = {team_id: {'team_id': team_id, 'state': marker} for team_id in teams}
     league = {team_id: {'team_id': team_id, 'state': marker} for team_id in teams}
     matchups = {game_pk: {'game_pk': game_pk, 'state': marker}} if game_pk else {}
-    tonight = {game_pk: {'game_pk': game_pk, 'state': marker}} if game_pk else {}
     return SimpleNamespace(
         game_pk=game_pk,
         represented_date='2026-07-14',
@@ -93,11 +92,9 @@ def _cu06(*, marker='new', teams=(TEAM_A, TEAM_B), game_pk=GAME_PK):
         team_boards_rebuilt=tuple(teams),
         league_rows_rebuilt=tuple(teams),
         matchups_rebuilt=(game_pk,) if game_pk else (),
-        tonight_entries_rebuilt=(game_pk,) if game_pk else (),
         team_board_results=boards,
         league_row_results=league,
         matchup_results=matchups,
-        tonight_results=tonight,
         parity_status='match',
         parity_mismatches=(),
         failures=(),
@@ -142,7 +139,7 @@ def test_complete_multi_team_candidate_commits_as_one_manifest(app):
         assert set(result.cache_keys) == {
             f'team_board:{TEAM_A}', f'team_board:{TEAM_B}',
             f'league_row:{TEAM_A}', f'league_row:{TEAM_B}',
-            f'matchup:{GAME_PK}', f'tonight:{GAME_PK}',
+            f'matchup:{GAME_PK}',
         }
         current = cu07.get_current_publication()
         assert current.id == result.new_publication_id
@@ -150,7 +147,9 @@ def test_complete_multi_team_candidate_commits_as_one_manifest(app):
         assert set(surfaces['team_boards']) == {str(TEAM_A), str(TEAM_B)}
         assert set(surfaces['league_rows']) == {str(TEAM_A), str(TEAM_B)}
         assert set(surfaces['matchups']) == {str(GAME_PK)}
-        assert set(surfaces['tonight_entries']) == {str(GAME_PK)}
+        # TN-11.7: the cohort carries no legacy tonight_v5 entries.
+        assert 'tonight_entries' not in surfaces
+        assert cu07.COHORT_CONTRACT == 'incremental_publication_cohort_v2'
 
 
 def test_strongest_cu02_through_cu07_chain_commits_then_stops(app, monkeypatch):
@@ -248,7 +247,6 @@ def test_strongest_cu02_through_cu07_chain_commits_then_stops(app, monkeypatch):
             team_board_builder=builders[0],
             league_listing_builder=builders[1],
             matchup_builder=builders[2],
-            tonight_builder=builders[3],
         )
         cache = ProofCache()
         publication = cu07.publish_incremental(
@@ -285,7 +283,6 @@ def test_strongest_cu02_through_cu07_chain_commits_then_stops(app, monkeypatch):
         ('team_board_results', 'team_board_cohort_incomplete'),
         ('league_row_results', 'league_cohort_incomplete'),
         ('matchup_results', 'matchup_cohort_incomplete'),
-        ('tonight_results', 'tonight_cohort_incomplete'),
     ),
 )
 def test_missing_required_surface_aborts_before_stage(app, field, expected_error):

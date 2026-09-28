@@ -1,10 +1,16 @@
-from datetime import date
 from types import SimpleNamespace
 
 from services import continuous_production_publication as publication
 
 
-def test_publication_reuses_complete_dashboard_writer_and_refreshes_tonight(
+def _ensure_recorder(calls, status='reused'):
+    def ensure(snapshot, **kwargs):
+        calls.append(('tonight_v1', snapshot.id, kwargs))
+        return {'status': status, 'tonight_publication_id': 700 + snapshot.id}
+    return ensure
+
+
+def test_publication_reuses_complete_dashboard_writer_and_ensures_tonight_v1(
     monkeypatch,
 ):
     snapshot = SimpleNamespace(id=52, is_published=True, error_message=None)
@@ -16,14 +22,7 @@ def test_publication_reuses_complete_dashboard_writer_and_refreshes_tonight(
         lambda **kwargs: calls.append(('dashboard', kwargs)) or snapshot,
     )
     monkeypatch.setattr(
-        publication, 'product_current_date', lambda: date(2026, 8, 31),
-    )
-    monkeypatch.setattr(
-        publication,
-        'generate_tonight_snapshot_for_date',
-        lambda reference_date, **kwargs: calls.append(
-            ('tonight', reference_date, kwargs)
-        ),
+        publication, 'ensure_tonight_v1_for_publication', _ensure_recorder(calls),
     )
 
     result = publication.publish_continuous_update(
@@ -34,6 +33,9 @@ def test_publication_reuses_complete_dashboard_writer_and_refreshes_tonight(
     assert result.committed is True
     assert result.previous_publication_id == 41
     assert result.new_publication_id == 52
+    assert result.cache_handoff_status == 'complete'
+    # TN-11.7: the handoff ensures the exact publication's tonight_v1 row; no
+    # legacy tonight_v5 cache is rebuilt.
     assert calls == [
         ('dashboard', {
             'sync_run_id': 91,
@@ -43,10 +45,9 @@ def test_publication_reuses_complete_dashboard_writer_and_refreshes_tonight(
             'raise_errors': True,
             'publication_critical_complete': True,
         }),
-        ('tonight', date(2026, 8, 31), {
-            'source': publication.PUBLICATION_SOURCE,
-        }),
+        ('tonight_v1', 52, {'source': publication.PUBLICATION_SOURCE}),
     ]
+    assert not hasattr(publication, 'generate_tonight_snapshot_for_date')
 
 
 def test_publication_refuses_when_serving_pointer_changed(monkeypatch):
@@ -69,7 +70,7 @@ def test_publication_refuses_when_serving_pointer_changed(monkeypatch):
     assert result.previous_publication_id == 42
 
 
-def test_tonight_failure_does_not_roll_back_published_dashboard(monkeypatch):
+def test_tonight_v1_failure_does_not_roll_back_published_dashboard(monkeypatch):
     snapshot = SimpleNamespace(id=52, is_published=True, error_message=None)
     monkeypatch.setattr(publication, 'current_publication_id', lambda: 41)
     monkeypatch.setattr(
@@ -77,11 +78,10 @@ def test_tonight_failure_does_not_roll_back_published_dashboard(monkeypatch):
         'build_bullpen_dashboard_snapshot',
         lambda **kwargs: snapshot,
     )
-    monkeypatch.setattr(publication, 'product_current_date', lambda: date(2026, 8, 31))
     monkeypatch.setattr(
         publication,
-        'generate_tonight_snapshot_for_date',
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('warm failed')),
+        'ensure_tonight_v1_for_publication',
+        lambda *_args, **_kwargs: {'status': 'failed', 'error': 'RuntimeError'},
     )
 
     result = publication.publish_continuous_update(
@@ -94,6 +94,32 @@ def test_tonight_failure_does_not_roll_back_published_dashboard(monkeypatch):
     assert result.errors == ('RuntimeError',)
 
 
+def test_disabled_tonight_v1_projection_is_not_a_handoff_failure(monkeypatch):
+    snapshot = SimpleNamespace(id=52, is_published=True, error_message=None)
+    monkeypatch.setattr(publication, 'current_publication_id', lambda: 41)
+    monkeypatch.setattr(
+        publication.dashboard_snapshot,
+        'build_bullpen_dashboard_snapshot',
+        lambda **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        publication,
+        'ensure_tonight_v1_for_publication',
+        lambda *_args, **_kwargs: {
+            'status': 'skipped', 'reason': 'tonight_v1_projection_disabled',
+        },
+    )
+
+    result = publication.publish_continuous_update(
+        {}, source_identity='final-observation', source_order=1,
+        sync_run_id=91, expected_current_id=41,
+    )
+
+    assert result.committed is True
+    assert result.cache_handoff_status == 'complete'
+    assert result.errors == ()
+
+
 def test_retry_uses_durable_dashboard_receipt_instead_of_republishing(monkeypatch):
     prior = SimpleNamespace(
         id=52,
@@ -103,7 +129,7 @@ def test_retry_uses_durable_dashboard_receipt_instead_of_republishing(monkeypatc
         sync_run_id=91,
     )
     builds = []
-    refreshes = []
+    ensures = []
     monkeypatch.setattr(publication, 'current_publication_id', lambda: prior.id)
     monkeypatch.setattr(
         publication.dashboard_snapshot,
@@ -116,12 +142,7 @@ def test_retry_uses_durable_dashboard_receipt_instead_of_republishing(monkeypatc
         lambda **kwargs: builds.append(kwargs) or prior,
     )
     monkeypatch.setattr(
-        publication, 'product_current_date', lambda: date(2026, 8, 31),
-    )
-    monkeypatch.setattr(
-        publication,
-        'generate_tonight_snapshot_for_date',
-        lambda reference_date, **kwargs: refreshes.append((reference_date, kwargs)),
+        publication, 'ensure_tonight_v1_for_publication', _ensure_recorder(ensures),
     )
 
     result = publication.publish_continuous_update(
@@ -136,14 +157,14 @@ def test_retry_uses_durable_dashboard_receipt_instead_of_republishing(monkeypatc
     assert result.new_publication_id == 52
     assert result.cache_handoff_status == 'complete'
     assert builds == []
-    assert refreshes == [
-        (date(2026, 8, 31), {'source': publication.PUBLICATION_SOURCE}),
+    assert ensures == [
+        ('tonight_v1', 52, {'source': publication.PUBLICATION_SOURCE}),
     ]
 
 
 def test_cache_only_retry_requires_existing_durable_receipt(monkeypatch):
     builds = []
-    refreshes = []
+    ensures = []
     monkeypatch.setattr(publication, 'current_publication_id', lambda: 63)
     monkeypatch.setattr(
         publication.dashboard_snapshot,
@@ -163,9 +184,7 @@ def test_cache_only_retry_requires_existing_durable_receipt(monkeypatch):
         lambda **kwargs: builds.append(kwargs),
     )
     monkeypatch.setattr(
-        publication,
-        'generate_tonight_snapshot_for_date',
-        lambda *args, **kwargs: refreshes.append((args, kwargs)),
+        publication, 'ensure_tonight_v1_for_publication', _ensure_recorder(ensures),
     )
 
     result = publication.publish_continuous_update(
@@ -181,7 +200,7 @@ def test_cache_only_retry_requires_existing_durable_receipt(monkeypatch):
     assert result.reason_code == 'publication_receipt_missing'
     assert result.cache_handoff_status == 'not_attempted'
     assert builds == []
-    assert refreshes == []
+    assert ensures == []
 
 
 def test_superseded_dashboard_receipt_prevents_duplicate_republication(monkeypatch):
@@ -198,7 +217,7 @@ def test_superseded_dashboard_receipt_prevents_duplicate_republication(monkeypat
         sync_run_id=102,
     )
     builds = []
-    refreshes = []
+    ensures = []
     monkeypatch.setattr(publication, 'current_publication_id', lambda: current.id)
     monkeypatch.setattr(
         publication.dashboard_snapshot,
@@ -216,12 +235,7 @@ def test_superseded_dashboard_receipt_prevents_duplicate_republication(monkeypat
         lambda **kwargs: builds.append(kwargs),
     )
     monkeypatch.setattr(
-        publication, 'product_current_date', lambda: date(2026, 8, 31),
-    )
-    monkeypatch.setattr(
-        publication,
-        'generate_tonight_snapshot_for_date',
-        lambda reference_date, **kwargs: refreshes.append((reference_date, kwargs)),
+        publication, 'ensure_tonight_v1_for_publication', _ensure_recorder(ensures),
     )
 
     result = publication.publish_continuous_update(
@@ -233,6 +247,7 @@ def test_superseded_dashboard_receipt_prevents_duplicate_republication(monkeypat
     assert result.new_publication_id == historical.id
     assert result.cache_handoff_status == 'complete'
     assert builds == []
-    assert refreshes == [
-        (date(2026, 8, 31), {'source': publication.PUBLICATION_SOURCE}),
+    # The ensure is bound to the receipt's own identity, never a newer pointer.
+    assert ensures == [
+        ('tonight_v1', historical.id, {'source': publication.PUBLICATION_SOURCE}),
     ]

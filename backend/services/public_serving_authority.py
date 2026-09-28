@@ -1434,12 +1434,14 @@ def trusted_tonight_view():
     # compatible without importing the bullpen API while this module is loaded.
     from api.bullpen import (
         _tonight_reference_date_from_request,
+        legacy_tonight_v5_response,
         tonight_contract_response,
         tonight_query_error_response,
     )
 
-    # contract=tonight_v1 is already publication-bound; only legacy tonight_v5
-    # continues below.
+    # The default and contract=tonight_v1 are publication-bound tonight_v1
+    # (TN-11.7); only an explicit, deprecated contract=tonight_v5 continues
+    # below. This branch is never part of tonight_v1 authority.
     contract_response = tonight_contract_response()
     if contract_response is not None:
         return contract_response
@@ -1460,7 +1462,7 @@ def trusted_tonight_view():
         if message not in limitations:
             limitations.append(message)
         payload['limitations'] = limitations
-    return jsonify(payload)
+    return legacy_tonight_v5_response(payload)
 
 
 def install_public_serving_authority(app):

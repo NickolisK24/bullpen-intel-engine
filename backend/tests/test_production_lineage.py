@@ -307,9 +307,9 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     output = result.stdout
     assert 'emergency_skip=false' in output and 'explicitly skipped' not in output
     assert output.index('current_heads=') < output.index('Applying database migrations')
-    assert output.index('Applying database migrations') < output.index('Daily Edition preparation completed')
-    assert output.index('Daily Edition preparation completed') < output.index('MAIN_RUNTIME_SERVER_READY')
-    assert 'no_trusted_publication' in output
+    assert output.index('Applying database migrations') < output.index('MAIN_RUNTIME_SERVER_READY')
+    # TN-11.7: startup no longer prepares the legacy Daily Edition (Today).
+    assert 'Daily Edition' not in output
     assert _fingerprint(existing) == before
     if os.name != 'nt':
         _prove_gunicorn(tmp_path, env)
@@ -346,6 +346,7 @@ def _prove_gunicorn(tmp_path, env):
             process.wait(timeout=15)
     logs = log.read_text()
     assert logs.index('emergency_skip=false') < logs.index('Applying database migrations')
-    assert logs.index('Daily Edition preparation completed') < logs.index('Starting gunicorn')
+    assert logs.index('Applying database migrations') < logs.index('Starting gunicorn')
+    assert 'Daily Edition' not in logs
     assert 'Running upgrade' not in logs
     assert not any(error in logs for error in ('UndefinedTable', 'UndefinedColumn', "Can't locate revision", 'ERROR'))

@@ -2103,6 +2103,55 @@ def test_rehearsal_withholds_other_state_without_cancellation_evidence(monkeypat
             drop_test_schema(rehearsal.app)
 
 
+def test_rehearsal_off_day_publishes_tonight_v1_without_legacy_generation(monkeypatch):
+    """TN-11.7: an off-day availability date publishes through the real path;
+    the publication hook creates the one tonight_v1 row (game_count 0) and the
+    operational ensure reuses it. No legacy Tonight/Today builder runs."""
+    from models.slate_game import SlateGame
+    from models.tonight_publication import TonightPublication
+    from services import intelligence_surface_snapshot, tonight_intelligence_snapshot
+    from services import tonight_read_model
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError('off-day publication reached a legacy builder')
+
+    monkeypatch.setattr(tonight_intelligence_snapshot, 'generate_tonight_snapshot_for_date', forbidden)
+    monkeypatch.setattr(intelligence_surface_snapshot, 'generate_snapshot_for_date', forbidden)
+    rehearsal = _TonightRehearsal(monkeypatch, name='off-day tonight_v1 rehearsal')
+    with rehearsal.app.app_context():
+        try:
+            rehearsal.setup()
+            SlateGame.query.filter_by(game_date_et=rehearsal.reference_date).delete()
+            db.session.commit()
+
+            snapshot = rehearsal.publish('off_day_rehearsal')
+
+            row = TonightPublication.query.filter_by(dashboard_snapshot_id=snapshot.id).one()
+            assert row.reference_date == rehearsal.reference_date
+            assert row.payload['games'] == []
+            assert row.payload['summary']['game_count'] == 0
+            assert row.payload['featured_game_pks'] == []
+            assert row.payload['lead'] is None
+            stored = (row.id, row.content_sha256, deepcopy(row.payload))
+
+            ensured = tonight_read_model.ensure_tonight_v1_for_publication(
+                snapshot, source='daily_proof',
+            )
+            assert ensured['status'] == 'reused'
+            assert ensured['tonight_publication_id'] == row.id
+            assert TonightPublication.query.count() == 1
+            again = db.session.get(TonightPublication, row.id)
+            assert (again.id, again.content_sha256, again.payload) == stored
+            print(
+                'REHEARSAL off_day_tonight_v1 '
+                f'snapshot={snapshot.id} tonight_v1={row.id} game_count=0 ensure=reused'
+            )
+        finally:
+            db.session.rollback()
+            db.session.remove()
+            drop_test_schema(rehearsal.app)
+
+
 def _inject_exact_predecessor(monkeypatch):
     """At the real proof seam, add one exact trusted predecessor for TB-09.
 

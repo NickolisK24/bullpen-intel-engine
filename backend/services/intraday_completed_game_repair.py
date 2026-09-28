@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from services import intraday_reconcile, sync_metadata
 from services.availability_reference_date import product_current_date
 from services.game_finality import has_safe_final_status
-from services.intraday_repair import refresh_tonight_after_publication
+from services.intraday_repair import ensure_tonight_v1_after_publication
 from services.intraday_schedule_repair import (
     apply_intraday_schedule_findings,
     build_schedule_repair_scope,
@@ -34,15 +34,13 @@ def run_intraday_completed_game_repair(
     completed_game_processor=None,
     fatigue_recalc=None,
     complete_with_snapshot=None,
-    tonight_builder=None,
-    today_builder=None,
+    tonight_v1_ensurer=None,
     publication_proof_builder=None,
     client=None,
 ):
     """Repair proven schedule deltas and newly-final games under one writer lock."""
     from services import sync as sync_service
-    from services.intelligence_surface_snapshot import generate_snapshot_for_date
-    from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
+    from services.tonight_read_model import ensure_tonight_v1_for_publication
 
     audit_runner = audit_runner or intraday_reconcile.run_intraday_audit
     schedule_writer = schedule_writer or apply_intraday_schedule_findings
@@ -51,8 +49,7 @@ def run_intraday_completed_game_repair(
     )
     fatigue_recalc = fatigue_recalc or sync_service.recalculate_all_fatigue
     complete_with_snapshot = complete_with_snapshot or sync_service.complete_sync_run_with_snapshot
-    tonight_builder = tonight_builder or generate_tonight_snapshot_for_date
-    today_builder = today_builder or generate_snapshot_for_date
+    tonight_v1_ensurer = tonight_v1_ensurer or ensure_tonight_v1_for_publication
     publication_proof_builder = publication_proof_builder or build_candidate_publication_proof
     client = client or mlb_client
 
@@ -70,8 +67,7 @@ def run_intraday_completed_game_repair(
         'logs_corrected': 0,
         'pitchers_touched': 0,
         'fatigue_recalculated': None,
-        'today_snapshot': None,
-        'tonight_snapshot': None,
+        'tonight_v1': None,
         'dashboard_snapshot_id': None,
         'publication_proof': None,
     }
@@ -147,16 +143,6 @@ def run_intraday_completed_game_repair(
                     reference_date=product_current_date()
                 )
 
-            today = today_builder(
-                product_current_date(),
-                source=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
-            )
-            result['today_snapshot'] = _surface_summary(today)
-            if (today or {}).get('status') not in ('ok', 'empty', 'generated'):
-                raise IntradayCompletedGameRepairError(
-                    'Today intelligence rebuild did not complete.'
-                )
-
             run, snapshot = complete_with_snapshot(
                 sync_run_id,
                 final_status=sync_metadata.STATUS_SUCCESS,
@@ -189,8 +175,9 @@ def run_intraday_completed_game_repair(
 
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
             # Tonight follows the trusted publication, never precedes it.
-            if not refresh_tonight_after_publication(
-                result, tonight_builder, source=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
+            if not ensure_tonight_v1_after_publication(
+                result, snapshot, tonight_v1_ensurer,
+                source=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
             ):
                 return result
             result['status'] = sync_metadata.STATUS_SUCCESS
@@ -305,16 +292,6 @@ def _positive_int(value):
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
-
-
-def _surface_summary(payload):
-    payload = payload or {}
-    return {
-        'status': payload.get('status'),
-        'reference_date': payload.get('reference_date') or payload.get('slate_date'),
-        'card_count': payload.get('card_count'),
-        'snapshot_id': payload.get('snapshot_id'),
-    }
 
 
 def _public_completed_game_summary(payload):

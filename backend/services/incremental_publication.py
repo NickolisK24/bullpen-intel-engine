@@ -25,7 +25,8 @@ from utils.time import utc_now_naive
 
 PROOF_SNAPSHOT_TYPE = 'cu07_incremental_proof'
 PROOF_SOURCE = 'cu07_proof'
-COHORT_CONTRACT = 'incremental_publication_cohort_v1'
+# v2 (TN-11.7): the cohort no longer carries legacy tonight_v5 entries.
+COHORT_CONTRACT = 'incremental_publication_cohort_v2'
 STATUS_STAGED = 'pending'
 STATUS_CURRENT = 'ready'
 
@@ -96,7 +97,6 @@ def build_candidate(cu06_result, *, source_identity, source_order):
     boards = _string_keys(_get(cu06_result, 'team_board_results') or {})
     league = _string_keys(_get(cu06_result, 'league_row_results') or {})
     matchups = _string_keys(_get(cu06_result, 'matchup_results') or {})
-    tonight = _string_keys(_get(cu06_result, 'tonight_results') or {})
 
     errors = []
     if _get(cu06_result, 'status') != STATUS_COMPLETE:
@@ -135,12 +135,8 @@ def build_candidate(cu06_result, *, source_identity, source_order):
     expected_games = {str(value) for value in game_ids}
     if set(_get(cu06_result, 'matchups_rebuilt') or ()) != set(game_ids):
         errors.append('matchup_rebuild_identity_mismatch')
-    if set(_get(cu06_result, 'tonight_entries_rebuilt') or ()) != set(game_ids):
-        errors.append('tonight_rebuild_identity_mismatch')
     if set(matchups) != expected_games:
         errors.append('matchup_cohort_incomplete')
-    if set(tonight) != expected_games:
-        errors.append('tonight_cohort_incomplete')
 
     semantic = _semantic({
         'contract': COHORT_CONTRACT,
@@ -151,7 +147,6 @@ def build_candidate(cu06_result, *, source_identity, source_order):
             'team_boards': boards,
             'league_rows': league,
             'matchups': matchups,
-            'tonight_entries': tonight,
         },
     })
     semantic_fingerprint = _fingerprint(semantic)
@@ -436,7 +431,6 @@ def cache_keys(candidate):
     keys = [f'team_board:{team_id}' for team_id in candidate.affected_team_ids]
     keys.extend(f'league_row:{team_id}' for team_id in candidate.affected_team_ids)
     keys.extend(f'matchup:{game_id}' for game_id in candidate.affected_game_ids)
-    keys.extend(f'tonight:{game_id}' for game_id in candidate.affected_game_ids)
     return tuple(keys)
 
 

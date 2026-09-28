@@ -3,6 +3,10 @@
 The service overlays accepted CU-04/CU-05 facts on a copied trusted snapshot,
 then delegates to the existing serving builders.  The copy is never persisted,
 published, cached, or installed as serving authority.
+
+TN-11.7: the bounded rebuild no longer maintains a legacy tonight_v5 entry.
+Public Tonight is the immutable tonight_v1 row projected from each trusted
+publication, so there is no per-game Tonight read model to rebuild here.
 """
 
 from __future__ import annotations
@@ -11,9 +15,7 @@ from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from time import perf_counter
-from types import SimpleNamespace
 
-from models.pitcher import Pitcher
 from models.slate_game import SlateGame
 from services import public_serving_authority
 from services.bullpen_board import author_rest_status
@@ -28,7 +30,6 @@ from services.league_team_state_listing import (
     build_league_team_state_row,
 )
 from services.trusted_compare_authority import build_scheduled_game_matchup_payload
-from utils.db import db
 
 
 STATUS_NO_ACTION = 'no_action'
@@ -56,13 +57,11 @@ class IncrementalReadModelResult:
     team_boards_rebuilt: tuple = ()
     league_rows_rebuilt: tuple = ()
     matchups_rebuilt: tuple = ()
-    tonight_entries_rebuilt: tuple = ()
     pitcher_models_rebuilt: tuple = ()
     team_board_results: dict = field(default_factory=dict)
     team_package_results: dict = field(default_factory=dict)
     league_row_results: dict = field(default_factory=dict)
     matchup_results: dict = field(default_factory=dict)
-    tonight_results: dict = field(default_factory=dict)
     parity_status: str = PARITY_NOT_COMPARABLE
     parity_entries: tuple = ()
     parity_mismatches: tuple = ()
@@ -81,7 +80,7 @@ class IncrementalReadModelResult:
         for key in (
             'requested_pitcher_ids', 'requested_team_ids',
             'team_boards_rebuilt', 'league_rows_rebuilt',
-            'matchups_rebuilt', 'tonight_entries_rebuilt',
+            'matchups_rebuilt',
             'pitcher_models_rebuilt', 'parity_entries',
             'parity_mismatches', 'failures',
         ):
@@ -97,7 +96,6 @@ def rebuild_read_model_impact(
     team_board_builder=None,
     league_listing_builder=None,
     matchup_builder=None,
-    tonight_builder=None,
 ):
     """Rebuild only read models invalidated by a trusted CU-05 result."""
     pitcher_ids = tuple(sorted(set(_get(cu05_result, 'arm_reads_recomputed') or ())))
@@ -133,7 +131,6 @@ def rebuild_read_model_impact(
 
     shadow_snapshot = build_shadow_snapshot(snapshot, cu05_result)
     state_overrides = _public_state_overrides(cu05_result)
-    classified_overrides = _classified_overrides(cu05_result)
     board_builder = team_board_builder or _default_team_board_builder
     listing_builder = league_listing_builder or _default_league_listing_builder
     game = SlateGame.query.filter_by(game_pk=game_pk).one_or_none() if game_pk else None
@@ -143,7 +140,6 @@ def rebuild_read_model_impact(
     boards = {}
     league_rows = {}
     matchups = {}
-    tonight = {}
     parity = []
 
     try:
@@ -197,32 +193,6 @@ def rebuild_read_model_impact(
         except Exception as exc:
             failures.append(_failure('matchup', game_pk, exc))
 
-        try:
-            build_tonight = tonight_builder or _default_tonight_builder
-            payload = build_tonight(
-                game, shadow_snapshot, state_overrides, classified_overrides,
-                league_listing,
-            )
-            entry = _game_entry(payload, game_pk)
-            if entry is not None:
-                tonight[int(game_pk)] = entry
-                if compare_authoritative:
-                    authority_payload = build_tonight(
-                        game, shadow_snapshot, state_overrides,
-                        classified_overrides, league_listing,
-                    )
-                    parity.append(_parity(
-                        'tonight', int(game_pk), entry,
-                        _game_entry(authority_payload, game_pk),
-                    ))
-            else:
-                failures.append({
-                    'scope': 'tonight', 'entity_id': game_pk,
-                    'error': 'TonightEntryUnavailable',
-                })
-        except Exception as exc:
-            failures.append(_failure('tonight', game_pk, exc))
-
     mismatches = tuple(
         asdict(entry) for entry in parity if entry.status == PARITY_MISMATCH
     )
@@ -249,7 +219,6 @@ def rebuild_read_model_impact(
         team_boards_rebuilt=tuple(sorted(boards)),
         league_rows_rebuilt=tuple(sorted(league_rows)),
         matchups_rebuilt=tuple(sorted(matchups)),
-        tonight_entries_rebuilt=tuple(sorted(tonight)),
         team_board_results=boards,
         team_package_results={
             team_id: deepcopy(
@@ -264,12 +233,11 @@ def rebuild_read_model_impact(
         },
         league_row_results=league_rows,
         matchup_results=matchups,
-        tonight_results=tonight,
         parity_status=parity_status,
         parity_entries=tuple(asdict(entry) for entry in parity),
         parity_mismatches=mismatches,
         failures=tuple(failures),
-        rebuild_performed=bool(boards or league_rows or matchups or tonight),
+        rebuild_performed=bool(boards or league_rows or matchups),
         rebuild_ms=round((perf_counter() - started) * 1000.0, 3),
     )
 
@@ -323,27 +291,6 @@ def build_shadow_snapshot(snapshot, cu05_result):
     return shadow
 
 
-def _classified_overrides(cu05_result):
-    availability = dict(_get(cu05_result, 'availability_results') or {})
-    workload = dict(_get(cu05_result, 'workload_rest_pitcher_results') or {})
-    result = {}
-    for pitcher_id, read in availability.items():
-        pitcher = db.session.get(Pitcher, pitcher_id)
-        if pitcher is None:
-            continue
-        inputs = (workload.get(pitcher_id) or {}).get('rest_workload_inputs') or {}
-        result[pitcher_id] = {
-            'pitcher_id': pitcher_id,
-            'pitcher': pitcher,
-            'score': SimpleNamespace(
-                raw_score=inputs.get('fatigue_score'),
-                risk_level=inputs.get('fatigue_risk_level'),
-            ),
-            'availability': deepcopy(read),
-        }
-    return result
-
-
 def _public_state_overrides(cu05_result):
     result = {}
     for team_id, projection in dict(
@@ -384,65 +331,9 @@ def _default_matchup_builder(game, snapshot, state_overrides):
     )
 
 
-def _default_tonight_builder(
-    game, snapshot, state_overrides, classified_overrides, league_listing,
-):
-    from services.bullpen_context import build_team_bullpen_context
-    from services.published_team_rest_status_listing import (
-        build_published_team_rest_status_listing,
-    )
-    from services.published_team_rotation_listing import (
-        build_published_team_rotation_listing,
-    )
-    from services.published_team_workload_listing import (
-        build_published_team_workload_listing,
-    )
-    from services.schedule_context import build_schedule_contexts_for_date
-    from services.tonight_intelligence_service import serve_tonight
-
-    ref = game.game_date_et
-    teams = {game.home_team_id, game.away_team_id}
-    schedules = [
-        row for row in build_schedule_contexts_for_date(ref)
-        if row.get('team_id') in teams
-    ]
-    # Every frozen sidecar resolves from this one snapshot: Team State (the
-    # league listing built from it), workload, rotation, and rest.
-    resolver = lambda: (snapshot, None)
-    return serve_tonight(
-        ref,
-        schedule_contexts=schedules,
-        slate_games=[game],
-        bullpen_context_builder=lambda team_id, reference_date: (
-            build_team_bullpen_context(
-                team_id,
-                reference_date,
-                classified_record_overrides=classified_overrides,
-            )
-        ),
-        team_state_listing_builder=lambda: league_listing,
-        workload_listing_builder=lambda: build_published_team_workload_listing(
-            snapshot_resolver=resolver,
-        ),
-        rotation_listing_builder=lambda: build_published_team_rotation_listing(
-            snapshot_resolver=resolver,
-        ),
-        rest_status_listing_builder=lambda: build_published_team_rest_status_listing(
-            snapshot_resolver=resolver,
-        ),
-    )
-
-
 def _listing_row(listing, team_id):
     return next(
         (row for row in listing.get('teams') or () if row.get('team_id') == team_id),
-        None,
-    )
-
-
-def _game_entry(payload, game_pk):
-    return next(
-        (row for row in (payload or {}).get('games') or () if row.get('game_pk') == game_pk),
         None,
     )
 

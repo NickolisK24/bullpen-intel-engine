@@ -2243,7 +2243,7 @@ def get_today_lead_story():
         payload = serve_today_lead_story(reference_date=reference_date)
     except Exception:  # pragma: no cover - defensive; service already fails closed
         current_app.logger.exception('today lead story build failed')
-        return jsonify({
+        return _deprecated_legacy_response(jsonify({
             'status': 'error',
             'reference_date': reference_date.isoformat() if reference_date else None,
             'lead_story': None,
@@ -2251,8 +2251,33 @@ def get_today_lead_story():
             'publishable_candidates': 0,
             'errors': 0,
             'empty_reason': 'lead_story_unavailable',
-        }), 503
-    return jsonify(payload)
+        }), 503)
+    return _deprecated_legacy_response(jsonify(payload))
+
+
+# TN-11.7: legacy public compatibility surfaces. /intelligence/today and
+# contract=tonight_v5 have no internal, scheduled, publication or frontend
+# consumer; they stay reachable only because an unauthenticated public API may
+# have external callers. Responses say so explicitly and name the successor.
+TONIGHT_V1_SUCCESSOR_LINK = (
+    '</api/bullpen/intelligence/tonight?contract=tonight_v1>; rel="successor-version"'
+)
+
+
+def _deprecated_legacy_response(response, status=200, *, contract=None):
+    response.status_code = status
+    response.headers['Deprecation'] = 'true'
+    response.headers['Link'] = TONIGHT_V1_SUCCESSOR_LINK
+    if contract:
+        response.headers['X-BaseballOS-Contract'] = contract
+    return response
+
+
+def legacy_tonight_v5_response(payload, status=200):
+    """Explicit, deprecated contract=tonight_v5 compatibility response."""
+    return _deprecated_legacy_response(
+        jsonify(payload), status, contract=tonight_v1_serving.LEGACY_CONTRACT,
+    )
 
 
 def _tonight_reference_date_from_request():
@@ -2272,13 +2297,14 @@ def _tonight_reference_date_from_request():
 def get_tonight_intelligence():
     """Tonight — bullpen situations BaseballOS is watching before first pitch.
 
-    Read-only, pregame intelligence. Serves a precomputed Tonight snapshot for
-    the resolved slate when one exists. On cache miss, it may build live and fill
-    the cache, but that fallback is time-bounded and fails soft to an honest
-    unavailable envelope. Defaults to the product current day (optional
-    ``reference_date`` YYYY-MM-DD for inspection). Descriptive and evidence-backed
-    — no predictions, no ranking, no recommendations. Separate from the COIN
-    completed-game stories and from ``/intelligence/today``.
+    TN-11.7: by default (and with ``contract=tonight_v1``) this serves the
+    immutable tonight_v1 row of the current trusted publication; it never
+    builds. Only an explicit ``contract=tonight_v5`` reaches the deprecated
+    legacy snapshot below, which keeps its prior behavior (optional
+    ``reference_date``; time-bounded live fill on cache miss outside trusted
+    serving) and is marked with ``Deprecation`` / successor ``Link`` headers.
+    Descriptive and evidence-backed — no predictions, no ranking, no
+    recommendations.
     """
     contract_response = tonight_contract_response()
     if contract_response is not None:
@@ -2291,22 +2317,24 @@ def get_tonight_intelligence():
         payload = serve_tonight_cached(reference_date=reference_date)
     except Exception:  # pragma: no cover - defensive; service isolates failures
         current_app.logger.exception('tonight intelligence build failed')
-        return jsonify(tonight_failure_payload(reference_date)), 503
-    return jsonify(payload)
+        return legacy_tonight_v5_response(tonight_failure_payload(reference_date), 503)
+    return legacy_tonight_v5_response(payload)
 
 
 def tonight_contract_response():
     """Contract selection shared by the Tonight view and its trusted override.
 
-    ``None`` means serve legacy tonight_v5 (no ``contract`` or
-    ``contract=tonight_v5``). ``contract=tonight_v1`` serves the stored v1
-    projection; any other value is a 400 in the Tonight shell.
+    TN-11.7: the default (no ``contract``) and ``contract=tonight_v1`` both
+    serve the stored tonight_v1 projection of the current trusted publication.
+    ``None`` means the caller explicitly asked for the deprecated
+    ``contract=tonight_v5`` compatibility view. Any other value is a 400 in the
+    Tonight shell.
     """
     contract = request.args.get(tonight_v1_serving.CONTRACT_PARAM)
-    if contract in (None, '', tonight_v1_serving.LEGACY_CONTRACT):
-        return None
-    if contract == tonight_v1_serving.CONTRACT:
+    if contract in (None, '', tonight_v1_serving.CONTRACT):
         return _tonight_v1_response()
+    if contract == tonight_v1_serving.LEGACY_CONTRACT:
+        return None
     return tonight_query_error_response(QueryParamError(
         tonight_v1_serving.CONTRACT_PARAM,
         'contract must be one of: '
