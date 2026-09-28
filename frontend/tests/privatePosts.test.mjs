@@ -642,7 +642,7 @@ test('draft generation stays isolated from public story and bullpen surfaces', (
   const publicFiles = [
     '../src/components/stories/Stories.jsx',
     '../src/components/stories/storiesFeedView.js',
-    '../src/components/home/Home.jsx',
+    '../src/components/tonight/TonightPage.jsx',
     '../src/components/bullpen/Bullpen.jsx',
   ]
 

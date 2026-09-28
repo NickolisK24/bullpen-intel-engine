@@ -50,9 +50,9 @@ test('current alias reuses one publication then discovers a forced publication t
   let calls = 0
   globalThis.fetch = async () => jsonResponse(responses[calls++])
 
-  const first = await api.getHomeProjection()
-  const revisit = await api.getHomeProjection()
-  const afterTurnover = await api.getHomeProjection({ forceRefresh: true })
+  const first = await api.getStoriesProjection()
+  const revisit = await api.getStoriesProjection()
+  const afterTurnover = await api.getStoriesProjection({ forceRefresh: true })
 
   assert.equal(calls, 2)
   assert.strictEqual(revisit, first)
@@ -90,7 +90,7 @@ test('timeout aborts the underlying read and reports a scoped timeout', async ()
   })
 
   await assert.rejects(
-    api.getHomeProjection({ timeoutMs: 5, forceRefresh: true, silent: true }),
+    api.getStoriesProjection({ timeoutMs: 5, forceRefresh: true, silent: true }),
     error => error?.status === 'timeout',
   )
 })

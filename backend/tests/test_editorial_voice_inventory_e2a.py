@@ -28,7 +28,9 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
             'backend/services/intelligence_surface_snapshot.py',
             'backend/story_writers/base_story_writer.py',
             'backend/story_writers/team_story_writer.py',
-            'frontend/src/components/home/IntelligenceSurface.jsx',
+            # frontend/src/components/home/IntelligenceSurface.jsx was retired in
+            # TN-11 (unrouted since the TN-10 Tonight root cutover); the backend
+            # copy layers above remain the voice source for this surface.
         ),
     },
     {
@@ -91,7 +93,9 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
             # backend copy layer below is the remaining What Changed voice source.
             'backend/services/what_changed_since_yesterday_copy.py',
             'backend/services/what_changed_since_yesterday_public.py',
-            'frontend/src/components/home/IntelligenceSurface.jsx',
+            # frontend/src/components/home/IntelligenceSurface.jsx was retired in
+            # TN-11 (unrouted since the TN-10 Tonight root cutover); the backend
+            # copy layers above remain the voice source for this surface.
         ),
     },
     {
@@ -106,7 +110,9 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
             'backend/services/tonight_candidate_selection.py',
             'backend/services/tonight_intelligence_service.py',
             'backend/services/tonight_intelligence_snapshot.py',
-            'frontend/src/components/home/IntelligenceSurface.jsx',
+            # frontend/src/components/home/IntelligenceSurface.jsx was retired in
+            # TN-11 (unrouted since the TN-10 Tonight root cutover); the backend
+            # copy layers above remain the voice source for this surface.
         ),
     },
     {

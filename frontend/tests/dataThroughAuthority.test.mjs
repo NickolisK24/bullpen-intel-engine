@@ -21,7 +21,6 @@ after(async () => {
 })
 
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
-const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')
@@ -142,26 +141,14 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
       data: dashboard,
       leagueTeamStates: makeLeagueTeamStateListing({ freshness: servedFreshness }),
     })),
-    Today: render(React.createElement(IntelligenceSurfaceView, {
-      intelligence: {
-        status: 'empty',
-        reference_date: servedFreshness.data_through,
-        empty_reason: 'lead_story_unavailable',
-      },
-      dashboard,
-      landscape: dashboard.landscape,
-    })),
     Stories: render(React.createElement(StoriesView, { dashboard })),
     Bullpen: render(React.createElement(BullpenBoardView, { board })),
     Comparison: render(React.createElement(BullpenComparisonView, { payload: comparison })),
   }
 
   for (const [surface, html] of Object.entries(surfaces)) {
-    if (['Today', 'Dashboard', 'Stories', 'Comparison'].includes(surface)) {
+    if (['Dashboard', 'Stories', 'Comparison'].includes(surface)) {
       assert.equal((html.match(/Data through/g) || []).length, 1, `${surface} did not render one authoritative freshness stamp`)
-      if (surface === 'Today') {
-        assert.equal(html.includes('Published view current'), false, `${surface} exposed routine trust chrome`)
-      }
       if (surface !== 'Stories') {
         assert.equal(html.includes('Freshness: Current'), false, `${surface} used generic current freshness copy`)
       }

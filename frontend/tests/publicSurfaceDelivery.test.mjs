@@ -5,7 +5,7 @@ import test from 'node:test'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-const homeSource = read('../src/components/home/IntelligenceSurface.jsx')
+const tonightPageSource = read('../src/components/tonight/TonightPage.jsx')
 const leagueSource = read('../src/components/dashboard/Dashboard.jsx')
 const storiesSource = read('../src/components/stories/Stories.jsx')
 const trustSource = read('../src/components/trust/DataTrust.jsx')
@@ -15,7 +15,6 @@ const appSource = read('../src/App.jsx')
 
 test('each public surface uses its purpose-built projection instead of Dashboard', () => {
   const consumers = [
-    [homeSource, 'getHomeProjection'],
     [leagueSource, 'getLeagueProjection'],
     [storiesSource, 'getStoriesProjection'],
     [trustSource, 'getTrustProjection'],
@@ -30,7 +29,8 @@ test('each public surface uses its purpose-built projection instead of Dashboard
 
 
 test('purpose-built API helpers have explicit coherent routes', () => {
-  assert.ok(apiSource.includes("getHomeProjection = (options = {}) => request('/bullpen/home'"))
+  // TN-11: the Home projection client was retired with the Home surface.
+  assert.equal(apiSource.includes('getHomeProjection'), false)
   assert.ok(apiSource.includes("getLeagueProjection = (options = {}) => request('/bullpen/league'"))
   assert.ok(apiSource.includes("getStoriesProjection = (options = {}) => request('/bullpen/stories'"))
   assert.ok(apiSource.includes("getTrustProjection = (options = {}) => request('/bullpen/trust'"))
@@ -45,11 +45,13 @@ test('League receives Team States inside the same projection request', () => {
 })
 
 
-test('Home keeps Today and Tonight independent of its publication projection', () => {
-  assert.ok(homeSource.includes('getTodayIntelligence({}, options)'))
-  assert.ok(homeSource.includes('getTonightIntelligence({}, options)'))
-  assert.ok(homeSource.includes('useFetch(getHomeProjection)'))
-  assert.equal(homeSource.includes('getBullpenLandscape'), false)
+test('the Tonight home reads only the tonight_v1 edition; legacy Home clients are retired', () => {
+  assert.equal((tonightPageSource.match(/getTonightV1\(/g) || []).length, 1)
+  assert.equal(tonightPageSource.includes('getBullpenLandscape'), false)
+  for (const retired of ['getHomeProjection', 'getTodayIntelligence', 'getTonightIntelligence']) {
+    assert.equal(tonightPageSource.includes(retired), false, retired)
+    assert.equal(new RegExp(`export const ${retired}\\b`).test(apiSource), false, retired)
+  }
 })
 
 
