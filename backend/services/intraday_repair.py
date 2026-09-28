@@ -88,8 +88,7 @@ def run_intraday_roster_repair(
     recent_log_sync=None,
     fatigue_recalc=None,
     complete_with_snapshot=None,
-    tonight_builder=None,
-    today_builder=None,
+    tonight_v1_ensurer=None,
     publication_proof_builder=None,
     repair_transaction_roster_evidence=False,
     transaction_roster_repair=None,
@@ -97,8 +96,7 @@ def run_intraday_roster_repair(
     from services import sync as sync_service
     from services.intraday_identity_repair import apply_intraday_identity_findings
     from services.roster_status_sync import sync_roster_statuses
-    from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
-    from services.intelligence_surface_snapshot import generate_snapshot_for_date
+    from services.tonight_read_model import ensure_tonight_v1_for_publication
     from services.intraday_transaction_roster_repair import (
         repair_current_window_transaction_roster_evidence,
     )
@@ -109,8 +107,7 @@ def run_intraday_roster_repair(
     recent_log_sync = recent_log_sync or sync_service.sync_recent_logs
     fatigue_recalc = fatigue_recalc or sync_service.recalculate_all_fatigue
     complete_with_snapshot = complete_with_snapshot or sync_service.complete_sync_run_with_snapshot
-    tonight_builder = tonight_builder or generate_tonight_snapshot_for_date
-    today_builder = today_builder or generate_snapshot_for_date
+    tonight_v1_ensurer = tonight_v1_ensurer or ensure_tonight_v1_for_publication
     publication_proof_builder = publication_proof_builder or build_candidate_publication_proof
     transaction_roster_repair = (
         transaction_roster_repair or repair_current_window_transaction_roster_evidence
@@ -130,8 +127,7 @@ def run_intraday_roster_repair(
         'recent_logs': None,
         'fatigue_recalculated': None,
         'dashboard_snapshot_id': None,
-        'today_snapshot': None,
-        'tonight_snapshot': None,
+        'tonight_v1': None,
         'publication_proof': None,
     }
 
@@ -244,11 +240,6 @@ def run_intraday_roster_repair(
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
             result['fatigue_recalculated'] = fatigue_recalc(reference_date=product_current_date())
 
-            today = today_builder(product_current_date(), source=JOB_INTRADAY_REPAIR)
-            result['today_snapshot'] = _surface_summary(today)
-            if (today or {}).get('status') not in ('ok', 'empty', 'generated'):
-                raise RuntimeError('Today intelligence rebuild did not complete.')
-
             identity_changes = (
                 int((identity_result or {}).get('created') or 0)
                 + int((identity_result or {}).get('reassigned') or 0)
@@ -284,11 +275,11 @@ def run_intraday_roster_repair(
                 raise RuntimeError('Intraday dashboard candidate is not serving.')
 
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
-            # Tonight is rebuilt only from the now-trusted publication; a failed
-            # publication above never reaches this point, so the stored Tonight
-            # payload stays on the previous trusted state.
-            if not refresh_tonight_after_publication(
-                result, tonight_builder, source=JOB_INTRADAY_REPAIR,
+            # Tonight follows only the now-trusted publication: its immutable
+            # tonight_v1 row is ensured for that exact identity. A failed
+            # publication above never reaches this point.
+            if not ensure_tonight_v1_after_publication(
+                result, snapshot, tonight_v1_ensurer, source=JOB_INTRADAY_REPAIR,
             ):
                 return result
             result['status'] = sync_metadata.STATUS_SUCCESS
@@ -323,29 +314,29 @@ def run_intraday_roster_repair(
                 writer_guard.release()
 
 
-def refresh_tonight_after_publication(result, tonight_builder, *, source):
-    """Rebuild Tonight after a trusted dashboard publication has committed.
+def ensure_tonight_v1_after_publication(result, snapshot, ensurer, *, source):
+    """Ensure the committed publication's tonight_v1 row (TN-11.7).
 
-    The publication is already durable, so a Tonight failure here cannot roll
-    it back: the stored Tonight payload is left as it was, the result reports
-    ``partial`` with ``tonight_refresh='retry_required'``, and the published
-    sync run is not rewritten as failed. Returns True when Tonight refreshed.
+    Replaces the legacy tonight_v5 rebuild. The publication is already durable,
+    so a tonight_v1 problem here cannot roll it back or rewrite the published
+    run as failed: the result reports ``partial`` with
+    ``tonight_refresh='retry_required'``. A disabled projection is not a
+    failure. Returns True when the step completed.
     """
     try:
-        tonight = tonight_builder(product_current_date(), source=source)
+        tonight = ensurer(snapshot, source=source)
     except Exception as exc:  # noqa: BLE001 - reported, never re-raised
         db.session.rollback()
-        tonight = None
-        result['tonight_error'] = type(exc).__name__
-    result['tonight_snapshot'] = _surface_summary(tonight)
-    if (tonight or {}).get('status') in ('ok', 'empty'):
+        tonight = {'status': 'failed', 'error': type(exc).__name__}
+    result['tonight_v1'] = tonight
+    if (tonight or {}).get('status') in ('created', 'reused', 'skipped'):
         result['tonight_refresh'] = 'complete'
         return True
     result['tonight_refresh'] = 'retry_required'
     result['status'] = sync_metadata.STATUS_PARTIAL
     result['message'] = (
-        'Dashboard published; the Tonight rebuild did not complete and the '
-        'previous stored Tonight payload was kept.'
+        'Dashboard published; its tonight_v1 row could not be ensured and '
+        'needs a retry.'
     )
     return False
 
@@ -388,13 +379,3 @@ def _mlb_pitcher_ids(findings):
         for finding in findings
         if isinstance(finding.get('mlb_player_id'), int)
     })
-
-
-def _surface_summary(payload):
-    payload = payload or {}
-    return {
-        'status': payload.get('status'),
-        'reference_date': payload.get('reference_date') or payload.get('slate_date'),
-        'card_count': payload.get('card_count'),
-        'snapshot_id': payload.get('snapshot_id'),
-    }

@@ -640,7 +640,7 @@ def test_real_shape_replay_mutates_cu01_then_runs_bounded_cu04_to_cu06(
             return cu06.rebuild_read_model_impact(
                 state, source_snapshot=snapshot,
                 team_board_builder=builders[0], league_listing_builder=builders[1],
-                matchup_builder=builders[2], tonight_builder=builders[3],
+                matchup_builder=builders[2],
             )
 
         _patch_metadata(monkeypatch)

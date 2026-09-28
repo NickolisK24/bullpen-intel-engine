@@ -54,12 +54,13 @@ export FLASK_APP="${FLASK_APP:-app.py}"
 
 python -m scripts.database_migrations startup
 
-echo "[render_start] Preparing Daily Edition for the current trusted publication."
-python -m scripts.prepare_daily_edition_snapshot
-echo "[render_start] Daily Edition preparation completed successfully."
+# TN-11.7: startup no longer prepares the legacy Daily Edition (Today) read
+# model. Its Home consumer was retired in TN-11; a Today failure must not keep
+# the API from starting. scripts/prepare_daily_edition_snapshot remains a
+# manual operator tool only.
 
-# Start the server only after the schema authority decision and Daily Edition
-# succeed. An explicit server
+# Start the server only after the schema authority decision succeeds. An
+# explicit server
 # command passed as arguments is exec'd verbatim; otherwise fall back to the
 # documented gunicorn invocation bound to Render's $PORT (default 10000). exec
 # replaces this shell so the server process receives signals directly.

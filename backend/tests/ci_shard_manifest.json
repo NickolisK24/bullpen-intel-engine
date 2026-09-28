@@ -740,6 +740,10 @@
           "measured_seconds": 8.131
         },
         {
+          "path": "tests/test_tonight_legacy_backend_retirement.py",
+          "measured_seconds": 8.3
+        },
+        {
           "path": "tests/test_today_relief_appearance_evidence.py",
           "measured_seconds": 0.63
         },

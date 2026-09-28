@@ -339,7 +339,7 @@ def chain_services(calls):
             'status': 'complete', 'parity_status': 'match', 'rebuild_performed': True,
             'requested_team_ids': [21, 22], 'team_boards_rebuilt': [21, 22],
             'league_rows_rebuilt': [21, 22], 'matchups_rebuilt': [GAME_PK],
-            'tonight_entries_rebuilt': [GAME_PK], 'pitcher_models_rebuilt': [],
+            'pitcher_models_rebuilt': [],
         }
 
     return orchestrator, workload, team_state, read_models
@@ -358,7 +358,6 @@ def proof_read_models(state, **_kwargs):
         'team_boards_rebuilt': list(team_ids),
         'league_rows_rebuilt': list(team_ids),
         'matchups_rebuilt': [game_pk],
-        'tonight_entries_rebuilt': [game_pk],
         'pitcher_models_rebuilt': [],
         'team_board_results': {
             str(team_id): {'team_id': team_id} for team_id in team_ids
@@ -367,7 +366,6 @@ def proof_read_models(state, **_kwargs):
             str(team_id): {'team_id': team_id} for team_id in team_ids
         },
         'matchup_results': {str(game_pk): {'game_pk': game_pk}},
-        'tonight_results': {str(game_pk): {'game_pk': game_pk}},
         'failures': [],
         'parity_mismatches': [],
     }
@@ -478,7 +476,7 @@ def test_shadow_full_chain_is_bounded_and_nonpublishing(app, monkeypatch):
     assert result.affected_team_ids == (21, 22)
     assert result.cu04_pitchers_recomputed == 2
     assert result.cu05_arm_reads_recomputed == 2
-    assert result.cu06_models_rebuilt == 6
+    assert result.cu06_models_rebuilt == 5  # boards 2 + league 2 + matchup 1; no tonight_v5 (TN-11.7)
     assert result.publication_candidates == 0
     assert result.production_authority_affected is False
 
@@ -3491,7 +3489,7 @@ def test_strongest_real_shape_cycle_reaches_only_cu07_proof(app, monkeypatch):
             return cu06.rebuild_read_model_impact(
                 state, source_snapshot=snapshot,
                 team_board_builder=builders[0], league_listing_builder=builders[1],
-                matchup_builder=builders[2], tonight_builder=builders[3],
+                matchup_builder=builders[2],
             )
 
         monkeypatch.setattr(

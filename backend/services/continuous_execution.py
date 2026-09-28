@@ -1163,7 +1163,7 @@ def _execute_cycle(**kwargs):
         })
         counters['cu06_models_rebuilt'] += sum(len(read_dict.get(key) or ()) for key in (
             'team_boards_rebuilt', 'league_rows_rebuilt', 'matchups_rebuilt',
-            'tonight_entries_rebuilt', 'pitcher_models_rebuilt',
+            'pitcher_models_rebuilt',
         ))
         if (
             work_job is not None

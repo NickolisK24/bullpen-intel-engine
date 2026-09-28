@@ -1,11 +1,13 @@
-"""TN-00: Tonight authority hardening.
+"""TN-00: Tonight authority hardening (updated for TN-11.7).
 
-- Repair paths write Tonight only after the replacement trusted Dashboard
-  publication has committed and proved it is serving; a failed publication
-  leaves the stored Tonight payload untouched.
-- The incremental rebuild resolves every frozen Tonight sidecar (Team State,
-  workload, rotation, rest) from the one snapshot it is rebuilding against.
-- Production trusted serving stays snapshot-only and fails closed.
+- Repair paths ensure Tonight only after the replacement trusted Dashboard
+  publication has committed and proved it is serving, and only for that exact
+  publication: its immutable tonight_v1 row. They never write the legacy
+  tonight_v5 cache; a failed publication runs no Tonight step at all.
+- The incremental rebuild no longer builds a legacy tonight_v5 entry.
+- Production trusted serving: the default contract is publication-bound
+  tonight_v1; the explicit, deprecated contract=tonight_v5 view stays
+  snapshot-only and fails closed.
 - Every Tonight response carries the same structural shell.
 """
 
@@ -94,14 +96,13 @@ def _wire_sync_metadata(monkeypatch, module, finished):
     monkeypatch.setattr(module.sync_metadata, 'finish_sync_run', finish)
 
 
-def _real_tonight_writer(calls):
-    """The production Tonight builder shape: it builds and commits a row."""
-    def build(reference_date, *, source):
+def _tonight_v1_ensurer(calls, ensured, *, status='reused'):
+    """The TN-11.7 Tonight step: ensure the published snapshot's v1 row."""
+    def ensure(snapshot, *, source):
         calls.append('tonight')
-        response = dict(STORED, games=[{'game_pk': 2}], limitations=['rebuilt'])
-        tonight_snap.write_snapshot(response, source=source)
-        return response
-    return build
+        ensured.append((snapshot.id, source))
+        return {'status': status, 'tonight_publication_id': 7}
+    return ensure
 
 
 def _publish(calls, *, fail=False):
@@ -146,8 +147,7 @@ def _run_roster_repair(app, calls, **overrides):
             'logs_corrected': 0,
         },
         fatigue_recalc=lambda **_kwargs: calls.append('fatigue') or 0,
-        today_builder=lambda *_args, **_kwargs: {'status': 'ok'},
-        tonight_builder=_real_tonight_writer(calls),
+        tonight_v1_ensurer=_tonight_v1_ensurer(calls, []),
         complete_with_snapshot=_publish(calls),
         publication_proof_builder=_proof(calls),
     )
@@ -170,8 +170,7 @@ def _run_completed_game_repair(app, calls, monkeypatch, **overrides):
     kwargs = dict(
         audit_runner=lambda **_kwargs: {'status': 'success', 'lanes': {}},
         schedule_writer=lambda _findings: calls.append('schedule') or {},
-        today_builder=lambda *_args, **_kwargs: {'status': 'ok'},
-        tonight_builder=_real_tonight_writer(calls),
+        tonight_v1_ensurer=_tonight_v1_ensurer(calls, []),
         complete_with_snapshot=_publish(calls),
         publication_proof_builder=_proof(calls),
     )
@@ -181,18 +180,25 @@ def _run_completed_game_repair(app, calls, monkeypatch, **overrides):
 
 # ── Invariants 1 and 2: publication precedes the Tonight write ──────────────
 
-def test_intraday_repair_publishes_before_writing_tonight(app, monkeypatch):
+def test_intraday_repair_publishes_before_ensuring_tonight_v1(app, monkeypatch):
     finished = []
     _wire_sync_metadata(monkeypatch, intraday_repair, finished)
-    _store_previous_tonight()
-    calls = []
+    legacy_before = _store_previous_tonight()
+    calls, ensured = [], []
 
-    result = _run_roster_repair(app, calls)
+    result = _run_roster_repair(
+        app, calls, tonight_v1_ensurer=_tonight_v1_ensurer(calls, ensured),
+    )
 
     assert result['status'] == 'success'
     assert calls[-3:] == ['publish', 'proof', 'tonight']
     assert result['tonight_refresh'] == 'complete'
-    assert _stored_tonight()[0]['limitations'] == ['rebuilt']
+    # Bound to the exact snapshot just published, never a date or pointer.
+    assert ensured == [(92, intraday_repair.JOB_INTRADAY_REPAIR)]
+    assert result['tonight_v1']['status'] == 'reused'
+    # No Today prerequisite and no legacy tonight_v5 write.
+    assert 'today_snapshot' not in result
+    assert _stored_tonight() == legacy_before
 
 
 def test_intraday_publication_failure_leaves_tonight_unchanged(app, monkeypatch):
@@ -206,7 +212,7 @@ def test_intraday_publication_failure_leaves_tonight_unchanged(app, monkeypatch)
     assert result['status'] == 'failed'
     assert 'dashboard publication failed' in result['error']
     assert 'tonight' not in calls
-    assert result['tonight_snapshot'] is None
+    assert result['tonight_v1'] is None
     assert finished == ['failed']
     assert _stored_tonight() == before
 
@@ -229,32 +235,39 @@ def test_intraday_tonight_failure_after_publication_is_partial(app, monkeypatch)
     before = _store_previous_tonight()
     calls = []
 
-    def failing_tonight(reference_date, *, source):
+    def failing_tonight(snapshot, *, source):
         calls.append('tonight')
-        raise RuntimeError('tonight build failed')
+        raise RuntimeError('tonight_v1 ensure failed')
 
-    result = _run_roster_repair(app, calls, tonight_builder=failing_tonight)
+    result = _run_roster_repair(app, calls, tonight_v1_ensurer=failing_tonight)
 
     assert calls[-3:] == ['publish', 'proof', 'tonight']
     assert result['status'] == 'partial'
     assert result['tonight_refresh'] == 'retry_required'
     assert result['dashboard_snapshot_id'] == 92
-    # The published run is not rewritten as failed, and Tonight keeps the
-    # previous stored payload.
+    assert result['tonight_v1'] == {'status': 'failed', 'error': 'RuntimeError'}
+    # The published run is not rewritten as failed, and the legacy store is
+    # untouched.
     assert 'failed' not in finished
     assert _stored_tonight() == before
 
 
-def test_completed_game_repair_publishes_before_writing_tonight(app, monkeypatch):
+def test_completed_game_repair_publishes_before_ensuring_tonight_v1(app, monkeypatch):
     _wire_sync_metadata(monkeypatch, intraday_completed_game_repair, [])
-    _store_previous_tonight()
-    calls = []
+    legacy_before = _store_previous_tonight()
+    calls, ensured = [], []
 
-    result = _run_completed_game_repair(app, calls, monkeypatch)
+    result = _run_completed_game_repair(
+        app, calls, monkeypatch,
+        tonight_v1_ensurer=_tonight_v1_ensurer(calls, ensured, status='created'),
+    )
 
     assert result['status'] == 'success'
     assert calls == ['schedule', 'publish', 'proof', 'tonight']
     assert result['tonight_refresh'] == 'complete'
+    assert ensured == [(92, intraday_completed_game_repair.JOB_INTRADAY_COMPLETED_GAME_REPAIR)]
+    assert 'today_snapshot' not in result
+    assert _stored_tonight() == legacy_before
 
 
 def test_completed_game_publication_failure_leaves_tonight_unchanged(app, monkeypatch):
@@ -281,7 +294,7 @@ def test_completed_game_tonight_failure_after_publication_is_partial(app, monkey
 
     result = _run_completed_game_repair(
         app, calls, monkeypatch,
-        tonight_builder=lambda *_args, **_kwargs: {'status': 'error'},
+        tonight_v1_ensurer=lambda *_args, **_kwargs: {'status': 'failed'},
     )
 
     assert result['status'] == 'partial'
@@ -290,54 +303,16 @@ def test_completed_game_tonight_failure_after_publication_is_partial(app, monkey
     assert _stored_tonight() == before
 
 
-# ── Invariant 3: one snapshot for every frozen sidecar ──────────────────────
+# ── Invariant 3: the incremental rebuild builds no legacy Tonight entry ─────
 
-def test_incremental_tonight_sidecars_resolve_from_one_snapshot(monkeypatch):
-    shadow = SimpleNamespace(id='shadow-snapshot')
-    seen = {}
+def test_incremental_rebuild_has_no_legacy_tonight_scope():
+    from pathlib import Path
 
-    def recording(name):
-        def listing(*, snapshot_resolver):
-            seen[name] = snapshot_resolver()[0]
-            return {'teams': []}
-        return listing
-
-    import services.published_team_rest_status_listing as rest_listing
-    import services.published_team_rotation_listing as rotation_listing
-    import services.published_team_workload_listing as workload_listing
-    import services.schedule_context as schedule_context
-
-    monkeypatch.setattr(workload_listing, 'build_published_team_workload_listing',
-                        recording('workload'))
-    monkeypatch.setattr(rotation_listing, 'build_published_team_rotation_listing',
-                        recording('rotation'))
-    monkeypatch.setattr(rest_listing, 'build_published_team_rest_status_listing',
-                        recording('rest'))
-    monkeypatch.setattr(schedule_context, 'build_schedule_contexts_for_date',
-                        lambda _ref: [])
-
-    def fake_serve(ref, **kwargs):
-        seen['team_state'] = kwargs['team_state_listing_builder']()['snapshot']
-        for key in ('workload_listing_builder', 'rotation_listing_builder',
-                    'rest_status_listing_builder'):
-            assert kwargs[key] is not None, key
-            kwargs[key]()
-        return {'games': []}
-
-    monkeypatch.setattr(tonight_svc, 'serve_tonight', fake_serve)
-    game = SimpleNamespace(game_date_et=REF, home_team_id=137, away_team_id=119)
-    league_listing = {'snapshot': shadow, 'teams': []}
-
-    incremental_read_model_rebuild._default_tonight_builder(
-        game, shadow, {}, {}, league_listing,
-    )
-
-    assert seen == {
-        'team_state': shadow,
-        'workload': shadow,
-        'rotation': shadow,
-        'rest': shadow,
-    }
+    source = Path(incremental_read_model_rebuild.__file__).read_text(encoding='utf-8')
+    assert not hasattr(incremental_read_model_rebuild, '_default_tonight_builder')
+    assert 'tonight_intelligence_service' not in source
+    assert 'serve_tonight' not in source
+    assert 'tonight_builder' not in source
 
 
 def test_partially_injected_sidecars_never_fall_back_to_public_snapshot(monkeypatch):
@@ -394,20 +369,24 @@ def mutable_reads(app):
         event.remove(db.engine, 'before_cursor_execute', record)
 
 
-def test_trusted_tonight_serves_stored_payload_only(app, trusted_client, mutable_reads):
+def test_trusted_explicit_v5_serves_stored_payload_only(app, trusted_client, mutable_reads):
     tonight_snap.write_snapshot(dict(STORED), source='daily_sync')
 
-    response = trusted_client.get('/api/bullpen/intelligence/tonight')
+    response = trusted_client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5')
 
     assert response.status_code == 200
+    # Deprecated compatibility, explicitly labelled with its successor.
+    assert response.headers['Deprecation'] == 'true'
+    assert response.headers['X-BaseballOS-Contract'] == 'tonight_v5'
+    assert 'contract=tonight_v1' in response.headers['Link']
     body = response.get_json()
     assert {key: body[key] for key in STORED} == STORED
     assert body['snapshot']['served_from'] == tonight_snap.SERVED_FROM_SNAPSHOT
     assert mutable_reads == []
 
 
-def test_trusted_tonight_miss_fails_closed(trusted_client, mutable_reads):
-    response = trusted_client.get('/api/bullpen/intelligence/tonight')
+def test_trusted_explicit_v5_miss_fails_closed(trusted_client, mutable_reads):
+    response = trusted_client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5')
 
     assert response.status_code == 200
     body = response.get_json()
@@ -424,8 +403,37 @@ def test_trusted_tonight_miss_fails_closed(trusted_client, mutable_reads):
     assert mutable_reads == []
 
 
+def test_trusted_default_is_tonight_v1_and_never_reads_v5(trusted_client, mutable_reads):
+    tonight_snap.write_snapshot(dict(STORED), source='daily_sync')
+
+    response = trusted_client.get('/api/bullpen/intelligence/tonight')
+
+    # TN-11.7: no contract means publication-bound tonight_v1. With no trusted
+    # publication it fails closed in the v1 shape; it never falls back to the
+    # stored legacy payload.
+    assert response.status_code == 200
+    assert response.headers['X-BaseballOS-Contract'] == 'tonight_v1'
+    assert 'Deprecation' not in response.headers
+    body = response.get_json()
+    assert body['contract'] == 'tonight_v1'
+    assert body['status'] == 'unavailable'
+    assert body['games'] == []
+    assert mutable_reads == []
+
+
+def test_trusted_default_rejects_legacy_reference_date_in_the_shell(trusted_client):
+    response = trusted_client.get('/api/bullpen/intelligence/tonight?reference_date=2026-09-24')
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert set(body) >= ENVELOPE_KEYS
+    assert body['parameter'] == 'reference_date'
+
+
 def test_trusted_tonight_bad_date_is_400_in_the_shell(trusted_client):
-    response = trusted_client.get('/api/bullpen/intelligence/tonight?reference_date=nope')
+    response = trusted_client.get(
+        '/api/bullpen/intelligence/tonight?contract=tonight_v5&reference_date=nope'
+    )
 
     assert response.status_code == 400
     body = response.get_json()
@@ -443,7 +451,7 @@ def test_trusted_tonight_bad_date_is_400_in_the_shell(trusted_client):
 def test_every_tonight_envelope_shares_the_shell(app, monkeypatch):
     client = app.test_client()
 
-    bad = client.get('/api/bullpen/intelligence/tonight?reference_date=nope')
+    bad = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5&reference_date=nope')
     assert bad.status_code == 400
     assert set(bad.get_json()) >= ENVELOPE_KEYS
 
@@ -452,7 +460,7 @@ def test_every_tonight_envelope_shares_the_shell(app, monkeypatch):
 
     import api.bullpen as bullpen_api
     monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', boom)
-    failure = client.get('/api/bullpen/intelligence/tonight')
+    failure = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5')
     assert failure.status_code == 503
     assert set(failure.get_json()) >= ENVELOPE_KEYS
     assert failure.get_json()['empty_reason'] == 'schedule_data_unavailable'

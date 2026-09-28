@@ -17,7 +17,7 @@ from services.distribution_delivery import (
 from services.postgame_recovery import (
     reset_fully_processed_markers_without_appearance_rows,
 )
-from services.schedule_tonight_refresh import refresh_schedule_and_tonight
+from services.schedule_tonight_refresh import refresh_schedule
 from services.sync_execution_context import (
     MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SOURCE_EXTERNAL_SCHEDULE,
     SyncExecutionContext,
@@ -147,6 +147,30 @@ def _new_attempt(context, *, outcome=OUTCOME_RUNNING, failure_reason=None):
     return attempt
 
 
+def _ensure_current_tonight_v1(source):
+    """Ensure the current trusted publication has its immutable tonight_v1 row.
+
+    TN-11.7: operational jobs no longer rebuild the legacy tonight_v5 cache.
+    The public Tonight authority is the tonight_v1 row bound to the current
+    trusted publication; the publication hook normally creates it, and this
+    idempotent check reuses it (or creates it once if the hook missed). It is
+    reported for proof and never gates sync success.
+    """
+    from services.tonight_read_model import ensure_tonight_v1_for_publication
+
+    snapshot = _current_published_snapshot()
+    if snapshot is None:
+        return {'status': 'skipped', 'reason': 'no_trusted_publication'}
+    return ensure_tonight_v1_for_publication(snapshot, source=source)
+
+
+def _refresh_schedule_proof(proof, status, source):
+    schedule = refresh_schedule(source=source)
+    status['schedule_refresh'] = schedule
+    proof['schedule_refresh_verified'] = schedule.get('status') == 'ok'
+    return schedule
+
+
 def _run_daily(app, context, guard, *, days_back, public_only):
     status = sync_service.run_daily_sync(
         app,
@@ -161,13 +185,12 @@ def _run_daily(app, context, guard, *, days_back, public_only):
         publication_critical=status.get('publication_critical'),
         sync_status=status.get('status'),
     )
-    tonight = refresh_schedule_and_tonight(source=context.source)
-    status['schedule_tonight_refresh'] = tonight
-    proof['schedule_tonight_verified'] = tonight.get('status') == 'ok'
+    schedule = _refresh_schedule_proof(proof, status, context.source)
+    proof['tonight_v1'] = _ensure_current_tonight_v1(context.source)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
         and proof.get('verified') is True
-        and tonight.get('status') == 'ok'
+        and schedule.get('status') == 'ok'
     )
     return status, proof, successful
 
@@ -197,24 +220,28 @@ def _run_postgame(app, context, guard, *, public_only):
         or proof.get('league_publication_status')
         == LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
     )
-    tonight = refresh_schedule_and_tonight(source=context.source)
-    status['schedule_tonight_refresh'] = tonight
-    proof['schedule_tonight_verified'] = tonight.get('status') == 'ok'
+    schedule = _refresh_schedule_proof(proof, status, context.source)
+    proof['tonight_v1'] = _ensure_current_tonight_v1(context.source)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
         and publication_ok
-        and tonight.get('status') == 'ok'
+        and schedule.get('status') == 'ok'
     )
     status['ledger_marker_recovery'] = marker_recovery
     return status, proof, successful
 
 
 def _run_morning(context):
-    result = refresh_schedule_and_tonight(
+    result = refresh_schedule(
         context.scheduled_for.astimezone(schedule_authority.EASTERN).date(),
         source=context.source,
     )
-    return result, {'verified': result.get('status') == 'ok'}, result.get('status') == 'ok'
+    proof = {
+        'verified': result.get('status') == 'ok',
+        'schedule_refresh_verified': result.get('status') == 'ok',
+        'tonight_v1': _ensure_current_tonight_v1(context.source),
+    }
+    return result, proof, result.get('status') == 'ok'
 
 
 def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only=True):
@@ -280,8 +307,8 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
             attempt.snapshot_after_id = _latest_snapshot_id()
             attempt.completed_at = _now()
             attempt.outcome = OUTCOME_EXECUTED if successful else OUTCOME_FAILED
-            if proof.get('schedule_tonight_verified') is False:
-                attempt.publication_outcome = 'schedule_tonight_not_verified'
+            if proof.get('schedule_refresh_verified') is False:
+                attempt.publication_outcome = 'schedule_refresh_not_verified'
             else:
                 attempt.publication_outcome = (
                     'verified' if proof.get('verified') is True

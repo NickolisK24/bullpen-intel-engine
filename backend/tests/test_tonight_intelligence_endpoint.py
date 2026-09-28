@@ -1,4 +1,7 @@
-"""Route tests for GET /api/bullpen/intelligence/tonight.
+"""Route tests for GET /api/bullpen/intelligence/tonight?contract=tonight_v5.
+
+TN-11.7: the legacy tonight_v5 view is reachable only through the explicit,
+deprecated contract; the default contract is tonight_v1.
 
 Exercises the HTTP layer over the real schedule path (seeded scheduled_games)
 with a stubbed bullpen-context builder so the cards are deterministic without
@@ -159,7 +162,7 @@ def test_ok_with_cards_default_date(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _warm_tonight_snapshot()
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'ok'
     assert body['reference_date'] == '2026-06-26'
     assert body['card_count'] == len(body['cards']) >= 1
@@ -175,7 +178,7 @@ def test_explicit_reference_date(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _warm_tonight_snapshot()
-    body = client.get('/api/bullpen/intelligence/tonight?reference_date=2026-06-26').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5&reference_date=2026-06-26').get_json()
     assert body['reference_date'] == '2026-06-26'
     assert body['status'] == 'ok'
 
@@ -183,7 +186,7 @@ def test_explicit_reference_date(client):
 # ── 4. Invalid reference date -> 400 ──────────────────────────────────────────
 
 def test_invalid_reference_date_returns_400(client):
-    resp = client.get('/api/bullpen/intelligence/tonight?reference_date=not-a-date')
+    resp = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5&reference_date=not-a-date')
     assert resp.status_code == 400
     body = resp.get_json()
     assert body['reason_code'] == 'invalid_query_parameter'
@@ -195,7 +198,7 @@ def test_invalid_reference_date_returns_400(client):
 def test_empty_when_no_schedule_rows(client):
     with client.application.app_context():
         _warm_tonight_snapshot()
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_schedule_context'
     assert body['cards'] == [] and body['card_count'] == 0
@@ -217,7 +220,7 @@ def test_snapshot_miss_uses_bounded_live_fallback_and_stores(client, monkeypatch
 
     monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _build)
 
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_schedule_context'
     assert body['cards'] == [] and body['card_count'] == 0
@@ -235,7 +238,7 @@ def test_snapshot_miss_live_timeout_returns_bounded_empty(client, monkeypatch):
 
     monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _timeout)
 
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == tonight_snap.EMPTY_LIVE_BUILD_TIMEOUT
     assert body['cards'] == [] and body['card_count'] == 0
@@ -249,7 +252,7 @@ def test_snapshot_miss_live_exception_returns_bounded_empty(client, monkeypatch)
 
     monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _boom)
 
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == tonight_snap.EMPTY_SNAPSHOT_BUILD_UNAVAILABLE
     assert body['cards'] == [] and body['card_count'] == 0
@@ -266,7 +269,7 @@ def test_empty_when_no_team_playing_today(client):
                                      status_state='scheduled', opponent_team_id=142))
         db.session.commit()
         _warm_tonight_snapshot()
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_teams_playing_today'
 
@@ -277,7 +280,7 @@ def test_public_cards_omit_strength_and_include_public_fields(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _warm_tonight_snapshot()
-    card = client.get('/api/bullpen/intelligence/tonight').get_json()['cards'][0]
+    card = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()['cards'][0]
     assert 'strength' not in card
     for key in ('team_id', 'team_name', 'headline', 'summary', 'signal_type',
                 'signal_family', 'pregame_story', 'evidence', 'schedule_context',
@@ -305,7 +308,7 @@ def test_endpoint_snapshot_carries_the_authoritative_game_slate(client):
         db.session.commit()
         _warm_tonight_snapshot()
 
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert body['game_count'] == 1
     assert len(body['games']) == 1
     game = body['games'][0]
@@ -336,7 +339,7 @@ def test_served_cards_do_not_put_team_name_in_prose(client, monkeypatch):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _warm_tonight_snapshot()
-    cards = client.get('/api/bullpen/intelligence/tonight').get_json()['cards']
+    cards = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()['cards']
     assert cards
     for card in cards:
         assert card['team_name'] == 'Chicago Cubs'        # name on the card
@@ -351,7 +354,7 @@ def test_endpoint_response_has_no_forbidden_language(client):
         _seed_playing_stretch(116)
         _seed_playing_stretch(118)
         _warm_tonight_snapshot()
-    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    body = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     blob = str(body).lower()
     for term in ('will win', 'will lose', 'guaranteed', 'probability', 'odds',
                  'recommend', 'ranked', 'ranking', 'predict', 'projection',
@@ -367,8 +370,8 @@ def test_deterministic_response(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _warm_tonight_snapshot()
-    first = client.get('/api/bullpen/intelligence/tonight').get_json()
-    second = client.get('/api/bullpen/intelligence/tonight').get_json()
+    first = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
+    second = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5').get_json()
     assert first == second
 
 
@@ -397,7 +400,7 @@ def test_read_failure_returns_honest_503_without_leaking_db_error(client, monkey
 
     monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', _raise)
 
-    resp = client.get('/api/bullpen/intelligence/tonight')
+    resp = client.get('/api/bullpen/intelligence/tonight?contract=tonight_v5')
     assert resp.status_code == 503
     body = resp.get_json()
     assert set(body) >= {'status', 'reference_date', 'cards', 'card_count',

@@ -206,8 +206,9 @@ def test_transaction_correction_survives_roster_no_change_and_publishes(monkeypa
             'logs_corrected': 0,
         },
         fatigue_recalc=lambda **_kwargs: calls.append('fatigue') or 0,
-        today_builder=lambda *_args, **_kwargs: {'status': 'ok', 'snapshot_id': 1},
-        tonight_builder=lambda *_args, **_kwargs: {'status': 'ok', 'snapshot_id': 2},
+        tonight_v1_ensurer=lambda *_args, **_kwargs: {
+            'status': 'reused', 'tonight_publication_id': 2,
+        },
         complete_with_snapshot=lambda *_args, **_kwargs: (
             SimpleNamespace(id=91), SimpleNamespace(id=92)
         ),

@@ -100,9 +100,9 @@ def create_app(config_name=None):
         in ('1', 'true', 'yes')
     )
     # Tonight v1 (TN-01): every committed trusted publication is projected into
-    # its immutable, publication-bound tonight_v1 row. Not served publicly yet;
-    # absent from bare-Flask unit apps so existing publication tests are
-    # unaffected.
+    # its immutable, publication-bound tonight_v1 row, the public Tonight
+    # authority (default contract since TN-11.7). Absent from bare-Flask unit
+    # apps so existing publication tests are unaffected.
     app.config['TONIGHT_V1_PROJECTION_ENABLED'] = (
         os.environ.get('TONIGHT_V1_PROJECTION', 'true').lower()
         in ('1', 'true', 'yes')
@@ -112,8 +112,11 @@ def create_app(config_name=None):
     # is not an operational toggle: every authorized production publisher
     # (Render primary or GitHub fallback) crosses the same boundary.
     app.config['TEAM_STATE_PUBLICATION_PROOF_REQUIRED'] = config_name == 'production'
-    # Home publication and its Daily Edition read model advance together.
-    app.config['DAILY_EDITION_PUBLICATION_REQUIRED'] = config_name == 'production'
+    # TN-11.7: the legacy Home / Daily Edition (Today) read model is no longer
+    # a publication prerequisite. The Home consumer was retired in TN-11 and
+    # public Tonight is served from tonight_v1, so a Dashboard publication must
+    # not wait on (or fail because of) the Today snapshot.
+    app.config['DAILY_EDITION_PUBLICATION_REQUIRED'] = False
     # Per-environment validation (production fails fast on unsafe config).
     cfg.init_app(app)
 

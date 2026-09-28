@@ -240,7 +240,44 @@ def test_consistent_row_has_no_identity_mismatch(tonight_app):
 
 # ── 7-8. Contract negotiation and legacy default ─────────────────────────────
 
-def test_default_request_still_serves_legacy_tonight_v5(tonight_app, monkeypatch):
+def test_default_request_serves_tonight_v1(tonight_app, monkeypatch):
+    """TN-11.7: no contract (or an empty one) is the tonight_v1 current alias."""
+    row = _generate(tonight_app.snapshot)
+    explicit_row = deepcopy(row.payload)
+    _forbid_builds(monkeypatch)
+
+    explicit = _get(tonight_app, V1_URL)
+    for url in (LEGACY_URL, LEGACY_URL + '?contract='):
+        response = _get(tonight_app, url)
+        assert response.status_code == 200
+        assert response.get_json() == explicit.get_json() == explicit_row
+        assert response.headers['X-BaseballOS-Contract'] == 'tonight_v1'
+        assert response.headers['ETag'] == explicit.headers['ETag'] == (
+            f'"{row.content_sha256}"'
+        )
+        assert 'Deprecation' not in response.headers
+    assert TonightPublication.query.count() == 1
+
+
+def test_default_request_never_falls_back_to_legacy_tonight_v5(tonight_app, monkeypatch):
+    from api import bullpen as bullpen_api
+    from services import tonight_intelligence_snapshot
+
+    def legacy(*_args, **_kwargs):
+        raise AssertionError('default contract reached the legacy tonight_v5 reader')
+
+    monkeypatch.setattr(tonight_intelligence_snapshot, 'serve_tonight_cached', legacy)
+    monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', legacy)
+
+    # No stored v1 row for the trusted publication: fail closed in the v1
+    # shape rather than serving the legacy snapshot.
+    body = _assert_unavailable(
+        _get(tonight_app, LEGACY_URL), tonight_v1_serving.REASON_ROW_MISSING,
+    )
+    assert body['contract'] == 'tonight_v1'
+
+
+def test_explicit_tonight_v5_is_deprecated_compatibility(tonight_app, monkeypatch):
     from api import bullpen as bullpen_api
     legacy = {
         'status': 'ok', 'reference_date': tonight_app.reference_date.isoformat(),
@@ -254,23 +291,26 @@ def test_default_request_still_serves_legacy_tonight_v5(tonight_app, monkeypatch
         return deepcopy(legacy)
 
     # The trusted override (installed by the fixture, as in production) and
-    # the original view both keep calling the legacy tonight_v5 reader.
+    # the original view both reach the legacy reader only when asked for it.
     from services import tonight_intelligence_snapshot
     monkeypatch.setattr(tonight_intelligence_snapshot, 'serve_tonight_cached', fake_serve)
     monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', fake_serve)
     monkeypatch.setattr(
         tonight_v1_serving, 'serve_current_tonight_v1',
-        lambda: (_ for _ in ()).throw(AssertionError('default reached tonight_v1')),
+        lambda: (_ for _ in ()).throw(AssertionError('explicit v5 reached tonight_v1')),
     )
     _generate(tonight_app.snapshot)
 
-    for url in (LEGACY_URL, LEGACY_URL + '?contract=tonight_v5', LEGACY_URL + '?contract='):
-        response = _get(tonight_app, url)
-        assert response.status_code == 200
-        assert response.get_json() == legacy
-        assert 'X-BaseballOS-Contract' not in response.headers
-        assert 'ETag' not in response.headers
-    assert calls == [None, None, None]
+    response = _get(tonight_app, LEGACY_URL + '?contract=tonight_v5')
+    assert response.status_code == 200
+    assert response.get_json() == legacy
+    assert response.headers['X-BaseballOS-Contract'] == 'tonight_v5'
+    assert response.headers['Deprecation'] == 'true'
+    assert response.headers['Link'] == (
+        '</api/bullpen/intelligence/tonight?contract=tonight_v1>; rel="successor-version"'
+    )
+    assert 'ETag' not in response.headers
+    assert calls == [None]
 
 
 def test_invalid_contract_is_a_stable_400(tonight_app, monkeypatch):
@@ -445,6 +485,11 @@ def test_original_view_negotiates_the_same_contracts(tonight_app, monkeypatch):
         response = bullpen_api.get_tonight_intelligence()
     assert response.get_json() == row.payload
     assert response.headers['ETag'] == f'"{row.content_sha256}"'
+
+    with tonight_app.app.test_request_context(LEGACY_URL):
+        response = bullpen_api.get_tonight_intelligence()
+    assert response.get_json() == row.payload
+    assert response.headers['X-BaseballOS-Contract'] == 'tonight_v1'
 
     with tonight_app.app.test_request_context(LEGACY_URL + '?contract=garbage'):
         response, status = bullpen_api.get_tonight_intelligence()
