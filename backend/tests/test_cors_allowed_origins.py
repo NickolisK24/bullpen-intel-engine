@@ -609,10 +609,15 @@ def test_trusted_tonight_view_never_builds_on_cache_miss(monkeypatch):
     )
     app = Flask(__name__)
     with app.test_request_context(
-        '/api/bullpen/intelligence/tonight?reference_date=2026-08-08'
+        # TN-11.7: the legacy v5 view is reachable only via the explicit,
+        # deprecated contract; the default contract is tonight_v1.
+        '/api/bullpen/intelligence/tonight?contract=tonight_v5&reference_date=2026-08-08'
     ):
         response = authority.trusted_tonight_view()
         payload = response.get_json()
+
+    assert response.headers['Deprecation'] == 'true'
+    assert response.headers['X-BaseballOS-Contract'] == 'tonight_v5'
 
     assert captured['build_on_miss'] is False
     assert captured['persist'] is False
