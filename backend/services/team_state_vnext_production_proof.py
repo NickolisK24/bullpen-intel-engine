@@ -658,7 +658,9 @@ def build_proof(*, snapshot, teams, expected_team_count, historical_before=None,
     from services.availability_reference_date import trusted_slate_reference_dates
 
     data_through = getattr(snapshot, 'data_through', None)
-    _, expected_availability = trusted_slate_reference_dates(data_through)
+    _, expected_availability = trusted_slate_reference_dates(
+        data_through, getattr(snapshot, 'availability_reference_date', None),
+    )
 
     historical = _historical_block(historical_before, historical_after)
     payload = _mapping(getattr(snapshot, 'payload', None))

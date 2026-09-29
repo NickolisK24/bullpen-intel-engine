@@ -27,7 +27,10 @@ from datetime import date, timedelta
 from typing import Callable, Optional
 
 from services.availability import ACTIVE_WINDOW_DAYS
-from services.availability_reference_date import product_current_date
+from services.availability_reference_date import (
+    product_current_date,
+    trusted_slate_reference_dates,
+)
 
 
 # Non-sensitive reason codes surfaced on the anchored freshness read. The two
@@ -96,7 +99,11 @@ def serving_snapshot_freshness_authority(
     )
     return {
         'data_through': data_through,
-        'availability_reference_date': data_through + timedelta(days=1),
+        # The snapshot's own schedule-aware date (past data_through + 1 across
+        # off-days); data_through + 1 only when the snapshot carries none.
+        'availability_reference_date': trusted_slate_reference_dates(
+            data_through, getattr(snapshot, 'availability_reference_date', None),
+        )[1],
         'reference_date': ref,
         'active_window_days': int(active_window_days),
         'reason_code': (

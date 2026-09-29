@@ -353,6 +353,14 @@ def build_recent_usage_rest_carrier(
     line of the games in which a row is a credited start, so the start can be
     classified by its game's shape; when omitted, the rows themselves are the
     only game lines.
+
+    Every window and pattern is calendar-relative to ``reference_date``: it ends
+    on the previous calendar day, so ``yesterday`` means the day before the
+    reference, never merely the latest data date. ``reference_date`` is the
+    canonical schedule-aware reference date, which sits past
+    ``data_through + 1`` only across schedule-confirmed no-game dates; those
+    dates hold no appearances and are covered as such, so an off-day reads as a
+    recovery day rather than as missing coverage.
     """
     anchor = _parse_data_through(data_through)
     reference = _parse_data_through(reference_date)
@@ -361,7 +369,7 @@ def build_recent_usage_rest_carrier(
             reference_date=reference,
             reason_code='data_through_missing',
         )
-    if reference is None or reference != anchor + timedelta(days=1):
+    if reference is None or reference <= anchor:
         return _unavailable_recent_usage_rest_carrier(
             data_through=anchor,
             reference_date=reference,
@@ -373,7 +381,10 @@ def build_recent_usage_rest_carrier(
         for pitcher_id, value in dict(active_pitchers or {}).items()
         if type(pitcher_id) is int and pitcher_id > 0
     }
-    coverage = dict(coverage_by_date or {})
+    coverage = _with_confirmed_no_game_days(coverage_by_date, anchor, reference)
+    # The last completed calendar day before the reference; equal to ``anchor``
+    # unless off-days separate the data from the reference date.
+    window_end = reference - timedelta(days=1)
     classes = bullpen_workload_classes(
         [log for log, _pitcher in rows], team_game_logs=team_game_logs,
     )
@@ -382,7 +393,7 @@ def build_recent_usage_rest_carrier(
         for log, pitcher in rows
         if _bullpen_state(log, classes) == RELIEF
     ]
-    seven_start = anchor - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
+    seven_start = window_end - timedelta(days=RECENT_USAGE_REST_MAX_WINDOW_DAYS - 1)
     contributor_ids = {
         pitcher.id
         for log, pitcher in relief_rows
@@ -403,7 +414,7 @@ def build_recent_usage_rest_carrier(
             pitcher_id=pitcher_id,
             pitcher_name=active_source.get('name') or names.get(pitcher_id),
             rows=rows_by_pitcher.get(pitcher_id) or [],
-            anchor=anchor,
+            anchor=window_end,
             reference=reference,
             coverage=coverage,
             source_days_since=active_source.get('days_since_last_appearance'),
@@ -442,6 +453,24 @@ def build_recent_usage_rest_carrier(
         'active_pitchers': active_pitchers,
         'off_active_historical_contributors': off_active,
     }
+
+
+def _with_confirmed_no_game_days(coverage_by_date, anchor, reference):
+    """Slate coverage plus the no-game days between ``anchor`` and ``reference``.
+
+    Those days exist only because the reference authority confirmed them as
+    league-wide no-game dates, so there is nothing on them to be incomplete.
+    """
+    coverage = dict(coverage_by_date or {})
+    day = anchor + timedelta(days=1)
+    while day < reference:
+        coverage.setdefault(day.isoformat(), {
+            'complete_enough_to_publish': True,
+            'reason_codes': [],
+            'schedule_confirmed_no_game_day': True,
+        })
+        day += timedelta(days=1)
+    return coverage
 
 
 def _unavailable_recent_usage_rest_carrier(

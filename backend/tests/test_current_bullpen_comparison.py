@@ -366,6 +366,39 @@ def test_scheduled_game_matchup_reuses_carrier_with_away_home_order(monkeypatch)
     assert payload['comparison']['teams']['team_b']['team_id'] == 2
 
 
+def test_scheduled_game_on_another_date_withholds_only_rest(monkeypatch):
+    """A game dated after the publication's availability date (an off-day in
+    between, or a rollover before the next publication) must not show that
+    publication's "worked yesterday" as the game's rest."""
+    _install_owners(monkeypatch)
+    game = _slate_game()
+    later = dict(game.to_dict(), game_date_et='2026-08-26')
+    payload = trusted_compare_authority.build_scheduled_game_matchup_payload(
+        SimpleNamespace(to_dict=lambda: later), _snapshot(), directory={},
+    )
+    domains = payload['comparison']['domains']
+
+    assert domains['rest']['status'] == comparison.STATUS_WITHHELD
+    assert domains['rest']['reason_code'] == comparison.REASON_REST_DATE_MISMATCH
+    assert domains['rest']['team_a'] is None and domains['rest']['team_b'] is None
+    for name in ('team_state', 'workload', 'rotation', 'availability'):
+        assert domains[name]['status'] != comparison.STATUS_WITHHELD
+    assert payload['comparison']['status'] == comparison.STATUS_PARTIAL
+
+    same_day = trusted_compare_authority.build_scheduled_game_matchup_payload(
+        game, _snapshot(), directory={},
+    )
+    assert same_day['comparison']['domains']['rest']['team_a'] == {
+        'rested_options': 2, 'worked_yesterday': 1, 'back_to_back': 0,
+    }
+
+
+def test_manual_comparison_without_a_game_date_keeps_publication_rest(monkeypatch):
+    _install_owners(monkeypatch)
+    carrier, _ = comparison.build_current_bullpen_comparison(_snapshot(), 1, 2)
+    assert carrier['domains']['rest']['status'] == comparison.STATUS_AVAILABLE
+
+
 def test_scheduled_game_route_selects_snapshot_once_without_board_builds(monkeypatch):
     _install_owners(monkeypatch)
     calls = []
@@ -399,9 +432,9 @@ def test_scheduled_game_route_selects_snapshot_once_without_board_builds(monkeyp
     monkeypatch.setattr(
         trusted_compare_authority,
         'build_current_bullpen_comparison',
-        lambda resolved_snapshot, away_team_id, home_team_id: (
-            comparison_calls.append((resolved_snapshot, away_team_id, home_team_id))
-            or build_comparison(resolved_snapshot, away_team_id, home_team_id)
+        lambda resolved_snapshot, away_team_id, home_team_id, **kwargs: (
+            comparison_calls.append((resolved_snapshot, away_team_id, home_team_id, kwargs))
+            or build_comparison(resolved_snapshot, away_team_id, home_team_id, **kwargs)
         ),
     )
     monkeypatch.setattr(
@@ -415,7 +448,7 @@ def test_scheduled_game_route_selects_snapshot_once_without_board_builds(monkeyp
         body = response.get_json()
 
     assert calls == [('game', {'game_pk': 900001}), 'directory', 'snapshot']
-    assert comparison_calls == [(snapshot, 1, 2)]
+    assert comparison_calls == [(snapshot, 1, 2, {'as_of_date': '2026-08-25'})]
     assert body['comparison']['contract'] == comparison.CONTRACT
     assert body['game']['away']['team_id'] == 1
     assert body['game']['home']['team_id'] == 2
@@ -449,7 +482,7 @@ def test_scheduled_game_identity_survives_comparison_unavailable(monkeypatch):
     monkeypatch.setattr(
         trusted_compare_authority,
         'build_current_bullpen_comparison',
-        lambda *args: (None, 'published_team_missing'),
+        lambda *args, **kwargs: (None, 'published_team_missing'),
     )
     payload = trusted_compare_authority.build_scheduled_game_matchup_payload(
         _slate_game(),

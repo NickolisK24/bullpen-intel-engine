@@ -504,6 +504,45 @@ def test_sf_side_is_team_board_bullpen_truth_not_fatigue_score(tonight_app):
     assert side['rotation'] is None
 
 
+def test_rollover_edition_withholds_rest_facts_of_an_earlier_day(tonight_app):
+    """A later baseball date never re-labels the publication's "yesterday".
+
+    The SF bullpen worked on the publication's data date. Presented for the
+    next baseball date from the same snapshot (TN-11.8 rollover before a new
+    publication), those arms did not work yesterday relative to that date, so
+    rest, 3-in-4 and key-arm rest patterns are withheld, not repeated.
+    """
+    snapshot = tonight_app.snapshot
+    next_day = snapshot.availability_reference_date + timedelta(days=1)
+    payload = tonight_read_model.build_tonight_v1(
+        snapshot,
+        tonight_read_model.load_slate_games(snapshot.availability_reference_date),
+        generated_at=datetime(2026, 9, 24, 12, 0),
+        reference_date=next_day,
+    )
+    side = _side(payload, SF)
+
+    assert payload['edition']['baseball_date'] == next_day.isoformat()
+    assert payload['edition']['availability_reference_date'] == (
+        snapshot.availability_reference_date.isoformat()
+    )
+    assert side['rest'] == {
+        'active_arm_count': None, 'rested_arm_count': None,
+        'worked_yesterday_count': None, 'back_to_back_count': None,
+        'available': False,
+        'reason_code': tonight_read_model.REASON_REST_DATE_MISMATCH,
+    }
+    assert side['multi_day_usage']['three_in_four_count'] is None
+    assert all(arm['days_since_last_appearance'] is None for arm in side['key_arms'])
+    assert all(arm['pattern'] is None for arm in side['key_arms'])
+    # Facts that are not calendar-relative to "yesterday" stay published.
+    assert side['team_state']['public_label'] == 'Stretched'
+    assert side['workload_7d']['appearances'] == 6
+    assert tonight_read_model.REASON_REST_DATE_MISMATCH in payload['limitations']
+    # The same-date edition is unchanged.
+    assert _side(_build(tonight_app), SF)['rest']['worked_yesterday_count'] == 2
+
+
 # ── Evidence states: withheld, never zero ────────────────────────────────────
 
 def test_missing_team_state_receipt_withholds_that_side(tonight_app):
