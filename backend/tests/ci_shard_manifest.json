@@ -1403,7 +1403,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 539.48,
+      "measured_seconds": 552.78,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1692,6 +1692,10 @@
         {
           "path": "tests/test_team_state_vnext_production_proof.py",
           "measured_seconds": 1.2
+        },
+        {
+          "path": "tests/test_tonight_v1_production_certification.py",
+          "measured_seconds": 13.3
         },
         {
           "path": "tests/test_traffic_reporting.py",
