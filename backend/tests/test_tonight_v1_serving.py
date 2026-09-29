@@ -399,6 +399,8 @@ def test_serving_module_cannot_build():
         # TN-07: the frozen lead is only marked pregame at serve time.
         'services.tonight_read_model.present_lead',
         'models.slate_game.SlateGame',
+        # TN-11.8: the product day selects which stored edition is current.
+        'services.availability_reference_date.product_current_date',
         'hashlib.sha256',
         '__future__.annotations',
         'datetime.date',

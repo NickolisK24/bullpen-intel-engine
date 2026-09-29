@@ -20,7 +20,7 @@ from services.postgame_recovery import (
 from services.schedule_tonight_refresh import refresh_schedule
 from services.sync_execution_context import (
     MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SOURCE_EXTERNAL_SCHEDULE,
-    SyncExecutionContext,
+    SOURCE_INCIDENT_RECOVERY, SyncExecutionContext,
 )
 from services.sync_publication_proof import (
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
@@ -147,21 +147,54 @@ def _new_attempt(context, *, outcome=OUTCOME_RUNNING, failure_reason=None):
     return attempt
 
 
-def _ensure_current_tonight_v1(source):
-    """Ensure the current trusted publication has its immutable tonight_v1 row.
+def tonight_reference_date(context):
+    """The baseball date a governed run presents: its intended window in ET.
 
-    TN-11.7: operational jobs no longer rebuild the legacy tonight_v5 cache.
-    The public Tonight authority is the tonight_v1 row bound to the current
-    trusted publication; the publication hook normally creates it, and this
-    idempotent check reuses it (or creates it once if the hook missed). It is
-    reported for proof and never gates sync success.
+    Derived from the execution context's ``scheduled_for`` (never host-local
+    time), the same Eastern authority the morning schedule refresh uses.
     """
-    from services.tonight_read_model import ensure_tonight_v1_for_publication
+    return context.scheduled_for.astimezone(schedule_authority.EASTERN).date()
 
+
+def _ensure_current_tonight_v1(context, *, include_publication_edition=True):
+    """Ensure today's immutable tonight_v1 edition for the trusted publication.
+
+    TN-11.8: the current trusted Dashboard snapshot is the bullpen authority,
+    and the run's intended ET date is the presented baseball day. They differ
+    when the calendar rolls forward while the trusted publication is still
+    current (a new day, an off-day), so this ensures the edition for exactly
+    ``(tonight_reference_date(context), snapshot)``: reused when stored,
+    created once otherwise, never overwritten, and never another date.
+
+    The publication-time edition (bound to the snapshot's own availability
+    date by the post-publication hook) is also ensured for lanes that publish,
+    and reported under ``publication_edition``. Reported for proof only; it
+    never gates sync success (TN-11.7) and never republishes the Dashboard.
+    """
+    from services.tonight_read_model import (
+        ensure_tonight_v1_for_date,
+        ensure_tonight_v1_for_publication,
+    )
+
+    reference_date = tonight_reference_date(context)
     snapshot = _current_published_snapshot()
     if snapshot is None:
-        return {'status': 'skipped', 'reason': 'no_trusted_publication'}
-    return ensure_tonight_v1_for_publication(snapshot, source=source)
+        return {
+            'status': 'skipped',
+            'reason': 'no_trusted_publication',
+            'reference_date': reference_date.isoformat(),
+        }
+    publication_edition = None
+    if include_publication_edition:
+        publication_edition = ensure_tonight_v1_for_publication(
+            snapshot, source=context.source,
+        )
+    result = ensure_tonight_v1_for_date(
+        snapshot, reference_date, source=context.source,
+    )
+    if publication_edition is not None:
+        result['publication_edition'] = publication_edition
+    return result
 
 
 def _refresh_schedule_proof(proof, status, source):
@@ -186,7 +219,7 @@ def _run_daily(app, context, guard, *, days_back, public_only):
         sync_status=status.get('status'),
     )
     schedule = _refresh_schedule_proof(proof, status, context.source)
-    proof['tonight_v1'] = _ensure_current_tonight_v1(context.source)
+    proof['tonight_v1'] = _ensure_current_tonight_v1(context)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
         and proof.get('verified') is True
@@ -221,7 +254,7 @@ def _run_postgame(app, context, guard, *, public_only):
         == LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
     )
     schedule = _refresh_schedule_proof(proof, status, context.source)
-    proof['tonight_v1'] = _ensure_current_tonight_v1(context.source)
+    proof['tonight_v1'] = _ensure_current_tonight_v1(context)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
         and publication_ok
@@ -232,14 +265,28 @@ def _run_postgame(app, context, guard, *, public_only):
 
 
 def _run_morning(context):
-    result = refresh_schedule(
-        context.scheduled_for.astimezone(schedule_authority.EASTERN).date(),
-        source=context.source,
-    )
+    """Schedule refresh for the intended ET date, then that date's edition.
+
+    The same path serves the natural morning window and ``recovery_morning``.
+    It never ingests, never publishes the Dashboard and never builds tonight_v5:
+    the current trusted publication is rolled forward into the edition for the
+    refreshed date.
+    """
+    reference_date = tonight_reference_date(context)
+    result = refresh_schedule(reference_date, source=context.source)
+    tonight = _ensure_current_tonight_v1(context, include_publication_edition=False)
+    result['tonight_edition'] = {
+        'schedule_date': reference_date.isoformat(),
+        'trusted_snapshot_id': tonight.get('dashboard_snapshot_id'),
+        'tonight_publication_id': tonight.get('tonight_publication_id'),
+        'reference_date': tonight.get('reference_date'),
+        'status': tonight.get('status'),
+        'game_count': tonight.get('game_count'),
+    }
     proof = {
         'verified': result.get('status') == 'ok',
         'schedule_refresh_verified': result.get('status') == 'ok',
-        'tonight_v1': _ensure_current_tonight_v1(context.source),
+        'tonight_v1': tonight,
     }
     return result, proof, result.get('status') == 'ok'
 
@@ -276,7 +323,15 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
 
         try:
             _recover_abandoned_attempts()
-            satisfied = _satisfied_attempt(context)
+            # A governed morning recovery re-runs the idempotent schedule and
+            # Tonight edition reconciliation even when the natural morning
+            # window already executed: that run may have preceded the fix it
+            # is recovering from. It never ingests or publishes.
+            morning_recovery = (
+                context.mode == MODE_MORNING
+                and context.source == SOURCE_INCIDENT_RECOVERY
+            )
+            satisfied = None if morning_recovery else _satisfied_attempt(context)
             if satisfied is not None:
                 attempt = _new_attempt(context, outcome=OUTCOME_ALREADY_SATISFIED)
                 attempt.publication_outcome = 'previous_window_execution_verified'

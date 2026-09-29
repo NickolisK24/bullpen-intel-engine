@@ -10,12 +10,16 @@ import TonightHeader from './TonightHeader'
 import TonightSlate from './TonightSlate'
 import { classifyTonightResponse, unavailableDetail } from './tonightView'
 
-function GoDeeper() {
+// The game-link sentence describes rendered game cards, so it is shown only
+// when games are on the page; Browse Team Boards is always offered.
+function GoDeeper({ hasGames = false }) {
   return (
     <nav className="mt-section-lg min-w-0 border-t border-dirt pt-panel" aria-label="Go deeper" data-testid="tonight-go-deeper">
-      <p className="text-sm text-chalk300">
-        Every game above links to both Team Boards and its Matchup.
-      </p>
+      {hasGames && (
+        <p className="text-sm text-chalk300">
+          Every game above links to both Team Boards and its Matchup.
+        </p>
+      )}
       <Link
         to="/bullpen"
         className="mt-2 inline-flex min-h-11 items-center rounded border border-dirt px-3 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
@@ -48,7 +52,7 @@ function TonightBody({ payload, loading, error, onRetry, completedInitiallyExpan
       <FeaturedGames payload={payload} />
       <TonightSlate games={payload.games} initialCompletedExpanded={completedInitiallyExpanded} />
       <LeagueChanges changes={payload.league_changes} />
-      <GoDeeper />
+      <GoDeeper hasGames={Array.isArray(payload.games) && payload.games.length > 0} />
     </>
   )
 }

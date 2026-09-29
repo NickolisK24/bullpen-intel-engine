@@ -512,3 +512,14 @@ test('route entry metadata describes /tonight without mutable baseball claims', 
   const sitemap = readFileSync(new URL('../public/sitemap.xml', import.meta.url), 'utf8')
   assert.doesNotMatch(sitemap, /\/tonight/)
 })
+
+test('TN-11.8: the game-link footer sentence renders only when games render', () => {
+  const quiet = section(renderPage({ payload: quietPayload() }), 'tonight-go-deeper')
+  assert.ok(quiet, 'the quiet day still offers Go deeper')
+  assert.doesNotMatch(textOf(quiet), /Every game above links/)
+  assert.match(textOf(quiet), /Browse Team Boards/)
+
+  const edition = section(renderPage({ payload: productionPayload() }), 'tonight-go-deeper')
+  assert.match(textOf(edition), /Every game above links to both Team Boards and its Matchup\./)
+  assert.match(textOf(edition), /Browse Team Boards/)
+})
