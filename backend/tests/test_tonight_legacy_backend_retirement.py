@@ -7,7 +7,7 @@ legacy surfaces remain only as explicit, deprecated public compatibility.
 """
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -118,11 +118,19 @@ def lanes(monkeypatch):
     )
     monkeypatch.setattr(sync_due, '_current_published_snapshot', lambda: state['published'])
 
-    def ensure(snapshot, *, source):
-        calls.append(('tonight_v1', snapshot.id, source))
+    def ensure_publication(snapshot, *, source):
+        calls.append(('tonight_v1_publication', snapshot.id, source))
+        return {'status': 'reused', 'tonight_publication_id': 4}
+
+    # TN-11.8: every lane ensures the edition for its own intended ET date.
+    def ensure_date(snapshot, reference_date, *, source):
+        calls.append(('tonight_v1', snapshot.id, reference_date, source))
         return dict(state['ensure'])
 
-    monkeypatch.setattr(tonight_read_model, 'ensure_tonight_v1_for_publication', ensure)
+    monkeypatch.setattr(
+        tonight_read_model, 'ensure_tonight_v1_for_publication', ensure_publication,
+    )
+    monkeypatch.setattr(tonight_read_model, 'ensure_tonight_v1_for_date', ensure_date)
     return SimpleNamespace(calls=calls, state=state)
 
 
@@ -132,10 +140,17 @@ def test_daily_succeeds_on_publication_and_schedule_without_legacy_generation(la
     )
 
     assert successful is True
-    assert [call[0] for call in lanes.calls] == ['daily', 'schedule', 'tonight_v1']
+    assert [call[0] for call in lanes.calls] == [
+        'daily', 'schedule', 'tonight_v1_publication', 'tonight_v1',
+    ]
     assert proof['schedule_refresh_verified'] is True
-    assert proof['tonight_v1'] == {'status': 'reused', 'tonight_publication_id': 5}
-    assert lanes.calls[-1] == ('tonight_v1', 3972, SOURCE_EXTERNAL_SCHEDULE)
+    assert proof['tonight_v1'] == {
+        'status': 'reused', 'tonight_publication_id': 5,
+        'publication_edition': {'status': 'reused', 'tonight_publication_id': 4},
+    }
+    assert lanes.calls[-1] == (
+        'tonight_v1', 3972, date(2026, 9, 28), SOURCE_EXTERNAL_SCHEDULE,
+    )
     assert status['schedule_refresh']['legacy_tonight_v5'] == 'not_generated'
     assert 'schedule_tonight_refresh' not in status
     assert 'schedule_tonight_verified' not in proof
@@ -189,7 +204,9 @@ def test_postgame_succeeds_without_legacy_generation(lanes):
     )
 
     assert successful is True
-    assert [call[0] for call in lanes.calls] == ['postgame', 'schedule', 'tonight_v1']
+    assert [call[0] for call in lanes.calls] == [
+        'postgame', 'schedule', 'tonight_v1_publication', 'tonight_v1',
+    ]
     assert proof['tonight_v1']['status'] == 'reused'
 
 
@@ -199,8 +216,12 @@ def test_morning_is_schedule_only(lanes):
     assert successful is True
     assert proof['verified'] is True
     assert proof['schedule_refresh_verified'] is True
+    # TN-11.8: the refreshed ET date's edition only; no publication ensure.
     assert [call[0] for call in lanes.calls] == ['schedule', 'tonight_v1']
+    assert lanes.calls[0][1] == date(2026, 9, 28)
+    assert lanes.calls[1] == ('tonight_v1', 3972, date(2026, 9, 28), SOURCE_EXTERNAL_SCHEDULE)
     assert result['legacy_tonight_v5'] == 'not_generated'
+    assert result['tonight_edition']['schedule_date'] == '2026-09-28'
 
 
 def test_no_trusted_publication_skips_the_tonight_v1_ensure(lanes):
@@ -209,7 +230,10 @@ def test_no_trusted_publication_skips_the_tonight_v1_ensure(lanes):
         None, _context(MODE_DAILY), None, days_back=7, public_only=True,
     )
     assert successful is True
-    assert proof['tonight_v1'] == {'status': 'skipped', 'reason': 'no_trusted_publication'}
+    assert proof['tonight_v1'] == {
+        'status': 'skipped', 'reason': 'no_trusted_publication',
+        'reference_date': '2026-09-28',
+    }
 
 
 # ── Ensure: exactly one immutable tonight_v1 row per publication ─────────────

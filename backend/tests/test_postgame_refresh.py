@@ -1010,8 +1010,8 @@ def test_postgame_sync_workflow_job_timeout_covers_the_worst_case_steps():
 
 def test_scheduled_windows_refresh_schedule_without_legacy_tonight():
     """Static guard (TN-11.7): daily, postgame and morning windows refresh the
-    schedule and ensure the trusted publication's tonight_v1 row; none of them
-    rebuilds the legacy tonight_v5 cache."""
+    schedule and ensure the tonight_v1 edition for their intended ET date;
+    none of them rebuilds the legacy tonight_v5 cache."""
     from pathlib import Path
 
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
@@ -1024,7 +1024,11 @@ def test_scheduled_windows_refresh_schedule_without_legacy_tonight():
     ).read_text(encoding='utf-8')
     assert 'refresh_schedule_and_tonight' not in due_service
     assert 'tonight_intelligence' not in due_service
-    assert due_service.count('_ensure_current_tonight_v1(context.source)') == 3
+    # TN-11.8: every lane ensures its intended ET date's edition.
+    assert due_service.count('_ensure_current_tonight_v1(context)') == 2
+    assert due_service.count(
+        '_ensure_current_tonight_v1(context, include_publication_edition=False)'
+    ) == 1
 
 
 def test_sync_workflow_direct_sync_steps_have_command_timeouts():

@@ -748,6 +748,10 @@
           "measured_seconds": 0.63
         },
         {
+          "path": "tests/test_tonight_v1_date_rollover.py",
+          "measured_seconds": 38.5
+        },
+        {
           "path": "tests/test_traffic_measurement.py",
           "measured_seconds": 1.231
         },

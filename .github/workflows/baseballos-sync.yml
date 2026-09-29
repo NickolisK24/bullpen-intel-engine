@@ -53,6 +53,7 @@ on:
         options:
           - recovery_daily
           - recovery_postgame
+          - recovery_morning
           - backfill
           - intraday
       backfill_date:
@@ -216,8 +217,13 @@ jobs:
           fi
           echo "Daily window reconciliation completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
+      # TN-11.8: the same morning path also serves the governed manual
+      # recovery_morning mode. It refreshes the schedule for the intended ET
+      # date and rolls the current trusted publication into that date's
+      # immutable Tonight edition. It never ingests, never runs Daily or
+      # Postgame, and never republishes the Dashboard.
       - name: Run morning slate schedule refresh
-        if: ${{ github.event_name == 'schedule' && github.event.schedule == '23 14 * * *' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'recovery_morning') || (github.event_name == 'schedule' && github.event.schedule == '23 14 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -225,14 +231,22 @@ jobs:
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           SLATE_SCHEDULE_COMMAND_TIMEOUT: 5m
+          EXECUTION_SOURCE: ${{ github.event_name == 'schedule' && 'github_schedule' || 'incident_recovery' }}
+          SCHEDULED_FOR: ${{ inputs.scheduled_for }}
+          RECOVERY_REASON: ${{ inputs.recovery_reason }}
+          CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
+          RECOVERY_OPERATOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
+          if [ "$GITHUB_EVENT_NAME" = 'schedule' ]; then
+            SCHEDULED_FOR="$(date -u +'%Y-%m-%dT14:23:00Z')"
+          fi
           echo "Morning slate schedule refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          timeout --kill-after=30s "$SLATE_SCHEDULE_COMMAND_TIMEOUT" python backend/scripts/run_due_sync.py --mode morning --execution-source github_schedule --scheduled-for "$(date -u +'%Y-%m-%dT14:23:00Z')" --public-only
+          timeout --kill-after=30s "$SLATE_SCHEDULE_COMMAND_TIMEOUT" python backend/scripts/run_due_sync.py --mode morning --execution-source "$EXECUTION_SOURCE" --scheduled-for "$SCHEDULED_FOR" --public-only --recovery-reason "$RECOVERY_REASON" --confirm-recovery "$CONFIRM_RECOVERY" --operator "$RECOVERY_OPERATOR"
           echo "Morning slate schedule refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run direct postgame refresh

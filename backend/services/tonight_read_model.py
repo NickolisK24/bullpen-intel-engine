@@ -38,6 +38,7 @@ from typing import Any, Mapping
 from models.slate_game import SlateGame
 from models.tonight_publication import TonightPublication
 from services import bullpen_board
+from services.dashboard_snapshot import SNAPSHOT_STATUS_READY
 from services import public_serving_authority as psa
 from services import team_board_v2
 from services.editorial_voice_contract_v1 import find_editorial_violations
@@ -203,15 +204,21 @@ class TonightPublicationConflict(RuntimeError):
 
 # ── Pure builder ─────────────────────────────────────────────────────────────
 
-def build_tonight_v1(snapshot, slate_games, *, generated_at):
+def build_tonight_v1(snapshot, slate_games, *, generated_at, reference_date=None):
     """Project one trusted snapshot plus its slate into the tonight_v1 payload.
 
-    ``slate_games`` must already be the slate for this publication's baseball
-    date. Performs no database reads: every input is the snapshot object and
-    the slate rows passed in.
+    ``slate_games`` must already be the slate for the edition's baseball date.
+    That date is ``reference_date`` when given (TN-11.8 date rollover: a later
+    baseball day presented with the same trusted bullpen state), otherwise the
+    snapshot's ``availability_reference_date`` (publication-time edition). The
+    edition always carries the snapshot's own ``availability_reference_date``
+    and ``data_through`` unchanged: the bullpen authority is not re-dated.
+    Performs no database reads: every input is the snapshot object and the
+    slate rows passed in.
     """
     package = _team_board_package(snapshot)
-    baseball_date = _iso(getattr(snapshot, 'availability_reference_date', None))
+    availability_date = _iso(getattr(snapshot, 'availability_reference_date', None))
+    baseball_date = _iso(reference_date) if reference_date is not None else availability_date
     limitations = []
     if package is None:
         limitations.append(REASON_TEAM_BOARD_PACKAGE_MISSING)
@@ -245,7 +252,7 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at):
         'edition': {
             'baseball_date': baseball_date,
             'data_through': _iso(getattr(snapshot, 'data_through', None)),
-            'availability_reference_date': baseball_date,
+            'availability_reference_date': availability_date,
             'generated_at': _iso(generated_at),
             'publication': {
                 'dashboard_snapshot_id': getattr(snapshot, 'id', None),
@@ -1284,22 +1291,26 @@ def content_sha256(payload):
     ).hexdigest()
 
 
-def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None):
+def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None, reference_date=None):
     """Build and store the tonight_v1 row for one trusted snapshot.
 
+    The edition's baseball date is ``reference_date`` when given, otherwise the
+    snapshot's ``availability_reference_date`` (the publication-time edition).
     Returns ``(row, outcome)`` where outcome is ``'created'`` or ``'reused'``.
     A rebuild of the same publication identity with identical content reuses
     the stored row; different content raises ``TonightPublicationConflict``
     and leaves the stored row untouched.
     """
-    baseball_date = getattr(snapshot, 'availability_reference_date', None)
-    if getattr(snapshot, 'id', None) is None or baseball_date is None:
+    availability_date = getattr(snapshot, 'availability_reference_date', None)
+    baseball_date = reference_date if reference_date is not None else availability_date
+    if getattr(snapshot, 'id', None) is None or baseball_date is None or availability_date is None:
         raise ValueError('tonight_v1_requires_identified_snapshot')
     if getattr(snapshot, 'data_through', None) is None:
         raise ValueError('tonight_v1_requires_data_through')
     generated_at = generated_at or utc_now_naive()
     payload = build_tonight_v1(
         snapshot, load_slate_games(baseball_date), generated_at=generated_at,
+        reference_date=baseball_date,
     )
     digest = content_sha256(payload)
     existing = TonightPublication.query.filter_by(
@@ -1320,7 +1331,7 @@ def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None):
         dashboard_snapshot_id=snapshot.id,
         sync_run_id=getattr(snapshot, 'sync_run_id', None),
         data_through=snapshot.data_through,
-        availability_reference_date=baseball_date,
+        availability_reference_date=availability_date,
         payload=payload,
         content_sha256=digest,
         generated_at=generated_at,
@@ -1406,6 +1417,96 @@ def ensure_tonight_v1_for_publication(snapshot, *, source):
         result.get('tonight_publication_id'),
     )
     return result
+
+
+def ensure_tonight_v1_for_date(snapshot, reference_date, *, source):
+    """Ensure the Tonight edition for one baseball date exists (TN-11.8).
+
+    Tonight identity is (reference_date, dashboard_snapshot_id, contract): the
+    trusted Dashboard snapshot answers "which bullpen state is authoritative",
+    ``reference_date`` answers "which MLB day is presented". They differ when
+    the calendar rolls forward (a new day, an off-day) while the trusted
+    bullpen publication is still current, so the same snapshot may own one
+    immutable edition per baseball date.
+
+    Only a published, ready Dashboard snapshot may carry a rolled-forward
+    edition. An existing row for the exact identity is reused as stored: never
+    rebuilt, compared or overwritten, so a later schedule change cannot touch
+    it. A missing row is built once from ``slate_games`` for ``reference_date``
+    with the snapshot's frozen Team Board package; the snapshot itself (its
+    ``data_through`` and ``availability_reference_date``) is never changed.
+    Honors the projection off-switch, never raises, and logs one line.
+    """
+    snapshot_id = getattr(snapshot, 'id', None)
+    result = None
+    if not _projection_enabled():
+        result = {'status': 'skipped', 'reason': 'tonight_v1_projection_disabled'}
+    elif snapshot is None or snapshot_id is None:
+        result = {'status': 'skipped', 'reason': 'trusted_publication_missing'}
+    elif not (
+        getattr(snapshot, 'is_published', False) is True
+        and getattr(snapshot, 'status', None) == SNAPSHOT_STATUS_READY
+    ):
+        result = {'status': 'skipped', 'reason': 'publication_not_trusted'}
+    elif not isinstance(reference_date, date) or isinstance(reference_date, datetime):
+        result = {'status': 'skipped', 'reason': 'reference_date_missing'}
+    elif _team_board_package(snapshot) is None:
+        result = {'status': 'skipped', 'reason': REASON_TEAM_BOARD_PACKAGE_MISSING}
+    else:
+        result = _ensure_dated_edition(snapshot, reference_date)
+    result = dict(result)
+    result['dashboard_snapshot_id'] = snapshot_id
+    result['reference_date'] = (
+        reference_date.isoformat() if isinstance(reference_date, date) else None
+    )
+    result['data_through'] = _iso(getattr(snapshot, 'data_through', None))
+    result['availability_reference_date'] = _iso(
+        getattr(snapshot, 'availability_reference_date', None)
+    )
+    logger.info(
+        'tonight_v1 date ensure source=%s snapshot_id=%s reference_date=%s status=%s '
+        'tonight_publication_id=%s game_count=%s data_through=%s '
+        'legacy_tonight_v5=not_generated',
+        source, snapshot_id, result['reference_date'], result.get('status'),
+        result.get('tonight_publication_id'), result.get('game_count'),
+        result['data_through'],
+    )
+    return result
+
+
+def _ensure_dated_edition(snapshot, reference_date):
+    """Reuse the exact stored edition, else create it once; never overwrite."""
+    try:
+        existing = read_tonight_v1(reference_date, snapshot.id)
+        if existing is not None:
+            return _dated_result('reused', existing)
+        try:
+            row, outcome = generate_tonight_v1_for_snapshot(
+                snapshot, reference_date=reference_date,
+            )
+        except TonightPublicationConflict:
+            # A concurrent writer stored this identity first: keep its row.
+            db.session.rollback()
+            row, outcome = read_tonight_v1(reference_date, snapshot.id), 'reused'
+            if row is None:
+                raise
+        return _dated_result(outcome, row)
+    except Exception as exc:  # noqa: BLE001 - reported, never re-raised
+        db.session.rollback()
+        logger.exception(
+            'tonight_v1 date ensure failed non-fatally snapshot_id=%s reference_date=%s',
+            getattr(snapshot, 'id', None), reference_date,
+        )
+        return {'status': 'failed', 'error': type(exc).__name__}
+
+
+def _dated_result(outcome, row):
+    summary = (row.payload or {}).get('summary') if isinstance(row.payload, dict) else None
+    return {
+        'status': outcome,
+        'tonight_publication_id': row.id,
+        'game_count': (summary or {}).get('game_count'),
+    }
 
 
 def _projection_enabled():

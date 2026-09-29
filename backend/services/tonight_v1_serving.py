@@ -4,7 +4,8 @@ Serving never builds. The request path is:
 
     1. resolve the current trusted Dashboard snapshot (metadata + freshness
        only, the same selector the Home / League / Trust projections use);
-    2. take its ``availability_reference_date`` as the Tonight baseball date;
+    2. take the current BaseballOS product day (the Eastern calendar date,
+       ``product_current_date``) as the Tonight baseball date (TN-11.8);
     3. read the one ``tonight_publications`` row bound to exactly
        (reference_date, dashboard_snapshot_id, contract='tonight_v1');
     4. check the row's stored identity against its payload and the snapshot;
@@ -12,8 +13,13 @@ Serving never builds. The request path is:
        stored payload (TN-03, see ``overlay_game_state``) and return it.
 
 A row bound to any other snapshot, including an older one for the same date,
-is never served as current. A missing or inconsistent row fails closed; the
-caller that asked for tonight_v1 never receives legacy tonight_v5 instead.
+is never served as current, and a row for any other baseball date (yesterday's
+edition in particular) is never served on today's date. The trusted bullpen
+snapshot may be older than the presented day: operational schedule refresh
+rolls the same trusted snapshot forward into today's edition. A missing or
+inconsistent row fails closed; the caller that asked for tonight_v1 never
+receives legacy tonight_v5 instead. Selecting the date is the only request-time
+decision: nothing is built or computed here.
 
 Bullpen intelligence stays frozen to the stored row. Only schedule facts of
 the stored games (state, first pitch, state_as_of) may change at serve time,
@@ -34,6 +40,7 @@ import re
 from models.slate_game import SlateGame
 from models.tonight_publication import TonightPublication
 from services import dashboard_snapshot as dashboard_snapshot_service
+from services.availability_reference_date import product_current_date
 from services.tonight_read_model import (
     CONTRACT,
     GAME_STATES,
@@ -120,16 +127,18 @@ def serve_current_tonight_v1():
     if snapshot is None:
         return unavailable_payload(REASON_NO_TRUSTED_PUBLICATION), None
 
-    reference_date = snapshot.availability_reference_date
+    reference_date = current_tonight_reference_date()
     row = TonightPublication.query.filter_by(
         contract=CONTRACT,
         dashboard_snapshot_id=snapshot.id,
         reference_date=reference_date,
     ).one_or_none()
     if row is None:
+        # Never an earlier date's edition: the operational schedule refresh
+        # creates today's edition from the same trusted snapshot.
         return unavailable_payload(REASON_ROW_MISSING, snapshot=snapshot), None
 
-    mismatch = identity_mismatch(row, snapshot)
+    mismatch = identity_mismatch(row, snapshot, reference_date=reference_date)
     if mismatch is not None:
         logger.error(
             'tonight_v1 authority integrity failure: row withheld '
@@ -303,8 +312,19 @@ def served_validator(content_sha256, overlay_identity):
     return sha256(body.encode('utf-8')).hexdigest()
 
 
-def identity_mismatch(row, snapshot):
-    """Name the first identity field on which row, payload and snapshot disagree."""
+def current_tonight_reference_date():
+    """The baseball date Tonight presents now: the BaseballOS product day."""
+    return product_current_date()
+
+
+def identity_mismatch(row, snapshot, *, reference_date=None):
+    """Name the first identity field on which row, payload and snapshot disagree.
+
+    ``reference_date`` is the requested edition date (default: the snapshot's
+    own availability date, the publication-time edition). The row must present
+    that date while carrying the snapshot's unchanged availability date.
+    """
+    requested = reference_date or snapshot.availability_reference_date
     payload = row.payload if isinstance(row.payload, dict) else None
     if payload is None:
         return 'payload'
@@ -312,7 +332,7 @@ def identity_mismatch(row, snapshot):
     publication = (
         edition.get('publication') if isinstance(edition.get('publication'), dict) else {}
     )
-    reference_date = _iso(row.reference_date)
+    row_date = _iso(row.reference_date)
     checks = (
         ('contract', row.contract == CONTRACT and payload.get('contract') == CONTRACT),
         ('dashboard_snapshot_id', (
@@ -328,10 +348,11 @@ def identity_mismatch(row, snapshot):
             and edition.get('data_through') == _iso(row.data_through)
         )),
         ('reference_date', (
-            row.reference_date == snapshot.availability_reference_date
-            and row.availability_reference_date == row.reference_date
-            and edition.get('baseball_date') == reference_date
-            and edition.get('availability_reference_date') == reference_date
+            row.reference_date == requested
+            and row.availability_reference_date == snapshot.availability_reference_date
+            and edition.get('baseball_date') == row_date
+            and edition.get('availability_reference_date')
+            == _iso(snapshot.availability_reference_date)
         )),
         ('content_sha256', bool(_SHA256.match(row.content_sha256 or ''))),
     )

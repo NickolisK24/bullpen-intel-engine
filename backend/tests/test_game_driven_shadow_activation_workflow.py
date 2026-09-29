@@ -118,7 +118,11 @@ def test_no_cron_was_added(workflow):
 
 def test_the_manual_modes_include_only_governed_recovery(workflow):
     options = workflow[True]['workflow_dispatch']['inputs']['mode']['options']
-    assert options == ['recovery_daily', 'recovery_postgame', 'backfill', 'intraday']
+    # TN-11.8 adds the governed recovery_morning (schedule + Tonight edition
+    # only; it never reaches the shadow lane, which stays daily/postgame).
+    assert options == [
+        'recovery_daily', 'recovery_postgame', 'recovery_morning', 'backfill', 'intraday',
+    ]
 
 
 def test_the_manual_inputs_include_recovery_evidence(workflow):
@@ -988,9 +992,24 @@ def test_the_mitigation_did_not_add_a_schedule(workflow):
 
 
 def test_the_mitigation_did_not_add_a_manual_mode(workflow):
+    # recovery_morning is TN-11.8's separately governed mode, not part of this
+    # mitigation; it never runs the daily step or the shadow handoff.
     assert workflow[True]['workflow_dispatch']['inputs']['mode']['options'] == [
-        'recovery_daily', 'recovery_postgame', 'backfill', 'intraday',
+        'recovery_daily', 'recovery_postgame', 'recovery_morning', 'backfill', 'intraday',
     ]
+    assert 'recovery_morning' not in workflow_text_for_shadow_steps(workflow)
+
+
+def workflow_text_for_shadow_steps(workflow):
+    steps = workflow['jobs']['public-sync']['steps']
+    shadow = [
+        step for step in steps
+        if 'shadow' in str(step.get('name', '')).lower()
+        or step.get('name') == 'Run direct daily sync'
+    ]
+    return ' '.join(str(step.get('if', '')) for step in shadow) + ' ' + str(
+        workflow['jobs']['shadow-activation-health'].get('if', '')
+    )
 
 
 def test_the_mitigation_did_not_promote_the_lane(daily_step):
