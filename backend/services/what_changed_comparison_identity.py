@@ -7,7 +7,6 @@ identity for immutable citation generation and reads.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import date, timedelta
 from typing import Mapping
 
@@ -124,8 +123,16 @@ def build_comparison_identity(current_snapshot, previous_snapshot) -> dict:
 
 
 def bind_comparison_identity(payload, current_snapshot, previous_snapshot) -> dict:
-    """Attach identity only when the frozen public comparison proves this pair."""
-    stored = deepcopy(_mapping(payload))
+    """Attach identity only when the frozen public comparison proves this pair.
+
+    Only the What Changed comparison block is rewritten. ``_mapping`` gives
+    fresh top-level, block and comparison dicts, so every other domain is
+    shared with the input rather than deep-copied: the Dashboard payload is
+    many megabytes and this runs inside the publication transaction, where a
+    whole-payload copy was a large share of the Daily Primary memory peak.
+    The returned value is equal to what a deep copy would have produced.
+    """
+    stored = _mapping(payload)
     block = _mapping(stored.get('what_changed_since_yesterday'))
     comparison = _mapping(block.get('comparison'))
     if comparison.get('comparison_available') is not True:

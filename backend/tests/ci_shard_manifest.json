@@ -909,6 +909,10 @@
           "measured_seconds": 4.529
         },
         {
+          "path": "tests/test_daily_publication_memory.py",
+          "measured_seconds": 38.3
+        },
+        {
           "path": "tests/test_daily_sync_publication_budget.py",
           "measured_seconds": 1.841
         },

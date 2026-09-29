@@ -36,6 +36,7 @@ from services import publication_criticality
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
+from services.process_memory import log_memory_checkpoint
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
     resolve_product_day,
@@ -5699,6 +5700,7 @@ def complete_sync_run_with_snapshot(
             commit=False,
             rollback_before=False,
         )
+        log_memory_checkpoint('publication_before', job=job_name, sync_run_id=sync_run_id)
         snapshot = dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
             sync_run_id=run.id if run is not None else sync_run_id,
             source=snapshot_source,
@@ -5726,13 +5728,22 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
+        # Read before commit: telemetry must never refresh the expired row.
+        published_snapshot_id = snapshot.id
         db.session.commit()
+        log_memory_checkpoint(
+            'publication_committed', job=job_name, snapshot_id=published_snapshot_id,
+        )
         # SC-03B-04: this path publishes with commit=False and owns the commit, so
         # the post-publication generation hook must be invoked here (once, after the
         # publication has durably committed). Reuses the one canonical completion
         # function. The trusted snapshot is already committed, but the Daily
         # Primary is not complete until its League Board projection verifies.
         dashboard_snapshot_service.run_post_commit_snapshot_publication(snapshot)
+        log_memory_checkpoint(
+            'post_publication_hooks_after', job=job_name,
+            snapshot_id=published_snapshot_id,
+        )
         # League Board authority is the published, snapshot-bound Team State
         # artifact set.  The hook remains post-commit, but a Daily Primary must
         # not report success when that required public projection is absent.
@@ -5751,6 +5762,10 @@ def complete_sync_run_with_snapshot(
                 require_complete_artifact_set,
             )
             require_complete_artifact_set(snapshot)
+            log_memory_checkpoint(
+                'artifact_gate_after', job=job_name,
+                snapshot_id=published_snapshot_id,
+            )
         return run, snapshot
     except Exception as exc:
         db.session.rollback()
@@ -6713,6 +6728,7 @@ def run_daily_sync(
     post_fatigue_phase_timings = []
     post_fatigue_instrumentation_started = False
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
+    log_memory_checkpoint('daily_start')
 
     status = {
         'last_sync':        started_at.isoformat(),
@@ -7275,6 +7291,7 @@ def run_daily_sync(
         write_status(status)
 
     run_logger.info('── Daily sync finished: %s ──', status['status'])
+    log_memory_checkpoint('daily_final', status=status.get('status'))
     # Detach the handler so it doesn't leak on the next run.
     if post_fatigue_instrumentation_started:
         _run_logged_daily_sync_phase(

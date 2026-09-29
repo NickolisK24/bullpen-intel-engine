@@ -82,6 +82,7 @@ from services.bullpen_population import (
     population_diagnostic,
 )
 from services.bullpen_visibility import build_visibility_contract
+from services.dashboard_source_cutoff import latest_valid_snapshot_source
 from services.game_context import build_landscape, build_team_game_context
 from services.injury_il_context import build_injury_il_context_payload
 from services.intelligence_surface_snapshot import serve_today_lead_story
@@ -308,7 +309,10 @@ def _reliever_population_rows(rows, reference_date=None):
 
 
 def _served_score_cutoff():
-    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    # Metadata plus freshness only: the same row and validity rule as
+    # get_latest_valid_dashboard_snapshot without parsing the full payload,
+    # which publication-time callers repeat once per team.
+    snapshot = latest_valid_snapshot_source()
     logging.getLogger(__name__).info(
         'source_score_cutoff source_snapshot_id=%s source_snapshot_lookup_count=1',
         getattr(snapshot, 'id', None),
