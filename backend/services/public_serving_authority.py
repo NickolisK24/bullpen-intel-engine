@@ -27,6 +27,7 @@ from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
 from services import board_freshness
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import tonight_intelligence_snapshot
+from services.process_memory import log_memory_checkpoint
 from services.availability_population import availability_with_eligibility, current_availability_records
 from services.availability_reference_date import parse_reference_date, product_current_date
 from services.availability_snapshot import (
@@ -1481,7 +1482,10 @@ def install_public_serving_authority(app):
 
     def trusted_dashboard_builder(*args, **kwargs):
         payload = original_dashboard_builder(*args, **kwargs)
-        return attach_frozen_team_boards(payload)
+        log_memory_checkpoint('dashboard_payload_after', job='dashboard_snapshot')
+        payload = attach_frozen_team_boards(payload)
+        log_memory_checkpoint('team_boards_after', job='dashboard_snapshot')
+        return payload
 
     bullpen_api.build_bullpen_dashboard_payload = trusted_dashboard_builder
 

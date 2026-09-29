@@ -54,6 +54,11 @@ def main(argv=None):
         )
         return 2
 
+    # Before the application allocates anything large: publication writes
+    # multi-megabyte payloads that must not stay resident after they are freed.
+    from services.process_memory import configure_allocator_for_large_buffers
+    configure_allocator_for_large_buffers()
+
     from app import app
     from services.sync_due import run_due_sync
     from utils.summary_output import SummaryOutputError, serialize_summary, write_summary

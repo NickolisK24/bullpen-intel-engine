@@ -342,10 +342,22 @@ def build_frozen_what_changed(previous, current, team_id):
 
 
 def attach_frozen_what_changed(snapshot, previous_snapshot):
-    """Attach all team comparisons to the candidate package by value."""
-    payload = deepcopy(dict(snapshot.payload))
-    package = deepcopy(dict(_mapping(payload.get('trusted_team_boards'))))
-    teams = deepcopy(dict(_mapping(package.get('by_team_id'))))
+    """Attach all team comparisons to the candidate package by value.
+
+    Only the payload, package, team map and each team entry receive a new
+    ``frozen_what_changed`` key, so only those containers are copied; every
+    other domain is shared with the candidate's current payload, which is
+    replaced below and never mutated. Deep-copying the whole multi-megabyte
+    payload (and the package and team map again) held three full copies at
+    once inside the publication transaction, the largest single contributor to
+    the Daily Primary memory peak. The resulting value is unchanged.
+    """
+    payload = dict(snapshot.payload)
+    package = dict(_mapping(payload.get('trusted_team_boards')))
+    teams = {
+        key: dict(team) if isinstance(team, Mapping) else deepcopy(team)
+        for key, team in _mapping(package.get('by_team_id')).items()
+    }
     for key, team in teams.items():
         team['frozen_what_changed'] = build_frozen_what_changed(
             previous_snapshot, snapshot, int(key),
