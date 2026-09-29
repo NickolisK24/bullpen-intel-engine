@@ -32,6 +32,8 @@ CURRENT_TARGET = CANONICAL_PROMOTION['revision']
 RECEIPT_TARGET = 'b6c9d2e5f8a1'
 # TN-01: an additive table after the admission receipt, reviewed on its own.
 TONIGHT_V1_TARGET = 'c3e7a1d9f5b2'
+# SEC-01: deny-by-default row level security, reviewed on its own.
+SEC01_RLS_TARGET = 'e5b9c3a7d1f4'
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -46,13 +48,16 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
                 assert revision not in revisions, (revision, path, revisions.get(revision))
                 revisions[revision] = path.name
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    assert script.get_heads() == [TONIGHT_V1_TARGET]
+    assert script.get_heads() == [SEC01_RLS_TARGET]
     receipt_extension = list(script.iterate_revisions(RECEIPT_TARGET, CURRENT_TARGET))
     assert [revision.revision for revision in receipt_extension] == [RECEIPT_TARGET]
     assert receipt_extension[0].down_revision == CURRENT_TARGET
     tonight_extension = list(script.iterate_revisions(TONIGHT_V1_TARGET, RECEIPT_TARGET))
     assert [revision.revision for revision in tonight_extension] == [TONIGHT_V1_TARGET]
     assert tonight_extension[0].down_revision == RECEIPT_TARGET
+    rls_extension = list(script.iterate_revisions(SEC01_RLS_TARGET, TONIGHT_V1_TARGET))
+    assert [revision.revision for revision in rls_extension] == [SEC01_RLS_TARGET]
+    assert rls_extension[0].down_revision == TONIGHT_V1_TARGET
     assert script.get_bases() == ['3b06397ddc6b']
     assert not any(revision.is_merge_point or revision.is_branch_point
                    for revision in script.walk_revisions())
@@ -68,6 +73,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     for revision, name in revisions.items():
         if revision not in promoted | {
             PREVIOUS_TARGET, CURRENT_TARGET, RECEIPT_TARGET, TONIGHT_V1_TARGET,
+            SEC01_RLS_TARGET,
         }:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
@@ -267,7 +273,7 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     # TN-01's Tonight table is its own additive transition: existing data,
     # columns, indexes and constraints are untouched; only the new table's
     # objects appear.
-    result = _flask(existing, 'upgrade')
+    result = _flask(existing, 'upgrade', TONIGHT_V1_TARGET)
     transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
     assert len(transitions) == 1, result.stderr
     assert RECEIPT_TARGET + ' -> ' + TONIGHT_V1_TARGET in transitions[0]
@@ -282,14 +288,25 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
         }
     assert after[4:] == before[4:]
     before = after
+    # SEC-01 changes access control only: every row, column, index,
+    # constraint, function body and trigger is identical afterwards.
+    result = _flask(existing, 'upgrade')
+    transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
+    assert len(transitions) == 1, result.stderr
+    assert TONIGHT_V1_TARGET + ' -> ' + SEC01_RLS_TARGET in transitions[0]
+    after = _fingerprint(existing)
+    assert {k: v for k, v in after[0].items() if k != 'alembic_version'} == {
+        k: v for k, v in before[0].items() if k != 'alembic_version'}
+    assert after[1:] == before[1:]
+    before = after
     for _ in range(2):
         result = _flask(existing, 'upgrade')
         assert 'Running upgrade' not in result.stderr
         assert _fingerprint(existing) == before
     result = _flask(fresh, 'upgrade')
     assert 'Running upgrade' in result.stderr
-    assert _flask(fresh, 'heads').stdout.strip().endswith(TONIGHT_V1_TARGET + ' (head)')
-    assert TONIGHT_V1_TARGET + ' (head)' in _flask(fresh, 'current').stdout
+    assert _flask(fresh, 'heads').stdout.strip().endswith(SEC01_RLS_TARGET + ' (head)')
+    assert SEC01_RLS_TARGET + ' (head)' in _flask(fresh, 'current').stdout
     assert _flask(fresh, 'history').returncode == 0
     # Production main runtime, real migrations and real Daily Edition helper.
     # The custom server probe exits instead of leaving a background web process.

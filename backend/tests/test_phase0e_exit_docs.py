@@ -11,8 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Production history promotion imports the immutable integration extension.
 # Keep an explicit pin so a new migration requires deliberate head review.
 # The egress remediation adds the nullable Dashboard admission receipt; TN-01
-# then adds the additive, publication-bound tonight_publications table.
-EXPECTED_ALEMBIC_HEAD = 'c3e7a1d9f5b2'
+# then adds the additive, publication-bound tonight_publications table; SEC-01
+# then enables deny-by-default row level security.
+EXPECTED_ALEMBIC_HEAD = 'e5b9c3a7d1f4'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',
