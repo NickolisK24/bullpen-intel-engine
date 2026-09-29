@@ -152,10 +152,12 @@ FROZEN_EXAMPLES = (
         _run_phase0e,
         'backend/services/what_changed_since_yesterday_public.py',
     ),
+    # team_state_source rather than team_state_payload: the payload holds the
+    # reviewed schedule-aware day-context exception (SCHEDULE_AWARE_DAY_CONTEXT_PATHS).
     (
         'appearance-team runtime surfaces',
         _run_appearance,
-        'backend/services/team_state_payload.py',
+        'backend/services/team_state_source.py',
     ),
 )
 
@@ -294,7 +296,7 @@ def test_hist03_transaction_history_exception_is_exact(monkeypatch):
             ['backend/services/what_changed_since_yesterday_public.py'],
         )
     with pytest.raises(AssertionError):
-        _run_appearance(monkeypatch, ['backend/services/team_state_payload.py'])
+        _run_appearance(monkeypatch, ['backend/services/team_state_source.py'])
 
 
 @pytest.mark.parametrize('label,runner', GUARDS)
