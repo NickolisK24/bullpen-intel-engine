@@ -778,7 +778,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 508.41,
+      "measured_seconds": 521.41,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1235,6 +1235,10 @@
         {
           "path": "tests/test_season_era.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sec01_supabase_rls.py",
+          "measured_seconds": 13.0
         },
         {
           "path": "tests/test_share_artifact_generation.py",
