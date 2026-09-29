@@ -805,3 +805,25 @@ def test_cancelled_game_slate_coverage_exception_is_exact_and_decision_linked():
     assert '`backend/services/slate_coverage.py`' in decision
     assert 'A cancelled game is never counted as final.' in decision
     assert "`other` without cancellation evidence still blocks." in decision
+
+
+def test_schedule_aware_day_context_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.SCHEDULE_AWARE_DAY_CONTEXT_PATHS
+    assert approved == ('backend/services/team_state_payload.py',)
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_state_payload.py'],
+        prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_state_public_copy.py'],
+        prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/team_state_public_copy.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-09-29-schedule-aware-availability-reference-date.md'
+    ).read_text(encoding='utf-8')
+    assert 'Team State card' in decision
+    assert 'Published snapshots, sidecars and Tonight rows are immutable' in decision

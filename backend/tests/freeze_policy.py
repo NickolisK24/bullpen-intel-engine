@@ -520,6 +520,18 @@ CANCELLED_GAME_SLATE_COVERAGE_PATHS = (
     'backend/services/slate_coverage.py',
 )
 
+# Schedule-aware day context, September 29 2026. The Team State card metrics
+# reread of a trusted snapshot now passes the snapshot's own stored
+# availability_reference_date (schedule-aware across off-days) instead of
+# recomputing data_through + 1, so the card describes the same day as the
+# snapshot's rest facts. The file reads no appearance-team authority and no
+# Team State threshold, vocabulary or public copy moves. Decision authority:
+# docs/decisions/2026-09-29-schedule-aware-availability-reference-date.md.
+# This exact-path approval becomes inert after merge.
+SCHEDULE_AWARE_DAY_CONTEXT_PATHS = (
+    'backend/services/team_state_payload.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
