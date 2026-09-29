@@ -63,7 +63,9 @@ run time.
 | Suite | Result |
 | --- | --- |
 | `test_tonight_v1_production_certification.py` | 8/8 passed |
-| Backend, four CI shards (local Postgres) | Running; see the hosted CI on this PR |
+| Backend shards 1, 2 and 4 (local Postgres) | 2256 passed and 1 skipped; 2533 passed and 2 skipped; 1945 passed |
+| Backend shard 3 (local Postgres) | Interrupted by a sandbox container restart. It contains `test_postgame_lookback.py`, whose MLB calls the sandbox proxy blocks. Certified by hosted CI instead. |
+| Hosted CI, pull_request run 36610872393 on `299b053` | All 4 backend shards, collection accounting, migrations, frontend tests, browser quality and dependency audit: green |
 | `scripts/ci_shard.py verify` | PASS (no duplicated or missing files or node IDs) |
 | Frontend `npm test` | 1284/1284 passed |
 | `git diff --check` | clean |
