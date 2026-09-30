@@ -363,3 +363,53 @@ def test_the_read_only_option_is_applied_once_when_the_script_runs(monkeypatch):
     assert os.environ['PGOPTIONS'] == (
         '-c statement_timeout=0 -c default_transaction_read_only=on'
     )
+
+
+# ── Refusal evidence and explicit-date anchoring ────────────────────────────
+
+def test_explicit_date_outputs_are_named_for_their_dates():
+    assert _script().output_basename(
+        snapshot_id=None, team_id=118,
+        membership_date='2026-09-29', availability_date='2026-09-30',
+    ) == 'team-state-coverage-team-118-dates-2026-09-29-2026-09-30'
+
+
+@pytest.mark.parametrize('argv,reason', [
+    (['--snapshot-id', '4132', '--team-id', '999'], 'team_not_mlb_club'),
+    (['--team-id', '118'], 'reference_dates_missing'),
+    (['--team-id', '118', '--membership-date', '2026-09-29'], 'reference_dates_missing'),
+])
+def test_a_refusal_before_database_access_leaves_a_scan_safe_document(
+    tmp_path, monkeypatch, argv, reason,
+):
+    script = _script()
+    monkeypatch.delitem(sys.modules, 'app', raising=False)
+    code = script.main([*argv, '--output-dir', str(tmp_path)])
+    assert code == script.EXIT_REFUSED
+    assert 'app' not in sys.modules
+    refusal = json.loads((tmp_path / 'team-state-coverage-refused.json').read_text())
+    assert refusal['mode'] == 'refused'
+    assert refusal['reason_code'] == reason
+    assert refusal['exit_code'] == 2
+    assert (tmp_path / 'team-state-coverage-refused.md').read_text().startswith(
+        '# Team State coverage diagnostic: refused'
+    )
+    scanner = subprocess.run(
+        [sys.executable, str(_SCRIPT.parent / 'scan_forbidden_artifact_content.py'),
+         '--directory', str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert scanner.returncode == 0, scanner.stdout + scanner.stderr
+
+
+def test_a_malformed_date_is_rejected_by_the_argument_parser():
+    with pytest.raises(SystemExit) as refused:
+        _script()._parse_args(['--team-id', '118', '--membership-date', '09/29/2026',
+                               '--availability-date', '2026-09-30'])
+    assert refused.value.code == 2
+
+
+def test_the_snapshot_not_found_guidance_names_the_explicit_date_anchor():
+    guidance = _script().SNAPSHOT_NOT_FOUND_GUIDANCE
+    assert 'rolled back' in guidance
+    assert '--membership-date' in guidance and '--availability-date' in guidance
