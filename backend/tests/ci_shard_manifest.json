@@ -664,6 +664,10 @@
           "measured_seconds": 8.857
         },
         {
+          "path": "tests/test_active_bullpen_coverage_diagnostic.py",
+          "measured_seconds": 6.7
+        },
+        {
           "path": "tests/test_slate_coverage_cancelled.py",
           "measured_seconds": 2.6
         },
