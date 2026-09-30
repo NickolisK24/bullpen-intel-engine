@@ -11,6 +11,10 @@ diagnostic must reach exactly the verdict the production classifier reaches on
 the same records, and name each arm's cause.
 """
 
+import json
+import os
+import subprocess
+import sys
 from datetime import date, datetime
 
 import pytest
@@ -254,3 +258,108 @@ def test_league_rows_are_ordered_by_headroom_and_flag_the_margin(app, team_118):
     assert [row['team_id'] for row in league['teams']] == [147, TEAM]
     assert set(league['ineligible_team_ids']) == {147, TEAM}
     assert set(league) >= {'one_arm_from_failing', 'two_arms_from_failing'}
+
+
+# ── Operator script: structured output and refusals ─────────────────────────
+
+import importlib.util  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/diagnose_team_state_coverage.py'
+
+
+def _script():
+    spec = importlib.util.spec_from_file_location('diagnose_team_state_coverage', _SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_output_files_are_named_for_the_scope_and_snapshot():
+    script = _script()
+    assert script.output_basename(snapshot_id=4132, team_id=118) == (
+        'team-state-coverage-team-118-snapshot-4132'
+    )
+    assert script.output_basename(snapshot_id=4132, league=True) == (
+        'team-state-coverage-league-snapshot-4132'
+    )
+
+
+def test_a_non_mlb_team_is_refused_before_any_database_access(monkeypatch):
+    script = _script()
+    monkeypatch.delitem(sys.modules, 'app', raising=False)
+    assert script.main(['--snapshot-id', '4132', '--team-id', '999']) == script.EXIT_REFUSED
+    assert 'app' not in sys.modules
+
+
+@pytest.mark.parametrize('argv', [
+    ['--snapshot-id', '4132', '--team-id', '118', '--league'],
+    ['--snapshot-id', '0', '--team-id', '118'],
+    ['--snapshot-id', '4132', '--team-id', '-1'],
+    ['--snapshot-id', '4132'],
+])
+def test_invalid_scope_arguments_are_rejected(argv):
+    with pytest.raises(SystemExit) as refused:
+        _script()._parse_args(argv)
+    assert refused.value.code == 2
+
+
+def test_the_written_evidence_is_complete_and_scan_safe(app, team_118, tmp_path):
+    script = _script()
+    with app.app_context():
+        report = _diagnose()
+    document = {
+        'diagnostic': 'team_state_active_bullpen_coverage',
+        'schema_version': script.SCHEMA_VERSION,
+        'mode': 'team',
+        'snapshot': {'snapshot_id': 4132},
+        'read_only_proof': {'read_only_probe_refused': True},
+        'run': {'commit_sha': None, 'workflow_run_id': None},
+        'non_authorization_statement': script.NON_AUTHORIZATION_STATEMENT,
+        'report': report,
+    }
+    path = script._write_outputs(
+        document, tmp_path, script.output_basename(snapshot_id=4132, team_id=118),
+    )
+    written = json.loads(path.read_text())
+    assert written['report']['arms'] == json.loads(json.dumps(report['arms'], default=str))
+    summary = (tmp_path / 'team-state-coverage-team-118-snapshot-4132.md').read_text()
+    assert 'Team 118: 4 of 9 active relievers usable' in summary
+    assert 'unresolved_fetch_failure' in summary
+
+    scanner = subprocess.run(
+        [sys.executable, str(_SCRIPT.parent / 'scan_forbidden_artifact_content.py'),
+         '--directory', str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert scanner.returncode == 0, scanner.stdout + scanner.stderr
+
+
+def test_stored_failure_text_is_reduced_to_a_safe_label():
+    label = diagnostic._safe_error_label(
+        'MLB API fetch failed for /people/1/stats: ReadTimeout host=statsapi token=abc\n'
+        'Traceback (most recent call last): ...'
+    )
+    assert label == 'MLB API fetch failed for /people/1/stats'
+    assert diagnostic._safe_error_label(
+        'connect postgresql://u:p@h/db failed'
+    ) == 'connect [url] failed'
+    assert diagnostic._safe_error_label('retry key=value') == 'retry [redacted]'
+    assert diagnostic._safe_error_label(None) == ''
+
+
+def test_loading_the_script_does_not_change_the_process_environment(monkeypatch):
+    monkeypatch.delenv('PGOPTIONS', raising=False)
+    _script()
+    assert 'PGOPTIONS' not in os.environ
+
+
+def test_the_read_only_option_is_applied_once_when_the_script_runs(monkeypatch):
+    monkeypatch.setenv('PGOPTIONS', '-c statement_timeout=0')
+    monkeypatch.setenv('AUTO_SYNC', 'false')
+    script = _script()
+    script._configure_read_only_process()
+    script._configure_read_only_process()
+    assert os.environ['PGOPTIONS'] == (
+        '-c statement_timeout=0 -c default_transaction_read_only=on'
+    )

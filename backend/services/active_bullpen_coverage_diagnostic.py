@@ -29,6 +29,7 @@ Cause codes (one per arm, first match wins, mirroring the production rule):
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from typing import Iterable, Mapping, Optional
 
@@ -109,9 +110,26 @@ def _open_fetch_failures(mlb_ids: Iterable) -> dict:
             'created_at': _iso(row.created_at),
             'job_name': row.job_name,
             'sync_run_id': row.sync_run_id,
-            'error': (row.error or '')[:200],
+            'error_label': _safe_error_label(row.error),
         })
     return failures
+
+
+_URL = re.compile(r'\S+://\S*')
+_ASSIGNMENT = re.compile(r'\S*=\S*')
+
+
+def _safe_error_label(error):
+    """A short, artifact-safe label for a stored failure message.
+
+    Only the first line before any detail separator is kept, with URLs and
+    ``key=value`` fragments removed, so no connection string, token or query
+    parameter can travel into an uploaded diagnostic artifact.
+    """
+    first_line = (error or '').strip().splitlines()[0] if (error or '').strip() else ''
+    label = first_line.split(': ', 1)[0]
+    label = _ASSIGNMENT.sub('[redacted]', _URL.sub('[url]', label))
+    return label[:120]
 
 
 def _latest_log_date(pitcher_id):
