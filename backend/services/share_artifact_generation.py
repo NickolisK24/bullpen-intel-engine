@@ -197,7 +197,8 @@ def resolve_readiness_reference_dates(
         return live_reference_date, live_reference_date
 
     membership_reference_date, availability_reference_date = trusted_slate_reference_dates(
-        getattr(source_snapshot, 'data_through', None)
+        getattr(source_snapshot, 'data_through', None),
+        getattr(source_snapshot, 'availability_reference_date', None),
     )
     if membership_reference_date is None or availability_reference_date is None:
         return live_reference_date, live_reference_date

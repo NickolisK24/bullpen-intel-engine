@@ -119,14 +119,17 @@ def build_scheduled_game_matchup_payload(
     reason = GAME_COMPARISON_UNAVAILABLE
     if snapshot is not None and away_team_id is not None and home_team_id is not None:
         try:
+            # The game's date is the day the rest counts must describe.
             if team_state_overrides is None:
                 comparison, reason = build_current_bullpen_comparison(
                     snapshot, away_team_id, home_team_id,
+                    as_of_date=source.get('game_date_et'),
                 )
             else:
                 comparison, reason = build_current_bullpen_comparison(
                     snapshot, away_team_id, home_team_id,
                     team_state_overrides=team_state_overrides,
+                    as_of_date=source.get('game_date_et'),
                 )
         except Exception:  # noqa: BLE001 - comparison is optional to game identity
             logger.warning(

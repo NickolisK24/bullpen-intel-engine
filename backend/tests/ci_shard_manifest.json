@@ -1407,7 +1407,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 552.78,
+      "measured_seconds": 554.78,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1632,6 +1632,10 @@
         {
           "path": "tests/test_run_tonight_refresh.py",
           "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_schedule_aware_day_context.py",
+          "measured_seconds": 2.0
         },
         {
           "path": "tests/test_schedule_tonight_refresh_postgres.py",

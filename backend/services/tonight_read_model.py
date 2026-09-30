@@ -76,6 +76,9 @@ WORKLOAD_STATUS_ORDER = ('unavailable', 'unknown', 'partial', FACT_COMPLETE)
 REASON_TEAM_PACKAGE_UNAVAILABLE = 'team_board_package_unavailable'
 REASON_TEAM_STATE_RECEIPT_UNAVAILABLE = 'team_state_receipt_unavailable'
 REASON_REST_UNAVAILABLE = 'rest_status_unavailable'
+# The edition presents a later baseball date than the publication's rest facts
+# describe; "yesterday" relative to that publication is not yesterday tonight.
+REASON_REST_DATE_MISMATCH = 'rest_reference_date_mismatch'
 REASON_WORKLOAD_UNAVAILABLE = 'workload_overview_unavailable'
 REASON_USAGE_INCOMPLETE = 'recent_usage_incomplete'
 REASON_TIME_UNCONFIRMED = 'first_pitch_time_unconfirmed'
@@ -215,10 +218,16 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at, reference_date=None
     and ``data_through`` unchanged: the bullpen authority is not re-dated.
     Performs no database reads: every input is the snapshot object and the
     slate rows passed in.
+
+    Rest, 3-in-4 and key-arm rest patterns are calendar facts relative to the
+    snapshot's availability date. When the edition's baseball date differs
+    (a rollover before the next publication), they are withheld with
+    ``rest_reference_date_mismatch`` rather than re-labelled as tonight's.
     """
     package = _team_board_package(snapshot)
     availability_date = _iso(getattr(snapshot, 'availability_reference_date', None))
     baseball_date = _iso(reference_date) if reference_date is not None else availability_date
+    rest_date_current = reference_date is None or baseball_date == availability_date
     limitations = []
     if package is None:
         limitations.append(REASON_TEAM_BOARD_PACKAGE_MISSING)
@@ -234,10 +243,14 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at, reference_date=None
             continue
         for team_id in (away_id, home_id):
             if team_id not in sides:
-                sides[team_id] = _team_side(snapshot, package, team_id)
+                sides[team_id] = _team_side(
+                    snapshot, package, team_id, rest_date_current=rest_date_current,
+                )
         games.append(_game_card(row, sides[away_id], sides[home_id]))
     if excluded:
         limitations.append(REASON_NONCANONICAL_GAME)
+    if sides and not rest_date_current:
+        limitations.append(REASON_REST_DATE_MISMATCH)
     for side in sides.values():
         if side['available'] is not True:
             limitations.append(side['reason_code'])
@@ -287,7 +300,7 @@ def _team_board_package(snapshot):
     return package
 
 
-def _team_side(snapshot, package, team_id):
+def _team_side(snapshot, package, team_id, *, rest_date_current=True):
     club = _CLUBS_BY_ID[team_id]
     team_package = (
         package['by_team_id'].get(str(team_id)) if package is not None else None
@@ -297,9 +310,13 @@ def _team_side(snapshot, package, team_id):
 
     identity = team_package.get('team') if isinstance(team_package.get('team'), Mapping) else {}
     arms = _active_arms(team_package)
-    usage = psa._frozen_recent_usage_rest_for_view(snapshot, team_package)
-    usage_by_pitcher = _usage_by_pitcher(usage)
-    rest = _rest(psa._frozen_rest_status_for_view(snapshot, team_package))
+    if rest_date_current:
+        usage = psa._frozen_recent_usage_rest_for_view(snapshot, team_package)
+        usage_by_pitcher = _usage_by_pitcher(usage)
+        rest = _rest(psa._frozen_rest_status_for_view(snapshot, team_package))
+    else:
+        usage_by_pitcher = None
+        rest = _rest({'available': False, 'reason_code': REASON_REST_DATE_MISMATCH})
     workload = _workload_7d(psa._frozen_workload_overview_for_view(snapshot, team_package))
     return {
         'team_id': team_id,
@@ -313,7 +330,7 @@ def _team_side(snapshot, package, team_id):
             'three_in_four_count': _three_in_four_count(arms, usage_by_pitcher),
         },
         'workload_7d': workload,
-        'key_arms': _key_arms(arms, usage_by_pitcher),
+        'key_arms': _key_arms(arms, usage_by_pitcher, rest_date_current=rest_date_current),
         'rotation': _rotation(
             psa._frozen_rotation_impact_for_view(snapshot, team_package, team_id)
         ),
@@ -465,8 +482,12 @@ def _three_in_four_count(arms, usage_by_pitcher):
     return total
 
 
-def _key_arms(arms, usage_by_pitcher):
-    """At most three governed trust/bridge arms, in fixed role then name order."""
+def _key_arms(arms, usage_by_pitcher, *, rest_date_current=True):
+    """At most three governed trust/bridge arms, in fixed role then name order.
+
+    Days since last appearance and the rest pattern are withheld (``None``) when
+    the snapshot's availability date is not the edition's baseball date.
+    """
     eligible = []
     for arm in arms:
         role = arm.get('public_role_read') if isinstance(arm.get('public_role_read'), Mapping) else {}
@@ -479,7 +500,10 @@ def _key_arms(arms, usage_by_pitcher):
     selected = []
     for _order, _name, _pid, arm, role in eligible[:KEY_ARM_LIMIT]:
         workload = arm.get('workload') if isinstance(arm.get('workload'), Mapping) else {}
-        if workload.get('back_to_back') is True:
+        if not rest_date_current:
+            workload = {}
+            pattern = None
+        elif workload.get('back_to_back') is True:
             pattern = PATTERN_BACK_TO_BACK
         elif _three_in_four_fact(usage_by_pitcher, arm.get('pitcher_id')) is True:
             pattern = PATTERN_THREE_IN_FOUR

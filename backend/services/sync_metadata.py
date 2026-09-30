@@ -14,6 +14,8 @@ from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
     product_current_date,
+    resolve_availability_reference_date,
+    resolve_product_day,
 )
 from utils.db import db
 from utils.time import to_utc_iso, utc_now_naive
@@ -539,11 +541,20 @@ def _iso(value):
     return to_utc_iso(value)
 
 
-def collect_data_metadata():
+def collect_data_metadata(as_of_date=None):
+    """Durable workload coverage, plus its schedule-aware availability date.
+
+    ``as_of_date`` is the explicit product day the metadata is read for. When
+    given, ``availability_reference_date`` is resolved by the canonical
+    schedule-aware authority: the day after ``latest_workload_date``, advanced
+    across schedule-confirmed off-days up to ``as_of_date``. Without it the
+    metadata carries no resolved date and readers fall back to the day after
+    coverage.
+    """
     latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
     latest_fatigue = db.session.query(db.func.max(FatigueScore.calculated_at)).scalar()
     game_logs = db.session.query(db.func.count(GameLog.id)).scalar() or 0
-    return {
+    metadata = {
         'game_logs': int(game_logs),
         'latest_game_date': latest_game_date,
         # V1 workload coverage is based on MLB game logs, so this matches the
@@ -552,12 +563,40 @@ def collect_data_metadata():
         'latest_workload_date': latest_game_date,
         'latest_fatigue_calculated_at': latest_fatigue,
     }
+    return with_availability_reference_date(metadata, as_of_date)
 
 
-def canonical_fatigue_reference_date(reference_date=None):
+def with_availability_reference_date(metadata, as_of_date):
+    """Attach the schedule-aware availability reference date for ``as_of_date``."""
+    result = dict(metadata or {})
+    if as_of_date is None:
+        return result
+    result['availability_reference_date'] = resolve_availability_reference_date(
+        result.get('latest_workload_date') or result.get('latest_game_date'),
+        as_of_date,
+    )
+    return result
+
+
+def fatigue_as_of_date(metadata):
+    """The product day the stored fatigue scores were written for.
+
+    Reads anchor here rather than on the wall clock: ``days_since_last_appearance``
+    on the latest scores was computed against this day's availability date, so
+    every read of those scores resolves the same date until the next
+    recalculation writes a newer batch.
+    """
+    calculated_at = (metadata or {}).get('latest_fatigue_calculated_at')
+    if calculated_at is None:
+        return None
+    return resolve_product_day(calculated_at).calendar_date
+
+
+def canonical_fatigue_reference_date(reference_date=None, *, as_of_date=None):
     """
     Single production authority for the fatigue recalculation reference date:
-    the latest completed MLB workload date + 1 day ("tonight's availability").
+    the schedule-aware availability reference date for the latest completed MLB
+    workload ("tonight's availability").
 
     Every production-facing recalculation path — the scheduled APScheduler sync,
     the GitHub Actions / manual sync endpoint, and the recalculate endpoint —
@@ -568,11 +607,19 @@ def canonical_fatigue_reference_date(reference_date=None):
     displayed availability share one calendar date instead of diverging between a
     per-pitcher last-game-date and the host's runtime "today".
 
+    ``as_of_date`` is the product day the recalculation writes for; the
+    recalculation stamps its scores inside that day, so readers resolve the same
+    date from ``latest_fatigue_calculated_at`` (see ``fatigue_as_of_date``).
+
     Returns None when there is no workload data to anchor against.
     """
     if reference_date is not None:
         return reference_date
-    return product_availability_reference_date_from_metadata(collect_data_metadata())
+    if as_of_date is None:
+        as_of_date = product_current_date()
+    return product_availability_reference_date_from_metadata(
+        collect_data_metadata(as_of_date=as_of_date)
+    )
 
 
 def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYNC):
@@ -1051,6 +1098,9 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         postgame_run = None
         daily_run = None
 
+    # Read as of the day the stored fatigue scores were written for, so the
+    # availability date and their rest facts always describe the same day.
+    metadata = with_availability_reference_date(metadata, fatigue_as_of_date(metadata))
     availability_reference_date = (
         product_availability_reference_date_from_metadata(metadata)
         if last_successful_sync

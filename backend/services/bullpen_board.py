@@ -508,7 +508,9 @@ def build_rest_status(cards, *, counts_withheld=False, board_context_unavailable
     ``days_since_last_appearance >= 2`` means at least one full calendar day
     elapsed between the last appearance and the board availability date;
     ``== 1`` means the pitcher worked yesterday. ``back_to_back`` is reused as
-    the existing governed availability boolean and is not recalculated here.
+    the governed availability boolean (entering the availability date off
+    appearances on each of the two preceding calendar dates) and is not
+    recalculated here.
     """
     if board_context_unavailable:
         return _unavailable_rest_status(REST_STATUS_BOARD_CONTEXT_UNAVAILABLE)

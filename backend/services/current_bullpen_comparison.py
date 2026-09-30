@@ -42,12 +42,14 @@ STATUS_WITHHELD = 'withheld'
 REASON_TEAM_MISSING = 'published_team_missing'
 REASON_NOT_COMPARABLE = 'comparison_authority_mismatch'
 REASON_DOMAIN_UNAVAILABLE = 'comparison_domain_unavailable'
+REASON_REST_DATE_MISMATCH = 'rest_reference_date_mismatch'
 
 logger = logging.getLogger(__name__)
 
 DOMAIN_MESSAGES = {
     'team_state': 'Team State comparison is unavailable for this publication.',
     'rest': 'Rest comparison is unavailable for this publication.',
+    'rest_date': 'Rest counts describe a different day than this game.',
     'workload': 'Recent workload comparison is unavailable for this publication.',
     'rotation': 'Rotation transfer comparison is unavailable for this publication.',
     'availability': 'Availability comparison is unavailable for this publication.',
@@ -78,11 +80,11 @@ def _team_identity(team_id, team_package):
     }
 
 
-def _withheld_domain(domain, reason_code=REASON_DOMAIN_UNAVAILABLE):
+def _withheld_domain(domain, reason_code=REASON_DOMAIN_UNAVAILABLE, *, message_key=None):
     return {
         'status': STATUS_WITHHELD,
         'reason_code': reason_code,
-        'message': DOMAIN_MESSAGES[domain],
+        'message': DOMAIN_MESSAGES[message_key or domain],
         'limitations': [],
         'team_a': None,
         'team_b': None,
@@ -249,9 +251,16 @@ def _availability(team_package, *, package_date, reference_date):
 
 
 def build_current_bullpen_comparison(
-    snapshot, team_a_id, team_b_id, *, team_state_overrides=None,
+    snapshot, team_a_id, team_b_id, *, team_state_overrides=None, as_of_date=None,
 ):
-    """Project one compact aligned comparison from one selected snapshot."""
+    """Project one compact aligned comparison from one selected snapshot.
+
+    ``as_of_date`` is the baseball date the comparison is presented for (a
+    scheduled game's date). Rest counts ("worked yesterday", back-to-back,
+    rested) are calendar facts relative to the publication's availability date,
+    so they are withheld when the two dates differ instead of being presented as
+    that game's rest.
+    """
     package = _mapping(_mapping(getattr(snapshot, 'payload', None)).get(
         authority.TEAM_BOARD_PACKAGE_KEY
     ))
@@ -311,9 +320,13 @@ def build_current_bullpen_comparison(
             'team_state', state_a, state_b,
             stamp_a=state_stamp_a, stamp_b=state_stamp_b,
         ),
-        'rest': _aligned_domain(
-            'rest', rest_a, rest_b,
-            stamp_a=rest_stamp_a, stamp_b=rest_stamp_b,
+        'rest': (
+            _withheld_domain('rest', REASON_REST_DATE_MISMATCH, message_key='rest_date')
+            if as_of_date is not None and _iso(as_of_date) != reference_date
+            else _aligned_domain(
+                'rest', rest_a, rest_b,
+                stamp_a=rest_stamp_a, stamp_b=rest_stamp_b,
+            )
         ),
         'workload': _aligned_domain(
             'workload', workload_a, workload_b,

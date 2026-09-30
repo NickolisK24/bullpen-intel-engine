@@ -4608,9 +4608,16 @@ def recalculate_all_fatigue(reference_date: date | None = None):
 
     Pass ``reference_date`` only to pin the anchor explicitly (e.g. in tests);
     production callers leave it None so the canonical date is derived from
-    durable workload metadata. Returns the count of pitchers updated.
+    durable workload metadata and the schedule, as of the product day this batch
+    is written in. Every score in the batch carries that one ``calculated_at`` so
+    readers resolve the same as-of day (``sync_metadata.fatigue_as_of_date``).
+    Returns the count of pitchers updated.
     """
-    ref = sync_metadata.canonical_fatigue_reference_date(reference_date)
+    calculated_at = utc_now_naive()
+    ref = sync_metadata.canonical_fatigue_reference_date(
+        reference_date,
+        as_of_date=resolve_product_day(calculated_at).calendar_date,
+    )
     if ref is None:
         # No workload data at all → nothing to anchor against.
         return 0
@@ -4645,6 +4652,7 @@ def recalculate_all_fatigue(reference_date: date | None = None):
             continue
 
         score = calculate_fatigue(pitcher, logs, reference_date=ref)
+        score.calculated_at = calculated_at
         db.session.add(score)
         updated += 1
 
@@ -6365,15 +6373,20 @@ def run_postgame_refresh(
                 )
 
                 candidate_metadata = sync_metadata.collect_data_metadata()
+                candidate_metadata = sync_metadata.with_availability_reference_date(
+                    candidate_metadata,
+                    sync_metadata.fatigue_as_of_date(candidate_metadata),
+                )
                 candidate_reference_date = (
                     product_availability_reference_date_from_metadata(
                         candidate_metadata
                     )
                 )
+                # Data coverage is its own fact: across an off-day the
+                # reference date sits more than one day after it.
                 candidate_data_through = (
-                    candidate_reference_date - timedelta(days=1)
-                    if candidate_reference_date is not None
-                    else None
+                    candidate_metadata['latest_workload_date']
+                    or candidate_metadata['latest_game_date']
                 )
                 status['candidate_data_through'] = (
                     candidate_data_through.isoformat()

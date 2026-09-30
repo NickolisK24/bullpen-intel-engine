@@ -28,6 +28,7 @@ from team_operations.contracts import (
     require_team_operations_governance_safe,
 )
 
+from services.availability_reference_date import trusted_slate_reference_dates
 from services.share_artifact_integrity import to_json_safe
 from services.share_artifacts import ShareArtifactEvidenceInput
 from services.team_state_eligibility import (
@@ -507,7 +508,16 @@ def _build_team_state_document_v1_2(
     data_through_iso = _iso(data_through)
 
     if isinstance(data_through, date):
-        metrics = build_team_state_card_metrics(source.team_id, reference_date=data_through)
+        metrics = build_team_state_card_metrics(
+            source.team_id,
+            reference_date=data_through,
+            # The publication's own schedule-aware date, so the card describes
+            # the same day as the snapshot's rest facts across off-days.
+            availability_reference_date=trusted_slate_reference_dates(
+                data_through,
+                getattr(source.snapshot, 'availability_reference_date', None),
+            )[1],
+        )
     else:
         # No slate to anchor to (eligibility should preclude this) — fail closed to
         # empty card data rather than an unanchored computation.
