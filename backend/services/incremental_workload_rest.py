@@ -46,6 +46,7 @@ PITCHER_REST_INPUT_FIELDS = (
     'appearances_last_5_days',
     'days_rest',
     'back_to_back',
+    'consecutive_day_appearances_5d',
     'three_in_four',
     'four_in_five',
     'freshness_state',

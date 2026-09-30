@@ -21,6 +21,7 @@ from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 
 import services.sync as sync_service
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import product_current_date
 from services.bullpen_board import (
     BOARD_GROUP_ORDER,
     build_board_payload,
@@ -660,16 +661,20 @@ class TestBoardEndpoint:
         assert body['stress']['summary']
 
     def test_board_workload_facts_and_rest_status_use_loaded_authority_values(self, client):
+        # Fixture dates count back from the host date; the board reads as of
+        # the ET product day. Back-to-Back is entering that day, so anchor the
+        # two appearances to its two preceding calendar dates.
+        offset = (date.today() - product_current_date()).days
         with client.application.app_context():
             rested = _seed_pitcher(
-                'Rested Arm', team_id=1, mlb_id=41001, days_ago=[3]
+                'Rested Arm', team_id=1, mlb_id=41001, days_ago=[3 + offset]
             )
             yesterday = _seed_pitcher(
                 'Back To Back Arm',
                 team_id=1,
                 mlb_id=41002,
                 innings=[1.0, 1.0],
-                days_ago=[1, 2],
+                days_ago=[1 + offset, 2 + offset],
             )
             rested_score = FatigueScore.query.filter_by(pitcher_id=rested.id).one()
             rested_score.days_since_last_appearance = 3
