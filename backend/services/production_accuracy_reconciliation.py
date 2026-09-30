@@ -19,6 +19,8 @@ from services.team_state_vnext_production_proof import load_durable_proof
 from services.availability import (
     ACTIVE_WINDOW_DAYS, STATUS_AVAILABLE, STATUS_AVOID, STATUS_LIMITED,
     STATUS_MONITOR, STATUS_UNAVAILABLE, THRESHOLDS,
+    _recent_consecutive, entering_back_to_back,
+    has_recent_consecutive_day_appearances,
 )
 from services.workload_appearance import is_workload_appearance_log
 from utils.db import db
@@ -321,7 +323,8 @@ def _availability_inputs(rows, reference_date, score):
         'appearances_last_3_days': len(rows_3),
         'appearances_last_5_days': len(rows_5),
         'days_rest': None if latest is None else (reference_date-latest).days,
-        'back_to_back': any(day-timedelta(days=1) in dates for day in dates),
+        'back_to_back': entering_back_to_back(dates, reference_date),
+        'consecutive_day_appearances_5d': has_recent_consecutive_day_appearances(dates),
         'three_in_four': len(rows_4) >= 3,
         'four_in_five': len(rows_5) >= 4,
         'freshness_state': freshness,
@@ -355,7 +358,7 @@ def _reproduce_arm_status(inputs):
         or p3 >= THRESHOLDS.avoid_pitches_last_3_days
         or a3 >= THRESHOLDS.avoid_appearances_last_3_days
         or a5 >= THRESHOLDS.avoid_appearances_last_5_days
-        or (inputs.get('back_to_back') and p3 >= THRESHOLDS.limited_back_to_back_pitches_last_3_days)
+        or (_recent_consecutive(inputs) and p3 >= THRESHOLDS.limited_back_to_back_pitches_last_3_days)
         or (fatigue is not None and fatigue >= THRESHOLDS.avoid_fatigue_score)
     ):
         status = STATUS_AVOID
@@ -365,7 +368,7 @@ def _reproduce_arm_status(inputs):
         or p5 >= THRESHOLDS.limited_pitches_last_5_days
         or a3 >= THRESHOLDS.limited_appearances_last_3_days
         or a5 >= THRESHOLDS.limited_appearances_last_5_days
-        or inputs.get('back_to_back')
+        or _recent_consecutive(inputs)
         or (fatigue is not None and fatigue >= THRESHOLDS.limited_fatigue_score)
         or (rest is not None and rest <= 1 and fatigue is not None and fatigue >= 50)
     ):
@@ -596,7 +599,8 @@ def _membership_workload(snapshot, mismatches, governed_differences=None):
         for key in (
             'pitches_yesterday', 'pitches_last_3_days', 'pitches_last_5_days',
             'appearances_last_3_days', 'appearances_last_5_days', 'days_rest',
-            'back_to_back', 'three_in_four', 'four_in_five', 'freshness_state',
+            'back_to_back', 'consecutive_day_appearances_5d',
+            'three_in_four', 'four_in_five', 'freshness_state',
             'latest_game_date', 'reference_date',
         ):
             if key in published_inputs:

@@ -106,9 +106,28 @@ def _logs_between(logs, start, end):
     ]
 
 
-def _has_back_to_back(appearance_dates):
-    sorted_dates = sorted(appearance_dates, reverse=True)
-    return any((day - timedelta(days=1)) in appearance_dates for day in sorted_dates)
+def entering_back_to_back(appearance_dates, reference_date):
+    """Public "Back-to-Back": entering ``reference_date`` off appearances on
+    each of the two immediately preceding calendar dates.
+
+    Calendar dates only: two appearances on one date (a doubleheader) are one
+    date, and consecutive team games split by an off-day never count.
+    """
+    dates = set(appearance_dates or ())
+    return (
+        reference_date - timedelta(days=1) in dates
+        and reference_date - timedelta(days=2) in dates
+    )
+
+
+def has_recent_consecutive_day_appearances(appearance_dates):
+    """Recent-workload history: any two consecutive calendar dates in the window.
+
+    Internal classification input only (``consecutive_day_appearances_5d``). It
+    is not the public Back-to-Back fact, which describes entering the as-of date.
+    """
+    dates = set(appearance_dates or ())
+    return any((day - timedelta(days=1)) in dates for day in dates)
 
 
 def _derive_inputs(score, game_logs, reference_date, latest_game_date, freshness_state):
@@ -140,7 +159,10 @@ def _derive_inputs(score, game_logs, reference_date, latest_game_date, freshness
         'appearances_last_3_days': len(logs_3),
         'appearances_last_5_days': len(logs_5),
         'days_rest': days_rest,
-        'back_to_back': _has_back_to_back(appearance_dates),
+        'back_to_back': entering_back_to_back(appearance_dates, reference_date),
+        'consecutive_day_appearances_5d': has_recent_consecutive_day_appearances(
+            appearance_dates,
+        ),
         'three_in_four': len(logs_4) >= 3,
         'four_in_five': len(logs_5) >= 4,
         'freshness_state': freshness_state,
@@ -203,6 +225,17 @@ def _add_reason(reasons, text):
         reasons.append(text)
 
 
+def _recent_consecutive(inputs):
+    """Classification keeps its recent consecutive-day workload rule.
+
+    Inputs derived before the split carry only ``back_to_back`` (then the
+    five-day window meaning), so fall back to it.
+    """
+    if 'consecutive_day_appearances_5d' in inputs:
+        return bool(inputs['consecutive_day_appearances_5d'])
+    return bool(inputs.get('back_to_back'))
+
+
 def _evaluate_workload(inputs, thresholds):
     reasons = []
     status = STATUS_AVAILABLE
@@ -227,7 +260,7 @@ def _evaluate_workload(inputs, thresholds):
         or pitches_3 >= thresholds.avoid_pitches_last_3_days
         or apps_3 >= thresholds.avoid_appearances_last_3_days
         or apps_5 >= thresholds.avoid_appearances_last_5_days
-        or (inputs['back_to_back'] and pitches_3 >= thresholds.limited_back_to_back_pitches_last_3_days)
+        or (_recent_consecutive(inputs) and pitches_3 >= thresholds.limited_back_to_back_pitches_last_3_days)
         or (fatigue is not None and fatigue >= thresholds.avoid_fatigue_score)
     ):
         status = STATUS_AVOID
@@ -237,7 +270,7 @@ def _evaluate_workload(inputs, thresholds):
         or pitches_5 >= thresholds.limited_pitches_last_5_days
         or apps_3 >= thresholds.limited_appearances_last_3_days
         or apps_5 >= thresholds.limited_appearances_last_5_days
-        or inputs['back_to_back']
+        or _recent_consecutive(inputs)
         or (fatigue is not None and fatigue >= thresholds.limited_fatigue_score)
         or (days_rest is not None and days_rest <= 1 and fatigue is not None and fatigue >= 50)
     ):

@@ -91,11 +91,32 @@ Downstream consumers use that one date:
   when the game's date differs from the publication's availability date.
   Manual comparison, which has no game date, is unchanged.
 
-Definitions preserved:
+Definitions:
 
-- **Back-to-back:** appearances on two consecutive calendar dates within the
-  five-day window, per `BULLPEN_AVAILABILITY_ENGINE_V1`. It is never inferred
-  from consecutive team games.
+- **Back-to-Back (public, changed):** the pitcher enters the as-of date having
+  appeared on each of the two immediately preceding calendar dates,
+  `appeared(as_of - 1) and appeared(as_of - 2)`. This is the `back_to_back`
+  availability input, the card `workload_facts.back_to_back`, the D-055 Rest
+  Status `back_to_back_count`, Tonight's key-arm `B2B`, Matchup rest, and the
+  Recent Usage & Rest `back_to_back` fact (and so What Changed's
+  `back_to_back_started`). Sep 26 + Sep 27, off Sep 28, target Sep 29 is not
+  back-to-back. A doubleheader on one date is one date. Consecutive team games
+  split by an off-day never count.
+- **Recent consecutive-day appearances (internal, unchanged):** the previous
+  meaning, any two consecutive calendar dates in the five-day window. It is kept
+  as the separate availability input `consecutive_day_appearances_5d` so the
+  classification thresholds of `BULLPEN_AVAILABILITY_ENGINE_V1` (Limited, and
+  Avoid with 35+ pitches in 3 days) do not move. It never produces the public
+  "Back-to-back appearances" reason. That reason now appears only for the
+  entering condition. Sep 26/Sep 27 work stays visible through 3-in-4, 4-in-6,
+  recent appearances and pitches.
+- **Evidence and ranking (unchanged):** `usage_back_to_back` in workload
+  recovery evidence already means "appeared on D and D-1" for a completed date.
+  The slate editorial ranker's consecutive-day count is an internal ranking
+  signal. Neither is a public Rest label.
+- **Published carriers:** these are immutable. A snapshot published before this
+  change keeps its stored `back_to_back` values, which were computed under the
+  previous meaning.
 - **3-in-4 and 4-in-6:** calendar windows that must include the previous
   calendar day.
 

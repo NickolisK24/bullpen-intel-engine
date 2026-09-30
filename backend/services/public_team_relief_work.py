@@ -66,7 +66,9 @@ RECENT_USAGE_REST_WINDOW_DAYS = {
     'last_7_days': 7,
 }
 RECENT_USAGE_REST_MAX_WINDOW_DAYS = 7
-RECENT_USAGE_REST_BACK_TO_BACK_WINDOW_DAYS = 5
+# Back-to-Back means entering the reference date off appearances on each of
+# the two preceding calendar dates, not any consecutive pair in a wider window.
+RECENT_USAGE_REST_BACK_TO_BACK_WINDOW_DAYS = 2
 RECENT_USAGE_REST_THREE_IN_FOUR_DAYS = 4
 RECENT_USAGE_REST_THREE_IN_FOUR_MIN_DAYS = 3
 RECENT_USAGE_REST_FOUR_IN_SIX_DAYS = 6
@@ -535,18 +537,11 @@ def _recent_usage_rest_pitcher(
         window_state=_classified_window_state(rows, coverage, anchor, anchor, classes),
     )
 
-    back_to_back_start = reference - timedelta(
+    back_to_back_start = anchor - timedelta(
         days=RECENT_USAGE_REST_BACK_TO_BACK_WINDOW_DAYS - 1
     )
-    back_to_back_dates = {
-        day for day in relief_dates if back_to_back_start <= day <= anchor
-    }
-    observed_back_to_back = any(
-        day - timedelta(days=1) in back_to_back_dates
-        for day in back_to_back_dates
-    )
     back_to_back = _pattern_fact(
-        matched=observed_back_to_back,
+        matched=anchor in relief_dates and back_to_back_start in relief_dates,
         window_state=_classified_window_state(
             rows, coverage, back_to_back_start, anchor, classes,
         ),

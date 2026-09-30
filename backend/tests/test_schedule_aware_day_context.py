@@ -30,7 +30,11 @@ from services import public_team_relief_work
 from services import slate_coverage
 from services import sync_metadata
 from services import team_board_what_changed
-from services.availability import classify_availability, derive_workload_rest_inputs
+from services.availability import (
+    classify_availability,
+    derive_workload_rest_inputs,
+    entering_back_to_back,
+)
 from services.availability_reference_date import (
     schedule_aware_availability_reference_date,
     trusted_slate_reference_dates,
@@ -196,13 +200,63 @@ def test_case12_back_to_back_is_calendar_not_consecutive_team_games():
     assert _inputs([_log(SEP[27])], SEP[29])['back_to_back'] is False
 
 
-def test_back_to_back_definition_is_preserved_for_real_consecutive_days():
-    # BULLPEN_AVAILABILITY_ENGINE_V1 counts any consecutive-day appearance pair
-    # inside the five-day window; an off-day does not erase the pair itself.
-    inputs = _inputs([_log(SEP[26]), _log(SEP[27])], SEP[29])
+# ── Back-to-Back: entering the as-of date ───────────────────────────────────
+
+def test_b2b_appeared_on_the_two_preceding_dates_is_back_to_back():
+    inputs = _inputs([_log(SEP[27]), _log(SEP[28])], SEP[29])
     assert inputs['back_to_back'] is True
+    assert entering_back_to_back({SEP[27], SEP[28]}, SEP[29]) is True
+
+
+def test_b2b_does_not_survive_an_off_day():
+    # Sep 26 + Sep 27, off Sep 28, target Sep 29: no longer back-to-back.
+    reference = _resolve(SEP[27], SEP[29], [_row(SEP[29], 'scheduled')])
+    inputs = _inputs([_log(SEP[26], pitches=28), _log(SEP[27], pitches=25)], reference)
+    assert inputs['back_to_back'] is False
     assert inputs['pitches_yesterday'] == 0
-    assert inputs['days_rest'] == 2
+    # The recent workload stays visible through rolling measures.
+    assert inputs['consecutive_day_appearances_5d'] is True
+    assert inputs['appearances_last_5_days'] == 2
+    assert inputs['pitches_last_5_days'] == 53
+
+
+def test_b2b_requires_both_preceding_dates():
+    inputs = _inputs([_log(SEP[26]), _log(SEP[28])], SEP[29])
+    assert inputs['back_to_back'] is False
+    assert inputs['pitches_yesterday'] == 18
+
+
+def test_b2b_doubleheader_on_one_date_is_not_back_to_back():
+    dh = [_log(SEP[28], game_pk=1), _log(SEP[28], game_pk=2)]
+    inputs = _inputs(dh, SEP[29])
+    assert inputs['back_to_back'] is False
+    assert inputs['consecutive_day_appearances_5d'] is False
+    # A doubleheader yesterday plus the day before still is.
+    assert _inputs(dh + [_log(SEP[27], game_pk=3)], SEP[29])['back_to_back'] is True
+
+
+def test_b2b_historical_as_of_is_deterministic(monkeypatch):
+    july = {day: date(2026, 7, day) for day in range(10, 20)}
+    logs = [_log(july[13]), _log(july[14])]
+    monkeypatch.setattr(
+        reference_authority, 'product_current_date', lambda *a, **k: SEP[29],
+    )
+    assert _inputs(logs, july[15])['back_to_back'] is True
+    assert _inputs(logs, july[16])['back_to_back'] is False
+
+
+def test_classification_keeps_its_recent_consecutive_day_rule():
+    # Status is unchanged by the label split: Sep 26 + 27 still weighs as
+    # recent consecutive-day workload on Sep 29, without a Back-to-Back reason.
+    result = classify_availability(
+        _score(), [_log(SEP[26], pitches=12), _log(SEP[27], pitches=12)], reference_date=SEP[29],
+    )
+    assert result['availability_status'] == 'Limited'
+    assert 'Back-to-back appearances' not in result['reasons']
+    entering = classify_availability(
+        _score(), [_log(SEP[27], pitches=12), _log(SEP[28], pitches=12)], reference_date=SEP[29],
+    )
+    assert 'Back-to-back appearances' in entering['reasons']
 
 
 def test_case3_multiple_off_days_accumulate_rest():
@@ -320,7 +374,8 @@ def test_recent_usage_rest_windows_are_calendar_relative_across_off_day():
     assert closer['windows']['last_3_days']['appearances']['value'] == 2
     assert closer['days_since_last_appearance']['value'] == 2
     assert closer['three_in_four']['value'] is False
-    assert closer['back_to_back']['value'] is True  # Sep 26-27, existing definition
+    # Sep 26-27 before the Sep 28 off-day: not back-to-back entering Sep 29.
+    assert closer['back_to_back']['value'] is False
 
 
 def test_recent_usage_rest_consecutive_day_semantics_are_unchanged():
@@ -330,6 +385,7 @@ def test_recent_usage_rest_consecutive_day_semantics_are_unchanged():
     assert closer['pitched_yesterday']['value'] is True
     assert closer['windows']['yesterday']['through_date'] == '2026-09-27'
     assert closer['three_in_four']['value'] is True
+    assert closer['back_to_back']['value'] is True  # Sep 26 and Sep 27
     assert closer['days_since_last_appearance']['value'] == 1
 
 
@@ -404,11 +460,13 @@ def _seed_sep_29_matchup():
     for team_id, abbreviation, opponent in ((CHC, 'CHC', 158), (SD, 'SD', 119)):
         arms[team_id] = [_pitcher(team_id * 100 + index, team_id, abbreviation) for index in range(4)]
         base_pk = team_id * 1000
-        # Two arms worked the Sep 27 finale: the arms once counted "yesterday".
+        # Three arms worked the Sep 27 finale: the arms once counted "yesterday".
         _game_log(arms[team_id][0], SEP[27], base_pk + 27, 24)
         _game_log(arms[team_id][1], SEP[27], base_pk + 27, 17)
         _game_log(arms[team_id][1], SEP[25], base_pk + 25, 15)
         _game_log(arms[team_id][2], SEP[26], base_pk + 26, 20)
+        # Sep 26 + Sep 27, then the off-day: back-to-back entering Sep 28 only.
+        _game_log(arms[team_id][2], SEP[27], base_pk + 27, 14)
         _game_log(arms[team_id][3], SEP[24], base_pk + 24, 30)
         for day in (24, 25, 26, 27):
             _schedule(team_id, opponent, base_pk + day, SEP[day], ScheduledGame.STATE_FINAL)
@@ -483,7 +541,9 @@ def test_production_fixture_before_fix_counted_previous_game_as_yesterday(app, m
     assert sync_service.recalculate_all_fatigue(reference_date=old_reference) == 8
     for team_id in (CHC, SD):
         rest = _team_rest(arms[team_id], old_reference)
-        assert rest['worked_yesterday_count'] == 2
+        assert rest['worked_yesterday_count'] == 3
+        # Entering Sep 28 off Sep 26 + Sep 27 really was back-to-back.
+        assert rest['back_to_back_count'] == 1
 
 
 def test_read_path_as_of_is_the_fatigue_write_day_not_the_wall_clock(app, monkeypatch):
