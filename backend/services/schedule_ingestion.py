@@ -70,6 +70,7 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         'games_skipped': 0,
         'rows_created': 0,
         'rows_updated': 0,
+        'rows_retired': 0,
         'slate_games_created': 0,
         'slate_games_updated': 0,
         'slate_games_skipped': 0,
@@ -100,6 +101,7 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
                     continue
                 outcome = _upsert_row(team_id, opponent_id, home_away, parsed, source)
                 summary[f'rows_{outcome}'] += 1
+            summary['rows_retired'] += _retire_non_participant_rows(parsed)
             summary['games_ingested'] += 1
         except Exception:  # noqa: BLE001 — one bad game never sinks the window
             db.session.rollback()
@@ -165,13 +167,14 @@ def refresh_non_final_games_for_slate(
     logger.info(
         'Slate finality refresh completed slate_date=%s candidate_games=%s '
         'games_seen=%s games_ingested=%s rows_created=%s rows_updated=%s '
-        'errors=%s elapsed_ms=%s.',
+        'rows_retired=%s errors=%s elapsed_ms=%s.',
         ref.isoformat(),
         len(candidate_game_pks),
         summary.get('games_seen'),
         summary.get('games_ingested'),
         summary.get('rows_created'),
         summary.get('rows_updated'),
+        summary.get('rows_retired'),
         summary.get('errors'),
         elapsed_ms,
     )
@@ -328,6 +331,35 @@ def _upsert_row(team_id, opponent_team_id, home_away, parsed, source):
     row.resumed_to_game_pk = parsed['resumed_to_game_pk']
     row.source = source
     return 'created' if created else 'updated'
+
+
+def _retire_non_participant_rows(parsed):
+    """Delete this game's rows for teams MLB no longer lists as participants.
+
+    Rows are keyed by (team_id, game_pk). MLB publishes undecided postseason
+    matchups with placeholder team ids (one or both sides), then fills in the
+    real clubs under the same gamePk. The upsert creates the real clubs' rows,
+    but each placeholder's row is never addressed again and keeps its pre-game
+    status forever (Sep 29, 2026: five such rows across three of four Wild Card
+    games). Slate coverage and the game-driven planner read every row of a
+    gamePk, so those orphans read as a non-final (or conflicting) game and
+    withhold publication of a complete slate. The payload in hand names both
+    participants of this
+    gamePk, so any other team's row for it is false and is removed. With either
+    participant missing nothing is inferred and nothing is removed.
+    """
+    participants = {parsed['home_team_id'], parsed['away_team_id']}
+    if None in participants:
+        return 0
+    stale_rows = (
+        ScheduledGame.query
+        .filter(ScheduledGame.game_pk == parsed['game_pk'])
+        .filter(ScheduledGame.team_id.notin_(participants))
+        .all()
+    )
+    for row in stale_rows:
+        db.session.delete(row)
+    return len(stale_rows)
 
 
 # ── Small helpers ─────────────────────────────────────────────────────────────
