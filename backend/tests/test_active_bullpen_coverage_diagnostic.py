@@ -210,3 +210,47 @@ def test_the_diagnostic_writes_nothing(app, team_118):
 ])
 def test_unresolved_headroom_mirrors_the_medium_thresholds(active, usable, headroom):
     assert diagnostic.unresolved_headroom(active, usable) == headroom
+
+
+def test_each_arm_carries_the_inputs_the_classifier_read(app, team_118):
+    ids, _members = team_118
+    with app.app_context():
+        report = _diagnose()
+    arms = {arm['pitcher_id']: arm for arm in report['arms']}
+
+    fresh = arms[ids['fresh_a']]
+    assert fresh['readiness_record_exists'] is True
+    assert fresh['fatigue_calculated_at'] == '2026-09-30T10:20:00'
+    assert fresh['record_data_state'] == 'fresh'
+    assert fresh['latest_game_log_date'] == '2026-09-26'
+    assert fresh['days_since_last_appearance'] == 4
+    assert (fresh['window_log_count'], fresh['window_logs_missing_pitch_count']) == (1, 0)
+
+    incomplete = arms[ids['incomplete_log']]
+    assert incomplete['window_logs_missing_pitch_count'] == 1
+    never = arms[ids['never_scored']]
+    assert never['readiness_record_exists'] is False
+    assert never['latest_game_log_date'] is None
+    assert never['days_since_last_appearance'] is None
+
+    assert report['coverage_pct'] == 44.4
+    assert report['unresolved_headroom'] == -3
+    assert report['eligible_coverage'] is False
+    assert report['medium_bar'] == {
+        'min_usable': 6, 'max_unresolved': 2, 'min_coverage_pct': 75.0,
+    }
+
+
+def test_league_rows_are_ordered_by_headroom_and_flag_the_margin(app, team_118):
+    with app.app_context():
+        league = diagnostic.diagnose_league(
+            [147, TEAM], membership_date=MEMBERSHIP_DATE, availability_date=AVAILABILITY_DATE,
+        )
+    rows = {row['team_id']: row for row in league['teams']}
+    assert rows[TEAM]['team'] == 'KC'
+    assert rows[TEAM]['eligible_coverage'] is False
+    # No roster authority for 147 in this fixture: unknown, and the least headroom.
+    assert rows[147]['confidence'] == 'unknown'
+    assert [row['team_id'] for row in league['teams']] == [147, TEAM]
+    assert set(league['ineligible_team_ids']) == {147, TEAM}
+    assert set(league) >= {'one_arm_from_failing', 'two_arms_from_failing'}

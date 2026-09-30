@@ -35,6 +35,7 @@ from typing import Iterable, Mapping, Optional
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.sync_failure import SyncFailure
+from services.mlb_club_directory import MLB_CLUBS
 from services.team_readiness_coverage import (
     assess_team_coverage,
     resolve_active_bullpen_membership,
@@ -56,6 +57,8 @@ CAUSE_UNRESOLVED_REST_UNPROVEN = 'unresolved_rest_unproven'
 USABLE_CAUSES = frozenset({CAUSE_USABLE_FRESH, CAUSE_USABLE_LEDGER_REST})
 
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
+
+_ABBREVIATIONS = {club.team_id: club.abbreviation for club in MLB_CLUBS}
 
 
 def _iso(value):
@@ -137,19 +140,49 @@ def _incomplete_window_logs(record):
     ]
 
 
+def _arm_evidence(pitcher, record, availability_date):
+    """Every input the production classifier reads for this arm, as observed."""
+    availability = (record or {}).get('availability') or {}
+    score = (record or {}).get('score')
+    latest = (record or {}).get('latest_game_date')
+    if latest is None and pitcher is not None:
+        latest = _latest_log_date(pitcher.id)
+    window_logs = (
+        GameLog.query
+        .filter(GameLog.pitcher_id == pitcher.id)
+        .filter(GameLog.game_date >= availability_date - timedelta(days=4))
+        .filter(GameLog.game_date <= availability_date)
+        .all()
+        if pitcher is not None else []
+    )
+    return {
+        'pitcher_team_id': getattr(pitcher, 'team_id', None),
+        'pitcher_active': getattr(pitcher, 'active', None),
+        'roster_status': getattr(pitcher, 'roster_status', None),
+        'team_assignment_status': getattr(pitcher, 'team_assignment_status', None),
+        'readiness_record_exists': record is not None,
+        'fatigue_calculated_at': _iso(getattr(score, 'calculated_at', None)),
+        'record_data_state': availability.get('data_state'),
+        'record_confidence': availability.get('confidence'),
+        'latest_game_log_date': _iso(latest),
+        'days_since_last_appearance': (
+            (availability_date - latest).days if isinstance(latest, date) else None
+        ),
+        'window_log_count': len(window_logs),
+        'window_logs_missing_pitch_count': sum(
+            1 for log in window_logs if log.pitches_thrown is None
+        ),
+    }
+
+
 def _arm_without_record(pitcher_id, pitcher, team_id):
     if pitcher is None:
         return CAUSE_NO_RECORD_PITCHER_UNKNOWN, {}
-    detail = {
-        'pitcher_team_id': pitcher.team_id,
-        'pitcher_active': pitcher.active,
-        'latest_game_log_date': _iso(_latest_log_date(pitcher_id)),
-    }
     if pitcher.team_id != team_id:
-        return CAUSE_NO_RECORD_OTHER_TEAM, detail
+        return CAUSE_NO_RECORD_OTHER_TEAM, {}
     if pitcher.active is False:
-        return CAUSE_NO_RECORD_INACTIVE_PITCHER, detail
-    return CAUSE_NO_RECORD_NEVER_SCORED, detail
+        return CAUSE_NO_RECORD_INACTIVE_PITCHER, {}
+    return CAUSE_NO_RECORD_NEVER_SCORED, {}
 
 
 def _arm_with_record(record, ledger_complete, failures):
@@ -219,6 +252,7 @@ def diagnose_active_bullpen_coverage(
             'cause': cause,
             'usable': cause in USABLE_CAUSES,
             'open_fetch_failure_count': len(pitcher_failures),
+            **_arm_evidence(pitcher, record, availability_date),
             **detail,
         })
 
@@ -243,12 +277,22 @@ def diagnose_active_bullpen_coverage(
         'active_bullpen_count': len(member_ids),
         'usable_record_count': usable,
         'unresolved_record_count': len(member_ids) - usable,
+        'coverage_pct': _coverage_pct(len(member_ids), usable),
+        'medium_bar': {
+            'min_usable': 6, 'max_unresolved': 2, 'min_coverage_pct': 75.0,
+        },
+        'unresolved_headroom': unresolved_headroom(len(member_ids), usable),
+        'eligible_coverage': assessment.confidence in ('high', 'medium'),
         'confidence': assessment.confidence,
         'data_state': assessment.data_state,
         'coverage_reason_code': assessment.reason_code,
         'cause_counts': dict(sorted(cause_counts.items())),
         'arms': arms,
     }
+
+
+def _coverage_pct(active, usable):
+    return round(usable * 100.0 / active, 1) if active else None
 
 
 def unresolved_headroom(active: int, usable: int) -> int:
@@ -283,15 +327,13 @@ def diagnose_league(
             ledger_complete=ledger_complete,
         )
         teams.append({
-            key: report[key] for key in (
+            'team': _ABBREVIATIONS.get(team_id),
+            **{key: report[key] for key in (
                 'team_id', 'authority_complete', 'active_bullpen_count',
-                'usable_record_count', 'unresolved_record_count', 'confidence',
-                'data_state', 'coverage_reason_code', 'cause_counts',
-            )
-        } | {
-            'unresolved_headroom': unresolved_headroom(
-                report['active_bullpen_count'], report['usable_record_count'],
-            ),
+                'usable_record_count', 'unresolved_record_count', 'coverage_pct',
+                'unresolved_headroom', 'confidence', 'data_state',
+                'eligible_coverage', 'coverage_reason_code', 'cause_counts',
+            )},
         })
     teams.sort(key=lambda team: (team['unresolved_headroom'], team['team_id']))
     return {
@@ -299,8 +341,13 @@ def diagnose_league(
         'availability_date': _iso(availability_date),
         'ledger_complete': ledger_complete,
         'ineligible_team_ids': [
-            team['team_id'] for team in teams
-            if team['confidence'] not in ('high', 'medium')
+            team['team_id'] for team in teams if not team['eligible_coverage']
+        ],
+        'one_arm_from_failing': [
+            team['team_id'] for team in teams if team['unresolved_headroom'] == 0
+        ],
+        'two_arms_from_failing': [
+            team['team_id'] for team in teams if team['unresolved_headroom'] == 1
         ],
         'teams': teams,
     }
