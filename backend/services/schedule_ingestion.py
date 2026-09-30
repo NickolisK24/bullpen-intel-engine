@@ -337,12 +337,14 @@ def _retire_non_participant_rows(parsed):
     """Delete this game's rows for teams MLB no longer lists as participants.
 
     Rows are keyed by (team_id, game_pk). MLB publishes undecided postseason
-    matchups with placeholder team ids, then fills in the real clubs under the
-    same gamePk. The upsert creates the real clubs' rows, but the placeholder's
-    row is never addressed again and keeps its pre-game status forever. Slate
-    coverage and the game-driven planner read every row of a gamePk, so that
-    orphan reads as a non-final (or conflicting) game and withholds publication
-    of a complete slate. The payload in hand names both participants of this
+    matchups with placeholder team ids (one or both sides), then fills in the
+    real clubs under the same gamePk. The upsert creates the real clubs' rows,
+    but each placeholder's row is never addressed again and keeps its pre-game
+    status forever (Sep 29, 2026: five such rows across three of four Wild Card
+    games). Slate coverage and the game-driven planner read every row of a
+    gamePk, so those orphans read as a non-final (or conflicting) game and
+    withhold publication of a complete slate. The payload in hand names both
+    participants of this
     gamePk, so any other team's row for it is false and is removed. With either
     participant missing nothing is inferred and nothing is removed.
     """

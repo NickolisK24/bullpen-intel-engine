@@ -5,25 +5,33 @@ Production (Daily Primary, SyncRun 93096, 2026-09-30): candidate snapshot 4130
 ``dashboard_snapshot_slate_coverage_incomplete`` although ingestion reported no
 errors and the Sep 29 schedule refreshes succeeded. The store-time stale
 finality refresh logged ``candidate_games=3 games_seen=4 games_ingested=4
-rows_created=0 rows_updated=8``.
+rows_created=0 rows_updated=8``. The gate was right to withhold: the schedule
+authority it read was wrong.
 
 MLB lists an undecided postseason matchup under its final gamePk with a
-placeholder team id, then fills in the real club under the same gamePk. The
-same window's slate refresh accepted every Division Series game (16 seen, 16
-``slate_games`` updated) although those opponents were still undecided, and
-``slate_games`` accepts a game only when both team ids are positive, so the
-placeholders carry positive ids. ``scheduled_games`` is keyed by
-(team_id, game_pk): the real club's row is created and later updated to final,
-but the placeholder's row is never addressed again and stays ``scheduled``.
-Slate coverage groups every row of a gamePk, so {final, final, scheduled}
-collapses to a non-final game; the game-driven planner reads the same rows as a
-finality conflict. Three of the four Game 1s carried such a row, so three
-distinct non-final gamePks were refresh candidates while MLB returned four
-games whose eight real rows were rewritten and whose three phantom rows were not.
+placeholder team id, then fills in the real club under the same gamePk.
+``scheduled_games`` is keyed by (team_id, game_pk): the real club's row is
+created and later updated to final, but the placeholder's row is never
+addressed again and stays ``scheduled``. Verified production rows for Sep 29:
 
-The fixture below replays that history through the real ingestion writer. Game
-pks, placeholder ids and all matchups other than the documented Cubs at Padres
-game are synthetic.
+  849843  112 away final, 135 home final, 4619 home scheduled, 4945 away scheduled
+  849845  143 away final, 144 home final, 4947 away scheduled
+  849849  117 home final, 145 away final, 4614 home scheduled, 4946 away scheduled
+  849851  111 away final, 147 home final
+
+Four real games, three affected games, five stale placeholder rows (2/1/2).
+Two games were listed before either club was known. Slate coverage groups every
+row of a gamePk, so each affected game collapsed to non-final and only 849851
+read as final. Snapshot 4130 recorded exactly that: games_scheduled=4,
+games_final=1, games_fully_ingested=1, games_incomplete=3, reason codes
+scheduled_games_not_final, completeness_unknown, validations_failed. The
+refresh's ``candidate_games=3`` counted the three affected GAMES, not the five
+stale ROWS; it fetched MLB's four games and rewrote their eight real rows, but
+could not reach the five placeholder rows. The game-driven planner read the same
+rows as finality conflicts.
+
+The fixture below uses the production game pks, team ids and placeholder ids,
+and replays that history through the real ingestion writer.
 """
 
 import os
@@ -53,16 +61,22 @@ from utils.db import db
 
 SLATE = date(2026, 9, 29)
 CUBS, PADRES = 112, 135
-# Four Wild Card Game 1s: (game_pk, home, away).
+# The four Wild Card Game 1s as production stores them: (game_pk, home, away).
 GAMES = (
-    (813001, PADRES, CUBS),
-    (813002, 111, 117),
-    (813003, 147, 116),
-    (813004, 143, 121),
+    (849843, PADRES, CUBS),
+    (849845, 144, 143),
+    (849849, 117, 145),
+    (849851, 147, 111),
 )
-# Before the bracket settled MLB listed one side of three games as a
-# placeholder club. The fourth game's matchup was already decided.
-PLACEHOLDERS = {813001: ('away', 9001), 813002: ('away', 9002), 813003: ('home', 9003)}
+# The placeholder clubs MLB listed before the bracket settled, per side. The
+# stale rows production still held on Sep 30: two, one and two.
+PLACEHOLDERS = {
+    849843: {'home': 4619, 'away': 4945},
+    849845: {'away': 4947},
+    849849: {'home': 4614, 'away': 4946},
+}
+STALE_ROW_COUNT = 5
+LEGACY_ROWS_PER_GAME = {849843: 4, 849845: 3, 849849: 4, 849851: 2}
 
 FINAL = ('F', 'Final', 'Final')
 SCHEDULED = ('S', 'Scheduled', 'Preview')
@@ -91,12 +105,8 @@ def _pre_clinch_slate():
     """What MLB listed for Sep 29 before the bracket settled."""
     games = []
     for game_pk, home, away in GAMES:
-        side, placeholder = PLACEHOLDERS.get(game_pk, (None, None))
-        games.append(_mlb_game(
-            game_pk,
-            placeholder if side == 'home' else home,
-            placeholder if side == 'away' else away,
-        ))
+        sides = PLACEHOLDERS.get(game_pk, {})
+        games.append(_mlb_game(game_pk, sides.get('home', home), sides.get('away', away)))
     return games
 
 
@@ -112,23 +122,36 @@ def _mark_all_fully_processed():
 def _seed_legacy_phantom_rows():
     """The production state the pre-fix writer left behind on Sep 30.
 
-    Real rows are final; each placeholder row kept the pre-clinch status.
+    Real rows are final; each placeholder row kept its pre-clinch status and
+    the pre-clinch opponent.
     """
     ingest_games(_slate(FINAL), source='daily_finality_preflight')
-    for game_pk, (side, placeholder) in PLACEHOLDERS.items():
-        home, away = next((h, a) for pk, h, a in GAMES if pk == game_pk)
-        db.session.add(ScheduledGame(
-            team_id=placeholder,
-            game_pk=game_pk,
-            game_date=SLATE,
-            home_away=side,
-            opponent_team_id=home if side == 'away' else away,
-            game_type='F',
-            status_code='S',
-            status_state=ScheduledGame.STATE_SCHEDULED,
-            source='daily_slate_schedule',
-        ))
+    for row in _placeholder_rows():
+        db.session.add(row)
     db.session.commit()
+
+
+def _placeholder_rows():
+    rows = []
+    for game in _pre_clinch_slate():
+        game_pk = game['gamePk']
+        home = game['teams']['home']['team']['id']
+        away = game['teams']['away']['team']['id']
+        for side, team_id, opponent in (('home', home, away), ('away', away, home)):
+            if team_id not in PLACEHOLDERS.get(game_pk, {}).values():
+                continue
+            rows.append(ScheduledGame(
+                team_id=team_id,
+                game_pk=game_pk,
+                game_date=SLATE,
+                home_away=side,
+                opponent_team_id=opponent,
+                game_type='F',
+                status_code='S',
+                status_state=ScheduledGame.STATE_SCHEDULED,
+                source='daily_slate_schedule',
+            ))
+    return rows
 
 
 def _rows_by_game():
@@ -170,8 +193,8 @@ def test_bracket_settlement_leaves_exactly_the_two_participants_per_game(app):
         }
 
         settled = ingest_games(_slate(SCHEDULED), source='daily_slate_schedule')
-        assert settled['rows_created'] == 3   # the three real clubs
-        assert settled['rows_retired'] == 3   # the three placeholders
+        assert settled['rows_created'] == STALE_ROW_COUNT   # the real clubs
+        assert settled['rows_retired'] == STALE_ROW_COUNT   # the placeholders
         final = ingest_games(_slate(FINAL), source='daily_finality_preflight')
         db.session.commit()
 
@@ -232,16 +255,50 @@ def test_natural_history_publishes_the_complete_wild_card_slate(app, monkeypatch
 
 
 def test_production_replay_store_time_refresh_retires_phantoms_and_publishes(app, monkeypatch, caplog):
-    """SyncRun 93096: the exact state and refresh counts production logged."""
+    """SyncRun 93096: the verified production rows, snapshot 4130's recorded
+    coverage, and the refresh counts production logged."""
     calls = _stub_mlb(monkeypatch, _slate(FINAL))
     with app.app_context():
         _seed_legacy_phantom_rows()
         _mark_all_fully_processed()
         db.session.commit()
 
+        legacy = _rows_by_game()
+        assert {pk: len(rows) for pk, rows in legacy.items()} == LEGACY_ROWS_PER_GAME
+        assert legacy[849843] == {
+            (CUBS, 'final'), (PADRES, 'final'), (4619, 'scheduled'), (4945, 'scheduled'),
+        }
+        assert legacy[849845] == {(143, 'final'), (144, 'final'), (4947, 'scheduled')}
+        assert legacy[849849] == {
+            (117, 'final'), (145, 'final'), (4614, 'scheduled'), (4946, 'scheduled'),
+        }
+        assert legacy[849851] == {(111, 'final'), (147, 'final')}
+
         before = slate_coverage.compute_slate_coverage(SLATE, sync_status='success')
-        assert before['games_final'] == 1
-        assert 'scheduled_games_not_final' in before['reason_codes']
+        # Exactly what snapshot 4130 recorded.
+        assert {key: before[key] for key in (
+            'slate_date', 'games_scheduled', 'games_final', 'games_fully_ingested',
+            'games_incomplete', 'games_failed', 'games_postponed', 'games_cancelled',
+            'games_suspended', 'games_unresolved', 'games_included',
+            'validations_passed', 'complete_enough_to_publish', 'reason_codes',
+        )} == {
+            'slate_date': '2026-09-29',
+            'games_scheduled': 4,
+            'games_final': 1,
+            'games_fully_ingested': 1,
+            'games_incomplete': 3,
+            'games_failed': 0,
+            'games_postponed': 0,
+            'games_cancelled': 0,
+            'games_suspended': 0,
+            'games_unresolved': 0,
+            'games_included': 4,
+            'validations_passed': False,
+            'complete_enough_to_publish': False,
+            'reason_codes': [
+                'scheduled_games_not_final', 'completeness_unknown', 'validations_failed',
+            ],
+        }
         assert dashboard_snapshot._payload_slate_coverage_unavailable_reason({
             'freshness': {**_payload()['freshness'], 'slate_coverage': before},
         }) == 'dashboard_snapshot_slate_coverage_incomplete'
@@ -249,12 +306,13 @@ def test_production_replay_store_time_refresh_retires_phantoms_and_publishes(app
         refresh = schedule_ingestion.refresh_non_final_games_for_slate(
             SLATE, source='snapshot_slate_finality_refresh', commit=False,
         )
-        assert refresh['candidate_game_pks'] == sorted(PLACEHOLDERS)
+        # candidate_games=3 counts affected games, not the five stale rows.
+        assert refresh['candidate_game_pks'] == [849843, 849845, 849849]
         assert refresh['summary']['games_seen'] == 4
         assert refresh['summary']['games_ingested'] == 4
         assert refresh['summary']['rows_created'] == 0
         assert refresh['summary']['rows_updated'] == 8
-        assert refresh['summary']['rows_retired'] == 3
+        assert refresh['summary']['rows_retired'] == STALE_ROW_COUNT
         assert refresh['summary']['errors'] == 0
 
         stored = dashboard_snapshot._payload_with_slate_coverage(
@@ -309,7 +367,7 @@ def test_a_game_mlb_still_reports_unfinished_still_withholds(app, monkeypatch):
         rows = _rows_by_game()
 
     # The phantom is gone, but the real suspension is authoritative and blocks.
-    assert rows[813001] == {(PADRES, 'suspended'), (CUBS, 'suspended')}
+    assert rows[849843] == {(PADRES, 'suspended'), (CUBS, 'suspended')}
     coverage = stored['freshness']['slate_coverage']
     assert 'suspended_games_not_final' in coverage['reason_codes']
     assert dashboard_snapshot._payload_slate_coverage_unavailable_reason(stored) == (
@@ -333,7 +391,7 @@ def test_nothing_is_retired_when_mlb_does_not_name_both_participants(app, monkey
         )
         rows = _rows_by_game()
 
-    assert (9001, 'scheduled') in rows[game_pk]
+    assert {(4619, 'scheduled'), (4945, 'scheduled')} <= rows[game_pk]
     assert dashboard_snapshot._payload_slate_coverage_unavailable_reason(stored) == (
         'dashboard_snapshot_slate_coverage_incomplete'
     )
@@ -381,19 +439,17 @@ def test_fenced_daily_preflight_retires_phantoms_and_the_gate_reads_the_real_sla
         db.session.execute(text(
             "SELECT set_config('baseballos.schedule_owners', :keys, true)"
         ), {'keys': '[%s]' % ','.join(f'"{pk}"' for pk in game_pks)})
-        for game_pk, (side, _placeholder) in PLACEHOLDERS.items():
-            home, away = next((h, a) for pk, h, a in GAMES if pk == game_pk)
-            real = away if side == 'away' else home
-            db.session.add(ScheduledGame(
-                team_id=real, game_pk=game_pk, game_date=SLATE, home_away=side,
-                opponent_team_id=home if side == 'away' else away, game_type='F',
-                status_code='S', status_state=ScheduledGame.STATE_SCHEDULED,
-                source='daily_slate_schedule',
-            ))
+        for game_pk, home, away in GAMES:
+            for side in PLACEHOLDERS.get(game_pk, {}):
+                db.session.add(ScheduledGame(
+                    team_id=home if side == 'home' else away, game_pk=game_pk,
+                    game_date=SLATE, home_away=side,
+                    opponent_team_id=away if side == 'home' else home, game_type='F',
+                    status_code='S', status_state=ScheduledGame.STATE_SCHEDULED,
+                    source='daily_slate_schedule',
+                ))
         db.session.commit()
-        assert {pk: len(rows) for pk, rows in _rows_by_game().items()} == {
-            813001: 3, 813002: 3, 813003: 3, 813004: 2,
-        }
+        assert {pk: len(rows) for pk, rows in _rows_by_game().items()} == LEGACY_ROWS_PER_GAME
 
         run = SyncRun(job_name='daily_sync', status='running', stage='started',
                       source='scheduled')
@@ -407,7 +463,7 @@ def test_fenced_daily_preflight_retires_phantoms_and_the_gate_reads_the_real_sla
             date(2026, 9, 30), 7,
         )
         assert preflight['status'] == 'ok'
-        assert preflight['summary']['rows_retired'] == 3
+        assert preflight['summary']['rows_retired'] == STALE_ROW_COUNT
         assert db.session.execute(text(
             "SELECT count(*) FROM compatibility_write_events WHERE outcome='stale_suppressed'"
         )).scalar() == 0

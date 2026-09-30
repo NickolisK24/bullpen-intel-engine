@@ -370,7 +370,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/schedule_ingestion.py': {
         'digest_after':
-            'd0c5e95058fc03ff25da37d3f62f298d878ba851df9832bea4b72c7f9fbeaf0d',
+            '84cde02f9f38fa5c3305bfd80b8c3a62df7f2f7e56c53921809fdd622d4d51da',
         'change': (
             'Schedule finality persistence (SyncRun 92585): ingest_games now '
             'declares transaction-local schedule ownership '
@@ -381,9 +381,10 @@ PACKAGE_MODIFIED_MODULES = {
             'selection, and the slate gate are unchanged; no state is inferred. '
             'Postseason participant settlement (SyncRun 93096): when the MLB '
             'payload names both participants of a gamePk, ingest_games deletes '
-            'that gamePk\'s rows for any other team, so a placeholder club\'s '
-            'row left behind when MLB fills in the real club can no longer read '
-            'as a non-final game'
+            'that gamePk\'s rows for any other team, so placeholder club rows left '
+            'behind when MLB fills in the real clubs (five rows across three of '
+            'the four Sep 29 Wild Card games) can no longer read as non-final '
+            'games'
         ),
         # Stored schedule facts for adopted games now follow authoritative MLB
         # transitions instead of freezing at their pre-adoption state, which is
