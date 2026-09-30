@@ -44,6 +44,7 @@ def _pitcher(mlb_id, name, *, team_id=TEAM, active=True):
     pitcher = Pitcher(
         mlb_id=mlb_id, full_name=name, team_id=team_id, active=active,
         team_abbreviation='KC' if team_id == TEAM else 'NYY', position='P',
+        team_assignment_status='ASSIGNED',
     )
     db.session.add(pitcher)
     db.session.flush()
@@ -122,7 +123,7 @@ def test_every_active_arm_is_named_with_its_first_unusable_cause(app, team_118):
         ids['fresh_c']: 'usable_fresh',
         ids['rested']: 'usable_ledger_rest',
         ids['fetch_failed']: 'unresolved_fetch_failure',
-        ids['never_scored']: 'no_record_never_scored',
+        ids['never_scored']: 'usable_ledger_confirmed_no_recent_workload',
         ids['other_team']: 'no_record_other_team',
         ids['incomplete_log']: 'unresolved_incomplete_log',
         ids['no_history']: 'unresolved_missing_history',
@@ -138,7 +139,7 @@ def test_the_verdict_is_the_production_triple(app, team_118):
     with app.app_context():
         report = _diagnose()
     assert (report['active_bullpen_count'], report['usable_record_count'],
-            report['unresolved_record_count']) == (9, 4, 5)
+            report['unresolved_record_count']) == (9, 5, 4)
     assert (report['confidence'], report['data_state']) == ('low', 'incomplete')
     assert report['coverage_reason_code'] == 'insufficient_active_bullpen_coverage'
 
@@ -237,8 +238,10 @@ def test_each_arm_carries_the_inputs_the_classifier_read(app, team_118):
     assert never['latest_game_log_date'] is None
     assert never['days_since_last_appearance'] is None
 
-    assert report['coverage_pct'] == 44.4
-    assert report['unresolved_headroom'] == -3
+    assert never['unscored_rest_reason'] == 'ledger_confirmed_no_recent_workload'
+
+    assert report['coverage_pct'] == 55.6
+    assert report['unresolved_headroom'] == -2
     assert report['eligible_coverage'] is False
     assert report['medium_bar'] == {
         'min_usable': 6, 'max_unresolved': 2, 'min_coverage_pct': 75.0,
@@ -324,7 +327,7 @@ def test_the_written_evidence_is_complete_and_scan_safe(app, team_118, tmp_path)
     written = json.loads(path.read_text())
     assert written['report']['arms'] == json.loads(json.dumps(report['arms'], default=str))
     summary = (tmp_path / 'team-state-coverage-team-118-snapshot-4132.md').read_text()
-    assert 'Team 118: 4 of 9 active relievers usable' in summary
+    assert 'Team 118: 5 of 9 active relievers usable' in summary
     assert 'unresolved_fetch_failure' in summary
 
     scanner = subprocess.run(

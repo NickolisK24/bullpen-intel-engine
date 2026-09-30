@@ -668,6 +668,10 @@
           "measured_seconds": 6.7
         },
         {
+          "path": "tests/test_ledger_confirmed_no_score_rest.py",
+          "measured_seconds": 3.0
+        },
+        {
           "path": "tests/test_team_state_coverage_diagnostic_workflow_contract.py",
           "measured_seconds": 1.0
         },

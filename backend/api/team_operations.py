@@ -507,11 +507,13 @@ def _assess_active_bullpen_coverage(
     ledger_complete = _appearance_ledger_complete(ref)
 
     usable_ids = set()
+    recorded_ids = set()
     for record in records:
         pitcher = record.get('pitcher')
         pitcher_id = getattr(pitcher, 'id', None)
         if pitcher_id is None or pitcher_id not in active_bullpen_ids:
             continue
+        recorded_ids.add(pitcher_id)
         data_state = (record.get('availability') or {}).get('data_state')
         if data_state == _USABLE_FRESH_DATA_STATE:
             usable_ids.add(pitcher_id)
@@ -519,6 +521,18 @@ def _assess_active_bullpen_coverage(
             # Ledger-confirmed rest: no recent appearance is a valid observed zero,
             # not stale source data (DECISION 2).
             usable_ids.add(pitcher_id)
+
+    # An active-bullpen arm with no fatigue score was never scored because it
+    # has no appearance in the scoring window. The same ledger proof that makes
+    # a stale arm usable makes it usable for coverage, when nothing contradicts
+    # it. It gains no readiness record and no score (see ledger_confirmed_rest).
+    unscored_ids = set(active_bullpen_ids) - recorded_ids
+    if unscored_ids and ledger_complete and authority_complete:
+        from services.ledger_confirmed_rest import ledger_confirmed_rest_ids
+        usable_ids |= ledger_confirmed_rest_ids(
+            unscored_ids, team_id=team_id, reference_date=ref,
+            ledger_complete=ledger_complete,
+        )
 
     active_count = len(active_bullpen_ids)
     usable_count = len(usable_ids)

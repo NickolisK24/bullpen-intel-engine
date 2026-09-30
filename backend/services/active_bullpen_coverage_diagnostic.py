@@ -17,10 +17,17 @@ Cause codes (one per arm, first match wins, mirroring the production rule):
 
 * ``usable_fresh``                 a record with an appearance in the active window
 * ``usable_ledger_rest``           no recent appearance, and the ledger proves it
+* ``usable_ledger_confirmed_no_recent_workload``
+                                   no score, no appearance in the active window,
+                                   and the ledger and roster evidence prove it
 * ``no_record_pitcher_unknown``    the roster authority names an unknown pitcher
 * ``no_record_other_team``         the pitcher's ``team_id`` is another club
 * ``no_record_inactive_pitcher``   ``Pitcher.active`` is false, so never scored
-* ``no_record_never_scored``       no fatigue score has ever been written
+* ``no_record_assignment_unconfirmed`` no score; team assignment not ``ASSIGNED``
+* ``no_record_mlb_id_missing``     no score; no MLB id to check fetch failures by
+* ``no_record_recent_workload_unscored`` no score, yet a log sits in the window
+* ``no_record_team_game_not_final`` no score; a team game in the ledger window
+                                   is live, suspended, or unsettled
 * ``unresolved_fetch_failure``     an unresolved ``pitcher_game_logs`` dead letter
 * ``unresolved_incomplete_log``    a log in the window lacks date or pitch count
 * ``unresolved_missing_history``   the record has no score or no appearance date
@@ -36,6 +43,7 @@ from typing import Iterable, Mapping, Optional
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.sync_failure import SyncFailure
+from services import ledger_confirmed_rest as unscored_rest
 from services.mlb_club_directory import MLB_CLUBS
 from services.team_readiness_coverage import (
     assess_team_coverage,
@@ -49,13 +57,38 @@ CAUSE_USABLE_LEDGER_REST = 'usable_ledger_rest'
 CAUSE_NO_RECORD_PITCHER_UNKNOWN = 'no_record_pitcher_unknown'
 CAUSE_NO_RECORD_OTHER_TEAM = 'no_record_other_team'
 CAUSE_NO_RECORD_INACTIVE_PITCHER = 'no_record_inactive_pitcher'
-CAUSE_NO_RECORD_NEVER_SCORED = 'no_record_never_scored'
+CAUSE_USABLE_LEDGER_CONFIRMED_NO_RECENT_WORKLOAD = (
+    'usable_ledger_confirmed_no_recent_workload'
+)
+CAUSE_NO_RECORD_ASSIGNMENT_UNCONFIRMED = 'no_record_assignment_unconfirmed'
+CAUSE_NO_RECORD_MLB_ID_MISSING = 'no_record_mlb_id_missing'
+CAUSE_NO_RECORD_RECENT_WORKLOAD_UNSCORED = 'no_record_recent_workload_unscored'
+CAUSE_NO_RECORD_TEAM_GAME_NOT_FINAL = 'no_record_team_game_not_final'
 CAUSE_UNRESOLVED_FETCH_FAILURE = 'unresolved_fetch_failure'
 CAUSE_UNRESOLVED_INCOMPLETE_LOG = 'unresolved_incomplete_log'
 CAUSE_UNRESOLVED_MISSING_HISTORY = 'unresolved_missing_history'
 CAUSE_UNRESOLVED_REST_UNPROVEN = 'unresolved_rest_unproven'
 
-USABLE_CAUSES = frozenset({CAUSE_USABLE_FRESH, CAUSE_USABLE_LEDGER_REST})
+USABLE_CAUSES = frozenset({
+    CAUSE_USABLE_FRESH,
+    CAUSE_USABLE_LEDGER_REST,
+    CAUSE_USABLE_LEDGER_CONFIRMED_NO_RECENT_WORKLOAD,
+})
+
+# The unscored-rest proof's reason, as the diagnostic's per-arm cause.
+_UNSCORED_CAUSES = {
+    unscored_rest.REASON_CONFIRMED: CAUSE_USABLE_LEDGER_CONFIRMED_NO_RECENT_WORKLOAD,
+    unscored_rest.REASON_PITCHER_UNKNOWN: CAUSE_NO_RECORD_PITCHER_UNKNOWN,
+    unscored_rest.REASON_OTHER_TEAM: CAUSE_NO_RECORD_OTHER_TEAM,
+    unscored_rest.REASON_INACTIVE: CAUSE_NO_RECORD_INACTIVE_PITCHER,
+    unscored_rest.REASON_ASSIGNMENT_UNCONFIRMED: CAUSE_NO_RECORD_ASSIGNMENT_UNCONFIRMED,
+    unscored_rest.REASON_MLB_ID_MISSING: CAUSE_NO_RECORD_MLB_ID_MISSING,
+    unscored_rest.REASON_LEDGER_INCOMPLETE: 'unresolved_rest_unproven',
+    unscored_rest.REASON_FETCH_FAILURE_OPEN: 'unresolved_fetch_failure',
+    unscored_rest.REASON_WINDOW_LOG_INCOMPLETE: 'unresolved_incomplete_log',
+    unscored_rest.REASON_RECENT_APPEARANCE_UNSCORED: CAUSE_NO_RECORD_RECENT_WORKLOAD_UNSCORED,
+    unscored_rest.REASON_TEAM_GAME_NOT_FINAL: CAUSE_NO_RECORD_TEAM_GAME_NOT_FINAL,
+}
 
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 
@@ -193,14 +226,12 @@ def _arm_evidence(pitcher, record, availability_date):
     }
 
 
-def _arm_without_record(pitcher_id, pitcher, team_id):
-    if pitcher is None:
-        return CAUSE_NO_RECORD_PITCHER_UNKNOWN, {}
-    if pitcher.team_id != team_id:
-        return CAUSE_NO_RECORD_OTHER_TEAM, {}
-    if pitcher.active is False:
-        return CAUSE_NO_RECORD_INACTIVE_PITCHER, {}
-    return CAUSE_NO_RECORD_NEVER_SCORED, {}
+def _arm_without_record(unscored_reason, failures):
+    cause = _UNSCORED_CAUSES[unscored_reason]
+    detail = {'unscored_rest_reason': unscored_reason}
+    if cause == CAUSE_UNRESOLVED_FETCH_FAILURE:
+        detail['open_fetch_failures'] = failures
+    return cause, detail
 
 
 def _arm_with_record(record, ledger_complete, failures):
@@ -253,6 +284,11 @@ def diagnose_active_bullpen_coverage(
         )
     }
     failures = _open_fetch_failures(pitcher.mlb_id for pitcher in pitchers.values())
+    unscored_reasons = unscored_rest.evaluate_unscored_rest(
+        [pid for pid in member_ids if pid not in records],
+        team_id=team_id, reference_date=availability_date,
+        ledger_complete=ledger_complete,
+    )
 
     arms = []
     for pitcher_id in sorted(member_ids):
@@ -260,7 +296,9 @@ def diagnose_active_bullpen_coverage(
         record = records.get(pitcher_id)
         pitcher_failures = failures.get(str(getattr(pitcher, 'mlb_id', None)), [])
         if record is None:
-            cause, detail = _arm_without_record(pitcher_id, pitcher, team_id)
+            cause, detail = _arm_without_record(
+                unscored_reasons[pitcher_id], pitcher_failures,
+            )
         else:
             cause, detail = _arm_with_record(record, ledger_complete, pitcher_failures)
         arms.append({
