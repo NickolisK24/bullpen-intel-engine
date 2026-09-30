@@ -63,12 +63,21 @@ def _positive_int(value):
     return number
 
 
+def _iso_date_text(value):
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError('must be YYYY-MM-DD') from exc
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--snapshot-id', type=_positive_int,
                         help='Candidate snapshot whose reference dates to use.')
-    parser.add_argument('--membership-date', help='YYYY-MM-DD; overrides the snapshot.')
-    parser.add_argument('--availability-date', help='YYYY-MM-DD; overrides the snapshot.')
+    parser.add_argument('--membership-date', type=_iso_date_text,
+                        help='YYYY-MM-DD; overrides the snapshot.')
+    parser.add_argument('--availability-date', type=_iso_date_text,
+                        help='YYYY-MM-DD; overrides the snapshot.')
     scope = parser.add_mutually_exclusive_group(required=True)
     scope.add_argument('--team-id', type=_positive_int, help='One team, with per-arm causes.')
     scope.add_argument('--league', action='store_true',
@@ -103,10 +112,87 @@ def _snapshot_identity(snapshot):
     }
 
 
-def output_basename(*, snapshot_id, team_id=None, league=False):
+def output_basename(*, snapshot_id, team_id=None, league=False,
+                    membership_date=None, availability_date=None):
     scope = 'league' if league else f'team-{team_id}'
-    anchor = f'snapshot-{snapshot_id}' if snapshot_id is not None else 'explicit-dates'
+    if snapshot_id is not None:
+        anchor = f'snapshot-{snapshot_id}'
+    else:
+        anchor = f'dates-{membership_date}-{availability_date}'
     return f'team-state-coverage-{scope}-{anchor}'
+
+
+REFUSAL_BASENAME = 'team-state-coverage-refused'
+
+REASON_TEAM_NOT_MLB = 'team_not_mlb_club'
+REASON_READ_ONLY_UNPROVEN = 'read_only_unproven'
+REASON_SNAPSHOT_NOT_FOUND = 'snapshot_not_found'
+REASON_REFERENCE_DATES_MISSING = 'reference_dates_missing'
+
+# A candidate withheld by the Team State publication proof is never persisted:
+# the proof raises inside the publication transaction and the Daily lane rolls
+# that transaction back, candidate row included. Its id was allocated from the
+# sequence (and logged), but no row exists to anchor on.
+SNAPSHOT_NOT_FOUND_GUIDANCE = (
+    'No dashboard_snapshots row has this id. A candidate withheld by the Team '
+    'State publication proof is rolled back with its publication transaction, '
+    'so its logged id is never stored. Diagnose it by the reference dates the '
+    'proof used instead: --membership-date (the slate, data_through) and '
+    '--availability-date (the availability reference date).'
+)
+
+
+def _refusal(args, *, exit_code, reason_code, message, guidance=None):
+    """Report a refusal on stderr and, when asked, as a structured document.
+
+    A refused run still leaves reviewable evidence: which inputs were refused
+    and why. No production evidence is ever included; a refusal happens before
+    any is read.
+    """
+    print(f'refusing: {message}', file=sys.stderr)
+    if args.output_dir:
+        document = {
+            'diagnostic': 'team_state_active_bullpen_coverage',
+            'schema_version': SCHEMA_VERSION,
+            'mode': 'refused',
+            'exit_code': exit_code,
+            'reason_code': reason_code,
+            'message': message,
+            'guidance': guidance,
+            'inputs': {
+                'snapshot_id': args.snapshot_id,
+                'team_id': args.team_id,
+                'league': bool(args.league),
+                'membership_date': args.membership_date,
+                'availability_date': args.availability_date,
+            },
+            'run': {
+                'commit_sha': os.environ.get('GITHUB_SHA'),
+                'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
+            },
+            'non_authorization_statement': NON_AUTHORIZATION_STATEMENT,
+        }
+        target = Path(args.output_dir)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / f'{REFUSAL_BASENAME}.json').write_text(
+            json.dumps(document, indent=2, sort_keys=True, default=str) + '\n',
+            encoding='utf-8',
+        )
+        (target / f'{REFUSAL_BASENAME}.md').write_text(
+            '\n'.join([
+                '# Team State coverage diagnostic: refused',
+                '',
+                f'- Reason: {reason_code}',
+                f'- Exit code: {exit_code}',
+                f'- {message}',
+                *([f'- {guidance}'] if guidance else []),
+                '',
+                NON_AUTHORIZATION_STATEMENT,
+                '',
+            ]),
+            encoding='utf-8',
+        )
+    return exit_code
 
 
 def markdown_summary(document):
@@ -179,8 +265,15 @@ def main(argv=None):
     from services.mlb_club_directory import MLB_TEAM_IDS
 
     if args.team_id is not None and args.team_id not in MLB_TEAM_IDS:
-        print(f'refusing: team {args.team_id} is not an MLB club', file=sys.stderr)
-        return EXIT_REFUSED
+        return _refusal(
+            args, exit_code=EXIT_REFUSED, reason_code=REASON_TEAM_NOT_MLB,
+            message=f'team {args.team_id} is not an MLB club',
+        )
+    if args.snapshot_id is None and not (args.membership_date and args.availability_date):
+        return _refusal(
+            args, exit_code=EXIT_REFUSED, reason_code=REASON_REFERENCE_DATES_MISSING,
+            message='need --snapshot-id or both --membership-date and --availability-date',
+        )
 
     _configure_read_only_process()
     from app import create_app
@@ -199,13 +292,19 @@ def main(argv=None):
             try:
                 read_only_proof = enforce_read_only(db.session)
             except (ReadOnlyNotEnforced, ReadOnlyProbeViolation):
-                print('refusing: read-only operation could not be proven', file=sys.stderr)
-                return EXIT_READ_ONLY_UNPROVEN
+                return _refusal(
+                    args, exit_code=EXIT_READ_ONLY_UNPROVEN,
+                    reason_code=REASON_READ_ONLY_UNPROVEN,
+                    message='read-only operation could not be proven',
+                )
         elif args.allow_non_postgres:
             read_only_proof = {'read_only_probe_refused': None, 'protection': 'none_local_only'}
         else:
-            print('refusing: read-only cannot be proven on this database', file=sys.stderr)
-            return EXIT_READ_ONLY_UNPROVEN
+            return _refusal(
+                args, exit_code=EXIT_READ_ONLY_UNPROVEN,
+                reason_code=REASON_READ_ONLY_UNPROVEN,
+                message='read-only cannot be proven on this database',
+            )
 
         snapshot = None
         membership_date = _date(args.membership_date)
@@ -213,16 +312,23 @@ def main(argv=None):
         if args.snapshot_id is not None:
             snapshot = db.session.get(DashboardSnapshot, args.snapshot_id)
             if snapshot is None:
-                print(f'refusing: snapshot {args.snapshot_id} not found', file=sys.stderr)
-                return EXIT_REFUSED
+                db.session.rollback()
+                return _refusal(
+                    args, exit_code=EXIT_REFUSED, reason_code=REASON_SNAPSHOT_NOT_FOUND,
+                    message=f'snapshot {args.snapshot_id} not found',
+                    guidance=SNAPSHOT_NOT_FOUND_GUIDANCE,
+                )
             snap_membership, snap_availability = (
                 diagnostic.reference_dates_for_snapshot(snapshot)
             )
             membership_date = membership_date or snap_membership
             availability_date = availability_date or snap_availability
         if membership_date is None or availability_date is None:
-            print('refusing: need --snapshot-id or both explicit dates', file=sys.stderr)
-            return EXIT_REFUSED
+            db.session.rollback()
+            return _refusal(
+                args, exit_code=EXIT_REFUSED, reason_code=REASON_REFERENCE_DATES_MISSING,
+                message='the snapshot carries no usable reference dates',
+            )
 
         if args.league:
             report = diagnostic.diagnose_league(
@@ -254,6 +360,8 @@ def main(argv=None):
     if args.output_dir:
         path = _write_outputs(document, args.output_dir, output_basename(
             snapshot_id=args.snapshot_id, team_id=args.team_id, league=args.league,
+            membership_date=_iso(membership_date),
+            availability_date=_iso(availability_date),
         ))
         print(f'Wrote {path.name}')
     else:

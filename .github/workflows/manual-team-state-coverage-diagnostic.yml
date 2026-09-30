@@ -1,12 +1,17 @@
 name: Manual Team State Coverage Diagnostic
 
-# Read-only diagnostic that explains a Team State coverage verdict for one
-# Dashboard snapshot's reference dates, one team at a time or league-wide.
+# Read-only diagnostic that explains a Team State coverage verdict for one set
+# of reference dates, one team at a time or league-wide.
 #
 # A candidate withheld with snapshot_team_state_ineligible:<team>:... keeps only
 # the reason codes. This workflow runs backend/scripts/diagnose_team_state_coverage.py
 # against the production database and uploads, for each active-bullpen reliever,
 # the first reason its readiness record is not usable, plus the team verdict.
+#
+# Anchor: a stored snapshot_id, OR explicit membership_date + availability_date.
+# A candidate withheld by the Team State publication proof is rolled back with
+# its publication transaction and never stored, so its logged id cannot anchor
+# a diagnosis; the dates the proof used can.
 #
 # It is read-only three ways: every PostgreSQL connection starts with
 # default_transaction_read_only=on, the script sets its transaction READ ONLY,
@@ -16,15 +21,35 @@ name: Manual Team State Coverage Diagnostic
 # recalculate fatigue, ingest schedules, run a sync or recovery, or run
 # migrations. An ineligible team is a diagnostic result, not a workflow
 # failure. Identifying a cause is information; it authorizes nothing.
+#
+# FAILURE VISIBILITY. No step uses continue-on-error: a failed step is shown as
+# failed. Evidence steps that must run after a failure use `!cancelled()`, so a
+# refusal still leaves a scanned, uploaded refusal document.
 
 on:
   workflow_dispatch:
     inputs:
       snapshot_id:
         description: >-
-          Dashboard snapshot whose reference dates to diagnose (positive
-          integer), e.g. the withheld candidate.
-        required: true
+          Stored Dashboard snapshot whose reference dates to diagnose (positive
+          integer). Leave empty when membership_date and availability_date are
+          supplied.
+        required: false
+        default: ''
+        type: string
+      membership_date:
+        description: >-
+          Explicit roster-membership date (YYYY-MM-DD), the slate the proof
+          read. Supply together with availability_date instead of snapshot_id.
+        required: false
+        default: ''
+        type: string
+      availability_date:
+        description: >-
+          Explicit availability reference date (YYYY-MM-DD). Supply together
+          with membership_date instead of snapshot_id.
+        required: false
+        default: ''
         type: string
       team_id:
         description: >-
@@ -73,6 +98,8 @@ jobs:
       - name: Refuse an unauthorized or invalid invocation
         env:
           INPUT_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          INPUT_MEMBERSHIP_DATE: ${{ inputs.membership_date }}
+          INPUT_AVAILABILITY_DATE: ${{ inputs.availability_date }}
           INPUT_TEAM_ID: ${{ inputs.team_id }}
           INPUT_LEAGUE: ${{ inputs.league }}
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
@@ -90,9 +117,26 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "$INPUT_SNAPSHOT_ID" | grep -Eq '^[1-9][0-9]{0,9}$'; then
-            echo "Refused: snapshot_id must be a positive integer."
-            exit 1
+          if [ -n "$INPUT_SNAPSHOT_ID" ]; then
+            if ! printf '%s' "$INPUT_SNAPSHOT_ID" | grep -Eq '^[1-9][0-9]{0,9}$'; then
+              echo "Refused: snapshot_id must be a positive integer."
+              exit 1
+            fi
+            if [ -n "$INPUT_MEMBERSHIP_DATE" ] || [ -n "$INPUT_AVAILABILITY_DATE" ]; then
+              echo "Refused: supply either snapshot_id or explicit dates, not both."
+              exit 1
+            fi
+          else
+            if [ -z "$INPUT_MEMBERSHIP_DATE" ] || [ -z "$INPUT_AVAILABILITY_DATE" ]; then
+              echo "Refused: supply snapshot_id, or both membership_date and availability_date."
+              exit 1
+            fi
+            for value in "$INPUT_MEMBERSHIP_DATE" "$INPUT_AVAILABILITY_DATE"; do
+              if ! printf '%s' "$value" | grep -Eq '^20[0-9]{2}-[01][0-9]-[0-3][0-9]$'; then
+                echo "Refused: dates must be YYYY-MM-DD."
+                exit 1
+              fi
+            done
           fi
 
           if [ "$INPUT_LEAGUE" != "true" ] && [ "$INPUT_LEAGUE" != "false" ]; then
@@ -133,9 +177,10 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
+      # No continue-on-error: a refused, unproven or failed diagnostic marks
+      # this step failed. Its exit code is recorded first for the final gate.
       - name: Run the read-only Team State coverage diagnostic
         id: diagnostic
-        continue-on-error: true
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -152,42 +197,84 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           INPUT_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          INPUT_MEMBERSHIP_DATE: ${{ inputs.membership_date }}
+          INPUT_AVAILABILITY_DATE: ${{ inputs.availability_date }}
           INPUT_TEAM_ID: ${{ inputs.team_id }}
           INPUT_LEAGUE: ${{ inputs.league }}
         run: |
           set -uo pipefail
           cd backend
+          anchor=(--membership-date "$INPUT_MEMBERSHIP_DATE" --availability-date "$INPUT_AVAILABILITY_DATE")
+          if [ -n "$INPUT_SNAPSHOT_ID" ]; then
+            anchor=(--snapshot-id "$INPUT_SNAPSHOT_ID")
+          fi
           scope=(--team-id "$INPUT_TEAM_ID")
           if [ "$INPUT_LEAGUE" = "true" ]; then
             scope=(--league)
           fi
           exit_code=0
           python scripts/diagnose_team_state_coverage.py \
-            --snapshot-id "$INPUT_SNAPSHOT_ID" \
+            "${anchor[@]}" \
             "${scope[@]}" \
             --output-dir ../artifacts/team-state-coverage-diagnostic \
             || exit_code=$?
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit "$exit_code"
 
+      # The forbidden-content scanner treats an empty or missing directory as
+      # safe, so an upload could otherwise "pass" with nothing in it. Before any
+      # scan, require non-empty JSON and Markdown, and require the diagnostic's
+      # own result pair (not a refusal) when the diagnostic succeeded.
+      - name: Verify the diagnostic output files
+        id: verify
+        if: ${{ !cancelled() }}
+        env:
+          OUTPUT_DIR: artifacts/team-state-coverage-diagnostic
+          DIAGNOSTIC_EXIT_CODE: ${{ steps.diagnostic.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          json=("$OUTPUT_DIR"/*.json)
+          markdown=("$OUTPUT_DIR"/*.md)
+          if [ "${#json[@]}" -eq 0 ] || [ "${#markdown[@]}" -eq 0 ]; then
+            echo "MISSING: the diagnostic wrote no JSON and Markdown evidence."
+            exit 1
+          fi
+          for file in "${json[@]}" "${markdown[@]}"; do
+            if [ ! -s "$file" ]; then
+              echo "EMPTY: $(basename "$file") has no content."
+              exit 1
+            fi
+          done
+          if [ "${DIAGNOSTIC_EXIT_CODE:-}" = "0" ]; then
+            results=0
+            for file in "${json[@]}"; do
+              if [ "$(basename "$file")" != "team-state-coverage-refused.json" ]; then
+                results=$((results + 1))
+              fi
+            done
+            if [ "$results" -ne 1 ]; then
+              echo "MISSING: a completed diagnostic must write exactly one result document."
+              exit 1
+            fi
+          fi
+          for file in "${json[@]}" "${markdown[@]}"; do
+            echo "Evidence file: $(basename "$file") ($(wc -c < "$file") bytes)"
+          done
+
       - name: Scan the diagnostic artifact
         id: scan
-        continue-on-error: true
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
         run: |
-          set -uo pipefail
-          exit_code=0
+          set -euo pipefail
           python backend/scripts/scan_forbidden_artifact_content.py \
-            --directory artifacts/team-state-coverage-diagnostic \
-            || exit_code=$?
-          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
-          exit "$exit_code"
+            --directory artifacts/team-state-coverage-diagnostic
 
-      # Upload BEFORE the final gate so an ineligible verdict is always
-      # reviewable. Only a scanned-safe artifact is uploaded.
+      # Upload BEFORE the final gate so a refusal or an ineligible verdict is
+      # always reviewable. Only verified, scanned-safe evidence is uploaded.
       - name: Upload the diagnostic artifact
         id: upload
-        continue-on-error: true
-        if: ${{ steps.scan.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' && steps.scan.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: team-state-coverage-diagnostic-${{ github.run_id }}
@@ -195,8 +282,23 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      # A step reported "success" is not proof of a retained artifact. The
+      # upload action returns the stored artifact's id; require it.
+      - name: Confirm the artifact was retained
+        id: retained
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${ARTIFACT_ID:-}" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "UNRETAINED: the upload returned no artifact id."
+            exit 1
+          fi
+          echo "Retained artifact id: $ARTIFACT_ID"
+
       - name: Append the diagnostic summary
-        if: ${{ always() && steps.scan.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
         run: |
           set -uo pipefail
           shopt -s nullglob
@@ -207,19 +309,25 @@ jobs:
           fi
           cat "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
 
-      # No continue-on-error. A baseball eligibility verdict never fails the
-      # workflow; only a refused, unproven, failed, unsafe or missing artifact does.
+      # Runs after any failure so the reason is stated once, precisely. It reads
+      # operational step outcomes only. A baseball eligibility verdict is data
+      # inside the artifact and never reaches this gate.
       - name: Final diagnostic gate
+        if: ${{ !cancelled() }}
         env:
           DIAGNOSTIC_OUTCOME: ${{ steps.diagnostic.outcome }}
           DIAGNOSTIC_EXIT_CODE: ${{ steps.diagnostic.outputs.exit_code }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
           SCAN_OUTCOME: ${{ steps.scan.outcome }}
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          RETAINED_OUTCOME: ${{ steps.retained.outcome }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
         run: |
           set -euo pipefail
 
           if [ "${DIAGNOSTIC_EXIT_CODE:-}" = "2" ]; then
             echo "REFUSED: the diagnostic rejected its inputs before reading evidence."
+            echo "The refusal document in the artifact states the reason."
             exit 1
           fi
 
@@ -228,8 +336,13 @@ jobs:
             exit 1
           fi
 
-          if [ "$DIAGNOSTIC_OUTCOME" != "success" ]; then
+          if [ "$DIAGNOSTIC_OUTCOME" != "success" ] || [ "${DIAGNOSTIC_EXIT_CODE:-}" != "0" ]; then
             echo "FAILED: the diagnostic did not complete."
+            exit 1
+          fi
+
+          if [ "$VERIFY_OUTCOME" != "success" ]; then
+            echo "MISSING: the diagnostic evidence files were not produced."
             exit 1
           fi
 
@@ -243,7 +356,13 @@ jobs:
             exit 1
           fi
 
+          if [ "$RETAINED_OUTCOME" != "success" ] || [ -z "${ARTIFACT_ID:-}" ]; then
+            echo "UNRETAINED: no retained artifact id was returned."
+            exit 1
+          fi
+
           echo "Team State coverage diagnostic completed read-only."
+          echo "Retained artifact id: $ARTIFACT_ID"
           echo "This diagnostic is read-only. It does not authorize publishing or"
           echo "promoting a snapshot, resolving sync failures, recalculating fatigue,"
           echo "repairing roster or schedule authority, or any production mutation."
