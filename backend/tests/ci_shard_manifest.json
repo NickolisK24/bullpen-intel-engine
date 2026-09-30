@@ -672,6 +672,10 @@
           "measured_seconds": 3.0
         },
         {
+          "path": "tests/test_publication_failure_evidence.py",
+          "measured_seconds": 10.0
+        },
+        {
           "path": "tests/test_team_state_coverage_diagnostic_workflow_contract.py",
           "measured_seconds": 1.0
         },

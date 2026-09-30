@@ -278,7 +278,7 @@ def test_rls_denies_postgrest_roles_and_preserves_the_owner(supabase_like_databa
 
     # service_role holds Supabase's default grants but is BYPASSRLS, so it never
     # blocks the guard.
-    result = _flask(owner_url, 'upgrade')
+    result = _flask(owner_url, 'upgrade', SEC01_HEAD)
     assert f'{PREVIOUS_HEAD} -> {SEC01_HEAD}' in result.stderr
 
     with owner_engine.connect() as connection:
@@ -373,7 +373,7 @@ def test_rls_denies_postgrest_roles_and_preserves_the_owner(supabase_like_databa
     assert _as_role(superuser, 'anon', 'SELECT count(*) FROM users') == [(1,)]
     assert _as_role(superuser, 'anon',
                     "INSERT INTO users(email, created_at) VALUES ('restored@example.com', now())") == 1
-    _flask(owner_url, 'upgrade')
+    _flask(owner_url, 'upgrade', SEC01_HEAD)
     with owner_engine.connect() as connection:
         assert _public_tables(connection) == after_tables
         assert _head(connection) == SEC01_HEAD

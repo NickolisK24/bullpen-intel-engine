@@ -33,6 +33,7 @@ from services import appearance_team_authority
 from services import dead_letter
 from services import pitcher_season_ledger_coverage
 from services import publication_criticality
+from services import publication_outcome
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
@@ -5726,6 +5727,9 @@ def complete_sync_run_with_snapshot(
             withheld_reason = publication_withheld_reason(snapshot)
             if run is not None:
                 run.error_message = withheld_reason
+                run.publication_outcome = publication_outcome.outcome_withheld(
+                    snapshot, withheld_reason,
+                )
             db.session.commit()
             if raise_on_withheld:
                 raise DashboardSnapshotPublicationWithheld(
@@ -5736,6 +5740,7 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
+            run.publication_outcome = publication_outcome.outcome_published(snapshot)
         # Read before commit: telemetry must never refresh the expired row.
         published_snapshot_id = snapshot.id
         db.session.commit()
@@ -5776,7 +5781,11 @@ def complete_sync_run_with_snapshot(
             )
         return run, snapshot
     except Exception as exc:
+        # The publication transaction (candidate included) is discarded first;
+        # only then is the structured proof of failure recorded, in the run's
+        # own commit, so it survives while no partial publication state can.
         db.session.rollback()
+        failure_outcome = _publication_failure_outcome(exc)
         sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
@@ -5794,8 +5803,31 @@ def complete_sync_run_with_snapshot(
             job_name=job_name,
             stage=sync_metadata.STAGE_FAILED,
             failed_stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
+            publication_outcome=failure_outcome,
         )
         raise
+
+
+def _publication_failure_outcome(exc):
+    """Shape the failure evidence; never let doing so mask the failure itself."""
+    try:
+        return publication_outcome.outcome_failed(exc)
+    except Exception:
+        logger.exception('Publication failure outcome could not be shaped.')
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return {
+            'schema_version': publication_outcome.SCHEMA_VERSION,
+            'status': publication_outcome.STATUS_FAILED,
+            'stop_reason': type(exc).__name__,
+            'withheld_reason': str(exc)[:publication_outcome.MAX_REASON_LENGTH],
+            'candidate_persisted': False,
+            'recovery_attempted': False,
+            'recovery_result': None,
+            'evidence_error': 'outcome_shaping_failed',
+        }
 
 
 def _prepare_canonical_public_roster_authority(

@@ -690,6 +690,7 @@ def finish_sync_run(
     published_dashboard_snapshot_id=None,
     commit=True,
     rollback_before=True,
+    publication_outcome=None,
 ):
     """
     Record the outcome of a sync as a durable sync_runs row.
@@ -743,6 +744,8 @@ def finish_sync_run(
         run.api_calls_made = api_calls_made or 0
         run.retries_used = retries_used or 0
         run.error_message = error_message
+        if publication_outcome is not None:
+            run.publication_outcome = publication_outcome
         if commit:
             db.session.commit()
         else:
