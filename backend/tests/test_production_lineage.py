@@ -34,6 +34,8 @@ RECEIPT_TARGET = 'b6c9d2e5f8a1'
 TONIGHT_V1_TARGET = 'c3e7a1d9f5b2'
 # SEC-01: deny-by-default row level security, reviewed on its own.
 SEC01_RLS_TARGET = 'e5b9c3a7d1f4'
+# WP-1: one nullable JSON column on sync_runs, reviewed on its own.
+PUBLICATION_OUTCOME_TARGET = 'd4a8f2c6e9b3'
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -48,7 +50,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
                 assert revision not in revisions, (revision, path, revisions.get(revision))
                 revisions[revision] = path.name
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    assert script.get_heads() == [SEC01_RLS_TARGET]
+    assert script.get_heads() == [PUBLICATION_OUTCOME_TARGET]
     receipt_extension = list(script.iterate_revisions(RECEIPT_TARGET, CURRENT_TARGET))
     assert [revision.revision for revision in receipt_extension] == [RECEIPT_TARGET]
     assert receipt_extension[0].down_revision == CURRENT_TARGET
@@ -58,6 +60,13 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     rls_extension = list(script.iterate_revisions(SEC01_RLS_TARGET, TONIGHT_V1_TARGET))
     assert [revision.revision for revision in rls_extension] == [SEC01_RLS_TARGET]
     assert rls_extension[0].down_revision == TONIGHT_V1_TARGET
+    outcome_extension = list(
+        script.iterate_revisions(PUBLICATION_OUTCOME_TARGET, SEC01_RLS_TARGET)
+    )
+    assert [revision.revision for revision in outcome_extension] == [
+        PUBLICATION_OUTCOME_TARGET,
+    ]
+    assert outcome_extension[0].down_revision == SEC01_RLS_TARGET
     assert script.get_bases() == ['3b06397ddc6b']
     assert not any(revision.is_merge_point or revision.is_branch_point
                    for revision in script.walk_revisions())
@@ -73,7 +82,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     for revision, name in revisions.items():
         if revision not in promoted | {
             PREVIOUS_TARGET, CURRENT_TARGET, RECEIPT_TARGET, TONIGHT_V1_TARGET,
-            SEC01_RLS_TARGET,
+            SEC01_RLS_TARGET, PUBLICATION_OUTCOME_TARGET,
         }:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
@@ -203,6 +212,17 @@ def _fingerprint(url):
     return contents, columns, indexes, constraints, functions, triggers
 
 
+def _sync_runs_without_outcome(url):
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        value = connection.execute(text(
+            "SELECT md5(coalesce(string_agg((to_jsonb(t) - 'publication_outcome')::text, '' "
+            "ORDER BY (to_jsonb(t) - 'publication_outcome')::text), '')) FROM sync_runs t"
+        )).scalar_one()
+    engine.dispose()
+    return value
+
+
 def _seed(url):
     engine = create_engine(url)
     with engine.begin() as c:
@@ -290,7 +310,7 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     before = after
     # SEC-01 changes access control only: every row, column, index,
     # constraint, function body and trigger is identical afterwards.
-    result = _flask(existing, 'upgrade')
+    result = _flask(existing, 'upgrade', SEC01_RLS_TARGET)
     transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
     assert len(transitions) == 1, result.stderr
     assert TONIGHT_V1_TARGET + ' -> ' + SEC01_RLS_TARGET in transitions[0]
@@ -299,14 +319,31 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
         k: v for k, v in before[0].items() if k != 'alembic_version'}
     assert after[1:] == before[1:]
     before = after
+    # WP-1 adds one nullable column: every other table's data, and every
+    # existing sync_runs value, is identical; only the new column appears.
+    sync_runs_before = _sync_runs_without_outcome(existing)
+    result = _flask(existing, 'upgrade')
+    transitions = [line for line in result.stderr.splitlines() if 'Running upgrade' in line]
+    assert len(transitions) == 1, result.stderr
+    assert SEC01_RLS_TARGET + ' -> ' + PUBLICATION_OUTCOME_TARGET in transitions[0]
+    after = _fingerprint(existing)
+    assert {k: v for k, v in after[0].items() if k not in ('alembic_version', 'sync_runs')} == {
+        k: v for k, v in before[0].items() if k not in ('alembic_version', 'sync_runs')}
+    assert _sync_runs_without_outcome(existing) == sync_runs_before
+    assert set(after[1]) - set(before[1]) == {
+        ('sync_runs', 'publication_outcome', 'json', 'YES', None),
+    }
+    assert set(before[1]) <= set(after[1])
+    assert after[2:] == before[2:]
+    before = after
     for _ in range(2):
         result = _flask(existing, 'upgrade')
         assert 'Running upgrade' not in result.stderr
         assert _fingerprint(existing) == before
     result = _flask(fresh, 'upgrade')
     assert 'Running upgrade' in result.stderr
-    assert _flask(fresh, 'heads').stdout.strip().endswith(SEC01_RLS_TARGET + ' (head)')
-    assert SEC01_RLS_TARGET + ' (head)' in _flask(fresh, 'current').stdout
+    assert _flask(fresh, 'heads').stdout.strip().endswith(PUBLICATION_OUTCOME_TARGET + ' (head)')
+    assert PUBLICATION_OUTCOME_TARGET + ' (head)' in _flask(fresh, 'current').stdout
     assert _flask(fresh, 'history').returncode == 0
     # Production main runtime, real migrations and real Daily Edition helper.
     # The custom server probe exits instead of leaving a background web process.

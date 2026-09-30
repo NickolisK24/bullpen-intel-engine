@@ -43,6 +43,11 @@ class SyncRun(db.Model):
     # error_message is the spec's "error_summary" (kept under its established
     # name for backward compatibility).
     error_message = db.Column(db.Text)
+    # WP-1: the structured outcome of this run's Dashboard publication attempt
+    # (services.publication_outcome). Written after the publication transaction
+    # settles, in its own commit, so a rolled-back candidate's failure evidence
+    # survives the rollback. Never a snapshot; never read by a publication gate.
+    publication_outcome = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
 
     def to_dict(self):

@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # The egress remediation adds the nullable Dashboard admission receipt; TN-01
 # then adds the additive, publication-bound tonight_publications table; SEC-01
 # then enables deny-by-default row level security.
-EXPECTED_ALEMBIC_HEAD = 'e5b9c3a7d1f4'
+EXPECTED_ALEMBIC_HEAD = 'd4a8f2c6e9b3'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',

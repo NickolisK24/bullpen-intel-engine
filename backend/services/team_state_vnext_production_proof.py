@@ -878,6 +878,126 @@ def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
     )
 
 
+def _source_current(readiness) -> bool:
+    freshness = _mapping(_mapping(readiness).get('freshness'))
+    return freshness.get('freshness_state') == 'current'
+
+
+def _team_failure_entry(team_id, eligibility, readiness, reference_dates, *, arms):
+    trust = _mapping(_mapping(readiness).get('trust_metadata'))
+    coverage = _mapping(trust.get('active_bullpen_coverage'))
+    entry = {
+        'team_id': team_id,
+        'reasons': list(eligibility.reasons),
+        'blocking_conditions': list(eligibility.blocking_conditions),
+        'trust_state': eligibility.trust_state,
+        'confidence': trust.get('confidence'),
+        'data_state': trust.get('data_state'),
+        'confidence_reasons': list(trust.get('confidence_reasons') or []),
+        'readiness_status_code': _mapping(_mapping(readiness).get('readiness')).get(
+            'status_code'
+        ),
+        'active_bullpen_count': coverage.get('active_bullpen_count'),
+        'usable_record_count': coverage.get('usable_record_count'),
+        'unresolved_record_count': coverage.get('unresolved_record_count'),
+        'membership_reference_date': _iso(reference_dates.get('membership_reference_date')),
+        'availability_reference_date': _iso(
+            reference_dates.get('availability_reference_date')
+        ),
+    }
+    entry.update(arms)
+    return entry
+
+
+_ARM_FIELDS = (
+    'pitcher_id', 'mlb_id', 'pitcher_name', 'cause', 'usable',
+    'unscored_rest_reason', 'readiness_record_exists', 'record_data_state',
+    'latest_game_log_date', 'window_log_count', 'window_logs_missing_pitch_count',
+    'open_fetch_failure_count',
+)
+
+
+def _arm_causes(team_id, readiness, reference_dates):
+    """Per-arm causes for a failing team, from the read-only coverage diagnostic.
+
+    Runs only on the failure path. Never raises: an explanation that cannot be
+    produced is recorded as unavailable and the withholding stands unchanged.
+    """
+    membership = reference_dates.get('membership_reference_date')
+    availability = reference_dates.get('availability_reference_date')
+    if not isinstance(membership, date) or not isinstance(availability, date):
+        return {'arm_causes_available': False, 'arm_causes_error': 'reference_dates_missing'}
+    try:
+        from services.active_bullpen_coverage_diagnostic import (
+            diagnose_active_bullpen_coverage,
+        )
+        report = diagnose_active_bullpen_coverage(
+            team_id,
+            membership_date=membership,
+            availability_date=availability,
+            source_current=_source_current(readiness),
+        )
+    except Exception as exc:
+        logger.warning(
+            'Team State failure arm causes unavailable team_id=%s: %s',
+            team_id, type(exc).__name__,
+        )
+        return {'arm_causes_available': False, 'arm_causes_error': type(exc).__name__}
+    return {
+        'arm_causes_available': True,
+        'ledger_complete': report.get('ledger_complete'),
+        'authority_complete': report.get('authority_complete'),
+        'cause_counts': report.get('cause_counts'),
+        'diagnostic_usable_record_count': report.get('usable_record_count'),
+        'diagnostic_unresolved_record_count': report.get('unresolved_record_count'),
+        'unresolved_arms': [
+            {field: _json_safe(arm.get(field)) for field in _ARM_FIELDS}
+            for arm in report.get('arms') or ()
+            if not arm.get('usable')
+        ],
+    }
+
+
+def team_state_failure_evidence(snapshot, ineligible) -> dict:
+    """Structured evidence for every team the Team State proof withheld."""
+    teams = []
+    failed = False
+    for team_id, eligibility, readiness, reference_dates in ineligible:
+        arms = (
+            {'arm_causes_available': False, 'arm_causes_error': 'skipped_after_error'}
+            if failed else _arm_causes(team_id, readiness, reference_dates)
+        )
+        failed = failed or arms.get('arm_causes_error') not in (None, 'reference_dates_missing')
+        teams.append(_team_failure_entry(
+            team_id, eligibility, readiness, reference_dates, arms=arms,
+        ))
+    first_dates = ineligible[0][3] if ineligible else {}
+    return _json_safe({
+        'failed_authority': 'team_state_eligibility',
+        'candidate_snapshot_id': getattr(snapshot, 'id', None),
+        'candidate_data_through': getattr(snapshot, 'data_through', None),
+        'affected_team_ids': [team_id for team_id, *_rest in ineligible],
+        'affected_game_pks': [],
+        'teams': teams,
+        'reference_dates': {
+            'membership_reference_date': first_dates.get('membership_reference_date'),
+            'availability_reference_date': first_dates.get('availability_reference_date'),
+        },
+    })
+
+
+class TeamStatePublicationIneligible(ValueError):
+    """At least one team failed Team State eligibility; carries every failure.
+
+    The message is the historical ``snapshot_team_state_ineligible:<first
+    team>:<reasons>`` string; ``publication_evidence`` names all teams.
+    """
+
+    def __init__(self, message, *, evidence):
+        super().__init__(message)
+        self.publication_evidence = dict(evidence)
+
+
 def require_transactional_publication_proof(
     snapshot, *, readiness_resolver=None, team_ids=None,
 ):
@@ -928,6 +1048,7 @@ def require_transactional_publication_proof(
     from services.team_board_snapshot_team_state import make_receipt
     from services.team_state_eligibility import evaluate_team_state_eligibility
     from services.team_state_source import gather_team_state_source
+    ineligible = []
     for team_id in expected_ids:
         reference_dates = {}
         arm_reads = {}
@@ -950,10 +1071,10 @@ def require_transactional_publication_proof(
                 source,
             )
             if not eligibility.eligible:
-                raise ValueError(
-                    f'snapshot_team_state_ineligible:{team_id}:'
-                    + ','.join(eligibility.reasons)
-                )
+                # Every team is evaluated before withholding, so the durable
+                # failure evidence names all of them, not only the first.
+                ineligible.append((team_id, eligibility, readiness, dict(reference_dates)))
+                continue
             frozen_receipts[str(team_id)] = make_receipt(
                 snapshot, team_id, readiness, method_version=EXPECTED_METHOD_VERSION,
             )
@@ -965,6 +1086,14 @@ def require_transactional_publication_proof(
         teams.append(_candidate_team_entry(
             snapshot, team_id, readiness, reference_dates,
         ))
+
+    if ineligible:
+        first_team_id, first_eligibility, _readiness, _dates = ineligible[0]
+        raise TeamStatePublicationIneligible(
+            f'snapshot_team_state_ineligible:{first_team_id}:'
+            + ','.join(first_eligibility.reasons),
+            evidence=team_state_failure_evidence(snapshot, ineligible),
+        )
 
     proof = build_proof(
         snapshot=snapshot,
