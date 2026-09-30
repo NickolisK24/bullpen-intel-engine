@@ -668,6 +668,10 @@
           "measured_seconds": 2.6
         },
         {
+          "path": "tests/test_slate_coverage_postseason_participants.py",
+          "measured_seconds": 12.6
+        },
+        {
           "path": "tests/test_slate_coverage_diagnostics.py",
           "measured_seconds": 1.921
         },

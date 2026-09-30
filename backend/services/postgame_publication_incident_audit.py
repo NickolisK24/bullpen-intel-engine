@@ -370,7 +370,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/schedule_ingestion.py': {
         'digest_after':
-            'ac5e40b1f882d4ebcc0bd35fba1ac357285bb8d834365dc59733d3af9ebcf96e',
+            'd0c5e95058fc03ff25da37d3f62f298d878ba851df9832bea4b72c7f9fbeaf0d',
         'change': (
             'Schedule finality persistence (SyncRun 92585): ingest_games now '
             'declares transaction-local schedule ownership '
@@ -378,11 +378,17 @@ PACKAGE_MODIFIED_MODULES = {
             'payload it writes, so the production schedule projection fence no '
             'longer silently returns the OLD row for games the sync-pipeline '
             'runtime adopted. Parsing, normalization, stored values, window '
-            'selection, and the slate gate are unchanged; no state is inferred'
+            'selection, and the slate gate are unchanged; no state is inferred. '
+            'Postseason participant settlement (SyncRun 93096): when the MLB '
+            'payload names both participants of a gamePk, ingest_games deletes '
+            'that gamePk\'s rows for any other team, so a placeholder club\'s '
+            'row left behind when MLB fills in the real club can no longer read '
+            'as a non-final game'
         ),
         # Stored schedule facts for adopted games now follow authoritative MLB
         # transitions instead of freezing at their pre-adoption state, which is
-        # what the slate gate reads. That is a real behaviour change.
+        # what the slate gate reads. Phantom participant rows are now removed
+        # rather than kept. Both are real behaviour changes.
         'behaviour_changed': True,
     },
 }
