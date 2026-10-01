@@ -539,6 +539,42 @@ publication-critical failures, so the run was `partial` with
 `publication_critical_complete=false`, and slate coverage withheld the candidate
 with `partial_sync`.
 
+### 15D.1 MLB roster authority boundary (October 1, SyncRun 93222)
+
+Only an MLB club's official roster views are MLB roster authority. The club
+set is the governed D-054 registry (`mlb_club_directory.MLB_TEAM_IDS`), exposed
+as `roster_evidence.is_mlb_club`.
+
+`RunRosterEvidence.team_metadata` is a label map. It overlays `/teams` on every
+team ID stored on a pitcher row, and production stores four minor-league
+affiliate IDs there (484, 531, 534, 5434; see the September 12 incident).
+Team assignment used to read that label map as its roster universe. That gave
+34 teams x 4 views = 136 requests. For an optioned pitcher, the affiliate's
+*active* roster then outranked the club's 40-man (status Optioned), and the
+affiliate became his MLB team. Roster status then wrote affiliate presence
+against the club's same-date 40-man presence, and the conflict withheld
+candidate 4156.
+
+Now:
+
+- Team assignment reads only MLB club rosters. The `/people` `currentTeam`
+  fallback for a pitcher on no MLB club roster is unchanged, so organizational
+  membership is still recorded.
+- A pitcher stored under a non-MLB team still gets a same-date snapshot, which
+  roster readiness covers. That team's views classify as `MINORS`, with the
+  raw status kept and source `mlb_stats_api:roster_sync:affiliate:<views>`.
+  `active_roster` and `forty_man_roster` are `false`, because those columns
+  mean the MLB rosters for every reader.
+- Same-date precedence ranks MLB club presence (2) over affiliate presence (1)
+  over absence (0). The rank comes from the row's own team ID, so stored
+  affiliate rows rank deterministically without being rewritten. Equal ranks,
+  such as two MLB clubs, two affiliates or two absences, remain a fail-closed
+  conflict. The conflict dead letter now records both ranks.
+- Daily reports `mlb_teams_queried`, `non_mlb_teams_queried`,
+  `non_mlb_teams_seen`, `affiliate_evidence_rows`,
+  `affiliate_evidence_excluded_from_mlb_authority` and
+  `true_mlb_roster_conflicts`.
+
 ## 15E. Publication outcome, bounded reconciliation and catch-up
 
 `sync_runs.publication_outcome` (WP-1) records every Dashboard publication
