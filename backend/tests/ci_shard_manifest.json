@@ -1245,6 +1245,10 @@
           "measured_seconds": 2.435
         },
         {
+          "path": "tests/test_roster_snapshot_team_precedence.py",
+          "measured_seconds": 2.0
+        },
+        {
           "path": "tests/test_rotation_game_shape_integration.py",
           "measured_seconds": 0.0
         },
