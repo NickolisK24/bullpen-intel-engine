@@ -34,6 +34,7 @@ from services import dead_letter
 from services import pitcher_season_ledger_coverage
 from services import publication_criticality
 from services import publication_outcome
+from services import publication_reconciliation
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
@@ -5674,6 +5675,7 @@ def complete_sync_run_with_snapshot(
     snapshot_source='sync_completion',
     job_name=sync_metadata.JOB_DAILY_SYNC,
     raise_on_withheld=True,
+    reconciler=None,
 ):
     """Finish a sync run and publish its Dashboard candidate.
 
@@ -5685,6 +5687,11 @@ def complete_sync_run_with_snapshot(
     pending candidate so a lane with its own withheld policy (postgame
     active-slate pending) can classify it. Post-publication hooks and the League
     Board artifact gate run only for a trusted publication.
+
+    ``reconciler`` (``services.publication_reconciliation``) enables one bounded
+    repair: a withheld candidate whose persisted gate evidence classifies as
+    locally repairable is repaired once and rebuilt once. Every evaluation is
+    recorded in the outcome; no gate changes.
     """
     from services import dashboard_snapshot as dashboard_snapshot_service
 
@@ -5710,15 +5717,27 @@ def complete_sync_run_with_snapshot(
             rollback_before=False,
         )
         log_memory_checkpoint('publication_before', job=job_name, sync_run_id=sync_run_id)
-        snapshot = dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
-            sync_run_id=run.id if run is not None else sync_run_id,
-            source=snapshot_source,
-            publish=True,
-            commit=False,
-            raise_errors=True,
-            publication_critical_complete=publication_critical_complete,
-        )
+
+        def build_candidate():
+            return dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
+                sync_run_id=run.id if run is not None else sync_run_id,
+                source=snapshot_source,
+                publish=True,
+                commit=False,
+                raise_errors=True,
+                publication_critical_complete=publication_critical_complete,
+            )
+
+        snapshot = build_candidate()
         published = is_trusted_publication(snapshot)
+        recovery = None
+        if not published and reconciler is not None:
+            snapshot, published, recovery = _reconcile_withheld_candidate(
+                snapshot, run=run, sync_run_id=sync_run_id, reconciler=reconciler,
+                rebuild=build_candidate,
+                publication_critical_complete=publication_critical_complete,
+            )
+            run = db.session.get(SyncRun, sync_run_id) if sync_run_id else run
         _log_cancelled_slate_exclusions(snapshot, published=published)
         if not published:
             # The pending candidate row is diagnostic evidence: commit it, but do
@@ -5727,8 +5746,14 @@ def complete_sync_run_with_snapshot(
             withheld_reason = publication_withheld_reason(snapshot)
             if run is not None:
                 run.error_message = withheld_reason
-                run.publication_outcome = publication_outcome.outcome_withheld(
-                    snapshot, withheld_reason,
+                run.publication_outcome = _with_recovery(
+                    publication_outcome.outcome_withheld(
+                        snapshot, withheld_reason,
+                        sync_run_id=run.id,
+                        publication_critical_complete=publication_critical_complete,
+                        fence_since=getattr(run, 'started_at', None),
+                    ),
+                    recovery,
                 )
             db.session.commit()
             if raise_on_withheld:
@@ -5740,7 +5765,12 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
-            run.publication_outcome = publication_outcome.outcome_published(snapshot)
+            run.publication_outcome = _with_recovery(
+                publication_outcome.outcome_published(
+                    snapshot, fence_since=getattr(run, 'started_at', None),
+                ),
+                recovery,
+            )
         # Read before commit: telemetry must never refresh the expired row.
         published_snapshot_id = snapshot.id
         db.session.commit()
@@ -5785,7 +5815,18 @@ def complete_sync_run_with_snapshot(
         # only then is the structured proof of failure recorded, in the run's
         # own commit, so it survives while no partial publication state can.
         db.session.rollback()
-        failure_outcome = _publication_failure_outcome(exc)
+        # A gate-withheld candidate already committed its own ``withheld``
+        # outcome (the candidate row survives). The withheld exception is how
+        # this function reports it to the caller; it is not a second failure
+        # and must not overwrite that outcome.
+        failure_outcome = (
+            None if isinstance(exc, DashboardSnapshotPublicationWithheld)
+            else _publication_failure_outcome(
+                exc, sync_run_id=sync_run_id,
+                publication_critical_complete=publication_critical_complete,
+                fence_since=_run_started_at(sync_run_id, started_at),
+            )
+        )
         sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
@@ -5808,10 +5849,87 @@ def complete_sync_run_with_snapshot(
         raise
 
 
-def _publication_failure_outcome(exc):
+def _with_recovery(outcome, recovery):
+    if recovery is None:
+        return outcome
+    outcome = dict(outcome)
+    outcome['recovery_attempted'] = bool(recovery.get('attempted'))
+    outcome['recovery_result'] = publication_outcome.json_safe(recovery)
+    return outcome
+
+
+def _reconcile_withheld_candidate(
+    snapshot, *, run, sync_run_id, reconciler, rebuild, publication_critical_complete,
+):
+    """One bounded repair and at most one rebuild for a withheld candidate."""
+    withheld_reason = publication_withheld_reason(snapshot)
+    first = publication_outcome.outcome_withheld(
+        snapshot, withheld_reason,
+        sync_run_id=getattr(run, 'id', None) or sync_run_id,
+        publication_critical_complete=publication_critical_complete,
+    )
+    plan = reconciler.plan(first)
+    recovery = {
+        'attempted': False,
+        'repair_class': plan.get('repair_class'),
+        'affected_entities': plan.get('affected_entities') or [],
+        'first_candidate_snapshot_id': getattr(snapshot, 'id', None),
+        'first_withheld_reason': withheld_reason,
+        'actions': [],
+        'result': None,
+        'stop_reason': plan.get('stop_reason'),
+    }
+    if not plan.get('repairable'):
+        return snapshot, False, recovery
+
+    # Keep the first candidate as pending evidence before repairing.
+    if run is not None:
+        run.error_message = withheld_reason
+        run.publication_outcome = _with_recovery(first, {**recovery, 'attempted': True})
+    db.session.commit()
+    logger.info(
+        'Publication reconciliation sync_run_id=%s class=%s games=%s.',
+        sync_run_id, plan.get('repair_class'),
+        [entity.get('game_pk') for entity in recovery['affected_entities']],
+    )
+    repair = reconciler.repair(plan, sync_run_id=sync_run_id)
+    recovery.update({
+        'attempted': True,
+        'actions': repair.get('actions') or [],
+        'result': repair.get('result'),
+        'error': repair.get('error'),
+    })
+    if repair.get('result') == 'repair_failed':
+        recovery['stop_reason'] = 'repair_failed'
+        return snapshot, False, recovery
+    rebuilt = rebuild()
+    published = is_trusted_publication(rebuilt)
+    recovery['rebuilt_candidate_snapshot_id'] = getattr(rebuilt, 'id', None)
+    recovery['stop_reason'] = None if published else 'still_withheld_after_repair'
+    return rebuilt, published, recovery
+
+
+def _run_started_at(sync_run_id, started_at=None):
+    if started_at is not None:
+        return started_at
+    try:
+        run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+        return getattr(run, 'started_at', None)
+    except Exception:
+        db.session.rollback()
+        return None
+
+
+def _publication_failure_outcome(
+    exc, *, sync_run_id=None, publication_critical_complete=None, fence_since=None,
+):
     """Shape the failure evidence; never let doing so mask the failure itself."""
     try:
-        return publication_outcome.outcome_failed(exc)
+        return publication_outcome.outcome_failed(
+            exc, sync_run_id=sync_run_id,
+            publication_critical_complete=publication_critical_complete,
+            fence_since=fence_since,
+        )
     except Exception:
         logger.exception('Publication failure outcome could not be shaped.')
         try:
@@ -7201,6 +7319,7 @@ def run_daily_sync(
                         source=source,
                         started_at=started_at.replace(tzinfo=None),
                         snapshot_source='scheduled_sync',
+                        reconciler=publication_reconciliation.default_reconciler(),
                     )
                 except DashboardSnapshotPublicationWithheld as withheld:
                     # The Daily Primary requires trusted currentness to advance: the

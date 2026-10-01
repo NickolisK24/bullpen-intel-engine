@@ -516,6 +516,96 @@ Each run reports `outcomes` (`confirmed_assigned`, `confirmed_reassigned`,
 `roster_source_failed`) and `fence_suppressed_writes`. The daily status carries
 them as `team_assignment_outcomes` and `team_assignment_fence_suppressed`.
 
+### 15D. Same-date roster snapshot precedence (October 1, SyncRun 93211)
+
+`roster_status_snapshots` holds one row per pitcher and date. A run that
+classifies a pitcher under a stale stored team writes a row with no roster
+evidence (`active_roster` and `forty_man_roster` are NULL: absent from every
+official view of that team). If the corrected assignment lands later the same
+date, the row for the new team carries official presence. These two rows do
+not contradict each other. `roster_status_sync.same_date_team_precedence` now
+settles the pair explicitly:
+
+| Existing row       | Incoming row       | Result                       |
+|--------------------|--------------------|------------------------------|
+| absent             | present            | supersede (correction logged)|
+| present            | absent             | retain the existing row      |
+| present            | present            | conflict, fail closed        |
+| absent             | absent             | conflict, fail closed        |
+
+Run order never decides, and earlier dates are never rewritten. Before this
+change, SyncRun 93211 dead-lettered four such pairs. They counted as non-game-log
+publication-critical failures, so the run was `partial` with
+`publication_critical_complete=false`, and slate coverage withheld the candidate
+with `partial_sync`.
+
+## 15E. Publication outcome, bounded reconciliation and catch-up
+
+`sync_runs.publication_outcome` (WP-1) records every Dashboard publication
+attempt:
+
+- `gate_evidence`: the withholding gate's verdict and its blocking games;
+- `affected_game_pks`;
+- `run_failures`: dead letters by type, with roster conflicts;
+- `publication_critical_complete`;
+- `fence_suppressed` during the run window;
+- `recovery_attempted` / `recovery_result`.
+
+A gate-withheld candidate keeps its `withheld` outcome: the candidate row
+exists as pending.
+
+The Daily Primary runs one bounded repair (`services/publication_reconciliation.py`).
+It applies when every blocking game is final at MLB but canonically incomplete
+(a marker, or the appearance ledger). Those games are re-ingested once through
+the canonical processor and the candidate is rebuilt once. Anything else is
+recorded and withheld: live, scheduled, suspended or linkage-unresolved games,
+`partial_sync`, Team State, or more than 16 games.
+
+### Catch-up to an earlier certifiable date: not implemented, by invariant
+
+Publishing "through the latest certifiable date" when that date is earlier than
+the newest ingested date would violate the snapshot contract. A Dashboard
+snapshot certifies `data_through` as the state its payload was computed from.
+`build_bullpen_dashboard_payload` and every section it assembles read current
+canonical state:
+
+- `availability_latest_fatigue_rows()`;
+- current `Pitcher` assignment and roster cache;
+- public roster readiness at the reference date;
+- all `game_logs`.
+
+`data_through` itself is the newest workload date. No builder reconstructs
+state as of an earlier date. A candidate labelled "through Sep 29", built while
+Sep 30 appearances are stored, would publish Sep 30 workload, rest and roster
+facts under a Sep 29 certification. That is a fabricated historical snapshot.
+
+What already advances on its own:
+
+- A league-wide off-day advances `availability_reference_date` without changing
+  `data_through` (#896 schedule-aware semantics).
+- A morning Daily certifies the previous slate, which is final by then.
+
+The stuck cases in September and October were authority defects, not
+unfinished slates: §15B, §15C, §15D and #897 participants.
+
+Required architecture for true catch-up (a separate package):
+
+1. An as-of payload build: every section takes an explicit `data_through` D and
+   reads only facts dated on or before D:
+   - game logs with `game_date <= D`;
+   - fatigue recomputed at reference D (`canonical_fatigue_reference_date`
+     already accepts it);
+   - roster snapshots dated D and the schedule as of D;
+   - assignment from dated membership, not the current cache.
+2. A date selector: start from the serving `data_through`, take the next slate
+   date, and certify it with the existing slate and ledger gates evaluated at
+   that date. Stop at the first uncertifiable date; never leapfrog.
+3. Publication of each certified date as its own immutable snapshot, in order,
+   through the same atomic publication and Team State proof.
+
+Until 1 exists, the correct behavior is the current one: withhold, keep
+serving the last certified snapshot, and persist enough evidence to act.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:

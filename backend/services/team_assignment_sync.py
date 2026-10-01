@@ -371,19 +371,8 @@ def _adopted_pitcher_teams():
 
 def _suppressed_projection_writes_since(started_at):
     """Fence-reverted pitcher writes logged since ``started_at`` (Postgres only)."""
-    bind = db.session.get_bind()
-    if bind.dialect.name != 'postgresql':
-        return None
-    present = db.session.execute(
-        text("SELECT to_regclass('public.compatibility_write_events') IS NOT NULL")
-    ).scalar()
-    if not present:
-        return None
-    return int(db.session.execute(text(
-        "SELECT count(*) FROM compatibility_write_events "
-        "WHERE resource_type='pitcher_projection' AND outcome='stale_suppressed' "
-        "AND created_at >= :since"
-    ), {'since': started_at}).scalar() or 0)
+    from services.fence_audit import suppressed_write_count_since
+    return suppressed_write_count_since(started_at, ('pitcher_projection',))
 
 
 def _clear_roster_ownership():

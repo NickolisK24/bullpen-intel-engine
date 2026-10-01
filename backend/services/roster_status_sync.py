@@ -537,6 +537,66 @@ def _record_roster_failure(detail, *, sync_run_id=None):
     return failure is not None
 
 
+PRECEDENCE_RETAIN_EXISTING = 'retain_existing'
+PRECEDENCE_SUPERSEDE_EXISTING = 'supersede_existing'
+PRECEDENCE_CONFLICT = 'conflict'
+
+
+def _has_roster_evidence(row):
+    """Whether a snapshot row records presence in the team's official rosters.
+
+    ``active_roster`` / ``forty_man_roster`` are ``None`` exactly when the
+    pitcher was absent from every official roster view of the row's team
+    (``_snapshot_values`` with no evidence). Any presence, including a
+    full-roster-only or non-roster-invitee entry, sets them to booleans.
+    """
+    get = row.get if isinstance(row, dict) else (lambda key: getattr(row, key, None))
+    return get('active_roster') is not None or get('forty_man_roster') is not None
+
+
+def same_date_team_precedence(existing, incoming):
+    """Explicit authority precedence for two same-date rows naming different teams.
+
+    Official roster presence for a team outranks a row that only records the
+    pitcher's absence from another team's rosters: the absent row was written
+    under a stale stored team and makes no membership claim. Two rows that both
+    carry official presence, or both carry none, are not ordered by any
+    authority and stay a conflict (fail closed). Run order never decides.
+    """
+    existing_evidenced = _has_roster_evidence(existing)
+    incoming_evidenced = _has_roster_evidence(incoming)
+    if existing_evidenced and not incoming_evidenced:
+        return PRECEDENCE_RETAIN_EXISTING
+    if incoming_evidenced and not existing_evidenced:
+        return PRECEDENCE_SUPERSEDE_EXISTING
+    return PRECEDENCE_CONFLICT
+
+
+def _supersede_unevidenced_snapshot(existing, values, *, sync_run_id, timestamp, flush):
+    previous_team_id = existing.team_id
+    existing.team_id = values['team_id']
+    for field in _SNAPSHOT_FACT_FIELDS:
+        setattr(existing, field, values[field])
+    existing.sync_run_id = sync_run_id
+    existing.updated_at = timestamp
+    source_provenance.record_source_correction(
+        existing,
+        correction_source=values['source'],
+        sync_run_id=sync_run_id,
+        corrected_at=timestamp,
+    )
+    _notify_roster_depth_evidence_snapshot_correction(existing, sync_run_id=sync_run_id)
+    db.session.add(existing)
+    if flush:
+        db.session.flush()
+    logger.info(
+        'Roster snapshot for pitcher_id=%s date=%s moved from team %s (no roster '
+        'evidence) to team %s (official roster evidence).',
+        existing.pitcher_id, existing.snapshot_date, previous_team_id, existing.team_id,
+    )
+    return existing
+
+
 def _upsert_roster_status_snapshot(
     values,
     *,
@@ -559,6 +619,17 @@ def _upsert_roster_status_snapshot(
         )
 
     if existing and existing.team_id != values['team_id']:
+        precedence = same_date_team_precedence(existing, values)
+        if precedence == PRECEDENCE_RETAIN_EXISTING:
+            # The incoming row only records that the pitcher is absent from a
+            # (stale) team's official rosters; the stored row is official
+            # roster evidence for its team. Absence is not a membership claim.
+            return existing, 'retained', False
+        if precedence == PRECEDENCE_SUPERSEDE_EXISTING and allow_correction:
+            return _supersede_unevidenced_snapshot(
+                existing, values, sync_run_id=sync_run_id,
+                timestamp=timestamp, flush=flush,
+            ), 'superseded', False
         failure = dead_letter.record_failure(
             ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
             'Roster snapshot team conflict for same pitcher/date',
@@ -785,6 +856,13 @@ def _cache_timestamp(snapshot):
     )
 
 
+def _suppressed_writes_since(started_at):
+    from services.fence_audit import suppressed_write_count_since
+    return suppressed_write_count_since(
+        started_at, ('pitcher_projection', 'roster_snapshot'),
+    )
+
+
 def _declare_roster_ownership(team_id):
     """Declare this transaction the roster-cache writer for one team's pitchers.
 
@@ -897,6 +975,7 @@ def sync_roster_statuses(
     """
     client = client or mlb_client
     run_evidence = evidence or build_run_roster_evidence(client=client)
+    started_at = utc_now_naive()
     timestamp = timestamp or utc_now_naive()
     snapshot_date = snapshot_date or timestamp.date()
     team_ids = _team_ids_to_sync(team_ids)
@@ -909,6 +988,7 @@ def sync_roster_statuses(
     snapshot_rows_corrected = 0
     snapshot_rows_unchanged = 0
     snapshot_conflicts = 0
+    snapshot_precedence = Counter()
     records_failed = 0
     dead_letters_resolved = Counter()
     reconciled_conflict_refs = []
@@ -990,6 +1070,8 @@ def sync_roster_statuses(
                 snapshot_rows_created += 1
             elif action == 'corrected':
                 snapshot_rows_corrected += 1
+            elif action in ('superseded', 'retained'):
+                snapshot_precedence[action] += 1
             else:
                 snapshot_rows_unchanged += 1
             reconciled_conflict_refs.append(pitcher.mlb_id)
@@ -1030,6 +1112,14 @@ def sync_roster_statuses(
         'snapshots_corrected': snapshot_rows_corrected,
         'snapshots_unchanged': snapshot_rows_unchanged,
         'snapshot_conflicts': snapshot_conflicts,
+        # Same-date team disagreements settled by explicit authority precedence
+        # (official roster presence over recorded absence) instead of conflicts.
+        'snapshots_superseded': snapshot_precedence.get('superseded', 0),
+        'snapshots_retained_over_absence': snapshot_precedence.get('retained', 0),
+        # Writes the database fence reverted during this sync (None where the
+        # fence cannot be observed): counted pitchers_changed / snapshot
+        # corrections are attempts, this is what did not land.
+        'fence_suppressed_writes': _suppressed_writes_since(started_at),
         'dead_letters_resolved': {
             'fetch': dead_letters_resolved.get('fetch', 0),
             'identity': dead_letters_resolved.get('identity', 0),

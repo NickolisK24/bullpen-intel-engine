@@ -808,3 +808,65 @@ def append_slate_coverage_to_freshness(freshness: Mapping | None, coverage: Mapp
     degradation['complete_enough_to_publish'] = False
     result['degradation'] = degradation
     return result
+
+
+# Compact per-game evidence for publication outcomes (WP-1). Same grouping,
+# cancellation and marker rules as ``compute_slate_coverage``; lists only the
+# games that keep the slate from being complete.
+SLATE_GAME_NOT_FINAL = 'not_final'
+SLATE_GAME_SUSPENDED = 'suspended'
+SLATE_GAME_RESUMED_LINKAGE_UNRESOLVED = 'resumed_linkage_unresolved'
+SLATE_GAME_MARKER_MISSING = 'final_marker_missing'
+SLATE_GAME_MARKER_INCOMPLETE = 'final_marker_incomplete'
+SLATE_GAME_MARKER_FAILED = 'final_marker_failed'
+
+SLATE_GAME_EVIDENCE_LIMIT = 30
+
+
+def slate_game_evidence(slate_date, *, limit=SLATE_GAME_EVIDENCE_LIMIT):
+    """``[{game_pk, game_date, status_state, status_code, marker_status, blocker}]``."""
+    ref = _as_date(slate_date)
+    if ref is None:
+        return []
+    games = _scheduled_games(_schedule_rows_for_date(ref))
+    _mark_authoritatively_cancelled_games(games)
+    included = [
+        game for game in games
+        if game['status_state'] != ScheduledGame.STATE_POSTPONED and not game.get('cancelled')
+    ]
+    final_pks = {
+        game['game_pk'] for game in included
+        if game['status_state'] == ScheduledGame.STATE_FINAL
+    }
+    markers = _markers_by_game_pk(final_pks)
+    evidence = []
+    for game in included:
+        state = game['status_state']
+        marker_status = None
+        if state == ScheduledGame.STATE_SUSPENDED:
+            blocker = SLATE_GAME_SUSPENDED
+        elif game.get('resumed_linkage_unresolved'):
+            blocker = SLATE_GAME_RESUMED_LINKAGE_UNRESOLVED
+        elif state != ScheduledGame.STATE_FINAL:
+            blocker = SLATE_GAME_NOT_FINAL
+        else:
+            marker_status = _marker_status(markers.get(game['game_pk']))
+            blocker = {
+                None: SLATE_GAME_MARKER_MISSING,
+                PostgameProcessedGame.STATUS_FAILED: SLATE_GAME_MARKER_FAILED,
+                PostgameProcessedGame.STATUS_FULLY_PROCESSED: None,
+            }.get(marker_status, SLATE_GAME_MARKER_INCOMPLETE)
+        if blocker is None:
+            continue
+        evidence.append({
+            'game_pk': game['game_pk'],
+            'game_date': ref.isoformat(),
+            'status_state': state,
+            'status_code': game.get('status_code'),
+            'marker_status': marker_status,
+            'home_team_id': game.get('home_team'),
+            'away_team_id': game.get('away_team'),
+            'resumed_linkage_unresolved': bool(game.get('resumed_linkage_unresolved')),
+            'blocker': blocker,
+        })
+    return evidence[:limit]
