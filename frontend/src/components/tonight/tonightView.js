@@ -44,6 +44,7 @@ const STATE_LABELS = Object.freeze({
   postponed: 'Postponed',
   suspended: 'Suspended',
   uncertain: 'Status not confirmed',
+  cancelled: 'Cancelled',
 })
 
 const SCHEDULED_TIME_UNCONFIRMED = 'Start time not confirmed'
@@ -220,9 +221,10 @@ export function gameView(game) {
 
 // Featured lifecycle presentation (TN-11.6). Games to Watch is a current-
 // attention surface: walk featured_game_pks in backend order, resolve each pk
-// to its served game, skip missing games and hide only state === 'final'.
-// Every other state (including unknown ones) stays visible, because final is
-// the only state known to be complete. No replacement, reordering or other
+// to its served game, skip missing games and hide state === 'final' and
+// state === 'cancelled'. Every other state (including unknown ones) stays
+// visible, because final is the only state known to be complete and cancelled
+// the only one known never to be played. No replacement, reordering or other
 // inputs: the frozen featured selection and each game's featured marker are
 // untouched, and final featured games remain in Completed Games.
 export function getVisibleFeaturedGames(games, featuredGamePks) {
@@ -230,7 +232,7 @@ export function getVisibleFeaturedGames(games, featuredGamePks) {
   const visible = []
   for (const pk of list(featuredGamePks)) {
     const game = byPk.get(pk)
-    if (game && game.state !== 'final') visible.push(game)
+    if (game && game.state !== 'final' && game.state !== 'cancelled') visible.push(game)
   }
   return visible
 }
@@ -277,10 +279,13 @@ export const LIFECYCLE_BY_STATE = Object.freeze({
 })
 
 // One pass in backend order; each game is appended to its bucket, so the
-// served order is preserved inside every bucket. No sorting.
+// served order is preserved inside every bucket. No sorting. A cancelled game
+// (MLB cancelled it, or MLB's schedule stopped listing an unneeded postseason
+// game) will not be played and is left out of every bucket.
 export function groupGamesByLifecycle(games) {
   const groups = { inProgress: [], upcoming: [], completed: [] }
   for (const game of list(games)) {
+    if (game?.state === 'cancelled') continue
     groups[LIFECYCLE_BY_STATE[game?.state] || 'upcoming'].push(game)
   }
   return groups

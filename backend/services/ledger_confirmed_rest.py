@@ -39,11 +39,14 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Iterable, Mapping
 
+from sqlalchemy import or_
+
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.schedule_absence import CANCELLED_STATUS_CODES
 from utils.db import db
 
 
@@ -119,6 +122,13 @@ def _team_has_unsettled_game(team_id, reference_date):
         .filter(ScheduledGame.game_date >= start)
         .filter(ScheduledGame.game_date < reference_date)
         .filter(ScheduledGame.status_state.in_(_UNSETTLED_GAME_STATES))
+        # A cancelled or retired game (``other`` with a cancellation code) is
+        # settled: it will never be played, so it never awaits finality.
+        .filter(or_(
+            ScheduledGame.status_state != ScheduledGame.STATE_OTHER,
+            ScheduledGame.status_code.is_(None),
+            ~ScheduledGame.status_code.in_(tuple(CANCELLED_STATUS_CODES)),
+        ))
         .first()
     )
     return row is not None

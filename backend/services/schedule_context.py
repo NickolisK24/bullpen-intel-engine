@@ -20,9 +20,13 @@ Status semantics (conservative):
     suspended  -> the game exists and consumes the date (counts as existence),
                   but is not "played" unless it is final
     postponed  -> not played; does NOT count as a game existing on the date
-    other      -> counts only for game existence, never as "played"
-So "a non-postponed game exists on a date" = any row whose status_state is not
-``postponed``; "a played game" = a row whose status_state is ``final``.
+    other      -> counts only for game existence, never as "played"; except a
+                  cancellation (MLB code ``C``, or ``RETIRED`` for a game a
+                  proven-complete MLB schedule stopped listing), which is
+                  treated like ``postponed``
+So "a non-postponed game exists on a date" = any row that is neither postponed
+nor cancelled (``schedule_absence.is_unplayed_terminal_schedule_row``); "a played
+game" = a row whose status_state is ``final``.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from models.scheduled_game import ScheduledGame
+from services.schedule_absence import is_unplayed_terminal_schedule_row
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +215,9 @@ def _rows_by_date(rows):
 
 
 def _non_postponed_on(by_date, day):
+    """Games that will be played on ``day``: not postponed, cancelled or retired."""
     return [r for r in by_date.get(day, ())
-            if r.status_state != ScheduledGame.STATE_POSTPONED]
+            if not is_unplayed_terminal_schedule_row(r.status_state, r.status_code)]
 
 
 def _final_on(by_date, day):

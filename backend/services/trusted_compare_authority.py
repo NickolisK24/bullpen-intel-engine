@@ -21,6 +21,25 @@ GAME_MATCHUP_CAPABILITY = 'scheduled_game_matchup_v1'
 GAME_MATCHUP_CONTRACT = 'scheduled_game_matchup_entry_v1'
 GAME_NOT_FOUND = 'scheduled_game_not_found'
 GAME_COMPARISON_UNAVAILABLE = 'scheduled_game_comparison_unavailable'
+# A game that will not be played keeps its identity but is never presented as
+# an upcoming matchup, and no bullpen comparison is composed for it.
+GAME_NOT_UPCOMING = 'not_upcoming'
+GAME_CANCELLED = 'scheduled_game_cancelled'
+GAME_REMOVED_FROM_SCHEDULE = 'scheduled_game_removed_from_mlb_schedule'
+
+
+def _not_upcoming_reason(game):
+    """Why a slate row will not be played, or ``None`` when it may be."""
+    from services.schedule_absence import SCHEDULE_RETIRED_STATUS_CODE
+
+    source = game.to_dict() if hasattr(game, 'to_dict') else dict(game or {})
+    status = source.get('status') if isinstance(source.get('status'), dict) else {}
+    normalized = status.get('normalized') or source.get('normalized_state')
+    detailed = str(status.get('detailed') or source.get('status_detailed') or '').lower()
+    code = str(status.get('code') or source.get('status_code') or '').upper()
+    if normalized != SlateGame.STATE_CANCELLED or 'postpon' in detailed:
+        return None
+    return GAME_REMOVED_FROM_SCHEDULE if code == SCHEDULE_RETIRED_STATUS_CODE else GAME_CANCELLED
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +132,22 @@ def build_scheduled_game_matchup_payload(
 ):
     """Compose game identity around the unchanged CMP-01 carrier."""
     source = game.to_dict() if hasattr(game, 'to_dict') else dict(game or {})
+    not_upcoming = _not_upcoming_reason(game)
+    if not_upcoming is not None:
+        return {
+            'capability': GAME_MATCHUP_CAPABILITY,
+            'contract': GAME_MATCHUP_CONTRACT,
+            'status': GAME_NOT_UPCOMING,
+            'reason_code': not_upcoming,
+            'ranking_applied': False,
+            'selection_made': False,
+            'prediction_applied': False,
+            'game': _scheduled_game_context(game, None, directory or {}),
+            'comparison': None,
+            'publication_authority': (
+                authority.publication_authority(snapshot) if snapshot is not None else None
+            ),
+        }
     away_team_id = source.get('away_team_id')
     home_team_id = source.get('home_team_id')
     comparison = None

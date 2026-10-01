@@ -7,6 +7,8 @@ export default function LeadDevelopment({ lead, games }) {
   const view = leadView(lead)
   if (!view) return null
   const game = (Array.isArray(games) ? games : []).find(item => item?.game_pk === view.gamePk)
+  // A lead about a game that will not be played is not presented.
+  if (game?.state === 'cancelled') return null
   const matchupHref = typeof game?.links?.matchup === 'string' ? game.links.matchup : null
   return (
     <section

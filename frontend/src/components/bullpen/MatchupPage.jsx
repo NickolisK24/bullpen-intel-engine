@@ -33,11 +33,16 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
     ? `Game ${game.game_number}`
     : null
   const metadata = [date, gameLabel, time, status].filter(Boolean)
+  // The backend marks a game that will not be played (cancelled, or removed
+  // from MLB's schedule as an unneeded postseason game) as not upcoming.
+  const notUpcoming = payload.status === 'not_upcoming'
 
   return (
     <div className="space-y-6">
       <header className="border-b border-dirt pb-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">Scheduled Matchup</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">
+          {notUpcoming ? 'Not Played' : 'Scheduled Matchup'}
+        </p>
         <h1 className="mt-2 break-words font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">
           {awayName} at {homeName}
         </h1>
@@ -48,7 +53,14 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
         )}
       </header>
 
-      {payload.comparison ? (
+      {notUpcoming ? (
+        <EmptyState
+          title="This game will not be played"
+          subtitle={payload.reason_code === 'scheduled_game_removed_from_mlb_schedule'
+            ? "It is no longer on MLB's schedule, so no bullpen comparison is shown for it."
+            : 'MLB cancelled it, so no bullpen comparison is shown for it.'}
+        />
+      ) : payload.comparison ? (
         <BullpenComparisonView
           payload={payload}
           sideLabels={{ teamA: `Away · ${awayName}`, teamB: `Home · ${homeName}` }}
