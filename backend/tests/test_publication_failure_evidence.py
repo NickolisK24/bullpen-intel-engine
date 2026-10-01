@@ -284,7 +284,7 @@ def test_without_wp1_the_evidence_is_lost(app, daily_candidate, monkeypatch):
     """The regression: remove the outcome write and only the string remains."""
     with app.app_context():
         monkeypatch.setattr(
-            sync_service, '_publication_failure_outcome', lambda _exc: None,
+            sync_service, '_publication_failure_outcome', lambda *_args, **_kwargs: None,
         )
         with pytest.raises(ValueError):
             _complete(daily_candidate['run_id'])
@@ -298,7 +298,7 @@ def test_an_unshapeable_failure_still_records_a_minimal_outcome(app, daily_candi
     with app.app_context():
         monkeypatch.setattr(
             publication_outcome, 'outcome_failed',
-            lambda _exc: (_ for _ in ()).throw(RuntimeError('shaping failed')),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('shaping failed')),
         )
         with pytest.raises(proof_service.TeamStatePublicationIneligible):
             _complete(daily_candidate['run_id'])
@@ -378,3 +378,118 @@ def test_failure_outcome_shape_for_a_plain_exception():
 ])
 def test_failed_authority_classification(reason, authority):
     assert publication_outcome.failed_authority_for_reason(reason) == authority
+
+
+# ---------------------------------------------------------------------------
+# Gate evidence (SyncRun 93211: slate_coverage with affected_game_pks=[]).
+# ---------------------------------------------------------------------------
+
+from models.postgame_processed_game import PostgameProcessedGame  # noqa: E402
+from models.scheduled_game import ScheduledGame  # noqa: E402
+
+
+def _game(game_pk, state, game_date=DATA_THROUGH, *, marker=None, teams=(141, 147)):
+    for team_id, side, opponent in ((teams[0], 'home', teams[1]), (teams[1], 'away', teams[0])):
+        db.session.add(ScheduledGame(
+            team_id=team_id, game_pk=game_pk, game_date=game_date, status_state=state,
+            home_away=side, opponent_team_id=opponent,
+        ))
+    if marker is not None:
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=game_pk, game_date=game_date, processing_status=marker,
+        ))
+
+
+def _withhold_for_slate(monkeypatch):
+    monkeypatch.setattr(
+        dashboard_snapshot, '_payload_slate_coverage_unavailable_reason',
+        lambda _payload: dashboard_snapshot.DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
+    )
+
+
+def test_a_raised_withhold_keeps_its_withheld_outcome(app, daily_candidate, monkeypatch):
+    """SyncRun 93211: the withheld outcome was overwritten as failed/not persisted."""
+    with app.app_context():
+        _withhold_for_slate(monkeypatch)
+        with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
+            _complete(daily_candidate['run_id'])
+        db.session.expire_all()
+        run = db.session.get(SyncRun, daily_candidate['run_id'])
+        outcome = run.publication_outcome
+        assert run.status == sync_metadata.STATUS_FAILED
+        assert outcome['status'] == 'withheld'
+        assert outcome['failed_authority'] == 'slate_coverage'
+        assert outcome['candidate_persisted'] is True
+        candidate = db.session.get(DashboardSnapshot, outcome['candidate_snapshot_id'])
+        assert candidate is not None and candidate.is_published is False
+        assert outcome['serving_snapshot_id'] == daily_candidate['serving_id']
+
+
+def test_slate_withholding_names_every_blocking_game(app, daily_candidate, monkeypatch):
+    with app.app_context():
+        _game(9001, ScheduledGame.STATE_FINAL, marker=PostgameProcessedGame.STATUS_FULLY_PROCESSED)
+        _game(9002, ScheduledGame.STATE_FINAL)
+        _game(9003, ScheduledGame.STATE_SCHEDULED, teams=(108, 109))
+        _game(9004, ScheduledGame.STATE_SUSPENDED, teams=(110, 111))
+        _game(9005, ScheduledGame.STATE_POSTPONED, teams=(112, 113))
+        _game(9006, ScheduledGame.STATE_FINAL, teams=(114, 115),
+              marker=PostgameProcessedGame.STATUS_FAILED)
+        db.session.commit()
+        _withhold_for_slate(monkeypatch)
+        with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
+            _complete(daily_candidate['run_id'])
+        db.session.expire_all()
+        outcome = db.session.get(SyncRun, daily_candidate['run_id']).publication_outcome
+
+        assert outcome['affected_game_pks'] == [9002, 9003, 9004, 9006]
+        games = {game['game_pk']: game for game in outcome['gate_evidence']['games']}
+        assert games[9002]['blocker'] == 'final_marker_missing'
+        assert games[9003]['blocker'] == 'not_final'
+        assert games[9004]['blocker'] == 'suspended'
+        assert games[9006]['blocker'] == 'final_marker_failed'
+        assert games[9002]['game_date'] == DATA_THROUGH.isoformat()
+        assert outcome['gate_evidence']['slate_date'] == DATA_THROUGH.isoformat()
+
+
+def test_run_failures_name_roster_conflicts_without_raw_payloads(app, daily_candidate, monkeypatch):
+    with app.app_context():
+        db.session.add(SyncFailure(
+            job_name='daily_sync', entity_type='roster_status_snapshot_conflict',
+            entity_ref='687924', error='Roster snapshot team conflict for same pitcher/date',
+            payload={'pitcher_id': 7, 'mlb_id': 687924, 'snapshot_date': '2026-10-01',
+                     'existing_team_id': 141, 'incoming_team_id': 147},
+            sync_run_id=daily_candidate['run_id'], resolved=False,
+        ))
+        db.session.commit()
+        _withhold_for_slate(monkeypatch)
+        with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
+            sync_service.complete_sync_run_with_snapshot(
+                daily_candidate['run_id'], final_status=sync_metadata.STATUS_PARTIAL,
+                publication_critical_complete=False,
+            )
+        db.session.expire_all()
+        outcome = db.session.get(SyncRun, daily_candidate['run_id']).publication_outcome
+        failures = outcome['run_failures']
+        assert failures['unresolved_by_entity_type']['roster_status_snapshot_conflict'] == 1
+        assert failures['roster_conflicts'] == [{
+            'mlb_id': 687924, 'pitcher_id': 7, 'snapshot_date': '2026-10-01',
+            'existing_team_id': 141, 'incoming_team_id': 147,
+        }]
+        assert outcome['publication_critical_complete'] is False
+
+
+def test_ledger_withholding_names_the_deficient_games(app, daily_candidate):
+    with app.app_context():
+        _game(9101, ScheduledGame.STATE_FINAL, game_date=date(2026, 9, 28),
+              marker=PostgameProcessedGame.STATUS_FULLY_PROCESSED)
+        db.session.commit()
+        with pytest.raises(sync_service.DashboardSnapshotPublicationWithheld):
+            _complete(daily_candidate['run_id'])
+        db.session.expire_all()
+        outcome = db.session.get(SyncRun, daily_candidate['run_id']).publication_outcome
+        assert outcome['status'] == 'withheld'
+        assert outcome['failed_authority'] == 'appearance_ledger'
+        assert outcome['affected_game_pks'] == [9101]
+        assert outcome['gate_evidence']['games'][0]['blocker'] == (
+            'final_game_without_appearance_rows'
+        )

@@ -5729,6 +5729,8 @@ def complete_sync_run_with_snapshot(
                 run.error_message = withheld_reason
                 run.publication_outcome = publication_outcome.outcome_withheld(
                     snapshot, withheld_reason,
+                    sync_run_id=run.id,
+                    publication_critical_complete=publication_critical_complete,
                 )
             db.session.commit()
             if raise_on_withheld:
@@ -5785,7 +5787,17 @@ def complete_sync_run_with_snapshot(
         # only then is the structured proof of failure recorded, in the run's
         # own commit, so it survives while no partial publication state can.
         db.session.rollback()
-        failure_outcome = _publication_failure_outcome(exc)
+        # A gate-withheld candidate already committed its own ``withheld``
+        # outcome (the candidate row survives). The withheld exception is how
+        # this function reports it to the caller; it is not a second failure
+        # and must not overwrite that outcome.
+        failure_outcome = (
+            None if isinstance(exc, DashboardSnapshotPublicationWithheld)
+            else _publication_failure_outcome(
+                exc, sync_run_id=sync_run_id,
+                publication_critical_complete=publication_critical_complete,
+            )
+        )
         sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
@@ -5808,10 +5820,13 @@ def complete_sync_run_with_snapshot(
         raise
 
 
-def _publication_failure_outcome(exc):
+def _publication_failure_outcome(exc, *, sync_run_id=None, publication_critical_complete=None):
     """Shape the failure evidence; never let doing so mask the failure itself."""
     try:
-        return publication_outcome.outcome_failed(exc)
+        return publication_outcome.outcome_failed(
+            exc, sync_run_id=sync_run_id,
+            publication_critical_complete=publication_critical_complete,
+        )
     except Exception:
         logger.exception('Publication failure outcome could not be shaped.')
         try:
