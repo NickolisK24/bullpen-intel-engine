@@ -74,6 +74,13 @@ class ScheduledGame(db.Model):
     resumed_from_game_pk = db.Column(db.Integer, nullable=True)
     resumed_to_game_pk = db.Column(db.Integer, nullable=True)
 
+    # ── Postseason conditional-game evidence (services.schedule_absence) ──────
+    # MLB's raw ``ifNecessary`` flag ('Y'/'N'), stored verbatim.
+    if_necessary = db.Column(db.String(2), nullable=True)
+    # First time a structurally sound league-wide MLB schedule response stopped
+    # listing this game; cleared whenever MLB lists it again.
+    schedule_absent_since = db.Column(db.DateTime, nullable=True)
+
     # ── Provenance ─────────────────────────────────────────────────────────────
     source = db.Column(db.String(40), nullable=False, default='schedule_ingestion')
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
@@ -101,6 +108,8 @@ class ScheduledGame(db.Model):
         'resumed_product_date',
         'resumed_from_game_pk',
         'resumed_to_game_pk',
+        'if_necessary',
+        'schedule_absent_since',
         'source',
     )
 

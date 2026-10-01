@@ -370,7 +370,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/schedule_ingestion.py': {
         'digest_after':
-            '93ad60c5426048b6cb7f3d4505a9b4ebd0622d65ceb36c371942a3cfa8bd0d3b',
+            '17de0e404dd627f86acb8aeab64a34ba892fd96251d709ee919a2a3287823ece',
         'change': (
             'Schedule finality persistence (SyncRun 92585): ingest_games now '
             'declares transaction-local schedule ownership '
@@ -386,7 +386,14 @@ PACKAGE_MODIFIED_MODULES = {
             'the four Sep 29 Wild Card games) can no longer read as non-final '
             'games. Fence observability (SyncRun 93211 package): the summary '
             'reports rows_suppressed, the schedule-fence reverts logged during '
-            'the ingest, next to rows_updated; no stored value changes'
+            'the ingest, next to rows_updated; no stored value changes. '
+            'Postseason conditional-game retirement (WP-4, Oct 1 2026): '
+            'ingest_games stores MLB ifNecessary, clears schedule_absent_since '
+            'when MLB lists a game, and, for a structurally sound league-wide '
+            'response, observes and (on a later confirming response) retires '
+            'stored postseason if-necessary games MLB stopped listing, as '
+            'cancelled rows (code RETIRED) in both schedule tables within the '
+            'same transaction; any other absence is reported and changes nothing'
         ),
         # Stored schedule facts for adopted games now follow authoritative MLB
         # transitions instead of freezing at their pre-adoption state, which is
