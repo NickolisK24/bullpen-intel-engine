@@ -123,7 +123,7 @@ def _conflict_dead_letter(mlb_id, *, snapshot_date='2026-07-12', created_at=EARL
         payload={
             'mlb_id': mlb_id,
             'snapshot_date': snapshot_date,
-            'existing_team_id': 999,
+            'existing_team_id': 147,
             'incoming_team_id': 113,
         },
         error='Roster snapshot team conflict for same pitcher/date',
@@ -237,7 +237,8 @@ def test_ambiguous_conflict_stays_unresolved_and_withheld(app):
         db.session.add(RosterStatusSnapshot(
             pitcher_id=pitcher.id,
             mlb_id=pitcher.mlb_id,
-            team_id=999,
+            # A different MLB club: equal authority, so a genuine conflict.
+            team_id=147,
             snapshot_date=SNAPSHOT_DAY,
             roster_status='ACTIVE',
             active_roster=True,
@@ -368,7 +369,8 @@ def test_remaining_genuine_conflict_is_team_scoped_but_keeps_league_closed(app):
         db.session.add(RosterStatusSnapshot(
             pitcher_id=conflicted.id,
             mlb_id=conflicted.mlb_id,
-            team_id=999,
+            # A different MLB club: equal authority, so a genuine conflict.
+            team_id=147,
             snapshot_date=SNAPSHOT_DAY,
             roster_status='ACTIVE',
             active_roster=True,
