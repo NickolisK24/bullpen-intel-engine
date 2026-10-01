@@ -370,7 +370,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/schedule_ingestion.py': {
         'digest_after':
-            '84cde02f9f38fa5c3305bfd80b8c3a62df7f2f7e56c53921809fdd622d4d51da',
+            '93ad60c5426048b6cb7f3d4505a9b4ebd0622d65ceb36c371942a3cfa8bd0d3b',
         'change': (
             'Schedule finality persistence (SyncRun 92585): ingest_games now '
             'declares transaction-local schedule ownership '
@@ -384,7 +384,9 @@ PACKAGE_MODIFIED_MODULES = {
             'that gamePk\'s rows for any other team, so placeholder club rows left '
             'behind when MLB fills in the real clubs (five rows across three of '
             'the four Sep 29 Wild Card games) can no longer read as non-final '
-            'games'
+            'games. Fence observability (SyncRun 93211 package): the summary '
+            'reports rows_suppressed, the schedule-fence reverts logged during '
+            'the ingest, next to rows_updated; no stored value changes'
         ),
         # Stored schedule facts for adopted games now follow authoritative MLB
         # transitions instead of freezing at their pre-adoption state, which is

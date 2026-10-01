@@ -5751,7 +5751,7 @@ def complete_sync_run_with_snapshot(
                         snapshot, withheld_reason,
                         sync_run_id=run.id,
                         publication_critical_complete=publication_critical_complete,
-                        fence_since=run.started_at,
+                        fence_since=getattr(run, 'started_at', None),
                     ),
                     recovery,
                 )
@@ -5767,7 +5767,7 @@ def complete_sync_run_with_snapshot(
             run.published_dashboard_snapshot_id = snapshot.id
             run.publication_outcome = _with_recovery(
                 publication_outcome.outcome_published(
-                    snapshot, fence_since=run.started_at,
+                    snapshot, fence_since=getattr(run, 'started_at', None),
                 ),
                 recovery,
             )
