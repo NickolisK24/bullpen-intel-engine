@@ -132,10 +132,14 @@ def _team_map_from_evidence(evidence):
 
 
 def _team_ids_to_sync(team_ids, team_map):
+    """Teams whose official rosters decide MLB team identity.
+
+    Only MLB clubs. ``team_map`` is a label map that also carries affiliate IDs
+    stored on pitcher rows; reading it as the roster universe let an affiliate's
+    active roster outrank the parent club's 40-man for an optioned pitcher.
+    """
     if team_ids:
         return list(dict.fromkeys(team_ids))
-    if team_map:
-        return sorted(team_map)
     return list(MLB_TEAM_IDS)
 
 
