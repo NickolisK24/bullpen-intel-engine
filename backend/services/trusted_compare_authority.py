@@ -26,6 +26,7 @@ GAME_COMPARISON_UNAVAILABLE = 'scheduled_game_comparison_unavailable'
 GAME_NOT_UPCOMING = 'not_upcoming'
 GAME_CANCELLED = 'scheduled_game_cancelled'
 GAME_REMOVED_FROM_SCHEDULE = 'scheduled_game_removed_from_mlb_schedule'
+_SLATE_CANCELLED = SlateGame.STATE_CANCELLED
 
 
 def _not_upcoming_reason(game):
@@ -37,7 +38,7 @@ def _not_upcoming_reason(game):
     normalized = status.get('normalized') or source.get('normalized_state')
     detailed = str(status.get('detailed') or source.get('status_detailed') or '').lower()
     code = str(status.get('code') or source.get('status_code') or '').upper()
-    if normalized != SlateGame.STATE_CANCELLED or 'postpon' in detailed:
+    if normalized != _SLATE_CANCELLED or 'postpon' in detailed:
         return None
     return GAME_REMOVED_FROM_SCHEDULE if code == SCHEDULE_RETIRED_STATUS_CODE else GAME_CANCELLED
 

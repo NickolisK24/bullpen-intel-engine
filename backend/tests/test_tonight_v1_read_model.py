@@ -431,7 +431,9 @@ def test_missing_first_pitch_keeps_the_game_and_orders_it_last(tonight_app):
     ('live', 'In Progress', 'live'),
     ('completed', 'Final', 'final'),
     ('cancelled', 'Postponed', 'postponed'),
-    ('cancelled', 'Cancelled', 'uncertain'),
+    # A game that will not be played (WP-4): served as cancelled.
+    ('cancelled', 'Cancelled', 'cancelled'),
+    ('cancelled', 'Cancelled: removed from MLB schedule', 'cancelled'),
     ('uncertain', 'Suspended: Rain', 'suspended'),
     ('uncertain', 'Delayed: Rain', 'uncertain'),
     ('unexpected', None, 'uncertain'),
