@@ -642,6 +642,107 @@ Required architecture for true catch-up (a separate package):
 Until 1 exists, the correct behavior is the current one: withhold, keep
 serving the last certified snapshot, and persist enough evidence to act.
 
+## 15F. Postseason conditional games MLB stops listing (WP-4, Oct 1 2026)
+
+### What happened
+
+After snapshot 4157, Tonight still showed four Oct 1 Wild Card Game 3s,
+although three of those series had ended 2-0.
+
+The Daily slate schedule refresh logs show MLB did not return the unneeded
+Game 3s as Cancelled. It stopped listing them. A returned game counts in
+`games_seen` whatever its status. The windows below add up only if Oct 1 went
+from four listed games to one:
+
+| Refresh run | Window          | `games_seen` |
+|-------------|-----------------|--------------|
+| Sep 29      | Sep 28 .. Oct 2 | 12           |
+| Sep 30      | Sep 29 .. Oct 3 | 16           |
+| Oct 1       | Sep 30 .. Oct 4 | 11           |
+
+- Sep 28 and Oct 2 had no games, so Sep 29, Sep 30 and Oct 1 had 4 games each.
+- That gives Oct 3 = 4.
+- Oct 1 + Oct 4 = 3 in the last run, so Oct 1 had at most 3 games.
+- The preflight windows (Sep 22..29 = 93, Sep 23..30 = 81, Sep 24..Oct 1 = 66)
+  agree with Oct 1 = 1 when Sep 23 had 16 games.
+
+Schedule ingestion only upserts what MLB returns. The vanished games therefore
+stayed `scheduled` in `scheduled_games` and `slate_games`. Tonight, Matchup,
+schedule context and the ledger rest window all treated them as games still to
+be played.
+
+### Retirement (`services/schedule_absence.py`)
+
+`/schedule` has no completeness flag. A response whose counts add up is only
+*internally consistent*. Retirement therefore needs all of the following.
+
+Source authority:
+
+- **MLB marks the game conditional.** The stored `ifNecessary` flag is `Y`
+  (new column `scheduled_games.if_necessary`). Rows stored before that column
+  fall back to MLB's series structure: a postseason `game_type` and a
+  `series_game_number` past the clinching minimum of a best-of-3, -5 or -7
+  `games_in_series`. Missing or inconsistent series metadata never qualifies.
+- **The gamePk appears nowhere in the response, on any date.** A game listed
+  under another date has moved; it is not retired.
+
+BaseballOS safeguards:
+
+- **Response integrity.** The response must be the real league-wide response,
+  with a known range, date entries inside it, and per-date counts that match
+  `totalGames`.
+- **No unexplained absence.** Any other missing stored game (regular season, a
+  Game 1, a final or postponed game) stops the whole response from retiring
+  anything.
+- **Two observations, at least 15 minutes apart.** The first only sets
+  `scheduled_games.schedule_absent_since`.
+- **Two-day reschedule lookahead** past the game's date.
+- **No ingest errors in the same response.**
+
+A retired game:
+
+- `scheduled_games`: `status_state='other'`, `status_code='RETIRED'`,
+  `source='schedule_absence'`.
+- `slate_games`: `normalized_state='cancelled'`, `status_code='RETIRED'`,
+  `status_detailed='Cancelled: removed from MLB schedule'`.
+
+Both tables are written in the ingest's own transaction, under its
+schedule-ownership declaration. Nothing is deleted. If MLB lists the gamePk
+again, the ordinary upsert restores it and the summary reports
+`game_pks_restored`. An explicit MLB cancellation (`C`) is stored as MLB sent
+it.
+
+The regular season is never retired by absence. A missing regular-season game
+is reported in `absence_reconciliation.absent_games` and kept.
+
+### Readers
+
+- **Slate coverage.** The existing cancellation proof covers a retired game
+  (detailed state "Cancelled").
+- **Schedule context (#896) and ledger rest (#900).** A cancelled or retired row
+  counts as no game.
+- **Tonight.**
+  - A new edition leaves the game out.
+  - A published edition is immutable. Its stored game list does not change.
+    The schedule overlay serves the game with the new state `cancelled`,
+    recounts `games_by_state` and the served `game_count`, and the frontend
+    hides cancelled games and a lead about one.
+- **Matchup.** Responds with `status='not_upcoming'` and
+  `reason_code='scheduled_game_removed_from_mlb_schedule'` (or
+  `scheduled_game_cancelled`). The game's identity is kept, and no comparison
+  is composed.
+
+### Observability
+
+The ingest summary carries:
+
+- `games_retired`, `game_pks_retired`, `games_restored`, `game_pks_restored`;
+- `absence_reconciliation`: `status`, `date_range`, `response_consistent`,
+  `response_integrity_reason`, `participants_retired`, `retirement_reason`,
+  and every `absent_games` entry with its action and basis.
+
+Daily logs one line for it after the slate schedule refresh.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:
