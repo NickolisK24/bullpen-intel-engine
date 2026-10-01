@@ -259,6 +259,10 @@ def overlay_game_state(payload, current_rows):
         for game in served_games:
             by_state[game['state']] = by_state.get(game['state'], 0) + 1
         served['summary'] = {**summary, 'games_by_state': by_state}
+        if by_state.get('cancelled'):
+            # A game that will not be played is not one of tonight's games.
+            # The stored game list is unchanged; only the served count is.
+            served['summary']['game_count'] = len(served_games) - by_state['cancelled']
     if reasons:
         limitations = list(payload.get('limitations') or [])
         served['limitations'] = list(dict.fromkeys(limitations + reasons))

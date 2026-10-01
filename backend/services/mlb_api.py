@@ -29,6 +29,42 @@ _DEFAULT_BACKOFF_JITTER = True
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
+class ScheduleGames(list):
+    """The games of one ``/schedule`` response, plus that response's shape.
+
+    A plain ``list`` for every existing caller. ``response_shape`` records what
+    the response itself declared (the requested range, its ``totalGames`` and
+    each date entry's count) so schedule reconciliation can prove the response
+    was complete before treating a stored game's absence as evidence. Any
+    other list (a stub, a hand-built game list) carries no shape and therefore
+    never proves anything.
+    """
+
+    response_shape = None
+
+
+def schedule_response_shape(data, *, start_date=None, end_date=None, team_id=None):
+    """Structural facts of one raw ``/schedule`` payload, read verbatim."""
+    dates = data.get('dates') if isinstance(data, dict) else None
+    entries = []
+    for entry in dates if isinstance(dates, list) else ():
+        games = entry.get('games') if isinstance(entry, dict) else None
+        entries.append({
+            'date': entry.get('date') if isinstance(entry, dict) else None,
+            'declared_games': entry.get('totalGames') if isinstance(entry, dict) else None,
+            'games': len(games) if isinstance(games, list) else None,
+        })
+    return {
+        'requested_start': start_date,
+        'requested_end': end_date,
+        'team_id': team_id,
+        'is_object': isinstance(data, dict),
+        'dates_is_list': isinstance(dates, list),
+        'declared_total_games': data.get('totalGames') if isinstance(data, dict) else None,
+        'date_entries': entries,
+    }
+
+
 _ENDPOINT_ID_PATTERN = re.compile(r'/\d+')
 
 
@@ -593,10 +629,13 @@ class MLBApiClient:
             params['teamId'] = team_id
 
         data = self._get('/schedule', params=params)
+        games = ScheduleGames()
+        games.response_shape = schedule_response_shape(
+            data, start_date=start_date, end_date=end_date, team_id=team_id,
+        )
         if not data:
-            return []
+            return games
         dates = data.get('dates', [])
-        games = []
         for date in dates:
             games.extend(date.get('games', []))
         return games

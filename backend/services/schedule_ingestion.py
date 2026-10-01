@@ -22,6 +22,7 @@ from time import perf_counter
 from sqlalchemy import text
 
 from models.scheduled_game import ScheduledGame
+from services import schedule_absence
 from services.game_finality import normalize_schedule_status_state
 from services.mlb_api import mlb_client
 from services.schedule_authority import upsert_slate_game
@@ -63,6 +64,12 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
 
     Idempotent: each game yields one row per team keyed by (team_id, game_pk).
     A game missing its gamePk or both team ids is skipped (counted), never fatal.
+
+    When ``games`` is a structurally sound league-wide schedule response,
+    stored postseason conditional games it no longer lists are observed and,
+    once a later response confirms the absence, retired in the same
+    transaction (``services.schedule_absence``). Any other input reconciles
+    nothing.
     """
     summary = {
         'games_seen': 0,
@@ -77,12 +84,24 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         'errors': 0,
     }
     synced_at = utc_now_naive()
+    integrity = schedule_absence.response_integrity(games)
     games = list(games or [])
     owned_game_pks = [
         parsed['game_pk'] for parsed in (_parse_game(game) for game in games)
         if parsed is not None
     ]
-    _declare_schedule_ownership(owned_game_pks)
+    returned_game_pks = {
+        pk for pk in (
+            _int((game or {}).get('gamePk')) if isinstance(game, dict) else None
+            for game in games
+        ) if pk is not None
+    }
+    absence_plan = schedule_absence.plan_absent_games(
+        integrity, returned_game_pks, now=synced_at,
+    )
+    absence_game_pks = schedule_absence.game_pks_to_write(absence_plan)
+    previously_retired = schedule_absence.retired_game_pks(owned_game_pks)
+    _declare_schedule_ownership(owned_game_pks + absence_game_pks)
 
     for game in games:
         summary['games_seen'] += 1
@@ -107,10 +126,14 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
             db.session.rollback()
             # The ownership declaration is transaction-local; the rollback
             # ended that transaction, so re-declare for the remaining writes.
-            _declare_schedule_ownership(owned_game_pks)
+            _declare_schedule_ownership(owned_game_pks + absence_game_pks)
             summary['errors'] += 1
             logger.warning('Schedule ingest failed for game %s',
                            parsed.get('game_pk'), exc_info=True)
+
+    summary.update(_reconcile_absent_games(
+        integrity, absence_plan, previously_retired, summary, synced_at,
+    ))
 
     if commit:
         db.session.commit()
@@ -121,6 +144,48 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
     from services.fence_audit import suppressed_write_count_since
     summary['rows_suppressed'] = suppressed_write_count_since(synced_at, ('schedule',))
     return summary
+
+
+def _reconcile_absent_games(integrity, plan, previously_retired, summary, synced_at):
+    """Apply the absence plan for this response; report every absent game."""
+    status = plan['status']
+    if summary['errors'] and status == schedule_absence.STATUS_RECONCILED:
+        # A failed write rolled part of this ingest back: the response is not
+        # fully reflected, so its absences are not acted on in this run.
+        status = schedule_absence.STATUS_FAIL_CLOSED_INGEST_ERRORS
+        retired = []
+    else:
+        retired = schedule_absence.apply_plan(plan, now=synced_at)
+    if retired:
+        logger.info(
+            'Schedule absence retired %s game(s) %s window=%s..%s reason=%s.',
+            len(retired), retired,
+            integrity.get('start_date'), integrity.get('end_date'),
+            schedule_absence.RETIREMENT_REASON,
+        )
+    elif status == schedule_absence.STATUS_FAIL_CLOSED_UNEXPLAINED:
+        logger.warning(
+            'Schedule absence reconciliation failed closed window=%s..%s '
+            'absent=%s: a stored game outside the retirable class is missing.',
+            integrity.get('start_date'), integrity.get('end_date'),
+            [(game['game_pk'], game['action']) for game in plan['games']],
+        )
+    restored = sorted(previously_retired)
+    return {
+        'games_retired': len(retired),
+        'game_pks_retired': retired,
+        'games_restored': len(restored),
+        'game_pks_restored': restored,
+        'absence_reconciliation': {
+            'status': status,
+            'date_range': [integrity.get('start_date'), integrity.get('end_date')],
+            'response_consistent': bool(integrity.get('consistent')),
+            'response_integrity_reason': integrity.get('reason'),
+            'participants_retired': summary.get('rows_retired', 0),
+            'retirement_reason': schedule_absence.RETIREMENT_REASON if retired else None,
+            'absent_games': plan['games'],
+        },
+    }
 
 
 def refresh_non_final_games_for_slate(
@@ -278,6 +343,7 @@ def _parse_game(game):
         'game_number': _int(game.get('gameNumber')),
         'series_game_number': _int(game.get('seriesGameNumber')),
         'games_in_series': _int(game.get('gamesInSeries')),
+        'if_necessary': _str_or_none(game.get('ifNecessary')),
         'original_game_date': original_game_date,
         'original_product_date': original_game_date,
         'resumed_game_date': resumed_game_date,
@@ -333,6 +399,9 @@ def _upsert_row(team_id, opponent_team_id, home_away, parsed, source):
     row.resumed_product_date = parsed['resumed_product_date']
     row.resumed_from_game_pk = parsed['resumed_from_game_pk']
     row.resumed_to_game_pk = parsed['resumed_to_game_pk']
+    row.if_necessary = parsed['if_necessary']
+    # MLB lists the game: any recorded absence (or retirement) is superseded.
+    row.schedule_absent_since = None
     row.source = source
     return 'created' if created else 'updated'
 

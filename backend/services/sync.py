@@ -7059,6 +7059,24 @@ def run_daily_sync(
                     (slate_schedule.get('summary') or {}).get('errors'),
                     slate_schedule.get('elapsed_ms'),
                 )
+                slate_absence = (slate_schedule.get('summary') or {}).get(
+                    'absence_reconciliation'
+                ) or {}
+                run_logger.info(
+                    'Daily slate schedule absence reconciliation: status=%s '
+                    'response_consistent=%s games_retired=%s game_pks_retired=%s '
+                    'games_restored=%s participants_retired=%s absent_games=%s.',
+                    slate_absence.get('status'),
+                    slate_absence.get('response_consistent'),
+                    (slate_schedule.get('summary') or {}).get('games_retired', 0),
+                    (slate_schedule.get('summary') or {}).get('game_pks_retired', []),
+                    (slate_schedule.get('summary') or {}).get('games_restored', 0),
+                    slate_absence.get('participants_retired', 0),
+                    [
+                        (game.get('game_pk'), game.get('action'))
+                        for game in slate_absence.get('absent_games') or ()
+                    ],
+                )
             else:
                 status['schedule_finality_preflight'] = {
                     'status': 'skipped',

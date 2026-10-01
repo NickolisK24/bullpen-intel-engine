@@ -369,7 +369,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 521.6,
+      "measured_seconds": 563.6,
       "files": [
         {
           "path": "tests/test_cu01p_proof.py",
@@ -798,6 +798,10 @@
         {
           "path": "tests/test_tonight_v1_read_model.py",
           "measured_seconds": 14.0
+        },
+        {
+          "path": "tests/test_postseason_conditional_game_retirement.py",
+          "measured_seconds": 42.0
         }
       ]
     },

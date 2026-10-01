@@ -58,10 +58,18 @@ STATE_FINAL = 'final'
 STATE_POSTPONED = 'postponed'
 STATE_SUSPENDED = 'suspended'
 STATE_UNCERTAIN = 'uncertain'
-GAME_STATES = (
+# A game that will not be played: MLB cancelled it, or a later MLB schedule
+# stopped listing it (an unneeded postseason game, ``schedule_absence``). A
+# built edition never contains one (``build_tonight_v1`` leaves it out), so it
+# is not a stored state; it exists only as a served state, when the schedule
+# overlay finds a stored game cancelled after the edition was published.
+STATE_CANCELLED = 'cancelled'
+# The stored states a built edition counts in ``summary.games_by_state``.
+PUBLISHED_GAME_STATES = (
     STATE_SCHEDULED, STATE_LIVE, STATE_FINAL,
     STATE_POSTPONED, STATE_SUSPENDED, STATE_UNCERTAIN,
 )
+GAME_STATES = PUBLISHED_GAME_STATES + (STATE_CANCELLED,)
 TEAM_STATE_BUCKETS = ('fresh', 'stretched', 'vulnerable', 'withheld')
 
 KEY_ARM_ROLE_ORDER = ('trust_arm', 'bridge_arm')
@@ -236,6 +244,11 @@ def build_tonight_v1(snapshot, slate_games, *, generated_at, reference_date=None
     games = []
     excluded = 0
     for row in slate_games or ():
+        if is_cancelled_slate_row(row):
+            # Will not be played: MLB cancelled it, or a proven-complete MLB
+            # schedule stopped listing it (an unneeded postseason game). It is
+            # not on tonight's slate. A postponed game is still presented.
+            continue
         away_id = _int(getattr(row, 'away_team_id', None))
         home_id = _int(getattr(row, 'home_team_id', None))
         if away_id not in _CANONICAL_TEAM_IDS or home_id not in _CANONICAL_TEAM_IDS:
@@ -535,6 +548,15 @@ def _rotation(carrier):
     }
 
 
+def is_cancelled_slate_row(row):
+    """A slate row for a game that will not be played (cancelled, not postponed)."""
+    detailed = str(getattr(row, 'status_detailed', None) or '').lower()
+    return (
+        getattr(row, 'normalized_state', None) == SlateGame.STATE_CANCELLED
+        and 'postpon' not in detailed
+    )
+
+
 def game_state(row):
     """The one mapping from slate_games normalization to Tonight game states."""
     normalized = getattr(row, 'normalized_state', None)
@@ -546,7 +568,7 @@ def game_state(row):
     if normalized == SlateGame.STATE_COMPLETED:
         return STATE_FINAL
     if normalized == SlateGame.STATE_CANCELLED:
-        return STATE_POSTPONED if 'postpon' in detailed else STATE_UNCERTAIN
+        return STATE_POSTPONED if 'postpon' in detailed else STATE_CANCELLED
     if normalized == SlateGame.STATE_UNCERTAIN and 'suspend' in detailed:
         return STATE_SUSPENDED
     return STATE_UNCERTAIN
@@ -641,7 +663,7 @@ def present_matchup_context(context, state):
     """The context as shown for one game state; never mutates ``context``.
 
     scheduled / uncertain: unchanged. live: the sentence stays, marked
-    ``pregame_context``. final / postponed / suspended: the sentence is hidden
+    ``pregame_context``. final / postponed / suspended / cancelled: the sentence is hidden
     and marked ``pregame_context_hidden``. A hidden sentence stays hidden. Any
     earlier marker is replaced, so presenting a stored context for a new state
     is idempotent. ``evidence_state`` never changes.
@@ -656,7 +678,7 @@ def present_matchup_context(context, state):
             reason_codes.append(CONTEXT_PREGAME_HIDDEN)
     elif state == STATE_LIVE:
         reason_codes.append(CONTEXT_PREGAME)
-    elif state in (STATE_FINAL, STATE_POSTPONED, STATE_SUSPENDED):
+    elif state in (STATE_FINAL, STATE_POSTPONED, STATE_SUSPENDED, STATE_CANCELLED):
         sentence = None
         reason_codes.append(CONTEXT_PREGAME_HIDDEN)
     return {
@@ -1262,7 +1284,7 @@ def _game_order(game):
 
 
 def _summary(games, sides, league_changes=()):
-    by_state = {state: 0 for state in GAME_STATES}
+    by_state = {state: 0 for state in PUBLISHED_GAME_STATES}
     for game in games:
         by_state[game['state']] += 1
     team_states = {bucket: 0 for bucket in TEAM_STATE_BUCKETS}
