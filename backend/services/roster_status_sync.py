@@ -625,7 +625,7 @@ def _upsert_roster_status_snapshot(
             # (stale) team's official rosters; the stored row is official
             # roster evidence for its team. Absence is not a membership claim.
             return existing, 'retained', False
-        if precedence == PRECEDENCE_SUPERSEDE_EXISTING:
+        if precedence == PRECEDENCE_SUPERSEDE_EXISTING and allow_correction:
             return _supersede_unevidenced_snapshot(
                 existing, values, sync_run_id=sync_run_id,
                 timestamp=timestamp, flush=flush,
@@ -856,6 +856,13 @@ def _cache_timestamp(snapshot):
     )
 
 
+def _suppressed_writes_since(started_at):
+    from services.fence_audit import suppressed_write_count_since
+    return suppressed_write_count_since(
+        started_at, ('pitcher_projection', 'roster_snapshot'),
+    )
+
+
 def _declare_roster_ownership(team_id):
     """Declare this transaction the roster-cache writer for one team's pitchers.
 
@@ -968,6 +975,7 @@ def sync_roster_statuses(
     """
     client = client or mlb_client
     run_evidence = evidence or build_run_roster_evidence(client=client)
+    started_at = utc_now_naive()
     timestamp = timestamp or utc_now_naive()
     snapshot_date = snapshot_date or timestamp.date()
     team_ids = _team_ids_to_sync(team_ids)
@@ -1108,6 +1116,10 @@ def sync_roster_statuses(
         # (official roster presence over recorded absence) instead of conflicts.
         'snapshots_superseded': snapshot_precedence.get('superseded', 0),
         'snapshots_retained_over_absence': snapshot_precedence.get('retained', 0),
+        # Writes the database fence reverted during this sync (None where the
+        # fence cannot be observed): counted pitchers_changed / snapshot
+        # corrections are attempts, this is what did not land.
+        'fence_suppressed_writes': _suppressed_writes_since(started_at),
         'dead_letters_resolved': {
             'fetch': dead_letters_resolved.get('fetch', 0),
             'identity': dead_letters_resolved.get('identity', 0),

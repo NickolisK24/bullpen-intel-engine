@@ -116,6 +116,10 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         db.session.commit()
     else:
         db.session.flush()
+    # rows_updated counts matched rows; a write the schedule fence reverted is
+    # reported here instead of being mistaken for an applied update.
+    from services.fence_audit import suppressed_write_count_since
+    summary['rows_suppressed'] = suppressed_write_count_since(synced_at, ('schedule',))
     return summary
 
 

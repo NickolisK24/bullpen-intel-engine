@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from models.pitcher import Pitcher
 from services.mlb_api import mlb_client
+from services.fence_audit import suppressed_write_count_since
 from services.roster_status import STATUS_UNKNOWN
+from services.roster_status_sync import _declare_roster_ownership
 from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED
 from utils.db import db
 from utils.time import utc_now_naive
@@ -31,6 +33,7 @@ def apply_intraday_identity_findings(findings, *, client=None, timestamp=None):
     """
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
+    started_at = utc_now_naive()
     teams = _team_map(client)
     created = 0
     reassigned = 0
@@ -86,6 +89,11 @@ def apply_intraday_identity_findings(findings, *, client=None, timestamp=None):
             action = 'unchanged'
 
         team = teams.get(team_id) or current_team
+        # The audited official active-roster team is current-assignment
+        # evidence (the class the pitcher projection fence protects), so the
+        # write is made under that team's roster-ownership declaration;
+        # without it an adopted pitcher's correction is reverted by the fence.
+        _declare_roster_ownership(team_id)
         before = (
             pitcher.team_id,
             pitcher.team_name,
@@ -115,12 +123,18 @@ def apply_intraday_identity_findings(findings, *, client=None, timestamp=None):
         applied.append({'mlb_id': mlb_id, 'team_id': team_id, 'action': action})
 
     db.session.flush()
+    if applied:
+        from services.team_assignment_sync import _clear_roster_ownership
+        _clear_roster_ownership()
     return {
         'source': SOURCE,
         'created': created,
         'reassigned': reassigned,
         'unchanged': unchanged,
         'applied': applied,
+        'fence_suppressed_writes': suppressed_write_count_since(
+            started_at, ('pitcher_projection',),
+        ),
     }
 
 

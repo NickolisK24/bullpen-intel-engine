@@ -33,6 +33,8 @@ Contract (``schema_version`` 1)::
     run_failures         this run's unresolved dead letters by entity type,
                          with compact roster-conflict entries
     publication_critical_complete  the run's publication-critical verdict
+    fence_suppressed     {resource_type: count} of ownership-fence reverts
+                         logged during the run window (None if unobservable)
     recovery_attempted   whether a bounded repair ran before this outcome
     recovery_result      None, or the repair's class, actions and result
     recorded_at          UTC timestamp of the record
@@ -256,6 +258,7 @@ def _base(status, **fields) -> dict:
         'gate_evidence': None,
         'run_failures': None,
         'publication_critical_complete': None,
+        'fence_suppressed': None,
         'recovery_attempted': False,
         'recovery_result': None,
         'recorded_at': utc_now_naive(),
@@ -264,18 +267,30 @@ def _base(status, **fields) -> dict:
     return json_safe(document)
 
 
-def outcome_published(snapshot) -> dict:
+def _fence(since):
+    if since is None:
+        return None
+    try:
+        from services.fence_audit import suppressed_writes_since
+        return suppressed_writes_since(since)
+    except Exception:
+        return None
+
+
+def outcome_published(snapshot, *, fence_since=None) -> dict:
     snapshot_id = getattr(snapshot, 'id', None)
     return _base(
         STATUS_PUBLISHED,
         candidate_snapshot_id=snapshot_id,
         candidate_persisted=True,
         published_snapshot_id=snapshot_id,
+        fence_suppressed=_fence(fence_since),
     )
 
 
 def outcome_withheld(
     snapshot, withheld_reason, *, sync_run_id=None, publication_critical_complete=None,
+    fence_since=None,
 ) -> dict:
     """A gate kept the candidate pending; the candidate row itself survives."""
     authority = failed_authority_for_reason(withheld_reason)
@@ -291,10 +306,13 @@ def outcome_withheld(
         gate_evidence=evidence,
         run_failures=run_failures(sync_run_id),
         publication_critical_complete=publication_critical_complete,
+        fence_suppressed=_fence(fence_since),
     )
 
 
-def outcome_failed(exc, *, sync_run_id=None, publication_critical_complete=None) -> dict:
+def outcome_failed(
+    exc, *, sync_run_id=None, publication_critical_complete=None, fence_since=None,
+) -> dict:
     """The publication transaction raised and was rolled back.
 
     Structured evidence carried by the exception (a Team State proof failure)
@@ -316,4 +334,5 @@ def outcome_failed(exc, *, sync_run_id=None, publication_critical_complete=None)
         reference_dates=carried.pop('reference_dates', None),
         run_failures=run_failures(sync_run_id),
         publication_critical_complete=publication_critical_complete,
+        fence_suppressed=_fence(fence_since),
     )

@@ -5731,6 +5731,7 @@ def complete_sync_run_with_snapshot(
                     snapshot, withheld_reason,
                     sync_run_id=run.id,
                     publication_critical_complete=publication_critical_complete,
+                    fence_since=run.started_at,
                 )
             db.session.commit()
             if raise_on_withheld:
@@ -5742,7 +5743,9 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
-            run.publication_outcome = publication_outcome.outcome_published(snapshot)
+            run.publication_outcome = publication_outcome.outcome_published(
+                snapshot, fence_since=run.started_at,
+            )
         # Read before commit: telemetry must never refresh the expired row.
         published_snapshot_id = snapshot.id
         db.session.commit()
@@ -5796,6 +5799,7 @@ def complete_sync_run_with_snapshot(
             else _publication_failure_outcome(
                 exc, sync_run_id=sync_run_id,
                 publication_critical_complete=publication_critical_complete,
+                fence_since=_run_started_at(sync_run_id, started_at),
             )
         )
         sync_metadata.finish_sync_run(
@@ -5820,12 +5824,26 @@ def complete_sync_run_with_snapshot(
         raise
 
 
-def _publication_failure_outcome(exc, *, sync_run_id=None, publication_critical_complete=None):
+def _run_started_at(sync_run_id, started_at=None):
+    if started_at is not None:
+        return started_at
+    try:
+        run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+        return getattr(run, 'started_at', None)
+    except Exception:
+        db.session.rollback()
+        return None
+
+
+def _publication_failure_outcome(
+    exc, *, sync_run_id=None, publication_critical_complete=None, fence_since=None,
+):
     """Shape the failure evidence; never let doing so mask the failure itself."""
     try:
         return publication_outcome.outcome_failed(
             exc, sync_run_id=sync_run_id,
             publication_critical_complete=publication_critical_complete,
+            fence_since=fence_since,
         )
     except Exception:
         logger.exception('Publication failure outcome could not be shaped.')
