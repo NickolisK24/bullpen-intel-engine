@@ -30,6 +30,7 @@ from collections import namedtuple
 
 from models.pitcher import Pitcher
 from services.mlb_api import mlb_client
+from services.mlb_club_directory import MLB_TEAM_IDS
 from utils.db import db
 
 
@@ -47,6 +48,22 @@ ROSTER_TYPES = (
 
 CONSUMER_TEAM_ASSIGNMENT = 'team_assignment_sync'
 CONSUMER_ROSTER_STATUS = 'roster_status_sync'
+
+
+MLB_CLUB_TEAM_IDS = frozenset(MLB_TEAM_IDS)
+
+
+def is_mlb_club(team_id):
+    """Whether ``team_id`` is a Major League club (the governed D-054 registry).
+
+    Only an MLB club's official roster views are MLB roster authority. Stored
+    pitcher rows also carry minor-league affiliate IDs (organizational context
+    from ``/people`` ``currentTeam``); those are labels, never MLB authority.
+    """
+    try:
+        return int(team_id) in MLB_CLUB_TEAM_IDS
+    except (TypeError, ValueError):
+        return False
 
 
 TeamMetadata = namedtuple('TeamMetadata', ('team_map', 'error'))
@@ -90,7 +107,12 @@ class RunRosterEvidence:
     # ── Team metadata ────────────────────────────────────────
 
     def team_metadata(self):
-        """Team identity for the run: stored identity overlaid with ``/teams``."""
+        """Team labels for the run: stored identity overlaid with ``/teams``.
+
+        A *label* map. It also holds every team ID stored on a pitcher row,
+        including minor-league affiliates, so it is never the set of teams whose
+        rosters decide MLB team identity (see ``is_mlb_club``).
+        """
         if self._team_metadata is None:
             team_map = _stored_team_map()
             error = None
@@ -157,6 +179,14 @@ class RunRosterEvidence:
     def summary(self):
         """Run-level reuse counters for the daily sync log."""
         fetched_team_ids = {team_id for team_id, _ in self._rosters}
+        non_mlb_fetched = sorted(
+            team_id for team_id in fetched_team_ids if not is_mlb_club(team_id)
+        )
+        non_mlb_seen = sorted(
+            team_id for team_id in (
+                self._team_metadata.team_map if self._team_metadata else ()
+            ) if not is_mlb_club(team_id)
+        )
         fetched_roster_types = {roster_type for _, roster_type in self._rosters}
         failures = [
             {'team_id': team_id, 'roster_type': roster_type, 'error': error}
@@ -165,6 +195,11 @@ class RunRosterEvidence:
         ]
         return {
             'teams_fetched': len(fetched_team_ids),
+            'mlb_teams_queried': len(fetched_team_ids) - len(non_mlb_fetched),
+            # Non-MLB (affiliate) teams whose views were read as organizational
+            # context for pitchers stored under them; never MLB authority.
+            'non_mlb_teams_queried': non_mlb_fetched,
+            'non_mlb_teams_seen': non_mlb_seen,
             'roster_types_declared': list(self._roster_types),
             'roster_types_fetched': sorted(fetched_roster_types),
             'roster_requests': self._requests,

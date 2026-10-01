@@ -6978,6 +6978,16 @@ def run_daily_sync(
                 run_roster_evidence_summary['fetch_failures'],
                 ', '.join(run_roster_evidence_summary['consumers']) or 'no consumers',
             )
+            run_logger.info(
+                'MLB roster authority: %s MLB clubs; non-MLB teams read as '
+                'organizational context only %s; %s affiliate evidence rows, %s '
+                'excluded from MLB authority, %s true MLB roster conflicts',
+                run_roster_evidence_summary.get('mlb_teams_queried'),
+                run_roster_evidence_summary.get('non_mlb_teams_queried'),
+                roster.get('affiliate_evidence_rows', 0),
+                roster.get('affiliate_evidence_excluded_from_mlb_authority', 0),
+                roster.get('true_mlb_roster_conflicts', 0),
+            )
             active_stage = sync_metadata.STAGE_TRANSACTIONS
             stage_started = time.monotonic()
             transactions = sync_transactions(

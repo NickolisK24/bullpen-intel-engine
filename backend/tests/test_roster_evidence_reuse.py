@@ -261,10 +261,12 @@ def test_independent_fetches_still_issue_both_passes(app):
         assignment_calls = list(fake.roster_calls)
         sync_roster_statuses(client=fake, timestamp=REFERENCE_TIME, snapshot_date=REFERENCE_DATE)
 
-    # Five fixture teams x four views for team assignment, then the stored
-    # pitcher's team fetched a second time for roster status.
-    assert len(assignment_calls) == 20
-    assert len(fake.roster_calls) == 24
+    # The thirty MLB clubs x four views for team assignment (the roster
+    # authority universe is the governed club registry, not the /teams or
+    # stored-team label map), then the stored pitcher's team fetched a second
+    # time for roster status.
+    assert len(assignment_calls) == 120
+    assert len(fake.roster_calls) == 124
     assert fake.roster_calls.count((113, ROSTER_TYPE_ACTIVE)) == 2
 
 
@@ -412,8 +414,9 @@ def test_team_metadata_fetch_failure_is_equivalent(app, shares_evidence):
         'source': 'mlb_stats_api:team_assignment_sync:teams',
         'error': 'teams endpoint unavailable',
     }
-    # Stored team identity still carries the run; ownership stays resolvable.
-    assert result['teams_processed'] == 1
+    # The MLB club universe does not depend on /teams; ownership stays
+    # resolvable and stored identity still supplies the labels.
+    assert result['teams_processed'] == 30
     assert updated.team_id == 113
     assert updated.team_abbreviation == 'CIN'
 

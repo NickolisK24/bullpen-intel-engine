@@ -24,6 +24,7 @@ from services.roster_evidence import (
     ROSTER_TYPE_NON_ROSTER,
     ROSTER_TYPES,
     build_run_roster_evidence,
+    is_mlb_club,
 )
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
@@ -271,6 +272,27 @@ def classify_roster_evidence(evidence):
     return _classification(STATUS_UNKNOWN, None, f'{SOURCE_PREFIX}:unavailable')
 
 
+AFFILIATE_SOURCE_PREFIX = f'{SOURCE_PREFIX}:affiliate'
+
+
+def classify_affiliate_evidence(evidence):
+    """Classify presence on a non-MLB (affiliate) team's roster views.
+
+    An affiliate roster places the player in that organization's minor-league
+    system: it is MINORS for the MLB roster, whatever the affiliate's own
+    active/full split says. The affiliate's raw status is preserved verbatim,
+    and the source names the affiliate views it came from, so the evidence is
+    kept for organizational context without becoming MLB roster membership.
+    """
+    evidence = evidence or {}
+    roster_types = sorted(evidence.get('roster_types') or ())
+    raw_statuses = list(evidence.get('raw_statuses') or [])
+    raw = raw_statuses[0][1] if raw_statuses else 'affiliate roster'
+    return _classification(
+        STATUS_MINORS, raw, f"{AFFILIATE_SOURCE_PREFIX}:{','.join(roster_types)}"[:100],
+    )
+
+
 def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYPES, evidence=None):
     """
     Read roster evidence for one MLB team and return it by MLB player id.
@@ -486,6 +508,11 @@ def _snapshot_values(
     sync_run_id,
 ):
     roster_types = set((evidence or {}).get('roster_types') or ())
+    if evidence is not None and not is_mlb_club(team_id):
+        # ``active_roster`` / ``forty_man_roster`` mean the MLB active and
+        # 40-man rosters for every reader. Presence on an affiliate's views is
+        # recorded as observed (non-None) but never as MLB roster membership.
+        roster_types = set()
     entry = _preferred_entry(evidence)
     positions = _position_details(entry)
     return {
@@ -554,20 +581,43 @@ def _has_roster_evidence(row):
     return get('active_roster') is not None or get('forty_man_roster') is not None
 
 
+AUTHORITY_ABSENT = 0
+AUTHORITY_AFFILIATE = 1
+AUTHORITY_MLB_CLUB = 2
+
+
+def snapshot_authority_rank(row):
+    """How strong a same-date row's team claim is.
+
+    MLB club roster presence (2) > minor-league affiliate roster presence (1) >
+    recorded absence (0). The rank is derived from the row's own team ID and
+    evidence columns, so stored rows (including affiliate rows written before
+    this rule) rank deterministically without being rewritten. A row without a
+    ``team_id`` is ranked by evidence alone (presence counts as 1).
+    """
+    if not _has_roster_evidence(row):
+        return AUTHORITY_ABSENT
+    get = row.get if isinstance(row, dict) else (lambda key: getattr(row, key, None))
+    return AUTHORITY_MLB_CLUB if is_mlb_club(get('team_id')) else AUTHORITY_AFFILIATE
+
+
 def same_date_team_precedence(existing, incoming):
     """Explicit authority precedence for two same-date rows naming different teams.
 
     Official roster presence for a team outranks a row that only records the
     pitcher's absence from another team's rosters: the absent row was written
-    under a stale stored team and makes no membership claim. Two rows that both
-    carry official presence, or both carry none, are not ordered by any
-    authority and stay a conflict (fail closed). Run order never decides.
+    under a stale stored team and makes no membership claim. MLB club roster
+    presence likewise outranks presence on a minor-league affiliate: an
+    optioned pitcher sits on his club's 40-man and on the affiliate's active
+    roster at once, and only the club is MLB team identity. Two rows of equal
+    rank (two MLB clubs, two affiliates, or two absences) are not ordered by
+    any authority and stay a conflict (fail closed). Run order never decides.
     """
-    existing_evidenced = _has_roster_evidence(existing)
-    incoming_evidenced = _has_roster_evidence(incoming)
-    if existing_evidenced and not incoming_evidenced:
+    existing_rank = snapshot_authority_rank(existing)
+    incoming_rank = snapshot_authority_rank(incoming)
+    if existing_rank > incoming_rank:
         return PRECEDENCE_RETAIN_EXISTING
-    if incoming_evidenced and not existing_evidenced:
+    if incoming_rank > existing_rank:
         return PRECEDENCE_SUPERSEDE_EXISTING
     return PRECEDENCE_CONFLICT
 
@@ -590,8 +640,8 @@ def _supersede_unevidenced_snapshot(existing, values, *, sync_run_id, timestamp,
     if flush:
         db.session.flush()
     logger.info(
-        'Roster snapshot for pitcher_id=%s date=%s moved from team %s (no roster '
-        'evidence) to team %s (official roster evidence).',
+        'Roster snapshot for pitcher_id=%s date=%s moved from team %s (lower '
+        'authority) to team %s (higher authority).',
         existing.pitcher_id, existing.snapshot_date, previous_team_id, existing.team_id,
     )
     return existing
@@ -621,15 +671,25 @@ def _upsert_roster_status_snapshot(
     if existing and existing.team_id != values['team_id']:
         precedence = same_date_team_precedence(existing, values)
         if precedence == PRECEDENCE_RETAIN_EXISTING:
-            # The incoming row only records that the pitcher is absent from a
-            # (stale) team's official rosters; the stored row is official
-            # roster evidence for its team. Absence is not a membership claim.
-            return existing, 'retained', False
+            # The incoming row records absence from a (stale) team's rosters,
+            # or presence only on a minor-league affiliate; the stored row is
+            # stronger roster evidence. Neither is an MLB membership claim.
+            action = (
+                'retained_over_affiliate'
+                if snapshot_authority_rank(values) == AUTHORITY_AFFILIATE
+                else 'retained'
+            )
+            return existing, action, False
         if precedence == PRECEDENCE_SUPERSEDE_EXISTING and allow_correction:
+            action = (
+                'superseded_affiliate'
+                if snapshot_authority_rank(existing) == AUTHORITY_AFFILIATE
+                else 'superseded'
+            )
             return _supersede_unevidenced_snapshot(
                 existing, values, sync_run_id=sync_run_id,
                 timestamp=timestamp, flush=flush,
-            ), 'superseded', False
+            ), action, False
         failure = dead_letter.record_failure(
             ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
             'Roster snapshot team conflict for same pitcher/date',
@@ -640,6 +700,10 @@ def _upsert_roster_status_snapshot(
                 'snapshot_date': values['snapshot_date'].isoformat(),
                 'existing_team_id': existing.team_id,
                 'incoming_team_id': values['team_id'],
+                # Equal ranks are why this did not resolve (0 absent,
+                # 1 affiliate presence, 2 MLB club presence).
+                'existing_authority_rank': snapshot_authority_rank(existing),
+                'incoming_authority_rank': snapshot_authority_rank(values),
             },
             sync_run_id=sync_run_id,
             job_name='daily_sync',
@@ -993,7 +1057,13 @@ def sync_roster_statuses(
     dead_letters_resolved = Counter()
     reconciled_conflict_refs = []
 
+    affiliate_evidence_rows = 0
+    true_mlb_conflicts = 0
     for team_id in team_ids:
+        # Pitchers stored under a non-MLB team keep a same-date snapshot (roster
+        # readiness covers every stored team), but that team's roster views
+        # are organizational context only: never MLB roster membership.
+        mlb_club = is_mlb_club(team_id)
         index, team_errors = build_team_roster_status_index(
             team_id,
             evidence=run_evidence,
@@ -1043,7 +1113,11 @@ def sync_roster_statuses(
             evidence = index.get(pitcher.mlb_id)
             if evidence is None:
                 missing += 1
-            classification = classify_roster_evidence(evidence)
+            if evidence is not None and not mlb_club:
+                classification = classify_affiliate_evidence(evidence)
+                affiliate_evidence_rows += 1
+            else:
+                classification = classify_roster_evidence(evidence)
             status = classification['status']
             by_status[status] += 1
 
@@ -1065,12 +1139,17 @@ def sync_roster_statuses(
                 records_failed += 1
             if snapshot is None:
                 snapshot_conflicts += 1
+                if snapshot_authority_rank(values) == AUTHORITY_MLB_CLUB:
+                    true_mlb_conflicts += 1
                 continue
             if action == 'created':
                 snapshot_rows_created += 1
             elif action == 'corrected':
                 snapshot_rows_corrected += 1
-            elif action in ('superseded', 'retained'):
+            elif action in (
+                'superseded', 'retained',
+                'superseded_affiliate', 'retained_over_affiliate',
+            ):
                 snapshot_precedence[action] += 1
             else:
                 snapshot_rows_unchanged += 1
@@ -1116,6 +1195,20 @@ def sync_roster_statuses(
         # (official roster presence over recorded absence) instead of conflicts.
         'snapshots_superseded': snapshot_precedence.get('superseded', 0),
         'snapshots_retained_over_absence': snapshot_precedence.get('retained', 0),
+        # MLB club roster presence over minor-league affiliate presence: the
+        # affiliate observation never became MLB team identity.
+        'affiliate_evidence_excluded_from_mlb_authority': (
+            snapshot_precedence.get('retained_over_affiliate', 0)
+            + snapshot_precedence.get('superseded_affiliate', 0)
+        ),
+        'affiliate_evidence_rows': affiliate_evidence_rows,
+        'mlb_teams_processed': sum(1 for team_id in team_ids if is_mlb_club(team_id)),
+        'non_mlb_teams_processed': sorted(
+            team_id for team_id in team_ids if not is_mlb_club(team_id)
+        ),
+        # Equal-rank presence on two MLB clubs: the only same-date team
+        # conflict that remains, and it still fails closed.
+        'true_mlb_roster_conflicts': true_mlb_conflicts,
         # Writes the database fence reverted during this sync (None where the
         # fence cannot be observed): counted pitchers_changed / snapshot
         # corrections are attempts, this is what did not land.
