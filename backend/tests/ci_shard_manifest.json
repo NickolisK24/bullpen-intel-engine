@@ -1253,6 +1253,10 @@
           "measured_seconds": 25.0
         },
         {
+          "path": "tests/test_publication_reconciliation.py",
+          "measured_seconds": 4.0
+        },
+        {
           "path": "tests/test_rotation_game_shape_integration.py",
           "measured_seconds": 0.0
         },
