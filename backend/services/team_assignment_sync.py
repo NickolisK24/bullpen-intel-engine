@@ -9,6 +9,8 @@ uses the current team instead of the stale locally stored team.
 
 from collections import Counter, defaultdict
 
+from sqlalchemy import text
+
 from models.pitcher import Pitcher
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services.mlb_club_directory import MLB_TEAM_IDS
@@ -22,7 +24,10 @@ from services.roster_evidence import (
     build_run_roster_evidence,
 )
 from services.roster_status import STATUS_UNKNOWN
-from services.roster_status_sync import roster_entry_player_id
+from services.roster_status_sync import (
+    _declare_roster_ownership,
+    roster_entry_player_id,
+)
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -39,6 +44,24 @@ ROSTER_PRECEDENCE = (
     ROSTER_TYPE_FULL,
     ROSTER_TYPE_NON_ROSTER,
 )
+
+# Official roster views whose evidence is the same class the pitcher projection
+# fence protects (``active_roster`` / ``forty_man_roster`` membership). Only an
+# assignment proven by one of these views is written under a roster-ownership
+# declaration; every weaker source stays subject to the fence.
+OWNERSHIP_ROSTER_TYPES = (ROSTER_TYPE_ACTIVE, ROSTER_TYPE_40_MAN)
+
+# Per-pitcher outcome vocabulary reported by every run, so an aggregate such as
+# ``unknown_count`` can be read as the specific reasons behind it.
+OUTCOME_CONFIRMED_ASSIGNED = 'confirmed_assigned'
+OUTCOME_CONFIRMED_REASSIGNED = 'confirmed_reassigned'
+OUTCOME_PRESERVED_STRONG_ASSIGNMENT = 'preserved_strong_assignment'
+OUTCOME_GENUINE_UNKNOWN = 'genuine_unknown'
+OUTCOME_NO_ORGANIZATION = 'no_organization'
+OUTCOME_LOOKUP_MISSING = 'lookup_missing'
+OUTCOME_LOOKUP_FAILED = 'lookup_failed'
+OUTCOME_AUTHORITY_CONFLICT = 'authority_conflict'
+OUTCOME_ROSTER_SOURCE_FAILED = 'roster_source_failed'
 
 NO_ORGANIZATION_STATUS_VALUES = {
     'FA',
@@ -211,6 +234,7 @@ def _classification_from_roster_evidence(evidence, team_map):
             return _classification(
                 TEAM_ASSIGNMENT_ASSIGNED,
                 _source_for(roster_type),
+                roster_type=roster_type,
                 **_team_identity(team_id, team_map),
             )
         if len(team_ids) > 1:
@@ -218,6 +242,7 @@ def _classification_from_roster_evidence(evidence, team_map):
                 TEAM_ASSIGNMENT_UNKNOWN,
                 f'{SOURCE_PREFIX}:ambiguous:{roster_type}',
                 ambiguous_team_ids=team_ids,
+                authority_conflict=True,
             )
 
     return None
@@ -235,9 +260,12 @@ def _classification_from_player_info(pitcher, client, team_map):
         )
 
     if not info:
+        # The person lookup returned nothing: the source did not tell us
+        # anything, which is not evidence that the player left his team.
         return _classification(
             TEAM_ASSIGNMENT_UNKNOWN,
             f'{SOURCE_PREFIX}:people:unavailable',
+            lookup_missing=True,
         )
 
     current_team = info.get('currentTeam') or {}
@@ -313,12 +341,110 @@ def _apply_assignment(pitcher, classification, timestamp):
     return before != _assignment_fields(pitcher), before
 
 
+def _adopted_pitcher_teams():
+    """``{pitcher_id: team_id}`` for pitchers the projection fence protects.
+
+    A pitcher with a current, non-void, open-ended ``active_roster`` or
+    ``forty_man_roster`` interval in ``roster_membership_intervals`` is adopted:
+    the ``baseballos_pitcher_projection_fence`` trigger (migration
+    ``e3f6a9b2c5d8``) reverts any undeclared update of its team, assignment and
+    roster fields. Empty where the table does not exist (non-migrated schemas).
+    """
+    bind = db.session.get_bind()
+    if bind.dialect.name != 'postgresql':
+        return {}
+    present = db.session.execute(
+        text("SELECT to_regclass('public.roster_membership_intervals') IS NOT NULL")
+    ).scalar()
+    if not present:
+        return {}
+    rows = db.session.execute(text(
+        "SELECT pitcher_id, team_id FROM roster_membership_intervals "
+        "WHERE is_current_version AND NOT is_void AND effective_end_date IS NULL "
+        "AND membership_type IN ('active_roster', 'forty_man_roster')"
+    )).all()
+    adopted = {}
+    for pitcher_id, team_id in rows:
+        adopted.setdefault(pitcher_id, set()).add(team_id)
+    return adopted
+
+
+def _suppressed_projection_writes_since(started_at):
+    """Fence-reverted pitcher writes logged since ``started_at`` (Postgres only)."""
+    bind = db.session.get_bind()
+    if bind.dialect.name != 'postgresql':
+        return None
+    present = db.session.execute(
+        text("SELECT to_regclass('public.compatibility_write_events') IS NOT NULL")
+    ).scalar()
+    if not present:
+        return None
+    return int(db.session.execute(text(
+        "SELECT count(*) FROM compatibility_write_events "
+        "WHERE resource_type='pitcher_projection' AND outcome='stale_suppressed' "
+        "AND created_at >= :since"
+    ), {'since': started_at}).scalar() or 0)
+
+
+def _clear_roster_ownership():
+    if db.session.get_bind().dialect.name != 'postgresql':
+        return
+    db.session.flush()
+    db.session.execute(text("SELECT set_config('baseballos.roster_owner', '', true)"))
+
+
+def _owner_team_for(classification):
+    """The team whose ownership an official roster confirmation may declare."""
+    if (
+        classification['status'] == TEAM_ASSIGNMENT_ASSIGNED
+        and classification.get('roster_type') in OWNERSHIP_ROSTER_TYPES
+        and classification.get('team_id') is not None
+    ):
+        return classification['team_id']
+    return None
+
+
+def _outcome(classification, before_team_id):
+    if classification.get('fetch_failed'):
+        return OUTCOME_LOOKUP_FAILED
+    if classification.get('lookup_missing'):
+        return OUTCOME_LOOKUP_MISSING
+    if classification.get('authority_conflict'):
+        return OUTCOME_AUTHORITY_CONFLICT
+    status = classification['status']
+    if status == TEAM_ASSIGNMENT_ASSIGNED:
+        if before_team_id not in (None, classification.get('team_id')):
+            return OUTCOME_CONFIRMED_REASSIGNED
+        return OUTCOME_CONFIRMED_ASSIGNED
+    if status == TEAM_ASSIGNMENT_NO_ORGANIZATION:
+        return OUTCOME_NO_ORGANIZATION
+    return OUTCOME_GENUINE_UNKNOWN
+
+
 def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=True, evidence=None):
     """
     Persist authoritative organization ownership for every tracked pitcher.
 
-    Missing or ambiguous authority is fail-closed: the stale team assignment is
-    cleared and the pitcher is marked inactive until ownership can be resolved.
+    Authority precedence, strongest first:
+
+    1. An official ``active`` or ``40Man`` roster view naming exactly one team.
+       This is current MLB roster membership. It is written under a
+       transaction-local ``baseballos.roster_owner`` declaration for that team,
+       so the pitcher projection fence accepts it for adopted pitchers, the
+       same rule the roster-status writer follows.
+    2. An official ``fullRoster`` / ``nonRosterInvitees`` view, then the MLB
+       person record (``currentTeam`` or an explicit free-agent/released
+       status). These are written without a declaration.
+    3. Absence of evidence. An empty person lookup, a failed person fetch or a
+       failed roster fetch for the stored team writes nothing: "the source did
+       not tell us" is not evidence that the player left his team.
+
+    Missing or ambiguous authority still fails closed for a pitcher the fence
+    does not protect: the stale team assignment is cleared. For an adopted
+    pitcher, whose current active/40-man membership is already proven, a
+    weaker source never overwrites it: the write is skipped and reported as
+    ``preserved_strong_assignment`` instead of being silently reverted by the
+    database. Only an official active/40-man confirmation can change it.
 
     ``evidence`` is this run's shared roster evidence. Passing the same evidence
     to the roster-status stage lets one official fetch pass serve both consumers;
@@ -326,6 +452,7 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
     """
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
+    started_at = utc_now_naive()
     assignment_evidence = build_team_assignment_index(
         team_ids=team_ids,
         client=client,
@@ -340,14 +467,32 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
         if item.get('team_id') is not None
     }
 
+    adopted = _adopted_pitcher_teams()
     pitchers = Pitcher.query.filter(Pitcher.mlb_id.isnot(None)).all()
     by_status = Counter()
+    outcomes = Counter()
     refreshed = 0
     changed = 0
     reassigned = 0
     cleared = 0
     lookup_errors = 0
+    declared_writes = defaultdict(list)
 
+    def record(pitcher, classification):
+        nonlocal changed, reassigned, cleared, refreshed
+        by_status[classification['status']] += 1
+        was_changed, before = _apply_assignment(pitcher, classification, timestamp)
+        if was_changed:
+            changed += 1
+            if classification['status'] == TEAM_ASSIGNMENT_ASSIGNED and before.get('team_id') not in (None, classification.get('team_id')):
+                reassigned += 1
+            if classification['status'] != TEAM_ASSIGNMENT_ASSIGNED and before.get('team_id') is not None:
+                cleared += 1
+        refreshed += 1
+
+    # Undeclared writes first. A roster-ownership declaration lasts until the
+    # transaction ends, so nothing may be written without one after the first
+    # declaration is made.
     for pitcher in pitchers:
         classification = classify_team_assignment(
             pitcher,
@@ -362,25 +507,44 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
                 'source': classification['source'],
                 'error': classification['lookup_error'],
             })
-        if classification.get('fetch_failed') or (
+        outcome = _outcome(classification, pitcher.team_id)
+        if classification.get('fetch_failed') or classification.get('lookup_missing'):
+            outcomes[outcome] += 1
+            continue
+        if (
             classification['status'] == TEAM_ASSIGNMENT_UNKNOWN
             and pitcher.team_id in roster_error_team_ids
         ):
+            outcomes[OUTCOME_ROSTER_SOURCE_FAILED] += 1
             continue
 
-        by_status[classification['status']] += 1
+        owner_team = _owner_team_for(classification)
+        if owner_team is not None:
+            declared_writes[owner_team].append((pitcher, classification, outcome))
+            continue
+        if pitcher.id in adopted:
+            # Current active/40-man membership is already proven for this
+            # pitcher; a weaker or absent source cannot overwrite it.
+            outcomes[
+                OUTCOME_AUTHORITY_CONFLICT if outcome == OUTCOME_AUTHORITY_CONFLICT
+                else OUTCOME_PRESERVED_STRONG_ASSIGNMENT
+            ] += 1
+            continue
+        outcomes[outcome] += 1
+        record(pitcher, classification)
 
-        was_changed, before = _apply_assignment(pitcher, classification, timestamp)
-        if was_changed:
-            changed += 1
-            if classification['status'] == TEAM_ASSIGNMENT_ASSIGNED and before.get('team_id') not in (None, classification.get('team_id')):
-                reassigned += 1
-            if classification['status'] != TEAM_ASSIGNMENT_ASSIGNED and before.get('team_id') is not None:
-                cleared += 1
-        refreshed += 1
+    for owner_team in sorted(declared_writes):
+        _declare_roster_ownership(owner_team)
+        for pitcher, classification, outcome in declared_writes[owner_team]:
+            outcomes[outcome] += 1
+            record(pitcher, classification)
+    if declared_writes:
+        _clear_roster_ownership()
 
     if commit:
         db.session.commit()
+    else:
+        db.session.flush()
 
     return {
         'source': SOURCE_PREFIX,
@@ -395,4 +559,7 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
         'lookup_errors': lookup_errors,
         'error_details': errors,
         'by_status': dict(sorted(by_status.items())),
+        'outcomes': dict(sorted(outcomes.items())),
+        'ownership_declared_teams': len(declared_writes),
+        'fence_suppressed_writes': _suppressed_projection_writes_since(started_at),
     }

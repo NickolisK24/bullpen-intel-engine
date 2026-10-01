@@ -7096,6 +7096,8 @@ def run_daily_sync(
             status['team_assignments_reassigned'] = team_assignment['reassigned_count']
             status['team_assignment_no_organization'] = team_assignment['no_organization_count']
             status['team_assignment_unknown'] = team_assignment['unknown_count']
+            status['team_assignment_outcomes'] = team_assignment.get('outcomes')
+            status['team_assignment_fence_suppressed'] = team_assignment.get('fence_suppressed_writes')
             status['roster_statuses_refreshed'] = roster['pitchers_refreshed']
             status['roster_statuses_changed'] = roster['pitchers_changed']
             status['roster_status_unknown'] = roster['unknown_count']

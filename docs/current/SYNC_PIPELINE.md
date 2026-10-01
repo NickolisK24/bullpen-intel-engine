@@ -482,6 +482,40 @@ Diagnosis query: count `compatibility_write_events` rows with
 `resource_type='pitcher_projection'` and `outcome='stale_suppressed'`, then
 compare with `roster_status_cache_divergences(team_ids=[...])`.
 
+### 15C. Team-assignment writer (October 1 Team State 118/133/140 incident)
+
+`team_assignment_sync.sync_team_assignments` is the other `main` writer of the
+fenced fields, and it never declared roster ownership either. The runtime
+adopted recent call-ups with `team_id` and `active` set but no
+`team_assignment_status`. Every official active-roster confirmation `main`
+wrote for them was then reverted by the fence. The ORM still counted these
+rows in `team_assignments_changed`, and each revert logged a `stale_suppressed`
+event. Ledger-confirmed rest for unscored relievers requires
+`team_assignment_status='ASSIGNED'`, so these arms stayed unresolved. Daily
+SyncRun 93203 then withheld candidate 4153 for teams 118, 133 and 140.
+
+Assignment precedence is now explicit:
+
+1. An official `active` or `40Man` roster view naming exactly one team is
+   written under a transaction-local `baseballos.roster_owner` declaration for
+   that team. This is the same class of evidence the fence protects.
+2. An official `fullRoster` or `nonRosterInvitees` view, or the MLB person
+   record (`currentTeam` or an explicit free-agent/released status), is
+   written undeclared.
+3. An empty person lookup, a failed person fetch, or a failed roster fetch for
+   the stored team writes nothing.
+
+For an adopted pitcher, a write from source 2 or 3, or an ambiguous
+classification, is skipped explicitly. The run reports it as
+`preserved_strong_assignment` or `authority_conflict` instead of writing it
+and having the database revert it.
+
+Each run reports `outcomes` (`confirmed_assigned`, `confirmed_reassigned`,
+`preserved_strong_assignment`, `genuine_unknown`, `no_organization`,
+`lookup_missing`, `lookup_failed`, `authority_conflict`,
+`roster_source_failed`) and `fence_suppressed_writes`. The daily status carries
+them as `team_assignment_outcomes` and `team_assignment_fence_suppressed`.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:
