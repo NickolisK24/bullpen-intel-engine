@@ -743,6 +743,82 @@ The ingest summary carries:
 
 Daily logs one line for it after the slate schedule refresh.
 
+## 15G. Canonical preparation happens before the candidate (SyncRun 93277)
+
+### Incident
+
+Postgame Primary SyncRun 93277 (2026-10-02 ~04:05Z) built candidate 4190 for
+slate 2026-10-01. Slate coverage correctly withheld it: three unneeded Wild
+Card Game 3s (849840, 849847, 849850) were still stored as `scheduled`/`S`.
+
+Later in the same execution, the governed runner (`sync_due._run_postgame`)
+refreshed the rolling schedule window Oct 1..Oct 5. That refresh made #904's
+confirming observation and retired exactly those three games. Nothing then
+reconsidered publication, so 4157 stayed served even though canonical
+authority had become publishable.
+
+### Why the refresh came after the candidate
+
+The runner's window refresh dates from TN-11.7. It was added as schedule
+coherence for the Tonight handoff, after the sync and its publication. Daily
+had separately gained the same window refresh before its candidate
+(`_refresh_daily_slate_schedule_window`). Postgame's only pre-candidate
+schedule work was the single-date finality preflight, and #904's reschedule
+lookahead can never confirm a retirement on a single-date window. No
+invariant required the post-candidate order.
+
+### Fix: reorder, not rebuild
+
+Postgame now refreshes the same rolling window before building its candidate:
+
+- the reference is the runner's presented ET date;
+- source `postgame_slate_schedule`;
+- it runs under the same `SYNC_SCHEDULE_FINALITY_PREFLIGHT` switch as Daily.
+
+When the lane's own pre-candidate refresh succeeded for exactly the window
+the runner presents, the runner reuses it as its schedule authority and does
+not refresh again. That second refresh was the late mutation. The runner
+refreshes after the candidate only when the lane did not prepare the window
+(disabled, failed or partial, or a different window); that is the previous
+behaviour.
+
+A failed preparation does not publish anything: the slate gate stays
+fail-closed exactly as before.
+
+No candidate is rebuilt, and no withheld candidate changes. A post-candidate
+rebuild is unnecessary for this topology and is not implemented.
+
+### WP-1 evidence
+
+`publication_outcome.canonical_preparation` records, on every published,
+withheld or failed outcome built after a prepared window:
+
+- `schedule_refresh_status`
+- `window`
+- `prepared_before_candidate`
+- `absence_status`
+- `games_retired` / `game_pks_retired`
+- `games_restored` / `game_pks_restored`
+
+The runner's `schedule_refresh` carries `prepared_before_candidate`.
+
+### Preparation barrier (future invariant)
+
+Every canonical mutation that certification reads should happen before the
+candidate is built:
+
+1. workload ingestion
+2. schedule reconciliation
+3. roster authority
+4. derived state
+5. candidate
+
+Daily and Postgame now meet this for schedule authority. The remaining
+post-candidate steps (Tonight edition, distribution) read the published
+authority and do not mutate what certification reads. A bounded rebuild
+should be added only if a genuinely late canonical mutation is ever proven
+necessary.
+
 ## 16. Operator Response to a Failed Daily Sync
 
 When a daily run fails:

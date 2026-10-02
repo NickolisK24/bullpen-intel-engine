@@ -806,7 +806,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 524.4,
+      "measured_seconds": 531.4,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1447,6 +1447,10 @@
         {
           "path": "tests/test_mlb_roster_authority_universe.py",
           "measured_seconds": 3.0
+        },
+        {
+          "path": "tests/test_publication_preparation_barrier.py",
+          "measured_seconds": 7.0
         }
       ]
     },
