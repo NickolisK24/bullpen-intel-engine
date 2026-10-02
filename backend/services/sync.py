@@ -3695,13 +3695,21 @@ def _refresh_daily_schedule_finality_window(
     }
 
 
-def _refresh_daily_slate_schedule_window(reference_date: date) -> dict:
-    """Refresh the WP42 yesterday-through-+3 schedule authority window."""
+def _refresh_daily_slate_schedule_window(
+    reference_date: date, *, source: str = 'daily_slate_schedule',
+) -> dict:
+    """Refresh the WP42 yesterday-through-+3 schedule authority window.
+
+    Canonical preparation: Daily and Postgame run this BEFORE building their
+    Dashboard candidate, so schedule reconciliation that changes what the
+    slate gate reads (finality, cancellation, postseason conditional-game
+    retirement) is in place when the candidate is certified, never after it.
+    """
     started = time.perf_counter()
     try:
         result = schedule_authority.ingest_rolling_window(
             reference_date,
-            source='daily_slate_schedule',
+            source=source,
         )
     except Exception as exc:  # noqa: BLE001 - sync continues with stale authority
         db.session.rollback()
@@ -3716,6 +3724,36 @@ def _refresh_daily_slate_schedule_window(reference_date: date) -> dict:
         }
     result['elapsed_ms'] = round((time.perf_counter() - started) * 1000, 1)
     return result
+
+
+def _postgame_slate_window_reference(window_time):
+    """The ET date whose rolling schedule window a postgame execution prepares.
+
+    The same date the governed runner presents (``sync_due.tonight_reference_
+    date``), so the runner can reuse this refresh instead of repeating it
+    after the candidate.
+    """
+    moment = window_time or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(schedule_authority.EASTERN).date()
+
+
+def schedule_preparation_evidence(slate_schedule):
+    """Compact WP-1 record of the schedule preparation a candidate was built on."""
+    slate_schedule = slate_schedule or {}
+    summary = slate_schedule.get('summary') or {}
+    absence = summary.get('absence_reconciliation') or {}
+    return {
+        'schedule_refresh_status': slate_schedule.get('status'),
+        'window': [slate_schedule.get('start_date'), slate_schedule.get('end_date')],
+        'prepared_before_candidate': True,
+        'absence_status': absence.get('status'),
+        'games_retired': int(summary.get('games_retired') or 0),
+        'game_pks_retired': list(summary.get('game_pks_retired') or []),
+        'games_restored': int(summary.get('games_restored') or 0),
+        'game_pks_restored': list(summary.get('game_pks_restored') or []),
+    }
 
 
 def _refresh_postgame_schedule_finality(
@@ -5676,6 +5714,7 @@ def complete_sync_run_with_snapshot(
     job_name=sync_metadata.JOB_DAILY_SYNC,
     raise_on_withheld=True,
     reconciler=None,
+    preparation=None,
 ):
     """Finish a sync run and publish its Dashboard candidate.
 
@@ -5692,6 +5731,9 @@ def complete_sync_run_with_snapshot(
     repair: a withheld candidate whose persisted gate evidence classifies as
     locally repairable is repaired once and rebuilt once. Every evaluation is
     recorded in the outcome; no gate changes.
+
+    ``preparation`` is the canonical preparation the candidate was built on
+    (``schedule_preparation_evidence``); it is recorded on every outcome.
     """
     from services import dashboard_snapshot as dashboard_snapshot_service
 
@@ -5746,7 +5788,7 @@ def complete_sync_run_with_snapshot(
             withheld_reason = publication_withheld_reason(snapshot)
             if run is not None:
                 run.error_message = withheld_reason
-                run.publication_outcome = _with_recovery(
+                run.publication_outcome = _with_preparation(_with_recovery(
                     publication_outcome.outcome_withheld(
                         snapshot, withheld_reason,
                         sync_run_id=run.id,
@@ -5754,7 +5796,7 @@ def complete_sync_run_with_snapshot(
                         fence_since=getattr(run, 'started_at', None),
                     ),
                     recovery,
-                )
+                ), preparation)
             db.session.commit()
             if raise_on_withheld:
                 raise DashboardSnapshotPublicationWithheld(
@@ -5765,12 +5807,12 @@ def complete_sync_run_with_snapshot(
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
-            run.publication_outcome = _with_recovery(
+            run.publication_outcome = _with_preparation(_with_recovery(
                 publication_outcome.outcome_published(
                     snapshot, fence_since=getattr(run, 'started_at', None),
                 ),
                 recovery,
-            )
+            ), preparation)
         # Read before commit: telemetry must never refresh the expired row.
         published_snapshot_id = snapshot.id
         db.session.commit()
@@ -5827,6 +5869,8 @@ def complete_sync_run_with_snapshot(
                 fence_since=_run_started_at(sync_run_id, started_at),
             )
         )
+        if failure_outcome is not None:
+            failure_outcome = _with_preparation(failure_outcome, preparation)
         sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
@@ -5847,6 +5891,21 @@ def complete_sync_run_with_snapshot(
             publication_outcome=failure_outcome,
         )
         raise
+
+
+def _preparation_for(status):
+    slate_schedule = (status or {}).get('slate_schedule_refresh')
+    if not isinstance(slate_schedule, dict) or slate_schedule.get('status') == 'skipped':
+        return None
+    return schedule_preparation_evidence(slate_schedule)
+
+
+def _with_preparation(outcome, preparation):
+    if preparation is None or outcome is None:
+        return outcome
+    outcome = dict(outcome)
+    outcome['canonical_preparation'] = publication_outcome.json_safe(preparation)
+    return outcome
 
 
 def _with_recovery(outcome, recovery):
@@ -6233,6 +6292,35 @@ def run_postgame_refresh(
                 }
             status['records_failed'] += schedule_finality_records_failed
             status['errors'] += schedule_finality_records_failed
+            if _sync_schedule_finality_preflight_enabled():
+                # Canonical preparation before the candidate (SyncRun 93277).
+                # The governed runner used to refresh this window only AFTER the
+                # candidate was built and withheld, so a postseason game retired
+                # by that refresh never reached the slate gate in the same
+                # execution. Its failure stays fail-closed at the gate.
+                slate_schedule = _refresh_daily_slate_schedule_window(
+                    _postgame_slate_window_reference(window_time or started_at),
+                    source='postgame_slate_schedule',
+                )
+                status['slate_schedule_refresh'] = slate_schedule
+                run_logger.info(
+                    'Postgame slate schedule refresh completed: status=%s '
+                    'window=%s..%s games_seen=%s games_retired=%s '
+                    'game_pks_retired=%s errors=%s elapsed_ms=%s.',
+                    slate_schedule.get('status'),
+                    slate_schedule.get('start_date'),
+                    slate_schedule.get('end_date'),
+                    (slate_schedule.get('summary') or {}).get('games_seen'),
+                    (slate_schedule.get('summary') or {}).get('games_retired', 0),
+                    (slate_schedule.get('summary') or {}).get('game_pks_retired', []),
+                    (slate_schedule.get('summary') or {}).get('errors'),
+                    slate_schedule.get('elapsed_ms'),
+                )
+            else:
+                status['slate_schedule_refresh'] = {
+                    'status': 'skipped',
+                    'reason': 'disabled',
+                }
             active_stage = sync_metadata.STAGE_LOG_INGESTION
 
             completed_games = []
@@ -6684,6 +6772,7 @@ def run_postgame_refresh(
                     snapshot_source='postgame_refresh',
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                     raise_on_withheld=False,
+                    preparation=_preparation_for(status),
                 )
                 status['dashboard_snapshot_id'] = snapshot.id
                 postgame_published = is_trusted_publication(snapshot)
@@ -7348,6 +7437,7 @@ def run_daily_sync(
                         started_at=started_at.replace(tzinfo=None),
                         snapshot_source='scheduled_sync',
                         reconciler=publication_reconciliation.default_reconciler(),
+                        preparation=_preparation_for(status),
                     )
                 except DashboardSnapshotPublicationWithheld as withheld:
                     # The Daily Primary requires trusted currentness to advance: the

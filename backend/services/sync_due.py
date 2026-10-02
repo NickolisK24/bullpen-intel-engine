@@ -197,8 +197,36 @@ def _ensure_current_tonight_v1(context, *, include_publication_edition=True):
     return result
 
 
-def _refresh_schedule_proof(proof, status, source):
-    schedule = refresh_schedule(source=source)
+def _refresh_schedule_proof(proof, status, context):
+    """Schedule authority for the run's Tonight handoff and execution proof.
+
+    Preparation barrier (SyncRun 93277): Daily and Postgame refresh the same
+    rolling window BEFORE they build the Dashboard candidate. When that
+    pre-candidate refresh succeeded for exactly the window this runner
+    presents, it is the run's schedule authority and is not repeated: a
+    second refresh here, after the candidate was certified, is how a
+    postseason game retired too late to reach the slate gate. Only when the
+    lane did not prepare the window (disabled, failed, or a different window)
+    does the runner refresh it here, as before.
+    """
+    reference_date = tonight_reference_date(context)
+    prepared = status.get('slate_schedule_refresh') or {}
+    start_date, end_date = schedule_authority.rolling_window(reference_date)
+    if (
+        prepared.get('status') == 'ok'
+        and prepared.get('start_date') == start_date.isoformat()
+        and prepared.get('end_date') == end_date.isoformat()
+    ):
+        schedule = {
+            'status': 'ok',
+            'reference_date': reference_date.isoformat(),
+            'schedule': prepared,
+            'prepared_before_candidate': True,
+            'legacy_tonight_v5': 'not_generated',
+        }
+    else:
+        schedule = refresh_schedule(source=context.source)
+        schedule['prepared_before_candidate'] = False
     status['schedule_refresh'] = schedule
     proof['schedule_refresh_verified'] = schedule.get('status') == 'ok'
     return schedule
@@ -218,7 +246,7 @@ def _run_daily(app, context, guard, *, days_back, public_only):
         publication_critical=status.get('publication_critical'),
         sync_status=status.get('status'),
     )
-    schedule = _refresh_schedule_proof(proof, status, context.source)
+    schedule = _refresh_schedule_proof(proof, status, context)
     proof['tonight_v1'] = _ensure_current_tonight_v1(context)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
@@ -253,7 +281,7 @@ def _run_postgame(app, context, guard, *, public_only):
         or proof.get('league_publication_status')
         == LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
     )
-    schedule = _refresh_schedule_proof(proof, status, context.source)
+    schedule = _refresh_schedule_proof(proof, status, context)
     proof['tonight_v1'] = _ensure_current_tonight_v1(context)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
