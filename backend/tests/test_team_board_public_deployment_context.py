@@ -256,22 +256,28 @@ def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
     rows = [
         (prior, pitcher),
         (_log(13, li=.5, day=prior_day), pitcher),
+        (_log(15, li=.5, day=prior_day), pitcher),
         (recent, pitcher),
         (_log(14, li=2.0, day=recent_day), pitcher),
+        (_log(16, li=2.0, day=recent_day), pitcher),
     ]
-    rows[1][0].game_type = 'D'
-    rows[3][0].game_type = 'D'
+    for log, _ in rows:
+        log.game_type = 'D'
     events = {
         11: [_event(11, 1, 2000, inning=6, fielding=OTHER), _event(11, 2, 1001, inning=6, fielding=TEAM)],
         13: [_event(13, 1, 2000, inning=6, fielding=OTHER), _event(13, 2, 1001, inning=6, fielding=TEAM)],
+        15: [_event(15, 1, 2000, inning=6, fielding=OTHER), _event(15, 2, 1001, inning=6, fielding=TEAM)],
         12: [_event(12, 1, 2000, inning=9, fielding=OTHER), _event(12, 2, 1001, inning=9, fielding=TEAM)],
         14: [_event(14, 1, 2000, inning=9, fielding=OTHER), _event(14, 2, 1001, inning=9, fielding=TEAM)],
+        16: [_event(16, 1, 2000, inning=9, fielding=OTHER), _event(16, 2, 1001, inning=9, fielding=TEAM)],
     }
     markers = {
         11: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=prior_day, home_team_id=TEAM, away_team_id=OTHER),
         13: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=prior_day, home_team_id=TEAM, away_team_id=OTHER),
+        15: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=prior_day, home_team_id=TEAM, away_team_id=OTHER),
         12: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=recent_day, home_team_id=TEAM, away_team_id=OTHER),
         14: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=recent_day, home_team_id=TEAM, away_team_id=OTHER),
+        16: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=recent_day, home_team_id=TEAM, away_team_id=OTHER),
     }
     result = build_public_deployment_context(
         TEAM, rows, DAY, markers=markers, events_by_game=events,
@@ -281,8 +287,8 @@ def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
     assert movement['status'] == 'complete'
     assert movement['movement'] == 'later_or_higher_leverage'
     assert movement['game_types'] == ['D', 'F', 'L', 'R', 'W']
-    assert movement['prior_window']['appearances'] == 2
-    assert movement['recent_window']['appearances'] == 2
+    assert movement['prior_window']['appearances'] == 3
+    assert movement['recent_window']['appearances'] == 3
 
 
 def test_role_movement_withholds_when_team_change_removes_prior_comparable_work():
@@ -316,7 +322,7 @@ def test_frozen_carrier_copies_role_movement_without_recomputing_it():
             'public_label': 'Recent deployment shifted toward later or higher-leverage work.',
             'signals': [],
             'population_basis': 'official_appearance_team_relief_appearances',
-            'game_types': ['P', 'R'],
+            'game_types': ['D', 'F', 'L', 'R', 'W'],
             'recent_window': {},
             'prior_window': {},
         }],
