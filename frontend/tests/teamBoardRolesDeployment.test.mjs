@@ -140,7 +140,7 @@ test('production uses the shared v2 request and leaves later packages untouched'
   assert.ok(boardSource.includes('<TeamBoardPerformance'))
   assert.ok(boardSource.includes('<SectionPair label="Roles and performance" ratio="7:5">'))
   assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
-  for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'roleMovement', 'role_movement']) {
+  for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'role_movement']) {
     assert.equal(componentSource.includes(forbidden), false, forbidden)
   }
 })
@@ -216,7 +216,36 @@ test('frontend does not calculate role, leverage bands, movement, or future depl
   const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRolesDeployment.jsx', import.meta.url), 'utf8')
   const adapterSource = await readFile(new URL('../src/adapters/teamBoardV2.js', import.meta.url), 'utf8')
   for (const source of [componentSource, adapterSource]) {
-    for (const forbidden of ['1.5', '0.85', 'role_movement', 'next save', 'Closer']) assert.equal(source.includes(forbidden), false, forbidden)
+    for (const forbidden of ['1.5', '0.85', 'next save', 'Closer']) assert.equal(source.includes(forbidden), false, forbidden)
   }
+  assert.equal(componentSource.includes('role_movement'), false)
   for (const forbidden of ['.reduce(', 'Math.', 'save ?']) assert.equal(componentSource.includes(forbidden), false, forbidden)
+})
+
+
+test('governed role movement renders backend-authored direction without frontend baseball math', () => {
+  const deployment = frozen()
+  const html = renderRoles({ read: { ...read, frozenPublicDeployment: deployment } })
+  assert.ok(html.includes('Recent deployment shifted toward later or higher-leverage work.'))
+  assert.ok(html.includes('Recent 7 days: 3 appearances'))
+  assert.ok(html.includes('Prior 7 days: 2 appearances'))
+})
+
+test('missing or unavailable role movement stays locally quiet', () => {
+  const carrier = frozenPublicDeploymentFixture()
+  carrier.role_movement = {
+    status: 'unavailable',
+    reason_code: 'insufficient_comparable_pitcher_evidence',
+    profiles: [{
+      ...carrier.role_movement.profiles[0],
+      status: 'unavailable',
+      movement: null,
+      public_label: null,
+      reason_code: 'insufficient_appearances',
+    }],
+  }
+  const deployment = readTeamBoardFrozenDeployment(carrier, publicationIdentity)
+  const html = renderRoles({ read: { ...read, frozenPublicDeployment: deployment } })
+  assert.equal(html.includes('role-movement-note'), false)
+  assert.ok(html.includes('Frozen observed bullpen deployment'))
 })
