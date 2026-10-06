@@ -296,6 +296,7 @@ export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
 }
 
 const publicRoleLabels = new Set(['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear'])
+const ROLE_MOVEMENT_MIN_APPEARANCES = 3
 
 function readDeploymentDomain(source, fields) {
   if (!source || !recentUsageRestStates.has(source.status)
@@ -350,7 +351,9 @@ function readRoleMovement(source) {
       || JSON.stringify(item.game_types) !== JSON.stringify(['D', 'F', 'L', 'R', 'W'])
       || !recent || !prior) return null
     if (item.status === 'complete') {
-      if (!['stable', 'later_or_higher_leverage', 'earlier_or_lower_leverage'].includes(item.movement)
+      if (recent.appearances < ROLE_MOVEMENT_MIN_APPEARANCES
+        || prior.appearances < ROLE_MOVEMENT_MIN_APPEARANCES
+        || !['stable', 'later_or_higher_leverage', 'earlier_or_lower_leverage'].includes(item.movement)
         || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
     } else if (item.public_label != null || item.movement != null) return null
     return {
