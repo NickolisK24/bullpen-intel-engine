@@ -10,6 +10,7 @@ from datetime import timedelta
 from math import isfinite
 
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
+from services import role_movement
 from utils.db import db
 
 
@@ -83,24 +84,108 @@ def _entry_for(log, pitcher, events, marker):
     return inning, margin
 
 
+def _movement_window(appearances, start, end, *, markers, events_by_game):
+    scoped = [
+        (log, pitcher) for log, pitcher in appearances
+        if start <= log.game_date <= end
+    ]
+    entry_known = late = leverage_known = high = 0
+    for log, pitcher in scoped:
+        inning, _ = _entry_for(
+            log, pitcher, events_by_game.get(log.mlb_game_pk, []),
+            markers.get(log.mlb_game_pk),
+        )
+        if inning is not None:
+            entry_known += 1
+            late += int(inning >= role_movement.LATE_ENTRY_INNING_MIN)
+        li = _recorded_li(getattr(log, 'leverage_index', None))
+        if li is not None:
+            leverage_known += 1
+            high += int(li >= HIGH_LEVERAGE_MIN)
+    return {
+        'start_date': start.isoformat(),
+        'through_date': end.isoformat(),
+        'window_days': role_movement.WINDOW_DAYS,
+        'appearances': len(scoped),
+        'season_phase': role_movement.season_phase(log.game_type for log, _ in scoped),
+        'eighth_or_later_appearances': late,
+        'known_entry_appearances': entry_known,
+        'high_leverage_appearances': high,
+        'known_leverage_appearances': leverage_known,
+    }
+
+
+def _role_movement_for_pitcher(pitcher_id, appearances, anchor, *, markers, events_by_game):
+    recent_start, recent_end, prior_start, prior_end = role_movement.window_bounds(anchor)
+    recent = _movement_window(
+        appearances, recent_start, recent_end,
+        markers=markers, events_by_game=events_by_game,
+    )
+    prior = _movement_window(
+        appearances, prior_start, prior_end,
+        markers=markers, events_by_game=events_by_game,
+    )
+    return {
+        'pitcher_id': pitcher_id,
+        **role_movement.classify_observed_role_movement(recent=recent, prior=prior),
+        'recent_window': recent,
+        'prior_window': prior,
+    }
+
+
+def _role_movement_carrier(population, anchor, *, markers, events_by_game):
+    profiles = [
+        _role_movement_for_pitcher(
+            pitcher_id, appearances, anchor,
+            markers=markers, events_by_game=events_by_game,
+        )
+        for pitcher_id, appearances in sorted(population.items())
+    ]
+    published = sum(item['status'] == 'complete' for item in profiles)
+    status = (
+        'complete' if profiles and published == len(profiles)
+        else 'partial' if published
+        else 'unavailable'
+    )
+    return {
+        'contract': role_movement.CONTRACT,
+        'method_version': role_movement.METHOD_VERSION,
+        'status': status,
+        'reason_code': None if status == 'complete' else 'insufficient_comparable_pitcher_evidence',
+        'population_basis': 'official_appearance_team_relief_appearances',
+        'game_types': sorted(role_movement.GAME_TYPES),
+        'data_through': anchor.isoformat(),
+        'profiles': profiles,
+    }
+
+
 def build_public_deployment_context(
     team_id, rows, anchor, *, markers, events_by_game, pitcher_ids=(),
 ):
     """Project one team's official relief rows; inputs are already bounded to D-13..D."""
     start = anchor - timedelta(days=WINDOW_DAYS - 1)
     grouped = defaultdict(list)
+    # The 14-day profile stays regular-season only. Role movement is its own
+    # versioned sub-contract over the same bounded rows: both seven-day
+    # windows sit inside [D-13, D], and it also admits postseason games.
+    movement_grouped = defaultdict(list)
     for log, pitcher in rows:
         if (
-            log.appearance_team_id == team_id
-            and log.game_date is not None
-            and start <= log.game_date <= anchor
-            and getattr(log, 'games_started', None) == 0
-            and getattr(log, 'game_type', None) == 'R'
+            log.appearance_team_id != team_id
+            or log.game_date is None
+            or not start <= log.game_date <= anchor
+            or getattr(log, 'games_started', None) != 0
         ):
+            continue
+        game_type = getattr(log, 'game_type', None)
+        if game_type == 'R':
             grouped[pitcher.id].append((log, pitcher))
+        if game_type in role_movement.GAME_TYPES:
+            movement_grouped[pitcher.id].append((log, pitcher))
     for pitcher_id in pitcher_ids:
         if type(pitcher_id) is int and pitcher_id > 0:
             grouped.setdefault(pitcher_id, [])
+            movement_grouped.setdefault(pitcher_id, [])
 
     profiles = []
     for pitcher_id, appearances in sorted(grouped.items()):
@@ -155,7 +240,9 @@ def build_public_deployment_context(
         'window_days': WINDOW_DAYS,
         'population_basis': 'official_appearance_team_relief_appearances',
         'profiles': profiles,
-        'role_movement': {'status': 'unavailable', 'reason_code': 'not_published'},
+        'role_movement': _role_movement_carrier(
+            movement_grouped, anchor, markers=markers, events_by_game=events_by_game,
+        ),
     }
 
 
@@ -167,7 +254,7 @@ def author_public_deployment_context(team_id, rows, anchor, *, pitcher_ids=()):
         and log.game_date is not None
         and anchor - timedelta(days=WINDOW_DAYS - 1) <= log.game_date <= anchor
         and getattr(log, 'games_started', None) == 0
-        and getattr(log, 'game_type', None) == 'R'
+        and getattr(log, 'game_type', None) in role_movement.GAME_TYPES
     })
     markers = {}
     events_by_game = defaultdict(list)

@@ -311,6 +311,76 @@ function readDeploymentDomain(source, fields) {
   }
 }
 
+const ROLE_MOVEMENT_CONTRACT = 'observed_role_movement_v1'
+const roleMovementStates = new Set(['complete', 'partial', 'unavailable'])
+const roleMovementPhases = new Set(['regular_season', 'postseason', 'mixed'])
+const roleMovementDirections = new Set(['later_or_higher_leverage', 'earlier_or_lower_leverage'])
+const roleMovementGameTypes = 'D,F,L,R,W'
+
+// Structural validation of the frozen, backend-authored movement carrier only.
+// Evidence minimums, materiality, direction, and copy belong to the backend.
+function readRoleMovementWindow(window) {
+  if (!window || typeof window !== 'object' || Array.isArray(window)
+    || typeof window.start_date !== 'string' || typeof window.through_date !== 'string'
+    || !nonnegativeCount(window.window_days) || window.window_days === 0
+    || !nonnegativeCount(window.appearances)
+    || !(window.season_phase === null ? window.appearances === 0 : roleMovementPhases.has(window.season_phase))
+    || !nonnegativeCount(window.eighth_or_later_appearances)
+    || !nonnegativeCount(window.known_entry_appearances)
+    || window.eighth_or_later_appearances > window.known_entry_appearances
+    || window.known_entry_appearances > window.appearances
+    || !nonnegativeCount(window.high_leverage_appearances)
+    || !nonnegativeCount(window.known_leverage_appearances)
+    || window.high_leverage_appearances > window.known_leverage_appearances
+    || window.known_leverage_appearances > window.appearances) return null
+  return {
+    startDate: window.start_date,
+    throughDate: window.through_date,
+    windowDays: window.window_days,
+    appearances: window.appearances,
+  }
+}
+
+function readRoleMovementProfile(item, dataThrough) {
+  const recent = readRoleMovementWindow(item?.recent_window)
+  const prior = readRoleMovementWindow(item?.prior_window)
+  if (!nonnegativeCount(item?.pitcher_id)
+    || item.contract !== ROLE_MOVEMENT_CONTRACT || item.method_version !== ROLE_MOVEMENT_CONTRACT
+    || !recent || !prior || recent.throughDate !== dataThrough || prior.throughDate >= recent.startDate) return null
+  if (item.status === 'unavailable') {
+    if (item.movement !== null || item.public_label !== null || typeof item.reason_code !== 'string') return null
+  } else if (item.status === 'complete') {
+    if (item.reason_code !== null) return null
+    if (item.movement === 'stable') {
+      if (item.public_label !== null) return null
+    } else if (!roleMovementDirections.has(item.movement)
+      || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
+  } else return null
+  return {
+    pitcherId: item.pitcher_id,
+    status: item.status,
+    movement: item.movement,
+    publicLabel: item.public_label,
+    recentWindow: recent,
+    priorWindow: prior,
+  }
+}
+
+// Old immutable publications carry no governed movement and read as null.
+// A malformed movement carrier withholds movement only, never the deployment.
+function readRoleMovement(source, dataThrough) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)
+    || source.contract !== ROLE_MOVEMENT_CONTRACT || source.method_version !== ROLE_MOVEMENT_CONTRACT
+    || !roleMovementStates.has(source.status) || source.data_through !== dataThrough
+    || source.population_basis !== 'official_appearance_team_relief_appearances'
+    || !Array.isArray(source.game_types) || source.game_types.join(',') !== roleMovementGameTypes
+    || !Array.isArray(source.profiles)) return null
+  const profiles = source.profiles.map(item => readRoleMovementProfile(item, dataThrough))
+  if (profiles.some(item => !item)) return null
+  if (new Set(profiles.map(item => item.pitcherId)).size !== profiles.length) return null
+  return { status: source.status, profiles }
+}
+
 export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
   if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
     || carrier.contract !== TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT
@@ -354,7 +424,14 @@ export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
     }
   })
   if (profiles.some(profile => !profile)) return null
-  return { contract: carrier.contract, teamId: carrier.team_id, dataThrough: carrier.data_through, windowDays: 14, profiles }
+  return {
+    contract: carrier.contract,
+    teamId: carrier.team_id,
+    dataThrough: carrier.data_through,
+    windowDays: 14,
+    profiles,
+    roleMovement: readRoleMovement(carrier.role_movement, carrier.data_through),
+  }
 }
 
 function readWorkloadMetric(metric) {

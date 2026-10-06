@@ -32,3 +32,52 @@ export function frozenPublicDeploymentFixture({ teamId = 111, dataThrough = '202
     role_movement: { status: 'unavailable', reason_code: 'not_published' },
   }
 }
+
+function movementWindow({ start, through, appearances, phase = 'regular_season' }) {
+  return {
+    start_date: start,
+    through_date: through,
+    window_days: 7,
+    appearances,
+    season_phase: appearances ? phase : null,
+    eighth_or_later_appearances: 0,
+    known_entry_appearances: appearances,
+    high_leverage_appearances: 0,
+    known_leverage_appearances: appearances,
+  }
+}
+
+// A governed observed_role_movement_v1 carrier as authored by the backend.
+export function governedRoleMovementFixture({
+  dataThrough = '2026-09-02',
+  pitcherId = 101,
+  status = 'complete',
+  movement = 'later_or_higher_leverage',
+  publicLabel = 'Recent deployment shifted toward later-inning, higher-leverage work.',
+  reasonCode = null,
+  recentAppearances = 3,
+  priorAppearances = 3,
+} = {}) {
+  return {
+    contract: 'observed_role_movement_v1',
+    method_version: 'observed_role_movement_v1',
+    status,
+    reason_code: status === 'complete' ? null : 'insufficient_comparable_pitcher_evidence',
+    population_basis: 'official_appearance_team_relief_appearances',
+    game_types: ['D', 'F', 'L', 'R', 'W'],
+    data_through: dataThrough,
+    profiles: [{
+      pitcher_id: pitcherId,
+      contract: 'observed_role_movement_v1',
+      method_version: 'observed_role_movement_v1',
+      status,
+      reason_code: reasonCode,
+      movement,
+      public_label: publicLabel,
+      season_phase: status === 'complete' ? 'regular_season' : null,
+      signals: [],
+      recent_window: movementWindow({ start: '2026-08-27', through: dataThrough, appearances: recentAppearances }),
+      prior_window: movementWindow({ start: '2026-08-20', through: '2026-08-26', appearances: priorAppearances }),
+    }],
+  }
+}

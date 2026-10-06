@@ -1451,6 +1451,10 @@
         {
           "path": "tests/test_publication_preparation_barrier.py",
           "measured_seconds": 7.0
+        },
+        {
+          "path": "tests/test_role_movement.py",
+          "measured_seconds": 1.0
         }
       ]
     },
