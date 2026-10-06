@@ -150,7 +150,8 @@ def test_appearance_team_and_14_day_boundary_exclude_prior_club_and_old_work():
         (_log(3, li=2.0, day=date(2026, 9, 8)), pitcher),
     ])
     assert result['contract'] == CONTRACT
-    assert result['role_movement'] == {'status': 'unavailable', 'reason_code': 'not_published'}
+    assert result['role_movement']['status'] == 'unavailable'
+    assert result['role_movement']['reason_code'] == 'insufficient_comparable_pitcher_evidence'
     assert len(result['profiles']) == 1
     assert result['profiles'][0]['leverage']['appearances'] == 1
 
@@ -299,3 +300,38 @@ def test_role_movement_withholds_when_team_change_removes_prior_comparable_work(
     movement = result['role_movement']['profiles'][0]
     assert movement['status'] == 'unavailable'
     assert movement['reason_code'] == 'insufficient_appearances'
+
+
+def test_frozen_carrier_copies_role_movement_without_recomputing_it():
+    role = {'kind': 'public_role_read', 'key': 'setup', 'label': 'Setup Arm'}
+    movement = {
+        'status': 'complete',
+        'reason_code': None,
+        'profiles': [{
+            'pitcher_id': 1,
+            'contract': 'observed_role_movement_v1',
+            'method_version': 'observed_role_movement_v1',
+            'status': 'complete',
+            'movement': 'later_or_higher_leverage',
+            'public_label': 'Recent deployment shifted toward later or higher-leverage work.',
+            'signals': [],
+            'population_basis': 'official_appearance_team_relief_appearances',
+            'game_types': ['P', 'R'],
+            'recent_window': {},
+            'prior_window': {},
+        }],
+    }
+    context = {
+        'contract': CONTRACT,
+        'data_through': DAY.isoformat(),
+        'window_days': 14,
+        'profiles': [{'pitcher_id': 1, 'entry_inning': {}, 'score_context': {}, 'leverage': {}}],
+        'role_movement': movement,
+    }
+    carrier = _frozen_roles_deployment_carrier(
+        TEAM,
+        [{'pitcher_id': 1, 'name': 'Observed Arm', 'public_role_read': role}],
+        {'profiles': []},
+        context,
+    )
+    assert carrier['role_movement'] == movement
