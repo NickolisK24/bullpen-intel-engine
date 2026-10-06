@@ -40,7 +40,7 @@ export function frozenPublicDeploymentFixture({ teamId = 111, dataThrough = '202
         movement: 'later_or_higher_leverage',
         public_label: 'Recent deployment shifted toward later or higher-leverage work.',
         population_basis: 'official_appearance_team_relief_appearances',
-        game_types: ['P', 'R'],
+        game_types: ['D', 'F', 'L', 'R', 'W'],
         recent_window: {
           appearances: 3,
           eighth_or_later_appearances: 3,
