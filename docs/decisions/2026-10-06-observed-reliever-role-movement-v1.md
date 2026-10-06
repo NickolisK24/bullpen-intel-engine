@@ -30,7 +30,7 @@ claim pitcher quality.
 
 ## Minimum evidence
 
-Each window requires at least two official relief appearances. Entry-inning and
+Each window requires at least three official relief appearances. Entry-inning and
 recorded-leverage signals are independently comparable. A missing signal is
 withheld rather than converted to zero.
 
