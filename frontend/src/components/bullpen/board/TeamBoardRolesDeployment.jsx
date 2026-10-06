@@ -53,7 +53,24 @@ function DeploymentFact({ label, evidence, children }) {
   )
 }
 
+function RoleMovementNote({ movement }) {
+  if (!movement || movement.status !== 'complete' || !movement.publicLabel) return null
+  return (
+    <div className="mt-row border-l-2 border-brand-blue/60 pl-row" data-testid="role-movement-note">
+      <p className="type-compact font-semibold text-text-primary">{movement.publicLabel}</p>
+      <p className="type-metadata mt-meta text-text-tertiary">
+        Recent 7 days: {movement.recentWindow.appearances} {movement.recentWindow.appearances === 1 ? 'appearance' : 'appearances'}
+        {' · '}
+        Prior 7 days: {movement.priorWindow.appearances} {movement.priorWindow.appearances === 1 ? 'appearance' : 'appearances'}
+      </p>
+    </div>
+  )
+}
+
 function FrozenDeployment({ deployment }) {
+  const movementProfiles = Array.isArray(deployment.roleMovement?.profiles)
+    ? deployment.roleMovement.profiles
+    : []
   const leverageBroadlyUnavailable = deployment.profiles.length > 1 && deployment.profiles.every(
     profile => profile.leverage?.status === 'unknown' || profile.leverage?.status === 'unavailable',
   )
@@ -90,6 +107,7 @@ function FrozenDeployment({ deployment }) {
                   ? `${profile.score.leading} leading · ${profile.score.tied} tied · ${profile.score.trailing} trailing`
                   : 'Score context not published'}
               </p>
+              <RoleMovementNote movement={movementProfiles.find(item => item.pitcherId === profile.pitcherId)} />
               <details className="mt-meta" data-testid="deployment-detail">
                 <summary className="inline-flex min-h-11 cursor-pointer items-center font-board text-board-metadata font-semibold text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus">View deployment detail</summary>
                 <dl className="mt-meta grid min-w-0 gap-x-panel gap-y-row rounded-sm bg-surface-raised/30 p-row tablet:grid-cols-3">
