@@ -53,24 +53,28 @@ function DeploymentFact({ label, evidence, children }) {
   )
 }
 
+function appearanceCount(count) {
+  return `${count} ${count === 1 ? 'appearance' : 'appearances'}`
+}
+
+// Renders only a backend-authored sentence; stable or withheld movement is quiet.
 function RoleMovementNote({ movement }) {
-  if (!movement || movement.status !== 'complete' || !movement.publicLabel) return null
+  if (!movement?.publicLabel) return null
+  const { recentWindow: recent, priorWindow: prior } = movement
   return (
     <div className="mt-row border-l-2 border-brand-blue/60 pl-row" data-testid="role-movement-note">
       <p className="type-compact font-semibold text-text-primary">{movement.publicLabel}</p>
       <p className="type-metadata mt-meta text-text-tertiary">
-        Recent 7 days: {movement.recentWindow.appearances} {movement.recentWindow.appearances === 1 ? 'appearance' : 'appearances'}
+        Recent {recent.windowDays} days: {appearanceCount(recent.appearances)}
         {' · '}
-        Prior 7 days: {movement.priorWindow.appearances} {movement.priorWindow.appearances === 1 ? 'appearance' : 'appearances'}
+        Prior {prior.windowDays} days: {appearanceCount(prior.appearances)}
       </p>
     </div>
   )
 }
 
 function FrozenDeployment({ deployment }) {
-  const movementProfiles = Array.isArray(deployment.roleMovement?.profiles)
-    ? deployment.roleMovement.profiles
-    : []
+  const movementProfiles = deployment.roleMovement?.profiles || []
   const leverageBroadlyUnavailable = deployment.profiles.length > 1 && deployment.profiles.every(
     profile => profile.leverage?.status === 'unknown' || profile.leverage?.status === 'unavailable',
   )

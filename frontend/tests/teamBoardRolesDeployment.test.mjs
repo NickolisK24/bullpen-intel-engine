@@ -4,7 +4,7 @@ import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
-import { frozenPublicDeploymentFixture } from './fixtures/teamBoardFrozenDeployment.mjs'
+import { frozenPublicDeploymentFixture, governedRoleMovementFixture } from './fixtures/teamBoardFrozenDeployment.mjs'
 import { readTeamBoardFrozenDeployment } from '../src/adapters/teamBoardV2.js'
 
 const server = await createServer({
@@ -218,34 +218,119 @@ test('frontend does not calculate role, leverage bands, movement, or future depl
   for (const source of [componentSource, adapterSource]) {
     for (const forbidden of ['1.5', '0.85', 'next save', 'Closer']) assert.equal(source.includes(forbidden), false, forbidden)
   }
+  // The adapter reads the frozen carrier key; the component never sees it.
   assert.equal(componentSource.includes('role_movement'), false)
   for (const forbidden of ['.reduce(', 'Math.', 'save ?']) assert.equal(componentSource.includes(forbidden), false, forbidden)
+  // No movement threshold, minimum, or direction rule exists in the browser.
+  const movementSource = adapterSource.slice(adapterSource.indexOf('const ROLE_MOVEMENT_CONTRACT'), adapterSource.indexOf('export function readTeamBoardFrozenDeployment'))
+  for (const forbidden of ['MIN_APPEARANCES', '>= 3', '< 3', '0.5', ' / ', 'Math.', 'shifted toward']) {
+    assert.equal(movementSource.includes(forbidden), false, forbidden)
+  }
+  // Counts are only checked against each other for consistency, never against a threshold.
+  assert.equal(/appearances\s*[<>]=?\s*\d/.test(movementSource), false)
 })
 
+const withMovement = movement => {
+  const carrier = frozenPublicDeploymentFixture()
+  carrier.role_movement = movement
+  return carrier
+}
+const readCarrier = carrier => readTeamBoardFrozenDeployment(carrier, publicationIdentity)
+const renderCarrier = carrier => renderRoles({ read: { ...read, frozenPublicDeployment: readCarrier(carrier) } })
 
-test('governed role movement renders backend-authored direction without frontend baseball math', () => {
-  const deployment = frozen()
-  const html = renderRoles({ read: { ...read, frozenPublicDeployment: deployment } })
-  assert.ok(html.includes('Recent deployment shifted toward later or higher-leverage work.'))
+test('governed role movement renders the backend sentence and factual window counts', () => {
+  const html = renderCarrier(withMovement(governedRoleMovementFixture()))
+  assert.ok(html.includes('role-movement-note'))
+  assert.ok(html.includes('Recent deployment shifted toward later-inning, higher-leverage work.'))
   assert.ok(html.includes('Recent 7 days: 3 appearances'))
   assert.ok(html.includes('Prior 7 days: 3 appearances'))
+  for (const forbidden of ['Closer', 'promot', 'demot', 'manager', 'trust him', 'next save', 'depth chart', 'will ']) {
+    assert.equal(html.toLowerCase().includes(forbidden.toLowerCase()), false, forbidden)
+  }
 })
 
-test('missing or unavailable role movement stays locally quiet', () => {
-  const carrier = frozenPublicDeploymentFixture()
-  carrier.role_movement = {
-    status: 'unavailable',
-    reason_code: 'insufficient_comparable_pitcher_evidence',
-    profiles: [{
-      ...carrier.role_movement.profiles[0],
-      status: 'unavailable',
-      movement: null,
-      public_label: null,
-      reason_code: 'insufficient_appearances',
-    }],
+test('earlier or lower movement renders exactly the backend-authored copy', () => {
+  const html = renderCarrier(withMovement(governedRoleMovementFixture({
+    movement: 'earlier_or_lower_leverage',
+    publicLabel: 'Recent deployment shifted toward earlier-inning work.',
+  })))
+  assert.ok(html.includes('Recent deployment shifted toward earlier-inning work.'))
+})
+
+test('the frontend never derives direction from counts or re-applies evidence minimums', () => {
+  // The frozen counts would not support a shift on their own; the browser does
+  // not second-guess the backend, it renders the published judgement verbatim.
+  const movement = governedRoleMovementFixture({ recentAppearances: 1, priorAppearances: 1 })
+  const html = renderCarrier(withMovement(movement))
+  assert.ok(html.includes('Recent deployment shifted toward later-inning, higher-leverage work.'))
+  assert.ok(html.includes('Recent 7 days: 1 appearance'))
+})
+
+test('stable, withheld, and partial-team movement stay locally quiet', () => {
+  const stable = governedRoleMovementFixture({ movement: 'stable', publicLabel: null })
+  const withheld = governedRoleMovementFixture({
+    status: 'unavailable', movement: null, publicLabel: null,
+    reasonCode: 'season_phase_boundary', recentAppearances: 0, priorAppearances: 0,
+  })
+  for (const movement of [stable, withheld]) {
+    const carrier = withMovement(movement)
+    const deployment = readCarrier(carrier)
+    assert.ok(deployment.roleMovement, 'valid carrier reads')
+    const html = renderCarrier(carrier)
+    assert.equal(html.includes('role-movement-note'), false)
+    assert.equal(html.includes('shifted'), false)
+    assert.ok(html.includes('Trusted Arm'))
   }
-  const deployment = readTeamBoardFrozenDeployment(carrier, publicationIdentity)
-  const html = renderRoles({ read: { ...read, frozenPublicDeployment: deployment } })
+})
+
+test('old immutable publications without governed movement stay readable and quiet', () => {
+  for (const legacy of [undefined, null, { status: 'unavailable', reason_code: 'not_published' }]) {
+    const carrier = frozenPublicDeploymentFixture()
+    if (legacy === undefined) delete carrier.role_movement
+    else carrier.role_movement = legacy
+    const deployment = readCarrier(carrier)
+    assert.ok(deployment, 'deployment still reads')
+    assert.equal(deployment.roleMovement, null)
+    const html = renderCarrier(carrier)
+    assert.equal(html.includes('role-movement-note'), false)
+    assert.ok(html.includes('Inning 9: 2'))
+  }
+})
+
+test('malformed or mismatched movement withholds movement only, never the deployment', () => {
+  const cases = [
+    movement => { movement.contract = 'observed_role_movement_v2' },
+    movement => { movement.data_through = '2026-09-01' },
+    movement => { movement.game_types = ['R'] },
+    movement => { movement.profiles[0].recent_window.through_date = '2026-09-01' },
+    movement => { movement.profiles[0].public_label = '' },
+    movement => { movement.profiles[0].movement = 'promoted_to_closer' },
+    movement => { movement.profiles[0].reason_code = 'x' },
+    movement => { movement.profiles[0].recent_window.known_entry_appearances = 9 },
+    movement => { movement.profiles[0].recent_window.season_phase = 'spring' },
+    movement => { Object.assign(movement.profiles[0], { status: 'unavailable', reason_code: 'x' }) },
+    movement => { Object.assign(movement.profiles[0], { movement: 'stable' }) },
+    movement => { movement.profiles.push(structuredClone(movement.profiles[0])) },
+    movement => { movement.profiles = null },
+  ]
+  for (const mutate of cases) {
+    const movement = governedRoleMovementFixture()
+    mutate(movement)
+    const carrier = withMovement(movement)
+    const deployment = readCarrier(carrier)
+    assert.ok(deployment, mutate.toString())
+    assert.equal(deployment.roleMovement, null, mutate.toString())
+    assert.equal(renderCarrier(carrier).includes('role-movement-note'), false)
+  }
+})
+
+test('movement for a pitcher outside the rendered deployment never renders', () => {
+  const html = renderCarrier(withMovement(governedRoleMovementFixture({ pitcherId: 999 })))
   assert.equal(html.includes('role-movement-note'), false)
-  assert.ok(html.includes('Frozen observed bullpen deployment'))
+})
+
+test('movement inherits the deployment carrier frozen identity', () => {
+  const carrier = withMovement(governedRoleMovementFixture())
+  assert.equal(readTeamBoardFrozenDeployment(carrier, { ...publicationIdentity, team_id: 112 }), null)
+  assert.equal(readTeamBoardFrozenDeployment(carrier, { ...publicationIdentity, represented_date: '2026-09-03' }), null)
 })

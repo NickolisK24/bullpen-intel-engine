@@ -296,7 +296,6 @@ export function readTeamBoardFrozenRotationGames(carrier, publicationIdentity) {
 }
 
 const publicRoleLabels = new Set(['Trusted Arm', 'Setup Arm', 'Coverage Arm', 'Middle Relief Arm', 'Role Unclear'])
-const ROLE_MOVEMENT_MIN_APPEARANCES = 3
 
 function readDeploymentDomain(source, fields) {
   if (!source || !recentUsageRestStates.has(source.status)
@@ -312,9 +311,20 @@ function readDeploymentDomain(source, fields) {
   }
 }
 
+const ROLE_MOVEMENT_CONTRACT = 'observed_role_movement_v1'
+const roleMovementStates = new Set(['complete', 'partial', 'unavailable'])
+const roleMovementPhases = new Set(['regular_season', 'postseason', 'mixed'])
+const roleMovementDirections = new Set(['later_or_higher_leverage', 'earlier_or_lower_leverage'])
+const roleMovementGameTypes = 'D,F,L,R,W'
+
+// Structural validation of the frozen, backend-authored movement carrier only.
+// Evidence minimums, materiality, direction, and copy belong to the backend.
 function readRoleMovementWindow(window) {
   if (!window || typeof window !== 'object' || Array.isArray(window)
+    || typeof window.start_date !== 'string' || typeof window.through_date !== 'string'
+    || !nonnegativeCount(window.window_days) || window.window_days === 0
     || !nonnegativeCount(window.appearances)
+    || !(window.season_phase === null ? window.appearances === 0 : roleMovementPhases.has(window.season_phase))
     || !nonnegativeCount(window.eighth_or_later_appearances)
     || !nonnegativeCount(window.known_entry_appearances)
     || window.eighth_or_later_appearances > window.known_entry_appearances
@@ -322,56 +332,53 @@ function readRoleMovementWindow(window) {
     || !nonnegativeCount(window.high_leverage_appearances)
     || !nonnegativeCount(window.known_leverage_appearances)
     || window.high_leverage_appearances > window.known_leverage_appearances
-    || window.known_leverage_appearances > window.appearances
-    || typeof window.start_date !== 'string'
-    || typeof window.through_date !== 'string') return null
+    || window.known_leverage_appearances > window.appearances) return null
   return {
-    appearances: window.appearances,
-    eighthOrLaterAppearances: window.eighth_or_later_appearances,
-    knownEntryAppearances: window.known_entry_appearances,
-    highLeverageAppearances: window.high_leverage_appearances,
-    knownLeverageAppearances: window.known_leverage_appearances,
     startDate: window.start_date,
     throughDate: window.through_date,
+    windowDays: window.window_days,
+    appearances: window.appearances,
   }
 }
 
-function readRoleMovement(source) {
-  if (!source || typeof source !== 'object' || Array.isArray(source)
-    || !['complete', 'partial', 'unavailable'].includes(source.status)
-    || !Array.isArray(source.profiles)) return null
-  const profiles = source.profiles.map(item => {
-    const recent = readRoleMovementWindow(item?.recent_window)
-    const prior = readRoleMovementWindow(item?.prior_window)
-    if (!nonnegativeCount(item?.pitcher_id)
-      || item.contract !== 'observed_role_movement_v1'
-      || item.method_version !== 'observed_role_movement_v1'
-      || !['complete', 'unavailable'].includes(item.status)
-      || item.population_basis !== 'official_appearance_team_relief_appearances'
-      || JSON.stringify(item.game_types) !== JSON.stringify(['D', 'F', 'L', 'R', 'W'])
-      || !recent || !prior) return null
-    if (item.status === 'complete') {
-      if (recent.appearances < ROLE_MOVEMENT_MIN_APPEARANCES
-        || prior.appearances < ROLE_MOVEMENT_MIN_APPEARANCES
-        || !['stable', 'later_or_higher_leverage', 'earlier_or_lower_leverage'].includes(item.movement)
-        || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
-    } else if (item.public_label != null || item.movement != null) return null
-    return {
-      pitcherId: item.pitcher_id,
-      status: item.status,
-      reasonCode: item.reason_code ?? null,
-      movement: item.movement ?? null,
-      publicLabel: item.public_label ?? null,
-      recentWindow: recent,
-      priorWindow: prior,
-    }
-  })
-  if (profiles.some(item => !item)) return null
+function readRoleMovementProfile(item, dataThrough) {
+  const recent = readRoleMovementWindow(item?.recent_window)
+  const prior = readRoleMovementWindow(item?.prior_window)
+  if (!nonnegativeCount(item?.pitcher_id)
+    || item.contract !== ROLE_MOVEMENT_CONTRACT || item.method_version !== ROLE_MOVEMENT_CONTRACT
+    || !recent || !prior || recent.throughDate !== dataThrough || prior.throughDate >= recent.startDate) return null
+  if (item.status === 'unavailable') {
+    if (item.movement !== null || item.public_label !== null || typeof item.reason_code !== 'string') return null
+  } else if (item.status === 'complete') {
+    if (item.reason_code !== null) return null
+    if (item.movement === 'stable') {
+      if (item.public_label !== null) return null
+    } else if (!roleMovementDirections.has(item.movement)
+      || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
+  } else return null
   return {
-    status: source.status,
-    reasonCode: source.reason_code ?? null,
-    profiles,
+    pitcherId: item.pitcher_id,
+    status: item.status,
+    movement: item.movement,
+    publicLabel: item.public_label,
+    recentWindow: recent,
+    priorWindow: prior,
   }
+}
+
+// Old immutable publications carry no governed movement and read as null.
+// A malformed movement carrier withholds movement only, never the deployment.
+function readRoleMovement(source, dataThrough) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)
+    || source.contract !== ROLE_MOVEMENT_CONTRACT || source.method_version !== ROLE_MOVEMENT_CONTRACT
+    || !roleMovementStates.has(source.status) || source.data_through !== dataThrough
+    || source.population_basis !== 'official_appearance_team_relief_appearances'
+    || !Array.isArray(source.game_types) || source.game_types.join(',') !== roleMovementGameTypes
+    || !Array.isArray(source.profiles)) return null
+  const profiles = source.profiles.map(item => readRoleMovementProfile(item, dataThrough))
+  if (profiles.some(item => !item)) return null
+  if (new Set(profiles.map(item => item.pitcherId)).size !== profiles.length) return null
+  return { status: source.status, profiles }
 }
 
 export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
@@ -423,7 +430,7 @@ export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
     dataThrough: carrier.data_through,
     windowDays: 14,
     profiles,
-    roleMovement: readRoleMovement(carrier.role_movement),
+    roleMovement: readRoleMovement(carrier.role_movement, carrier.data_through),
   }
 }
 
