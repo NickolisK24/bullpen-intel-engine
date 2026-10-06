@@ -927,6 +927,13 @@ def test_bootstrap_recovers_partial_preinserted_package_set(app):
 
 def test_bootstrap_resolver_and_observability_are_bounded(app, monkeypatch):
     snapshot, _proof = _source()
+    # The fixture snapshot is current as of its own reference date. Pin the
+    # product clock there so the 30-day freshness fail-closed boundary measures
+    # fixture age, not the age of the hard-coded dates on the wall clock.
+    monkeypatch.setattr(
+        'services.dashboard_snapshot.product_current_date',
+        lambda: REFERENCE_DATE,
+    )
     monkeypatch.setattr(
         'services.team_publication_storage.dashboard_snapshot_service.'
         'get_latest_dashboard_snapshot_guarded',
