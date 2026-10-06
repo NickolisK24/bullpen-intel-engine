@@ -5,7 +5,7 @@ completed usage only. It does not infer manager intent, future availability,
 health, quality, or a depth-chart job.
 """
 
-MIN_APPEARANCES_PER_WINDOW = 2
+MIN_APPEARANCES_PER_WINDOW = 3
 SHARE_SHIFT_MIN = 0.50
 
 CONTRACT = "observed_role_movement_v1"
