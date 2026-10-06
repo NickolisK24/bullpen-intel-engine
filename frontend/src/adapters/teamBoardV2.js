@@ -311,6 +311,66 @@ function readDeploymentDomain(source, fields) {
   }
 }
 
+function readRoleMovementWindow(window) {
+  if (!window || typeof window !== 'object' || Array.isArray(window)
+    || !nonnegativeCount(window.appearances)
+    || !nonnegativeCount(window.eighth_or_later_appearances)
+    || !nonnegativeCount(window.known_entry_appearances)
+    || window.eighth_or_later_appearances > window.known_entry_appearances
+    || window.known_entry_appearances > window.appearances
+    || !nonnegativeCount(window.high_leverage_appearances)
+    || !nonnegativeCount(window.known_leverage_appearances)
+    || window.high_leverage_appearances > window.known_leverage_appearances
+    || window.known_leverage_appearances > window.appearances
+    || typeof window.start_date !== 'string'
+    || typeof window.through_date !== 'string') return null
+  return {
+    appearances: window.appearances,
+    eighthOrLaterAppearances: window.eighth_or_later_appearances,
+    knownEntryAppearances: window.known_entry_appearances,
+    highLeverageAppearances: window.high_leverage_appearances,
+    knownLeverageAppearances: window.known_leverage_appearances,
+    startDate: window.start_date,
+    throughDate: window.through_date,
+  }
+}
+
+function readRoleMovement(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)
+    || !['complete', 'partial', 'unavailable'].includes(source.status)
+    || !Array.isArray(source.profiles)) return null
+  const profiles = source.profiles.map(item => {
+    const recent = readRoleMovementWindow(item?.recent_window)
+    const prior = readRoleMovementWindow(item?.prior_window)
+    if (!nonnegativeCount(item?.pitcher_id)
+      || item.contract !== 'observed_role_movement_v1'
+      || item.method_version !== 'observed_role_movement_v1'
+      || !['complete', 'unavailable'].includes(item.status)
+      || item.population_basis !== 'official_appearance_team_relief_appearances'
+      || JSON.stringify(item.game_types) !== JSON.stringify(['P', 'R'])
+      || !recent || !prior) return null
+    if (item.status === 'complete') {
+      if (!['stable', 'later_or_higher_leverage', 'earlier_or_lower_leverage'].includes(item.movement)
+        || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
+    } else if (item.public_label != null || item.movement != null) return null
+    return {
+      pitcherId: item.pitcher_id,
+      status: item.status,
+      reasonCode: item.reason_code ?? null,
+      movement: item.movement ?? null,
+      publicLabel: item.public_label ?? null,
+      recentWindow: recent,
+      priorWindow: prior,
+    }
+  })
+  if (profiles.some(item => !item)) return null
+  return {
+    status: source.status,
+    reasonCode: source.reason_code ?? null,
+    profiles,
+  }
+}
+
 export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
   if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
     || carrier.contract !== TEAM_BOARD_PUBLIC_DEPLOYMENT_CONTRACT
@@ -354,7 +414,14 @@ export function readTeamBoardFrozenDeployment(carrier, publicationIdentity) {
     }
   })
   if (profiles.some(profile => !profile)) return null
-  return { contract: carrier.contract, teamId: carrier.team_id, dataThrough: carrier.data_through, windowDays: 14, profiles }
+  return {
+    contract: carrier.contract,
+    teamId: carrier.team_id,
+    dataThrough: carrier.data_through,
+    windowDays: 14,
+    profiles,
+    roleMovement: readRoleMovement(carrier.role_movement),
+  }
 }
 
 function readWorkloadMetric(metric) {
