@@ -250,17 +250,17 @@ def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
     prior_day = DAY.replace(day=10)
     recent_day = DAY.replace(day=20)
     prior = _log(11, li=.5, day=prior_day)
-    prior.game_type = 'P'
+    prior.game_type = 'D'
     recent = _log(12, li=2.0, day=recent_day)
-    recent.game_type = 'P'
+    recent.game_type = 'D'
     rows = [
         (prior, pitcher),
         (_log(13, li=.5, day=prior_day), pitcher),
         (recent, pitcher),
         (_log(14, li=2.0, day=recent_day), pitcher),
     ]
-    rows[1][0].game_type = 'P'
-    rows[3][0].game_type = 'P'
+    rows[1][0].game_type = 'D'
+    rows[3][0].game_type = 'D'
     events = {
         11: [_event(11, 1, 2000, inning=6, fielding=OTHER), _event(11, 2, 1001, inning=6, fielding=TEAM)],
         13: [_event(13, 1, 2000, inning=6, fielding=OTHER), _event(13, 2, 1001, inning=6, fielding=TEAM)],
@@ -280,7 +280,7 @@ def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
     movement = result['role_movement']['profiles'][0]
     assert movement['status'] == 'complete'
     assert movement['movement'] == 'later_or_higher_leverage'
-    assert movement['game_types'] == ['P', 'R']
+    assert movement['game_types'] == ['D', 'F', 'L', 'R', 'W']
     assert movement['prior_window']['appearances'] == 2
     assert movement['recent_window']['appearances'] == 2
 
@@ -288,11 +288,11 @@ def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
 def test_role_movement_withholds_when_team_change_removes_prior_comparable_work():
     pitcher = _pitcher()
     prior = _log(21, team=OTHER, li=.5, day=DAY.replace(day=10))
-    prior.game_type = 'P'
+    prior.game_type = 'D'
     recent = _log(22, li=2.0, day=DAY.replace(day=20))
-    recent.game_type = 'P'
+    recent.game_type = 'D'
     recent2 = _log(23, li=2.0, day=DAY.replace(day=19))
-    recent2.game_type = 'P'
+    recent2.game_type = 'D'
     result = build_public_deployment_context(
         TEAM, [(prior, pitcher), (recent, pitcher), (recent2, pitcher)], DAY,
         markers={}, events_by_game={},
