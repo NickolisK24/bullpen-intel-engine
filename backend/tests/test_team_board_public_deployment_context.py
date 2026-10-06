@@ -242,3 +242,60 @@ def test_public_role_is_copied_verbatim_without_closer_inference():
     assert profile['observed_profile'] == observed
     assert profile['context']['entry_inning']['by_inning'][0]['inning'] == 9
     assert 'closer' not in repr(carrier).lower()
+
+
+def test_role_movement_uses_adjacent_seven_day_windows_and_postseason_rows():
+    pitcher = _pitcher()
+    prior_day = DAY.replace(day=10)
+    recent_day = DAY.replace(day=20)
+    prior = _log(11, li=.5, day=prior_day)
+    prior.game_type = 'P'
+    recent = _log(12, li=2.0, day=recent_day)
+    recent.game_type = 'P'
+    rows = [
+        (prior, pitcher),
+        (_log(13, li=.5, day=prior_day), pitcher),
+        (recent, pitcher),
+        (_log(14, li=2.0, day=recent_day), pitcher),
+    ]
+    rows[1][0].game_type = 'P'
+    rows[3][0].game_type = 'P'
+    events = {
+        11: [_event(11, 1, 2000, inning=6, fielding=OTHER), _event(11, 2, 1001, inning=6, fielding=TEAM)],
+        13: [_event(13, 1, 2000, inning=6, fielding=OTHER), _event(13, 2, 1001, inning=6, fielding=TEAM)],
+        12: [_event(12, 1, 2000, inning=9, fielding=OTHER), _event(12, 2, 1001, inning=9, fielding=TEAM)],
+        14: [_event(14, 1, 2000, inning=9, fielding=OTHER), _event(14, 2, 1001, inning=9, fielding=TEAM)],
+    }
+    markers = {
+        11: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=prior_day, home_team_id=TEAM, away_team_id=OTHER),
+        13: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=prior_day, home_team_id=TEAM, away_team_id=OTHER),
+        12: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=recent_day, home_team_id=TEAM, away_team_id=OTHER),
+        14: Row(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED, game_date=recent_day, home_team_id=TEAM, away_team_id=OTHER),
+    }
+    result = build_public_deployment_context(
+        TEAM, rows, DAY, markers=markers, events_by_game=events,
+    )
+    assert result['profiles'] == []
+    movement = result['role_movement']['profiles'][0]
+    assert movement['status'] == 'complete'
+    assert movement['movement'] == 'later_or_higher_leverage'
+    assert movement['game_types'] == ['P', 'R']
+    assert movement['prior_window']['appearances'] == 2
+    assert movement['recent_window']['appearances'] == 2
+
+
+def test_role_movement_withholds_when_team_change_removes_prior_comparable_work():
+    pitcher = _pitcher()
+    prior = _log(21, team=OTHER, li=.5, day=DAY.replace(day=10))
+    prior.game_type = 'P'
+    recent = _log(22, li=2.0, day=DAY.replace(day=20))
+    recent.game_type = 'P'
+    recent2 = _log(23, li=2.0, day=DAY.replace(day=19))
+    recent2.game_type = 'P'
+    result = build_public_deployment_context(
+        TEAM, [(prior, pitcher), (recent, pitcher), (recent2, pitcher)], DAY,
+        markers={}, events_by_game={},
+    )
+    movement = result['role_movement']['profiles'][0]
+    assert movement['status'] == 'unavailable'
+    assert movement['reason_code'] == 'insufficient_appearances'
