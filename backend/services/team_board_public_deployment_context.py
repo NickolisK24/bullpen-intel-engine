@@ -19,7 +19,7 @@ METHOD_VERSION = 'team_board_public_deployment_context_v1'
 WINDOW_DAYS = 14
 HIGH_LEVERAGE_MIN = 1.5
 LOW_LEVERAGE_MAX = 0.85
-ROLE_MOVEMENT_GAME_TYPES = frozenset({'R', 'P'})
+ROLE_MOVEMENT_GAME_TYPES = frozenset({'R', 'F', 'D', 'L', 'W'})
 ROLE_MOVEMENT_WINDOW_DAYS = 7
 
 
