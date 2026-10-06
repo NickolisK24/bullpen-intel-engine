@@ -347,7 +347,7 @@ function readRoleMovement(source) {
       || item.method_version !== 'observed_role_movement_v1'
       || !['complete', 'unavailable'].includes(item.status)
       || item.population_basis !== 'official_appearance_team_relief_appearances'
-      || JSON.stringify(item.game_types) !== JSON.stringify(['P', 'R'])
+      || JSON.stringify(item.game_types) !== JSON.stringify(['D', 'F', 'L', 'R', 'W'])
       || !recent || !prior) return null
     if (item.status === 'complete') {
       if (!['stable', 'later_or_higher_leverage', 'earlier_or_lower_leverage'].includes(item.movement)
