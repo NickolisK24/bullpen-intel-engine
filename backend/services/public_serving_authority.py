@@ -278,7 +278,11 @@ def _frozen_roles_deployment_carrier(team_id, selected_records, deployment_profi
         'window_days': context.get('window_days'),
         'profiles': profiles,
         'deployment_profile': deepcopy(deployment_profile),
-        'role_movement': {'status': 'unavailable', 'reason_code': 'not_published'},
+        'role_movement': deepcopy(
+            context.get('role_movement')
+            if isinstance(context.get('role_movement'), Mapping)
+            else {'status': 'unavailable', 'reason_code': 'not_published'}
+        ),
     }
 
 
