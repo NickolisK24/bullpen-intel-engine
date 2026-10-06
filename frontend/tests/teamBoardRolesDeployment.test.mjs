@@ -228,7 +228,7 @@ test('governed role movement renders backend-authored direction without frontend
   const html = renderRoles({ read: { ...read, frozenPublicDeployment: deployment } })
   assert.ok(html.includes('Recent deployment shifted toward later or higher-leverage work.'))
   assert.ok(html.includes('Recent 7 days: 3 appearances'))
-  assert.ok(html.includes('Prior 7 days: 2 appearances'))
+  assert.ok(html.includes('Prior 7 days: 3 appearances'))
 })
 
 test('missing or unavailable role movement stays locally quiet', () => {
