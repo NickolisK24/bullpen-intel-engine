@@ -1122,7 +1122,10 @@ class TestBoardEndpoint:
             'active_hidden_count': 0,
             'hidden_active_pitchers': [],
         }
-        assert default_by_name['Nick Martinez']['availability_status'] == 'Monitor'
+        # Engine v2: no appearance in the active window with a complete
+        # completed-game ledger is observed rest, never On Watch.
+        assert default_by_name['Nick Martinez']['availability_status'] == 'Available'
+        assert default_by_name['Nick Martinez']['operating_basis'] == 'ledger_confirmed_rest'
         assert default_by_name['Nick Martinez']['data_state'] == 'stale'
         assert default_by_name['Nick Martinez']['visibility']['has_current_workload'] is False
         assert default_by_name['Nick Martinez']['visibility']['is_visible_by_default'] is True
@@ -1164,10 +1167,16 @@ class TestBoardEndpoint:
             )
 
         body = client.get('/api/bullpen/teams/139/board').get_json()
-        cards = [card for group in body['groups'] for card in group['pitchers']]
+        grouped = [card for group in body['groups'] for card in group['pitchers']]
+        cards = body['evidence_limited_pitchers']
 
+        # Engine v2: missing evidence is no workload group (never On Watch); the
+        # arm stays visible in the evidence-limited list.
+        assert grouped == []
         assert [card['name'] for card in cards] == ['Fully Rested Relief Option']
-        assert cards[0]['availability_status'] == 'Monitor'
+        assert body['ungrouped_pitchers'] == 1
+        assert cards[0]['availability_status'] is None
+        assert cards[0]['availability_public_label'] is None
         assert cards[0]['data_state'] == 'missing'
         assert cards[0]['eligibility']['status'] == 'role_reliever'
         assert cards[0]['visibility']['is_visible_by_default'] is True

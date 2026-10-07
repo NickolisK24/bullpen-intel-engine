@@ -18,8 +18,9 @@ from models.sync_failure import SyncFailure
 from services.availability import (
     ACTIVE_WINDOW_DAYS,
     CONFIDENCE_LOW,
+    OPERATING_BASIS_LEDGER_CONFIRMED_REST,
+    OPERATING_BASIS_PARTIAL_WORKLOAD,
     STATUS_AVAILABLE,
-    STATUS_MONITOR,
     classify_availability,
 )
 from services.availability_explanations import (
@@ -67,12 +68,43 @@ def _unresolved_workload_fetch_failure_refs(pitchers):
     return {row[0] for row in rows}
 
 
+def rest_confirmed_for(reference_date):
+    """Whether absence from the active window is OBSERVED rest at ``reference_date``.
+
+    The same proof the Team State trust gate uses: the completed-appearance
+    ledger is complete through the last completed day before the reference
+    date. The ledger window contains every workload input the availability
+    model reads, so a pitcher missing from it carries no recent MLB workload.
+    Fails closed (False) on any error: unproven rest is never fabricated.
+    """
+    if reference_date is None:
+        return False
+    try:
+        from services.appearance_ledger import build_appearance_ledger
+        return bool(
+            build_appearance_ledger(end_date=reference_date - timedelta(days=1)).get('complete')
+        )
+    except Exception:  # noqa: BLE001 - unproven rest stays unproven
+        return False
+
+
 def _apply_workload_fetch_failure(availability):
+    """An open workload fetch failure leaves only OBSERVED workload as a floor.
+
+    A rest proof is voided, a clean read becomes no operating status, and a
+    status already reached by observed workload stays as a lower bound.
+    Evidence uncertainty never becomes On Watch.
+    """
     updated = dict(availability or {})
-    if updated.get('availability_status') == STATUS_AVAILABLE:
-        updated['availability_status'] = STATUS_MONITOR
-    elif not updated.get('availability_status'):
-        updated['availability_status'] = STATUS_MONITOR
+    if (
+        updated.get('availability_status') == STATUS_AVAILABLE
+        or updated.get('operating_basis') == OPERATING_BASIS_LEDGER_CONFIRMED_REST
+        or not updated.get('availability_status')
+    ):
+        updated['availability_status'] = None
+        updated['operating_basis'] = None
+    else:
+        updated['operating_basis'] = OPERATING_BASIS_PARTIAL_WORKLOAD
     updated['confidence'] = CONFIDENCE_LOW
     updated['data_state'] = 'incomplete'
 
@@ -260,6 +292,7 @@ def _classified_record(
     logs,
     mode,
     workload_fetch_failed=False,
+    rest_confirmed=False,
 ):
     availability = classify_availability(
         score=score,
@@ -267,6 +300,7 @@ def _classified_record(
         reference_date=evaluation_date,
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
+        rest_confirmed=rest_confirmed and mode == CURRENT_AVAILABILITY_MODE,
     )
     if mode == CURRENT_AVAILABILITY_MODE and workload_fetch_failed:
         availability = _apply_workload_fetch_failure(availability)
@@ -304,6 +338,9 @@ def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAIL
             mode == CURRENT_AVAILABILITY_MODE
             and str(pitcher.mlb_id) in _unresolved_workload_fetch_failure_refs([pitcher])
         ),
+        rest_confirmed=(
+            mode == CURRENT_AVAILABILITY_MODE and rest_confirmed_for(evaluation_date)
+        ),
     )
 
 
@@ -326,6 +363,12 @@ def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_M
         if mode == CURRENT_AVAILABILITY_MODE
         else set()
     )
+    # Every current-mode row shares one reference date, so one rest proof.
+    rest_confirmed = (
+        mode == CURRENT_AVAILABILITY_MODE
+        and bool(rows)
+        and rest_confirmed_for(current_reference_date)
+    )
 
     return [
         _classified_record(
@@ -336,6 +379,7 @@ def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_M
             logs=logs_by_pitcher.get(pitcher.id, []),
             mode=mode,
             workload_fetch_failed=str(pitcher.mlb_id) in fetch_failure_refs,
+            rest_confirmed=rest_confirmed,
         )
         for score, pitcher in rows
     ]

@@ -454,8 +454,11 @@ def _workload_7d(overview):
 def _active_arms(team_package):
     """The exact Active Bullpen arm set the Team Board serves for this package."""
     records = psa._records_for_view(team_package, False)
-    groups = bullpen_board.group_cards(bullpen_board._board_cards(records))
-    return team_board_v2._active_arms({'groups': groups})
+    cards = bullpen_board._board_cards(records)
+    return team_board_v2._active_arms({
+        'groups': bullpen_board.group_cards(cards),
+        'evidence_limited_pitchers': bullpen_board.evidence_limited_cards(cards),
+    })
 
 
 def _usage_by_pitcher(usage):

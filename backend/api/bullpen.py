@@ -34,6 +34,7 @@ from services.availability_snapshot import (
     classify_fatigue_rows,
     classify_latest_fatigue_rows,
     latest_fatigue_rows as availability_latest_fatigue_rows,
+    rest_confirmed_for,
 )
 from services.availability_summary import (
     summarize_availability_records,
@@ -418,6 +419,7 @@ def _availability_for(pitcher_id, score, reference_date=None):
         reference_date=ref,
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
+        rest_confirmed=rest_confirmed_for(ref),
     )
 
 
