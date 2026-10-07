@@ -1,0 +1,282 @@
+name: Manual Publication Truth Certification
+
+# Read-only truth certification of one stored trusted Dashboard publication.
+#
+# Runs backend/scripts/certify_publication_truth.py against the production
+# database and uploads, for all 30 clubs: the published Active Bullpen against
+# the canonical membership authority, an independent GameLog recount of every
+# frozen recent-usage fact, why every Team State arm holds its availability
+# status (workload, stale data, missing data, fetch failure, incomplete log),
+# the Team State partition and its reproduction, clearly labelled
+# HYPOTHETICAL / AUDIT ONLY recomputations, and how much recent relief work
+# comes from postseason games.
+#
+# It is read-only three ways: every PostgreSQL connection starts with
+# default_transaction_read_only=on, the script sets its transaction READ ONLY,
+# and a bounded write probe must be REFUSED before any certification read. An
+# accepted probe stops the run before anything is certified.
+#
+# It does not publish or promote any snapshot, resolve sync failures,
+# recalculate fatigue, ingest schedules, run a sync, recovery or backfill, or
+# run migrations. A certification FAIL is a result inside the artifact, not a
+# workflow failure. A finding is evidence; it authorizes nothing.
+#
+# FAILURE VISIBILITY. No step uses continue-on-error: a failed step is shown as
+# failed. Evidence steps that must run after a failure use `!cancelled()`, so a
+# refusal still leaves a scanned, uploaded refusal document.
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_id:
+        description: >-
+          Stored trusted Dashboard snapshot to certify (positive integer).
+        required: true
+        type: string
+      confirmation:
+        description: >-
+          Must be exactly RUN READ ONLY PUBLICATION TRUTH CERTIFICATION.
+        required: true
+        type: string
+
+# Share the production sync writer lane so the certification reads a settled
+# state and never overlaps a production writer. cancel-in-progress stays false.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+# contents: read to check out the reviewed commit. Nothing else.
+permissions:
+  contents: read
+
+jobs:
+  publication-truth-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.repository == 'NickolisK24/bullpen-intel-engine'
+      && github.ref == 'refs/heads/main'
+      && github.actor == github.repository_owner
+
+    steps:
+      # SHELL BOUNDARY (established in PR #604). No `${{ }}` expression may
+      # appear inside any `run:` script. Every input crosses through env: and is
+      # read only as a quoted variable. Validation happens here, before the
+      # repository is checked out and before any credential is in scope.
+      - name: Refuse an unauthorized or invalid invocation
+        env:
+          INPUT_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          RESOLVED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$RESOLVED_REF" != "refs/heads/main" ]; then
+            echo "Refused: this certification runs only from refs/heads/main."
+            exit 1
+          fi
+
+          if [ "$INPUT_CONFIRMATION" != "RUN READ ONLY PUBLICATION TRUTH CERTIFICATION" ]; then
+            echo "Refused: confirmation must be exactly RUN READ ONLY PUBLICATION TRUTH CERTIFICATION."
+            exit 1
+          fi
+
+          # Whole-value match: grep would accept a multi-line value whose first
+          # line is numeric; bash =~ anchors to the entire string.
+          if ! [[ "$INPUT_SNAPSHOT_ID" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "Refused: snapshot_id must be a positive integer."
+            exit 1
+          fi
+
+          echo "Authorization and input preconditions satisfied."
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      # No continue-on-error: a refused, unproven or failed certification marks
+      # this step failed. Its exit code is recorded first for the final gate.
+      - name: Run the read-only publication truth certification
+        id: certification
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # Required for APPLICATION STARTUP ONLY: APP_ENV=production refuses to
+          # boot without it (config.py). The certification never reads it, makes
+          # no HTTP call, and invokes no admin endpoint.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # Every libpq connection starts read-only, independent of the script.
+          PGOPTIONS: '-c default_transaction_read_only=on'
+          # No sync URL, no publication token, no ingestion mode: nothing here
+          # can run a sync, publish, or ingest.
+          AUTO_SYNC: 'false'
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          INPUT_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: |
+          set -uo pipefail
+          cd backend
+          exit_code=0
+          python scripts/certify_publication_truth.py \
+            --snapshot-id "$INPUT_SNAPSHOT_ID" \
+            --output-dir ../artifacts/publication-truth-certification \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      # The forbidden-content scanner treats an empty or missing directory as
+      # safe, so an upload could otherwise "pass" with nothing in it. Before any
+      # scan, require non-empty JSON and Markdown, and require the certification
+      # pair for the requested snapshot (not a refusal) when it succeeded.
+      - name: Verify the certification output files
+        id: verify
+        if: ${{ !cancelled() }}
+        env:
+          OUTPUT_DIR: artifacts/publication-truth-certification
+          CERTIFICATION_EXIT_CODE: ${{ steps.certification.outputs.exit_code }}
+          INPUT_SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          json=("$OUTPUT_DIR"/*.json)
+          markdown=("$OUTPUT_DIR"/*.md)
+          if [ "${#json[@]}" -eq 0 ] || [ "${#markdown[@]}" -eq 0 ]; then
+            echo "MISSING: the certification wrote no JSON and Markdown evidence."
+            exit 1
+          fi
+          for file in "${json[@]}" "${markdown[@]}"; do
+            if [ ! -s "$file" ]; then
+              echo "EMPTY: $(basename "$file") has no content."
+              exit 1
+            fi
+          done
+          if [ "${CERTIFICATION_EXIT_CODE:-}" = "0" ]; then
+            expected="certification-${INPUT_SNAPSHOT_ID}"
+            if [ "${#json[@]}" -ne 1 ] || [ "${#markdown[@]}" -ne 1 ] \
+              || [ "$(basename "${json[0]}")" != "${expected}.json" ] \
+              || [ "$(basename "${markdown[0]}")" != "${expected}.md" ]; then
+              echo "MISSING: a completed certification must write exactly ${expected}.json and ${expected}.md."
+              exit 1
+            fi
+          fi
+          for file in "${json[@]}" "${markdown[@]}"; do
+            echo "Evidence file: $(basename "$file") ($(wc -c < "$file") bytes)"
+          done
+
+      - name: Scan the certification artifact
+        id: scan
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory artifacts/publication-truth-certification
+
+      # Upload BEFORE the final gate so a refusal or a FAIL verdict is always
+      # reviewable. Only verified, scanned-safe evidence is uploaded.
+      - name: Upload the certification artifact
+        id: upload
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-truth-certification-${{ github.run_id }}
+          path: artifacts/publication-truth-certification
+          retention-days: 30
+          if-no-files-found: error
+
+      # A step reported "success" is not proof of a retained artifact. The
+      # upload action returns the stored artifact's id; require it.
+      - name: Confirm the artifact was retained
+        id: retained
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${ARTIFACT_ID:-}" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "UNRETAINED: the upload returned no artifact id."
+            exit 1
+          fi
+          echo "Retained artifact id: $ARTIFACT_ID"
+
+      - name: Append the certification summary
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          summaries=(artifacts/publication-truth-certification/*.md)
+          if [ "${#summaries[@]}" -eq 0 ]; then
+            echo "No certification summary was produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs after any failure so the reason is stated once, precisely. It reads
+      # operational step outcomes only. A certification verdict (PASS,
+      # CONDITIONAL or FAIL) is data inside the artifact and never reaches it.
+      - name: Final certification gate
+        if: ${{ !cancelled() }}
+        env:
+          CERTIFICATION_OUTCOME: ${{ steps.certification.outcome }}
+          CERTIFICATION_EXIT_CODE: ${{ steps.certification.outputs.exit_code }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          RETAINED_OUTCOME: ${{ steps.retained.outcome }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+
+          if [ "${CERTIFICATION_EXIT_CODE:-}" = "2" ]; then
+            echo "REFUSED: the certification rejected its input before certifying."
+            echo "The refusal document in the artifact states the reason."
+            exit 1
+          fi
+
+          if [ "${CERTIFICATION_EXIT_CODE:-}" = "3" ]; then
+            echo "READ_ONLY_UNPROVEN: read-only operation could not be proven. Nothing was certified."
+            exit 1
+          fi
+
+          if [ "$CERTIFICATION_OUTCOME" != "success" ] || [ "${CERTIFICATION_EXIT_CODE:-}" != "0" ]; then
+            echo "FAILED: the certification did not complete."
+            exit 1
+          fi
+
+          if [ "$VERIFY_OUTCOME" != "success" ]; then
+            echo "MISSING: the certification evidence files were not produced."
+            exit 1
+          fi
+
+          if [ "$SCAN_OUTCOME" != "success" ]; then
+            echo "UNSAFE: the certification artifact failed the forbidden-content scan."
+            exit 1
+          fi
+
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the certification artifact did not upload."
+            exit 1
+          fi
+
+          if [ "$RETAINED_OUTCOME" != "success" ] || [ -z "${ARTIFACT_ID:-}" ]; then
+            echo "UNRETAINED: no retained artifact id was returned."
+            exit 1
+          fi
+
+          echo "Publication truth certification completed read-only."
+          echo "Retained artifact id: $ARTIFACT_ID"
+          echo "This certification is read-only. It does not authorize publishing or"
+          echo "promoting a snapshot, resolving sync failures, recalculating fatigue,"
+          echo "changing methodology or thresholds, or any production mutation."
