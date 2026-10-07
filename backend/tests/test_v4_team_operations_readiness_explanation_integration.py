@@ -127,14 +127,15 @@ def stressed_pitcher_records():
 
 
 def coverage_limited_pitcher_records():
-    # Four fully-covered clean arms plus one record with no current workload,
-    # no availability, and no handedness. Four clean out of five is Stretched
-    # under Contract A (a supported state), and the one unresolved record keeps
+    # Three fully-covered clean arms, one workload On Watch arm, and one record
+    # with no current workload, no availability, and no handedness. Under Team
+    # State v3_phase_6 the unresolved arm cannot decide the state: Stretched
+    # whether it resolves clean or severe (a supported state), and it keeps
     # coverage and handedness partial so the coverage-scope evidence still fires.
     return (
         {
-            'availability_status': 'available',
-            'workload_category': 'low',
+            'availability_status': 'monitor',
+            'workload_category': 'moderate',
             'throwing_hand': 'left',
             'has_current_workload': True,
             'has_availability': True,
