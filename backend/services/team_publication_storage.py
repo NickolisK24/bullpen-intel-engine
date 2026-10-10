@@ -714,6 +714,10 @@ def _board_pitcher_ids(board) -> tuple[int, ...]:
                 card for card in group.get('pitchers') or group.get('arms') or ()
                 if isinstance(card, Mapping)
             )
+    cards.extend(
+        card for card in board.get('evidence_limited_pitchers') or ()
+        if isinstance(card, Mapping)
+    )
     return _int_tuple(card.get('pitcher_id') for card in cards)
 
 
@@ -726,6 +730,10 @@ def _board_cards_by_pitcher(board) -> dict[int, dict]:
             pitcher_id = _positive_int(_mapping(card).get('pitcher_id'))
             if pitcher_id is not None:
                 result[pitcher_id] = deepcopy(dict(card))
+    for card in _mapping(board).get('evidence_limited_pitchers') or ():
+        pitcher_id = _positive_int(_mapping(card).get('pitcher_id'))
+        if pitcher_id is not None:
+            result[pitcher_id] = deepcopy(dict(card))
     return result
 
 

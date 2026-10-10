@@ -14,6 +14,7 @@ from services.availability_explanations import (
     BASE_LIMITATIONS,
     INCOMPLETE_WORKLOAD_LIMITATION,
     INCOMPLETE_WORKLOAD_REASON,
+    LEDGER_REST_LIMITATION,
     MISSING_WORKLOAD_LIMITATION,
     MISSING_WORKLOAD_REASON,
     STALE_WORKLOAD_LIMITATION,
@@ -21,6 +22,7 @@ from services.availability_explanations import (
     appearance_frequency_reason,
     back_to_back_reason,
     fatigue_score_reason,
+    ledger_rest_reason,
     pitch_count_reason,
     rest_reason,
     stale_workload_reason,
@@ -29,6 +31,13 @@ from services.workload_appearance import workload_appearance_logs
 
 
 ACTIVE_WINDOW_DAYS = 14
+
+# Availability engine v2 separates OPERATING STATE (what observed MLB workload
+# supports) from EVIDENCE QUALITY (``data_state``/``confidence``). Evidence
+# quality alone never creates workload concern, and uncertainty is never turned
+# into a clean read. See
+# docs/decisions/2026-10-07-evidence-quality-operating-state-separation.md.
+AVAILABILITY_METHOD_VERSION = 'availability_engine_v2'
 
 STATUS_AVAILABLE = 'Available'
 STATUS_MONITOR = 'Monitor'
@@ -39,6 +48,18 @@ STATUS_UNAVAILABLE = 'Unavailable'
 CONFIDENCE_HIGH = 'high'
 CONFIDENCE_MEDIUM = 'medium'
 CONFIDENCE_LOW = 'low'
+
+# ``operating_basis``: why an arm carries (or does not carry) an operating
+# status. ``None`` means BaseballOS has no operating evidence for the arm, and
+# the arm then carries no availability status at all.
+OPERATING_BASIS_WORKLOAD = 'workload'
+OPERATING_BASIS_LEDGER_CONFIRMED_REST = 'ledger_confirmed_rest'
+OPERATING_BASIS_PARTIAL_WORKLOAD = 'partial_workload'
+OPERATING_BASES = frozenset({
+    OPERATING_BASIS_WORKLOAD,
+    OPERATING_BASIS_LEDGER_CONFIRMED_REST,
+    OPERATING_BASIS_PARTIAL_WORKLOAD,
+})
 
 
 @dataclass(frozen=True)
@@ -318,6 +339,7 @@ def classify_availability(
     latest_game_date=None,
     active_window_days=ACTIVE_WINDOW_DAYS,
     thresholds=THRESHOLDS,
+    rest_confirmed=False,
 ):
     """
     Classify pitcher availability from existing workload data.
@@ -331,6 +353,10 @@ def classify_availability(
             from game_logs when possible.
         active_window_days: Freshness window for current availability.
         thresholds: AvailabilityThresholds instance for deterministic rule tuning.
+        rest_confirmed: True only when the completed-appearance ledger is
+            proven complete for the days before ``reference_date``. Then an arm
+            with no appearance in the active window has OBSERVED rest. Defaults
+            to False, which never fabricates rest.
 
     Returns:
         Dict safe to embed in API responses.
@@ -347,11 +373,13 @@ def classify_availability(
         inputs,
         thresholds=thresholds,
         active_window_days=active_window_days,
+        rest_confirmed=rest_confirmed,
     )
 
 
 def classify_availability_inputs(
     inputs, thresholds=THRESHOLDS, active_window_days=ACTIVE_WINDOW_DAYS,
+    rest_confirmed=False,
 ):
     """Classify an arm from already-derived authoritative workload/rest inputs.
 
@@ -365,8 +393,12 @@ def classify_availability_inputs(
     limitations = list(BASE_LIMITATIONS)
 
     if data_state == 'missing':
+        # No score or no appearance on record: no operating evidence. The arm
+        # carries no availability status, so it is never On Watch and never
+        # Available (engine v1 returned a low-confidence Monitor here).
         return {
-            'availability_status': STATUS_MONITOR,
+            'availability_status': None,
+            'operating_basis': None,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
             'reasons': [MISSING_WORKLOAD_REASON],
@@ -375,12 +407,17 @@ def classify_availability_inputs(
         }
 
     if data_state == 'incomplete':
+        # Observed partial workload that already crosses a threshold is a floor
+        # (missing inputs can hide more work, never less). Partial workload
+        # that crosses nothing proves neither concern nor a clean read.
         status, reasons = _evaluate_workload(inputs, thresholds)
+        basis = OPERATING_BASIS_PARTIAL_WORKLOAD
         if status == STATUS_AVAILABLE:
-            status = STATUS_MONITOR
+            status, basis = None, None
         _add_reason(reasons, INCOMPLETE_WORKLOAD_REASON)
         return {
             'availability_status': status,
+            'operating_basis': basis,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
             'reasons': reasons,
@@ -389,8 +426,22 @@ def classify_availability_inputs(
         }
 
     if data_state == 'stale':
+        if rest_confirmed:
+            # No appearance in the active window and a complete completed-game
+            # ledger: observed rest, not old data. The carried fatigue score of
+            # a stale arm is never read; no score is fabricated.
+            return {
+                'availability_status': STATUS_AVAILABLE,
+                'operating_basis': OPERATING_BASIS_LEDGER_CONFIRMED_REST,
+                'confidence': CONFIDENCE_MEDIUM,
+                'data_state': data_state,
+                'reasons': [ledger_rest_reason(active_window_days)],
+                'limitations': limitations + [LEDGER_REST_LIMITATION],
+                'inputs': inputs,
+            }
         return {
-            'availability_status': STATUS_MONITOR,
+            'availability_status': None,
+            'operating_basis': None,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
             'reasons': [stale_workload_reason(active_window_days)],
@@ -405,6 +456,7 @@ def classify_availability_inputs(
 
     return {
         'availability_status': status,
+        'operating_basis': OPERATING_BASIS_WORKLOAD,
         'confidence': confidence,
         'data_state': data_state,
         'reasons': reasons,

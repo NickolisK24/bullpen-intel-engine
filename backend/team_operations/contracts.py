@@ -19,7 +19,15 @@ CONTRACT = 'team_operations_bullpen_readiness_api_contract'
 # so the readiness contract version advances one phase. Every payload assembled
 # under the new classifier stamps this value; historical rows keep 'v3_phase_4'.
 # Do not silently continue 'v3_phase_4'.
-CONTRACT_VERSION = 'v3_phase_5'
+# v3_phase_6 separates evidence quality from operating state (truth
+# certification remediation, docs/decisions/
+# 2026-10-07-evidence-quality-operating-state-separation.md). Stale, missing or
+# incomplete evidence no longer enters the partition as workload concern, and a
+# new evidence-determinacy gate withholds a state that arms without operating
+# evidence could decide. Thresholds, precedence and the clean/moderate/severe
+# map are unchanged. Snapshots published under v3_phase_5 keep that stamp and
+# keep serving what they published.
+CONTRACT_VERSION = 'v3_phase_6'
 NO_RANKING_APPLIED = False
 NO_SELECTION_MADE = False
 
@@ -29,6 +37,10 @@ NO_SELECTION_MADE = False
 # produced the state. Distinct from the immutable artifact render version
 # (team-state-1.x.0), which versions the published document shape.
 TEAM_STATE_METHOD_VERSION = CONTRACT_VERSION
+# Governed earlier Team State methods. A frozen receipt stamped with one of these
+# remains valid for the snapshot that published it (history is never rewritten),
+# but it is never comparable with a receipt of another method.
+HISTORICAL_TEAM_STATE_METHOD_VERSIONS = frozenset({'v3_phase_5'})
 
 CONTRACT_STATES = frozenset(
     {

@@ -11,6 +11,10 @@ function countOrNull(value) {
     : null
 }
 
+// Backend reason code for a published Team State whose active bullpen includes
+// arms without a current workload score (services/team_board_v2.py).
+export const TEAM_STATE_EVIDENCE_SCOPE_REASON = 'team_state_evidence_scope_disclosed'
+
 function firstLimitation(sectionStatus, excludedMessage = null) {
   const sections = ['team_state', 'active_bullpen']
   for (const key of sections) {
@@ -24,6 +28,7 @@ function firstLimitation(sectionStatus, excludedMessage = null) {
     return {
       status: section.status === 'unavailable' ? 'unavailable' : 'partial',
       limitation: limitation?.trim() || null,
+      reasonCode: typeof section.reason_code === 'string' ? section.reason_code : null,
     }
   }
   return null
@@ -304,7 +309,13 @@ export default function TeamBoardAnswerBlock({
             {view.limitation && (
               <SectionState
                 status={view.limitation.status}
-                title="Limited read"
+                title={
+                  // Evidence-quality scope of a published Team State (backend
+                  // evidence_scope). It names scope; it is not a weaker read.
+                  view.limitation.reasonCode === TEAM_STATE_EVIDENCE_SCOPE_REASON
+                    ? 'Workload evidence'
+                    : 'Limited read'
+                }
                 message={view.limitation.limitation}
                 className="mt-panel"
               />

@@ -142,8 +142,13 @@ class TestBullpenFreshness:
         assert inventory['mode'] == 'scored_pitcher_inventory'
         assert inventory['is_current_availability'] is False
         assert inventory['total_pitchers'] == 1
-        assert inventory['statuses']['Monitor'] == 1
-        assert inventory['confidence']['low'] == 1
+        # Engine v2: a stale score is evidence quality, not workload concern, so
+        # it is never Monitor. Here the completed-game ledger proves the rest (no
+        # final game was missed), so the idle arm reads Available on that basis
+        # with medium confidence while its data state stays stale.
+        assert inventory['statuses']['Monitor'] == 0
+        assert inventory['statuses']['Available'] == 1
+        assert inventory['confidence']['medium'] == 1
         assert inventory['data_state']['stale'] == 1
         assert any('inventory workload reads' in note.lower() for note in inventory['notes'])
 

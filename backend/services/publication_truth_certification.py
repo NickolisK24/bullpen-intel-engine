@@ -209,9 +209,20 @@ def certify_roster(snapshot, *, membership_date, memberships=None):
                                'issue': 'roster_snapshot_other_team',
                                'snapshot_team_id': row.team_id})
             elif str(row.roster_status).lower() != 'active':
+                # The canonical membership authority reads the CURRENT roster
+                # assignment; this row is the dated snapshot for the membership
+                # date. Both are recorded so a timing difference (a roster move
+                # between the dated snapshot and publication) is visible.
                 issues.append({'pitcher_id': pitcher_id, 'mlb_id': pitcher.mlb_id,
                                'issue': 'not_on_mlb_active_roster',
-                               'roster_status': row.roster_status})
+                               'roster_status': row.roster_status,
+                               'snapshot_source': row.source,
+                               'snapshot_last_corrected_at': _iso(row.last_corrected_at),
+                               'current_roster_status': pitcher.roster_status,
+                               'current_roster_status_source': pitcher.roster_status_source,
+                               'current_roster_status_updated_at': _iso(
+                                   pitcher.roster_status_updated_at),
+                               'current_team_assignment_status': pitcher.team_assignment_status})
             elif row.active_roster is False:
                 # The canonical membership authority decides membership; a
                 # disagreeing flag on the same row is recorded for review.
@@ -405,9 +416,22 @@ def certify_workload(snapshot):
                     continue
                 diff[key] = {'published': published[key], 'recount': expected}
             if diff:
-                mismatches.append({'pitcher_id': pitcher_id,
-                                   'pitcher_name': item.get('pitcher_name'),
-                                   **context, 'diff': diff})
+                days = diff.get('days_since_last_appearance')
+                mismatches.append({
+                    'pitcher_id': pitcher_id,
+                    'pitcher_name': item.get('pitcher_name'),
+                    **context, 'diff': diff,
+                    # The frozen days-since comes from the stored FatigueScore,
+                    # computed at that score's own reference date; the daily
+                    # recalculation skips an arm with no log in its window, so
+                    # an idle arm's stored value stops advancing. A published
+                    # value SMALLER than the recount is that signature.
+                    'stored_score_carry_forward_signature': bool(
+                        days and isinstance(days.get('published'), int)
+                        and isinstance(days.get('recount'), int)
+                        and days['published'] < days['recount']
+                    ),
+                })
         teams[club.team_id] = {
             'team': club.abbreviation,
             'arms_checked': checked,
@@ -492,6 +516,8 @@ def _arm_row(pitcher_id, record, sidecar_record, ledger_complete):
         'public_form': PUBLIC_STATUS_FORMS.get(status),
         'bucket': bucket,
         'monitor_basis': monitor_basis(availability) if bucket == 'monitor' else None,
+        # Availability engine v2 field; absent in a v1 publication.
+        'operating_basis': availability.get('operating_basis'),
         'data_state': data_state,
         'confidence': availability.get('confidence'),
         'latest_game_date': _iso(inputs.get('latest_game_date')),
@@ -596,6 +622,11 @@ def certify_arm_attribution(snapshot, *, memberships, sidecars, ledger_complete)
             'stale_arms': data_states['stale'],
             'missing_arms': data_states['missing'],
             'ledger_confirmed_rest': sum(1 for arm in arms if arm['ledger_confirmed_rest']),
+            'available_from_confirmed_rest': sum(
+                1 for arm in arms
+                if arm['bucket'] == 'clean' and arm['operating_basis'] == 'ledger_confirmed_rest'),
+            'without_operating_status': sum(
+                1 for arm in arms if arm['frozen_record_present'] and not arm['availability_status']),
             'members_without_record': len(unscored),
             'sidecar_disagreements': sum(
                 1 for arm in arms
@@ -653,10 +684,15 @@ def certify_team_state(snapshot, *, attribution, sidecars, coverage=None):
         if notes and verdict == PASS:
             verdict = CONDITIONAL
         team_coverage = _mapping(coverage.get(club.team_id))
+        package = _team_package(_package(snapshot), club.team_id) or {}
+        scope = package.get('evidence_scope') if isinstance(
+            package.get('evidence_scope'), Mapping) else None
         teams[club.team_id] = {
             'team': club.abbreviation,
             **state,
             'receipt_present': present,
+            'receipt_method_version': _receipt_method_version(snapshot, club.team_id),
+            'evidence_scope': dict(scope) if scope else None,
             'receipt_reason_code': _mapping(value).get('reason_code'),
             'sidecar_bound': sidecar is not None,
             'sidecar_trust_state': sidecar_domain.get('trust_state'),
@@ -693,6 +729,11 @@ def certify_team_state(snapshot, *, attribution, sidecars, coverage=None):
             'verdict': verdict,
         }
     return teams
+
+
+def _receipt_method_version(snapshot, team_id):
+    from services.team_board_snapshot_team_state import _receipt_method_version as read
+    return read(snapshot, team_id)
 
 
 def coverage_at_audit_time(membership_date, availability_date):

@@ -1103,11 +1103,13 @@ class TestDashboardEndpoint:
         assert roster_readiness['reason_codes'] == []
         assert roster_readiness['coverage']['complete'] is True
         assert dashboard['availability_summary']['total_pitchers'] == 10
-        assert dashboard['availability_summary']['statuses']['Available'] == 5
-        assert dashboard['availability_summary']['statuses']['Monitor'] == 5
+        # Engine v2: the idle arm (no outing in the active window, ledger
+        # complete) is ledger-confirmed rest, never On Watch.
+        assert dashboard['availability_summary']['statuses']['Available'] == 6
+        assert dashboard['availability_summary']['statuses']['Monitor'] == 4
         assert dashboard['roles']['total'] == 10
         assert dashboard['landscape']['teams_evaluated'] == 1
         assert landscape_entries
         assert all(entry['total_relievers'] == 10 for entry in landscape_entries)
-        assert all(entry['available'] == 5 for entry in landscape_entries)
-        assert all(entry['monitor'] == 5 for entry in landscape_entries)
+        assert all(entry['available'] == 6 for entry in landscape_entries)
+        assert all(entry['monitor'] == 4 for entry in landscape_entries)

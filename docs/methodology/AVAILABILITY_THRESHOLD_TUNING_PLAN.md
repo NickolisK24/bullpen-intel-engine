@@ -114,9 +114,9 @@ Unavailable can also trigger when `appearances_last_5_days >= 4` and
 | Data state | Current behavior |
 |---|---|
 | Fresh | Classifies from workload thresholds; confidence defaults to high |
-| Stale | Returns Monitor, low confidence |
-| Missing | Returns Monitor, low confidence |
-| Incomplete | Evaluates available workload, promotes Available to Monitor, low confidence |
+| Stale | Engine v2: Available from ledger-confirmed rest (medium confidence) when the completed-game ledger is complete; otherwise no operating status, low confidence (v1 returned Monitor) |
+| Missing | Engine v2: no operating status, low confidence (v1 returned Monitor) |
+| Incomplete | Engine v2: observed partial workload that crosses a threshold is kept as a lower bound; otherwise no operating status; low confidence (v1 promoted Available to Monitor) |
 
 The active freshness window is 14 days.
 

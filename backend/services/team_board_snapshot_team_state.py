@@ -163,14 +163,13 @@ def receipt_value(snapshot, team_id):
             data_through=_date(snapshot.data_through),
             reason_code='snapshot_team_state_receipt_missing',
         )
-    from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
     expected_date = _date(snapshot.data_through)
     if not isinstance(receipt, Mapping) or any((
         receipt.get('contract') != CONTRACT,
         receipt.get('team_id') != int(team_id),
         receipt.get('dashboard_snapshot_id') != snapshot.id,
         receipt.get('represented_date') != expected_date,
-        receipt.get('method_version') != EXPECTED_METHOD_VERSION,
+        receipt.get('method_version') not in governed_receipt_method_versions(),
         not isinstance(receipt.get('value'), Mapping),
         receipt.get('value', {}).get('data_through') != expected_date,
     )):
@@ -180,6 +179,32 @@ def receipt_value(snapshot, team_id):
             reason_code='snapshot_team_state_receipt_invalid',
         )
     return True, deepcopy(dict(receipt['value']))
+
+
+def governed_receipt_method_versions():
+    """Team State methods a frozen receipt may carry: current plus governed history.
+
+    A receipt is bound to the snapshot that published it, so a snapshot published
+    under an earlier governed method keeps serving exactly what it published.
+    """
+    from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
+    from team_operations import HISTORICAL_TEAM_STATE_METHOD_VERSIONS
+    return frozenset({EXPECTED_METHOD_VERSION}) | HISTORICAL_TEAM_STATE_METHOD_VERSIONS
+
+
+def _receipt_method_version(snapshot, team_id):
+    package = (
+        snapshot.payload.get('trusted_team_boards')
+        if isinstance(snapshot.payload, Mapping) else None
+    )
+    if not isinstance(package, Mapping):
+        return None
+    receipts = package.get('frozen_team_state_by_team_id')
+    receipt = receipts.get(str(int(team_id))) if isinstance(receipts, Mapping) else None
+    if receipt is None:
+        team = (package.get('by_team_id') or {}).get(str(int(team_id)))
+        receipt = team.get('frozen_team_state') if isinstance(team, Mapping) else None
+    return receipt.get('method_version') if isinstance(receipt, Mapping) else None
 
 
 def compare_exact_team_state(previous_snapshot, current_snapshot, team_id, identity):
@@ -202,6 +227,16 @@ def compare_exact_team_state(previous_snapshot, current_snapshot, team_id, ident
         return {**base, 'status': 'unavailable', 'reason_code': 'snapshot_team_state_receipt_missing'}
     if previous.get('available') is not True or current.get('available') is not True:
         return {**base, 'status': 'unavailable', 'reason_code': 'team_state_not_comparable'}
+    if _receipt_method_version(previous_snapshot, team_id) != _receipt_method_version(
+        current_snapshot, team_id,
+    ):
+        # Two methods classified these states. A difference between them is a
+        # methodology change, not a baseball event, so it is never published as
+        # one (no "recovered" copy because a classification defect was fixed).
+        return {
+            **base, 'status': 'unavailable',
+            'reason_code': 'team_state_method_version_changed',
+        }
     from_state = previous.get('public_state')
     to_state = current.get('public_state')
     if from_state not in {'fresh', 'stretched', 'vulnerable'} or to_state not in {'fresh', 'stretched', 'vulnerable'}:

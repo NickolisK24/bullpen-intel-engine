@@ -18,6 +18,7 @@ from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     _apply_workload_fetch_failure,
     _unresolved_workload_fetch_failure_refs,
+    rest_confirmed_for,
 )
 from services.incremental_workload_rest import (
     PARITY_MATCH,
@@ -277,7 +278,9 @@ def _classified_override(pitcher_id, workload_result, *, availability_date):
         raise LookupError(f'pitcher {pitcher_id} not found')
     workload_result = dict(workload_result or {})
     inputs = dict(workload_result.get('rest_workload_inputs') or {})
-    availability = classify_availability_inputs(inputs)
+    availability = classify_availability_inputs(
+        inputs, rest_confirmed=rest_confirmed_for(availability_date),
+    )
     if str(getattr(pitcher, 'mlb_id', '')) in _unresolved_workload_fetch_failure_refs(
         [pitcher]
     ):

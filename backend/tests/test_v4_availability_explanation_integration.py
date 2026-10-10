@@ -201,13 +201,38 @@ class TestV4AvailabilityExplanationIntegration:
 
         payload = explanation_payload(availability)
 
-        assert availability['availability_status'] == STATUS_MONITOR
+        # Engine v2: stale evidence without a rest proof has no operating status;
+        # it is explained as evidence uncertainty, never as a monitor arm.
+        assert availability['availability_status'] is None
+        assert payload['state_explained'] == 'no_operating_status'
         assert payload['freshness']['status'] == 'stale'
         assert 'FRESHNESS_STALE_SOURCE' in reason_codes(payload)
+        assert 'AVAILABILITY_MONITOR_THRESHOLD_MET' not in reason_codes(payload)
         assert evidence_by_type(payload)['availability_data_state']['value'] == 'stale'
         assert 'stale_data' in limitation_types(payload)
         assert 'limited_confidence' in limitation_types(payload)
-        assert 'BaseballOS is treating him as a monitor arm' in payload['summary']
+        assert 'monitor arm' not in payload['summary']
+        assert 'no current read' in payload['summary']
+        assert_no_availability_meta_copy(payload)
+        assert_governance_safe(payload)
+
+    def test_ledger_confirmed_rest_is_explained_with_its_basis(self):
+        ref = date(2026, 6, 1)
+        availability = classify_availability(
+            score=ScoreStub(raw_score=80.0),
+            game_logs=[],
+            reference_date=ref,
+            latest_game_date=ref - timedelta(days=30),
+            rest_confirmed=True,
+        )
+
+        payload = explanation_payload(availability)
+
+        assert availability['availability_status'] == 'Available'
+        assert payload['state_explained'] == 'Available'
+        assert payload['freshness']['status'] == 'stale'
+        assert 'complete game records confirm that rest' in payload['summary']
+        assert 'monitor arm' not in payload['summary']
         assert_no_availability_meta_copy(payload)
         assert_governance_safe(payload)
 
@@ -223,6 +248,8 @@ class TestV4AvailabilityExplanationIntegration:
         evidence = evidence_by_type(payload)
 
         assert availability['data_state'] == 'missing'
+        assert availability['availability_status'] is None
+        assert payload['state_explained'] == 'no_operating_status'
         assert payload['freshness']['status'] == 'missing'
         assert 'TRUST_LIMITED' in reason_codes(payload)
         assert 'missing_data' in limitation_types(payload)
