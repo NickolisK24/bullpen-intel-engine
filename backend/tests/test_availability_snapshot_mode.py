@@ -271,7 +271,18 @@ def test_snapshot_mode_produces_mixed_workload_statuses_from_sample_data(client)
         assert availability['reasons']
 
 
-def test_current_mode_keeps_stale_data_truthful(client):
+@pytest.mark.parametrize('rest_proven', [False, True])
+def test_current_mode_keeps_stale_data_truthful(client, monkeypatch, rest_proven):
+    """Engine v2: stale evidence is never On Watch.
+
+    Without a rest proof it carries no operating status. With a complete
+    completed-game ledger, no appearance in the window is observed rest: the
+    arm reads Available from that basis, still reports stale evidence, and its
+    old (high) fatigue score is never read.
+    """
+    import services.availability_snapshot as availability_snapshot
+
+    monkeypatch.setattr(availability_snapshot, 'rest_confirmed_for', lambda _ref: rest_proven)
     with client.application.app_context():
         _add_pitcher(
             'Stale Calendar Workload',
@@ -287,10 +298,18 @@ def test_current_mode_keeps_stale_data_truthful(client):
         )
 
     availability = records[0]['availability']
-    assert availability['availability_status'] == 'Monitor'
-    assert availability['confidence'] == 'low'
     assert availability['data_state'] == 'stale'
-    assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in availability['limitations']
+    assert availability['availability_status'] != 'Monitor'
+    if rest_proven:
+        assert availability['availability_status'] == 'Available'
+        assert availability['operating_basis'] == 'ledger_confirmed_rest'
+        assert availability['confidence'] == 'medium'
+        assert any('no current workload score' in note for note in availability['limitations'])
+    else:
+        assert availability['availability_status'] is None
+        assert availability['operating_basis'] is None
+        assert availability['confidence'] == 'low'
+        assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in availability['limitations']
 
 
 def test_snapshot_mode_keeps_missing_data_truthful(client):
@@ -309,7 +328,8 @@ def test_snapshot_mode_keeps_missing_data_truthful(client):
         )
 
     availability = records[0]['availability']
-    assert availability['availability_status'] == 'Monitor'
+    # Engine v2: missing evidence carries no operating status.
+    assert availability['availability_status'] is None
     assert availability['confidence'] == 'low'
     assert availability['data_state'] == 'missing'
     assert availability['reasons'] == ['Missing recent workload history']

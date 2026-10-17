@@ -462,9 +462,12 @@ def test_unknown_arms_never_improve_the_state_by_implicit_zero():
     as clean. Replacing a clean arm with an unknown one cannot improve the state."""
     for c, m, s in [(6, 2, 0), (5, 3, 0), (4, 2, 0), (3, 3, 0)]:
         if c > 0:
-            with_unknown = _rank_of(c - 1, m, s, 1)
-            baseline = _rank_of(c, m, s, 0)
-            assert with_unknown <= baseline, (c, m, s)
+            code = _state(c - 1, m, s, 1)
+            if code == 'data_limited':
+                # v3_phase_6: when the unknown arm could decide the state, no
+                # state is published. Withholding never improves a state.
+                continue
+            assert RANK[code] <= _rank_of(c, m, s, 0), (c, m, s)
 
 
 # ── 10. Determinism ──────────────────────────────────────────────────────────
@@ -479,9 +482,9 @@ def test_classification_is_deterministic():
 
 def test_readiness_payload_stamps_the_vnext_contract_version():
     payload = _payload(7, 4, 0, 0)
-    assert payload['contract_version'] == 'v3_phase_5'
+    assert payload['contract_version'] == 'v3_phase_6'
     assert payload['contract_version'] == CONTRACT_VERSION
-    assert payload['team_state_evidence']['method_version'] == 'v3_phase_5'
+    assert payload['team_state_evidence']['method_version'] == 'v3_phase_6'
 
 
 def test_refused_payload_still_records_the_method_version():

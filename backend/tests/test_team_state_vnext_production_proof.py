@@ -20,6 +20,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
 from services import team_state_vnext_production_proof as proof_module
 from services.team_state_vnext_production_proof import (
+    EXPECTED_METHOD_VERSION,
     CAPABILITY,
     CONTRACT,
     INVARIANTS,
@@ -56,7 +57,7 @@ def _thresholds():
 
 
 def _evidence(clean, moderate, severe, unknown, *, status_code, decisive_rule,
-              method_version='v3_phase_5'):
+              method_version=EXPECTED_METHOD_VERSION):
     total = clean + moderate + severe + unknown
     share = (lambda count: count / total) if total else (lambda count: None)
     return {
@@ -90,7 +91,7 @@ def _artifact(public_code):
 
 def _result(team_id, *, clean=6, moderate=2, severe=0, unknown=0,
             status_code='operationally_stable', decisive_rule='fresh_coverage',
-            public_code='fresh', method_version='v3_phase_5',
+            public_code='fresh', method_version=EXPECTED_METHOD_VERSION,
             membership=SLATE, availability=AVAILABILITY, evidence=None):
     vector = evidence if evidence is not None else _evidence(
         clean, moderate, severe, unknown,
@@ -106,7 +107,7 @@ def _result(team_id, *, clean=6, moderate=2, severe=0, unknown=0,
         product_date=SLATE,
         artifact=_artifact(public_code),
         readiness={
-            'contract_version': 'v3_phase_5',
+            'contract_version': EXPECTED_METHOD_VERSION,
             'readiness': {'status_code': status_code},
             'team_state_evidence': vector,
         },
@@ -309,12 +310,14 @@ def test_a_31st_unexpected_team_is_rejected():
 def test_method_version_is_captured_verbatim_for_every_team():
     proof = _build()
     assert proof['invariants']['method_version_observed']['result'] == RESULT_PASS
-    assert {team['method_version'] for team in proof['teams']} == {'v3_phase_5'}
-    assert all(team['contract_version'] == 'v3_phase_5' for team in proof['teams'])
+    assert {team['method_version'] for team in proof['teams']} == {EXPECTED_METHOD_VERSION}
+    assert EXPECTED_METHOD_VERSION == 'v3_phase_6'
+    assert all(team['contract_version'] == EXPECTED_METHOD_VERSION for team in proof['teams'])
 
 
 def test_a_stale_method_version_fails_the_invariant():
-    teams = _teams(29) + _teams(1, method_version='v3_phase_4')
+    # The previous governed method is stale for a NEW publication.
+    teams = _teams(29) + _teams(1, method_version='v3_phase_5')
     proof = _build(teams=teams)
     assert proof['invariants']['method_version_observed']['result'] == RESULT_FAIL
 

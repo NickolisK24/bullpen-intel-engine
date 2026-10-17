@@ -473,7 +473,7 @@ def test_trusted_publication_rehearsal(monkeypatch, tmp_path):
                         'availability_reference_date': snapshot.availability_reference_date,
                     })
                     return {
-                        'contract_version': 'v3_phase_5',
+                        'contract_version': 'v3_phase_6',
                         'team': {
                             'team_id': team_id, 'team_name': f'Rehearsal Team {team_id}',
                             'team_abbreviation': f'R{team_id}',
@@ -485,7 +485,7 @@ def test_trusted_publication_rehearsal(monkeypatch, tmp_path):
                         'freshness': {'data_through': snapshot.data_through.isoformat()},
                         'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
                         'team_state_evidence': {
-                            'method_version': 'v3_phase_5',
+                            'method_version': 'v3_phase_6',
                             'contract': 'team_state_contract_a',
                             'basis': 'status_only',
                             'readiness_status_code': 'operationally_stable',
@@ -1113,7 +1113,7 @@ def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
                     'availability_reference_date': snapshot.availability_reference_date,
                 })
                 return {
-                    'contract_version': 'v3_phase_5',
+                    'contract_version': 'v3_phase_6',
                     'team': {
                         'team_id': team_id,
                         'team_name': f'Rehearsal Team {team_id}',
@@ -1126,7 +1126,7 @@ def test_rehearsal_accepts_30_accounted_teams_with_sparse_publishable_boards(
                     'freshness': {'data_through': snapshot.data_through.isoformat()},
                     'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
                     'team_state_evidence': {
-                        'method_version': 'v3_phase_5',
+                        'method_version': 'v3_phase_6',
                         'contract': 'team_state_contract_a', 'basis': 'status_only',
                         'readiness_status_code': 'operationally_stable',
                         'active_pitcher_count': 8, 'clean_count': 6,
@@ -1238,7 +1238,7 @@ def _governed_readiness(team_id, reference_dates_out, source_snapshot):
         'availability_reference_date': source_snapshot.availability_reference_date,
     })
     return {
-        'contract_version': 'v3_phase_5',
+        'contract_version': 'v3_phase_6',
         'team': {
             'team_id': team_id, 'team_name': f'Rehearsal Team {team_id}',
             'team_abbreviation': f'R{team_id}',
@@ -1247,7 +1247,7 @@ def _governed_readiness(team_id, reference_dates_out, source_snapshot):
         'freshness': {'data_through': source_snapshot.data_through.isoformat()},
         'trust_metadata': {'confidence': 'high', 'data_state': 'fresh'},
         'team_state_evidence': {
-            'method_version': 'v3_phase_5',
+            'method_version': 'v3_phase_6',
             'contract': 'team_state_contract_a', 'basis': 'status_only',
             'readiness_status_code': status_code,
             'active_pitcher_count': 8, 'clean_count': clean,

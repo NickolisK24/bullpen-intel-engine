@@ -4,6 +4,33 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## October 7, 2026 - Evidence quality separated from operating state
+
+- The governed truth certification of snapshot 4496 (data through 2026-10-06)
+  proved that evidence age alone became workload concern: an arm with no
+  appearance in 14 days was classified `Monitor` with low confidence, published
+  as "On Watch", and counted as moderate in Team State. WSH, COL, TEX, MIN, MIA
+  and AZ published Stretched with every On Watch arm stale.
+- Availability engine v2 (`availability_engine_v2`): a stale arm whose rest the
+  completed-game ledger proves reads Available from `ledger_confirmed_rest`
+  (medium confidence, still `data_state: stale`); stale without that proof,
+  missing, or incomplete evidence carries no operating status unless observed
+  partial workload already crosses a threshold. Evidence uncertainty is shown
+  through the Workload Data family and the Limited Read, never On Watch.
+- Team State method `v3_phase_5 -> v3_phase_6`: thresholds and the
+  clean/moderate/severe map are unchanged; a new evidence-determinacy gate
+  withholds a state that arms without operating evidence could decide.
+- Each new team package freezes an `evidence_scope` carrier; the Team Board
+  names how many active arms rest on confirmed game records or lack current
+  workload evidence.
+- History is not rewritten: snapshot 4496 and earlier keep their `v3_phase_5`
+  receipts and keep serving what they published. A Team State comparison across
+  the two methods is not published as a change (`team_state_method_version_changed`).
+- Methodology now discloses that workload counts regular-season and postseason
+  games, and no longer claims that stale or missing evidence always withholds a
+  read. Decision record:
+  [docs/decisions/2026-10-07-evidence-quality-operating-state-separation.md](../decisions/2026-10-07-evidence-quality-operating-state-separation.md).
+
 ## August 18, 2026 - Team State availability reference date (D-056)
 
 - The published Team State path classified bullpen availability on the trusted
