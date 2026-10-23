@@ -169,18 +169,21 @@ def assemble_bullpen_readiness(
     # pressure, raw fatigue scores, and handedness coverage are computed above as
     # governed context for other surfaces, but they do NOT decide the state.
     team_state_partition = _team_state_partition(availability_distribution)
+    evidence_bounds = _evidence_bounds(records)
     readiness_code, decisive_rule, decisive_inputs = _contract_a_decision(
         team_state_partition,
         coverage_inventory,
         handedness_coverage,
         freshness_metadata,
         trust,
+        evidence_bounds=evidence_bounds,
     )
     team_state_evidence = _team_state_evidence(
         readiness_code=readiness_code,
         decisive_rule=decisive_rule,
         decisive_inputs=decisive_inputs,
         partition=team_state_partition,
+        evidence_bounds=evidence_bounds,
         coverage_inventory=coverage_inventory,
         handedness_coverage=handedness_coverage,
         freshness=freshness_metadata,
@@ -257,7 +260,37 @@ def _normalize_pitcher_record(record: Mapping[str, Any]) -> dict[str, Any]:
         'has_current_workload': bool(record.get('has_current_workload', True)),
         'has_availability': bool(record.get('has_availability', True)),
         'active': bool(record.get('active', True)),
+        'evidence_bound': _evidence_bound(record),
     }
+
+
+EVIDENCE_BOUND_EXACT = 'exact'
+EVIDENCE_BOUND_LOWER = 'lower_bound'
+EVIDENCE_BOUND_UNKNOWN = 'unknown'
+_EVIDENCE_BOUNDS = frozenset({
+    EVIDENCE_BOUND_EXACT, EVIDENCE_BOUND_LOWER, EVIDENCE_BOUND_UNKNOWN,
+})
+
+
+def _evidence_bound(record: Mapping[str, Any]) -> str:
+    """How firmly the arm's operating status is known (v3_phase_6).
+
+    ``exact``: observed workload or ledger-confirmed rest. ``lower_bound``:
+    observed partial workload that missing inputs can only make worse.
+    ``unknown``: no operating status at all. A record without an explicit bound
+    is exact unless it carries no governed availability status.
+    """
+    explicit = record.get('evidence_bound')
+    if explicit in _EVIDENCE_BOUNDS:
+        return explicit
+    status = str(
+        record.get('availability_status') or record.get('availability') or 'unknown'
+    ).lower()
+    if not bool(record.get('has_availability', True)) or status not in {
+        'available', 'monitor', 'limited', 'avoid', 'unavailable',
+    }:
+        return EVIDENCE_BOUND_UNKNOWN
+    return EVIDENCE_BOUND_EXACT
 
 
 def _availability_distribution(records: tuple[dict[str, Any], ...]) -> dict[str, int]:
@@ -484,6 +517,30 @@ def _constraints(
     return constraints
 
 
+def _evidence_bounds(records: tuple[dict[str, Any], ...]) -> dict[str, int]:
+    """Counts of the active arms whose operating status is not exactly known."""
+    unknown = 0
+    lower_moderate = 0
+    lower_severe = 0
+    for record in _active_records(records):
+        status = record['availability_status'] if record['has_availability'] else 'unknown'
+        bound = record['evidence_bound']
+        if bound == EVIDENCE_BOUND_UNKNOWN or status not in {
+            'available', 'monitor', 'limited', 'avoid', 'unavailable',
+        }:
+            unknown += 1
+        elif bound == EVIDENCE_BOUND_LOWER:
+            if status in {'avoid', 'unavailable'}:
+                lower_severe += 1
+            elif status in {'monitor', 'limited'}:
+                lower_moderate += 1
+    return {
+        'uncertain_unknown_count': unknown,
+        'lower_bound_moderate_count': lower_moderate,
+        'lower_bound_severe_count': lower_severe,
+    }
+
+
 def _team_state_partition(availability_distribution: Mapping[str, Any]) -> dict[str, int]:
     """Status-only clean/moderate/severe/unknown partition of the active bullpen.
 
@@ -566,6 +623,7 @@ def _contract_a_decision(
     handedness_coverage: Mapping[str, Any],
     freshness: TeamOperationsFreshnessMetadata,
     trust: TeamOperationsTrustMetadata,
+    evidence_bounds: Mapping[str, int] | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Locked Contract A precedence. Returns (status_code, decisive_rule, inputs).
 
@@ -589,6 +647,43 @@ def _contract_a_decision(
     if gate is not None:
         return 'data_limited', DECISIVE_RULE_DATA_LIMITED, dict(gate)
 
+    # v3_phase_6 evidence determinacy. An arm with no operating status (or only
+    # a lower bound) may resolve anywhere between its most favorable value and
+    # severe. When the two extremes classify differently, those arms -- not
+    # the observed workload -- would decide the state, so no state is
+    # supported: withhold. Uncertainty can therefore never produce Stretched or
+    # Vulnerable, and never produce Fresh. Contract A is monotone in clean and
+    # severe counts, so when the extremes agree the recorded partition (which
+    # lies between them) yields that same state and rule below.
+    bounds = evidence_bounds or {}
+    unknown = int(bounds.get('uncertain_unknown_count') or 0)
+    lower_moderate = int(bounds.get('lower_bound_moderate_count') or 0)
+    if unknown or lower_moderate:
+        best = dict(partition)
+        best['clean_count'] = partition['clean_count'] + unknown
+        best['unknown_count'] = partition['unknown_count'] - unknown
+        worst = dict(partition)
+        worst['severe_count'] = partition['severe_count'] + unknown + lower_moderate
+        worst['moderate_count'] = partition['moderate_count'] - lower_moderate
+        worst['unknown_count'] = partition['unknown_count'] - unknown
+        best_code, _rule, _inputs = _contract_a_thresholds(best)
+        worst_code, _rule, _inputs = _contract_a_thresholds(worst)
+        if best_code != worst_code:
+            return 'data_limited', DECISIVE_RULE_DATA_LIMITED, {
+                'gate': 'evidence_indeterminate',
+                'uncertain_unknown_count': unknown,
+                'lower_bound_moderate_count': lower_moderate,
+                'best_case_status_code': best_code,
+                'worst_case_status_code': worst_code,
+            }
+
+    return _contract_a_thresholds(partition)
+
+
+def _contract_a_thresholds(
+    partition: Mapping[str, int],
+) -> tuple[str, str, dict[str, Any]]:
+    """Contract A precedence steps 2-4 on one partition (thresholds unchanged)."""
     total = partition['active_pitcher_count']
     clean = partition['clean_count']
     severe = partition['severe_count']
@@ -661,6 +756,7 @@ def _team_state_evidence(
     handedness_coverage: Mapping[str, Any],
     freshness: TeamOperationsFreshnessMetadata,
     trust: TeamOperationsTrustMetadata,
+    evidence_bounds: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """Canonical Team State evidence vector from the exact classifier inputs.
 
@@ -670,12 +766,18 @@ def _team_state_evidence(
     denominator]`` so a downstream reader can reproduce the boundary arithmetic.
     """
     total = partition['active_pitcher_count']
+    bounds = dict(evidence_bounds or {
+        'uncertain_unknown_count': 0,
+        'lower_bound_moderate_count': 0,
+        'lower_bound_severe_count': 0,
+    })
     material_limitations = _team_state_material_limitations(
         readiness_code=readiness_code,
         partition=partition,
         handedness_coverage=handedness_coverage,
         freshness=freshness,
         trust=trust,
+        decisive_inputs=decisive_inputs,
     )
     return {
         'method_version': TEAM_STATE_METHOD_VERSION,
@@ -691,6 +793,7 @@ def _team_state_evidence(
         'moderate_share': _share(partition['moderate_count'], total),
         'severe_share': _share(partition['severe_count'], total),
         'unknown_share': _share(partition['unknown_count'], total),
+        'evidence_bounds': bounds,
         'decisive_rule': decisive_rule,
         'decisive_inputs': dict(decisive_inputs),
         'thresholds_applied': _team_state_thresholds_applied(),
@@ -729,6 +832,7 @@ def _team_state_material_limitations(
     handedness_coverage: Mapping[str, Any],
     freshness: TeamOperationsFreshnessMetadata,
     trust: TeamOperationsTrustMetadata,
+    decisive_inputs: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Structured, non-prose material limitations attached to the evidence vector."""
     limitations: list[dict[str, Any]] = []
@@ -737,6 +841,14 @@ def _team_state_material_limitations(
             'limitation_id': 'team_state_withheld',
             'detail': 'Team State is withheld because governed evidence did not clear the trust/data bar.',
         })
+        if (decisive_inputs or {}).get('gate') == 'evidence_indeterminate':
+            limitations.append({
+                'limitation_id': 'evidence_indeterminate',
+                'detail': (
+                    'Arms without current operating evidence could change the '
+                    'Team State, so no state is published.'
+                ),
+            })
     if partition['unknown_count']:
         # Preserved, never dropped and never counted as clean: an arm with no
         # governed availability state stays UNKNOWN in the partition.

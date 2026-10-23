@@ -19,9 +19,12 @@ export function getPitcherSearchResultView(result = {}) {
     position: result.position || 'P',
     teamLabel: formatTeamLabel(result),
     rosterLabel: rosterStatus?.label || result.roster_status || 'Roster Unknown',
-    availability: result.availability || 'Monitor',
+    // A missing status is evidence uncertainty, never On Watch: no workload
+    // status is invented here (the backend publishes none for stale or missing
+    // evidence, and the Workload Data note below says why).
+    availability: result.availability || null,
     availabilityPayload: {
-      availability_status: result.availability || 'Monitor',
+      availability_status: result.availability || null,
       confidence: result.availability_confidence,
       data_state: result.availability_data_state,
     },
@@ -100,7 +103,7 @@ export function PitcherSearchPanel({
                           <span>{view.rosterLabel}</span>
                         </div>
                       </div>
-                      <AvailabilityBadge availability={view.availabilityPayload} />
+                      <AvailabilityBadge availability={view.availabilityPayload} showDataState />
                     </div>
                   </button>
                 )

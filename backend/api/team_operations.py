@@ -349,11 +349,21 @@ def _single_value(values):
     return next(iter(values)) if len(values) == 1 else None
 
 
+def _evidence_bound(availability):
+    """How firmly an arm's operating status is known (Team State v3_phase_6)."""
+    if not availability.get('availability_status'):
+        return 'unknown'
+    if availability.get('operating_basis') == 'partial_workload':
+        return 'lower_bound'
+    return 'exact'
+
+
 def _readiness_record(record):
     availability = dict(record.get('availability') or {})
     inputs = dict(availability.get('inputs') or {})
     pitcher = record.get('pitcher')
     return {
+        'evidence_bound': _evidence_bound(availability),
         'availability_status': availability.get('availability_status', 'unknown'),
         'workload_category': _workload_category(record),
         'throwing_hand': getattr(pitcher, 'throws', None) or 'unknown',

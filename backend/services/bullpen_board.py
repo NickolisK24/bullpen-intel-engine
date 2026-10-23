@@ -389,6 +389,8 @@ def short_reason_for(availability):
     inputs = availability.get('inputs') or {}
 
     if data_state == 'stale':
+        if availability.get('operating_basis') == 'ledger_confirmed_rest':
+            return 'Rest confirmed: no recent MLB outing'
         return 'Outside active freshness window'
     if data_state == 'missing':
         return 'No workload record available'
@@ -654,6 +656,9 @@ def build_card(
             availability.get('availability_status')
         ),
         'confidence': availability.get('confidence'),
+        # Why the card carries (or lacks) an operating status: observed
+        # workload, ledger-confirmed rest, partial workload, or None.
+        'operating_basis': availability.get('operating_basis'),
         'short_reason': short_reason_for(availability),
         'last_appearance': workload_appearance,
         'last_workload_appearance': workload_appearance,
@@ -688,6 +693,20 @@ def build_card(
         # physical workload above keeps driving availability.
         card['bullpen_workload_display'] = bullpen_workload_display
     return card
+
+
+def evidence_limited_cards(cards):
+    """Cards with no operating status: their workload evidence is stale, missing or
+    incomplete and nothing observed supports a workload group.
+
+    They are never placed in a workload group (in particular never On Watch) and
+    never counted in one. They stay visible as their own evidence-limited list,
+    in the same alphabetical, non-ranking order the groups use.
+    """
+    return sorted(
+        (card for card in cards or () if card.get('availability_status') not in BOARD_GROUP_ORDER),
+        key=lambda card: (str(card.get('name') or '').lower(), card.get('pitcher_id') or 0),
+    )
 
 
 def group_cards(cards):
@@ -914,6 +933,7 @@ def build_board_payload(
         'visibility': visibility,
         'rest_status': rest_status,
         'groups': groups,
+        'evidence_limited_pitchers': evidence_limited_cards(cards),
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': None if counts_withheld else max(len(cards) - grouped_total, 0),
         'freshness': freshness or {},

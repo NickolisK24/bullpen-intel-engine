@@ -15,6 +15,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, STATUS_UNAVAILABLE, classify_availability
 from services.availability_reference_date import product_current_date
+from services.availability_snapshot import rest_confirmed_for
 from services.roster_status import classify_roster_status, apply_roster_status_to_availability
 from utils.db import db
 
@@ -104,12 +105,14 @@ def _final_availability_for(pitcher, score, reference_date=None):
         pitcher.id,
         reference_date=reference_date,
     )
+    current_reference_date = reference_date or product_current_date()
     workload_signal = classify_availability(
         score=score,
         game_logs=logs,
-        reference_date=reference_date or product_current_date(),
+        reference_date=current_reference_date,
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
+        rest_confirmed=rest_confirmed_for(current_reference_date),
     )
     roster_status = classify_roster_status(pitcher)
     final_availability = apply_roster_status_to_availability(workload_signal, roster_status)

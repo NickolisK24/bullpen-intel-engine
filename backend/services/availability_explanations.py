@@ -38,6 +38,14 @@ FETCH_FAILED_WORKLOAD_LIMITATION = 'Recent usage information is incomplete becau
 # Wording must keep a data-state keyword (stale/missing/incomplete) so
 # categorize_limitation continues to map it to CATEGORY_DATA_STATE.
 STALE_WORKLOAD_LIMITATION = 'Recent usage information is incomplete, so workload data must not be treated as current availability'
+# Ledger-confirmed rest (availability engine v2). The reason must keep the
+# ``rest`` keyword and avoid ``pitch``/``appearance`` so categorize_reason files
+# it under CATEGORY_REST; the limitation keeps the ``stale`` keyword so
+# categorize_limitation files it under CATEGORY_DATA_STATE.
+LEDGER_REST_LIMITATION = (
+    'Workload data is stale: there is no current workload score, so this read '
+    'rests on complete game records showing no recent MLB outing'
+)
 WORKLOAD_FALLBACK_REASON = 'Recent usage narrowed availability, but the source detail is unavailable'
 RECENT_WORKLOAD_REASON = 'Recent workload is high enough to narrow normal availability'
 
@@ -128,6 +136,12 @@ REASON_CATALOG = [
         'example': 'Latest workload data is outside the 14-day freshness window',
     },
     {
+        'category': CATEGORY_REST,
+        'rule': 'Ledger-confirmed rest',
+        'template': 'Rested: no MLB outing in the last {days} days, confirmed by complete game records',
+        'example': 'Rested: no MLB outing in the last 14 days, confirmed by complete game records',
+    },
+    {
         'category': CATEGORY_FALLBACK,
         'rule': 'Unmapped restriction',
         'template': WORKLOAD_FALLBACK_REASON,
@@ -177,6 +191,13 @@ def fatigue_score_reason(score):
 
 def stale_workload_reason(active_window_days):
     return f'Latest workload data is outside the {active_window_days}-day freshness window'
+
+
+def ledger_rest_reason(active_window_days):
+    return (
+        f'Rested: no MLB outing in the last {active_window_days} days, '
+        'confirmed by complete game records'
+    )
 
 
 def reason_catalog():

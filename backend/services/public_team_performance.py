@@ -129,20 +129,23 @@ def _represented_date(board):
 def _represented_active_group(board, represented):
     members = []
     seen = set()
-    for group in board.get('groups') or []:
-        for card in group.get('pitchers') or []:
-            if (card.get('visibility') or {}).get('is_visible_by_default') is False:
-                continue
-            pitcher_id = card.get('pitcher_id')
-            if not isinstance(pitcher_id, int) or pitcher_id in seen:
-                continue
-            seen.add(pitcher_id)
-            members.append({
-                'pitcher_id': pitcher_id,
-                'pitcher_mlb_id': card.get('pitcher_mlb_id'),
-                'pitcher_full_name': card.get('name'),
-                'role_evidence': None,
-            })
+    grouped = [
+        card for group in board.get('groups') or [] for card in group.get('pitchers') or []
+    ]
+    # Evidence-limited arms (no operating status) are still active bullpen arms.
+    for card in grouped + list(board.get('evidence_limited_pitchers') or []):
+        if (card.get('visibility') or {}).get('is_visible_by_default') is False:
+            continue
+        pitcher_id = card.get('pitcher_id')
+        if not isinstance(pitcher_id, int) or pitcher_id in seen:
+            continue
+        seen.add(pitcher_id)
+        members.append({
+            'pitcher_id': pitcher_id,
+            'pitcher_mlb_id': card.get('pitcher_mlb_id'),
+            'pitcher_full_name': card.get('name'),
+            'role_evidence': None,
+        })
     return {
         'team_id': (board.get('team') or {}).get('team_id'),
         'reference_date': represented.isoformat() if represented else None,

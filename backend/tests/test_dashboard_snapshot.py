@@ -98,10 +98,10 @@ def _team_state_proof_readiness(reference_dates_out, snapshot):
         'availability_reference_date': snapshot.availability_reference_date,
     })
     return {
-        'contract_version': 'v3_phase_5',
+        'contract_version': 'v3_phase_6',
         'readiness': {'status_code': 'operationally_stable'},
         'team_state_evidence': {
-            'method_version': 'v3_phase_5',
+            'method_version': 'v3_phase_6',
             'contract': 'team_state_contract_a',
             'basis': 'status_only',
             'readiness_status_code': 'operationally_stable',

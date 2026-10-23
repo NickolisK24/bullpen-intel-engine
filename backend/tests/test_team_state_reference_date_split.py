@@ -210,7 +210,7 @@ def resolver_call_recorder(monkeypatch, trusted_source):
     )
     monkeypatch.setattr(
         team_operations_pkg, 'assemble_bullpen_readiness',
-        lambda **kwargs: {'freshness': kwargs.get('freshness'), 'contract_version': 'v3_phase_5'},
+        lambda **kwargs: {'freshness': kwargs.get('freshness'), 'contract_version': 'v3_phase_6'},
     )
     return seen
 

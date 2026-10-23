@@ -60,7 +60,7 @@ export const PITCHER_READ_LABELS = Object.freeze({
   WATCH_ARM: read(
     'watch_arm',
     'Watch Arm',
-    'Current workload status is On Watch or the data read is not fully clear.',
+    'Current workload status is On Watch: recent workload deserves attention. Old or missing workload data is never a Watch Arm; it is a Limited Read.',
     { borderColor: 'rgba(234,179,8,0.34)', backgroundColor: 'rgba(234,179,8,0.09)', color: '#fef08a' },
   ),
   REST_RESTRICTED: read(

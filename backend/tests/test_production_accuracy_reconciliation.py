@@ -68,7 +68,7 @@ def _proof_team(team_id):
         },
         'thresholds_applied': _thresholds(),
         'decisive_rule': 'fresh_coverage',
-        'method_version': 'v3_phase_5',
+        'method_version': 'v3_phase_6',
         'final_team_state': {
             'readiness_status_code': 'operationally_stable',
             'published_public_state': 'fresh',
@@ -86,14 +86,14 @@ def _proof_row(teams):
                 'dashboard_snapshot_id': SNAPSHOT_ID,
                 'sync_run_id': 91,
                 'data_through': '2026-08-31',
-                'expected_method_version': 'v3_phase_5',
+                'expected_method_version': 'v3_phase_6',
             },
             'teams': teams,
             'overall_verdict': 'PASS',
         },
         overall_verdict='PASS',
         captured_team_count=30,
-        method_version='v3_phase_5',
+        method_version='v3_phase_6',
     )
 
 

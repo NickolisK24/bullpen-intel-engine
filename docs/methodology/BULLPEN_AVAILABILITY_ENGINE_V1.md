@@ -235,11 +235,26 @@ The first API integration is additive: fatigue list, team bullpen, and pitcher
 detail responses preserve existing fatigue fields and add an `availability`
 object for each classified pitcher.
 
-V1 uses `Monitor` with low confidence for stale, missing, or incomplete data
-because the public status set is limited to Available, Monitor, Limited, Avoid,
-and Unavailable. Consumers must use `data_state`, `confidence`, `reasons`, and
-`limitations` to distinguish "workload concern" from "current availability is
-uncertain."
+~~V1 uses `Monitor` with low confidence for stale, missing, or incomplete data.~~
+**Superseded by availability engine v2 (`availability_engine_v2`, 2026-10-07,
+docs/decisions/2026-10-07-evidence-quality-operating-state-separation.md).** The
+v1 rule let evidence age become workload concern: no consumer actually separated
+low-confidence Monitor from workload Monitor, so stale arms filled the On Watch
+group and the Team State partition. Engine v2 keeps operating state and evidence
+quality apart:
+
+| Evidence (`data_state`) | Operating status | `operating_basis` | Confidence |
+|---|---|---|---|
+| fresh | workload thresholds (unchanged) | `workload` | high / medium |
+| stale, completed-game ledger proves no recent MLB workload | Available | `ledger_confirmed_rest` | medium |
+| stale, rest not proven | none | none | low |
+| missing | none | none | low |
+| incomplete or open fetch failure, observed partial workload crosses a threshold | that status, as a lower bound | `partial_workload` | low |
+| incomplete or open fetch failure, otherwise | none | none | low |
+
+An arm with no operating status carries no availability status at all (never On
+Watch, never Available) and is shown through the Workload Data family and the
+Limited Read. The carried fatigue score of a stale arm is never read.
 
 Current threshold references:
 
@@ -252,7 +267,7 @@ Current threshold references:
 | Appearances over last 3 days | n/a | >= 2 | >= 3 | n/a |
 | Appearances over last 5 days | >= 2 | >= 3 | >= 4 | >= 4 with 75+ pitches |
 | Back-to-back appearances | Monitor or higher by context | Any back-to-back appearance sequence | Back-to-back plus 35+ pitches in 3 days | n/a |
-| Freshness | n/a | n/a | n/a | Stale data returns Monitor with low confidence, not a current workload label |
+| Freshness | n/a | n/a | n/a | Engine v2: stale data is never a workload label; see the evidence table above |
 
 The Unavailable three-day pitch threshold was adopted from Candidate C after
 audit and boundary review. The governed adoption moved that value from 80 to 90,

@@ -152,7 +152,8 @@ class TestAvailabilityClassification:
         assert result['availability_status'] == expected_status
         assert f'{three_day_pitches} pitches in 3 days' in result['reasons']
 
-    def test_missing_data_is_low_confidence_monitor(self):
+    def test_missing_data_has_no_operating_status(self):
+        """Engine v2: missing evidence is uncertainty, never a workload status."""
         result = classify_availability(
             score=None,
             game_logs=[],
@@ -160,12 +161,13 @@ class TestAvailabilityClassification:
             latest_game_date=None,
         )
 
-        assert result['availability_status'] == STATUS_MONITOR
+        assert result['availability_status'] is None
+        assert result['operating_basis'] is None
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'missing'
         assert result['reasons'] == ['Missing recent workload history']
 
-    def test_stale_data_is_low_confidence_and_not_current(self, make_log):
+    def test_stale_data_without_rest_proof_is_low_confidence_and_not_current(self, make_log):
         ref = date(2026, 6, 1)
         result = classify_availability(
             score=ScoreStub(raw_score=20.0),
@@ -174,7 +176,10 @@ class TestAvailabilityClassification:
             latest_game_date=ref - timedelta(days=30),
         )
 
-        assert result['availability_status'] == STATUS_MONITOR
+        # Engine v2: without a rest proof, stale evidence carries no operating
+        # status (never On Watch, never Available).
+        assert result['availability_status'] is None
+        assert result['operating_basis'] is None
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'stale'
         assert 'Latest workload data is outside the 14-day freshness window' in result['reasons']
