@@ -223,7 +223,7 @@ def test_summary_uses_only_the_canonical_result_and_does_not_mutate_evidence():
     payload = readiness(
         'operationally_stable',
         team_state_evidence={
-            'method_version': 'v3_phase_5',
+            'method_version': 'v3_phase_6',
             'clean_count': 5,
             'severe_count': 1,
             'decisive_rule': 'fresh_coverage',
@@ -238,7 +238,7 @@ def test_summary_uses_only_the_canonical_result_and_does_not_mutate_evidence():
     assert block['public_state'] == 'fresh'
     assert block['summary'] == CANONICAL_SUMMARIES['fresh']
     assert payload == original
-    assert payload['team_state_evidence']['method_version'] == 'v3_phase_5'
+    assert payload['team_state_evidence']['method_version'] == 'v3_phase_6'
 
 
 # ── The comparison contract passes both sides through unchanged ──────────────

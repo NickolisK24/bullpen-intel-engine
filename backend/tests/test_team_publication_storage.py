@@ -127,7 +127,7 @@ def _proof_team(club):
         },
         'team_state_evidence': {
             'contract': 'team_state_contract_a',
-            'method_version': 'v3_phase_5',
+            'method_version': 'v3_phase_6',
             'active_pitcher_count': 8,
             'decisive_rule': 'fresh_coverage',
         },
@@ -222,7 +222,7 @@ def _source(*, data_through=DATA_THROUGH, generated_at=GENERATED_AT,
         },
         overall_verdict='PASS',
         captured_team_count=30,
-        method_version='v3_phase_5',
+        method_version='v3_phase_6',
         publication_source='test',
         generated_at=published_at,
     )
@@ -331,7 +331,7 @@ def _continuous_inputs(
         team_packages[str(team_id)] = team_package
         team_states[str(team_id)] = {
             'public_team_state': deepcopy(state),
-            'team_state_evidence': {'method_version': 'v3_phase_5'},
+            'team_state_evidence': {'method_version': 'v3_phase_6'},
         }
         for pitcher_id in team_pitcher_ids:
             workload_by_pitcher[str(pitcher_id)] = {
@@ -1004,7 +1004,7 @@ def test_missing_proof_source_identity_and_partial_population_fail_closed(app):
         },
         overall_verdict='PASS',
         captured_team_count=30,
-        method_version='v3_phase_5',
+        method_version='v3_phase_6',
         generated_at=PUBLISHED_AT,
     )
     db.session.add(proof)

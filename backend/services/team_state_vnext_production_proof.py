@@ -55,7 +55,10 @@ PROOF_PATH_ENV = 'TEAM_STATE_VNEXT_PROOF_PATH'
 # hard-coded here: the boundary is a fact about production, not about this module.
 BOUNDARY_SNAPSHOT_ENV = 'TEAM_STATE_VNEXT_BOUNDARY_SNAPSHOT_ID'
 
-EXPECTED_METHOD_VERSION = 'v3_phase_5'
+# The method this proof requires of a NEW publication. It advances with
+# team_operations.TEAM_STATE_METHOD_VERSION (v3_phase_6: evidence quality is
+# separated from operating state).
+EXPECTED_METHOD_VERSION = 'v3_phase_6'
 
 RESULT_PASS = 'PASS'
 RESULT_FAIL = 'FAIL'

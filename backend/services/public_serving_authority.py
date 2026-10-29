@@ -27,6 +27,7 @@ from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
 from services import board_freshness
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import tonight_intelligence_snapshot
+from services.team_evidence_scope import author_evidence_scope, valid_evidence_scope
 from services.process_memory import log_memory_checkpoint
 from services.availability_population import availability_with_eligibility, current_availability_records
 from services.availability_reference_date import parse_reference_date, product_current_date
@@ -654,6 +655,9 @@ def build_frozen_team_board_package(dashboard_payload):
                 'reference_date_policy': REST_STATUS_REFERENCE_DATE_POLICY,
                 'availability_reference_date': reference_date.isoformat(),
             },
+            # P1-4: evidence-quality scope of the same active records, frozen
+            # with the publication (never re-derived for an older snapshot).
+            'evidence_scope': author_evidence_scope(selected_records),
             'capacity_intelligence': _support_for_team(payload, 'capacity_intelligence', team_id),
             'rotation_support_pressure': deepcopy(rotation_support_pressure),
             'frozen_rotation_impact': deepcopy(rotation_game_carriers.get(team_id)),
@@ -1303,6 +1307,8 @@ def build_published_team_board(
         if team_state_override is not None
         else _published_team_state(snapshot, team_id)
     )
+    # Frozen with this publication; an older snapshot has none (no disclosure).
+    payload['evidence_scope'] = valid_evidence_scope(team_package.get('evidence_scope'))
     if include_recent_usage_rest:
         payload['recent_usage_rest'] = _frozen_recent_usage_rest_for_view(
             snapshot, team_package

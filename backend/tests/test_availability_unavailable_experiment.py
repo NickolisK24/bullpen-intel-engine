@@ -149,10 +149,12 @@ def test_candidate_thresholds_do_not_change_stale_or_missing_semantics(make_log)
         candidate=candidate,
     )
 
-    assert stale['availability_status'] == STATUS_MONITOR
+    # Engine v2: stale/missing evidence carries no operating status, whatever
+    # the candidate thresholds are.
+    assert stale['availability_status'] is None
     assert stale['confidence'] == CONFIDENCE_LOW
     assert stale['data_state'] == 'stale'
-    assert missing['availability_status'] == STATUS_MONITOR
+    assert missing['availability_status'] is None
     assert missing['confidence'] == CONFIDENCE_LOW
     assert missing['data_state'] == 'missing'
 

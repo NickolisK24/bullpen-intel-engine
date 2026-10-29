@@ -92,51 +92,58 @@ def _section_status(status, *, reason_code=None, limitations=None, represented_d
     }
 
 
+def _board_active_cards(board):
+    """Grouped cards, then the evidence-limited cards (no operating status)."""
+    for group in board.get('groups') or []:
+        yield from group.get('pitchers') or []
+    yield from board.get('evidence_limited_pitchers') or []
+
+
 def _active_arms(board):
     arms = []
-    for group in board.get('groups') or []:
-        for card in group.get('pitchers') or []:
-            visibility = card.get('visibility') or {}
-            if visibility.get('is_visible_by_default') is False:
-                continue
-            facts = card.get('workload_facts') or {}
-            last_appearance = deepcopy(card.get('last_appearance'))
-            appearances_last_7 = facts.get('appearances_last_7')
-            pitches_last_7_days = facts.get('pitches_last_7_days')
-            display = card.get('bullpen_workload_display')
-            if (
-                isinstance(display, dict)
-                and display.get('contract') == ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT
-            ):
-                # Bullpen workload frozen with this publication (relief lines and
-                # openers); a conventional start is never shown as bullpen work.
-                appearances_last_7 = display.get('appearances_last_7')
-                pitches_last_7_days = display.get('pitches_last_7_days')
-                last_appearance = deepcopy(display.get('last_appearance'))
-            arms.append({
-                'pitcher_id': card.get('pitcher_id'),
-                'name': card.get('name'),
-                'public_role_read': deepcopy(card.get('public_role_read')),
-                'public_labels': deepcopy(card.get('pitcher_labels')),
-                'availability': {
-                    'status': card.get('availability_status'),
-                    'label': card.get('availability_public_label'),
-                    'confidence': card.get('confidence'),
-                    'data_state': card.get('data_state'),
-                    'short_reason': card.get('short_reason'),
-                    'reasons': deepcopy(card.get('reasons') or []),
-                    'limitations': deepcopy(card.get('limitations') or []),
-                },
-                'last_appearance': last_appearance,
-                'workload': {
-                    'days_since_last_appearance': facts.get('days_since_last_appearance'),
-                    'appearances_last_7': appearances_last_7,
-                    'pitches_last_7_days': pitches_last_7_days,
-                    'back_to_back': facts.get('back_to_back'),
-                },
-                'roster_status': deepcopy(card.get('roster_status')),
-                'visibility': deepcopy(card.get('visibility')),
-            })
+    for card in _board_active_cards(board):
+        visibility = card.get('visibility') or {}
+        if visibility.get('is_visible_by_default') is False:
+            continue
+        facts = card.get('workload_facts') or {}
+        last_appearance = deepcopy(card.get('last_appearance'))
+        appearances_last_7 = facts.get('appearances_last_7')
+        pitches_last_7_days = facts.get('pitches_last_7_days')
+        display = card.get('bullpen_workload_display')
+        if (
+            isinstance(display, dict)
+            and display.get('contract') == ACTIVE_BULLPEN_WORKLOAD_DISPLAY_CONTRACT
+        ):
+            # Bullpen workload frozen with this publication (relief lines and
+            # openers); a conventional start is never shown as bullpen work.
+            appearances_last_7 = display.get('appearances_last_7')
+            pitches_last_7_days = display.get('pitches_last_7_days')
+            last_appearance = deepcopy(display.get('last_appearance'))
+        arms.append({
+            'pitcher_id': card.get('pitcher_id'),
+            'name': card.get('name'),
+            'public_role_read': deepcopy(card.get('public_role_read')),
+            'public_labels': deepcopy(card.get('pitcher_labels')),
+            'availability': {
+                'status': card.get('availability_status'),
+                'label': card.get('availability_public_label'),
+                'confidence': card.get('confidence'),
+                'data_state': card.get('data_state'),
+                'operating_basis': card.get('operating_basis'),
+                'short_reason': card.get('short_reason'),
+                'reasons': deepcopy(card.get('reasons') or []),
+                'limitations': deepcopy(card.get('limitations') or []),
+            },
+            'last_appearance': last_appearance,
+            'workload': {
+                'days_since_last_appearance': facts.get('days_since_last_appearance'),
+                'appearances_last_7': appearances_last_7,
+                'pitches_last_7_days': pitches_last_7_days,
+                'back_to_back': facts.get('back_to_back'),
+            },
+            'roster_status': deepcopy(card.get('roster_status')),
+            'visibility': deepcopy(card.get('visibility')),
+        })
     return arms
 
 
@@ -862,11 +869,27 @@ def build_team_board_v2_payload(
     )
     off_active_count = _off_active_count(board)
 
+    evidence_scope = deepcopy(board.get('evidence_scope')) if isinstance(
+        board.get('evidence_scope'), dict) else None
+    evidence_note = (evidence_scope or {}).get('note')
+    team_state_available = team_state.get('available') is True
     section_status = {
         'team_state': _section_status(
-            STATUS_AVAILABLE if team_state.get('available') is True else STATUS_UNAVAILABLE,
-            reason_code=team_state.get('reason_code'),
-            limitations=[team_state.get('unavailable_message')] if team_state.get('unavailable_message') else [],
+            (
+                STATUS_PARTIAL if team_state_available and evidence_note
+                else STATUS_AVAILABLE if team_state_available
+                else STATUS_UNAVAILABLE
+            ),
+            reason_code=(
+                'team_state_evidence_scope_disclosed'
+                if team_state_available and evidence_note
+                else team_state.get('reason_code')
+            ),
+            limitations=(
+                [evidence_note] if team_state_available and evidence_note
+                else [team_state.get('unavailable_message')]
+                if team_state.get('unavailable_message') else []
+            ),
             represented_date=team_state.get('data_through') or represented_date,
         ),
         'active_bullpen': active_status,
@@ -929,6 +952,9 @@ def build_team_board_v2_payload(
         'freshness': freshness,
         'team_state': team_state,
         'summary': team_state.get('summary'),
+        # Evidence-quality scope of the active bullpen (frozen; None for a
+        # snapshot published before the carrier existed).
+        'evidence_scope': evidence_scope,
         'active_bullpen': {
             'population_basis': ACTIVE_BULLPEN_POPULATION_BASIS,
             'arm_count': board.get('total_pitchers'),
@@ -984,6 +1010,7 @@ def build_team_board_core_payload(board, *, publication_identity):
         'freshness': full['freshness'],
         'team_state': full['team_state'],
         'summary': full['summary'],
+        'evidence_scope': full['evidence_scope'],
         'active_bullpen': full['active_bullpen'],
         'rest_status': full['rest_status'],
         'off_active_count': full['off_active_count'],

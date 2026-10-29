@@ -681,19 +681,24 @@ def _team_states(snapshot, mismatches):
     teams = proof.get('teams') if isinstance(proof.get('teams'), list) else []
     seen, bad = set(), 0
     publication = proof.get('publication') if isinstance(proof.get('publication'), Mapping) else {}
+    from services.team_board_snapshot_team_state import governed_receipt_method_versions
+    from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
+    # A proof is bound to the method its own publication ran under (a historical
+    # snapshot keeps its v3_phase_5 proof); it must be a governed method and
+    # agree with the publication block.
+    row_method = getattr(row, 'method_version', EXPECTED_METHOD_VERSION)
     identity_valid = (
         getattr(row, 'snapshot_id', snapshot.id) == snapshot.id
         and getattr(row, 'data_through', snapshot.data_through) == snapshot.data_through
         and getattr(row, 'captured_team_count', 30) == 30
-        and getattr(row, 'method_version', 'v3_phase_5') == 'v3_phase_5'
+        and row_method in governed_receipt_method_versions()
         and getattr(row, 'overall_verdict', proof.get('overall_verdict'))
         == proof.get('overall_verdict')
         and proof.get('overall_verdict') in ('PASS', 'PASS_WITH_INCONCLUSIVE')
         and publication.get('dashboard_snapshot_id') == snapshot.id
         and publication.get('sync_run_id') == snapshot.sync_run_id
         and publication.get('data_through') == snapshot.data_through.isoformat()
-        and publication.get('expected_method_version', 'v3_phase_5')
-        == 'v3_phase_5'
+        and publication.get('expected_method_version', row_method) == row_method
         and proof.get('proof_generated_at') not in (None, '')
     )
     if not identity_valid:

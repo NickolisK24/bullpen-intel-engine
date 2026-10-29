@@ -80,8 +80,16 @@ def _required_subject_id(subject_id: str | int | None) -> str:
     return resolved
 
 
+# Availability engine v2: stale (rest unproven), missing or incomplete evidence
+# carries NO operating status. That is a governed outcome, explained as evidence
+# uncertainty -- never as a workload state.
+NO_OPERATING_STATUS = 'no_operating_status'
+
+
 def _availability_status(availability: Mapping[str, Any]) -> str:
     status = availability.get('availability_status')
+    if status is None and 'availability_status' in availability:
+        return NO_OPERATING_STATUS
     if status not in SUPPORTED_AVAILABILITY_STATUSES:
         raise ValueError('availability_status uses unsupported vocabulary.')
     return str(status)
@@ -408,6 +416,7 @@ def build_availability_explanation(
             data_state=data_state,
             reasons=reasons,
             inputs=inputs,
+            operating_basis=availability.get('operating_basis'),
         ),
         reason_codes=_reason_codes(
             status=status,
@@ -433,9 +442,18 @@ def _availability_summary(
     data_state: str,
     reasons: tuple[str, ...],
     inputs: Mapping[str, Any],
+    operating_basis: str | None = None,
 ) -> str:
+    if data_state == 'stale' and operating_basis == 'ledger_confirmed_rest':
+        return (
+            'He has not pitched in the last 14 days; complete game records confirm '
+            'that rest, though there is no current workload score.'
+        )
     if data_state == 'stale':
-        return 'BaseballOS is treating him as a monitor arm, but the stored workload data is stale.'
+        return (
+            'BaseballOS has no current read on him because his latest workload data '
+            'is outside the freshness window.'
+        )
     if data_state == 'missing':
         return 'BaseballOS cannot say much yet because recent workload data is missing.'
     if data_state == 'incomplete':

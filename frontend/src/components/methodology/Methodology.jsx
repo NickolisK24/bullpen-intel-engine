@@ -60,6 +60,7 @@ const EXAMINED_INPUTS = [
   ['Current roster context', 'Whether the pitcher is on the active roster, per public roster data.'],
   ['Team availability distribution', 'How Available, On Watch, Limited, and Unavailable arms are spread across the group.'],
   ['Data-through date, freshness, and coverage', 'The completed-game date each read is based on, and whether the day’s data is complete enough to publish.'],
+  ['Which games count', 'Workload and rest count completed MLB regular-season and postseason games — a postseason outing is real bullpen work. Observed role reads and the 14-day deployment profile use regular-season games only; role movement keeps regular-season and postseason phases separate; season totals and performance use the regular season only.'],
 ]
 
 const LIMITATIONS = [
@@ -115,7 +116,9 @@ export function MethodologyView() {
           BaseballOS describes the current state of every MLB bullpen from recent,
           completed-game data. It reads recent workload, rest, role and roster
           context, and freshness, and it shows why each read exists. When the
-          evidence is missing or stale, it withholds the read instead of guessing.
+          evidence is stale, missing, or incomplete, BaseballOS says so: old data
+          is never turned into workload concern, and a conclusion the evidence
+          cannot support is withheld.
         </p>
       </header>
 
@@ -171,6 +174,14 @@ export function MethodologyView() {
             ))}
           </dl>
           <p className="mt-4 max-w-2xl text-xs leading-relaxed text-chalk500">
+            Evidence quality is shown separately from these states. Workload
+            evidence that is old, missing, or incomplete appears as a data note,
+            never as On Watch. An arm with no MLB outing in the last 14 days reads
+            as Available only when complete game records confirm that rest;
+            otherwise it carries no availability state until current evidence
+            returns.
+          </p>
+          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-chalk500">
             Freshness, missing evidence, roster context, or incomplete coverage can
             limit a read or withhold it. An availability state is not a health
             clearance, is not a promise the pitcher can pitch, and does not say
@@ -200,6 +211,13 @@ export function MethodologyView() {
             ))}
           </dl>
           <p className="mt-4 max-w-2xl text-xs leading-relaxed text-chalk500">
+            Arms without current workload evidence never count as workload concern
+            in a team read. If those arms could change the team state, BaseballOS
+            withholds it rather than guessing; when some arms rest on confirmed game
+            records instead of a current workload score, the Team Board says how
+            many.
+          </p>
+          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-chalk500">
             Team state and individual arm status answer different questions, so
             BaseballOS keeps them separate. A team read is not a score, and more
             Available arms does not automatically make one bullpen &ldquo;better&rdquo; than
