@@ -142,8 +142,9 @@ class TestBullpenFreshness:
         assert inventory['mode'] == 'scored_pitcher_inventory'
         assert inventory['is_current_availability'] is False
         assert inventory['total_pitchers'] == 1
-        assert inventory['statuses']['Monitor'] == 1
-        assert inventory['confidence']['low'] == 1
+        # WP-0.1: a stale score is rest by absence (Available, medium).
+        assert inventory['statuses']['Available'] == 1
+        assert inventory['confidence']['medium'] == 1
         assert inventory['data_state']['stale'] == 1
         assert any('inventory workload reads' in note.lower() for note in inventory['notes'])
 

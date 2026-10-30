@@ -532,6 +532,23 @@ SCHEDULE_AWARE_DAY_CONTEXT_PATHS = (
     'backend/services/team_state_payload.py',
 )
 
+# WP-0.1 current-read integrity, October 30 2026 (findings EOS-001, EOS-002,
+# EOS-004 of the 2026 end-of-season audit). Eligibility gains one block so a
+# club no longer in active competition gets no current Team State artifact;
+# the plausibility module and the dry-run correction manifest are new Team
+# State modules. None reads appearance-team authority directly, no Contract A
+# threshold moves, and no public Team State label is added (the two new
+# outcomes are governed non-states in team_state_public_vocabulary.py). The
+# correction manifest is read-only and never mutates an artifact. Authority:
+# docs/audits/2026-end-of-season/wp01/WP-0.1_CURRENT_READ_INTEGRITY.md, pending
+# the founder's ledger entries for audit decisions DEC-01 and DEC-02. This
+# exact-path approval becomes inert after merge.
+WP01_CURRENT_READ_INTEGRITY_PATHS = (
+    'backend/services/team_state_eligibility.py',
+    'backend/services/team_state_plausibility.py',
+    'backend/services/team_state_correction_manifest.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

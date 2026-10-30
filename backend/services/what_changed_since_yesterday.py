@@ -79,7 +79,6 @@ REASON_VALIDATIONS_FAILED = 'validations_failed'
 REASON_SNAPSHOTS_NOT_COMPARABLE = 'snapshots_not_comparable'
 REASON_DATA_THROUGH_MISSING = 'data_through_missing'
 REASON_COMPARISON_WITHHELD = 'comparison_withheld'
-REASON_AVAILABILITY_METHOD_BOUNDARY = 'availability_method_boundary'
 
 _REASON_LIMITATIONS = {
     REASON_NO_PRIOR_SNAPSHOT: NO_PRIOR_LIMITATION,
@@ -109,10 +108,6 @@ _REASON_LIMITATIONS = {
     ),
     REASON_DATA_THROUGH_MISSING: (
         'Current or prior snapshot is missing data-through metadata.'
-    ),
-    REASON_AVAILABILITY_METHOD_BOUNDARY: (
-        'Current and prior snapshots use different availability methods, so '
-        'their rested counts are not comparable.'
     ),
     REASON_COMPARISON_WITHHELD: COMPARISON_WITHHELD_LIMITATION,
 }
@@ -327,12 +322,6 @@ def _trusted_comparison_reason_codes(
         reasons.append(REASON_DATA_THROUGH_MISSING)
     elif prior_date != current_date - timedelta(days=1):
         reasons.append(REASON_SNAPSHOTS_NOT_COMPARABLE)
-    if (current_payload or {}).get('availability_method_version') != (
-        prior_payload or {}
-    ).get('availability_method_version'):
-        # Rested counts produced under different availability semantics differ
-        # by method, not by baseball (WP-0.1); never report them as a change.
-        reasons.append(REASON_AVAILABILITY_METHOD_BOUNDARY)
 
     if reasons:
         reasons.append(REASON_COMPARISON_WITHHELD)

@@ -759,26 +759,16 @@ def test_withheld_club_receipt_binds_to_the_publication_date():
     assert receipt['value']['data_through'] == DATA_THROUGH.isoformat()
 
 
-def test_since_yesterday_withholds_rested_counts_across_the_method_boundary():
-    from tests.test_what_changed_since_yesterday import (
-        dashboard_payload,
-        snapshot,
-        trusted_comparison,
-    )
+def test_since_yesterday_has_no_comparable_prior_across_the_method_boundary():
+    from api.bullpen import _availability_comparable_snapshot
     from services.availability import AVAILABILITY_METHOD_VERSION
-    from services.what_changed_since_yesterday import REASON_AVAILABILITY_METHOD_BOUNDARY
 
-    current = dashboard_payload([snapshot(clean=13)], data_through='2026-06-19')
-    current['availability_method_version'] = AVAILABILITY_METHOD_VERSION
-    prior = dashboard_payload([snapshot(clean=0)], data_through='2026-06-18')
-
-    # Thirteen "new" rested options here would be the method change, not
-    # baseball, so the comparison is withheld rather than reported.
-    result = trusted_comparison(current, prior)
-    assert result['change_count'] == 0
-    assert REASON_AVAILABILITY_METHOD_BOUNDARY in result['reason_codes']
-    assert any('different availability methods' in note for note in result['limitations'])
-
-    prior['availability_method_version'] = AVAILABILITY_METHOD_VERSION
-    compared = trusted_comparison(current, prior)
-    assert REASON_AVAILABILITY_METHOD_BOUNDARY not in compared['reason_codes']
+    before = SimpleNamespace(id=5625, payload={'freshness': {}})
+    after = SimpleNamespace(
+        id=5656, payload={'availability_method_version': AVAILABILITY_METHOD_VERSION},
+    )
+    # A prior built under the retired semantics would make thirteen rested
+    # arms look like thirteen "new" clean options: not comparable.
+    assert _availability_comparable_snapshot(before) is None
+    assert _availability_comparable_snapshot(None) is None
+    assert _availability_comparable_snapshot(after) is after

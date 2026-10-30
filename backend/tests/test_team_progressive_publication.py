@@ -78,9 +78,9 @@ def _add_relievers(team_id, base_mlb, count=8):
                 pitches_thrown=12, innings_pitched=1.0, innings_pitched_outs=3,
             ))
             db.session.add_all([
-                ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='home', opponent_team_id=900000 + team_id),
-                ScheduledGame(team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
             db.session.add(PostgameProcessedGame(
@@ -101,9 +101,9 @@ def _add_relievers(team_id, base_mlb, count=8):
 def _add_game(game_pk, home, away, *, final, processed):
     state = 'final' if final else 'scheduled'
     db.session.add_all([
-        ScheduledGame(team_id=home, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
+        ScheduledGame(game_type='R', team_id=home, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
                       home_away='home', opponent_team_id=away),
-        ScheduledGame(team_id=away, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
+        ScheduledGame(game_type='R', team_id=away, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
                       home_away='away', opponent_team_id=home),
     ])
     if processed:

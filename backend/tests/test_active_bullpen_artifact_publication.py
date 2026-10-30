@@ -107,9 +107,9 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
             innings_pitched=ip, innings_pitched_outs=outs, games_started=starts,
         ))
         db.session.add_all([
-            ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='home', opponent_team_id=800000 + team_id),
-            ScheduledGame(team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='away', opponent_team_id=team_id),
         ])
         db.session.add(PostgameProcessedGame(
@@ -135,9 +135,9 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
                 pitches_thrown=None, innings_pitched=1.0, innings_pitched_outs=3, games_started=0,
             ))
             db.session.add_all([
-                ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='home', opponent_team_id=800000 + team_id),
-                ScheduledGame(team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
             db.session.add(PostgameProcessedGame(

@@ -173,9 +173,9 @@ def _relievers(team_id, base):
 def _seed_final_game(with_slate_roster=True):
     _relievers(HOME, 750000); _relievers(AWAY, 760000)
     db.session.add_all([
-        ScheduledGame(team_id=HOME, game_pk=GAME_PK, game_date=SLATE, status_state='final',
+        ScheduledGame(game_type='R', team_id=HOME, game_pk=GAME_PK, game_date=SLATE, status_state='final',
                       home_away='home', opponent_team_id=AWAY),
-        ScheduledGame(team_id=AWAY, game_pk=GAME_PK, game_date=SLATE, status_state='final',
+        ScheduledGame(game_type='R', team_id=AWAY, game_pk=GAME_PK, game_date=SLATE, status_state='final',
                       home_away='away', opponent_team_id=HOME)])
     db.session.add(PostgameProcessedGame(mlb_game_pk=GAME_PK, game_date=SLATE,
         processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED))

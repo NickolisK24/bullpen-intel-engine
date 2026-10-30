@@ -89,9 +89,9 @@ def _add_reliever(seed):
             pitches_thrown=12, innings_pitched=1.0, innings_pitched_outs=3,
         ))
         db.session.add_all([
-            ScheduledGame(team_id=TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='home', opponent_team_id=900000 + TEAM_ID),
-            ScheduledGame(team_id=900000 + TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=900000 + TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='away', opponent_team_id=TEAM_ID),
         ])
     db.session.add(FatigueScore(
@@ -165,6 +165,13 @@ def _seed_rested_team():
     for seed in range(1, 9):
         _add_reliever(seed)
     _add_stale_sync_run()
+    # A club in its season has an upcoming game on the schedule authority; the
+    # rested relievers are idle, not out of competition (WP-0.1).
+    db.session.add(ScheduledGame(
+        game_type='R', team_id=TEAM_ID, game_pk=979999, game_date=TODAY + timedelta(days=1),
+        status_state='scheduled', home_away='home', opponent_team_id=900000 + TEAM_ID,
+    ))
+    db.session.flush()
     # Seed roster readiness for the serving snapshot's slate too. A read produced from
     # a trusted serving snapshot anchors its active-bullpen roster authority to the
     # snapshot's data_through (the slate it published for), matching production where

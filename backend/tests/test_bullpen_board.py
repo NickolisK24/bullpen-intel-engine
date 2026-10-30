@@ -1122,7 +1122,8 @@ class TestBoardEndpoint:
             'active_hidden_count': 0,
             'hidden_active_pitchers': [],
         }
-        assert default_by_name['Nick Martinez']['availability_status'] == 'Monitor'
+        # WP-0.1: an active arm idle past the window is rested, not On Watch.
+        assert default_by_name['Nick Martinez']['availability_status'] == 'Available'
         assert default_by_name['Nick Martinez']['data_state'] == 'stale'
         assert default_by_name['Nick Martinez']['visibility']['has_current_workload'] is False
         assert default_by_name['Nick Martinez']['visibility']['is_visible_by_default'] is True
