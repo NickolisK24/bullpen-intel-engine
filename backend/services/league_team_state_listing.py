@@ -127,7 +127,31 @@ def _withheld_state(reason, *, data_through=None):
     )
 
 
-def _row_state(artifact, snapshot):
+def _competition_withholding(snapshot, team_id):
+    """The frozen season non-state for a club withheld from current reads.
+
+    Such a club deliberately has no Team State artifact (WP-0.1); its governed
+    withholding is the receipt the publication proof froze for this snapshot.
+    """
+    if team_id is None:
+        return None
+    from services.team_board_snapshot_team_state import receipt_value
+    from services.team_state_public_vocabulary import is_competition_withholding
+
+    try:
+        present, value = receipt_value(snapshot, team_id)
+    except Exception:  # noqa: BLE001 - fall back to the governed missing state
+        return None
+    if present and is_competition_withholding(value):
+        return value
+    return None
+
+
+def _row_state(artifact, snapshot, team_id=None):
+    if artifact is None:
+        withheld = _competition_withholding(snapshot, team_id)
+        if withheld is not None:
+            return withheld
     if not _publication_context_matches(artifact, snapshot):
         return _withheld_state(
             PUBLICATION_CONTEXT_MISMATCH,
@@ -250,7 +274,9 @@ def build_league_team_state_listing(
     rows = [
         build_league_team_state_row(
             identity,
-            _row_state(selected.get(identity['team_id']), snapshot),
+            _row_state(
+                selected.get(identity['team_id']), snapshot, identity['team_id'],
+            ),
         )
         for identity in identities
     ]

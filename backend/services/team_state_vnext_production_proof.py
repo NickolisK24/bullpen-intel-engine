@@ -616,6 +616,14 @@ def _evaluate_invariants(teams, *, expected_team_count, distribution, historical
 def _governed_withholding(team) -> bool:
     final = _mapping(team.get('final_team_state'))
     evidence = _mapping(team.get('team_state_evidence'))
+    if (
+        final.get('withholding_outcome') in ('season_complete', 'competition_status_unconfirmed')
+        and final.get('published_public_state') is None
+        # Counted here only when there is no reproducible partition to count
+        # it under; a withheld club whose state reproduces is counted there.
+        and _mapping(team.get('contract_a_reproduction')).get('reproduced') is not True
+    ):
+        return True
     return (
         final.get('readiness_status_code') == 'data_limited'
         and final.get('published_public_state') is None
@@ -841,18 +849,13 @@ def _proof_replay_projection(proof):
 
 def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
     """Adapt the classifier's in-process result to the durable proof contract."""
-    from services.team_state_public_vocabulary import (
-        is_publishable_state,
-        public_state_for,
-    )
+    from services.team_state_public_vocabulary import public_team_state
 
     readiness = _mapping(readiness)
-    status_code = _mapping(readiness.get('readiness')).get('status_code')
-    public_state = (
-        public_state_for(status_code).get('public_code')
-        if is_publishable_state(status_code)
-        else None
-    )
+    # The one public projection decides what this club publishes, including a
+    # governed withholding for a club no longer in active competition (WP-0.1).
+    projected = public_team_state(readiness)
+    public_state = projected.get('public_state') if projected.get('available') is True else None
     artifact = SimpleNamespace(payload={
         'public_copy': {'state': {'public_code': public_state}}
     }) if public_state is not None else None
@@ -868,7 +871,7 @@ def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
         membership_reference_date=reference_dates.get('membership_reference_date'),
         availability_reference_date=reference_dates.get('availability_reference_date'),
     )
-    return build_team_entry(
+    entry = build_team_entry(
         team_id,
         result,
         expected_availability_reference_date=getattr(
@@ -876,6 +879,60 @@ def _candidate_team_entry(snapshot, team_id, readiness, reference_dates):
         ),
         data_through=getattr(snapshot, 'data_through', None),
     )
+    season_context = readiness.get('season_context')
+    entry['season_context'] = (
+        _json_safe(dict(season_context)) if isinstance(season_context, Mapping) else None
+    )
+    entry['final_team_state']['withholding_outcome'] = (
+        None if projected.get('available') is True else projected.get('outcome')
+    )
+    return entry
+
+
+def _previous_published_states(snapshot, team_ids) -> dict:
+    """Public states frozen on the previous trusted publication, by club."""
+    try:
+        from models.dashboard_snapshot import DashboardSnapshot
+        from services.team_board_snapshot_team_state import receipt_value
+        from services.what_changed_comparison_identity import (
+            comparison_identity_from_payload,
+        )
+        from utils.db import db
+
+        identity = comparison_identity_from_payload(getattr(snapshot, 'payload', None))
+        if identity is None or identity.get('previous_snapshot_id') is None:
+            return {}
+        previous = db.session.get(DashboardSnapshot, identity['previous_snapshot_id'])
+        if previous is None:
+            return {}
+        states = {}
+        for team_id in team_ids:
+            present, value = receipt_value(previous, team_id)
+            if present and isinstance(value, Mapping) and value.get('available') is True:
+                states[int(team_id)] = value.get('public_state')
+        return states
+    except Exception as exc:  # noqa: BLE001 - the shift check is advisory only
+        logger.warning(
+            'Previous Team State distribution unavailable for plausibility: %s',
+            type(exc).__name__,
+        )
+        return {}
+
+
+def _plausibility_teams(teams, frozen_inputs):
+    rows = []
+    for team in teams:
+        inputs = _mapping(frozen_inputs.get(str(team['team_id'])))
+        arm_reads = _mapping(inputs.get('arm_reads')).get('records') or []
+        rows.append({
+            'team_id': team['team_id'],
+            'public_state': team['final_team_state']['published_public_state'],
+            'season_context': team.get('season_context'),
+            'availability_reference_date': team.get('availability_reference_date'),
+            'partition': team.get('partition'),
+            'arm_reads': arm_reads,
+        })
+    return rows
 
 
 def _source_current(readiness) -> bool:
@@ -1046,9 +1103,17 @@ def require_transactional_publication_proof(
         )
     )
     from services.team_board_snapshot_team_state import make_receipt
-    from services.team_state_eligibility import evaluate_team_state_eligibility
+    from services.team_state_eligibility import (
+        evaluate_team_state_eligibility,
+        is_withheld_for_competition,
+    )
+    from services.team_state_plausibility import (
+        evaluate_publication_plausibility,
+        require_publication_plausibility,
+    )
     from services.team_state_source import gather_team_state_source
     ineligible = []
+    competition_withheld = {}
     for team_id in expected_ids:
         reference_dates = {}
         arm_reads = {}
@@ -1070,7 +1135,13 @@ def require_transactional_publication_proof(
             eligibility = evaluate_team_state_eligibility(
                 source,
             )
-            if not eligibility.eligible:
+            if not eligibility.eligible and is_withheld_for_competition(eligibility):
+                # A club no longer in active competition has no current state
+                # to publish. That is a governed withholding, not a failure:
+                # its receipt freezes the season non-state for every surface,
+                # and its other evidence gaps cannot block clubs still playing.
+                competition_withheld[str(team_id)] = list(eligibility.reasons)
+            elif not eligibility.eligible:
                 # Every team is evaluated before withholding, so the durable
                 # failure evidence names all of them, not only the first.
                 ineligible.append((team_id, eligibility, readiness, dict(reference_dates)))
@@ -1095,6 +1166,15 @@ def require_transactional_publication_proof(
             evidence=team_state_failure_evidence(snapshot, ineligible),
         )
 
+    plausibility = evaluate_publication_plausibility(
+        _plausibility_teams(teams, frozen_inputs),
+        data_through=getattr(snapshot, 'data_through', None),
+        previous_states=_previous_published_states(snapshot, expected_ids),
+    )
+    # Deterministic contradictions abort the publication transaction; the
+    # previous trusted snapshot keeps serving.
+    require_publication_plausibility(plausibility)
+
     proof = build_proof(
         snapshot=snapshot,
         teams=teams,
@@ -1109,6 +1189,14 @@ def require_transactional_publication_proof(
         },
         proof_generated_at=getattr(snapshot, 'published_at', None),
     )
+    proof['plausibility'] = plausibility
+    proof['competition_withheld'] = {
+        'team_ids': sorted(int(key) for key in competition_withheld),
+        'reasons_by_team_id': competition_withheld,
+    }
+    if plausibility['warning_checks'] and proof['overall_verdict'] == VERDICT_PASS:
+        # Advisory anomalies are surfaced for review, never silently passed.
+        proof['overall_verdict'] = VERDICT_PASS_WITH_INCONCLUSIVE
     mandatory = (
         'all_teams_published',
         'method_version_observed',

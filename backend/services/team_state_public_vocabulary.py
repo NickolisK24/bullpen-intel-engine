@@ -132,6 +132,15 @@ TEAM_STATE_REFUSED = 'refused'
 TEAM_STATE_UNSUPPORTED = 'unsupported_internal_state'
 TEAM_STATE_READINESS_UNAVAILABLE = 'readiness_unavailable'
 TEAM_STATE_NOT_TEAM_SCOPED = 'not_team_scoped'
+# WP-0.1 (EOS-002): a current Team State is a pregame operating read, so a club
+# that is no longer playing, or whose competition status cannot be confirmed,
+# receives no current state. Its earlier published reads remain dated history.
+TEAM_STATE_SEASON_COMPLETE = 'season_complete'
+TEAM_STATE_COMPETITION_UNCONFIRMED = 'competition_status_unconfirmed'
+COMPETITION_WITHHOLDING_OUTCOMES = frozenset({
+    TEAM_STATE_SEASON_COMPLETE,
+    TEAM_STATE_COMPETITION_UNCONFIRMED,
+})
 
 # Reader-facing non-state messages. Deliberately plain: they say a Team State is
 # not available and why in ordinary language, and they never read like a state.
@@ -154,6 +163,16 @@ TEAM_STATE_UNAVAILABLE_MESSAGES = {
     TEAM_STATE_NOT_TEAM_SCOPED: (
         'Team State is a team-level read. Open a team bullpen board for its '
         'current Team State.'
+    ),
+    TEAM_STATE_SEASON_COMPLETE: (
+        "This club's season is complete, so there is no current Team State read. "
+        'Reliever workload shown for this club is historical context, not a '
+        'current pregame read. Earlier published reads remain available as '
+        'dated history.'
+    ),
+    TEAM_STATE_COMPETITION_UNCONFIRMED: (
+        'A current Team State read is not available for this bullpen because '
+        'the schedule record does not yet confirm the club is still playing.'
     ),
 }
 
@@ -227,6 +246,36 @@ def _readiness_refusal_reason(readiness: Mapping) -> Optional[str]:
     return None
 
 
+def _readiness_competition_outcome(readiness: Mapping) -> Optional[tuple]:
+    """``(outcome, basis)`` when the club is not in active competition.
+
+    ``season_context`` is the governed club competition status attached by the
+    publication resolver (``services.club_competition_status``). A readiness
+    payload without it keeps its existing projection.
+    """
+    context = readiness.get('season_context')
+    if not isinstance(context, Mapping):
+        return None
+    status = context.get('status')
+    if status == 'active':
+        return None
+    outcome = (
+        TEAM_STATE_SEASON_COMPLETE
+        if status == 'season_complete'
+        else TEAM_STATE_COMPETITION_UNCONFIRMED
+    )
+    return outcome, context.get('basis')
+
+
+def is_competition_withholding(team_state) -> bool:
+    """True for a Team State block withheld because the club is not playing."""
+    return (
+        isinstance(team_state, Mapping)
+        and team_state.get('available') is not True
+        and team_state.get('outcome') in COMPETITION_WITHHOLDING_OUTCOMES
+    )
+
+
 def _readiness_is_refused(readiness: Mapping) -> bool:
     if readiness.get('contract_state') == 'refused':
         return True
@@ -249,6 +298,17 @@ def public_team_state(readiness) -> dict:
         return team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE)
 
     data_through = _readiness_data_through(readiness)
+
+    competition = _readiness_competition_outcome(readiness)
+    if competition is not None:
+        # A club that is no longer playing has no current pregame state, so
+        # this precedes every other outcome, including a computed state.
+        outcome, basis = competition
+        return team_state_unavailable(
+            outcome,
+            data_through=data_through,
+            reason_code=basis,
+        )
 
     if _readiness_is_refused(readiness):
         return team_state_unavailable(

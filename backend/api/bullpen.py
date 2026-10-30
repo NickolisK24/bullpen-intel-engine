@@ -21,7 +21,11 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from models.sync_run import SyncRun
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability import (
+    ACTIVE_WINDOW_DAYS,
+    AVAILABILITY_METHOD_VERSION,
+    classify_availability,
+)
 from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
@@ -3160,6 +3164,9 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
         'baselines': baselines,
+        # Availability semantics this payload was built under (WP-0.1). The
+        # trusted What Changed comparison refuses to compare across a change.
+        'availability_method_version': AVAILABILITY_METHOD_VERSION,
     }
     # Prior dashboard snapshot — the comparison baseline for canonical story
     # continuity and the "what changed" surfaces. Fetched once and reused below.

@@ -346,7 +346,7 @@ def resolve_team_readiness_payload(
                 team_id,
                 type(exc).__name__,
             )
-    return assemble_bullpen_readiness(
+    readiness = assemble_bullpen_readiness(
         team=_team_payload_from_records(records, team_id=team_id),
         pitcher_records=tuple(_readiness_record(record) for record in readiness_records),
         trust_metadata=_team_operations_trust_metadata(
@@ -358,6 +358,25 @@ def resolve_team_readiness_payload(
         ),
         generated_at=generated_at,
     )
+    return attach_season_context(readiness, team_id, availability_reference_date)
+
+
+def attach_season_context(readiness, team_id, reference_date):
+    """Attach the club's competition status at the date this read describes.
+
+    The Team State itself is still computed (and stays inspectable in the
+    readiness evidence); the public projection, eligibility, and publication
+    proof read ``season_context`` to withhold a *current* state for a club that
+    is no longer playing (WP-0.1, EOS-002).
+    """
+    from services.club_competition_status import resolve_club_competition_status
+
+    if not isinstance(readiness, Mapping):
+        return readiness
+    status = resolve_club_competition_status(team_id, reference_date)
+    readiness = dict(readiness)
+    readiness['season_context'] = status.to_dict()
+    return readiness
 
 
 def _merge_classified_record_overrides(records, overrides, *, team_id):

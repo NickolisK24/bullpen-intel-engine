@@ -49,6 +49,9 @@ BLOCK_INCOMPLETE_EVIDENCE = 'incomplete_evidence'
 BLOCK_AUTHORITY_VALIDATION_FAILED = 'authority_validation_failed'
 BLOCK_INSUFFICIENT_TRUST = 'insufficient_trust'
 BLOCK_UNSUPPORTED_TEAM_STATE = 'unsupported_team_state'
+# WP-0.1 (EOS-002): a club that is no longer playing, or whose competition
+# status cannot be confirmed, has no current Team State to publish.
+BLOCK_NOT_IN_ACTIVE_COMPETITION = 'not_in_active_competition'
 
 
 # Trust-state summary codes.
@@ -216,7 +219,21 @@ def _evidence_summary(source: TeamStateSource, readiness: Optional[Mapping[str, 
         'confidence': trust_metadata.get('confidence') if trust_metadata else None,
         'constraint_count': len(constraints) if isinstance(constraints, (list, tuple)) else 0,
         'constraint_categories': _constraint_categories(readiness) if readiness else [],
+        'competition_status': (
+            (_as_mapping(readiness.get('season_context')) or {}).get('status')
+            if readiness else None
+        ),
     }
+
+
+def is_withheld_for_competition(result: TeamStateEligibilityResult) -> bool:
+    """True when the club is withheld because it is not in active competition.
+
+    The publication proof treats this as a governed withholding rather than a
+    failure: the club has no current state to publish, so its other evidence
+    gaps (if any) cannot block the clubs that are still playing.
+    """
+    return BLOCK_NOT_IN_ACTIVE_COMPETITION in tuple(result.blocking_conditions)
 
 
 def _trust_state(eligible: bool, reasons: list) -> str:
@@ -295,6 +312,15 @@ def evaluate_team_state_eligibility(
         confidence = trust_metadata.get('confidence')
         if confidence not in SUFFICIENT_CONFIDENCE:
             block(BLOCK_INSUFFICIENT_TRUST, f'confidence:{confidence}')
+
+        # --- Club still in active competition -------------------------------
+        season_context = _as_mapping(readiness.get('season_context'))
+        if season_context is not None and season_context.get('status') != 'active':
+            block(
+                BLOCK_NOT_IN_ACTIVE_COMPETITION,
+                f"competition_status:{season_context.get('status')}:"
+                f"{season_context.get('basis')}",
+            )
 
         # --- Supported team state --------------------------------------------
         status_code = _readiness_status_code(readiness)

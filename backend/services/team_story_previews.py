@@ -44,7 +44,10 @@ from urllib.parse import quote
 
 from services.bullpen_board import METHODOLOGY_REASON
 from services.public_bullpen_copy import guard_public_prose
-from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_LABEL_SET
+from services.team_state_public_vocabulary import (
+    PUBLIC_TEAM_STATE_LABEL_SET,
+    is_competition_withholding,
+)
 
 
 DEFAULT_SITE_URL = 'https://baseballos.app'
@@ -547,7 +550,13 @@ def build_team_story_preview(
     data_through = receipt['data_through']
     dated_clause = data_through_sentence(data_through)
     state_label, non_state_message = _team_state_read(board)
-    baseball_point = _baseball_point(board)
+    # A club that is no longer playing publishes no current baseball point:
+    # its board counts describe a finished season, not tonight (WP-0.1).
+    baseball_point = (
+        None
+        if is_competition_withholding((board or {}).get('team_state'))
+        else _baseball_point(board)
+    )
 
     # The board's claim is settled above. A canonical story may word it only if
     # it agrees with it; otherwise the page falls back to the board's own
