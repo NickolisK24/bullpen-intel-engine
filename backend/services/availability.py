@@ -16,19 +16,25 @@ from services.availability_explanations import (
     INCOMPLETE_WORKLOAD_REASON,
     MISSING_WORKLOAD_LIMITATION,
     MISSING_WORKLOAD_REASON,
-    STALE_WORKLOAD_LIMITATION,
+    NO_RECENT_APPEARANCE_LIMITATION,
     WORKLOAD_FALLBACK_REASON,
     appearance_frequency_reason,
     back_to_back_reason,
     fatigue_score_reason,
+    no_recent_appearance_reason,
     pitch_count_reason,
     rest_reason,
-    stale_workload_reason,
 )
 from services.workload_appearance import workload_appearance_logs
 
 
 ACTIVE_WINDOW_DAYS = 14
+
+# Compatibility stamp for the input-to-status semantics of this classifier.
+# v2 (WP-0.1, EOS-001): an arm with no appearance inside ACTIVE_WINDOW_DAYS is
+# rested, not On Watch. Publications stamp this so a comparison across the
+# boundary is refused instead of being reported as a baseball change.
+AVAILABILITY_METHOD_VERSION = 'availability_rest_by_absence_v2'
 
 STATUS_AVAILABLE = 'Available'
 STATUS_MONITOR = 'Monitor'
@@ -389,12 +395,18 @@ def classify_availability_inputs(
         }
 
     if data_state == 'stale':
+        # No appearance inside the freshness window means no recent workload,
+        # so no workload rule can restrict the arm (every window is empty).
+        # Elapsed time alone never creates a constraint (EOS-001). The read
+        # stays a workload fact: medium confidence and an explicit limitation
+        # that it does not establish physical or medical readiness. Roster
+        # authority still removes an inactive arm from the active population.
         return {
-            'availability_status': STATUS_MONITOR,
-            'confidence': CONFIDENCE_LOW,
+            'availability_status': STATUS_AVAILABLE,
+            'confidence': CONFIDENCE_MEDIUM,
             'data_state': data_state,
-            'reasons': [stale_workload_reason(active_window_days)],
-            'limitations': limitations + [STALE_WORKLOAD_LIMITATION],
+            'reasons': [no_recent_appearance_reason(active_window_days)],
+            'limitations': limitations + [NO_RECENT_APPEARANCE_LIMITATION],
             'inputs': inputs,
         }
 

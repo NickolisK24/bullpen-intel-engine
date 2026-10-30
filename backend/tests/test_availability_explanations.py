@@ -12,12 +12,14 @@ from services.availability_explanations import (
     INCOMPLETE_WORKLOAD_REASON,
     MISSING_WORKLOAD_LIMITATION,
     MISSING_WORKLOAD_REASON,
+    NO_RECENT_APPEARANCE_LIMITATION,
     STALE_WORKLOAD_LIMITATION,
     appearance_frequency_reason,
     back_to_back_reason,
     categorize_reason,
     fatigue_score_reason,
     pitch_count_reason,
+    no_recent_appearance_reason,
     rest_reason,
     stale_workload_reason,
 )
@@ -66,8 +68,12 @@ def test_data_state_reason_and_limitation_wording_is_trust_first(make_log):
         reference_date=ref,
         latest_game_date=ref - timedelta(days=30),
     )
-    assert stale['reasons'] == [stale_workload_reason(14)]
-    assert STALE_WORKLOAD_LIMITATION in stale['limitations']
+    # EOS-001: an arm outside the freshness window is rested, and its read is
+    # labelled as a workload fact, not as stale or incomplete data.
+    assert stale['availability_status'] == 'Available'
+    assert stale['reasons'] == [no_recent_appearance_reason(14)]
+    assert NO_RECENT_APPEARANCE_LIMITATION in stale['limitations']
+    assert STALE_WORKLOAD_LIMITATION not in stale['limitations']
 
 
 def test_reason_append_prevents_duplicates():
@@ -114,3 +120,4 @@ def test_reason_categories_cover_generated_reason_families():
     assert categorize_reason('Only 1 day of rest') == CATEGORY_REST
     assert categorize_reason('Recent workload is high enough to narrow normal availability') == CATEGORY_FATIGUE
     assert categorize_reason(stale_workload_reason(14)) == CATEGORY_DATA_STATE
+    assert categorize_reason(no_recent_appearance_reason(14)) == CATEGORY_REST

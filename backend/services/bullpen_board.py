@@ -53,7 +53,9 @@ BOARD_GROUP_ORDER = [
 # governed population, evidence gates, and count definitions. The public
 # contract version owns the exact frozen reader-object shape and meaning.
 # Phase 1 records these stamps without changing any reader path.
-REST_STATUS_METHOD_VERSION = 'd055_rest_status_v1'
+# v2 (WP-0.1, EOS-001): arms with no appearance inside the freshness window
+# count as rested, not On Watch, so the same evidence yields different counts.
+REST_STATUS_METHOD_VERSION = 'd055_rest_status_v2'
 REST_STATUS_PUBLIC_CONTRACT_VERSION = 'd055_rest_status_public_v1'
 
 # Plain baseball language only — no governance/contract jargon on this surface.

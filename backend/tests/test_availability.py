@@ -6,6 +6,7 @@ import pytest
 from services.availability import (
     CONFIDENCE_HIGH,
     CONFIDENCE_LOW,
+    CONFIDENCE_MEDIUM,
     STATUS_AVAILABLE,
     STATUS_AVOID,
     STATUS_LIMITED,
@@ -165,7 +166,10 @@ class TestAvailabilityClassification:
         assert result['data_state'] == 'missing'
         assert result['reasons'] == ['Missing recent workload history']
 
-    def test_stale_data_is_low_confidence_and_not_current(self, make_log):
+    def test_no_recent_appearance_is_rest_not_a_constraint(self, make_log):
+        # EOS-001: elapsed time without an appearance never creates a
+        # restriction. The arm is rested, at medium confidence, and the read
+        # says plainly that it is a workload fact only.
         ref = date(2026, 6, 1)
         result = classify_availability(
             score=ScoreStub(raw_score=20.0),
@@ -174,11 +178,11 @@ class TestAvailabilityClassification:
             latest_game_date=ref - timedelta(days=30),
         )
 
-        assert result['availability_status'] == STATUS_MONITOR
-        assert result['confidence'] == CONFIDENCE_LOW
+        assert result['availability_status'] == STATUS_AVAILABLE
+        assert result['confidence'] == CONFIDENCE_MEDIUM
         assert result['data_state'] == 'stale'
-        assert 'Latest workload data is outside the 14-day freshness window' in result['reasons']
-        assert any('must not be treated as current availability' in note for note in result['limitations'])
+        assert result['reasons'] == ['No appearances in the last 14 days']
+        assert any('not physical or medical readiness' in note for note in result['limitations'])
 
     def test_incomplete_inputs_reduce_confidence(self, make_log):
         ref = date(2026, 6, 1)
