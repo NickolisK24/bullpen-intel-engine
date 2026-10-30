@@ -42,7 +42,9 @@
 | `services/team_board_snapshot_team_state.py` | Receipts may freeze a competition withholding, and are stamped with the availability method. A Team State comparison across the method boundary is refused (`availability_method_boundary`) instead of reporting a change |
 | `services/league_team_state_listing.py` | A club with no artifact shows its frozen season withholding, not a generic "artifact missing" |
 | `services/team_story_previews.py` | A withheld club's static preview carries no current baseball point |
-| `api/bullpen.py`, `services/what_changed_since_yesterday.py` | The dashboard payload is stamped with the availability method; the trusted Since Yesterday comparison withholds across the boundary |
+| `api/bullpen.py` | The dashboard payload is stamped with the availability method. A prior built under a different method is passed to Since Yesterday as no comparable prior, so the method change is withheld rather than reported as rested-option movement. The frozen `services/what_changed_since_yesterday.py` is unchanged |
+| `explanations/availability.py` | A rested-by-absence arm's V4 explanation says it has not pitched in two weeks (a workload note, not a health read), not "a monitor arm", and carries no elevated-usage reason |
+| `tests/freeze_policy.py` | Exact-path approval `WP01_CURRENT_READ_INTEGRITY_PATHS` for the three Team State modules, citing this record |
 | `services/team_state_correction_manifest.py`, `scripts/build_team_state_correction_manifest.py` (new) | Read-only dry-run correction manifest |
 
 **No frontend change.** The frontend already renders the backend's governed `unavailable_message` for any non-state outcome (`frontend/src/adapters/publicTeamState.js`).
