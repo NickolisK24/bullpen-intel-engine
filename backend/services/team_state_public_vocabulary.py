@@ -141,6 +141,12 @@ COMPETITION_WITHHOLDING_OUTCOMES = frozenset({
     TEAM_STATE_SEASON_COMPLETE,
     TEAM_STATE_COMPETITION_UNCONFIRMED,
 })
+# DEC-02: the reader-facing status a competition withholding shows in place of
+# a Team State. These are publication statuses, not a fourth Team State.
+COMPETITION_STATUS_LABELS = {
+    TEAM_STATE_SEASON_COMPLETE: 'Season Complete',
+    TEAM_STATE_COMPETITION_UNCONFIRMED: 'Status Unconfirmed',
+}
 
 # Reader-facing non-state messages. Deliberately plain: they say a Team State is
 # not available and why in ordinary language, and they never read like a state.
@@ -203,17 +209,34 @@ def _team_state_block(
     }
 
 
-def team_state_unavailable(outcome: str, *, data_through=None, reason_code=None) -> dict:
-    """Return a governed, label-less Team State block for a non-state outcome."""
+def team_state_unavailable(
+    outcome: str,
+    *,
+    data_through=None,
+    reason_code=None,
+    final_recorded_date=None,
+) -> dict:
+    """Return a governed, label-less Team State block for a non-state outcome.
+
+    A competition withholding (DEC-02) also carries its ``status_label`` and,
+    for a completed season, the club's ``final_recorded_date``. Every other
+    non-state block keeps its existing shape.
+    """
     if outcome == TEAM_STATE_AVAILABLE:
         raise ValueError('team_state_unavailable cannot build an available Team State')
     if outcome not in TEAM_STATE_UNAVAILABLE_MESSAGES:
         raise ValueError(f'unknown Team State non-state outcome {outcome!r}')
-    return _team_state_block(
+    block = _team_state_block(
         outcome=outcome,
         data_through=data_through,
         reason_code=reason_code,
     )
+    if outcome in COMPETITION_WITHHOLDING_OUTCOMES:
+        block['status_label'] = COMPETITION_STATUS_LABELS[outcome]
+        block['final_recorded_date'] = (
+            final_recorded_date if outcome == TEAM_STATE_SEASON_COMPLETE else None
+        )
+    return block
 
 
 def team_state_not_team_scoped() -> dict:
@@ -247,7 +270,7 @@ def _readiness_refusal_reason(readiness: Mapping) -> Optional[str]:
 
 
 def _readiness_competition_outcome(readiness: Mapping) -> Optional[tuple]:
-    """``(outcome, basis)`` when the club is not in active competition.
+    """``(outcome, basis, final_recorded_date)`` when the club is not playing.
 
     ``season_context`` is the governed club competition status attached by the
     publication resolver (``services.club_competition_status``). A readiness
@@ -264,7 +287,7 @@ def _readiness_competition_outcome(readiness: Mapping) -> Optional[tuple]:
         if status == 'season_complete'
         else TEAM_STATE_COMPETITION_UNCONFIRMED
     )
-    return outcome, context.get('basis')
+    return outcome, context.get('basis'), context.get('last_final_game_date')
 
 
 def is_competition_withholding(team_state) -> bool:
@@ -303,11 +326,12 @@ def public_team_state(readiness) -> dict:
     if competition is not None:
         # A club that is no longer playing has no current pregame state, so
         # this precedes every other outcome, including a computed state.
-        outcome, basis = competition
+        outcome, basis, final_recorded_date = competition
         return team_state_unavailable(
             outcome,
             data_through=data_through,
             reason_code=basis,
+            final_recorded_date=final_recorded_date,
         )
 
     if _readiness_is_refused(readiness):

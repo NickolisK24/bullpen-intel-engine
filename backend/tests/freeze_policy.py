@@ -540,8 +540,9 @@ SCHEDULE_AWARE_DAY_CONTEXT_PATHS = (
 # threshold moves, and no public Team State label is added (the two new
 # outcomes are governed non-states in team_state_public_vocabulary.py). The
 # correction manifest is read-only and never mutates an artifact. Authority:
-# docs/audits/2026-end-of-season/wp01/WP-0.1_CURRENT_READ_INTEGRITY.md, pending
-# the founder's ledger entries for audit decisions DEC-01 and DEC-02. This
+# docs/audits/2026-end-of-season/wp01/WP-0.1_CURRENT_READ_INTEGRITY.md and the
+# founder decisions DEC-01 and DEC-02 recorded in
+# docs/decisions/2026-10-31-current-read-integrity-founder-decisions.md. This
 # exact-path approval becomes inert after merge.
 WP01_CURRENT_READ_INTEGRITY_PATHS = (
     'backend/services/team_state_eligibility.py',

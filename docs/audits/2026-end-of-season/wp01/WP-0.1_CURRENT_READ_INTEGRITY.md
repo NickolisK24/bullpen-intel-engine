@@ -4,7 +4,7 @@
 **Findings addressed:** EOS-001, EOS-002, EOS-003 (dry run only), EOS-004 (`03_FINDINGS_REGISTER.md`).
 **Audit documents:** `docs/audits/2026-end-of-season/` on branch `audit/2026-end-of-season-platform-audit`; they are not on `main`, so references below name them without a path.
 **Branch:** `fix/phase0-wp01-current-read-integrity`.
-**Status:** Implementation. Nothing here changes product policy until the founder ledgers DEC-01 and DEC-02 (`06_DECISION_REGISTER.md`); see "Policy" below.
+**Status:** Implementation. The founder approved DEC-01 (historical artifacts) and DEC-02 (clubs not in active competition) on 2026-10-31; both are recorded in `docs/decisions/2026-10-31-current-read-integrity-founder-decisions.md`. See "Policy" below.
 
 ## Root causes, confirmed at `main` @ `3488addf6`
 
@@ -124,16 +124,17 @@ The distribution checks count only clubs that publish a current state, so a post
 
 ## Policy
 
-This package changes what a published label means in two places. Both are consistent with existing rules, but both need ledger entries:
+This package changes what a published label means in two places. Both are consistent with existing rules:
 
 - **Stale arm → Clean Option.**
   - Implements Standard 02:676 ("staleness … never silently degrades accuracy").
   - Matches 02's own definition of Available ("recent workload leaves the arm inside the normal availability range").
-  - Needs DEC-02.
 - **No current Team State for a club not in active competition.**
   - Implements 01:140 and 02:685.
   - Adds two governed non-state outcomes to Standard 02 §8. "No fourth Team State" is preserved: these are non-states like `data_limited`.
-  - Needs DEC-01.
+  - Governed by DEC-02: "Season Complete" with the final recorded date, or "Status Unconfirmed" with no current assessment, carried as `status_label` / `final_recorded_date` on the non-state block.
+
+Historical artifacts are governed by DEC-01: preserved when accurate, corrected only through versioned supersession, never silently rewritten or automatically withdrawn, and each production correction batch needs separate founder approval of a verified manifest.
 
 ## Remaining dependencies
 

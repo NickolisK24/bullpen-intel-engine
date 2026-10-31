@@ -287,6 +287,10 @@ def test_washington_october_read_is_withheld_as_season_complete():
     assert block['outcome'] == TEAM_STATE_SEASON_COMPLETE
     assert block['data_through'] == DATA_THROUGH.isoformat()
     assert 'historical context, not a current pregame read' in block['unavailable_message']
+    # DEC-02: the reader sees "Season Complete" and the club's final recorded game.
+    assert block['status_label'] == 'Season Complete'
+    assert block['final_recorded_date'] == status.to_dict()['last_final_game_date']
+    assert block['final_recorded_date'] is not None
     # The computed state stays inspectable as dated evidence.
     assert readiness['readiness']['status_code'] == 'operationally_stable'
 
@@ -444,6 +448,9 @@ def test_unconfirmed_status_never_becomes_a_definitive_claim():
     })
     assert block['available'] is False
     assert block['outcome'] == TEAM_STATE_COMPETITION_UNCONFIRMED
+    # DEC-02: "Status Unconfirmed", with no dated season claim.
+    assert block['status_label'] == 'Status Unconfirmed'
+    assert block['final_recorded_date'] is None
 
     assert _status(LAD, rows=[], winners={}).basis == BASIS_NO_SCHEDULE_EVIDENCE
     # Spring training and exhibition games are not competition.
@@ -772,3 +779,12 @@ def test_since_yesterday_has_no_comparable_prior_across_the_method_boundary():
     assert _availability_comparable_snapshot(before) is None
     assert _availability_comparable_snapshot(None) is None
     assert _availability_comparable_snapshot(after) is after
+
+
+def test_non_competition_blocks_keep_their_existing_shape():
+    """DEC-02 fields belong to competition withholdings only."""
+    from services.team_state_public_vocabulary import TEAM_STATE_DATA_LIMITED, team_state_unavailable
+
+    block = team_state_unavailable(TEAM_STATE_DATA_LIMITED, data_through='2026-10-18')
+    assert 'status_label' not in block
+    assert 'final_recorded_date' not in block

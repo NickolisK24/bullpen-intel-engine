@@ -269,9 +269,24 @@ export default function TeamBoardAnswerBlock({
                 {view.teamState.available ? (
                   view.summary && <p className="max-w-3xl font-board text-[1rem] font-medium leading-[1.6] text-text-primary tablet:text-[1.0625rem]">{view.summary}</p>
                 ) : (
-                  <p className="type-body max-w-3xl text-text-secondary" role="status">
-                    {view.teamState.unavailableMessage}
-                  </p>
+                  <div role="status">
+                    {view.teamState.statusLabel && (
+                      <p className="type-metadata font-semibold uppercase tracking-wider text-text-primary">
+                        {view.teamState.statusLabel}
+                      </p>
+                    )}
+                    {view.teamState.finalRecordedDate && (
+                      <p className="type-metadata text-text-secondary">
+                        Final recorded game{' '}
+                        <time dateTime={view.teamState.finalRecordedDate}>
+                          {formatFreshnessDate(view.teamState.finalRecordedDate) || view.teamState.finalRecordedDate}
+                        </time>
+                      </p>
+                    )}
+                    <p className="type-body max-w-3xl text-text-secondary">
+                      {view.teamState.unavailableMessage}
+                    </p>
+                  </div>
                 )}
               </div>
 
