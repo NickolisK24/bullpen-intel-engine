@@ -122,6 +122,12 @@ def main(argv=None):
         app = create_read_only_app()
         with app.app_context():
             try:
+                if db.engine.dialect.name == 'postgresql':
+                    # Enforced by the database, not only by this code: any
+                    # write in this transaction is refused.
+                    from sqlalchemy import text
+
+                    db.session.execute(text('SET TRANSACTION READ ONLY'))
                 entries = load_manifest_entries(args.start, end)
             finally:
                 # Never leave a transaction open, and never commit.

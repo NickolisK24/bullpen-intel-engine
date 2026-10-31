@@ -77,8 +77,14 @@ Implementation consequence for WP-0.1:
   game is scheduled, while the regular season is in progress, or after it
   clinched a postseason series whose next round is not yet listed. It is
   season-complete only on positive evidence (a lost series, a decided World
-  Series, or a postseason schedule without the club). Anything else is
-  undetermined, and a failed lookup fails closed.
+  Series, or a postseason already past its first round without the club).
+  Anything else is undetermined, and a failed lookup fails closed. Every
+  evaluation is as of the read's reference date.
+- Known limit of point 3: stored authority has no seeding and the schedule
+  reaches three days ahead, so a first-round bye club reads "Status
+  Unconfirmed" until its first Division Series game is stored. That is the
+  fail-closed behaviour this decision requires, not a definitive claim;
+  removing the gap needs full postseason schedule ingestion (WP-1.1).
 - `season_complete` and `competition_status_unconfirmed` are governed
   non-states in the Team State vocabulary owner. They carry
   `status_label` ("Season Complete" / "Status Unconfirmed"); the season-complete

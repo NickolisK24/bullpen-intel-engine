@@ -402,10 +402,69 @@ def test_pennant_winner_waiting_days_for_the_next_round_stays_active():
 
 
 def test_regular_season_off_days_do_not_end_a_season():
-    rows = [_row(NYY, 111, date(2026, 7, 12))]
+    # The All-Star break: the club has no stored game ahead, but the league's
+    # stored schedule still lists regular-season games, which is positive
+    # evidence the season continues. No activity-window threshold is used.
+    rows = [
+        _row(NYY, 111, date(2026, 7, 12)),
+        _row(LAD, MIL, date(2026, 7, 17), state='scheduled'),
+    ]
     status = _status(NYY, reference=date(2026, 7, 16), rows=rows, winners={})
     assert status.status == STATUS_ACTIVE
     assert status.basis == BASIS_REGULAR_SEASON_IN_PROGRESS
+
+
+def test_recent_regular_season_play_alone_never_proves_the_season_continues():
+    # Once the stored schedule lists no further regular-season game and no
+    # postseason, a recent game is not evidence: the status is unconfirmed.
+    rows = [_row(NYY, 111, date(2026, 9, 27))]
+    status = _status(NYY, reference=date(2026, 9, 28), rows=rows, winners={})
+    assert status.status == STATUS_UNDETERMINED
+    assert status.basis == BASIS_UNRESOLVED
+
+
+def _wild_card_round():
+    rows = [_row(team, None, REGULAR_SEASON_END) for team in (WSH, LAD, NYY, CLE)]
+    wild_card, winners = _series(NYY, CLE, 'F', 3, [], date(2026, 9, 29))
+    return rows + wild_card, winners
+
+
+def test_first_round_bye_club_is_not_declared_season_complete():
+    # LAD has a bye. Its Division Series games are outside the stored rolling
+    # window while the Wild Card round is listed, so it is absent from every
+    # stored postseason row - exactly like WSH, which missed the postseason.
+    rows, winners = _wild_card_round()
+    for reference in (date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30)):
+        for team in (LAD, WSH):
+            status = _status(team, reference=reference, rows=rows, winners=winners)
+            assert status.status == STATUS_UNDETERMINED
+            assert status.basis == BASIS_UNRESOLVED
+
+
+def test_absence_is_conclusive_only_after_the_first_round():
+    rows, winners = _wild_card_round()
+    division, more = _series(LAD, NYY, 'D', 5, [LAD], date(2026, 10, 4))
+    rows = rows + division
+    winners = {**winners, **more}
+    reference = date(2026, 10, 5)
+    assert _status(WSH, reference=reference, rows=rows, winners=winners).status == (
+        STATUS_SEASON_COMPLETE
+    )
+    lad = _status(LAD, reference=reference, rows=rows, winners=winners)
+    assert lad.status == STATUS_ACTIVE
+    assert lad.basis == BASIS_UPCOMING_GAME
+
+
+def test_status_is_evaluated_as_of_its_reference_date():
+    # LAD lost the NLCS on Oct 15 and MIL later won the World Series. A read
+    # dated Oct 13 is classified with what was known then.
+    as_of = date(2026, 10, 13)
+    lad = _status(LAD, reference=as_of)
+    assert lad.status == STATUS_ACTIVE
+    assert lad.basis == BASIS_UPCOMING_GAME
+    assert _status(MIL, reference=as_of).status == STATUS_ACTIVE
+    # After the clinching game the same club is complete.
+    assert _status(LAD, reference=date(2026, 10, 16)).status == STATUS_SEASON_COMPLETE
 
 
 # 8. A team whose final game has completed.
@@ -678,12 +737,20 @@ def test_inactivity_counted_as_constraint_blocks_publication():
     assert CHECK_INACTIVITY_CONSTRAINT in result['blocking_checks']
 
 
-def test_unreadable_competition_authority_blocks_publication():
+def test_unreadable_competition_authority_withholds_only_that_club():
     status = lookup_failed_status(NYY, REFERENCE)
     assert status.basis == BASIS_LOOKUP_FAILED
-    teams = [_entry(NYY, None, status=status.status, basis=status.basis)]
+    # The failed club is withheld; the rest of the publication proceeds.
+    teams = [_entry(NYY, None, status=status.status, basis=status.basis), _entry(MIL, 'fresh')]
     result = evaluate_publication_plausibility(teams, data_through=DATA_THROUGH)
-    assert result['blocking_checks'] == [CHECK_LOOKUP_FAILED]
+    assert result['blocked'] is False
+    assert result['warning_checks'] == [CHECK_LOOKUP_FAILED]
+    require_publication_plausibility(result)
+
+    # A failed lookup can never carry a current state into publication.
+    teams = [_entry(NYY, 'fresh', status=status.status, basis=status.basis)]
+    result = evaluate_publication_plausibility(teams, data_through=DATA_THROUGH)
+    assert CHECK_INACTIVE_CLUB_CURRENT in result['blocking_checks']
 
 
 def test_dates_that_contradict_the_publication_block_it():
@@ -788,3 +855,60 @@ def test_non_competition_blocks_keep_their_existing_shape():
     block = team_state_unavailable(TEAM_STATE_DATA_LIMITED, data_through='2026-10-18')
     assert 'status_label' not in block
     assert 'final_recorded_date' not in block
+
+
+def test_team_state_history_refuses_the_availability_method_boundary():
+    """A Vulnerable -> Fresh History transition caused by WP-0.1 is not baseball."""
+    from services import team_board_delta_substrate as delta
+    from services.availability import AVAILABILITY_METHOD_VERSION
+    from tests.test_team_board_delta_substrate import _snapshot as _delta_snapshot
+
+    def stamped(represented, snapshot_id, state, stamp):
+        snapshot = _delta_snapshot(represented, snapshot_id=snapshot_id, state=state)
+        metadata = snapshot.payload['domains']['team_state']
+        assert metadata['availability_method_version'] == AVAILABILITY_METHOD_VERSION
+        if stamp is None:
+            metadata.pop('availability_method_version')
+        return snapshot
+
+    before = stamped(date(2026, 10, 29), 1, 'vulnerable', None)
+    after = stamped(date(2026, 10, 30), 2, 'fresh', AVAILABILITY_METHOD_VERSION)
+    domain = delta.compare_snapshots(before, after)['domains']['team_state']
+    assert domain['status'] != delta.COMPARABLE
+    assert domain['reason_code'] == delta.METHOD_VERSION_MISMATCH
+
+    # Two pre-WP-0.1 sidecars still compare with each other, unchanged.
+    older = stamped(date(2026, 10, 28), 3, 'vulnerable', None)
+    assert delta.compare_snapshots(older, before)['domains']['team_state']['status'] == (
+        delta.COMPARABLE
+    )
+    # And two WP-0.1 sidecars compare normally.
+    later = stamped(date(2026, 10, 31), 4, 'stretched', AVAILABILITY_METHOD_VERSION)
+    assert delta.compare_snapshots(after, later)['domains']['team_state']['status'] == (
+        delta.COMPARABLE
+    )
+
+
+def test_supporting_reads_treat_an_idle_arm_as_rested():
+    """Capacity, trust and optionality agree with the Clean Option arm read."""
+    from services import bullpen_capacity, bullpen_optionality_context, bullpen_trust_hierarchy
+
+    availability = _arm(REFERENCE - timedelta(days=21))
+    assert availability['data_state'] == 'stale'
+    record = {
+        'availability': availability,
+        'pitcher_labels': {'read': {'key': 'clean_option'}, 'role': {'key': 'middle_relief'}},
+    }
+    assert bullpen_capacity._capacity_state(record) == ('available', 'active')
+    assert bullpen_trust_hierarchy._is_limited_read(record) is False
+    assert bullpen_optionality_context._workload_warning(record) is False
+
+    # A recently worked arm still carries its warning.
+    worked = {
+        **record,
+        'availability': {
+            **availability, 'data_state': 'fresh',
+            'inputs': {**availability['inputs'], 'pitches_yesterday': 25},
+        },
+    }
+    assert bullpen_optionality_context._workload_warning(worked) is True

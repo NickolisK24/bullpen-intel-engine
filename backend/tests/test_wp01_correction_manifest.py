@@ -273,3 +273,41 @@ def test_database_dry_run_classifies_without_touching_any_artifact(app):
             for a in ShareArtifact.query.order_by(ShareArtifact.public_id).all()
         ]
         assert after == before
+
+
+def test_database_dry_run_is_read_only_at_the_database(app, tmp_path, monkeypatch):
+    """The CLI's database mode runs end to end and PostgreSQL refuses any write."""
+    import json as _json
+
+    from sqlalchemy import text
+
+    from scripts import build_team_state_correction_manifest as cli
+    from services import team_state_correction_manifest as manifest_service
+    from utils.db import db
+
+    output = tmp_path / 'manifest.json'
+    with app.app_context():
+        dialect = db.engine.dialect.name
+    assert cli.main(['--start', '2026-09-28', '--output', str(output)]) == 0
+    manifest = _json.loads(output.read_text())
+    assert manifest['mode'] == 'dry_run'
+    assert manifest['execution_authorized'] is False
+    assert manifest['scope']['source'] == 'database_dry_run'
+
+    if dialect != 'postgresql':
+        return
+    attempted = {}
+
+    def writing_loader(start, end):
+        try:
+            db.session.execute(text('CREATE TEMPORARY TABLE wp01_write_probe (id int)'))
+        except Exception as error:  # noqa: BLE001 - the refusal is the point
+            attempted['refused'] = 'read-only' in str(error).lower()
+            raise
+        attempted['refused'] = False
+        return []
+
+    monkeypatch.setattr(manifest_service, 'load_manifest_entries', writing_loader)
+    with pytest.raises(Exception):
+        cli.main(['--start', '2026-09-28', '--output', str(output)])
+    assert attempted == {'refused': True}

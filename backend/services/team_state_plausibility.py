@@ -18,8 +18,6 @@ Two severities:
     * ``inactivity_counted_as_constraint`` - an arm whose only evidence is
       "no appearance inside the freshness window" reads Watch Arm or Limited
       Rest (the October failure mode at arm level).
-    * ``competition_status_lookup_failed`` - the competition authority could
-      not be read, so no club's eligibility is established.
     * ``represented_date_contradiction`` - a club's competition status was
       evaluated for a different date than the read it gates.
 
@@ -35,6 +33,10 @@ Two severities:
       from its Clean Option arm reads.
     * ``season_context_missing`` - a published state carries no competition
       status (a resolver that predates WP-0.1).
+    * ``competition_status_lookup_failed`` - one club's competition authority
+      could not be read. That club is already withheld as unconfirmed (and if
+      it carried a public state, ``inactive_club_published_as_current``
+      blocks), so the other clubs still publish.
     * ``final_game_after_data_through`` - the schedule shows a club's final
       game after the publication's data-through date. This is normally
       ingestion lag (a game final before its appearances are ingested), so it
@@ -187,7 +189,7 @@ def evaluate_publication_plausibility(
         ))
     if lookup_failed:
         findings.append(_finding(
-            CHECK_LOOKUP_FAILED, SEVERITY_BLOCK, lookup_failed,
+            CHECK_LOOKUP_FAILED, SEVERITY_WARN, lookup_failed,
             'Club competition status could not be read from stored authority.',
         ))
     if date_contradictions:

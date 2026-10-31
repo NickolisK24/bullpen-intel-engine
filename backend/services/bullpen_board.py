@@ -17,12 +17,14 @@ not exposed as user-facing copy.
 from datetime import datetime, timezone
 
 from services.availability import (
+    ACTIVE_WINDOW_DAYS,
     STATUS_AVAILABLE,
     STATUS_AVOID,
     STATUS_LIMITED,
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
+from services.availability_explanations import no_recent_appearance_reason
 from services.bullpen_stress import build_bullpen_stress
 from services.pitcher_public_labels import build_pitcher_labels
 from services.pitcher_role_authority import author_public_role_read
@@ -53,9 +55,7 @@ BOARD_GROUP_ORDER = [
 # governed population, evidence gates, and count definitions. The public
 # contract version owns the exact frozen reader-object shape and meaning.
 # Phase 1 records these stamps without changing any reader path.
-# v2 (WP-0.1, EOS-001): arms with no appearance inside the freshness window
-# count as rested, not On Watch, so the same evidence yields different counts.
-REST_STATUS_METHOD_VERSION = 'd055_rest_status_v2'
+REST_STATUS_METHOD_VERSION = 'd055_rest_status_v1'
 REST_STATUS_PUBLIC_CONTRACT_VERSION = 'd055_rest_status_public_v1'
 
 # Plain baseball language only — no governance/contract jargon on this surface.
@@ -391,7 +391,8 @@ def short_reason_for(availability):
     inputs = availability.get('inputs') or {}
 
     if data_state == 'stale':
-        return 'Outside active freshness window'
+        # WP-0.1 (EOS-001): an idle arm is rested, not a data caveat.
+        return no_recent_appearance_reason(ACTIVE_WINDOW_DAYS)
     if data_state == 'missing':
         return 'No workload record available'
     if data_state == 'incomplete':

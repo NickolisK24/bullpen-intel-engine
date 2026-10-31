@@ -226,3 +226,49 @@ def test_idle_arm_counted_as_constraint_refuses_publication(app, monkeypatch):
         assert candidate.is_published is False
         assert TeamStatePublicationProof.query.count() == 0
         assert dashboard_snapshot.get_latest_dashboard_snapshot().id == previous.id
+
+
+def test_failed_competition_lookup_never_aborts_the_publication_transaction(app, monkeypatch):
+    """A failed read fails closed for one club inside a savepoint."""
+    from sqlalchemy import text
+
+    from services import club_competition_status as competition
+
+    def broken_inputs(team_id, reference_date, *, session=None):
+        session.execute(text('SELECT * FROM table_that_does_not_exist'))
+
+    monkeypatch.setattr(competition, 'load_competition_inputs', broken_inputs)
+    with app.app_context():
+        status = competition.resolve_club_competition_status(PLAYING[0], AVAILABILITY)
+        assert status.status == competition.STATUS_UNDETERMINED
+        assert status.basis == competition.BASIS_LOOKUP_FAILED
+        # The surrounding transaction is still usable for every other club.
+        assert db.session.execute(text('SELECT 1')).scalar() == 1
+
+
+def test_competition_inputs_include_league_regular_season_evidence(app):
+    from models.scheduled_game import ScheduledGame
+    from services.club_competition_status import (
+        BASIS_REGULAR_SEASON_IN_PROGRESS,
+        STATUS_ACTIVE,
+        resolve_club_competition_status,
+    )
+
+    columns = {column.name for column in ScheduledGame.__table__.columns}
+    with app.app_context():
+        def game(team_id, opponent, game_pk, game_date, state):
+            values = dict(
+                team_id=team_id, opponent_team_id=opponent, game_pk=game_pk,
+                game_date=game_date, game_type='R', status_state=state,
+            )
+            return ScheduledGame(**{key: value for key, value in values.items() if key in columns})
+
+        db.session.add_all([
+            game(147, 111, 990001, date(2026, 7, 12), 'final'),
+            game(119, 158, 990002, date(2026, 7, 17), 'scheduled'),
+        ])
+        db.session.flush()
+        status = resolve_club_competition_status(147, date(2026, 7, 16))
+        assert status.status == STATUS_ACTIVE
+        assert status.basis == BASIS_REGULAR_SEASON_IN_PROGRESS
+        db.session.rollback()

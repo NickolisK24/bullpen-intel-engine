@@ -18,6 +18,7 @@ from typing import Any, Mapping
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
+from services.availability import AVAILABILITY_METHOD_VERSION
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
 from services.bullpen_board import (
     REST_STATUS_METHOD_VERSION,
@@ -808,6 +809,8 @@ def build_prospective_envelope(
 
     domain_metadata = {
         'method_version': method_version,
+        # WP-0.1: the availability semantics the frozen state was derived under.
+        'availability_method_version': AVAILABILITY_METHOD_VERSION,
         'contract_version': contract_version,
         'public_contract_version': PUBLIC_TEAM_STATE_CONTRACT,
         'population_basis': population_basis,
@@ -1279,6 +1282,14 @@ def _compatible_domain(previous, current, domain, value_key):
     if previous_method in (None, '') or current_method in (None, ''):
         return _withheld(domain, METHOD_VERSION_MISSING)
     if previous_method != current_method:
+        return _withheld(domain, METHOD_VERSION_MISMATCH)
+    if domain == 'team_state' and (
+        previous_metadata.get('availability_method_version')
+        != current_metadata.get('availability_method_version')
+    ):
+        # WP-0.1: states derived under different availability semantics differ
+        # by method, not baseball. Sidecars written before the stamp existed
+        # carry none, so they compare only with each other.
         return _withheld(domain, METHOD_VERSION_MISMATCH)
 
     contract_fields = (

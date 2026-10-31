@@ -47,11 +47,11 @@
 | `tests/freeze_policy.py` | Exact-path approval `WP01_CURRENT_READ_INTEGRITY_PATHS` for the three Team State modules, citing this record |
 | `services/team_state_correction_manifest.py`, `scripts/build_team_state_correction_manifest.py` (new) | Read-only dry-run correction manifest |
 
-**No frontend change.** The frontend already renders the backend's governed `unavailable_message` for any non-state outcome (`frontend/src/adapters/publicTeamState.js`).
+**Frontend: presentation only.** The frontend renders the backend's governed `unavailable_message` for any non-state outcome, and (DEC-02) the backend's `status_label` and `final_recorded_date` for a competition withholding (`frontend/src/adapters/publicTeamState.js`). It accepts only the exact outcome/label pair the backend owns and derives nothing.
 
 ## Club competition status
 
-Evaluated at the read's availability reference date `R`, for `R`'s season, using only competitive game types (`R`, `F`, `D`, `L`, `W`). Spring, exhibition, and unknown types are ignored.
+Evaluated **as of** the read's availability reference date `R`, for `R`'s season, using only competitive game types (`R`, `F`, `D`, `L`, `W`). Spring, exhibition, and unknown types are ignored. As of `R` means: a game dated on or after `R` counts as still to be played, and only decisions in games dated before `R` are read, so a historical read (the correction manifest) is classified with what was knowable when it was published.
 
 | Condition, in order | Status | Basis |
 |---|---|---|
@@ -61,10 +61,10 @@ Evaluated at the read's availability reference date `R`, for `R`'s season, using
 | A pending game on or after `R` | active | `upcoming_scheduled_game` |
 | The club won its latest series and the next round is not yet listed | active | `postseason_series_won_next_round_not_listed` |
 | Club in the postseason, otherwise | undetermined | `competition_status_unresolved` |
-| Postseason scheduled and the club is not in it | season_complete | `postseason_scheduled_without_club` |
-| No postseason scheduled; last regular-season final within `ACTIVE_WINDOW_DAYS` | active | `regular_season_in_progress` |
-| Otherwise | undetermined | `competition_status_unresolved` |
-| The stored authority could not be read | undetermined | `competition_status_lookup_failed` (publication blocks) |
+| A Division Series or later game is final and the club is in no postseason row | season_complete | `postseason_scheduled_without_club` |
+| No postseason scheduled; the club's last final was regular season and the league's stored schedule lists a regular-season game on or after `R` | active | `regular_season_in_progress` |
+| Otherwise (including a club absent from a Wild Card-only postseason schedule, which may be a first-round bye club) | undetermined | `competition_status_unresolved` |
+| The stored authority could not be read (inside a savepoint, so the publication transaction survives) | undetermined | `competition_status_lookup_failed` (that club is withheld; the proof records a warning) |
 
 How the inputs are read:
 
@@ -75,7 +75,8 @@ How the inputs are read:
 - **Pending games:**
   - `scheduled`, `suspended`, or live.
   - A cancelled or retired game (`schedule_absence`) is not pending.
-- **Why no three-day heuristic is used:** stored series outcomes and the schedule authority settle the cases it was meant to cover. A pennant winner waiting six days for the World Series stays active, and a series loser is withheld the next day even before its unneeded games are retired.
+- **Why no activity-window heuristic is used:** stored series outcomes and the schedule authority settle the cases it was meant to cover. A pennant winner waiting six days for the World Series stays active, and a series loser is withheld the next day even before its unneeded games are retired. An earlier draft kept a 14-day "recent regular-season game" fallback; it was removed in independent verification because it could keep a non-playoff club active when the postseason schedule was late.
+- **Known fail-closed gap (first-round byes):** stored authority has no standings or seeding, and `scheduled_games` reaches only three days ahead. Between the last regular-season day and the first stored Division Series game, a bye club is indistinguishable from a club that missed the postseason, so both read Status Unconfirmed rather than one being falsely declared complete. Closing this needs full postseason schedule (or seeding) ingestion, which belongs to the season-phase model (WP-1.1).
 
 ## Plausibility checks (inside the pre-trust proof)
 
@@ -83,7 +84,6 @@ How the inputs are read:
 
 - `inactive_club_published_as_current`
 - `inactivity_counted_as_constraint`: a stale arm reading Watch Arm or Limited Rest
-- `competition_status_lookup_failed`
 - `represented_date_contradiction`: a club's competition status was evaluated for a different date than the read it gates
 
 **Advisory.** Recorded in the proof and surfaced as `PASS_WITH_INCONCLUSIVE`.
@@ -92,6 +92,7 @@ How the inputs are read:
 - `vulnerable_shift`: at least 50% of at least 8 comparable clubs worsened at once
 - `arm_read_team_state_mismatch`
 - `season_context_missing`
+- `competition_status_lookup_failed`: that club is already withheld as unconfirmed
 - `final_game_after_data_through`: normally ingestion lag, so it does not withhold the previous-day read
 
 The distribution checks count only clubs that publish a current state, so a postseason publication with two clubs cannot trip them.

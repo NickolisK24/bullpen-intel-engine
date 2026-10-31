@@ -63,7 +63,9 @@ LEVERAGE_USAGE_KEYS = {OBSERVED_LATE, OBSERVED_SETUP}
 REGULAR_USAGE_KEYS = {OBSERVED_LATE, OBSERVED_SETUP, OBSERVED_MIDDLE}
 DEPTH_USAGE_KEYS = {OBSERVED_LONG, OBSERVED_LOW}
 
-LIMITED_DATA_STATES = {'stale', 'missing', 'incomplete', 'failed', 'historical', 'unknown'}
+# 'stale' means only that the arm has not pitched inside the freshness window.
+# Since WP-0.1 (EOS-001) that is a rested Available read, not limited data.
+LIMITED_DATA_STATES = {'missing', 'incomplete', 'failed', 'historical', 'unknown'}
 UNKNOWN_CONFIDENCE = {'none', 'unknown'}
 WEAK_CONFIDENCE = {'none', 'unknown', 'low'}
 

@@ -280,7 +280,8 @@ class TestShortReason:
         assert reason == '42 pitches yesterday'
 
     def test_stale_and_missing_read_as_data_caveats(self):
-        assert short_reason_for(availability('Monitor', data_state='stale')) == 'Outside active freshness window'
+        # WP-0.1 (EOS-001): an idle arm is rested, so its line says so plainly.
+        assert short_reason_for(availability('Available', data_state='stale')) == 'No appearances in the last 14 days'
         assert short_reason_for(availability('Monitor', data_state='missing')) == 'No workload record available'
         assert short_reason_for(availability('Monitor', data_state='failed')) == 'Recent workload fetch failed'
 

@@ -18,17 +18,27 @@ This module answers one narrow question from stored authority only:
 Outcomes:
 
 ``active``
-    An upcoming competitive game is scheduled, a postseason series has been
-    won and the next round is not yet listed, or the regular season is still
-    in progress (no postseason schedule exists yet and the club played a
-    regular-season game inside the availability freshness window).
+    An upcoming competitive game is scheduled for the club, a postseason series
+    has been won and the next round is not yet listed, or the regular season is
+    still in progress (the club's last game was a regular-season game and the
+    stored schedule still lists a regular-season game on or after the
+    reference date). No activity-window threshold is used.
 ``season_complete``
     The club lost a postseason series, the World Series has been decided, or
-    the postseason is scheduled and the club is not in it.
+    the postseason is past its first round (a Division Series or later game is
+    final) and the club appears nowhere in the postseason schedule.
 ``undetermined``
     The stored evidence cannot establish either. This never becomes a
     definitive claim in either direction; the caller withholds the current
-    read.
+    read. Example: after the regular season and before any Division Series
+    game is final, a club absent from the stored postseason rows may be a
+    first-round bye club whose games are outside the rolling schedule window,
+    so it is unconfirmed rather than complete.
+
+Every evaluation is as of its reference date: games dated on or after the
+reference date count as still to be played, and only decisions in games dated
+before it are read. A historical read is therefore classified with what was
+knowable when it was published, not with later results.
 
 Spring training and exhibition games are not competition for this purpose. A
 game whose type is unknown is ignored rather than assumed regular season.
@@ -43,10 +53,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Iterable, Mapping, Optional
 
-from services.availability import ACTIVE_WINDOW_DAYS
 from services.schedule_absence import (
     POSTSEASON_GAME_TYPES,
     SERIES_LENGTHS,
@@ -74,9 +83,15 @@ BASIS_LOOKUP_FAILED = 'competition_status_lookup_failed'
 REGULAR_SEASON_GAME_TYPE = 'R'
 COMPETITIVE_GAME_TYPES = frozenset({REGULAR_SEASON_GAME_TYPE}) | POSTSEASON_GAME_TYPES
 POSTSEASON_ROUND_ORDER = {'F': 1, 'D': 2, 'L': 3, 'W': 4}
+# A final game from this round on means the first round is over, so every club
+# still playing appears in the postseason schedule.
+PAST_FIRST_ROUND_GAME_TYPES = frozenset({'D', 'L', 'W'})
 WORLD_SERIES_GAME_TYPE = 'W'
 
 FINAL_STATE = 'final'
+# Rows fetched to prove the league still has regular-season games ahead. Any
+# one pending row is enough; a few guard against a cancelled first row.
+LEAGUE_REGULAR_SEASON_PROBE_ROWS = 32
 
 
 @dataclass(frozen=True)
@@ -125,14 +140,24 @@ def _int_or_none(value):
         return None
 
 
-def _is_final(row) -> bool:
-    return _value(row, 'status_state') == FINAL_STATE
+def _is_final(row, reference_date) -> bool:
+    """Final and dated before the reference date (known when the read ran)."""
+    return (
+        _value(row, 'status_state') == FINAL_STATE
+        and _value(row, 'game_date') < reference_date
+    )
 
 
-def _is_pending(row) -> bool:
-    """A stored game that may still be played (scheduled, live, suspended)."""
-    if _is_final(row):
+def _is_pending(row, reference_date) -> bool:
+    """A game still to be played as of the reference date.
+
+    A game dated on or after the reference date counts as pending even if it
+    is final now. A game MLB has cancelled or retired stays not pending.
+    """
+    if _value(row, 'game_date') < reference_date:
         return False
+    if _value(row, 'status_state') == FINAL_STATE:
+        return True
     return not is_unplayed_terminal_schedule_row(
         _value(row, 'status_state'), _value(row, 'status_code'),
     )
@@ -150,7 +175,7 @@ def _competitive_rows(rows, season):
     return selected
 
 
-def _series_outcomes(club_id, club_post_rows, winner_by_game):
+def _series_outcomes(club_id, club_post_rows, winner_by_game, reference_date):
     """Per postseason series: (round, club_clinched, opponent_clinched).
 
     A series is identified by its round (game type) and opponent. It is decided
@@ -175,7 +200,8 @@ def _series_outcomes(club_id, club_post_rows, winner_by_game):
             continue
         clinch = length // 2 + 1
         game_pks = {
-            _int_or_none(_value(row, 'game_pk')) for row in rows if _is_final(row)
+            _int_or_none(_value(row, 'game_pk')) for row in rows
+            if _is_final(row, reference_date)
         } - {None}
         club_wins = sum(1 for pk in game_pks if winner_by_game.get(pk) == club_id)
         opponent_wins = sum(1 for pk in game_pks if winner_by_game.get(pk) == opponent)
@@ -187,7 +213,7 @@ def _series_outcomes(club_id, club_post_rows, winner_by_game):
     return outcomes
 
 
-def _world_series_decided(league_post_rows, winner_by_game) -> bool:
+def _world_series_decided(league_post_rows, winner_by_game, reference_date) -> bool:
     world_series_rows = defaultdict(list)
     for row in league_post_rows:
         if _value(row, 'game_type') != WORLD_SERIES_GAME_TYPE:
@@ -198,7 +224,7 @@ def _world_series_decided(league_post_rows, winner_by_game) -> bool:
         world_series_rows[team_id].append(row)
     for team_id, rows in world_series_rows.items():
         for _round, club_clinched, opponent_clinched in _series_outcomes(
-            team_id, rows, winner_by_game,
+            team_id, rows, winner_by_game, reference_date,
         ):
             if club_clinched or opponent_clinched:
                 return True
@@ -211,14 +237,14 @@ def classify_club_competition_status(
     *,
     schedule_rows: Iterable[Any],
     winner_by_game: Mapping[int, int],
-    regular_season_window_days: int = ACTIVE_WINDOW_DAYS,
 ) -> ClubCompetitionStatus:
     """Classify one club from stored schedule rows and official decisions.
 
     ``schedule_rows`` are ScheduledGame-like rows (``team_id``, ``game_pk``,
     ``game_date``, ``game_type``, ``status_state``, ``status_code``,
     ``opponent_team_id``, ``games_in_series``) for the reference date's season:
-    every row of this club, plus the league's postseason rows. Pure function.
+    every row of this club, the league's postseason rows, and the league's
+    regular-season rows dated on or after the reference date. Pure function.
     """
     team_id = int(team_id)
     if not isinstance(reference_date, date):
@@ -231,13 +257,13 @@ def classify_club_competition_status(
     league_post_rows = [row for row in rows if _value(row, 'game_type') in POSTSEASON_GAME_TYPES]
     club_post_rows = [row for row in club_rows if _value(row, 'game_type') in POSTSEASON_GAME_TYPES]
 
-    finals = [row for row in club_rows if _is_final(row)]
+    finals = [row for row in club_rows if _is_final(row, reference_date)]
     last_final = max(finals, key=lambda row: _value(row, 'game_date'), default=None)
     last_final_date = _value(last_final, 'game_date') if last_final is not None else None
     last_final_type = _value(last_final, 'game_type') if last_final is not None else None
     upcoming = [
         _value(row, 'game_date') for row in club_rows
-        if _is_pending(row) and _value(row, 'game_date') >= reference_date
+        if _is_pending(row, reference_date)
     ]
     next_date = min(upcoming) if upcoming else None
 
@@ -252,11 +278,13 @@ def classify_club_competition_status(
     if not club_rows:
         return result(STATUS_UNDETERMINED, BASIS_NO_SCHEDULE_EVIDENCE)
 
-    if _world_series_decided(league_post_rows, winner_by_game):
+    if _world_series_decided(league_post_rows, winner_by_game, reference_date):
         return result(STATUS_SEASON_COMPLETE, BASIS_POSTSEASON_COMPLETE)
 
     if club_post_rows:
-        outcomes = _series_outcomes(team_id, club_post_rows, winner_by_game)
+        outcomes = _series_outcomes(
+            team_id, club_post_rows, winner_by_game, reference_date,
+        )
         if any(opponent_clinched for _round, _won, opponent_clinched in outcomes):
             return result(STATUS_SEASON_COMPLETE, BASIS_ELIMINATED)
         if next_date is not None:
@@ -270,12 +298,17 @@ def classify_club_competition_status(
 
     if next_date is not None:
         return result(STATUS_ACTIVE, BASIS_UPCOMING_GAME)
-    if league_post_rows:
+    if any(
+        _value(row, 'game_type') in PAST_FIRST_ROUND_GAME_TYPES
+        and _is_final(row, reference_date)
+        for row in league_post_rows
+    ):
+        # Every club still playing is in the postseason schedule by now.
         return result(STATUS_SEASON_COMPLETE, BASIS_NOT_IN_POSTSEASON)
-    if (
-        last_final_type == REGULAR_SEASON_GAME_TYPE
-        and last_final_date is not None
-        and last_final_date >= reference_date - timedelta(days=regular_season_window_days)
+    if not league_post_rows and last_final_type == REGULAR_SEASON_GAME_TYPE and any(
+        _value(row, 'game_type') == REGULAR_SEASON_GAME_TYPE
+        and _is_pending(row, reference_date)
+        for row in rows
     ):
         return result(STATUS_ACTIVE, BASIS_REGULAR_SEASON_IN_PROGRESS)
     return result(STATUS_UNDETERMINED, BASIS_UNRESOLVED)
@@ -323,9 +356,24 @@ def load_competition_inputs(team_id, reference_date, *, session=None):
         ))
         .all()
     )
+    # Positive evidence that the regular season continues: the league's
+    # earliest stored regular-season games on or after the reference date.
+    league_regular_ahead = (
+        session.query(*columns)
+        .filter(ScheduledGame.game_date >= reference_date)
+        .filter(ScheduledGame.game_date <= season_end)
+        .filter(ScheduledGame.game_type == REGULAR_SEASON_GAME_TYPE)
+        .filter(ScheduledGame.team_id != int(team_id))
+        .order_by(ScheduledGame.game_date, ScheduledGame.game_pk, ScheduledGame.team_id)
+        .limit(LEAGUE_REGULAR_SEASON_PROBE_ROWS)
+        .all()
+    )
+    rows = list(rows) + list(league_regular_ahead)
     final_post_pks = sorted({
         row.game_pk for row in rows
-        if row.game_type in POSTSEASON_GAME_TYPES and row.status_state == FINAL_STATE
+        if row.game_type in POSTSEASON_GAME_TYPES
+        and row.status_state == FINAL_STATE
+        and row.game_date < reference_date
     })
     winner_by_game = {}
     if final_post_pks:
@@ -355,10 +403,16 @@ def resolve_club_competition_status(team_id, reference_date, *, session=None):
         return ClubCompetitionStatus(
             int(team_id), STATUS_UNDETERMINED, BASIS_NO_SCHEDULE_EVIDENCE, None,
         )
+    from utils.db import db
+
+    active_session = session or db.session
     try:
-        rows, winner_by_game = load_competition_inputs(
-            team_id, reference_date, session=session,
-        )
+        # A savepoint keeps a failed read from aborting the caller's
+        # publication transaction; only this club fails closed.
+        with active_session.begin_nested():
+            rows, winner_by_game = load_competition_inputs(
+                team_id, reference_date, session=active_session,
+            )
     except Exception:  # noqa: BLE001 - an unreadable authority fails closed
         return lookup_failed_status(team_id, reference_date)
     return classify_club_competition_status(

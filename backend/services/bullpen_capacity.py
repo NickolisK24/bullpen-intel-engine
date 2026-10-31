@@ -51,7 +51,9 @@ NO_TRUST_ARM_LIMITATION = (
     'No relievers have a clear Trust Arm label, so Trust Capacity Loss is a Limited Read.'
 )
 
-LIMITED_DATA_STATES = {'stale', 'missing', 'incomplete', 'failed', 'historical', 'unknown'}
+# 'stale' means only that the arm has not pitched inside the freshness window.
+# Since WP-0.1 (EOS-001) that is a rested Available read, not limited data.
+LIMITED_DATA_STATES = {'missing', 'incomplete', 'failed', 'historical', 'unknown'}
 UNKNOWN_CONFIDENCE = {'none', 'unknown'}
 
 CAPACITY_DEFINITIONS = {
