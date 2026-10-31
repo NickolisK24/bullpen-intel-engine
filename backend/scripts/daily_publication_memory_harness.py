@@ -85,6 +85,7 @@ def _seed(reference_date, shape=None):
     from models.team_game_pitching_split import TeamGamePitchingSplit
     from services.roster_status import STATUS_IL_15
     from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+    from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
     from utils.db import db
     from utils.time import utc_now_naive
 
@@ -204,6 +205,8 @@ def _seed(reference_date, shape=None):
     db.session.bulk_insert_mappings(ScheduledGame, scheduled)
     db.session.bulk_insert_mappings(PostgameProcessedGame, processed)
     db.session.bulk_insert_mappings(TeamGamePitchingSplit, splits)
+    # In-season schedule evidence for club competition status (WP-0.1).
+    add_league_regular_season_game_ahead(reference_date)
 
     fatigue = []
     for team in pitchers_by_team.values():

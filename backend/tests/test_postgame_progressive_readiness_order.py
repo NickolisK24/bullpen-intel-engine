@@ -43,6 +43,7 @@ from services.sync_publication_proof import (
 from services.team_progressive_publication import publish_team_state_for_final_game
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.test_postgame_refresh import _game, _patch_mlb, _run, _seed_pitchers
+from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -177,6 +178,7 @@ def _seed_final_game(with_slate_roster=True):
                       home_away='home', opponent_team_id=AWAY),
         ScheduledGame(game_type='R', team_id=AWAY, game_pk=GAME_PK, game_date=SLATE, status_state='final',
                       home_away='away', opponent_team_id=HOME)])
+    add_league_regular_season_game_ahead(date.today())
     db.session.add(PostgameProcessedGame(mlb_game_pk=GAME_PK, game_date=SLATE,
         processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED))
     db.session.commit()

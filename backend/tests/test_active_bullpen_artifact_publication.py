@@ -55,6 +55,7 @@ from services.team_state_payload import (
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
 from utils.db import db
 
 
@@ -112,6 +113,7 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
             ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='away', opponent_team_id=team_id),
         ])
+        add_league_regular_season_game_ahead(date.today())
         db.session.add(PostgameProcessedGame(
             mlb_game_pk=gpk, game_date=gd,
             processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
@@ -140,6 +142,7 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
                 ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
+            add_league_regular_season_game_ahead(date.today())
             db.session.add(PostgameProcessedGame(
                 mlb_game_pk=gpk, game_date=gd,
                 processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
