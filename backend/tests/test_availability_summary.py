@@ -70,15 +70,32 @@ def test_availability_summary_includes_zero_counts_for_expected_buckets():
 
 def test_availability_summary_adds_stale_dominant_trust_note():
     summary = summarize_availability_records([
-        _record('Monitor', 'low', 'stale'),
-        _record('Monitor', 'low', 'stale'),
         _record('Monitor', 'low', 'missing'),
+        _record('Monitor', 'low', 'missing'),
+        _record('Monitor', 'low', 'incomplete'),
         _record('Available', 'high', 'fresh'),
     ])
 
     assert 'Recent usage information is missing for most pitchers, so most availability reads are less certain.' in summary['notes']
-    assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in summary['notes']
     assert 'Missing workload history makes availability reads less certain.' in summary['notes']
+
+
+def test_idle_arms_are_a_rest_note_not_missing_usage_information():
+    # WP-0.1 (EOS-001): an arm with no recent appearance is rested by absence.
+    summary = summarize_availability_records([
+        _record('Available', 'medium', 'stale'),
+        _record('Available', 'medium', 'stale'),
+        _record('Monitor', 'low', 'missing'),
+        _record('Available', 'high', 'fresh'),
+    ])
+
+    assert not any('missing for most pitchers' in note for note in summary['notes'])
+    assert 'Recent usage information is incomplete for some pitchers, so some availability reads are less certain.' in summary['notes']
+    assert (
+        'No recent appearances: this read describes workload only, not physical or medical readiness'
+        in summary['notes']
+    )
+    assert not any('must not be treated as current availability' in note for note in summary['notes'])
 
 
 def test_availability_summary_reports_empty_classification_set():

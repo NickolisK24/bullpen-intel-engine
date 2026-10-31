@@ -287,10 +287,16 @@ def test_current_mode_keeps_stale_data_truthful(client):
         )
 
     availability = records[0]['availability']
-    assert availability['availability_status'] == 'Monitor'
-    assert availability['confidence'] == 'low'
+    # WP-0.1: a month without an appearance is rest, not a constraint. The
+    # read stays honest that it is stale-sourced and a workload fact only.
+    assert availability['availability_status'] == 'Available'
+    assert availability['confidence'] == 'medium'
     assert availability['data_state'] == 'stale'
-    assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in availability['limitations']
+    assert availability['reasons'] == ['No appearances in the last 14 days']
+    assert any(
+        'not physical or medical readiness' in note
+        for note in availability['limitations']
+    )
 
 
 def test_snapshot_mode_keeps_missing_data_truthful(client):

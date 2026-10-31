@@ -38,6 +38,13 @@ FETCH_FAILED_WORKLOAD_LIMITATION = 'Recent usage information is incomplete becau
 # Wording must keep a data-state keyword (stale/missing/incomplete) so
 # categorize_limitation continues to map it to CATEGORY_DATA_STATE.
 STALE_WORKLOAD_LIMITATION = 'Recent usage information is incomplete, so workload data must not be treated as current availability'
+# An arm with no appearance inside the freshness window carries no recent
+# workload. That is rest, not a restriction (EOS-001), but it is still only a
+# workload fact: it says nothing about physical or medical readiness.
+NO_RECENT_APPEARANCE_LIMITATION = (
+    'No recent appearances: this read describes workload only, not physical '
+    'or medical readiness'
+)
 WORKLOAD_FALLBACK_REASON = 'Recent usage narrowed availability, but the source detail is unavailable'
 RECENT_WORKLOAD_REASON = 'Recent workload is high enough to narrow normal availability'
 
@@ -128,6 +135,12 @@ REASON_CATALOG = [
         'example': 'Latest workload data is outside the 14-day freshness window',
     },
     {
+        'category': CATEGORY_REST,
+        'rule': 'No recent appearances',
+        'template': 'No appearances in the last {days} days',
+        'example': 'No appearances in the last 14 days',
+    },
+    {
         'category': CATEGORY_FALLBACK,
         'rule': 'Unmapped restriction',
         'template': WORKLOAD_FALLBACK_REASON,
@@ -179,6 +192,10 @@ def stale_workload_reason(active_window_days):
     return f'Latest workload data is outside the {active_window_days}-day freshness window'
 
 
+def no_recent_appearance_reason(active_window_days):
+    return f'No appearances in the last {active_window_days} days'
+
+
 def reason_catalog():
     return [dict(item) for item in REASON_CATALOG]
 
@@ -194,6 +211,9 @@ def categorize_reason(reason):
         or text.startswith('recent mlb workload fetch failed')
     ):
         return CATEGORY_DATA_STATE
+    if text.startswith('no appearances in the last'):
+        # Absence of appearances is rest, not appearance frequency.
+        return CATEGORY_REST
     if 'pitch' in text:
         return CATEGORY_PITCH_COUNT
     if 'appearance' in text or 'back-to-back' in text:

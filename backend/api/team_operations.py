@@ -357,9 +357,15 @@ def _readiness_record(record):
         'availability_status': availability.get('availability_status', 'unknown'),
         'workload_category': _workload_category(record),
         'throwing_hand': getattr(pitcher, 'throws', None) or 'unknown',
-        'has_current_workload': availability.get('data_state') == 'fresh'
+        # 'stale' here is a known last appearance outside the freshness
+        # window: a current record of rest, not missing evidence (EOS-001).
+        'has_current_workload': availability.get('data_state') in {'fresh', 'stale'}
         and bool(record.get('latest_game_date') or inputs.get('latest_game_date')),
-        'has_availability': bool(availability.get('availability_status')),
+        # A missing workload record is insufficient evidence, not a workload
+        # constraint: it lands in the Team State unknown bucket rather than
+        # the moderate bucket its internal Monitor status would imply.
+        'has_availability': bool(availability.get('availability_status'))
+        and availability.get('data_state') != 'missing',
         'active': bool(getattr(pitcher, 'active', True)),
     }
 

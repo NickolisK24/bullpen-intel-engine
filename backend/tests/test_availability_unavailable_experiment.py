@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from services.availability import (
     CONFIDENCE_LOW,
+    STATUS_AVAILABLE,
     STATUS_AVOID,
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
@@ -149,8 +150,9 @@ def test_candidate_thresholds_do_not_change_stale_or_missing_semantics(make_log)
         candidate=candidate,
     )
 
-    assert stale['availability_status'] == STATUS_MONITOR
-    assert stale['confidence'] == CONFIDENCE_LOW
+    # WP-0.1: candidate thresholds still leave the stale/missing semantics
+    # alone; stale is rest (Available), missing stays a low-confidence Monitor.
+    assert stale['availability_status'] == STATUS_AVAILABLE
     assert stale['data_state'] == 'stale'
     assert missing['availability_status'] == STATUS_MONITOR
     assert missing['confidence'] == CONFIDENCE_LOW

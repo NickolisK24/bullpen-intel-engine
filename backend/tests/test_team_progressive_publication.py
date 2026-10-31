@@ -30,6 +30,7 @@ from services.team_progressive_publication import (
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
 from utils.db import db
 
 
@@ -78,9 +79,9 @@ def _add_relievers(team_id, base_mlb, count=8):
                 pitches_thrown=12, innings_pitched=1.0, innings_pitched_outs=3,
             ))
             db.session.add_all([
-                ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='home', opponent_team_id=900000 + team_id),
-                ScheduledGame(team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
             db.session.add(PostgameProcessedGame(
@@ -101,9 +102,9 @@ def _add_relievers(team_id, base_mlb, count=8):
 def _add_game(game_pk, home, away, *, final, processed):
     state = 'final' if final else 'scheduled'
     db.session.add_all([
-        ScheduledGame(team_id=home, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
+        ScheduledGame(game_type='R', team_id=home, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
                       home_away='home', opponent_team_id=away),
-        ScheduledGame(team_id=away, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
+        ScheduledGame(game_type='R', team_id=away, game_pk=game_pk, game_date=GAME_DATE, status_state=state,
                       home_away='away', opponent_team_id=home),
     ])
     if processed:
@@ -119,6 +120,7 @@ def _seed(final_processed=True):
         _add_relievers(tid, base)
     _add_game(FINAL_GAME_PK, HOME, AWAY, final=True, processed=final_processed)
     _add_game(LATE_GAME_PK, OTHER_HOME, OTHER_AWAY, final=False, processed=False)
+    add_league_regular_season_game_ahead(date.today())
     db.session.commit()
     seed_roster_readiness_snapshots()
 

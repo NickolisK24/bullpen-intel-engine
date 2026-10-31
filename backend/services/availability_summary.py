@@ -12,7 +12,7 @@ from services.availability import (
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
-from services.availability_explanations import STALE_WORKLOAD_LIMITATION
+from services.availability_explanations import NO_RECENT_APPEARANCE_LIMITATION
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
 
 
@@ -63,7 +63,10 @@ def _summary_notes(total_pitchers, data_state_counts, is_current_availability=Tr
     stale = data_state_counts.get('stale', 0)
     missing = data_state_counts.get('missing', 0)
     incomplete = data_state_counts.get('incomplete', 0)
-    limited = stale + missing + incomplete
+    # For current availability a stale arm has simply not pitched inside the
+    # freshness window: a known rested read (WP-0.1, EOS-001), not missing usage
+    # information. The scored-inventory view keeps treating it as dated context.
+    limited = missing + incomplete + (0 if is_current_availability else stale)
     notes = []
 
     if limited > total_pitchers / 2:
@@ -84,7 +87,7 @@ def _summary_notes(total_pitchers, data_state_counts, is_current_availability=Tr
 
     if stale:
         if is_current_availability:
-            notes.append(STALE_WORKLOAD_LIMITATION)
+            notes.append(NO_RECENT_APPEARANCE_LIMITATION)
         else:
             notes.append('Stale workload data is retained here as inventory context, not bullpen availability.')
     if missing:

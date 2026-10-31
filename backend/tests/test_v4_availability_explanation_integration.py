@@ -201,13 +201,16 @@ class TestV4AvailabilityExplanationIntegration:
 
         payload = explanation_payload(availability)
 
-        assert availability['availability_status'] == STATUS_MONITOR
+        # WP-0.1: no appearance inside the window is rest, not a constraint.
+        assert availability['availability_status'] == STATUS_AVAILABLE
         assert payload['freshness']['status'] == 'stale'
         assert 'FRESHNESS_STALE_SOURCE' in reason_codes(payload)
+        assert 'WORKLOAD_RECENT_USAGE_ELEVATED' not in reason_codes(payload)
         assert evidence_by_type(payload)['availability_data_state']['value'] == 'stale'
         assert 'stale_data' in limitation_types(payload)
         assert 'limited_confidence' in limitation_types(payload)
-        assert 'BaseballOS is treating him as a monitor arm' in payload['summary']
+        assert 'has not pitched in the last two weeks' in payload['summary']
+        assert 'monitor arm' not in payload['summary']
         assert_no_availability_meta_copy(payload)
         assert_governance_safe(payload)
 

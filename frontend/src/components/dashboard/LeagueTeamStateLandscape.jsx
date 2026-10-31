@@ -32,7 +32,7 @@ function TeamRow({ team, showState = true }) {
         {showState ? (
           <TeamStateChip teamState={team.teamState} />
         ) : (
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk500">Read unavailable</span>
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk500">{team.teamState.statusLabel || 'Read unavailable'}</span>
         )}
       </Link>
       {!showState && (

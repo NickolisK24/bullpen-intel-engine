@@ -280,7 +280,8 @@ class TestShortReason:
         assert reason == '42 pitches yesterday'
 
     def test_stale_and_missing_read_as_data_caveats(self):
-        assert short_reason_for(availability('Monitor', data_state='stale')) == 'Outside active freshness window'
+        # WP-0.1 (EOS-001): an idle arm is rested, so its line says so plainly.
+        assert short_reason_for(availability('Available', data_state='stale')) == 'No appearances in the last 14 days'
         assert short_reason_for(availability('Monitor', data_state='missing')) == 'No workload record available'
         assert short_reason_for(availability('Monitor', data_state='failed')) == 'Recent workload fetch failed'
 
@@ -1122,7 +1123,8 @@ class TestBoardEndpoint:
             'active_hidden_count': 0,
             'hidden_active_pitchers': [],
         }
-        assert default_by_name['Nick Martinez']['availability_status'] == 'Monitor'
+        # WP-0.1: an active arm idle past the window is rested, not On Watch.
+        assert default_by_name['Nick Martinez']['availability_status'] == 'Available'
         assert default_by_name['Nick Martinez']['data_state'] == 'stale'
         assert default_by_name['Nick Martinez']['visibility']['has_current_workload'] is False
         assert default_by_name['Nick Martinez']['visibility']['is_visible_by_default'] is True

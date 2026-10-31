@@ -183,7 +183,9 @@ def _reason_codes(
 
     if status == 'Monitor':
         codes.append('AVAILABILITY_MONITOR_THRESHOLD_MET')
-    if reasons and data_state != 'missing':
+    # A stale arm's only reason is that it has not pitched recently (WP-0.1),
+    # which is rest, never elevated usage.
+    if reasons and data_state not in {'missing', 'stale'}:
         codes.append('WORKLOAD_RECENT_USAGE_ELEVATED')
     if data_state == 'stale':
         codes.append('FRESHNESS_STALE_SOURCE')
@@ -434,6 +436,11 @@ def _availability_summary(
     reasons: tuple[str, ...],
     inputs: Mapping[str, Any],
 ) -> str:
+    if data_state == 'stale' and status == 'Available':
+        return (
+            'He has not pitched in the last two weeks, so recent workload does '
+            'not limit him. This is a workload note only, not a health read.'
+        )
     if data_state == 'stale':
         return 'BaseballOS is treating him as a monitor arm, but the stored workload data is stale.'
     if data_state == 'missing':

@@ -2491,6 +2491,9 @@ class TestRepeatedSameDatePublicationPreservesComparison:
             'teams': [team_item],
             'by_team_id': {str(team_item['team_id']): team_item},
         }
+        # Built under the same availability method as the live payload it
+        # mirrors, so its rested counts are a comparable prior (WP-0.1).
+        payload['availability_method_version'] = current['availability_method_version']
         prior_run = _create_sync_run(prior_date)
         prior_snapshot = DashboardSnapshot(
             snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,

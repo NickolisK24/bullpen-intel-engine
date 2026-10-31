@@ -532,6 +532,53 @@ SCHEDULE_AWARE_DAY_CONTEXT_PATHS = (
     'backend/services/team_state_payload.py',
 )
 
+# WP-0.1 current-read integrity, October 30 2026 (findings EOS-001 to EOS-004
+# of the 2026 end-of-season audit). This approval names every runtime file the
+# package changes, so none of them rides on an older package's approval.
+#
+# - An arm with no appearance inside the freshness window is a rested Available
+#   read (availability, arm read, explanations, and the board's supporting
+#   reads agree), under a new availability method stamp that receipts, What
+#   Changed and the History delta substrate refuse to compare across.
+# - A club no longer in active competition (club_competition_status) gets no
+#   current Team State: eligibility gains one block, the proof records a
+#   governed withholding, and the vocabulary owner adds two governed non-state
+#   outcomes with DEC-02 status labels ("Season Complete", "Status
+#   Unconfirmed"). The three public Team State labels and Contract A thresholds
+#   are unchanged; no file reads appearance-team authority.
+# - Plausibility checks run inside the pre-trust proof, and a dry-run correction
+#   manifest reads artifacts without ever mutating one.
+#
+# Authority: docs/audits/2026-end-of-season/wp01/WP-0.1_CURRENT_READ_INTEGRITY.md
+# and founder decisions DEC-01 and DEC-02 in
+# docs/decisions/2026-10-31-current-read-integrity-founder-decisions.md. This
+# exact-path approval becomes inert after merge.
+WP01_CURRENT_READ_INTEGRITY_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/api/team_operations.py',
+    'backend/explanations/availability.py',
+    'backend/scripts/build_team_state_correction_manifest.py',
+    'backend/services/availability.py',
+    'backend/services/availability_explanations.py',
+    'backend/services/availability_summary.py',
+    'backend/services/bullpen_board.py',
+    'backend/services/bullpen_capacity.py',
+    'backend/services/bullpen_optionality_context.py',
+    'backend/services/bullpen_trust_hierarchy.py',
+    'backend/services/club_competition_status.py',
+    'backend/services/league_team_state_listing.py',
+    'backend/services/pitcher_public_labels.py',
+    'backend/services/share_artifact_generation.py',
+    'backend/services/team_board_delta_substrate.py',
+    'backend/services/team_board_snapshot_team_state.py',
+    'backend/services/team_state_correction_manifest.py',
+    'backend/services/team_state_eligibility.py',
+    'backend/services/team_state_plausibility.py',
+    'backend/services/team_state_public_vocabulary.py',
+    'backend/services/team_state_vnext_production_proof.py',
+    'backend/services/team_story_previews.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

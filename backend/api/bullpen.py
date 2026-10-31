@@ -21,7 +21,11 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from models.sync_run import SyncRun
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability import (
+    ACTIVE_WINDOW_DAYS,
+    AVAILABILITY_METHOD_VERSION,
+    classify_availability,
+)
 from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
@@ -1610,6 +1614,21 @@ def _dashboard_payload_data_through(payload):
     )
 
 
+def _availability_comparable_snapshot(snapshot):
+    """The prior snapshot when its rested counts are comparable, else ``None``.
+
+    Rested counts built under a different availability method are not a
+    comparable prior (WP-0.1): comparing them would report the method change
+    as baseball movement, so What Changed is withheld as having no prior.
+    """
+    payload = getattr(snapshot, 'payload', None) if snapshot is not None else None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get('availability_method_version') != AVAILABILITY_METHOD_VERSION:
+        return None
+    return snapshot
+
+
 def _what_changed_snapshot_metadata(snapshot):
     if snapshot is None:
         return None
@@ -3160,6 +3179,9 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
         'baselines': baselines,
+        # Availability semantics this payload was built under (WP-0.1). The
+        # trusted What Changed comparison refuses to compare across a change.
+        'availability_method_version': AVAILABILITY_METHOD_VERSION,
     }
     # Prior dashboard snapshot — the comparison baseline for canonical story
     # continuity and the "what changed" surfaces. Fetched once and reused below.
@@ -3219,9 +3241,12 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             immediate_prior_snapshot=previous_snapshot,
         ),
     )
+    comparable_previous_snapshot = _availability_comparable_snapshot(
+        what_changed_previous_snapshot
+    )
     changes = build_what_changed_public_payload(
         payload,
-        what_changed_previous_payload,
+        comparable_previous_snapshot.payload if comparable_previous_snapshot else None,
         limit=WHAT_CHANGED_PUBLIC_TEAM_LIMIT,
         require_trusted_snapshots=True,
         current_snapshot_metadata={
@@ -3230,11 +3255,11 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             'data_through': data_through.isoformat() if data_through else None,
         },
         prior_snapshot_metadata=_what_changed_snapshot_metadata(
-            what_changed_previous_snapshot
+            comparable_previous_snapshot
         ),
     )
     if (
-        what_changed_previous_snapshot is not None
+        comparable_previous_snapshot is not None
         and isinstance(changes, dict)
         and isinstance(changes.get('comparison'), dict)
         and changes['comparison'].get('comparison_available') is True
@@ -3243,7 +3268,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         # Carry the exact renderer-selected prior; never ask the share path to
         # find another snapshot from dates later.
         changes['comparison']['previous_snapshot_id'] = (
-            what_changed_previous_snapshot.id
+            comparable_previous_snapshot.id
         )
     payload['what_changed_since_yesterday'] = changes
 

@@ -98,7 +98,10 @@ READ_PUBLIC_LABELS = {
 # must advance when availability, evidence, roster, or projection semantics can
 # make the same evidence mean a different public read.
 ARM_READ_PUBLIC_CONTRACT_VERSION = 'pitcher_current_read_v1'
-ARM_READ_METHOD_VERSION = 'pitcher_public_labels_v1'
+# v2 (WP-0.1, EOS-001): an arm resolved Available because it has no
+# appearance inside the freshness window reads Clean Option, matching the
+# Team State clean partition, instead of Limited Read.
+ARM_READ_METHOD_VERSION = 'pitcher_public_labels_v2'
 
 # Canonical usage-role -> public-role mapping. middle_relief is a distinct
 # baseball role and must never collapse into the setup/bridge slot.
@@ -307,6 +310,11 @@ def _role_label(role, eligibility=None):
 def _has_enough_read_data(availability, status):
     availability = availability or {}
     data_state = _normalize_token(availability.get('data_state'))
+    if data_state == 'stale' and status == 'available':
+        # Rested by absence: the availability authority's medium-confidence
+        # record of no recent appearances is enough for a clean workload read
+        # (EOS-001). Anything weaker stays a Limited Read.
+        return _normalize_token(availability.get('confidence')) in {'high', 'medium'}
     if data_state in LIMITED_DATA_STATES:
         return False
     if data_state and data_state not in FRESH_DATA_STATES:

@@ -8,8 +8,10 @@ from copy import deepcopy
 from datetime import date
 from typing import Mapping
 
+from services.availability import AVAILABILITY_METHOD_VERSION
 from services.team_state_public_vocabulary import (
     TEAM_STATE_READINESS_UNAVAILABLE,
+    is_competition_withholding,
     public_team_state,
     team_state_unavailable,
 )
@@ -107,21 +109,53 @@ def _date(value):
 
 
 def make_receipt(snapshot, team_id, readiness, *, method_version):
-    """Freeze the existing public vocabulary projection, not a new classifier."""
+    """Freeze the existing public vocabulary projection, not a new classifier.
+
+    A club that is no longer playing freezes its governed season non-state
+    (WP-0.1) so every surface reads the same withholding for that publication;
+    any other unavailable value still refuses.
+    """
     value = public_team_state(readiness)
-    if value.get('available') is not True:
+    withheld = is_competition_withholding(value)
+    if value.get('available') is not True and not withheld:
         raise ValueError('snapshot_team_state_public_value_unavailable')
+    if withheld and value.get('data_through') is None:
+        # A withholding makes no dated claim of its own; it is bound to the
+        # publication's represented date like every other receipt.
+        value['data_through'] = _date(snapshot.data_through)
     if _date(value.get('data_through')) != _date(snapshot.data_through):
         raise ValueError('snapshot_team_state_date_mismatch')
     value['data_through'] = _date(snapshot.data_through)
-    return {
+    receipt = {
         'contract': CONTRACT,
         'team_id': int(team_id),
         'dashboard_snapshot_id': snapshot.id,
         'represented_date': _date(snapshot.data_through),
         'method_version': method_version,
+        'availability_method_version': AVAILABILITY_METHOD_VERSION,
         'value': deepcopy(value),
     }
+    season_context = readiness.get('season_context') if isinstance(readiness, Mapping) else None
+    if isinstance(season_context, Mapping):
+        receipt['season_context'] = deepcopy(dict(season_context))
+    return receipt
+
+
+def receipt_availability_method(snapshot, team_id):
+    """The availability semantics stamp on a frozen receipt, or ``None``."""
+    payload = snapshot.payload if isinstance(getattr(snapshot, 'payload', None), Mapping) else {}
+    package = payload.get('trusted_team_boards')
+    if not isinstance(package, Mapping):
+        return None
+    receipts = package.get('frozen_team_state_by_team_id')
+    if isinstance(receipts, Mapping):
+        receipt = receipts.get(str(int(team_id)))
+    else:
+        team = (package.get('by_team_id') or {}).get(str(int(team_id)))
+        receipt = team.get('frozen_team_state') if isinstance(team, Mapping) else None
+    if not isinstance(receipt, Mapping):
+        return None
+    return receipt.get('availability_method_version')
 
 
 def receipt_value(snapshot, team_id):
@@ -202,6 +236,13 @@ def compare_exact_team_state(previous_snapshot, current_snapshot, team_id, ident
         return {**base, 'status': 'unavailable', 'reason_code': 'snapshot_team_state_receipt_missing'}
     if previous.get('available') is not True or current.get('available') is not True:
         return {**base, 'status': 'unavailable', 'reason_code': 'team_state_not_comparable'}
+    if (
+        receipt_availability_method(previous_snapshot, team_id)
+        != receipt_availability_method(current_snapshot, team_id)
+    ):
+        # Reads produced under different availability semantics differ by
+        # method, not by baseball; never report that as a Team State change.
+        return {**base, 'status': 'unavailable', 'reason_code': 'availability_method_boundary'}
     from_state = previous.get('public_state')
     to_state = current.get('public_state')
     if from_state not in {'fresh', 'stretched', 'vulnerable'} or to_state not in {'fresh', 'stretched', 'vulnerable'}:

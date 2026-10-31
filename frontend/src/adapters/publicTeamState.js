@@ -41,6 +41,14 @@ export const NO_TEAM_STATE_TONE = Object.freeze({
   dot: '#94a3b8',
 })
 
+// Backend-owned competition statuses (DEC-02), keyed by the governed outcome
+// they belong to. Used only to accept a backend-supplied pair; a club's season
+// status is never derived here.
+const COMPETITION_STATUS_LABEL_FOR_OUTCOME = Object.freeze({
+  season_complete: 'Season Complete',
+  competition_status_unconfirmed: 'Status Unconfirmed',
+})
+
 // Used only when the backend omitted its own governed message.
 export const TEAM_STATE_UNAVAILABLE_FALLBACK =
   'A current Team State read is not available for this bullpen.'
@@ -64,6 +72,17 @@ export function isCanonicalTeamStateLabel(label) {
  * produce a label-less read carrying the backend's governed non-state message.
  * The raw value is never displayed and nothing is repaired locally.
  */
+function competitionStatus(block) {
+  if (!block || block.available === true) return { statusLabel: null, finalRecordedDate: null }
+  const expected = COMPETITION_STATUS_LABEL_FOR_OUTCOME[block.outcome]
+  const statusLabel = textOrNull(block.status_label)
+  if (!expected || statusLabel !== expected) return { statusLabel: null, finalRecordedDate: null }
+  return {
+    statusLabel,
+    finalRecordedDate: block.outcome === 'season_complete' ? textOrNull(block.final_recorded_date) : null,
+  }
+}
+
 export function readPublicTeamState(teamState) {
   const block = teamState && typeof teamState === 'object' ? teamState : null
   const unavailableMessage =
@@ -77,6 +96,7 @@ export function readPublicTeamState(teamState) {
     unavailableMessage,
     dataThrough: textOrNull(block?.data_through),
     hasContract: Boolean(block),
+    ...competitionStatus(block),
   }
 
   if (!block || block.available !== true) return unavailable
@@ -96,5 +116,7 @@ export function readPublicTeamState(teamState) {
     unavailableMessage: null,
     dataThrough: textOrNull(block.data_through),
     hasContract: true,
+    statusLabel: null,
+    finalRecordedDate: null,
   }
 }

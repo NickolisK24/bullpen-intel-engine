@@ -55,6 +55,7 @@ from services.team_state_payload import (
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
 from utils.db import db
 
 
@@ -107,11 +108,12 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
             innings_pitched=ip, innings_pitched_outs=outs, games_started=starts,
         ))
         db.session.add_all([
-            ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='home', opponent_team_id=800000 + team_id),
-            ScheduledGame(team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+            ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                           home_away='away', opponent_team_id=team_id),
         ])
+        add_league_regular_season_game_ahead(date.today())
         db.session.add(PostgameProcessedGame(
             mlb_game_pk=gpk, game_date=gd,
             processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
@@ -135,11 +137,12 @@ def _add_reliever(team_id, seed, *, usable=True, hand='R', roster_status='ACTIVE
                 pitches_thrown=None, innings_pitched=1.0, innings_pitched_outs=3, games_started=0,
             ))
             db.session.add_all([
-                ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='home', opponent_team_id=800000 + team_id),
-                ScheduledGame(team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=800000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
+            add_league_regular_season_game_ahead(date.today())
             db.session.add(PostgameProcessedGame(
                 mlb_game_pk=gpk, game_date=gd,
                 processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,

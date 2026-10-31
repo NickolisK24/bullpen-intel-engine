@@ -1467,7 +1467,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 554.78,
+      "measured_seconds": 560.78,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1824,6 +1824,18 @@
         {
           "path": "tests/test_production_lineage.py",
           "measured_seconds": 25.0
+        },
+        {
+          "path": "tests/test_wp01_current_read_integrity.py",
+          "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_wp01_publication_gate.py",
+          "measured_seconds": 3.0
+        },
+        {
+          "path": "tests/test_wp01_correction_manifest.py",
+          "measured_seconds": 2.0
         }
       ]
     }

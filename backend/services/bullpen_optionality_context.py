@@ -35,7 +35,9 @@ OPTIONALITY_DEEP = 'deep'
 OPTIONALITY_INSUFFICIENT_DATA = 'insufficient_data'
 
 RESTRICTED_STATUSES = {STATUS_LIMITED, STATUS_AVOID, STATUS_UNAVAILABLE}
-LIMITED_DATA_STATES = {'stale', 'missing', 'incomplete', 'failed', 'historical', 'unknown'}
+# 'stale' means only that the arm has not pitched inside the freshness window.
+# Since WP-0.1 (EOS-001) that is a rested Available read, not limited data.
+LIMITED_DATA_STATES = {'missing', 'incomplete', 'failed', 'historical', 'unknown'}
 
 NO_OPTIONALITY_DATA_LIMITATION = (
     'No current bullpen availability records were available to measure optionality.'
@@ -162,7 +164,8 @@ def _workload_warning(record):
         return True
     if _norm(availability.get('confidence')) in {'low', 'none', 'unknown'}:
         return True
-    if _reasons(record):
+    if _reasons(record) and _norm(availability.get('data_state')) != 'stale':
+        # A rested arm's only reason is that it has not pitched recently.
         return True
     return any([
         bool(inputs.get('back_to_back')),

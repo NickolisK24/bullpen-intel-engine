@@ -62,6 +62,7 @@ from services.team_progressive_publication import (
 import services.team_progressive_publication as progressive
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+from tests.schedule_evidence_fixture import add_league_regular_season_game_ahead
 from utils.db import db
 
 
@@ -107,11 +108,12 @@ def _add_relievers(team_id, base_mlb, count=8):
                 pitches_thrown=12, innings_pitched=1.0, innings_pitched_outs=3,
             ))
             db.session.add_all([
-                ScheduledGame(team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='home', opponent_team_id=900000 + team_id),
-                ScheduledGame(team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
+                ScheduledGame(game_type='R', team_id=900000 + team_id, game_pk=gpk, game_date=gd, status_state='final',
                               home_away='away', opponent_team_id=team_id),
             ])
+            add_league_regular_season_game_ahead(date.today())
             db.session.add(PostgameProcessedGame(
                 mlb_game_pk=gpk, game_date=gd,
                 processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
@@ -129,11 +131,12 @@ def _add_relievers(team_id, base_mlb, count=8):
 
 def _add_final_game(game_pk, home, away, game_date, *, ledger=True):
     db.session.add_all([
-        ScheduledGame(team_id=home, game_pk=game_pk, game_date=game_date, status_state='final',
+        ScheduledGame(game_type='R', team_id=home, game_pk=game_pk, game_date=game_date, status_state='final',
                       home_away='home', opponent_team_id=away),
-        ScheduledGame(team_id=away, game_pk=game_pk, game_date=game_date, status_state='final',
+        ScheduledGame(game_type='R', team_id=away, game_pk=game_pk, game_date=game_date, status_state='final',
                       home_away='away', opponent_team_id=home),
     ])
+    add_league_regular_season_game_ahead(date.today())
     # A committed appearance line for the game so the ledger digest has content and a
     # correction has something to change.
     home_pitcher = (
