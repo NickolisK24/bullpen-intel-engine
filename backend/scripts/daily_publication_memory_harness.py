@@ -42,6 +42,10 @@ PRODUCTION_SHAPE = {
     'depth_per_team': 18,
     'season_days': 150,
     'seasons': 2,
+    # In season the rolling schedule window stores the next days' games. False
+    # models the end of the season: no regular-season game ahead and no
+    # postseason rows, so every club's competition status is unconfirmed.
+    'league_schedule_ahead': True,
 }
 
 
@@ -206,7 +210,8 @@ def _seed(reference_date, shape=None):
     db.session.bulk_insert_mappings(PostgameProcessedGame, processed)
     db.session.bulk_insert_mappings(TeamGamePitchingSplit, splits)
     # In-season schedule evidence for club competition status (WP-0.1).
-    add_league_regular_season_game_ahead(reference_date)
+    if shape['league_schedule_ahead']:
+        add_league_regular_season_game_ahead(reference_date)
 
     fatigue = []
     for team in pitchers_by_team.values():

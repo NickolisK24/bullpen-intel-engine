@@ -9,6 +9,7 @@ State from mutable roster or GameLog rows.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from models.share_artifact import (
@@ -20,7 +21,10 @@ from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS
 from services.published_team_state import project_published_team_state_artifact
 from services.share_artifact_repository import list_team_state_artifacts_for_snapshot
 from services.team_board_snapshot_team_state import receipt_value
-from services.team_state_public_vocabulary import PUBLIC_STATE_LABELS
+from services.team_state_public_vocabulary import (
+    PUBLIC_STATE_LABELS,
+    is_competition_withholding,
+)
 
 
 class LeagueTeamStateArtifactRecoveryError(RuntimeError):
@@ -122,11 +126,36 @@ _ABBREVIATION_BY_TEAM_ID = {
 }
 
 
+def competition_withheld_team_ids(snapshot):
+    """Clubs whose frozen receipt is a governed competition withholding.
+
+    WP-0.1: a club that is no longer in active competition (or whose status is
+    unconfirmed) deliberately gets no current Team State artifact. Its
+    withholding is the receipt the publication proof froze for the snapshot,
+    so the expected artifact set is the other clubs.
+    """
+    if not isinstance(getattr(snapshot, 'payload', None), Mapping):
+        # No frozen package means no receipts, so no governed withholding.
+        return frozenset()
+    return frozenset(
+        team_id for team_id in MLB_TEAM_IDS
+        if _receipt_is_competition_withholding(snapshot, team_id)
+    )
+
+
+def _receipt_is_competition_withholding(snapshot, team_id):
+    present, value = receipt_value(snapshot, team_id)
+    return bool(present) and is_competition_withholding(value)
+
+
 def _batch_recovery_result(snapshot, batch, *, artifact_count=0):
     by_team = {item.team_id: item for item in (batch.results if batch else ())}
     outcomes = []
     reasons = Counter()
+    withheld = competition_withheld_team_ids(snapshot)
     for team_id in MLB_TEAM_IDS:
+        if team_id in withheld:
+            continue
         item = by_team.get(team_id)
         present, receipt = receipt_value(snapshot, team_id)
         receipt_available = bool(
@@ -201,15 +230,20 @@ def _published_by_team(snapshot, *, session=None):
 
 
 def require_complete_artifact_set(snapshot, *, session=None):
-    """Require exact canonical, snapshot-bound artifacts matching frozen receipts."""
-    expected = set(MLB_TEAM_IDS)
+    """Require exact canonical, snapshot-bound artifacts matching frozen receipts.
+
+    A club withheld for competition (WP-0.1) must have no artifact; every other
+    club must have exactly one.
+    """
+    withheld = competition_withheld_team_ids(snapshot)
+    expected = set(MLB_TEAM_IDS) - withheld
     by_team = _published_by_team(snapshot, session=session)
     if set(by_team) != expected:
         raise LeagueTeamStateArtifactRecoveryError(
             'league_team_state_artifact_set_incomplete'
         )
 
-    for team_id in MLB_TEAM_IDS:
+    for team_id in sorted(expected):
         artifact = by_team[team_id]
         if (
             artifact.source_snapshot_id != snapshot.id

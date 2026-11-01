@@ -79,11 +79,32 @@ def run_post_publication_generation(snapshot, *, generator=None):
         generate_team_state_artifacts_batch,
     )
 
+    # WP-0.1: a club withheld for competition gets no current Team State
+    # artifact, so it is not a generation target at all.
+    from services.league_team_state_artifact_recovery import (
+        competition_withheld_team_ids,
+    )
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    withheld = competition_withheld_team_ids(snapshot)
+    team_ids = None
+    if withheld:
+        team_ids = [team_id for team_id in MLB_TEAM_IDS if team_id not in withheld]
+        if not team_ids:
+            logger.info(
+                'Post-publication generation skipped snapshot_id=%s: all %d clubs '
+                'are withheld for competition.',
+                source_snapshot_id, len(withheld),
+            )
+            _publish_since_yesterday_artifacts(snapshot, source_snapshot_id)
+            return None
+
     try:
         result = generate_team_state_artifacts_batch(
             source_snapshot_id=source_snapshot_id,
             product_date=product_date,
             actor=POST_PUBLICATION_ACTOR,
+            team_ids=team_ids,
             generator=generator,
         )
     except BatchSourceAuthorityError as exc:
@@ -120,6 +141,11 @@ def run_post_publication_generation(snapshot, *, generator=None):
         result.failed_count, result.missing_count,
     )
 
+    _publish_since_yesterday_artifacts(snapshot, source_snapshot_id)
+    return result
+
+
+def _publish_since_yesterday_artifacts(snapshot, source_snapshot_id):
     # Since Yesterday artifacts use the same publication-owned lifecycle. Their
     # semantic source is the exact frozen adjacent-snapshot comparison already
     # embedded in this published snapshot; a failure remains downstream and
@@ -151,4 +177,3 @@ def run_post_publication_generation(snapshot, *, generator=None):
             source_snapshot_id=source_snapshot_id,
             lane='Since Yesterday generation',
         )
-    return result

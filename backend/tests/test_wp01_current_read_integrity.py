@@ -912,3 +912,94 @@ def test_supporting_reads_treat_an_idle_arm_as_rested():
         },
     }
     assert bullpen_optionality_context._workload_warning(worked) is True
+
+
+def test_artifact_gate_expects_artifacts_only_for_clubs_still_playing(monkeypatch):
+    """Production 2026-11-01: withheld clubs have no artifact, by design."""
+    from types import SimpleNamespace
+
+    from services import league_team_state_artifact_recovery as recovery
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_state_public_vocabulary import (
+        TEAM_STATE_SEASON_COMPLETE,
+        team_state_unavailable,
+    )
+
+    playing = {MLB_TEAM_IDS[0], MLB_TEAM_IDS[1]}
+    withholding = team_state_unavailable(TEAM_STATE_SEASON_COMPLETE, data_through='2026-10-28')
+    snapshot = SimpleNamespace(
+        id=5814, sync_run_id=96372, data_through=date(2026, 10, 28), payload={},
+    )
+
+    def receipt(snap, team_id):
+        if team_id in playing:
+            return True, {'available': True, 'public_state': 'fresh',
+                          'public_label': 'Fresh', 'data_through': '2026-10-28'}
+        return True, withholding
+
+    monkeypatch.setattr(recovery, 'receipt_value', receipt)
+    assert recovery.competition_withheld_team_ids(snapshot) == (
+        frozenset(MLB_TEAM_IDS) - playing
+    )
+
+    # Every club withheld: no artifact is the complete set.
+    monkeypatch.setattr(recovery, 'receipt_value', lambda snap, team_id: (True, withholding))
+    monkeypatch.setattr(recovery, '_published_by_team', lambda snap, session=None: {})
+    assert recovery.require_complete_artifact_set(snapshot) == {}
+
+    # A withheld club must not carry a current artifact.
+    stray = SimpleNamespace(team_id=MLB_TEAM_IDS[2])
+    monkeypatch.setattr(
+        recovery, '_published_by_team', lambda snap, session=None: {MLB_TEAM_IDS[2]: stray},
+    )
+    with pytest.raises(recovery.LeagueTeamStateArtifactRecoveryError) as raised:
+        recovery.require_complete_artifact_set(snapshot)
+    assert str(raised.value) == 'league_team_state_artifact_set_incomplete'
+
+    # A club still playing must still have its artifact.
+    monkeypatch.setattr(recovery, 'receipt_value', receipt)
+    monkeypatch.setattr(recovery, '_published_by_team', lambda snap, session=None: {})
+    with pytest.raises(recovery.LeagueTeamStateArtifactRecoveryError):
+        recovery.require_complete_artifact_set(snapshot)
+
+
+def test_post_publication_hook_skips_clubs_withheld_for_competition(monkeypatch):
+    from types import SimpleNamespace
+
+    from services import league_team_state_artifact_recovery as recovery
+    from services import share_artifact_batch_generation as batch
+    from services import share_artifact_publication_hook as hook
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    snapshot = SimpleNamespace(
+        id=5814, sync_run_id=96372, data_through=date(2026, 10, 28),
+        is_published=True, status='ready',
+    )
+    calls = []
+
+    def fake_batch(**kwargs):
+        calls.append(kwargs.get('team_ids'))
+        return SimpleNamespace(attempted_count=0, generated_count=0, reused_count=0,
+                               refused_count=0, failed_count=0, missing_count=0, results=())
+
+    since_yesterday = []
+    monkeypatch.setattr(batch, 'generate_team_state_artifacts_batch', fake_batch)
+    monkeypatch.setattr(
+        hook, '_publish_since_yesterday_artifacts',
+        lambda snap, snapshot_id: since_yesterday.append(snapshot_id),
+    )
+    monkeypatch.setattr(
+        recovery, 'competition_withheld_team_ids', lambda snap: frozenset(MLB_TEAM_IDS),
+    )
+    assert hook.run_post_publication_generation(snapshot) is None
+    assert calls == []
+    # Since Yesterday artifacts are independent of Team State and still run.
+    assert since_yesterday == [5814]
+
+    monkeypatch.setattr(
+        recovery, 'competition_withheld_team_ids',
+        lambda snap: frozenset(MLB_TEAM_IDS[2:]),
+    )
+    hook.run_post_publication_generation(snapshot)
+    assert calls == [list(MLB_TEAM_IDS[:2])]
+    assert since_yesterday == [5814, 5814]

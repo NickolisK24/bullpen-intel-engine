@@ -552,3 +552,47 @@ def test_daily_publication_reads_and_writes_the_payload_a_bounded_number_of_time
     ):
         assert phase in phases, phase
     assert all('rss_mb=' in line and 'peak_rss_mb=' in line for line in telemetry)
+
+
+def test_daily_publication_completes_when_every_club_is_withheld(monkeypatch, tmp_path):
+    """Production 2026-11-01: no club is in active competition after the season.
+
+    Every club's frozen receipt is a governed competition withholding, so the
+    publication creates no current Team State artifact, and the artifact gate
+    must accept that instead of failing the daily sync with
+    ``league_team_state_artifact_set_incomplete``.
+    """
+    from scripts.daily_publication_memory_harness import configure_harness_app, run_harness
+    from services import sync as sync_service
+    from services.league_team_state_artifact_recovery import (
+        competition_withheld_team_ids,
+        require_complete_artifact_set,
+    )
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import receipt_value
+
+    url = _test_database_url()
+    assert_disposable_test_target(url, operation='daily publication memory guard')
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', url)
+    monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
+    app = configure_harness_app(importlib.import_module('app').create_app('test'))
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            results = run_harness(app, shape={**SMALL_SHAPE, 'league_schedule_ahead': False})
+            run = results['measured']
+            assert run['published'] is True
+            assert run['status'] == 'ready'
+            assert run['parity']['artifact_count'] == 0
+            snapshot = db.session.get(DashboardSnapshot, run['snapshot_id'])
+            assert competition_withheld_team_ids(snapshot) == frozenset(MLB_TEAM_IDS)
+            for team_id in MLB_TEAM_IDS:
+                present, value = receipt_value(snapshot, team_id)
+                assert present is True
+                assert value['available'] is False
+                assert value['status_label'] == 'Status Unconfirmed'
+            assert require_complete_artifact_set(snapshot) == {}
+        finally:
+            db.session.remove()
+            drop_test_schema(app)
