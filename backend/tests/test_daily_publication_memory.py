@@ -554,22 +554,9 @@ def test_daily_publication_reads_and_writes_the_payload_a_bounded_number_of_time
     assert all('rss_mb=' in line and 'peak_rss_mb=' in line for line in telemetry)
 
 
-def test_daily_publication_completes_when_every_club_is_withheld(monkeypatch, tmp_path):
-    """Production 2026-11-01: no club is in active competition after the season.
-
-    Every club's frozen receipt is a governed competition withholding, so the
-    publication creates no current Team State artifact, and the artifact gate
-    must accept that instead of failing the daily sync with
-    ``league_team_state_artifact_set_incomplete``.
-    """
+def _run_offseason_harness(monkeypatch, tmp_path, shape, check):
     from scripts.daily_publication_memory_harness import configure_harness_app, run_harness
     from services import sync as sync_service
-    from services.league_team_state_artifact_recovery import (
-        competition_withheld_team_ids,
-        require_complete_artifact_set,
-    )
-    from services.mlb_club_directory import MLB_TEAM_IDS
-    from services.team_board_snapshot_team_state import receipt_value
 
     url = _test_database_url()
     assert_disposable_test_target(url, operation='daily publication memory guard')
@@ -580,26 +567,65 @@ def test_daily_publication_completes_when_every_club_is_withheld(monkeypatch, tm
     with app.app_context():
         create_test_schema(app)
         try:
-            results = run_harness(app, shape={**SMALL_SHAPE, 'league_schedule_ahead': False})
-            run = results['measured']
-            assert run['published'] is True
-            assert run['status'] == 'ready'
-            assert run['parity']['artifact_count'] == 0
-            snapshot = db.session.get(DashboardSnapshot, run['snapshot_id'])
-            assert competition_withheld_team_ids(snapshot) == frozenset(MLB_TEAM_IDS)
-            for team_id in MLB_TEAM_IDS:
-                present, value = receipt_value(snapshot, team_id)
-                assert present is True
-                assert value['available'] is False
-                assert value['status_label'] == 'Status Unconfirmed'
-            assert require_complete_artifact_set(snapshot) == {}
-            # The hook no longer attempts (and fails closed for) withheld clubs.
-            from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
-
-            assert db.session.query(ShareArtifactGenerationAudit).filter_by(
-                source_snapshot_id=snapshot.id,
-                outcome=ShareArtifactGenerationAudit.OUTCOME_FAILED_CLOSED,
-            ).count() == 0
+            check(lambda: run_harness(app, shape={**SMALL_SHAPE, **shape}))
         finally:
             db.session.remove()
             drop_test_schema(app)
+
+
+def test_daily_publication_completes_when_every_club_is_season_complete(monkeypatch, tmp_path):
+    """Production 2026-11-01 and 11-04: the World Series is decided.
+
+    Every club's frozen receipt is an affirmative Season Complete withholding,
+    so the publication creates no current Team State artifact and the artifact
+    gate accepts it instead of failing the daily sync with
+    ``league_team_state_artifact_set_incomplete``.
+    """
+    from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
+    from services.league_team_state_artifact_recovery import (
+        competition_withheld_team_ids,
+        require_complete_artifact_set,
+    )
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_board_snapshot_team_state import receipt_value
+
+    def check(run):
+        run = run()['measured']
+        assert run['published'] is True
+        assert run['status'] == 'ready'
+        assert run['parity']['artifact_count'] == 0
+        snapshot = db.session.get(DashboardSnapshot, run['snapshot_id'])
+        assert competition_withheld_team_ids(snapshot) == frozenset(MLB_TEAM_IDS)
+        for team_id in MLB_TEAM_IDS:
+            present, value = receipt_value(snapshot, team_id)
+            assert present is True
+            assert value['available'] is False
+            assert value['status_label'] == 'Season Complete'
+            assert value['reason_code'] == 'world_series_decided'
+        assert require_complete_artifact_set(snapshot) == {}
+        # The hook no longer attempts (and fails closed for) withheld clubs.
+        assert db.session.query(ShareArtifactGenerationAudit).filter_by(
+            source_snapshot_id=snapshot.id,
+            outcome=ShareArtifactGenerationAudit.OUTCOME_FAILED_CLOSED,
+        ).count() == 0
+
+    _run_offseason_harness(
+        monkeypatch, tmp_path, {'league_schedule_ahead': False, 'world_series_decided': True}, check,
+    )
+
+
+def test_unconfirmed_competition_status_still_fails_the_artifact_gate(monkeypatch, tmp_path):
+    """Missing schedule evidence is missing data, never 30 valid withholdings.
+
+    With no stored game ahead and no postseason, every club reads Status
+    Unconfirmed. The gate must still demand their artifacts and fail loudly,
+    as it would mid-season if schedule ingestion silently stopped.
+    """
+    from services.league_team_state_artifact_recovery import LeagueTeamStateArtifactRecoveryError
+
+    def check(run):
+        with pytest.raises(LeagueTeamStateArtifactRecoveryError) as raised:
+            run()
+        assert str(raised.value) == 'league_team_state_artifact_set_incomplete'
+
+    _run_offseason_harness(monkeypatch, tmp_path, {'league_schedule_ahead': False}, check)

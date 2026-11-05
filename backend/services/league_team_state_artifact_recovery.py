@@ -21,8 +21,14 @@ from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS
 from services.published_team_state import project_published_team_state_artifact
 from services.share_artifact_repository import list_team_state_artifacts_for_snapshot
 from services.team_board_snapshot_team_state import receipt_value
+from services.club_competition_status import (
+    BASIS_ELIMINATED,
+    BASIS_NOT_IN_POSTSEASON,
+    BASIS_POSTSEASON_COMPLETE,
+)
 from services.team_state_public_vocabulary import (
     PUBLIC_STATE_LABELS,
+    TEAM_STATE_SEASON_COMPLETE,
     is_competition_withholding,
 )
 
@@ -126,13 +132,25 @@ _ABBREVIATION_BY_TEAM_ID = {
 }
 
 
-def competition_withheld_team_ids(snapshot):
-    """Clubs whose frozen receipt is a governed competition withholding.
+# A withholding excuses a club's artifact only when stored evidence settled it:
+# Season Complete from a lost series, a decided World Series, or a postseason
+# past its first round without the club. Status Unconfirmed is never enough.
+# It is what a failed status lookup, missing schedule evidence, or missing
+# series results produce, so the artifact is still required and the gate fails
+# loudly instead of accepting silent withholdings.
+AFFIRMATIVE_WITHHOLDINGS = frozenset({
+    (TEAM_STATE_SEASON_COMPLETE, BASIS_POSTSEASON_COMPLETE),
+    (TEAM_STATE_SEASON_COMPLETE, BASIS_ELIMINATED),
+    (TEAM_STATE_SEASON_COMPLETE, BASIS_NOT_IN_POSTSEASON),
+})
 
-    WP-0.1: a club that is no longer in active competition (or whose status is
-    unconfirmed) deliberately gets no current Team State artifact. Its
-    withholding is the receipt the publication proof froze for the snapshot,
-    so the expected artifact set is the other clubs.
+
+def competition_withheld_team_ids(snapshot):
+    """Clubs whose frozen receipt is an affirmative Season Complete withholding.
+
+    WP-0.1: a club whose season is complete deliberately gets no current Team
+    State artifact. Its withholding is the receipt the publication proof froze
+    for the snapshot, so the expected artifact set is the other clubs.
     """
     if not isinstance(getattr(snapshot, 'payload', None), Mapping):
         # No frozen package means no receipts, so no governed withholding.
@@ -145,7 +163,11 @@ def competition_withheld_team_ids(snapshot):
 
 def _receipt_is_competition_withholding(snapshot, team_id):
     present, value = receipt_value(snapshot, team_id)
-    return bool(present) and is_competition_withholding(value)
+    return (
+        bool(present)
+        and is_competition_withholding(value)
+        and (value.get('outcome'), value.get('reason_code')) in AFFIRMATIVE_WITHHOLDINGS
+    )
 
 
 def _batch_recovery_result(snapshot, batch, *, artifact_count=0):
@@ -194,14 +216,14 @@ def _batch_recovery_result(snapshot, batch, *, artifact_count=0):
     return LeagueTeamStateArtifactRecoveryResult(
         snapshot.id,
         snapshot.sync_run_id,
-        'generation_incomplete' if reasons else 'repaired',
+        'generation_incomplete' if reasons or batch is None else 'repaired',
         artifact_count,
         tuple(sorted(item.team_id for item in outcomes if item.outcome in {'generated', 'reused'})),
         batch.generated_count if batch else 0,
         batch.reused_count if batch else 0,
         batch.failed_count if batch else 0,
         batch.refused_count if batch else 0,
-        batch.missing_count if batch else len(MLB_TEAM_IDS),
+        batch.missing_count if batch else len(MLB_TEAM_IDS) - len(withheld),
         tuple(sorted(reasons.items())),
         tuple(outcomes),
     )
@@ -238,6 +260,12 @@ def require_complete_artifact_set(snapshot, *, session=None):
     withheld = competition_withheld_team_ids(snapshot)
     expected = set(MLB_TEAM_IDS) - withheld
     by_team = _published_by_team(snapshot, session=session)
+    if set(by_team) & withheld:
+        # A current artifact for a withheld club contradicts its receipt.
+        # Generation cannot repair it, so it is not reported as incomplete.
+        raise LeagueTeamStateArtifactRecoveryError(
+            'league_team_state_artifact_on_withheld_club'
+        )
     if set(by_team) != expected:
         raise LeagueTeamStateArtifactRecoveryError(
             'league_team_state_artifact_set_incomplete'

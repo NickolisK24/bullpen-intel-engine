@@ -86,7 +86,15 @@ def run_post_publication_generation(snapshot, *, generator=None):
     )
     from services.mlb_club_directory import MLB_TEAM_IDS
 
-    withheld = competition_withheld_team_ids(snapshot)
+    try:
+        withheld = competition_withheld_team_ids(snapshot)
+    except Exception:  # noqa: BLE001 - optional lane: attempt every club instead
+        # The artifact gate re-reads the receipts and fails closed on its own.
+        logger.exception(
+            'Post-publication generation could not read competition withholdings '
+            'snapshot_id=%s; attempting every club.', source_snapshot_id,
+        )
+        withheld = frozenset()
     team_ids = None
     if withheld:
         team_ids = [team_id for team_id in MLB_TEAM_IDS if team_id not in withheld]

@@ -46,6 +46,9 @@ PRODUCTION_SHAPE = {
     # models the end of the season: no regular-season game ahead and no
     # postseason rows, so every club's competition status is unconfirmed.
     'league_schedule_ahead': True,
+    # True models the offseason: a decided World Series (4-0, official wins on
+    # the winning club's pitchers), so every club is Season Complete.
+    'world_series_decided': False,
 }
 
 
@@ -205,6 +208,56 @@ def _seed(reference_date, shape=None):
                         final_state='Final', pitching_lines_seen=1,
                         processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
                     ))
+    if shape['world_series_decided']:
+        winner, loser = TEAM_IDS[0], TEAM_IDS[1]
+        for number in range(4):
+            game_pk += 1
+            game_date = reference_date - timedelta(days=8 - number)
+            for side_index, team_id in enumerate((winner, loser)):
+                team = pitchers_by_team[team_id]
+                starter = team['starters'][number % starters_per_team]
+                reliever = team['relievers'][number % relievers_per_team]
+                game_logs.append(dict(
+                    pitcher_id=starter.id, mlb_game_pk=game_pk, game_date=game_date,
+                    game_type='W', games_started=1, innings_pitched=5.0,
+                    innings_pitched_outs=15, pitches_thrown=88,
+                    win=side_index == 0,
+                    appearance_team_id=team_id,
+                    appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+                ))
+                game_logs.append(dict(
+                    pitcher_id=reliever.id, mlb_game_pk=game_pk, game_date=game_date,
+                    game_type='W', games_started=0, innings_pitched=1.0,
+                    innings_pitched_outs=3, pitches_thrown=15, win=False,
+                    appearance_team_id=team_id,
+                    appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+                    leverage_index=1.4,
+                ))
+                scheduled.append(dict(
+                    team_id=team_id, game_pk=game_pk, game_date=game_date,
+                    game_type='W', status_code='F', status_state=ScheduledGame.STATE_FINAL,
+                    game_number=1, home_away='home' if side_index == 0 else 'away',
+                    opponent_team_id=loser if side_index == 0 else winner,
+                    games_in_series=7,
+                ))
+                splits.append(dict(
+                    team_id=team_id, mlb_game_pk=game_pk, game_date=game_date,
+                    game_type='W', starter_pitcher_id=starter.id,
+                    starter_mlb_id=starter.mlb_id,
+                    starter_identity_status=TeamGamePitchingSplit.STARTER_KNOWN,
+                    starter_outs_recorded=15, bullpen_outs_recorded=3, total_team_outs=18,
+                    split_completeness_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+                    split_reason_codes=[],
+                    suspended_resumed_linkage_status=TeamGamePitchingSplit.LINKAGE_NONE,
+                    calendar_context_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+                    calendar_reason_codes=[], source='test_fixture',
+                ))
+            processed.append(dict(
+                mlb_game_pk=game_pk, game_date=game_date, game_type='W',
+                home_team_id=winner, away_team_id=loser, final_state='Final',
+                pitching_lines_seen=4,
+                processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+            ))
     db.session.bulk_insert_mappings(GameLog, game_logs)
     db.session.bulk_insert_mappings(ScheduledGame, scheduled)
     db.session.bulk_insert_mappings(PostgameProcessedGame, processed)

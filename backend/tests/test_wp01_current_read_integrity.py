@@ -926,7 +926,9 @@ def test_artifact_gate_expects_artifacts_only_for_clubs_still_playing(monkeypatc
     )
 
     playing = {MLB_TEAM_IDS[0], MLB_TEAM_IDS[1]}
-    withholding = team_state_unavailable(TEAM_STATE_SEASON_COMPLETE, data_through='2026-10-28')
+    withholding = team_state_unavailable(
+        TEAM_STATE_SEASON_COMPLETE, data_through='2026-10-28', reason_code='world_series_decided',
+    )
     snapshot = SimpleNamespace(
         id=5814, sync_run_id=96372, data_through=date(2026, 10, 28), payload={},
     )
@@ -954,7 +956,7 @@ def test_artifact_gate_expects_artifacts_only_for_clubs_still_playing(monkeypatc
     )
     with pytest.raises(recovery.LeagueTeamStateArtifactRecoveryError) as raised:
         recovery.require_complete_artifact_set(snapshot)
-    assert str(raised.value) == 'league_team_state_artifact_set_incomplete'
+    assert str(raised.value) == 'league_team_state_artifact_on_withheld_club'
 
     # A club still playing must still have its artifact.
     monkeypatch.setattr(recovery, 'receipt_value', receipt)
@@ -1037,10 +1039,10 @@ def _current_receipt():
                   'data_through': '2026-10-28'}
 
 
-def _withheld_receipt(outcome=TEAM_STATE_SEASON_COMPLETE):
+def _withheld_receipt(outcome=TEAM_STATE_SEASON_COMPLETE, basis='world_series_decided'):
     from services.team_state_public_vocabulary import team_state_unavailable
 
-    return True, team_state_unavailable(outcome, data_through='2026-10-28')
+    return True, team_state_unavailable(outcome, data_through='2026-10-28', reason_code=basis)
 
 
 def _artifact(team_id, *, snapshot_id=5814, sync_run_id=96372, product_date=date(2026, 10, 28)):
@@ -1059,7 +1061,8 @@ def test_artifact_gate_accepts_a_mixed_postseason_league(monkeypatch):
 
     playing = MLB_TEAM_IDS[:2]
     receipts = {team_id: _withheld_receipt() for team_id in MLB_TEAM_IDS}
-    receipts[MLB_TEAM_IDS[2]] = _withheld_receipt(TEAM_STATE_COMPETITION_UNCONFIRMED)
+    receipts[MLB_TEAM_IDS[2]] = _withheld_receipt(basis='postseason_series_lost')
+    receipts[MLB_TEAM_IDS[3]] = _withheld_receipt(basis='postseason_scheduled_without_club')
     receipts.update({team_id: _current_receipt() for team_id in playing})
     artifacts = {team_id: _artifact(team_id) for team_id in playing}
     recovery, snapshot = _gate_fixture(monkeypatch, receipts=receipts, artifacts=artifacts)
@@ -1152,3 +1155,148 @@ def test_artifact_gate_never_modifies_an_artifact(monkeypatch):
     )
     recovery.require_complete_artifact_set(snapshot)
     assert vars(artifact) == before
+
+
+@pytest.mark.parametrize('basis', [
+    'competition_status_unresolved',
+    'no_competitive_schedule_evidence',
+    'competition_status_lookup_failed',
+])
+def test_status_unconfirmed_never_excuses_a_missing_artifact(monkeypatch, basis):
+    """Unconfirmed is what missing data produces; it still demands an artifact."""
+    from services import league_team_state_artifact_recovery as recovery
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    receipts = {
+        team_id: _withheld_receipt(TEAM_STATE_COMPETITION_UNCONFIRMED, basis)
+        for team_id in MLB_TEAM_IDS
+    }
+    recovery_module, snapshot = _gate_fixture(monkeypatch, receipts=receipts, artifacts={})
+    assert recovery_module.competition_withheld_team_ids(snapshot) == frozenset()
+    with pytest.raises(recovery.LeagueTeamStateArtifactRecoveryError) as raised:
+        recovery_module.require_complete_artifact_set(snapshot)
+    assert str(raised.value) == 'league_team_state_artifact_set_incomplete'
+
+
+def test_season_complete_with_an_unrecognised_basis_is_not_a_withholding(monkeypatch):
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    receipts = {team_id: _withheld_receipt(basis='no_competitive_schedule_evidence')
+                for team_id in MLB_TEAM_IDS}
+    recovery, snapshot = _gate_fixture(monkeypatch, receipts=receipts, artifacts={})
+    assert recovery.competition_withheld_team_ids(snapshot) == frozenset()
+
+
+def _real_receipt_snapshot(receipts_by_team, *, package_data_through='2026-10-28', snapshot_id=5814):
+    """A snapshot whose payload carries a real frozen receipt package."""
+    from types import SimpleNamespace
+
+    from services.public_serving_authority import TEAM_BOARD_PACKAGE_CONTRACT
+
+    package = {
+        'contract': TEAM_BOARD_PACKAGE_CONTRACT,
+        'data_through': package_data_through,
+        'by_team_id': {},
+        'frozen_team_state_by_team_id': receipts_by_team,
+    }
+    return SimpleNamespace(
+        id=snapshot_id, sync_run_id=96372, data_through=date(2026, 10, 28),
+        payload={'trusted_team_boards': package},
+    )
+
+
+def _real_receipt(team_id, value, *, snapshot_id=5814):
+    from services.team_board_snapshot_team_state import CONTRACT
+    from services.team_state_vnext_production_proof import EXPECTED_METHOD_VERSION
+
+    return {
+        'contract': CONTRACT, 'team_id': team_id, 'dashboard_snapshot_id': snapshot_id,
+        'represented_date': '2026-10-28', 'method_version': EXPECTED_METHOD_VERSION,
+        'value': value,
+    }
+
+
+def test_real_frozen_receipts_decide_which_clubs_are_withheld():
+    from services.league_team_state_artifact_recovery import competition_withheld_team_ids
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_state_public_vocabulary import team_state_unavailable
+
+    complete = team_state_unavailable(
+        TEAM_STATE_SEASON_COMPLETE, data_through='2026-10-28', reason_code='world_series_decided',
+    )
+    receipts = {str(team_id): _real_receipt(team_id, complete) for team_id in MLB_TEAM_IDS}
+    assert competition_withheld_team_ids(_real_receipt_snapshot(receipts)) == frozenset(MLB_TEAM_IDS)
+
+    # Missing receipt for one club: that club still requires an artifact.
+    partial = dict(receipts)
+    partial.pop(str(MLB_TEAM_IDS[0]))
+    assert MLB_TEAM_IDS[0] not in competition_withheld_team_ids(_real_receipt_snapshot(partial))
+
+    # A receipt frozen for another snapshot is invalid, never a withholding.
+    foreign = dict(receipts)
+    foreign[str(MLB_TEAM_IDS[1])] = _real_receipt(MLB_TEAM_IDS[1], complete, snapshot_id=5813)
+    assert MLB_TEAM_IDS[1] not in competition_withheld_team_ids(_real_receipt_snapshot(foreign))
+
+    # A package frozen for another date withholds nobody.
+    assert competition_withheld_team_ids(
+        _real_receipt_snapshot(receipts, package_data_through='2026-10-27')
+    ) == frozenset()
+
+    # A contradictory value (available with a withholding outcome) is not one.
+    contradictory = dict(receipts)
+    contradictory[str(MLB_TEAM_IDS[2])] = _real_receipt(
+        MLB_TEAM_IDS[2], {**complete, 'available': True},
+    )
+    assert MLB_TEAM_IDS[2] not in competition_withheld_team_ids(
+        _real_receipt_snapshot(contradictory)
+    )
+
+
+def test_post_publication_hook_survives_unreadable_withholdings(monkeypatch):
+    from types import SimpleNamespace
+
+    from services import league_team_state_artifact_recovery as recovery
+    from services import share_artifact_batch_generation as batch
+    from services import share_artifact_publication_hook as hook
+
+    snapshot = SimpleNamespace(id=5814, sync_run_id=96372, data_through=date(2026, 10, 28),
+                               is_published=True, status='ready')
+    calls = []
+
+    def fake_batch(**kwargs):
+        calls.append(kwargs.get('team_ids'))
+        return SimpleNamespace(attempted_count=30, generated_count=30, reused_count=0,
+                               refused_count=0, failed_count=0, missing_count=0, results=())
+
+    def broken(snap):
+        raise TypeError('malformed frozen package')
+
+    monkeypatch.setattr(batch, 'generate_team_state_artifacts_batch', fake_batch)
+    monkeypatch.setattr(hook, '_publish_since_yesterday_artifacts', lambda snap, snapshot_id: None)
+    monkeypatch.setattr(recovery, 'competition_withheld_team_ids', broken)
+    assert hook.run_post_publication_generation(snapshot) is not None
+    # Falls back to attempting every club; the gate fails closed on its own.
+    assert calls == [None]
+
+    # Nothing withheld: the batch call is unchanged from before (team_ids=None).
+    calls.clear()
+    monkeypatch.setattr(recovery, 'competition_withheld_team_ids', lambda snap: frozenset())
+    hook.run_post_publication_generation(snapshot)
+    assert calls == [None]
+
+
+def test_recovery_result_without_a_batch_is_never_reported_repaired(monkeypatch):
+    from types import SimpleNamespace
+
+    from services import league_team_state_artifact_recovery as recovery
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    snapshot = SimpleNamespace(id=5814, sync_run_id=96372, data_through=date(2026, 10, 28),
+                               payload={})
+    monkeypatch.setattr(
+        recovery, 'competition_withheld_team_ids', lambda snap: frozenset(MLB_TEAM_IDS[2:]),
+    )
+    monkeypatch.setattr(recovery, 'receipt_value', lambda snap, team_id: (False, None))
+    result = recovery._batch_recovery_result(snapshot, None)
+    assert result.outcome == 'generation_incomplete'
+    assert result.missing_count == 2
