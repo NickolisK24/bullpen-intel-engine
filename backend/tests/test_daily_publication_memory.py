@@ -593,6 +593,13 @@ def test_daily_publication_completes_when_every_club_is_withheld(monkeypatch, tm
                 assert value['available'] is False
                 assert value['status_label'] == 'Status Unconfirmed'
             assert require_complete_artifact_set(snapshot) == {}
+            # The hook no longer attempts (and fails closed for) withheld clubs.
+            from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
+
+            assert db.session.query(ShareArtifactGenerationAudit).filter_by(
+                source_snapshot_id=snapshot.id,
+                outcome=ShareArtifactGenerationAudit.OUTCOME_FAILED_CLOSED,
+            ).count() == 0
         finally:
             db.session.remove()
             drop_test_schema(app)
