@@ -1,0 +1,60 @@
+name: BaseballOS Production Health
+
+# WP-0.2 (EOS-008). A credential-free external check of the public API:
+# serving, deployed release, publication cadence, dating, read-model
+# consistency, and stale reads presented as current. It holds no database
+# credential and writes nothing. A critical result fails the run, and GitHub
+# emails the repository owner about failed scheduled runs; that failure email
+# is the alert.
+#
+# Offseason: a day with no games is healthy. The expected signal is the daily
+# scheduled publication, not new games or appearances.
+
+on:
+  schedule:
+    - cron: '37 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # Scheduled runs always use the default branch; a dispatch from any other
+    # branch would compare production against the wrong history.
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The release comparison needs the history of main.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check production health
+        env:
+          # The public API base is not a credential. Prefer a repository
+          # variable; fall back to the existing sync URL secret.
+          BASEBALLOS_API_BASE_URL: ${{ vars.BASEBALLOS_API_BASE_URL }}
+          BASEBALLOS_SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
+        run: |
+          set -uo pipefail
+          python backend/scripts/check_production_health.py --output production-health.json
+          status=$?
+          {
+            echo "### BaseballOS production health"
+            echo
+            echo '```json'
+            cat production-health.json 2>/dev/null || echo '{"status": "no result"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
