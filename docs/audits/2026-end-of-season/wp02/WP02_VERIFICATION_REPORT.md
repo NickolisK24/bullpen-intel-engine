@@ -18,7 +18,7 @@
 | File | Covers | Local result |
 |---|---|---|
 | `tests/test_wp02_production_health.py` | offseason quiet day healthy; missed publication critical; stale read presented as current critical; inconsistent read model; future dating; non-production environment; API down; backend deployment identity (behind main, missing, not comparable); git ancestry comparison; `/api/health` reports `RENDER_GIT_COMMIT`; URL derivation | 15 passed |
-| `tests/test_wp02_shadow_summary_contract.py` | real `run_due_sync` producer to validator contract; executed, already_satisfied, failed and blocked; legacy shape still accepted | 12 passed |
+| `tests/test_wp02_shadow_summary_contract.py` | real `run_due_sync` producer to validator contract; executed, already_satisfied, failed and blocked; legacy shape still accepted | 10 passed |
 | `tests/test_wp02_workflow_security.py` | every workflow declares permissions; no secrets in `pull_request` workflows; no `pull_request_target`; `DATABASE_URL` surface can only shrink; only the two distribution jobs can write contents, and they push fast-forward to main only; no tracked or doc credentials; `.env` files are examples only; the scanner's patterns | 8 passed |
 | `tests/test_wp02_restore_rehearsal.py` | real `pg_dump`/`pg_restore` round trip on disposable PostgreSQL 16 databases; lost-row detection; missing canonical tables block "verified"; unsafe targets refused; no credentials in output | 5 passed |
 | `tests/test_roster_depth_evidence.py` (2 added) | pitcher names in claims; authored forbidden language still rejected next to a name | passed |
