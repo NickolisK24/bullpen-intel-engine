@@ -188,13 +188,14 @@ def validate_claim_template(template: ClaimTemplate) -> bool:
     return True
 
 
-def render_claim_template(template: ClaimTemplate, values: dict) -> str:
+def render_claim_template(template: ClaimTemplate, values: dict, *, proper_nouns=()) -> str:
+    """Render and lint a claim; ``proper_nouns`` are exact inserted names."""
     validate_claim_template(template)
     missing = sorted(template.placeholders - set(values))
     if missing:
         raise EvidenceRuleError(f'claim template missing values: {missing}')
     rendered = template.template_text.format_map(_StrictFormatValues(values))
-    assert_claim_language_allowed(rendered)
+    assert_claim_language_allowed(rendered, proper_nouns)
     return rendered
 
 
