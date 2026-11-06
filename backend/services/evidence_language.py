@@ -70,10 +70,30 @@ FORBIDDEN_LANGUAGE_RULES = (
 )
 
 
-def lint_claim_language(text: str) -> list[dict]:
-    """Return forbidden-language hits for claim template or rendered text."""
+# Stands in for an exact proper noun while linting; it matches no rule.
+PROPER_NOUN_MASK = 'NAMEDSUBJECT'
+
+
+def mask_proper_nouns(text: str, proper_nouns=()) -> str:
+    """Replace each exact proper noun (a player name the code inserted) with a
+    neutral token, longest first, so a name such as "Will Vest" or "Chad Green"
+    is not read as authored language. Only exact occurrences are masked; the
+    authored text around them is still linted in full."""
+    masked = text
+    for noun in sorted({str(item) for item in proper_nouns or () if item}, key=len, reverse=True):
+        masked = masked.replace(noun, PROPER_NOUN_MASK)
+    return masked
+
+
+def lint_claim_language(text: str, proper_nouns=()) -> list[dict]:
+    """Return forbidden-language hits for claim template or rendered text.
+
+    ``proper_nouns`` are exact names the caller inserted into ``text``; they
+    are excluded from linting and nothing else is.
+    """
     if text is None:
         return [{'rule_id': 'missing_claim_text', 'match': None}]
+    text = mask_proper_nouns(text, proper_nouns)
     hits = []
     for rule in FORBIDDEN_LANGUAGE_RULES:
         match = rule.pattern.search(text)
@@ -86,8 +106,8 @@ def lint_claim_language(text: str) -> list[dict]:
     return hits
 
 
-def assert_claim_language_allowed(text: str) -> bool:
-    hits = lint_claim_language(text)
+def assert_claim_language_allowed(text: str, proper_nouns=()) -> bool:
+    hits = lint_claim_language(text, proper_nouns)
     if hits:
         first = hits[0]
         raise EvidenceLanguageError(

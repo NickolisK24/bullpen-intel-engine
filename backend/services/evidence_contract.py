@@ -66,8 +66,13 @@ def build_evidence_object(
     sync_run_id: int | None = None,
     registry: EvidenceRuleRegistry | None = None,
     source: str = 'phase0d:evidence_contract',
+    claim_proper_nouns: tuple[str, ...] = (),
 ) -> EvidenceObject:
-    """Build but do not commit a Phase 0D evidence object."""
+    """Build but do not commit a Phase 0D evidence object.
+
+    ``claim_proper_nouns`` are exact names inserted into ``claim_values``
+    (player names); claim-language linting excludes them and nothing else.
+    """
     registry = registry or evidence_rule_registry
     rule = registry.get(rule_id, rule_version)
     _validate_build_inputs(
@@ -86,6 +91,7 @@ def build_evidence_object(
         input_values=input_values,
         contradictions=contradictions,
         source_posture=source_posture,
+        claim_proper_nouns=claim_proper_nouns,
     )
     if completeness not in rule.allowed_completeness:
         completeness = EvidenceObject.COMPLETENESS_WITHHELD
@@ -378,6 +384,7 @@ def _evaluate_evidence_state(
     input_values: dict,
     contradictions,
     source_posture: str,
+    claim_proper_nouns: tuple[str, ...] = (),
 ) -> tuple[str, list[str], str]:
     if source_posture != 'cleared':
         return (
@@ -416,7 +423,7 @@ def _evaluate_evidence_state(
     return (
         EvidenceObject.COMPLETENESS_COMPLETE,
         [],
-        render_claim_template(claim_template, claim_values),
+        render_claim_template(claim_template, claim_values, proper_nouns=claim_proper_nouns),
     )
 
 

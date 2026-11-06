@@ -10,6 +10,10 @@ on:
   pull_request:
   workflow_dispatch: {}
 
+# WP-0.2: tests need to read the repository and nothing else.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
