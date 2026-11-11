@@ -720,3 +720,57 @@ def test_public_isolation_and_service_does_not_read_blocked_sources(app):
         text = path.read_text(encoding='utf-8')
         for needle in blocked_public:
             assert needle not in text
+
+
+def test_pitcher_names_are_not_read_as_forbidden_claim_language(app):
+    """Production 2026-10-31 (WP-0.2): "Will Vest" tripped prediction framing.
+
+    A pitcher's name inserted into a roster-depth claim is a proper noun, not
+    language BaseballOS authored; the delta, explained and unexplained objects
+    build COMPLETE and keep the name verbatim.
+    """
+    with app.app_context():
+        holdover = _pitcher(70, 801, 'Holdover Arm')
+        added = _pitcher(71, 802, 'Will Vest')
+        removed = _pitcher(72, 803, 'Chad Green')
+        _snapshot(holdover, snapshot_date=PRODUCT_DATE - timedelta(days=1))
+        _snapshot(removed, snapshot_date=PRODUCT_DATE - timedelta(days=1))
+        _snapshot(holdover, snapshot_date=PRODUCT_DATE)
+        _snapshot(added, snapshot_date=PRODUCT_DATE)
+        _coverage()
+        _transaction(
+            'tx-will-vest-recall', added, to_team_id=116, category='recall',
+            type_code='RECALL', alignment='aligned', eligible=True,
+        )
+
+        build_roster_depth_evidence(PRODUCT_DATE)
+        delta = _row(TEAM_DEPTH_DELTA_DAILY_RULE_ID)
+        explained = _row(TEAM_ROSTER_CHANGES_EXPLAINED_RULE_ID)
+        unexplained = _row(TEAM_ROSTER_CHANGES_UNEXPLAINED_RULE_ID)
+
+        assert delta.completeness_state == EvidenceObject.COMPLETENESS_COMPLETE
+        assert 'Will Vest' in delta.rendered_claim
+        assert 'Chad Green' in delta.rendered_claim
+        assert 'Will Vest added' in explained.rendered_claim
+        assert 'Chad Green removed' in unexplained.rendered_claim
+
+
+def test_authored_forbidden_language_is_still_rejected_next_to_a_name():
+    from services.evidence_language import EvidenceLanguageError, lint_claim_language
+    from services.evidence_rules import ClaimTemplate, render_claim_template
+
+    template = ClaimTemplate('x', 1, '{claim}')
+    # The name is excluded; the authored prediction next to it is not.
+    with pytest.raises(EvidenceLanguageError, match='forbidden_prediction_framing'):
+        render_claim_template(
+            template, {'claim': 'Will Vest will be available tonight.'},
+            proper_nouns=('Will Vest',),
+        )
+    # Without the declared name, the original guard is unchanged.
+    with pytest.raises(EvidenceLanguageError, match='forbidden_prediction_framing'):
+        render_claim_template(template, {'claim': 'Will Vest added.'})
+    assert render_claim_template(
+        template, {'claim': 'Will Vest added.'}, proper_nouns=('Will Vest',),
+    ) == 'Will Vest added.'
+    # Only exact declared names are masked: a surname alone is still linted.
+    assert lint_claim_language('Green added.', proper_nouns=('Chad Green',))

@@ -55,6 +55,14 @@ CYCLE_KINDS = (CYCLE_DAILY, CYCLE_POSTGAME)
 
 WORK_STATE_NO_CANDIDATES = 'no_candidates'
 WORK_STATE_CANDIDATES = 'candidates_planned'
+# The window was already satisfied by an earlier attempt, so this run executed
+# no cycle. That is a successful no-op, not proof the shadow lane is healthy.
+WORK_STATE_ALREADY_SATISFIED = 'already_satisfied_no_cycle'
+
+# ``scripts/run_due_sync.py`` (the scheduled runner since the Render-primary
+# cutover) wraps the legacy runner summary: {status, mode, ..., result: {...}}.
+DUE_STATUS_EXECUTED = 'executed'
+DUE_STATUS_ALREADY_SATISFIED = 'already_satisfied'
 
 EXIT_PASS = 0
 EXIT_FAILED = 1
@@ -522,11 +530,58 @@ def _validate_postgame(lane, failures):
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 
+def normalize_sync_summary(summary):
+    """Return ``(legacy_summary, due_status, due_result)``.
+
+    The validator's invariants are written against the legacy runner summary
+    ``{status, publication_proof, sync}``. ``run_due_sync`` nests that inside
+    ``result`` and reports its own outcome as the top-level ``status``
+    (``executed``, ``already_satisfied``, ``failed`` or ``blocked``). A legacy
+    summary passes through unchanged with ``due_status`` ``None``.
+    """
+    result = summary.get('result')
+    if not isinstance(result, dict) or 'sync' in summary:
+        return summary, None, None
+    sync = result.get('sync') if isinstance(result.get('sync'), dict) else {}
+    legacy = {
+        'status': sync.get('status'),
+        'publication_proof': result.get('publication_proof') or {},
+        'sync': sync,
+    }
+    return legacy, summary.get('status'), result
+
+
 def validate_cycle(summary, *, cycle_kind, runner_exit_code) -> dict:
     if cycle_kind not in CYCLE_KINDS:
         raise ValidationError(f'unsupported cycle kind: {cycle_kind!r}')
 
     failures: list[dict] = []
+    summary, due_status, due_result = normalize_sync_summary(summary)
+    if due_status == DUE_STATUS_ALREADY_SATISFIED:
+        if runner_exit_code != 0:
+            _fail(failures, 'runner_exit_code', expected=0, observed=runner_exit_code)
+        if due_result.get('executed') is not False or not due_result.get(
+            'satisfied_by_attempt_id'
+        ):
+            _fail(
+                failures, 'already_satisfied_unproven',
+                expected='executed=false with satisfied_by_attempt_id',
+                observed={
+                    'executed': due_result.get('executed'),
+                    'satisfied_by_attempt_id': due_result.get('satisfied_by_attempt_id'),
+                },
+            )
+        decision = _decision(
+            failures, cycle_kind=cycle_kind, lane={},
+            runner_exit_code=runner_exit_code, summary=summary,
+        )
+        decision['work_state'] = WORK_STATE_ALREADY_SATISFIED
+        decision['due_status'] = due_status
+        return decision
+    if due_status is not None and due_status != DUE_STATUS_EXECUTED:
+        # A failed or blocked due run is a real failure; the lane checks below
+        # still run so the diagnostics show what the lane reported.
+        _fail(failures, 'due_outcome', expected=DUE_STATUS_EXECUTED, observed=due_status)
     _validate_production_outcome(summary, cycle_kind, runner_exit_code, failures)
 
     lane = ((summary.get('sync') or {}).get('game_driven_ingestion')) or {}

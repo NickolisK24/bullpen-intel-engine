@@ -287,6 +287,10 @@ def create_app(config_name=None):
             'environment': app.config.get('APP_ENV', 'development'),
             'debug':       bool(app.config.get('DEBUG', False)),
             'message':     'BaseballOS API is live',
+            # Render sets RENDER_GIT_COMMIT for git-backed services; the
+            # commit of a public repository is not a secret. It lets an
+            # external check verify which code the API is running (WP-0.2).
+            'release':     os.environ.get('RENDER_GIT_COMMIT') or None,
         }
 
     logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
