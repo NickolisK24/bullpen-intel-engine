@@ -1,0 +1,370 @@
+{
+  "seasons": [
+    2025,
+    2026
+  ],
+  "frozen_spec": {
+    "frozen_on": "2026-11-18",
+    "tuned_on": [
+      2024
+    ],
+    "evaluate_on": [
+      2025,
+      2026
+    ],
+    "test1": {
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 1,
+      "not_clean": "avoid_unavailable"
+    },
+    "test2": {
+      "tiebreak": "saves_then_holds_30d"
+    }
+  },
+  "save_chance_audit": {
+    "save_opportunity_games": 2814,
+    "bs_entered_9th_plus": 367,
+    "bs_straddle_resolved_9th_plus": 44,
+    "bs_before_9th": 981,
+    "outs_check_fail": 0
+  },
+  "test1": {
+    "fire_rate": 0.0715771951727008,
+    "flagged_team_games": 688,
+    "team_games": 9612,
+    "groups": {
+      "unflagged": {
+        "team_games": 8924,
+        "ra_7_9": 1.337856021529491,
+        "blown_lead": 0.12994350282485875,
+        "bp_ra9": 4.503841557111149,
+        "games_led_after_6": 3894
+      },
+      "flagged": {
+        "team_games": 688,
+        "ra_7_9": 1.3604651162790697,
+        "blown_lead": 0.13240418118466898,
+        "bp_ra9": 4.498804145628488,
+        "games_led_after_6": 287
+      }
+    },
+    "ra_7_9": {
+      "within_team_gap": -0.01662421957015999,
+      "within_team_ci": [
+        -0.15523855091747096,
+        0.12198604985649904
+      ],
+      "pooled_gap": 0.02260909474957873,
+      "pooled_ci": [
+        -0.10191700949016803,
+        0.15431545738323593
+      ],
+      "team_seasons_used": 59
+    },
+    "blown_lead": {
+      "within_team_gap": 0.0025970366232292933,
+      "within_team_ci": [
+        -0.039091366633838075,
+        0.04420421653990644
+      ],
+      "pooled_gap": 0.002460678359810231,
+      "pooled_ci": [
+        -0.03335739714811104,
+        0.03953213610306336
+      ],
+      "team_seasons_used": 53
+    },
+    "bp_ra9": {
+      "within_team_gap": -0.17674926581447217,
+      "within_team_ci": [
+        -0.5897741782229152,
+        0.24910236408427347
+      ],
+      "pooled_gap": -0.005037411482661014,
+      "pooled_ci": [
+        -0.32703135634031283,
+        0.34828336608806837
+      ],
+      "team_seasons_used": 59
+    },
+    "by_season": {
+      "2025": {
+        "fire_rate": 0.06994171523730225,
+        "flagged_team_games": 336,
+        "team_games": 4804,
+        "groups": {
+          "unflagged": {
+            "team_games": 4468,
+            "ra_7_9": 1.3245967741935485,
+            "blown_lead": 0.12532233109850438,
+            "bp_ra9": 4.477520268610269,
+            "games_led_after_6": 1939
+          },
+          "flagged": {
+            "team_games": 336,
+            "ra_7_9": 1.3988095238095237,
+            "blown_lead": 0.125,
+            "bp_ra9": 4.5334434351775394,
+            "games_led_after_6": 144
+          }
+        },
+        "ra_7_9": {
+          "within_team_gap": 0.003064150369271912,
+          "within_team_ci": [
+            -0.2344182852605661,
+            0.22438877191775947
+          ],
+          "pooled_gap": 0.07421274961597524,
+          "pooled_ci": [
+            -0.14518681441128423,
+            0.26708215760141263
+          ],
+          "team_seasons_used": 30
+        },
+        "blown_lead": {
+          "within_team_gap": 0.0055245137836441634,
+          "within_team_ci": [
+            -0.05174467107648232,
+            0.07087259840039545
+          ],
+          "pooled_gap": -0.00032233109850438035,
+          "pooled_ci": [
+            -0.04982725493045835,
+            0.05596069763053962
+          ],
+          "team_seasons_used": 27
+        },
+        "bp_ra9": {
+          "within_team_gap": -0.19540405107508668,
+          "within_team_ci": [
+            -0.905980047159254,
+            0.47224724037656163
+          ],
+          "pooled_gap": 0.055923166567270144,
+          "pooled_ci": [
+            -0.5408897425581691,
+            0.595867754236896
+          ],
+          "team_seasons_used": 30
+        }
+      },
+      "2026": {
+        "fire_rate": 0.07321131447587355,
+        "flagged_team_games": 352,
+        "team_games": 4808,
+        "groups": {
+          "unflagged": {
+            "team_games": 4456,
+            "ra_7_9": 1.3511450381679388,
+            "blown_lead": 0.13452685421994884,
+            "bp_ra9": 4.529186791522918,
+            "games_led_after_6": 1955
+          },
+          "flagged": {
+            "team_games": 352,
+            "ra_7_9": 1.3238636363636365,
+            "blown_lead": 0.13986013986013987,
+            "bp_ra9": 4.466478294374518,
+            "games_led_after_6": 143
+          }
+        },
+        "ra_7_9": {
+          "within_team_gap": -0.036991498817848155,
+          "within_team_ci": [
+            -0.19424821458543143,
+            0.12531611853639962
+          ],
+          "pooled_gap": -0.027281401804302385,
+          "pooled_ci": [
+            -0.1716191268912156,
+            0.12878600653630343
+          ],
+          "team_seasons_used": 29
+        },
+        "blown_lead": {
+          "within_team_gap": -0.0004430358125861429,
+          "within_team_ci": [
+            -0.05118871322492682,
+            0.054887336622597135
+          ],
+          "pooled_gap": 0.005333285640191032,
+          "pooled_ci": [
+            -0.041244467626596434,
+            0.05354203576825314
+          ],
+          "team_seasons_used": 26
+        },
+        "bp_ra9": {
+          "within_team_gap": -0.15745121209659516,
+          "within_team_ci": [
+            -0.6246600674204744,
+            0.3444541907049136
+          ],
+          "pooled_gap": -0.06270849714839954,
+          "pooled_ci": [
+            -0.4827106742707186,
+            0.3718046099352396
+          ],
+          "team_seasons_used": 29
+        }
+      }
+    }
+  },
+  "test1_verdict": "FAIL",
+  "test2": {
+    "cases": 63,
+    "by_closer_flag": {
+      "Avoid": 62,
+      "Unavailable": 1
+    },
+    "closer_pitched_anyway": 5,
+    "recipient_in_bullpen_read": 55,
+    "engine_acc": 0.3333333333333333,
+    "engine_ci": [
+      0.20967741935483872,
+      0.46153846153846156
+    ],
+    "naive_acc": 0.25396825396825395,
+    "naive_ci": [
+      0.1515008576329331,
+      0.3666911764705881
+    ],
+    "edge": 0.07936507936507936,
+    "edge_ci": [
+      0.0,
+      0.16393442622950816
+    ],
+    "team_seasons": 38,
+    "by_season": {
+      "2025": {
+        "cases": 29,
+        "by_closer_flag": {
+          "Avoid": 28,
+          "Unavailable": 1
+        },
+        "closer_pitched_anyway": 2,
+        "recipient_in_bullpen_read": 25,
+        "engine_acc": 0.3793103448275862,
+        "engine_ci": [
+          0.19230769230769232,
+          0.5555555555555556
+        ],
+        "naive_acc": 0.3103448275862069,
+        "naive_ci": [
+          0.14285714285714285,
+          0.4838709677419355
+        ],
+        "edge": 0.06896551724137928,
+        "edge_ci": [
+          -0.07142857142857142,
+          0.1935483870967742
+        ],
+        "team_seasons": 20
+      },
+      "2026": {
+        "cases": 34,
+        "by_closer_flag": {
+          "Avoid": 34
+        },
+        "closer_pitched_anyway": 3,
+        "recipient_in_bullpen_read": 30,
+        "engine_acc": 0.29411764705882354,
+        "engine_ci": [
+          0.1282051282051282,
+          0.4857335907335906
+        ],
+        "naive_acc": 0.20588235294117646,
+        "naive_ci": [
+          0.08823529411764706,
+          0.34615384615384615
+        ],
+        "edge": 0.08823529411764708,
+        "edge_ci": [
+          0.0,
+          0.21621621621621623
+        ],
+        "team_seasons": 18
+      }
+    }
+  },
+  "test2_verdict": "INCONCLUSIVE",
+  "exploratory": {
+    "top2_avoid_unavailable": {
+      "cases": 63,
+      "by_closer_flag": {
+        "Avoid": 62,
+        "Unavailable": 1
+      },
+      "closer_pitched_anyway": 5,
+      "recipient_in_bullpen_read": 55,
+      "engine_acc": 0.4444444444444444,
+      "engine_ci": [
+        0.3275862068965517,
+        0.5689655172413793
+      ],
+      "naive_acc": 0.4126984126984127,
+      "naive_ci": [
+        0.2602739726027397,
+        0.5689655172413793
+      ],
+      "edge": 0.031746031746031744,
+      "edge_ci": [
+        -0.08001612903225802,
+        0.1372718052738336
+      ],
+      "team_seasons": 38
+    },
+    "limited_included_top1": {
+      "cases": 583,
+      "by_closer_flag": {
+        "Limited": 520,
+        "Avoid": 62,
+        "Unavailable": 1
+      },
+      "closer_pitched_anyway": 283,
+      "recipient_in_bullpen_read": 281,
+      "engine_acc": 0.14408233276157806,
+      "engine_ci": [
+        0.11359317299498155,
+        0.17326958517019583
+      ],
+      "naive_acc": 0.15265866209262435,
+      "naive_ci": [
+        0.11999815498154981,
+        0.18485952479583384
+      ],
+      "edge": -0.008576329331046295,
+      "edge_ci": [
+        -0.033557673044175104,
+        0.01576334545212707
+      ],
+      "team_seasons": 59
+    },
+    "limited_included_top2": {
+      "cases": 583,
+      "by_closer_flag": {
+        "Limited": 520,
+        "Avoid": 62,
+        "Unavailable": 1
+      },
+      "closer_pitched_anyway": 283,
+      "recipient_in_bullpen_read": 281,
+      "engine_acc": 0.22298456260720412,
+      "engine_ci": [
+        0.18818831509931971,
+        0.2613250316756414
+      ],
+      "naive_acc": 0.241852487135506,
+      "naive_ci": [
+        0.20386394961119003,
+        0.28156124174234365
+      ],
+      "edge": -0.018867924528301883,
+      "edge_ci": [
+        -0.04797121771217714,
+        0.00893180641821944
+      ],
+      "team_seasons": 59
+    }
+  }
+}

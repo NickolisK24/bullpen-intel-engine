@@ -72,3 +72,18 @@ or the row-level outputs.
   prior day.
 - **Workload scope.** Only regular-season appearances count toward workload.
   Spring training and postseason are excluded.
+
+## Round 2: role-weighted state and save prediction
+
+```bash
+python -m backtests.bullpen_state.round2            # tune (2024) + evaluate (2025-26, frozen spec) + report
+python -m backtests.bullpen_state.round2 evaluate   # evaluation only; reads results/round2_frozen_spec.json
+```
+
+This works offline from the round 1 cache and `output/`, so run round 1 first.
+
+- **Spec.** `FROZEN_SPEC.md` holds the definitions chosen on 2024. It was
+  committed before 2025–2026 were evaluated.
+- **Tuning.** Reads 2023–2024 data only.
+- **Evaluation.** Takes its parameters only from the frozen JSON.
+- **Report.** Written to `results/REPORT_ROUND2.md`.
