@@ -810,7 +810,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 532.5,
+      "measured_seconds": 533.5,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1463,6 +1463,10 @@
         {
           "path": "tests/test_publication_truth_certification_workflow_contract.py",
           "measured_seconds": 1.1
+        },
+        {
+          "path": "tests/test_publication_candidate_reference_dates.py",
+          "measured_seconds": 1.0
         }
       ]
     },
