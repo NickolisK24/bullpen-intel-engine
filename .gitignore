@@ -30,3 +30,7 @@ build/
 
 # OS
 .DS_Store
+
+# Bullpen state backtest: source cache and generated outputs
+backtests/bullpen_state/.cache/
+backtests/bullpen_state/output/
