@@ -1,0 +1,865 @@
+{
+  "season": 2024,
+  "save_chance_audit": {
+    "save_opportunity_games": 1381,
+    "bs_entered_9th_plus": 184,
+    "bs_straddle_resolved_9th_plus": 10,
+    "bs_before_9th": 493,
+    "outs_check_fail": 0
+  },
+  "test1_variants": [
+    {
+      "fire_rate": 0.8479166666666667,
+      "flagged_team_games": 4070,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 730,
+          "ra_7_9": 1.2664835164835164,
+          "blown_lead": 0.15217391304347827,
+          "bp_ra9": 4.344237352605553,
+          "games_led_after_6": 322
+        },
+        "flagged": {
+          "team_games": 4070,
+          "ra_7_9": 1.2993113625184456,
+          "blown_lead": 0.14213197969543148,
+          "bp_ra9": 4.443130036588925,
+          "games_led_after_6": 1773
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": 0.0457479260656877,
+        "within_team_ci": [
+          -0.07346046084783495,
+          0.15460147612949124
+        ],
+        "pooled_gap": 0.032827846034929165,
+        "pooled_ci": [
+          -0.09152122006606471,
+          0.14783172333990385
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.017362433899031884,
+        "within_team_ci": [
+          -0.060780642701613305,
+          0.025017083608450934
+        ],
+        "pooled_gap": -0.010041933348046789,
+        "pooled_ci": [
+          -0.04736603749172453,
+          0.026242971448015028
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": 0.1078828775409204,
+        "within_team_ci": [
+          -0.2242774686740653,
+          0.44472031047462396
+        ],
+        "pooled_gap": 0.09889268398337148,
+        "pooled_ci": [
+          -0.25598989892223867,
+          0.4377821258768705
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 1,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.06708333333333333,
+      "flagged_team_games": 322,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4478,
+          "ra_7_9": 1.2968924659065504,
+          "blown_lead": 0.1426403641881639,
+          "bp_ra9": 4.3983175733759055,
+          "games_led_after_6": 1977
+        },
+        "flagged": {
+          "team_games": 322,
+          "ra_7_9": 1.2585669781931463,
+          "blown_lead": 0.16101694915254236,
+          "bp_ra9": 4.837059809949692,
+          "games_led_after_6": 118
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": 0.015148773914497841,
+        "within_team_ci": [
+          -0.23006013885707305,
+          0.29179222028350055
+        ],
+        "pooled_gap": -0.03832548771340405,
+        "pooled_ci": [
+          -0.24798893558841056,
+          0.19776740297565967
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.0011227584490231496,
+        "within_team_ci": [
+          -0.06453692386045938,
+          0.06624593098454647
+        ],
+        "pooled_gap": 0.018376584964378467,
+        "pooled_ci": [
+          -0.044843787553140085,
+          0.08065259428278596
+        ],
+        "team_seasons_used": 21
+      },
+      "bp_ra9": {
+        "within_team_gap": 0.6438253989374692,
+        "within_team_ci": [
+          -0.07414768444268315,
+          1.460908274217526
+        ],
+        "pooled_gap": 0.43874223657378675,
+        "pooled_ci": [
+          -0.15657282907501305,
+          1.0809392870792736
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 1,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": true
+    },
+    {
+      "fire_rate": 0.6179166666666667,
+      "flagged_team_games": 2966,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 1834,
+          "ra_7_9": 1.325136612021858,
+          "blown_lead": 0.15451174289245984,
+          "bp_ra9": 4.4918552036199095,
+          "games_led_after_6": 809
+        },
+        "flagged": {
+          "team_games": 2966,
+          "ra_7_9": 1.2753036437246963,
+          "blown_lead": 0.1368584758942457,
+          "bp_ra9": 4.389387328703989,
+          "games_led_after_6": 1286
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": -0.03716233198693781,
+        "within_team_ci": [
+          -0.14464216471427138,
+          0.06860414652741273
+        ],
+        "pooled_gap": -0.04983296829716166,
+        "pooled_ci": [
+          -0.1540630270032422,
+          0.056586089707276806
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.02181202921140443,
+        "within_team_ci": [
+          -0.0516790497321913,
+          0.008075758817187419
+        ],
+        "pooled_gap": -0.017653266998214123,
+        "pooled_ci": [
+          -0.045424683340225404,
+          0.009612167752068503
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": -0.07833452357515527,
+        "within_team_ci": [
+          -0.3755813061062239,
+          0.20834843230462638
+        ],
+        "pooled_gap": -0.10246787491592091,
+        "pooled_ci": [
+          -0.40269112311649047,
+          0.18728706726447675
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 2,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.005208333333333333,
+      "flagged_team_games": 25,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4775,
+          "ra_7_9": 1.2923044663451457,
+          "blown_lead": 0.1434052757793765,
+          "bp_ra9": 4.421231235261412,
+          "games_led_after_6": 2085
+        },
+        "flagged": {
+          "team_games": 25,
+          "ra_7_9": 1.68,
+          "blown_lead": 0.2,
+          "bp_ra9": 5.750902527075812,
+          "games_led_after_6": 10
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": 0.3876955336548542,
+        "pooled_ci": [
+          -0.2496707904217711,
+          1.050638335483924
+        ],
+        "team_seasons_used": 0
+      },
+      "blown_lead": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": 0.056594724220623505,
+        "pooled_ci": [
+          -0.14907560302013567,
+          0.34971076749914104
+        ],
+        "team_seasons_used": 0
+      },
+      "bp_ra9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": 1.3296712918144005,
+        "pooled_ci": [
+          -0.7528163506949157,
+          4.146510008686472
+        ],
+        "team_seasons_used": 0
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 2,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.32145833333333335,
+      "flagged_team_games": 1543,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 3257,
+          "ra_7_9": 1.3009529664924684,
+          "blown_lead": 0.1450381679389313,
+          "bp_ra9": 4.441969816420768,
+          "games_led_after_6": 1441
+        },
+        "flagged": {
+          "team_games": 1543,
+          "ra_7_9": 1.2803374432186891,
+          "blown_lead": 0.14067278287461774,
+          "bp_ra9": 4.399468085106383,
+          "games_led_after_6": 654
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": -0.008638865766073511,
+        "within_team_ci": [
+          -0.10784137514232228,
+          0.09219010085153263
+        ],
+        "pooled_gap": -0.020615523273779246,
+        "pooled_ci": [
+          -0.11943140962096925,
+          0.07921602371247193
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.007063859561393276,
+        "within_team_ci": [
+          -0.0451855703923359,
+          0.030337674394476717
+        ],
+        "pooled_gap": -0.004365385064313554,
+        "pooled_ci": [
+          -0.03828946611528881,
+          0.02831410554326362
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": -0.020362184506766523,
+        "within_team_ci": [
+          -0.3018924874454954,
+          0.24901845802721487
+        ],
+        "pooled_gap": -0.04250173131438473,
+        "pooled_ci": [
+          -0.31271120426177396,
+          0.24044935946657098
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 3,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.0,
+      "flagged_team_games": 0,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4800,
+          "ra_7_9": 1.2943262411347518,
+          "blown_lead": 0.14367541766109784,
+          "bp_ra9": 4.428255397055458,
+          "games_led_after_6": 2095
+        },
+        "flagged": {
+          "team_games": 0,
+          "ra_7_9": NaN,
+          "blown_lead": NaN,
+          "bp_ra9": NaN,
+          "games_led_after_6": 0
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "blown_lead": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "bp_ra9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "top3_definition": "role_authority",
+      "n_not_clean": 3,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.8477083333333333,
+      "flagged_team_games": 4069,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 731,
+          "ra_7_9": 1.2633744855967077,
+          "blown_lead": 0.15432098765432098,
+          "bp_ra9": 4.309714285714286,
+          "games_led_after_6": 324
+        },
+        "flagged": {
+          "team_games": 4069,
+          "ra_7_9": 1.2998769987699876,
+          "blown_lead": 0.1417278373800113,
+          "bp_ra9": 4.44920446130024,
+          "games_led_after_6": 1771
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": 0.05110283729670855,
+        "within_team_ci": [
+          -0.06762298344121408,
+          0.16876191638396296
+        ],
+        "pooled_gap": 0.036502513173279905,
+        "pooled_ci": [
+          -0.09124150337373273,
+          0.16049737345794257
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.022793771382657334,
+        "within_team_ci": [
+          -0.06599039745688551,
+          0.01610383906794708
+        ],
+        "pooled_gap": -0.012593150274309683,
+        "pooled_ci": [
+          -0.04897791192652147,
+          0.022423369429553027
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": 0.14273029665449666,
+        "within_team_ci": [
+          -0.1661570290530842,
+          0.44507778950528537
+        ],
+        "pooled_gap": 0.1394901755859541,
+        "pooled_ci": [
+          -0.1834843407287014,
+          0.4535463810179688
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 1,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.06666666666666667,
+      "flagged_team_games": 320,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4480,
+          "ra_7_9": 1.2940782122905028,
+          "blown_lead": 0.14119433198380565,
+          "bp_ra9": 4.387424059565938,
+          "games_led_after_6": 1976
+        },
+        "flagged": {
+          "team_games": 320,
+          "ra_7_9": 1.297805642633229,
+          "blown_lead": 0.18487394957983194,
+          "bp_ra9": 4.990701606086222,
+          "games_led_after_6": 119
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": 0.025279676764840144,
+        "within_team_ci": [
+          -0.20577709913205247,
+          0.2883589769245143
+        ],
+        "pooled_gap": 0.003727430342726157,
+        "pooled_ci": [
+          -0.19527042266396907,
+          0.2333057608223409
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": 0.026622154966471533,
+        "within_team_ci": [
+          -0.04184652505438234,
+          0.09753334831641847
+        ],
+        "pooled_gap": 0.04367961759602629,
+        "pooled_ci": [
+          -0.019175762111543728,
+          0.10980913139562427
+        ],
+        "team_seasons_used": 22
+      },
+      "bp_ra9": {
+        "within_team_gap": 0.7335340416639361,
+        "within_team_ci": [
+          0.05359541260595852,
+          1.503338562851253
+        ],
+        "pooled_gap": 0.6032775465202835,
+        "pooled_ci": [
+          0.027695873344246724,
+          1.2006281560383136
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 1,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": true
+    },
+    {
+      "fire_rate": 0.6214583333333333,
+      "flagged_team_games": 2983,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 1817,
+          "ra_7_9": 1.3177054605626035,
+          "blown_lead": 0.15594059405940594,
+          "bp_ra9": 4.445898645563841,
+          "games_led_after_6": 808
+        },
+        "flagged": {
+          "team_games": 2983,
+          "ra_7_9": 1.2801073465280108,
+          "blown_lead": 0.13597513597513597,
+          "bp_ra9": 4.417626745714024,
+          "games_led_after_6": 1287
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": -0.026589111077447828,
+        "within_team_ci": [
+          -0.12923716059223725,
+          0.07963015998004196
+        ],
+        "pooled_gap": -0.03759811403459268,
+        "pooled_ci": [
+          -0.1421449681956911,
+          0.06782817635363216
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.025436577844177247,
+        "within_team_ci": [
+          -0.055439189056190115,
+          0.003766377906394252
+        ],
+        "pooled_gap": -0.01996545808426997,
+        "pooled_ci": [
+          -0.04586678641331242,
+          0.006682578660436133
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": -0.008095362616737874,
+        "within_team_ci": [
+          -0.30069307222899866,
+          0.28986909910350117
+        ],
+        "pooled_gap": -0.02827189984981704,
+        "pooled_ci": [
+          -0.3164873198322165,
+          0.27203951244538455
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 2,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.005208333333333333,
+      "flagged_team_games": 25,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4775,
+          "ra_7_9": 1.2929335290417279,
+          "blown_lead": 0.14388489208633093,
+          "bp_ra9": 4.4229537741817975,
+          "games_led_after_6": 2085
+        },
+        "flagged": {
+          "team_games": 25,
+          "ra_7_9": 1.56,
+          "blown_lead": 0.1,
+          "bp_ra9": 5.419354838709677,
+          "games_led_after_6": 10
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": 0.2670664709582722,
+        "pooled_ci": [
+          -0.44438094506525067,
+          0.939124383961969
+        ],
+        "team_seasons_used": 0
+      },
+      "blown_lead": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": -0.04388489208633092,
+        "pooled_ci": [
+          -0.15996367760442012,
+          0.19956616644113995
+        ],
+        "team_seasons_used": 0
+      },
+      "bp_ra9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": 0.9964010645278796,
+        "pooled_ci": [
+          -1.1643710262385736,
+          3.6374610814987993
+        ],
+        "team_seasons_used": 0
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 2,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.32166666666666666,
+      "flagged_team_games": 1544,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 3256,
+          "ra_7_9": 1.3010455104551046,
+          "blown_lead": 0.14483714483714483,
+          "bp_ra9": 4.432733721814036,
+          "games_led_after_6": 1443
+        },
+        "flagged": {
+          "team_games": 1544,
+          "ra_7_9": 1.2801556420233462,
+          "blown_lead": 0.1411042944785276,
+          "bp_ra9": 4.4188494057825345,
+          "games_led_after_6": 652
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": -0.009485793924867935,
+        "within_team_ci": [
+          -0.10313526098392964,
+          0.08702716455731904
+        ],
+        "pooled_gap": -0.02088986843175844,
+        "pooled_ci": [
+          -0.11658824751377966,
+          0.07742060611029976
+        ],
+        "team_seasons_used": 30
+      },
+      "blown_lead": {
+        "within_team_gap": -0.0054845515799399796,
+        "within_team_ci": [
+          -0.04373696369845113,
+          0.03202043286368676
+        ],
+        "pooled_gap": -0.003732850358617229,
+        "pooled_ci": [
+          -0.0373012540749531,
+          0.030636204353479735
+        ],
+        "team_seasons_used": 30
+      },
+      "bp_ra9": {
+        "within_team_gap": 0.0017833761471442926,
+        "within_team_ci": [
+          -0.25464403308731753,
+          0.26591577885034684
+        ],
+        "pooled_gap": -0.01388431603150142,
+        "pooled_ci": [
+          -0.2797999897086141,
+          0.266189176033909
+        ],
+        "team_seasons_used": 30
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 3,
+      "not_clean": "non_available",
+      "fire_rate_ok": false
+    },
+    {
+      "fire_rate": 0.0,
+      "flagged_team_games": 0,
+      "team_games": 4800,
+      "groups": {
+        "unflagged": {
+          "team_games": 4800,
+          "ra_7_9": 1.2943262411347518,
+          "blown_lead": 0.14367541766109784,
+          "bp_ra9": 4.428255397055458,
+          "games_led_after_6": 2095
+        },
+        "flagged": {
+          "team_games": 0,
+          "ra_7_9": NaN,
+          "blown_lead": NaN,
+          "bp_ra9": NaN,
+          "games_led_after_6": 0
+        }
+      },
+      "ra_7_9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "blown_lead": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "bp_ra9": {
+        "within_team_gap": NaN,
+        "within_team_ci": [
+          null,
+          null
+        ],
+        "pooled_gap": NaN,
+        "pooled_ci": [
+          null,
+          null
+        ],
+        "team_seasons_used": 0
+      },
+      "top3_definition": "saves_holds_30d",
+      "n_not_clean": 3,
+      "not_clean": "avoid_unavailable",
+      "fire_rate_ok": false
+    }
+  ],
+  "test2_variants": [
+    {
+      "cases": 21,
+      "by_closer_flag": {
+        "Avoid": 21
+      },
+      "closer_pitched_anyway": 5,
+      "recipient_in_bullpen_read": 16,
+      "engine_acc": 0.42857142857142855,
+      "engine_ci": [
+        0.23518099547511312,
+        0.6471323529411761
+      ],
+      "naive_acc": 0.23809523809523808,
+      "naive_ci": [
+        0.08,
+        0.47058823529411764
+      ],
+      "edge": 0.19047619047619047,
+      "edge_ci": [
+        0.04545454545454547,
+        0.3684210526315789
+      ],
+      "team_seasons": 16,
+      "tiebreak": "saves_then_holds_30d"
+    },
+    {
+      "cases": 21,
+      "by_closer_flag": {
+        "Avoid": 21
+      },
+      "closer_pitched_anyway": 5,
+      "recipient_in_bullpen_read": 16,
+      "engine_acc": 0.38095238095238093,
+      "engine_ci": [
+        0.2,
+        0.5882352941176471
+      ],
+      "naive_acc": 0.2857142857142857,
+      "naive_ci": [
+        0.11994117647058823,
+        0.47619047619047616
+      ],
+      "edge": 0.09523809523809523,
+      "edge_ci": [
+        0.0,
+        0.25000000000000006
+      ],
+      "team_seasons": 16,
+      "tiebreak": "most_days_rest"
+    },
+    {
+      "cases": 21,
+      "by_closer_flag": {
+        "Avoid": 21
+      },
+      "closer_pitched_anyway": 5,
+      "recipient_in_bullpen_read": 16,
+      "engine_acc": 0.42857142857142855,
+      "engine_ci": [
+        0.23518099547511312,
+        0.6471323529411761
+      ],
+      "naive_acc": 0.2857142857142857,
+      "naive_ci": [
+        0.11994117647058823,
+        0.47619047619047616
+      ],
+      "edge": 0.14285714285714285,
+      "edge_ci": [
+        0.0,
+        0.33333333333333337
+      ],
+      "team_seasons": 16,
+      "tiebreak": "relief_apps_30d"
+    }
+  ],
+  "usage_role_distribution": {
+    "middle_relief": 14009,
+    "setup_bridge": 13316,
+    "long_multi_inning": 5480,
+    "late_high_leverage": 4152,
+    "low_unclear": 1835,
+    "insufficient_data": 1528
+  }
+}

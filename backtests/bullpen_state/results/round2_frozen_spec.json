@@ -1,0 +1,13 @@
+{
+  "frozen_on": "2026-11-18",
+  "tuned_on": [2024],
+  "evaluate_on": [2025, 2026],
+  "test1": {
+    "top3_definition": "saves_holds_30d",
+    "n_not_clean": 1,
+    "not_clean": "avoid_unavailable"
+  },
+  "test2": {
+    "tiebreak": "saves_then_holds_30d"
+  }
+}
