@@ -149,6 +149,7 @@ _RESOLVE_FRESHNESS = object()
 
 def resolve_readiness_reference_dates(
     source_snapshot, *, sync_status=None, snapshot_freshness=_RESOLVE_FRESHNESS,
+    publication_candidate=False,
 ) -> tuple:
     """The two governed reference dates one readiness read is produced against.
 
@@ -178,6 +179,18 @@ def resolve_readiness_reference_dates(
     ``snapshot_freshness`` lets a caller that has already resolved the serving
     freshness verdict hand it over rather than paying for a second resolution per
     team; omitted, it is resolved here.
+
+    ``publication_candidate`` is set only by the transactional publication proof
+    (``require_transactional_publication_proof``) for the candidate it is proving.
+    The serving freshness authority is a *currency* verdict: it also refuses a
+    snapshot whose ``data_through`` is older than the active window, which happens
+    on every no-game day once the window passes (the 2026 offseason). The proof
+    asks which dates the candidate's reads describe, not whether they are current,
+    so for that one caller the candidate keeps its own dates whenever it passes the
+    canonical league trust verdict (``snapshot_unavailable_reason``: ready,
+    published inside the publication transaction, valid payload, consistent dates,
+    inside the unavailable boundary). The freshness verdict itself is not anchored
+    here, and an arbitrary unpublished or inconsistent snapshot gains nothing.
     """
     from api.team_operations import _availability_reference_date, _sync_status_payload
     from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
@@ -192,6 +205,7 @@ def resolve_readiness_reference_dates(
     is_trusted_source = (
         getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE
         or snapshot_freshness is not None
+        or (publication_candidate is True and _publication_candidate_trusted(source_snapshot))
     )
     if not is_trusted_source:
         return live_reference_date, live_reference_date
@@ -205,6 +219,18 @@ def resolve_readiness_reference_dates(
     return membership_reference_date, availability_reference_date
 
 
+def _publication_candidate_trusted(snapshot) -> bool:
+    """The canonical league trust verdict for the candidate under proof. Fails closed."""
+    if snapshot is None:
+        return False
+    from services.dashboard_snapshot import snapshot_unavailable_reason
+
+    try:
+        return snapshot_unavailable_reason(snapshot) is None
+    except Exception:  # noqa: BLE001 - an unreadable verdict never grants authority
+        return False
+
+
 def resolve_team_readiness_payload(
     team_id: int,
     *,
@@ -215,6 +241,7 @@ def resolve_team_readiness_payload(
     arm_reads_out: Optional[dict] = None,
     classified_record_overrides: Optional[Mapping[int, Mapping[str, Any]]] = None,
     represented_date_override: Optional[date] = None,
+    publication_candidate: bool = False,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -251,6 +278,8 @@ def resolve_team_readiness_payload(
     ``represented_date_override`` is an explicit shadow-only date anchor. It is
     converted by the same ``trusted_slate_reference_dates`` authority used for
     trusted snapshots; it never reads the wall clock.
+    ``publication_candidate`` is passed only by the transactional publication proof;
+    see :func:`resolve_readiness_reference_dates`.
     """
     from api.team_operations import (
         TEAM_OPERATIONS_DEFAULT_LIMIT,
@@ -290,6 +319,7 @@ def resolve_team_readiness_payload(
             resolve_readiness_reference_dates(
                 source_snapshot, sync_status=sync_status,
                 snapshot_freshness=snapshot_freshness,
+                publication_candidate=publication_candidate,
             )
         )
     if isinstance(reference_dates_out, dict):

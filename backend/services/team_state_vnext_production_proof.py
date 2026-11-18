@@ -1065,7 +1065,10 @@ def require_transactional_publication_proof(
     reproduction, or a persistence failure raises and therefore prevents the
     candidate from becoming the current publication.
     """
-    from services.share_artifact_generation import resolve_team_readiness_payload
+    from services.share_artifact_generation import (
+        _resolver_accepts,
+        resolve_team_readiness_payload,
+    )
     from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_directory import valid_team_ids
     from flask import current_app, has_app_context
@@ -1102,6 +1105,7 @@ def require_transactional_publication_proof(
             for item in resolver_parameters.values()
         )
     )
+    candidate_dates = _resolver_accepts(resolver, 'publication_candidate')
     from services.team_board_snapshot_team_state import make_receipt
     from services.team_state_eligibility import (
         evaluate_team_state_eligibility,
@@ -1124,6 +1128,10 @@ def require_transactional_publication_proof(
         }
         if capture_arm_reads:
             resolver_kwargs['arm_reads_out'] = arm_reads
+        if candidate_dates:
+            # This snapshot IS the publication under proof: its reads describe its
+            # own governed dates at any data age (see resolve_readiness_reference_dates).
+            resolver_kwargs['publication_candidate'] = True
         readiness = resolver(team_id, **resolver_kwargs)
         if not isinstance(readiness, Mapping):
             raise ValueError(f'team_state_publication_proof_missing_team:{team_id}')
