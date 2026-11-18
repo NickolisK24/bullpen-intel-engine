@@ -13,14 +13,21 @@ From the repository root, with the backend requirements installed on Python 3.11
 (as in CI) plus `pytest`:
 
 ```bash
-python -m backtests.bullpen_state.run            # fetch missing source data, then build
-python -m backtests.bullpen_state.run --offline  # rebuild from the cache only
+python -m backtests.bullpen_state.run            # fetch missing data, build dataset, analyze, write report
+python -m backtests.bullpen_state.run --offline  # same, from the cache only
 ```
 
 The first run downloads about 24,000 MLB Stats API responses (schedules,
 boxscores, day-before active rosters for 2023–2026) at no more than 4 requests
 per second. Every response is cached gzip-compressed under `.cache/` and never
-requested again. Outputs go to `output/`. Both folders are git-ignored.
+requested again. Row-level outputs go to `output/`. Both `.cache/` and `output/` are git-ignored.
+Aggregate results go to `results/`, which is committed:
+
+- `REPORT.md`: the report.
+- `analysis_results.json`: every number in the report.
+- `dataset_summary.json`: dataset counts.
+- `findings.md` and `assumptions.md`: the hand-written prose the report includes.
+  They are not regenerated. Re-read them if a rerun's numbers change.
 
 **Source terms.** Every MLB Stats API response points to MLB Advanced Media's
 copyright notice (`gdx.mlb.com/components/copyright.txt`). Use here is limited
@@ -41,7 +48,11 @@ or the row-level outputs.
    - `reliever_days.csv`: one row per active-bullpen reliever per team-game,
      with his pre-game availability flag and whether he pitched.
    - `dataset_summary.json`: counts.
-3. **No-lookahead proof** (`tests/test_no_lookahead.py`). Same-day and future
+3. **Outcomes and analysis** (`analysis.py`). Outcomes per team-game, within-team
+   gaps, a fixed-effects regression, and a team-season cluster bootstrap for
+   every interval.
+4. **Report** (`report.py`). Writes `results/REPORT.md`.
+5. **No-lookahead proof** (`tests/test_no_lookahead.py`). Same-day and future
    data, real or synthetic, cannot change any pre-game output.
 
 ## Replay assumptions

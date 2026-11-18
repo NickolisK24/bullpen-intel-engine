@@ -1,6 +1,6 @@
 """One command to (re)run the bullpen-state backtest.
 
-    python -m backtests.bullpen_state.run              # fetch (cached) + build dataset
+    python -m backtests.bullpen_state.run              # fetch (cached) + dataset + analysis + report
     python -m backtests.bullpen_state.run --offline    # cache only, no network
 
 Run from the repository root with the backend requirements installed (Python 3.11,
@@ -40,7 +40,12 @@ def main(argv=None):
 
     from .build_dataset import build
     build(seasons, history, offline=True)
-    print(f'outputs written to {config.OUTPUT_DIR}')
+    print(f'dataset written to {config.OUTPUT_DIR}')
+
+    from .analysis import run as analyze
+    from .report import render
+    analyze()
+    print(f'report written to {render()}')
     return 0
 
 

@@ -38,8 +38,13 @@ TEAM_GAME_FIELDS = [
     # same-game raw facts (outcomes are derived from these in the next step)
     'runs_scored', 'runs_allowed', 'starter_mlb_id', 'starter_outs',
     'starter_runs', 'bullpen_outs', 'bullpen_runs', 'bullpen_earned_runs',
-    'relievers_used', 'innings_for', 'innings_against',
+    'relievers_used', 'pp_outs', 'pp_runs',
+    'bullpen_outs_pitchers', 'bullpen_runs_pitchers', 'bullpen_earned_runs_pitchers',
+    'innings_for', 'innings_against',
 ]
+# Pitching positions as production defines them (services.bullpen_eligibility),
+# plus two-way players, who are pitchers when they pitch.
+PITCHER_POSITIONS = {'P', 'SP', 'RP', 'CL', 'LHP', 'RHP', 'TWP'}
 RELIEVER_FIELDS = [
     'season', 'game_date', 'game_pk', 'team_id', 'dh_game2', 'public_state',
     'pitcher_mlb_id', 'name', 'role', 'availability_status', 'availability_data_state',
@@ -89,6 +94,7 @@ def build(eval_seasons=config.EVAL_SEASONS, history_seasons=config.HISTORY_SEASO
         pitch_unknown_days = 0
         team_games = 0
         cache = {}
+        roster_pos = {}
         for g in games_by_season[season]:
             for side in ('home', 'away'):
                 team_id = g.home_id if side == 'home' else g.away_id
@@ -104,6 +110,10 @@ def build(eval_seasons=config.EVAL_SEASONS, history_seasons=config.HISTORY_SEASO
                     if roster is None:
                         cache[key] = None
                     else:
+                        roster_pos[key] = {
+                            int((e.get('person') or {}).get('id')): (e.get('position') or {}).get('abbreviation') or ''
+                            for e in roster if (e.get('person') or {}).get('id')
+                        }
                         cache[key] = replay_team_day(
                             team_id, g.game_date, roster, history.view_before(g.game_date),
                         )
@@ -115,6 +125,12 @@ def build(eval_seasons=config.EVAL_SEASONS, history_seasons=config.HISTORY_SEASO
                 team_apps = sorted(apps_by_game_team.get((g.game_pk, team_id), []), key=lambda a: a.order)
                 starter = team_apps[0] if team_apps else None
                 pen = team_apps[1:]
+                # Pitcher vs position player: day-before roster position first,
+                # then the position the player entered the game at.
+                rpos = roster_pos.get(key, {})
+                is_pitcher = lambda a: (rpos.get(a.pitcher_mlb_id) or a.position) in PITCHER_POSITIONS
+                pp = [a for a in pen if not is_pitcher(a)]
+                pen_p = [a for a in pen if is_pitcher(a)]
                 ours = [(n, (h if side == 'home' else a)) for n, a, h in g.innings]
                 theirs = [(n, (a if side == 'home' else h)) for n, a, h in g.innings]
                 dh2 = int(g.game_number == 2)
@@ -144,6 +160,11 @@ def build(eval_seasons=config.EVAL_SEASONS, history_seasons=config.HISTORY_SEASO
                     'bullpen_runs': sum(a.runs_allowed for a in pen),
                     'bullpen_earned_runs': sum(a.earned_runs for a in pen),
                     'relievers_used': len(pen),
+                    'pp_outs': sum(a.innings_pitched_outs for a in pp),
+                    'pp_runs': sum(a.runs_allowed for a in pp),
+                    'bullpen_outs_pitchers': sum(a.innings_pitched_outs for a in pen_p),
+                    'bullpen_runs_pitchers': sum(a.runs_allowed for a in pen_p),
+                    'bullpen_earned_runs_pitchers': sum(a.earned_runs for a in pen_p),
                     'innings_for': json.dumps(ours), 'innings_against': json.dumps(theirs),
                 }
                 tg.writerow(row)

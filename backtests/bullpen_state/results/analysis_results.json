@@ -1,0 +1,1643 @@
+{
+  "generated_from": {
+    "team_games": 14576,
+    "reliever_days": 121005
+  },
+  "sample": {
+    "primary_team_games": 14412,
+    "dh_game2_team_games": 164,
+    "state_counts_primary": {
+      "fresh": 3538,
+      "stretched": 7077,
+      "vulnerable": 3797,
+      "data_limited": 0
+    },
+    "state_counts_all": {
+      "fresh": 3642,
+      "stretched": 7129,
+      "vulnerable": 3805,
+      "data_limited": 0
+    },
+    "state_counts_by_season": {
+      "2024": {
+        "fresh": 1285,
+        "stretched": 2366,
+        "vulnerable": 1207
+      },
+      "2025": {
+        "fresh": 1209,
+        "stretched": 2397,
+        "vulnerable": 1254
+      },
+      "2026": {
+        "fresh": 1148,
+        "stretched": 2366,
+        "vulnerable": 1344
+      }
+    },
+    "zero_bullpen_out_games_primary": 80,
+    "position_player_pitching_team_games": 352,
+    "position_player_runs": 437,
+    "opener_team_games_primary": {
+      "fresh": 388,
+      "stretched": 860,
+      "vulnerable": 207
+    },
+    "team_seasons": 90
+  },
+  "primary": {
+    "groups": {
+      "fresh": {
+        "team_games": 3538,
+        "games_led_after_6": 1560,
+        "bullpen_outs": 39813,
+        "bp_ra9": 4.4521889834978525,
+        "bp_ra9_all": 4.4822507364321735,
+        "blown_lead": 0.12692307692307692,
+        "ra_7_9": 1.2844607981885083,
+        "ra_7_plus": 1.413812623832437,
+        "starter_ip": 5.089221782551347,
+        "bullpen_ip": 3.7509892594686263
+      },
+      "stretched": {
+        "team_games": 7077,
+        "games_led_after_6": 3063,
+        "bullpen_outs": 79201,
+        "bp_ra9": 4.450852893271549,
+        "bp_ra9_all": 4.490799392897909,
+        "blown_lead": 0.13614103819784526,
+        "ra_7_9": 1.3160424028268551,
+        "ra_7_plus": 1.4318021201413427,
+        "starter_ip": 5.1034336583298,
+        "bullpen_ip": 3.730441335782582
+      },
+      "vulnerable": {
+        "team_games": 3797,
+        "games_led_after_6": 1653,
+        "bullpen_outs": 40517,
+        "bp_ra9": 4.559419502924698,
+        "bp_ra9_all": 4.614752092408595,
+        "blown_lead": 0.13914095583787053,
+        "ra_7_9": 1.3773734177215189,
+        "ra_7_plus": 1.4994725738396624,
+        "starter_ip": 5.305767711351066,
+        "bullpen_ip": 3.556930910367834
+      }
+    },
+    "gaps": {
+      "stretched_minus_fresh": {
+        "bp_ra9": {
+          "within_team_gap": -0.040526464203923085,
+          "team_seasons_used": 90,
+          "pooled_gap": -0.0013360902263030994,
+          "within_team_ci": [
+            -0.24983106637595068,
+            0.1651333799834564
+          ],
+          "pooled_ci": [
+            -0.2131957230272531,
+            0.2063360496627162
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": -0.03202333070250622,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.008548656465735327,
+          "within_team_ci": [
+            -0.24206467480063565,
+            0.17406826122802163
+          ],
+          "pooled_ci": [
+            -0.21233460581232086,
+            0.2176855480616653
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.01125993783883296,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.009217961274768344,
+          "within_team_ci": [
+            -0.007676068303911099,
+            0.030869349793383634
+          ],
+          "pooled_ci": [
+            -0.01120087950526432,
+            0.029249921558940097
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": 0.022951494784694396,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.031581604638346805,
+          "within_team_ci": [
+            -0.048351398089711256,
+            0.09387932708781434
+          ],
+          "pooled_ci": [
+            -0.04085444915049327,
+            0.10130243935424164
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": 0.007239423625974593,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.01798949630890556,
+          "within_team_ci": [
+            -0.06383397798697621,
+            0.07474091074368677
+          ],
+          "pooled_ci": [
+            -0.05577423916258635,
+            0.0869670082260759
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": 0.04807684844291657,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.01421187577845373,
+          "within_team_ci": [
+            -0.005401964502267371,
+            0.10580330030697978
+          ],
+          "pooled_ci": [
+            -0.03801281484015891,
+            0.07302228674312636
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": -0.049979717836843386,
+          "team_seasons_used": 90,
+          "pooled_gap": -0.02054792368604419,
+          "within_team_ci": [
+            -0.10626791746252329,
+            0.007401176379745527
+          ],
+          "pooled_ci": [
+            -0.07974347824224458,
+            0.0367177329030805
+          ]
+        }
+      },
+      "vulnerable_minus_fresh": {
+        "bp_ra9": {
+          "within_team_gap": 0.04502258741846398,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.10723051942684592,
+          "within_team_ci": [
+            -0.19013554492147347,
+            0.27395739502238026
+          ],
+          "pooled_ci": [
+            -0.12537547053709447,
+            0.3464187551070655
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": 0.06500263836612256,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.1325013559764212,
+          "within_team_ci": [
+            -0.16678957555292884,
+            0.29235747436087606
+          ],
+          "pooled_ci": [
+            -0.10730665391199654,
+            0.3688578053551115
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.015979234839496273,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.012217878914793617,
+          "within_team_ci": [
+            -0.007875422020000522,
+            0.04058636421803384
+          ],
+          "pooled_ci": [
+            -0.01133687427342432,
+            0.03604721113843073
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": 0.07556812030722558,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.09291261953301055,
+          "within_team_ci": [
+            0.00031606663499330934,
+            0.14471547377519808
+          ],
+          "pooled_ci": [
+            0.019082388213848823,
+            0.16144831941128296
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": 0.06684409996410666,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.08565995000722526,
+          "within_team_ci": [
+            -0.00973032544166779,
+            0.13732277085781056
+          ],
+          "pooled_ci": [
+            0.008673622069157356,
+            0.15647018451920722
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": 0.25354501203694674,
+          "team_seasons_used": 90,
+          "pooled_gap": 0.2165459287997198,
+          "within_team_ci": [
+            0.18735187638273015,
+            0.3213364409955205
+          ],
+          "pooled_ci": [
+            0.14848441838348253,
+            0.2875377235450699
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": -0.22456499005637234,
+          "team_seasons_used": 90,
+          "pooled_gap": -0.19405834910079234,
+          "within_team_ci": [
+            -0.2908249097775056,
+            -0.1574483898678817
+          ],
+          "pooled_ci": [
+            -0.26223542602936073,
+            -0.12648453700340095
+          ]
+        }
+      }
+    }
+  },
+  "vulnerable_minus_stretched": {
+    "bp_ra9": {
+      "within_team_gap": 0.08554905162238706,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.10856660965314902,
+      "within_team_ci": [
+        -0.107202624900484,
+        0.30145770787067355
+      ],
+      "pooled_ci": [
+        -0.07791976765063717,
+        0.31439839800755287
+      ]
+    },
+    "bp_ra9_all": {
+      "within_team_gap": 0.09702596906862883,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.12395269951068588,
+      "within_team_ci": [
+        -0.09224446834171093,
+        0.315681880244534
+      ],
+      "pooled_ci": [
+        -0.060291938727941655,
+        0.3324736549341611
+      ]
+    },
+    "blown_lead": {
+      "within_team_gap": 0.004719297000663313,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.0029999176400252736,
+      "within_team_ci": [
+        -0.014329321149865211,
+        0.024441886679115697
+      ],
+      "pooled_ci": [
+        -0.013718821145268803,
+        0.019937594442349875
+      ]
+    },
+    "ra_7_9": {
+      "within_team_gap": 0.05261662552253117,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.06133101489466375,
+      "within_team_ci": [
+        -0.010131184132325239,
+        0.11962183367562598
+      ],
+      "pooled_ci": [
+        0.005066108128311731,
+        0.12218036613116001
+      ]
+    },
+    "ra_7_plus": {
+      "within_team_gap": 0.05960467633813208,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.0676704536983197,
+      "within_team_ci": [
+        -0.004958090321508116,
+        0.13112523401969237
+      ],
+      "pooled_ci": [
+        0.0065586922046899036,
+        0.13380718419815066
+      ]
+    },
+    "starter_ip": {
+      "within_team_gap": 0.20546816359403014,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.20233405302126606,
+      "within_team_ci": [
+        0.1465053468557952,
+        0.2634225729054327
+      ],
+      "pooled_ci": [
+        0.14411658142897793,
+        0.25888921960708333
+      ]
+    },
+    "bullpen_ip": {
+      "within_team_gap": -0.17458527221952896,
+      "team_seasons_used": 90,
+      "pooled_gap": -0.17351042541474815,
+      "within_team_ci": [
+        -0.23554163853086776,
+        -0.11232389581059135
+      ],
+      "pooled_ci": [
+        -0.23575045097347472,
+        -0.11059183200998322
+      ]
+    }
+  },
+  "ordering": {
+    "bp_ra9": {
+      "values": [
+        4.4521889834978525,
+        4.450852893271549,
+        4.559419502924698
+      ],
+      "fresh_lt_stretched_lt_vulnerable": false
+    },
+    "bp_ra9_all": {
+      "values": [
+        4.4822507364321735,
+        4.490799392897909,
+        4.614752092408595
+      ],
+      "fresh_lt_stretched_lt_vulnerable": true
+    },
+    "blown_lead": {
+      "values": [
+        0.12692307692307692,
+        0.13614103819784526,
+        0.13914095583787053
+      ],
+      "fresh_lt_stretched_lt_vulnerable": true
+    },
+    "ra_7_9": {
+      "values": [
+        1.2844607981885083,
+        1.3160424028268551,
+        1.3773734177215189
+      ],
+      "fresh_lt_stretched_lt_vulnerable": true
+    },
+    "ra_7_plus": {
+      "values": [
+        1.413812623832437,
+        1.4318021201413427,
+        1.4994725738396624
+      ],
+      "fresh_lt_stretched_lt_vulnerable": true
+    },
+    "starter_ip": {
+      "values": [
+        5.089221782551347,
+        5.1034336583298,
+        5.305767711351066
+      ],
+      "fresh_lt_stretched_lt_vulnerable": true
+    },
+    "bullpen_ip": {
+      "values": [
+        3.7509892594686263,
+        3.730441335782582,
+        3.556930910367834
+      ],
+      "fresh_lt_stretched_lt_vulnerable": false
+    }
+  },
+  "regression": {
+    "n_games": 14332,
+    "dropped_zero_bullpen_out_games": 80,
+    "coefficients": {
+      "stretched_vs_fresh": {
+        "estimate": -0.01832275497964796,
+        "ci": [
+          -0.2276829877585961,
+          0.19110539436905613
+        ]
+      },
+      "vulnerable_vs_fresh": {
+        "estimate": 0.05678412520627063,
+        "ci": [
+          -0.16451165594654912,
+          0.2861088303544535
+        ]
+      },
+      "opp_offense_per_run": {
+        "estimate": 0.4216809994437014,
+        "ci": [
+          0.21944601126889002,
+          0.630570728988798
+        ]
+      },
+      "home": {
+        "estimate": -0.162339212735084,
+        "ci": [
+          -0.33895005490868646,
+          0.01572577698866585
+        ]
+      }
+    },
+    "spec": "WLS of game bullpen R/9 (pitchers only) on state dummies (fresh = baseline), team-season fixed effects, ballpark fixed effects, opponent season-to-date R/G (prior dates only, shrunk), home indicator; weights = bullpen outs; team-season cluster bootstrap."
+  },
+  "by_season": {
+    "2024": {
+      "groups": {
+        "fresh": {
+          "team_games": 1251,
+          "bp_ra9": 4.229009281243255
+        },
+        "stretched": {
+          "team_games": 2346,
+          "bp_ra9": 4.443475226796929
+        },
+        "vulnerable": {
+          "team_games": 1203,
+          "bp_ra9": 4.614768892725418
+        }
+      },
+      "vulnerable_minus_fresh_bp_ra9": {
+        "within_team_gap": 0.39919479187355583,
+        "team_seasons_used": 30,
+        "pooled_gap": 0.38575961148216287,
+        "within_team_ci": [
+          0.03719004029817009,
+          0.7529269278886708
+        ],
+        "pooled_ci": [
+          0.008864930089917603,
+          0.7565054247646397
+        ]
+      }
+    },
+    "2025": {
+      "groups": {
+        "fresh": {
+          "team_games": 1172,
+          "bp_ra9": 4.65163839181966
+        },
+        "stretched": {
+          "team_games": 2381,
+          "bp_ra9": 4.370767835550182
+        },
+        "vulnerable": {
+          "team_games": 1251,
+          "bp_ra9": 4.537087912087912
+        }
+      },
+      "vulnerable_minus_fresh_bp_ra9": {
+        "within_team_gap": -0.17967319899883805,
+        "team_seasons_used": 30,
+        "pooled_gap": -0.11455047973174803,
+        "within_team_ci": [
+          -0.5588410477315816,
+          0.21857808994970668
+        ],
+        "pooled_ci": [
+          -0.48554368264477266,
+          0.2833788415283591
+        ]
+      }
+    },
+    "2026": {
+      "groups": {
+        "fresh": {
+          "team_games": 1115,
+          "bp_ra9": 4.492733564013841
+        },
+        "stretched": {
+          "team_games": 2350,
+          "bp_ra9": 4.536577218572542
+        },
+        "vulnerable": {
+          "team_games": 1343,
+          "bp_ra9": 4.531288343558282
+        }
+      },
+      "vulnerable_minus_fresh_bp_ra9": {
+        "within_team_gap": -0.08445383061932596,
+        "team_seasons_used": 30,
+        "pooled_gap": 0.038554779544440976,
+        "within_team_ci": [
+          -0.47239768106943747,
+          0.26545928489960086
+        ],
+        "pooled_ci": [
+          -0.3552965724668811,
+          0.410796792542432
+        ]
+      }
+    }
+  },
+  "dh_game2": {
+    "groups": {
+      "fresh": {
+        "team_games": 104,
+        "games_led_after_6": 47,
+        "bullpen_outs": 1337,
+        "bp_ra9": 4.119670905011219,
+        "bp_ra9_all": 4.119670905011219,
+        "blown_lead": 0.10638297872340426,
+        "ra_7_9": 1.2596153846153846,
+        "ra_7_plus": 1.3461538461538463,
+        "starter_ip": 4.589743589743589,
+        "bullpen_ip": 4.28525641025641
+      },
+      "stretched": {
+        "team_games": 52,
+        "games_led_after_6": 22,
+        "bullpen_outs": 546,
+        "bp_ra9": 4.252747252747253,
+        "bp_ra9_all": 4.459605026929982,
+        "blown_lead": 0.045454545454545456,
+        "ra_7_9": 1.2307692307692308,
+        "ra_7_plus": 1.2692307692307692,
+        "starter_ip": 5.25,
+        "bullpen_ip": 3.5
+      },
+      "vulnerable": {
+        "team_games": 8,
+        "games_led_after_6": 3,
+        "bullpen_outs": 91,
+        "bp_ra9": 4.153846153846154,
+        "bp_ra9_all": 4.153846153846154,
+        "blown_lead": 0.0,
+        "ra_7_9": 1.0,
+        "ra_7_plus": 1.625,
+        "starter_ip": 5.333333333333333,
+        "bullpen_ip": 3.7916666666666665
+      }
+    },
+    "gaps": {
+      "stretched_minus_fresh": {
+        "bp_ra9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.13307634773603372,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.372520686716808,
+            1.877909211641448
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.3399341219187626,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.2829097854022455,
+            2.250710015429896
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.0609284332688588,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.18181818181818182,
+            0.07310540718970943
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.028846153846153744,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.5859655880842323,
+            0.6689525602409637
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.0769230769230771,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.6577383736369165,
+            0.6260879878267095
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.6602564102564106,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            0.08691845336265405,
+            1.2514082884195576
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.7852564102564097,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.366411325304681,
+            -0.21989740360754148
+          ]
+        }
+      },
+      "vulnerable_minus_fresh": {
+        "bp_ra9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.03417524883493517,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -2.917812400300836,
+            2.78315980591935
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.03417524883493517,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -2.917812400300836,
+            2.78315980591935
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.10638297872340426,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.2,
+            -0.023809523809523808
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.2596153846153846,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.2663431677018633,
+            1.1424251805985535
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.27884615384615374,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.075079735944222,
+            1.8705556651292627
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.7435897435897436,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.22967120181405876,
+            1.8571900047147565
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.49358974358974317,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.5534105279538715,
+            0.38390017349459743
+          ]
+        }
+      }
+    }
+  },
+  "excluding_openers": {
+    "groups": {
+      "fresh": {
+        "team_games": 3150,
+        "bp_ra9": 4.493358521754531
+      },
+      "stretched": {
+        "team_games": 6217,
+        "bp_ra9": 4.4331042417269675
+      },
+      "vulnerable": {
+        "team_games": 3590,
+        "bp_ra9": 4.561236814558338
+      }
+    },
+    "vulnerable_minus_fresh_bp_ra9": {
+      "within_team_gap": -0.004050947150200221,
+      "team_seasons_used": 90,
+      "pooled_gap": 0.0678782928038073,
+      "within_team_ci": [
+        -0.24362238770983977,
+        0.2411420606679677
+      ],
+      "pooled_ci": [
+        -0.1706574356229715,
+        0.3171231394660384
+      ]
+    }
+  },
+  "availability_primary": {
+    "flags": {
+      "Available": {
+        "reliever_days": 53934,
+        "pitched": 28282,
+        "same_day_pitch_rate": 0.5243816516483109,
+        "rate_ci": [
+          0.5169584005450931,
+          0.5315547055749362
+        ]
+      },
+      "Monitor": {
+        "reliever_days": 32906,
+        "pitched": 11047,
+        "same_day_pitch_rate": 0.33571385157721995,
+        "rate_ci": [
+          0.32726365203357843,
+          0.34360598828078104
+        ]
+      },
+      "Limited": {
+        "reliever_days": 26714,
+        "pitched": 6171,
+        "same_day_pitch_rate": 0.23100247061465898,
+        "rate_ci": [
+          0.22254410093782082,
+          0.23882945509607642
+        ]
+      },
+      "Avoid": {
+        "reliever_days": 4476,
+        "pitched": 54,
+        "same_day_pitch_rate": 0.012064343163538873,
+        "rate_ci": [
+          0.008752195072483968,
+          0.015479239659812438
+        ]
+      },
+      "Unavailable": {
+        "reliever_days": 1620,
+        "pitched": 1,
+        "same_day_pitch_rate": 0.0006172839506172839,
+        "rate_ci": [
+          0.0,
+          0.0019367646543656573
+        ]
+      },
+      "Avoid+Unavailable": {
+        "reliever_days": 6096,
+        "pitched": 55,
+        "same_day_pitch_rate": 0.00902230971128609,
+        "rate_ci": [
+          0.006486310967118415,
+          0.011663644643429057
+        ]
+      }
+    },
+    "Unavailable_to_Available_ratio": {
+      "ratio": 0.0011771654265113002,
+      "ci": [
+        0.0,
+        0.0036973850378612194
+      ],
+      "did_not_pitch_share": 0.9993827160493827
+    },
+    "Avoid+Unavailable_to_Available_ratio": {
+      "ratio": 0.017205616716233083,
+      "ci": [
+        0.012426637444180292,
+        0.02216921822391971
+      ],
+      "did_not_pitch_share": 0.990977690288714
+    }
+  },
+  "availability_dh_game2": {
+    "flags": {
+      "Available": {
+        "reliever_days": 907,
+        "pitched": 350,
+        "same_day_pitch_rate": 0.38588754134509373,
+        "rate_ci": [
+          0.3559684036608684,
+          0.4153661798795242
+        ]
+      },
+      "Monitor": {
+        "reliever_days": 207,
+        "pitched": 60,
+        "same_day_pitch_rate": 0.2898550724637681,
+        "rate_ci": [
+          0.22906610272752836,
+          0.3502127583494243
+        ]
+      },
+      "Limited": {
+        "reliever_days": 210,
+        "pitched": 57,
+        "same_day_pitch_rate": 0.2714285714285714,
+        "rate_ci": [
+          0.20873268761790825,
+          0.3299529347986792
+        ]
+      },
+      "Avoid": {
+        "reliever_days": 21,
+        "pitched": 0,
+        "same_day_pitch_rate": 0.0,
+        "rate_ci": [
+          0.0,
+          0.0
+        ]
+      },
+      "Unavailable": {
+        "reliever_days": 10,
+        "pitched": 0,
+        "same_day_pitch_rate": 0.0,
+        "rate_ci": [
+          0.0,
+          0.0
+        ]
+      },
+      "Avoid+Unavailable": {
+        "reliever_days": 31,
+        "pitched": 0,
+        "same_day_pitch_rate": 0.0,
+        "rate_ci": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "Unavailable_to_Available_ratio": {
+      "ratio": 0.0,
+      "ci": [
+        0.0,
+        0.0
+      ],
+      "did_not_pitch_share": 1.0
+    },
+    "Avoid+Unavailable_to_Available_ratio": {
+      "ratio": 0.0,
+      "ci": [
+        0.0,
+        0.0
+      ],
+      "did_not_pitch_share": 1.0
+    }
+  },
+  "exploratory_clean_arms": {
+    "groups": {
+      "0": {
+        "team_games": 344,
+        "games_led_after_6": 148,
+        "bullpen_outs": 3561,
+        "bp_ra9": 4.685762426284751,
+        "bp_ra9_all": 4.743446737311768,
+        "blown_lead": 0.11486486486486487,
+        "ra_7_9": 1.4215116279069768,
+        "ra_7_plus": 1.552325581395349,
+        "starter_ip": 5.478682170542635,
+        "bullpen_ip": 3.4505813953488373
+      },
+      "1": {
+        "team_games": 1227,
+        "games_led_after_6": 524,
+        "bullpen_outs": 12825,
+        "bp_ra9": 4.433684210526316,
+        "bp_ra9_all": 4.518061129978388,
+        "blown_lead": 0.1450381679389313,
+        "ra_7_9": 1.3854930725346373,
+        "ra_7_plus": 1.504482477587612,
+        "starter_ip": 5.367834827492529,
+        "bullpen_ip": 3.4841075794621026
+      },
+      "2": {
+        "team_games": 2179,
+        "games_led_after_6": 957,
+        "bullpen_outs": 23580,
+        "bp_ra9": 4.622519083969466,
+        "bp_ra9_all": 4.663595051754608,
+        "blown_lead": 0.14315569487983282,
+        "ra_7_9": 1.3719540229885057,
+        "ra_7_plus": 1.4937931034482759,
+        "starter_ip": 5.246749273366988,
+        "bullpen_ip": 3.607159247361175
+      },
+      "3": {
+        "team_games": 2962,
+        "games_led_after_6": 1321,
+        "bullpen_outs": 32555,
+        "bp_ra9": 4.427983412686223,
+        "bp_ra9_all": 4.459214501510574,
+        "blown_lead": 0.13096139288417866,
+        "ra_7_9": 1.299797434166104,
+        "ra_7_plus": 1.4226873733963539,
+        "starter_ip": 5.188161152374521,
+        "bullpen_ip": 3.663628179158226
+      },
+      "4": {
+        "team_games": 3055,
+        "games_led_after_6": 1279,
+        "bullpen_outs": 34063,
+        "bp_ra9": 4.50303848750844,
+        "bp_ra9_all": 4.550411342552074,
+        "blown_lead": 0.13682564503518374,
+        "ra_7_9": 1.3322411533420708,
+        "ra_7_plus": 1.4400393184796854,
+        "starter_ip": 5.101363884342607,
+        "bullpen_ip": 3.716639388979814
+      },
+      "5+": {
+        "team_games": 4645,
+        "games_led_after_6": 2047,
+        "bullpen_outs": 52947,
+        "bp_ra9": 4.4273329933707295,
+        "bp_ra9_all": 4.459803332832908,
+        "blown_lead": 0.13043478260869565,
+        "ra_7_9": 1.2894396551724139,
+        "ra_7_plus": 1.4165948275862068,
+        "starter_ip": 5.040473627556512,
+        "bullpen_ip": 3.79956942949408
+      }
+    },
+    "gaps": {
+      "1_minus_0": {
+        "bp_ra9": {
+          "within_team_gap": 0.02223922240645455,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.25207821575843514,
+          "within_team_ci": [
+            -0.7395017450326922,
+            0.7799680422207486
+          ],
+          "pooled_ci": [
+            -0.7953040090825302,
+            0.28923498344393367
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": 0.00330662000866316,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.2253856073333793,
+          "within_team_ci": [
+            -0.8075106948933423,
+            0.7852224544648643
+          ],
+          "pooled_ci": [
+            -0.8070025878707642,
+            0.33107503226271917
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.12267992424242423,
+          "team_seasons_used": 16,
+          "pooled_gap": 0.030173303074066418,
+          "within_team_ci": [
+            0.048875344352617076,
+            0.1872739109848484
+          ],
+          "pooled_ci": [
+            -0.02224622795646982,
+            0.08506551386599367
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": 0.03694409829914173,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.036018555372339556,
+          "within_team_ci": [
+            -0.24079926658744416,
+            0.2964166189439915
+          ],
+          "pooled_ci": [
+            -0.229703517689944,
+            0.15102592571030957
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": -0.020968406785118694,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.04784310380773693,
+          "within_team_ci": [
+            -0.2818989314025785,
+            0.24622006046348147
+          ],
+          "pooled_ci": [
+            -0.2508735626290436,
+            0.16025904274842032
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": -0.03270587527281285,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.11084734305010624,
+          "within_team_ci": [
+            -0.2146201581620375,
+            0.15685904149432073
+          ],
+          "pooled_ci": [
+            -0.25283607896856375,
+            0.024961133037000607
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": -0.0840452864669864,
+          "team_seasons_used": 34,
+          "pooled_gap": 0.033526184113265245,
+          "within_team_ci": [
+            -0.3153855781666421,
+            0.1445587446377558
+          ],
+          "pooled_ci": [
+            -0.13404335205938708,
+            0.20953515054077562
+          ]
+        }
+      },
+      "2_minus_0": {
+        "bp_ra9": {
+          "within_team_gap": 0.09183848378354782,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.06324334231528539,
+          "within_team_ci": [
+            -0.7413459969367032,
+            0.8978629471096788
+          ],
+          "pooled_ci": [
+            -0.6297154800777056,
+            0.4861206705269267
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": 0.06824844873702345,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.07985168555716005,
+          "within_team_ci": [
+            -0.8139702673145572,
+            0.9322590519655689
+          ],
+          "pooled_ci": [
+            -0.6751030824456294,
+            0.49039074194724525
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.07854815221543163,
+          "team_seasons_used": 16,
+          "pooled_gap": 0.028290830014967946,
+          "within_team_ci": [
+            0.012535110635163159,
+            0.13730544016849158
+          ],
+          "pooled_ci": [
+            -0.028550351074954218,
+            0.08122203042860136
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": 0.03681766984586768,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.049557604918471165,
+          "within_team_ci": [
+            -0.2539435456399019,
+            0.3146612204331835
+          ],
+          "pooled_ci": [
+            -0.25847703487053014,
+            0.15987008985262385
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": -0.014105386742158488,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.05853247794707306,
+          "within_team_ci": [
+            -0.3020432682938306,
+            0.28044171875446233
+          ],
+          "pooled_ci": [
+            -0.26264554897354103,
+            0.16008405430216827
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": -0.10882903655812033,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.23193289717564713,
+          "within_team_ci": [
+            -0.2748189720129326,
+            0.06481396384722891
+          ],
+          "pooled_ci": [
+            -0.36131777685093414,
+            -0.1008246330759282
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": 0.008522494497192942,
+          "team_seasons_used": 34,
+          "pooled_gap": 0.15657785201233754,
+          "within_team_ci": [
+            -0.17340296990952048,
+            0.17950098471155104
+          ],
+          "pooled_ci": [
+            0.006647690267374651,
+            0.30326341814367985
+          ]
+        }
+      },
+      "3_minus_0": {
+        "bp_ra9": {
+          "within_team_gap": -0.0719738131539981,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.25777901359852784,
+          "within_team_ci": [
+            -0.7944435623538416,
+            0.6372087690394469
+          ],
+          "pooled_ci": [
+            -0.7899210050316913,
+            0.27897863886133495
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": -0.1224394008520342,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.28423223580119394,
+          "within_team_ci": [
+            -0.8957830669642476,
+            0.6342684762069338
+          ],
+          "pooled_ci": [
+            -0.8360409227049912,
+            0.26759786542398617
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.04798666514514037,
+          "team_seasons_used": 16,
+          "pooled_gap": 0.016096528019313786,
+          "within_team_ci": [
+            -0.019859701103339015,
+            0.11577981033844023
+          ],
+          "pooled_ci": [
+            -0.03505091299498194,
+            0.06156685869488435
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": -0.047639593099971816,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.12171419374087278,
+          "within_team_ci": [
+            -0.30783697296629664,
+            0.19796617565813396
+          ],
+          "pooled_ci": [
+            -0.3115658931296237,
+            0.06907247831982653
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": -0.09710417007849538,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.12963820799899506,
+          "within_team_ci": [
+            -0.3759955150844325,
+            0.17358741065714198
+          ],
+          "pooled_ci": [
+            -0.330444695697614,
+            0.0732820771398718
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": -0.26687643895914637,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.29052101816811415,
+          "within_team_ci": [
+            -0.462354008430741,
+            -0.07478229019911735
+          ],
+          "pooled_ci": [
+            -0.4235776666072128,
+            -0.14944346683447873
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": 0.16213195983183862,
+          "team_seasons_used": 34,
+          "pooled_gap": 0.2130467838093888,
+          "within_team_ci": [
+            -0.06101325246970624,
+            0.3847593728681936
+          ],
+          "pooled_ci": [
+            0.06268785154336332,
+            0.35987664301331596
+          ]
+        }
+      },
+      "4_minus_0": {
+        "bp_ra9": {
+          "within_team_gap": 0.17893702675689474,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.1827239387763111,
+          "within_team_ci": [
+            -0.5502977385767467,
+            0.9272706002830687
+          ],
+          "pooled_ci": [
+            -0.7196727460216767,
+            0.34852071829514797
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": 0.17727559000807575,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.19303539475969345,
+          "within_team_ci": [
+            -0.55977543804969,
+            0.9391325787954512
+          ],
+          "pooled_ci": [
+            -0.7494110314973944,
+            0.34549239338155135
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.09532275188476814,
+          "team_seasons_used": 16,
+          "pooled_gap": 0.02196078017031887,
+          "within_team_ci": [
+            0.011832773604856614,
+            0.1731661673648418
+          ],
+          "pooled_ci": [
+            -0.03259383131181161,
+            0.07060937896881023
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": -0.009486732394999671,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.089270474564906,
+          "within_team_ci": [
+            -0.2773521150744791,
+            0.2667123661718243
+          ],
+          "pooled_ci": [
+            -0.2839862293646339,
+            0.114775008677256
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": -0.05563248599368677,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.11228626291566357,
+          "within_team_ci": [
+            -0.34740005273978297,
+            0.23811257097011523
+          ],
+          "pooled_ci": [
+            -0.31957967004557575,
+            0.10005703893690801
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": -0.31523211543745083,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.37731828620002794,
+          "within_team_ci": [
+            -0.49083652336238925,
+            -0.13730190444694876
+          ],
+          "pooled_ci": [
+            -0.506670644002308,
+            -0.2527679888426648
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": 0.16809252513829406,
+          "team_seasons_used": 34,
+          "pooled_gap": 0.2660579936309766,
+          "within_team_ci": [
+            -0.012298873387966452,
+            0.34902018483851516
+          ],
+          "pooled_ci": [
+            0.1289172964365188,
+            0.4098590829147347
+          ]
+        }
+      },
+      "5+_minus_0": {
+        "bp_ra9": {
+          "within_team_gap": 0.10981539771997215,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.25842943291402154,
+          "within_team_ci": [
+            -0.5621299180713808,
+            0.7702150577819104
+          ],
+          "pooled_ci": [
+            -0.7848049913279385,
+            0.2668003369701262
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": 0.07370111995547061,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.28364340447885983,
+          "within_team_ci": [
+            -0.635020469162068,
+            0.7514064799861924
+          ],
+          "pooled_ci": [
+            -0.819675630004872,
+            0.25657642972157085
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": 0.053182780488146286,
+          "team_seasons_used": 16,
+          "pooled_gap": 0.015569917743830777,
+          "within_team_ci": [
+            -0.014870091358515107,
+            0.10625010789093424
+          ],
+          "pooled_ci": [
+            -0.037358597769930224,
+            0.062479795251604
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": -0.06639537792878762,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.13207197273456295,
+          "within_team_ci": [
+            -0.2975689829429345,
+            0.1604545481168128
+          ],
+          "pooled_ci": [
+            -0.31155668533319736,
+            0.051181109994202625
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": -0.08865728727774323,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.13573075380914212,
+          "within_team_ci": [
+            -0.3302041489978054,
+            0.15224589417021298
+          ],
+          "pooled_ci": [
+            -0.327929414308485,
+            0.048810607989606396
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": -0.3758356196018056,
+          "team_seasons_used": 34,
+          "pooled_gap": -0.4382085429861231,
+          "within_team_ci": [
+            -0.5379132466587266,
+            -0.21566847790433358
+          ],
+          "pooled_ci": [
+            -0.5716263859928332,
+            -0.30303005184993825
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": 0.25764823375890217,
+          "team_seasons_used": 34,
+          "pooled_gap": 0.3489880341452425,
+          "within_team_ci": [
+            0.0647558458707394,
+            0.4475645519652387
+          ],
+          "pooled_ci": [
+            0.20233701942128862,
+            0.4979933343782627
+          ]
+        }
+      }
+    }
+  },
+  "exploratory_vulnerable_rules": {
+    "groups": {
+      "margin_floor": {
+        "team_games": 3750,
+        "games_led_after_6": 1629,
+        "bullpen_outs": 39966,
+        "bp_ra9": 4.567557423810238,
+        "bp_ra9_all": 4.623920809764811,
+        "blown_lead": 0.14119091467157766,
+        "ra_7_9": 1.3809396689802456,
+        "ra_7_plus": 1.502669514148425,
+        "starter_ip": 5.307644444444444,
+        "bullpen_ip": 3.5525333333333333
+      },
+      "severity_share": {
+        "team_games": 47,
+        "games_led_after_6": 24,
+        "bullpen_outs": 551,
+        "bp_ra9": 3.969147005444646,
+        "bp_ra9_all": 3.9476534296028882,
+        "blown_lead": 0.0,
+        "ra_7_9": 1.0869565217391304,
+        "ra_7_plus": 1.2391304347826086,
+        "starter_ip": 5.156028368794326,
+        "bullpen_ip": 3.9078014184397163
+      }
+    },
+    "gaps": {
+      "severity_share_minus_margin_floor": {
+        "bp_ra9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.5984104183655923,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.797112164171067,
+            0.6696095384710913
+          ]
+        },
+        "bp_ra9_all": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.6762673801619226,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -1.8707786340782329,
+            0.5959167791548553
+          ]
+        },
+        "blown_lead": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.14119091467157766,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.15939606487756394,
+            -0.12382514599793885
+          ]
+        },
+        "ra_7_9": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.2939831472411152,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.6807887874839045,
+            0.13672663239827493
+          ]
+        },
+        "ra_7_plus": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.26353907936581633,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.6805442706264907,
+            0.19222090491033547
+          ]
+        },
+        "starter_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": -0.15161607565011792,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.6023079238622729,
+            0.2595071080006444
+          ]
+        },
+        "bullpen_ip": {
+          "within_team_gap": NaN,
+          "team_seasons_used": 0,
+          "pooled_gap": 0.35526808510638297,
+          "within_team_ci": [
+            null,
+            null
+          ],
+          "pooled_ci": [
+            -0.15357140194859586,
+            0.9157295541046467
+          ]
+        }
+      }
+    }
+  },
+  "pass": {
+    "ra9_bar": {
+      "rule": "within-team vulnerable - fresh bullpen R/9 >= 0.4 and 95% CI excludes 0",
+      "gap": 0.04502258741846398,
+      "ci": [
+        -0.19013554492147347,
+        0.27395739502238026
+      ],
+      "passed": false
+    },
+    "availability_bar": {
+      "rule": "Unavailable same-day pitch rate <= 0.5 x Available rate and 95% CI of the ratio excludes 1",
+      "ratio": 0.0011771654265113002,
+      "ci": [
+        0.0,
+        0.0036973850378612194
+      ],
+      "unavailable_flags": 1620,
+      "passed": true
+    }
+  }
+}

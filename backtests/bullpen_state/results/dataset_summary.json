@@ -1,0 +1,59 @@
+{
+  "seasons": {
+    "2024": {
+      "team_games": 4858,
+      "team_games_missing_roster": 0,
+      "team_games_by_state": {
+        "fresh": 1285,
+        "stretched": 2366,
+        "vulnerable": 1207
+      },
+      "reliever_days": 40804,
+      "reliever_days_by_flag": {
+        "Available": 18770,
+        "Monitor": 11049,
+        "Limited": 8960,
+        "Unavailable": 556,
+        "Avoid": 1469
+      },
+      "reliever_days_pitch_count_unknown_scored_as_zero": 0
+    },
+    "2025": {
+      "team_games": 4860,
+      "team_games_missing_roster": 0,
+      "team_games_by_state": {
+        "fresh": 1209,
+        "stretched": 2397,
+        "vulnerable": 1254
+      },
+      "reliever_days": 40182,
+      "reliever_days_by_flag": {
+        "Available": 18224,
+        "Monitor": 11041,
+        "Limited": 8986,
+        "Avoid": 1423,
+        "Unavailable": 508
+      },
+      "reliever_days_pitch_count_unknown_scored_as_zero": 0
+    },
+    "2026": {
+      "team_games": 4858,
+      "team_games_missing_roster": 0,
+      "team_games_by_state": {
+        "fresh": 1148,
+        "stretched": 2366,
+        "vulnerable": 1344
+      },
+      "reliever_days": 40019,
+      "reliever_days_by_flag": {
+        "Available": 17847,
+        "Avoid": 1605,
+        "Monitor": 11023,
+        "Limited": 8978,
+        "Unavailable": 566
+      },
+      "reliever_days_pitch_count_unknown_scored_as_zero": 0
+    }
+  },
+  "missing_boxscores": 0
+}

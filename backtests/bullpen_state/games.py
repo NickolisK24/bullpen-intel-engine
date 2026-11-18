@@ -151,6 +151,12 @@ def parse_boxscore(game: Game, box: dict) -> list[Appearance]:
                 blown_save=bool(_int(st.get('blownSaves'))),
                 inherited_runners=_int(st.get('inheritedRunners')),
                 inherited_runners_scored=_int(st.get('inheritedRunnersScored')),
-                position=((p.get('position') or {}).get('abbreviation') or ''),
+                # Boxscore 'position' is the position held at game end, so a position
+                # player who finishes on the mound reads 'P'. The first entry of
+                # allPositions is the position he entered the game at.
+                position=(
+                    ((p.get('allPositions') or [{}])[0].get('abbreviation'))
+                    or (p.get('position') or {}).get('abbreviation') or ''
+                ),
             ))
     return out
