@@ -162,6 +162,8 @@ README.
 
 ## Documentation
 
+**Repository recovery (November 18, 2026):** For the verified current-state inspection, unresolved PRs, branch retirement gates, and developer handoff, read [Repository Handoff Baseline](docs/current/REPOSITORY_HANDOFF_BASELINE.md). This is a recovery snapshot, not a replacement for the canonical roadmap.
+
 Start here:
 
 - [Documentation hub](docs/README.md)
