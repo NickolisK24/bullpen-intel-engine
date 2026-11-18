@@ -1130,7 +1130,9 @@ def require_transactional_publication_proof(
             resolver_kwargs['arm_reads_out'] = arm_reads
         if candidate_dates:
             # This snapshot IS the publication under proof: its reads describe its
-            # own governed dates at any data age (see resolve_readiness_reference_dates).
+            # own governed dates past the 14-day freshness window, while the
+            # canonical trust verdict (including its 30-day boundary) still decides
+            # (see resolve_readiness_reference_dates).
             resolver_kwargs['publication_candidate'] = True
         readiness = resolver(team_id, **resolver_kwargs)
         if not isinstance(readiness, Mapping):
