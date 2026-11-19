@@ -147,6 +147,10 @@ def seed(conn):
         observation(conn, date(2026, 9, 25) + timedelta(days=offset), offset in (0, 3, 6))
     for day in (25, 26):
         observation(conn, date(2026, 9, day), True, "40Man")
+    seed_atomic_publication(conn)
+
+
+def seed_atomic_publication(conn):
     # Installed SP-11 generation and pointer, independent of the public dashboard pointer.
     conn.exec_driver_sql("""
         INSERT INTO canonical_impact_plans(id,plan_fingerprint,rules_version,authority_class,baseball_date,
@@ -296,7 +300,7 @@ def test_burgos_history(fenced_database_url):
             seed(conn)
             assert (
                 conn.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one()
-                == "c71b09e45a82"
+                == "de608f29a341"
             )
             assert conn.exec_driver_sql(
                 "SELECT relrowsecurity FROM pg_class WHERE oid='repair_requests'::regclass"

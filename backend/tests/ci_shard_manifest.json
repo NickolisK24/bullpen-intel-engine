@@ -814,7 +814,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 533.5,
+      "measured_seconds": 536.5,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1259,6 +1259,10 @@
         {
           "path": "tests/test_roster_snapshot_team_precedence.py",
           "measured_seconds": 2.0
+        },
+        {
+          "path": "tests/test_murphy_transaction_recovery.py",
+          "measured_seconds": 3.0
         },
         {
           "path": "tests/test_burgos_roster_history.py",
