@@ -277,6 +277,15 @@ def _fence(since):
         return None
 
 
+def outcome_no_candidate(reason, historical_snapshot_id, data_through):
+    return _base(
+        STATUS_WITHHELD, withheld_reason=reason, candidate_persisted=False,
+        historical_snapshot_id=historical_snapshot_id, data_through=data_through,
+        serving_snapshot_id=None,
+        publication_critical_complete=True,
+    )
+
+
 def outcome_published(snapshot, *, fence_since=None) -> dict:
     snapshot_id = getattr(snapshot, 'id', None)
     return _base(

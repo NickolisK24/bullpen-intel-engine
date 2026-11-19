@@ -43,6 +43,8 @@ from services import sync_metadata  # noqa: E402
 from services.sync import POSTGAME_SCOPE_SOURCE  # noqa: E402
 from services.sync_publication_proof import (  # noqa: E402
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
+    PROOF_NO_CANDIDATE_EXPECTED,
+    daily_publication_requirement_met,
 )
 
 
@@ -157,7 +159,7 @@ def _validate_production_outcome(summary, cycle_kind, runner_exit_code, failures
     proof = summary.get('publication_proof') or {}
     verified = proof.get('verified') is True
     if cycle_kind == CYCLE_DAILY:
-        if not verified:
+        if not daily_publication_requirement_met(proof):
             _fail(
                 failures, 'daily_publication_proof',
                 expected='verified', observed=proof.get('verified'),
@@ -904,6 +906,8 @@ def _render_failed(decision, cycle) -> str:
 
 def _publication_text(decision) -> str:
     proof = decision['publication_proof']
+    if proof.get('league_publication_status') == PROOF_NO_CANDIDATE_EXPECTED:
+        return PROOF_NO_CANDIDATE_EXPECTED
     if proof.get('verified') is True:
         return 'verified'
     return str(proof.get('league_publication_status') or 'unverified')

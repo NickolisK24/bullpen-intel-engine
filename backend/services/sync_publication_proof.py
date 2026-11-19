@@ -43,6 +43,45 @@ _GENUINE_WITHHOLDING_REASONS = frozenset({
 })
 
 
+OFFSEASON_WITHHELD = 'season_complete_workload_expired'
+
+
+def daily_publication_proof(sync):
+    outcome = sync.get('publication_outcome') or {}
+    if (
+        outcome.get('withheld_reason') == OFFSEASON_WITHHELD
+        and outcome.get('status') == 'withheld'
+        and outcome.get('candidate_persisted') is False
+        and _positive_int(outcome.get('historical_snapshot_id')) is not None
+        and sync.get('status') == 'success'
+        and sync.get('dashboard_snapshot_id') is None
+        and (sync.get('publication_critical') or {}).get('complete') is True
+    ):
+        return {
+            'status': 'withheld', 'verified': False, 'candidate_required': False,
+            'candidate_snapshot_id': None, 'served_snapshot_id': None,
+            'historical_snapshot_id': outcome['historical_snapshot_id'],
+            'data_through': outcome['data_through'],
+            'league_publication_status': OFFSEASON_WITHHELD,
+            'reason_codes': [OFFSEASON_WITHHELD],
+        }
+    return build_candidate_publication_proof(
+        sync.get('dashboard_snapshot_id'), candidate_required=True,
+        publication_critical=sync.get('publication_critical'), sync_status=sync.get('status'),
+    )
+
+
+def daily_publication_requirement_met(proof):
+    return proof.get('verified') is True or (
+        proof.get('league_publication_status') == OFFSEASON_WITHHELD
+        and proof.get('verified') is False
+        and proof.get('candidate_required') is False
+        and _positive_int(proof.get('historical_snapshot_id')) is not None
+        and proof.get('status') == 'withheld'
+        and proof.get('candidate_snapshot_id') is None
+    )
+
+
 def build_candidate_publication_proof(
     snapshot_id,
     *,
@@ -95,7 +134,7 @@ def build_candidate_publication_proof(
             'candidate_required': False,
             'candidate_snapshot_id': None,
             'served_snapshot_id': _snapshot_id(served_snapshot_loader()),
-            'league_publication_status': LEAGUE_PUBLICATION_PUBLISHED,
+            'league_publication_status': PROOF_NO_CANDIDATE_EXPECTED,
             'reason_codes': [],
         }
 

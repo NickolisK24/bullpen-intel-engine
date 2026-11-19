@@ -5694,6 +5694,58 @@ def _log_cancelled_slate_exclusions(snapshot, *, published):
     )
 
 
+def _expired_season_publication_outcome(run, schedule):
+    """Withhold only after ingestion and a confirmed empty league schedule."""
+    from models.team_state_publication_proof import TeamStatePublicationProof
+    from services import dashboard_snapshot, schedule_absence
+    from services.availability_reference_date import product_current_date
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.sync_publication_proof import OFFSEASON_WITHHELD
+    from services.team_state_public_vocabulary import TEAM_STATE_SEASON_COMPLETE
+
+    today = product_current_date()
+    through = run.latest_workload_date
+    summary = schedule.get('summary') or {}
+    absence = summary.get('absence_reconciliation') or {}
+    window = [day.isoformat() for day in schedule_authority.rolling_window(today)]
+    if (
+        through is None
+        or sync_metadata.build_degradation_block((today - through).days)['state']
+        != sync_metadata.DEGRADATION_UNAVAILABLE
+        or schedule.get('status') != 'ok'
+        or summary.get('games_seen') != 0
+        or absence.get('date_range') != window
+        or absence.get('response_consistent') is not True
+        or absence.get('status') != schedule_absence.STATUS_NOTHING_ABSENT
+    ):
+        return None
+
+    prior = dashboard_snapshot.get_latest_dashboard_snapshot()
+    if prior is None or prior.data_through != through:
+        return None
+    # The rolling window can be empty while an intervening game is unresolved.
+    intervening = db.session.query(ScheduledGame.status_state, ScheduledGame.status_code).filter(
+        ScheduledGame.game_date > through, ScheduledGame.game_date <= today,
+    )
+    if any(not schedule_absence.is_unplayed_terminal_schedule_row(*row) for row in intervening):
+        return None
+    prior_proof = TeamStatePublicationProof.query.filter_by(
+        snapshot_id=prior.id, sync_run_id=prior.sync_run_id, data_through=through,
+        captured_team_count=len(MLB_TEAM_IDS),
+    ).first()
+    if prior_proof is None or prior_proof.overall_verdict not in ('PASS', 'PASS_WITH_INCONCLUSIVE'):
+        return None
+    teams = prior_proof.proof.get('teams') or []
+    completed = {
+        team['team_id'] for team in teams
+        if team['final_team_state'].get('withholding_outcome') == TEAM_STATE_SEASON_COMPLETE
+        and team['final_team_state']['published_public_state'] is None
+    }
+    if len(teams) != len(MLB_TEAM_IDS) or completed != set(MLB_TEAM_IDS):
+        return None
+    return publication_outcome.outcome_no_candidate(OFFSEASON_WITHHELD, prior.id, through)
+
+
 def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
@@ -5715,6 +5767,7 @@ def complete_sync_run_with_snapshot(
     raise_on_withheld=True,
     reconciler=None,
     preparation=None,
+    daily_schedule=None,
 ):
     """Finish a sync run and publish its Dashboard candidate.
 
@@ -5758,6 +5811,18 @@ def complete_sync_run_with_snapshot(
             commit=False,
             rollback_before=False,
         )
+        if (
+            daily_schedule and run is not None and job_name == sync_metadata.JOB_DAILY_SYNC
+            and final_status == sync_metadata.STATUS_SUCCESS
+            and publication_critical_complete is True
+            and not (records_processed or records_failed or errors)
+        ):
+            outcome = _expired_season_publication_outcome(run, daily_schedule)
+            if outcome is not None:
+                run.publication_outcome = _with_preparation(outcome, preparation)
+                db.session.commit()
+                return run, None
+
         log_memory_checkpoint('publication_before', job=job_name, sync_run_id=sync_run_id)
 
         def build_candidate():
@@ -7436,6 +7501,8 @@ def run_daily_sync(
                         source=source,
                         started_at=started_at.replace(tzinfo=None),
                         snapshot_source='scheduled_sync',
+                        daily_schedule=(None if game_lane['completed_game_pks']
+                                        else status.get('slate_schedule_refresh')),
                         reconciler=publication_reconciliation.default_reconciler(),
                         preparation=_preparation_for(status),
                     )
@@ -7446,6 +7513,10 @@ def run_daily_sync(
                     status['dashboard_snapshot_id'] = withheld.snapshot_id
                     status['publication_withheld_reason'] = withheld.reason_code
                     raise
+                if snapshot is None:
+                    status['publication_outcome'] = completed_run.publication_outcome
+                    status['message'] = 'Season complete; expired workload retained as history.'
+                    return {'status': 'withheld', 'snapshot_id': None}
                 status['dashboard_snapshot_id'] = snapshot.id
                 return {'status': final_status, 'snapshot_id': snapshot.id}
 
@@ -7457,7 +7528,9 @@ def run_daily_sync(
                 _complete_sync_phase,
             )
 
-            if include_internal_enrichment:
+            if status.get('publication_outcome'):
+                status['internal_enrichment'] = 'skipped_publication_withheld'
+            elif include_internal_enrichment:
                 active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
                 _run_post_publish_internal_daily_sync_phase(
                     run_logger,

@@ -493,3 +493,96 @@ def test_ledger_withholding_names_the_deficient_games(app, daily_candidate):
         assert outcome['gate_evidence']['games'][0]['blocker'] == (
             'final_game_without_appearance_rows'
         )
+
+
+@pytest.mark.parametrize(
+    ('age', 'case', 'withheld'),
+    [(29, 'empty', False), (30, 'empty', True), (35, 'empty', True),
+     (35, 'regular_season_final', False), (35, 'missing_club', False),
+     (35, 'unconfirmed_schedule', False), (35, 'current_game', False)],
+)
+def test_completed_season_daily_publication_boundary(app, monkeypatch, age, case, withheld):
+    from models.game_log import GameLog
+    from models.scheduled_game import ScheduledGame
+    from services import availability_reference_date, schedule_authority
+    from services.sync_publication_proof import daily_publication_proof, daily_publication_requirement_met
+
+    through = date(2026, 10, 28)
+    today = through + timedelta(days=age)
+    monkeypatch.setattr(availability_reference_date, 'product_current_date', lambda: today)
+    monkeypatch.setattr(dashboard_snapshot, 'product_current_date', lambda: today)
+    previous_run = _create_sync_run(through)
+    prior = _serving_snapshot(previous_run)
+    prior.data_through = through
+    prior.availability_reference_date = through + timedelta(days=2)
+    payload = _minimal_dashboard_payload()
+    payload['freshness'].update(
+        data_through=through.isoformat(), availability_reference_date='2026-10-30',
+    )
+    payload['freshness']['slate_coverage']['slate_date'] = through.isoformat()
+    prior.payload = payload
+    clubs = sorted(MLB_TEAM_IDS)
+    if case == 'missing_club':
+        clubs.pop()
+    db.session.add(TeamStatePublicationProof(
+        snapshot_id=prior.id, sync_run_id=previous_run.id, data_through=through,
+        captured_team_count=len(clubs), overall_verdict='PASS_WITH_INCONCLUSIVE',
+        proof={'teams': [
+            {'team_id': club, 'final_team_state': {
+                'withholding_outcome': 'season_complete', 'published_public_state': None,
+            }} for club in clubs
+        ]},
+    ))
+    pitcher = Pitcher(mlb_id=700001, full_name='Historical Pitcher')
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=1001, game_date=through,
+                           innings_pitched=1.0, innings_pitched_outs=3))
+    if case == 'regular_season_final':
+        db.session.add(ScheduledGame(team_id=108, game_pk=1002, game_type='R',
+                                     game_date=today - timedelta(days=4), status_state='final'))
+    run = _create_sync_run(through, stage='started')
+    db.session.commit()
+    window = [d.isoformat() for d in schedule_authority.rolling_window(today)]
+    schedule = {'status': 'ok', 'summary': {
+        'games_seen': int(case == 'current_game'), 'absence_reconciliation': {
+            'response_consistent': case != 'unconfirmed_schedule',
+            'date_range': window, 'status': 'nothing_absent',
+        },
+    }}
+    # A contradictory candidate proves that falling through to the builder
+    # retains its normal failure semantics. A governed no-op never calls it.
+    def invalid_candidate(**kwargs):
+        raise ValueError('contradictory candidate')
+
+    monkeypatch.setattr(dashboard_snapshot, 'build_bullpen_dashboard_snapshot', invalid_candidate)
+    kwargs = dict(final_status='success', daily_schedule=schedule, publication_critical_complete=True)
+    if withheld:
+        finished, candidate = sync_service.complete_sync_run_with_snapshot(run.id, **kwargs)
+        assert candidate is None
+        assert finished.status == 'success'
+        assert finished.stage == sync_metadata.STAGE_DASHBOARD_SNAPSHOT
+        assert finished.published_dashboard_snapshot_id is None
+        proof = daily_publication_proof({
+            'status': finished.status, 'publication_outcome': finished.publication_outcome,
+            'publication_critical': {'complete': True},
+        })
+        assert daily_publication_requirement_met(proof)
+        assert proof['verified'] is False
+        assert proof['historical_snapshot_id'] == prior.id
+        assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
+        from scripts import validate_game_driven_shadow_cycle as validator
+        from tests.test_game_driven_shadow_activation_validator import _summary
+        summary = _summary('daily')
+        summary['publication_proof'] = proof
+        decision = validator.validate_cycle(summary, cycle_kind='daily', runner_exit_code=0)
+        assert decision['result'] == validator.RESULT_PASS
+        proof['historical_snapshot_id'] = None
+        assert not daily_publication_requirement_met(proof)
+    else:
+        with pytest.raises(ValueError, match='contradictory candidate'):
+            sync_service.complete_sync_run_with_snapshot(run.id, **kwargs)
+        assert run.status == 'failed'
+    assert DashboardSnapshot.query.count() == 1
+    assert prior.payload == payload
+    assert previous_run.published_dashboard_snapshot_id == prior.id

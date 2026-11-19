@@ -116,7 +116,10 @@ def lanes(monkeypatch):
         sync_due, 'build_candidate_publication_proof',
         lambda *_a, **_k: {'verified': state['proof_verified']},
     )
-    monkeypatch.setattr(sync_due, '_current_published_snapshot', lambda: state['published'])
+    monkeypatch.setattr(sync_due, 'daily_publication_proof',
+                        lambda _status: {'verified': state['proof_verified']})
+    monkeypatch.setattr(sync_due.dashboard_snapshot_service, 'get_latest_valid_dashboard_snapshot',
+                        lambda: state['published'])
 
     def ensure_publication(snapshot, *, source):
         calls.append(('tonight_v1_publication', snapshot.id, source))

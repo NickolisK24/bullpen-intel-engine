@@ -186,6 +186,8 @@ def _prove(candidate):
             date(2026, 10, 28), date(2026, 10, 30), date(2026, 11, 11),
             id='last_day_inside_window',
         ),
+        pytest.param(date(2026, 10, 28), date(2026, 10, 30), date(2026, 11, 26),
+                     id='last_eligible_day_age_29'),
         pytest.param(
             # The first failing daily run (data age 15).
             date(2026, 10, 28), date(2026, 10, 30), date(2026, 11, 12),
