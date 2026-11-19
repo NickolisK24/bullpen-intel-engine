@@ -20,7 +20,7 @@ from services.evidence_contract import (
     build_evidence_object,
     mark_dependent_evidence_for_recompute,
 )
-from services.evidence_language import EvidenceLanguageError
+from services.evidence_language import EvidenceLanguageError, mask_proper_nouns
 from services.evidence_rules import (
     ClaimTemplate,
     ClaimTemplateRegistry,
@@ -763,8 +763,8 @@ def _register_roster_depth_template(registry, template):
     return registry.register(template)
 
 
-def _assert_text_has_no_roster_depth_forbidden_terms(text):
-    lowered = f' {text or ""} '.lower()
+def _assert_text_has_no_roster_depth_forbidden_terms(text, proper_nouns=()):
+    lowered = f' {mask_proper_nouns(text or "", proper_nouns)} '.lower()
     for term in _FORBIDDEN_ROSTER_DEPTH_TERMS:
         pattern = r'\b' + re.escape(term).replace(r'\ ', r'\s+') + r'\b'
         if re.search(pattern, lowered):
@@ -1158,6 +1158,7 @@ def _depth_delta_object(
     reasons = []
     current_census = _analyze_census(current)
     prior_census = _analyze_census(prior) if prior else None
+    inserted_names = ()
     if current.snapshot_date != product_date:
         state = EvidenceObject.COMPLETENESS_UNKNOWN
         reasons.append(REASON_SNAPSHOT_STALE if current.snapshot_date else REASON_SNAPSHOT_MISSING)
@@ -1185,6 +1186,9 @@ def _depth_delta_object(
         additions = sorted(current_ids - prior_ids)
         removals = sorted(prior_ids - current_ids)
         change = len(current_ids) - len(prior_ids)
+        inserted_names = tuple(
+            pitcher_names[pid] for pid in additions + removals if pitcher_names.get(pid)
+        )
         claim = (
             f'Active-pitcher census changed by {change:+d} for team {team_id}: '
             f'{_names(additions, pitcher_names) or "no additions"}, '
@@ -1222,6 +1226,7 @@ def _depth_delta_object(
         templates=templates,
         sync_run_id=sync_run_id,
         source=source,
+        proper_nouns=inserted_names,
     )
 
 
@@ -1268,6 +1273,7 @@ def _explained_changes_object(team_id, product_date, changes, registry, template
         templates=templates,
         sync_run_id=sync_run_id,
         source=source,
+        proper_nouns=tuple(change['name'] for change in changes if change.get('name')),
     )
 
 
@@ -1318,6 +1324,7 @@ def _unexplained_changes_object(
         templates=templates,
         sync_run_id=sync_run_id,
         source=source,
+        proper_nouns=tuple(change['name'] for change in changes if change.get('name')),
     )
 
 
@@ -1666,8 +1673,11 @@ def _build_object(
     state=EvidenceObject.COMPLETENESS_COMPLETE,
     reason_codes=None,
     window_days=None,
+    proper_nouns=(),
 ):
-    _assert_text_has_no_roster_depth_forbidden_terms(claim)
+    # ``proper_nouns`` are the exact pitcher names this module inserted into
+    # ``claim``; a name such as "Will Vest" is not authored language.
+    _assert_text_has_no_roster_depth_forbidden_terms(claim, proper_nouns)
     if not cited_inputs:
         return None
     rule = registry.get(rule_id, RULE_VERSION)
@@ -1689,6 +1699,7 @@ def _build_object(
         registry=registry,
         sync_run_id=sync_run_id,
         source=EVIDENCE_SOURCE,
+        claim_proper_nouns=tuple(proper_nouns or ()),
     )
     if state != EvidenceObject.COMPLETENESS_COMPLETE or reason_codes:
         evidence.completeness_state = state
