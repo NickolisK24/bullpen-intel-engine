@@ -5700,7 +5700,6 @@ def _expired_season_publication_outcome(run, schedule):
     from services import dashboard_snapshot, schedule_absence
     from services.availability_reference_date import product_current_date
     from services.mlb_club_directory import MLB_TEAM_IDS
-    from services.sync_publication_proof import OFFSEASON_WITHHELD
     from services.team_state_public_vocabulary import TEAM_STATE_SEASON_COMPLETE
 
     today = product_current_date()
@@ -5743,7 +5742,7 @@ def _expired_season_publication_outcome(run, schedule):
     }
     if len(teams) != len(MLB_TEAM_IDS) or completed != set(MLB_TEAM_IDS):
         return None
-    return publication_outcome.outcome_no_candidate(OFFSEASON_WITHHELD, prior.id, through)
+    return publication_outcome.outcome_no_candidate(prior.id, through)
 
 
 def complete_sync_run_with_snapshot(

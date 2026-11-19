@@ -87,7 +87,7 @@ def main(argv=None):
     from app import app
     from services import sync as sync_service
     from services import sync_metadata
-    from services.sync_publication_proof import (
+    from services.publication_outcome import (
         daily_publication_proof, daily_publication_requirement_met,
     )
     from utils.summary_output import (

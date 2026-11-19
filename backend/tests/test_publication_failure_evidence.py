@@ -505,7 +505,7 @@ def test_completed_season_daily_publication_boundary(app, monkeypatch, age, case
     from models.game_log import GameLog
     from models.scheduled_game import ScheduledGame
     from services import availability_reference_date, schedule_authority
-    from services.sync_publication_proof import daily_publication_proof, daily_publication_requirement_met
+    from services.publication_outcome import daily_publication_proof, daily_publication_requirement_met
 
     through = date(2026, 10, 28)
     today = through + timedelta(days=age)

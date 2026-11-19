@@ -41,10 +41,10 @@ from services import game_driven_ingestion  # noqa: E402
 from services import pitcher_identity_reconciliation as pitcher_identity  # noqa: E402
 from services import sync_metadata  # noqa: E402
 from services.sync import POSTGAME_SCOPE_SOURCE  # noqa: E402
+from services.publication_outcome import daily_publication_requirement_met  # noqa: E402
 from services.sync_publication_proof import (  # noqa: E402
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
     PROOF_NO_CANDIDATE_EXPECTED,
-    daily_publication_requirement_met,
 )
 
 

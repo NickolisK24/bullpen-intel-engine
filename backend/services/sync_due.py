@@ -22,11 +22,10 @@ from services.sync_execution_context import (
     MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SOURCE_EXTERNAL_SCHEDULE,
     SOURCE_INCIDENT_RECOVERY, SyncExecutionContext,
 )
+from services.publication_outcome import daily_publication_proof, daily_publication_requirement_met
 from services.sync_publication_proof import (
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
     build_candidate_publication_proof,
-    daily_publication_proof,
-    daily_publication_requirement_met,
     PROOF_NO_CANDIDATE_EXPECTED,
 )
 from utils.db import db
@@ -274,6 +273,8 @@ def _run_postgame(app, context, guard, *, public_only):
         status.get('dashboard_snapshot_id'),
         candidate_required=changed_workload,
     )
+    if proof.get('status') == PROOF_NO_CANDIDATE_EXPECTED:
+        proof['league_publication_status'] = PROOF_NO_CANDIDATE_EXPECTED
     publication_ok = (
         proof.get('verified') is True
         or proof.get('league_publication_status')
