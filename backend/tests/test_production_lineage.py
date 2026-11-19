@@ -39,6 +39,7 @@ PUBLICATION_OUTCOME_TARGET = 'd4a8f2c6e9b3'
 # WP-4: two nullable schedule-absence columns on scheduled_games.
 SCHEDULE_ABSENCE_TARGET = 'a7c3e9f1d2b5'
 ROSTER_HISTORY_TARGET = 'c71b09e45a82'
+TRANSACTION_RECOVERY_TARGET = 'de608f29a341'
 
 
 def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path):
@@ -53,7 +54,8 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
                 assert revision not in revisions, (revision, path, revisions.get(revision))
                 revisions[revision] = path.name
     script = ScriptDirectory(str(BACKEND / 'migrations'))
-    assert script.get_heads() == [ROSTER_HISTORY_TARGET]
+    assert script.get_heads() == [TRANSACTION_RECOVERY_TARGET]
+    assert script.get_revision(TRANSACTION_RECOVERY_TARGET).down_revision == ROSTER_HISTORY_TARGET
     assert script.get_revision(ROSTER_HISTORY_TARGET).down_revision == SCHEDULE_ABSENCE_TARGET
     receipt_extension = list(script.iterate_revisions(RECEIPT_TARGET, CURRENT_TARGET))
     assert [revision.revision for revision in receipt_extension] == [RECEIPT_TARGET]
@@ -93,7 +95,7 @@ def test_history_is_single_linear_extension_with_distinct_revision_ids(tmp_path)
     for revision, name in revisions.items():
         if revision not in promoted | {
             PREVIOUS_TARGET, CURRENT_TARGET, RECEIPT_TARGET, TONIGHT_V1_TARGET,
-            SEC01_RLS_TARGET, PUBLICATION_OUTCOME_TARGET, SCHEDULE_ABSENCE_TARGET, ROSTER_HISTORY_TARGET,
+            SEC01_RLS_TARGET, PUBLICATION_OUTCOME_TARGET, SCHEDULE_ABSENCE_TARGET, ROSTER_HISTORY_TARGET, TRANSACTION_RECOVERY_TARGET,
         }:
             shutil.copyfile(BACKEND / 'migrations/versions' / name, original / 'versions' / name)
     assert ScriptDirectory(str(original)).get_heads() == [MANIFEST['common_revision']]
@@ -383,14 +385,21 @@ def test_fresh_and_existing_postgres_preserve_history_data_and_normal_startup(po
     assert before[1:] == after[1:]
     assert {k: v for k, v in before[0].items() if k != 'alembic_version'} == {
         k: v for k, v in after[0].items() if k != 'alembic_version'}
+    result = _flask(existing, 'upgrade', TRANSACTION_RECOVERY_TARGET)
+    assert ROSTER_HISTORY_TARGET + ' -> ' + TRANSACTION_RECOVERY_TARGET in result.stderr
+    after_recovery = _fingerprint(existing)
+    assert before[1:] == after_recovery[1:]
+    assert {k: v for k, v in before[0].items() if k != 'alembic_version'} == {
+        k: v for k, v in after_recovery[0].items() if k != 'alembic_version'}
+    before = after_recovery
     for _ in range(2):
         result = _flask(existing, 'upgrade')
         assert 'Running upgrade' not in result.stderr
         assert _fingerprint(existing) == before
     result = _flask(fresh, 'upgrade')
     assert 'Running upgrade' in result.stderr
-    assert _flask(fresh, 'heads').stdout.strip().endswith(ROSTER_HISTORY_TARGET + ' (head)')
-    assert ROSTER_HISTORY_TARGET + ' (head)' in _flask(fresh, 'current').stdout
+    assert _flask(fresh, 'heads').stdout.strip().endswith(TRANSACTION_RECOVERY_TARGET + ' (head)')
+    assert TRANSACTION_RECOVERY_TARGET + ' (head)' in _flask(fresh, 'current').stdout
     assert _flask(fresh, 'history').returncode == 0
     # Production main runtime, real migrations and real Daily Edition helper.
     # The custom server probe exits instead of leaving a background web process.
