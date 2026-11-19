@@ -87,7 +87,9 @@ def main(argv=None):
     from app import app
     from services import sync as sync_service
     from services import sync_metadata
-    from services.sync_publication_proof import build_candidate_publication_proof
+    from services.publication_outcome import (
+        daily_publication_proof, daily_publication_requirement_met,
+    )
     from utils.summary_output import (
         SummaryOutputError, serialize_summary, write_summary,
     )
@@ -99,12 +101,7 @@ def main(argv=None):
         include_internal_enrichment=not args.public_only,
     )
     with app.app_context():
-        publication_proof = build_candidate_publication_proof(
-            status.get('dashboard_snapshot_id'),
-            candidate_required=True,
-            publication_critical=status.get('publication_critical'),
-            sync_status=status.get('status'),
-        )
+        publication_proof = daily_publication_proof(status)
 
     summary = {
         'status': status.get('status'),
@@ -119,7 +116,7 @@ def main(argv=None):
 
     sync_succeeded = status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
     exit_code = (
-        0 if sync_succeeded and publication_proof.get('verified') is True else 1
+        0 if sync_succeeded and daily_publication_requirement_met(publication_proof) else 1
     )
 
     # Durable evidence is written BEFORE the exit code is returned, and a

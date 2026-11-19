@@ -277,6 +277,58 @@ def _fence(since):
         return None
 
 
+OFFSEASON_WITHHELD = 'season_complete_workload_expired'
+
+
+def daily_publication_proof(sync):
+    from services.sync_publication_proof import build_candidate_publication_proof
+
+    outcome = sync.get('publication_outcome') or {}
+    if (
+        outcome.get('withheld_reason') == OFFSEASON_WITHHELD
+        and outcome.get('status') == 'withheld'
+        and outcome.get('candidate_persisted') is False
+        and type(outcome.get('historical_snapshot_id')) is int
+        and outcome['historical_snapshot_id'] > 0
+        and sync.get('status') == 'success'
+        and sync.get('dashboard_snapshot_id') is None
+        and (sync.get('publication_critical') or {}).get('complete') is True
+    ):
+        return {
+            'status': 'withheld', 'verified': False, 'candidate_required': False,
+            'candidate_snapshot_id': None, 'served_snapshot_id': None,
+            'historical_snapshot_id': outcome['historical_snapshot_id'],
+            'data_through': outcome['data_through'],
+            'league_publication_status': OFFSEASON_WITHHELD,
+            'reason_codes': [OFFSEASON_WITHHELD],
+        }
+    return build_candidate_publication_proof(
+        sync.get('dashboard_snapshot_id'), candidate_required=True,
+        publication_critical=sync.get('publication_critical'), sync_status=sync.get('status'),
+    )
+
+
+def daily_publication_requirement_met(proof):
+    return proof.get('verified') is True or (
+        proof.get('league_publication_status') == OFFSEASON_WITHHELD
+        and proof.get('verified') is False
+        and proof.get('candidate_required') is False
+        and type(proof.get('historical_snapshot_id')) is int
+        and proof['historical_snapshot_id'] > 0
+        and proof.get('status') == 'withheld'
+        and proof.get('candidate_snapshot_id') is None
+    )
+
+
+def outcome_no_candidate(historical_snapshot_id, data_through):
+    return _base(
+        STATUS_WITHHELD, withheld_reason=OFFSEASON_WITHHELD, candidate_persisted=False,
+        historical_snapshot_id=historical_snapshot_id, data_through=data_through,
+        serving_snapshot_id=None,
+        publication_critical_complete=True,
+    )
+
+
 def outcome_published(snapshot, *, fence_since=None) -> dict:
     snapshot_id = getattr(snapshot, 'id', None)
     return _base(

@@ -22,9 +22,11 @@ from services.sync_execution_context import (
     MODE_DAILY, MODE_MORNING, MODE_POSTGAME, SOURCE_EXTERNAL_SCHEDULE,
     SOURCE_INCIDENT_RECOVERY, SyncExecutionContext,
 )
+from services.publication_outcome import daily_publication_proof, daily_publication_requirement_met
 from services.sync_publication_proof import (
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
     build_candidate_publication_proof,
+    PROOF_NO_CANDIDATE_EXPECTED,
 )
 from utils.db import db
 
@@ -177,7 +179,7 @@ def _ensure_current_tonight_v1(context, *, include_publication_edition=True):
     )
 
     reference_date = tonight_reference_date(context)
-    snapshot = _current_published_snapshot()
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None:
         return {
             'status': 'skipped',
@@ -240,17 +242,12 @@ def _run_daily(app, context, guard, *, days_back, public_only):
         include_internal_enrichment=not public_only,
         preacquired_writer_guard=guard,
     )
-    proof = build_candidate_publication_proof(
-        status.get('dashboard_snapshot_id'),
-        candidate_required=True,
-        publication_critical=status.get('publication_critical'),
-        sync_status=status.get('status'),
-    )
+    proof = daily_publication_proof(status)
     schedule = _refresh_schedule_proof(proof, status, context)
     proof['tonight_v1'] = _ensure_current_tonight_v1(context)
     successful = (
         status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
-        and proof.get('verified') is True
+        and daily_publication_requirement_met(proof)
         and schedule.get('status') == 'ok'
     )
     return status, proof, successful
@@ -276,6 +273,8 @@ def _run_postgame(app, context, guard, *, public_only):
         status.get('dashboard_snapshot_id'),
         candidate_required=changed_workload,
     )
+    if proof.get('status') == PROOF_NO_CANDIDATE_EXPECTED:
+        proof['league_publication_status'] = PROOF_NO_CANDIDATE_EXPECTED
     publication_ok = (
         proof.get('verified') is True
         or proof.get('league_publication_status')
@@ -392,6 +391,8 @@ def run_due_sync(app, context: SyncExecutionContext, *, days_back=7, public_only
             attempt.outcome = OUTCOME_EXECUTED if successful else OUTCOME_FAILED
             if proof.get('schedule_refresh_verified') is False:
                 attempt.publication_outcome = 'schedule_refresh_not_verified'
+            elif proof.get('status') == PROOF_NO_CANDIDATE_EXPECTED:
+                attempt.publication_outcome = PROOF_NO_CANDIDATE_EXPECTED
             else:
                 attempt.publication_outcome = (
                     'verified' if proof.get('verified') is True
