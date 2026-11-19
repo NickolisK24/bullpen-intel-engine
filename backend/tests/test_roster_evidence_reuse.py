@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.test_schedule_ingestion import fenced_database_url  # noqa: F401
 
 import models.prospect  # noqa: F401
 import services.sync as sync_service
@@ -855,3 +856,111 @@ def test_daily_sync_passes_the_same_evidence_object_to_both_consumers(app, monke
 
     assert observed['team_assignment'] is not None
     assert observed['roster_status'] is observed['team_assignment']
+
+
+def test_primary_roster_replay_on_migrated_postgres(fenced_database_url):
+    from models.source_observation import SourceFetchAttempt, SourceObservation
+    from services.primary_roster_inputs import replay_membership
+    from services.transaction_roster_evidence import acquire_exact_transaction_roster_evidence
+
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = fenced_database_url
+    db.init_app(app)
+    day = date(2026, 9, 28)
+    rosters = {(111, 'active'): [roster_entry(700001)],
+               (111, '40Man'): [roster_entry(670103), roster_entry(700001)],
+               (111, 'fullRoster'): [roster_entry(700002)]}
+    with app.app_context():
+        for player in (670103, 700001, 700002, 700003):
+            seed_pitcher(str(player), player, team_id=111)
+        fake = CountingRosterClient(rosters=rosters)
+        run = seed_sync_run()
+        def sync(**kwargs):
+            return sync_roster_statuses(team_ids=[111], client=fake, snapshot_date=day,
+                                       sync_run_id=run.id, **kwargs)
+
+        sync()
+        snapshots = {s.mlb_id: s for s in RosterStatusSnapshot.query.all()}
+        for player, flags in {670103: (False, True), 700001: (True, True),
+                              700002: (False, False), 700003: (None, None)}.items():
+            row = snapshots[player]
+            assert replay_membership(row) == flags == (row.active_roster, row.forty_man_roster)
+        row = snapshots[670103]
+        original_id = row.active_roster_observation_id
+        original = db.session.get(SourceObservation, original_id)
+        assert original.subject.request_parameters == {'rosterType': 'active'}
+        assert original.subject.baseball_date is None
+        assert SourceFetchAttempt.query.count() == 4
+        sync()
+        repeated_id = row.active_roster_observation_id
+        assert repeated_id != original_id
+        assert SourceObservation.query.count() == 5
+        assert SourceFetchAttempt.query.count() == 8
+        assert row.correction_count == 0
+        rosters[111, 'active'].append(roster_entry(670103))
+        sync(commit=False)
+        assert replay_membership(row) == (True, True)
+        db.session.rollback()
+        assert row.active_roster_observation_id == repeated_id
+        assert SourceFetchAttempt.query.count() == 8
+        sync()
+        revised = db.session.get(SourceObservation, row.active_roster_observation_id)
+        assert revised.predecessor_observation_id == repeated_id
+        assert len(original.payload_artifact.payload_json['records']) == 1
+        assert replay_membership(row) == (True, True)
+
+        class DatedClient:
+            def get_team_roster(self, team, *, roster_type, date):
+                assert date == '2026-09-27'
+                return rosters.get((team, roster_type), [])
+
+        acquire_exact_transaction_roster_evidence(
+            transactions=[{'transaction_date': '2026-09-27', 'to_team_id': 111, 'player_mlb_id': 670103}],
+            eligible_mlb_ids={670103}, pitchers_by_mlb_id={670103: db.session.get(Pitcher, row.pitcher_id)},
+            team_metadata_by_season={2026: {111: {'sport_id': 1}}}, client=DatedClient(),
+            timestamp=REFERENCE_TIME, sync_run_id=run.id,
+        )
+        historical = RosterStatusSnapshot.query.filter_by(mlb_id=670103, snapshot_date=date(2026, 9, 27)).one()
+        assert replay_membership(historical) == (True, True)
+        dated = db.session.get(SourceObservation, historical.active_roster_observation_id)
+        assert dated.subject.request_parameters == {'date': '2026-09-27', 'rosterType': 'active'}
+        assert dated.subject.baseball_date == historical.snapshot_date
+
+
+def test_offline_replay_refuses_partial_and_unlinked_rosters(app):
+    from services.primary_roster_inputs import replay_membership
+    with app.app_context():
+        seed_pitcher('Boston pitcher', 670103, team_id=111)
+        client = CountingRosterClient(rosters={(111, 'active'): [{'person': {}}],
+                                              (111, '40Man'): [roster_entry(670103)]})
+        sync_roster_statuses(team_ids=[111], snapshot_date=REFERENCE_DATE, client=client)
+        row = RosterStatusSnapshot.query.one()
+        assert row.active_roster_observation_id and row.forty_man_roster_observation_id
+        with pytest.raises(ValueError, match='incomplete primary roster input'):
+            replay_membership(row)
+        row.active_roster_observation_id = None
+        with pytest.raises(ValueError, match='incomplete primary roster input'):
+            replay_membership(row)
+
+
+def test_offline_replay_checks_the_pair_and_normalized_payload_digest(app):
+    from services.primary_roster_inputs import replay_membership
+    from models.source_observation import SourceObservation
+
+    with app.app_context():
+        seed_pitcher('Boston pitcher', 670103, team_id=111)
+        client = CountingRosterClient(rosters={(111, 'active'): [roster_entry(670103)]})
+        sync_roster_statuses(team_ids=[111], snapshot_date=REFERENCE_DATE, client=client)
+        row = RosterStatusSnapshot.query.one()
+        with db.session.no_autoflush:
+            row.forty_man_roster_observation_id = row.active_roster_observation_id
+            with pytest.raises(ValueError, match='Mismatched active and forty-man'):
+                replay_membership(row)
+        db.session.rollback()
+        active = db.session.get(SourceObservation, row.active_roster_observation_id)
+        assert active.payload_artifact.payload_json['acquired_at_utc']['active'].endswith('Z')
+        with db.session.no_autoflush:
+            active.payload_artifact.payload_json = {'records': []}
+            with pytest.raises(ValueError, match='digest or count mismatch'):
+                replay_membership(row)
+        db.session.rollback()

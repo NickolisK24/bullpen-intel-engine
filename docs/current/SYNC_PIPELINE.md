@@ -1019,3 +1019,38 @@ generated-content commit through the normal Git integration.
 - GitHub issue `#620` — OPS-002
 - GitHub issue `#593` — OPS-001 scheduled observation closeout
 - GitHub issue `#598` — CI-003 generated-content CI validation
+
+### Replay a primary roster projection
+
+New primary roster snapshots link their active and forty-man source observations.
+Each payload includes a separate SHA-256 digest of its normalized MLB record list.
+The active observation's normalized payload also identifies the full-roster and
+non-roster-invitee observations and the UTC acquisition time for each view.
+Those views distinguish a tracked pitcher outside the MLB roster from a player
+missing from every response (unknown membership). A live request has no
+`date` parameter and a null subject baseball date. A dated transaction lookup
+retains the requested date. The snapshot's reference date alone cannot establish
+which request was made.
+
+In a configured local Flask shell against a disposable database containing a
+captured snapshot, compare its stored flags with the retained inputs:
+
+```python
+from models.roster_status_snapshot import RosterStatusSnapshot
+from services.primary_roster_inputs import replay_membership
+
+row = RosterStatusSnapshot.query.filter_by(id=snapshot_id).one()
+assert replay_membership(row) == (row.active_roster, row.forty_man_roster)
+```
+
+Replay reads the database only. Missing links on older snapshots, partial views,
+and inconsistent evidence cannot certify membership. The PostgreSQL rehearsal
+creates its own migrated database and synthetic MLB responses:
+
+```sh
+cd backend
+python -m pytest -q tests/test_roster_evidence_reuse.py::test_primary_roster_replay_on_migrated_postgres
+```
+
+Set `TEST_DATABASE_URL` to a disposable local PostgreSQL test database per the
+setup guide. The rehearsal skips when the test database uses SQLite.

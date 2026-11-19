@@ -11,6 +11,8 @@ from collections import defaultdict
 from datetime import date, datetime
 import logging
 
+from services.primary_roster_inputs import retain_roster_inputs
+from services.roster_evidence import RunRosterEvidence
 from services.roster_status_sync import (
     ROSTER_TYPES,
     build_exact_date_team_roster_status_index,
@@ -99,11 +101,8 @@ def acquire_exact_transaction_roster_evidence(
     source_match_count = 0
     failed_identity_dates = set()
     for (transaction_date, team_id), mlb_ids in sorted(targets_by_pair.items()):
-        index, errors = build_exact_date_team_roster_status_index(
-            team_id,
-            transaction_date,
-            client=client,
-        )
+        dated = RunRosterEvidence(client, represented_date=transaction_date)
+        index, errors = build_exact_date_team_roster_status_index(team_id, transaction_date, evidence=dated)
         if errors:
             fetch_errors.extend(errors)
             failed_identity_dates.update(
@@ -111,6 +110,7 @@ def acquire_exact_transaction_roster_evidence(
                 for mlb_id in mlb_ids
             )
             continue
+        links = retain_roster_inputs(dated, team_id, sync_run_id, errors)
         for mlb_id in sorted(mlb_ids):
             evidence = index.get(mlb_id)
             if evidence is None:
@@ -119,6 +119,7 @@ def acquire_exact_transaction_roster_evidence(
             matches_by_identity_date[(mlb_id, transaction_date)].append({
                 'team_id': team_id,
                 'evidence': evidence,
+                'observation_links': links,
             })
 
     candidates = []
@@ -144,6 +145,7 @@ def acquire_exact_transaction_roster_evidence(
             'team_id': match['team_id'],
             'snapshot_date': transaction_date,
             'evidence': match['evidence'],
+            'observation_links': match['observation_links'],
         })
 
     persistence = persist_missing_exact_roster_status_snapshots(

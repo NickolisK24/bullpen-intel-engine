@@ -238,3 +238,11 @@ class TestBackoff:
         assert result == {'value': 1}
         # 1, 2, then capped at 3, 3.
         assert sleeps == [1.0, 2.0, 3.0, 3.0]
+
+
+@pytest.mark.parametrize('body', [None, {}, {'roster': None}, {'roster': {}}])
+def test_missing_roster_collection_is_not_a_successful_empty_roster(monkeypatch, body):
+    client = MLBApiClient()
+    monkeypatch.setattr(client, '_get', lambda *args, **kwargs: body)
+    with pytest.raises(MlbApiFetchError, match='roster collection'):
+        client.get_team_roster(111, roster_type='active')

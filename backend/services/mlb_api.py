@@ -553,9 +553,9 @@ class MLBApiClient:
             params['hydrate'] = hydrate
 
         data = self._get(f'/teams/{team_id}/roster', params=params)
-        if not data:
-            return []
-        return data.get('roster', [])
+        if not isinstance(data, dict) or not isinstance(data.get('roster'), list):
+            raise MlbApiFetchError('Missing or malformed MLB roster collection', endpoint=f'/teams/{team_id}/roster')
+        return data['roster']
 
     # ─── Pitchers ────────────────────────────────────────────
 

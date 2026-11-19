@@ -32,6 +32,7 @@ from models.pitcher import Pitcher
 from services.mlb_api import mlb_client
 from services.mlb_club_directory import MLB_TEAM_IDS
 from utils.db import db
+from utils.time import utc_now_naive
 
 
 ROSTER_TYPE_ACTIVE = 'active'
@@ -88,14 +89,26 @@ def _stored_team_map():
     }
 
 
+def roster_entry_player_id(entry):
+    person = entry.get('person') or {}
+    if not isinstance(person, dict):
+        return None
+    value = person.get('id') or entry.get('personId') or entry.get('playerId')
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        value = int(value)
+    return value if type(value) is int and value > 0 else None
+
+
 class RunRosterEvidence:
     """One run's official roster evidence, fetched once and reused."""
 
-    def __init__(self, client=None, roster_types=ROSTER_TYPES):
+    def __init__(self, client=None, roster_types=ROSTER_TYPES, *, represented_date=None):
         self._client = client or mlb_client
         self._roster_types = tuple(roster_types)
         self._team_metadata = None
         self._rosters = {}
+        self.represented_date = represented_date
+        self.fetch_times = {}
         self._consumers = []
         self._requests = 0
 
@@ -154,12 +167,17 @@ class RunRosterEvidence:
         key = (team_id, roster_type)
         if key not in self._rosters:
             self._requests += 1
+            started = utc_now_naive()
+            params = {'date': self.represented_date.isoformat()} if self.represented_date else {}
             try:
-                roster = self._client.get_team_roster(team_id, roster_type=roster_type)
+                roster = self._client.get_team_roster(team_id, roster_type=roster_type, **params)
+                if not isinstance(roster, (tuple, list)) or any(not isinstance(r, dict) for r in roster):
+                    raise ValueError('Malformed MLB roster collection')
             except Exception as exc:  # noqa: BLE001 - reported to the consumer verbatim
                 self._rosters[key] = (None, str(exc))
             else:
-                self._rosters[key] = (tuple(roster or ()), None)
+                self._rosters[key] = (tuple(roster), None)
+            self.fetch_times[key] = (started, utc_now_naive())
 
         entries, error = self._rosters[key]
         return RosterView(

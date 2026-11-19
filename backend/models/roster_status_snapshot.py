@@ -1,3 +1,4 @@
+from models.source_observation import SourceObservation
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -48,6 +49,8 @@ class RosterStatusSnapshot(db.Model):
     roster_status = db.Column(db.String(30), nullable=False)
     active_roster = db.Column(db.Boolean, nullable=True)
     forty_man_roster = db.Column(db.Boolean, nullable=True)
+    active_roster_observation_id = db.Column(db.Integer, db.ForeignKey(SourceObservation.id, ondelete='SET NULL'))
+    forty_man_roster_observation_id = db.Column(db.Integer, db.ForeignKey(SourceObservation.id, ondelete='SET NULL'))
     position_code = db.Column(db.String(10))
     position_name = db.Column(db.String(50))
     position_type = db.Column(db.String(30))
