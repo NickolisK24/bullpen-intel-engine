@@ -4,8 +4,8 @@ from importlib import import_module
 
 from alembic import op
 
-revision = "de608f29a341"
-down_revision = "c71b09e45a82"
+revision = 'de608f29a341'
+down_revision = 'c71b09e45a82'
 branch_labels = None
 depends_on = None
 
