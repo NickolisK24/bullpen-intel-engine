@@ -460,6 +460,10 @@
           "measured_seconds": 0.85
         },
         {
+          "path": "tests/test_run_due_sync_shadow_summary_contract.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_game_driven_shadow_activation_validator.py",
           "measured_seconds": 0.047
         },
