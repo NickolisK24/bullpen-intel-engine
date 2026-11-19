@@ -238,3 +238,34 @@ class TestBackoff:
         assert result == {'value': 1}
         # 1, 2, then capped at 3, 3.
         assert sleeps == [1.0, 2.0, 3.0, 3.0]
+
+
+@pytest.mark.parametrize('body', [None, {}, {'roster': None}, {'roster': {}}])
+def test_missing_roster_collection_is_not_a_successful_empty_roster(monkeypatch, body):
+    client = MLBApiClient()
+    monkeypatch.setattr(client, '_get', lambda *args, **kwargs: body)
+    with pytest.raises(MlbApiFetchError, match='roster collection'):
+        client.get_team_roster(111, roster_type='active')
+
+
+@pytest.mark.parametrize('team,kind,is_empty', [
+    (111, 'nonRosterInvitees', True), (1, 'active', True),
+    (111, 'active', False), (111, '40Man', False),
+])
+def test_identity_only_roster_envelope_is_empty_only_for_context(monkeypatch, team, kind, is_empty):
+    body = {'teamId': team, 'rosterType': kind, 'link': f'/api/v1/teams/{team}/roster'}
+    client = MLBApiClient()
+    monkeypatch.setattr(client, '_get', lambda *args, **kwargs: body)
+    if is_empty:
+        assert client.get_team_roster(team, roster_type=kind) == []
+    else:
+        with pytest.raises(MlbApiFetchError, match='roster collection'):
+            client.get_team_roster(team, roster_type=kind)
+
+
+def test_other_teams_roster_cannot_become_boston_evidence(monkeypatch):
+    client = MLBApiClient()
+    body = {'teamId': 112, 'rosterType': 'active', 'roster': []}
+    monkeypatch.setattr(client, '_get', lambda *args, **kwargs: body)
+    with pytest.raises(MlbApiFetchError, match='scope mismatch'):
+        client.get_team_roster(111, roster_type='active')

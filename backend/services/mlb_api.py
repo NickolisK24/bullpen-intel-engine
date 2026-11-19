@@ -8,6 +8,8 @@ from flask import current_app, has_app_context
 
 from datetime import datetime, timedelta
 
+from services.mlb_club_directory import MLB_TEAM_IDS
+
 
 logger = logging.getLogger('baseballos.mlb_api')
 
@@ -552,10 +554,22 @@ class MLBApiClient:
         if hydrate:
             params['hydrate'] = hydrate
 
-        data = self._get(f'/teams/{team_id}/roster', params=params)
-        if not data:
-            return []
-        return data.get('roster', [])
+        endpoint = f'/teams/{team_id}/roster'
+        data = self._get(endpoint, params=params)
+        if isinstance(data, dict):
+            if (str(data.get('teamId', team_id)) != str(team_id)
+                    or data.get('rosterType', roster_type) != roster_type):
+                raise MlbApiFetchError('MLB roster response scope mismatch', endpoint=endpoint)
+            if isinstance(data.get('roster'), list):
+                return data['roster']
+            # MLB omits the collection for an empty context view, including
+            # non-roster invitees in the offseason. Require its named envelope.
+            # Only an explicit list can establish an MLB club's membership.
+            context_view = roster_type not in ('active', '40Man') or int(team_id) not in MLB_TEAM_IDS
+            if (context_view and 'roster' not in data and data.get('teamId') == int(team_id)
+                    and data.get('rosterType') == roster_type and data.get('link') == f'/api/v1{endpoint}'):
+                return []
+        raise MlbApiFetchError('Missing or malformed MLB roster collection', endpoint=endpoint)
 
     # ─── Pitchers ────────────────────────────────────────────
 

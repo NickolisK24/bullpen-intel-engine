@@ -8,6 +8,7 @@ freshness and local tracking state.
 """
 
 from collections import Counter, defaultdict
+from datetime import date
 import logging
 
 from sqlalchemy import text
@@ -15,9 +16,12 @@ from sqlalchemy import text
 from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
+from services.primary_roster_inputs import retain_roster_inputs
 from services.mlb_api import mlb_client
 from services.roster_evidence import (
     CONSUMER_ROSTER_STATUS,
+    RunRosterEvidence,
+    roster_entry_player_id,
     ROSTER_TYPE_40_MAN,
     ROSTER_TYPE_ACTIVE,
     ROSTER_TYPE_FULL,
@@ -122,11 +126,6 @@ def _status_details_from_fields(code=None, description=None):
         'raw_status_code': str(code) if code not in (None, '') else None,
         'raw_status_description': str(description) if description not in (None, '') else None,
     }
-
-
-def roster_entry_player_id(entry):
-    person = entry.get('person') or {}
-    return person.get('id') or entry.get('personId') or entry.get('playerId')
 
 
 def roster_entry_position(entry):
@@ -339,54 +338,17 @@ def build_exact_date_team_roster_status_index(
     *,
     client=None,
     roster_types=ROSTER_TYPES,
+    evidence=None,
 ):
-    """Read official roster evidence for exactly one team and represented date.
-
-    This deliberately does not use :class:`RunRosterEvidence`: that cache owns
-    current-run roster views and has no represented-date key.  Callers must
-    deduplicate ``(team_id, snapshot_date)`` before invoking this function.
-    Every declared roster view must succeed or the result fails closed.
-    """
-    client = client or mlb_client
-    index = defaultdict(lambda: {
-        'player_id': None,
-        'roster_types': set(),
-        'raw_statuses': [],
-        'entries': {},
-    })
-    errors = []
-    represented_date = (
-        snapshot_date.isoformat()
-        if hasattr(snapshot_date, 'isoformat')
-        else str(snapshot_date)
-    )
-
-    for roster_type in roster_types:
-        try:
-            entries = client.get_team_roster(
-                team_id,
-                roster_type=roster_type,
-                date=represented_date,
-            )
-        except Exception as exc:  # noqa: BLE001 - fail closed for this team/date
-            errors.append({
-                'reason': 'fetch_failed',
-                'team_id': team_id,
-                'snapshot_date': represented_date,
-                'roster_type': roster_type,
-                'entity_type': ROSTER_STATUS_FETCH_ENTITY_TYPE,
-                'error': str(exc),
-            })
-            continue
-        for entry in entries or ():
-            error = _record_evidence(index, team_id, roster_type, entry)
-            if error:
-                error['snapshot_date'] = represented_date
-                errors.append(error)
-
-    if errors:
-        return {}, errors
-    return dict(index), []
+    """Read all roster types for one explicit represented date."""
+    day = snapshot_date if isinstance(snapshot_date, date) else date.fromisoformat(snapshot_date)
+    dated = evidence or RunRosterEvidence(client, roster_types, represented_date=day)
+    if dated.represented_date != day:
+        raise ValueError('Roster evidence must be fetched for the requested date')
+    index, errors = build_team_roster_status_index(team_id, roster_types=roster_types, evidence=dated)
+    for error in errors:
+        error['snapshot_date'] = day.isoformat()
+    return ({}, errors) if errors else (index, [])
 
 
 def _team_ids_to_sync(team_ids=None):
@@ -627,6 +589,8 @@ def _supersede_unevidenced_snapshot(existing, values, *, sync_run_id, timestamp,
     existing.team_id = values['team_id']
     for field in _SNAPSHOT_FACT_FIELDS:
         setattr(existing, field, values[field])
+    for field in ('active_roster_observation_id', 'forty_man_roster_observation_id'):
+        setattr(existing, field, values.get(field))
     existing.sync_run_id = sync_run_id
     existing.updated_at = timestamp
     source_provenance.record_source_correction(
@@ -731,6 +695,8 @@ def _upsert_roster_status_snapshot(
         if getattr(existing, field) != values[field]:
             setattr(existing, field, values[field])
             changed = True
+    for field in ('active_roster_observation_id', 'forty_man_roster_observation_id'):
+        setattr(existing, field, values.get(field))
     existing.sync_run_id = sync_run_id
     existing.updated_at = timestamp
     if changed:
@@ -817,6 +783,7 @@ def persist_missing_exact_roster_status_snapshots(
             timestamp=timestamp,
             sync_run_id=sync_run_id,
         )
+        values.update(candidate.get('observation_links', {}))
         snapshot, action, failure_recorded = _upsert_roster_status_snapshot(
             values,
             sync_run_id=sync_run_id,
@@ -1042,7 +1009,8 @@ def sync_roster_statuses(
     started_at = utc_now_naive()
     timestamp = timestamp or utc_now_naive()
     snapshot_date = snapshot_date or timestamp.date()
-    team_ids = _team_ids_to_sync(team_ids)
+    # Acquire source-subject row locks in the same club order across concurrent runs.
+    team_ids = sorted(_team_ids_to_sync(team_ids))
     by_status = Counter()
     errors = []
     changed = 0
@@ -1101,6 +1069,7 @@ def sync_roster_statuses(
                 team_id,
                 job_name='daily_sync',
             )
+        links = retain_roster_inputs(run_evidence, team_id, sync_run_id, team_errors)
         _declare_roster_ownership(team_id)
         pitchers = (
             Pitcher.query
@@ -1130,6 +1099,7 @@ def sync_roster_statuses(
                 timestamp=timestamp,
                 sync_run_id=sync_run_id,
             )
+            values.update(links)
             snapshot, action, failure_recorded = _upsert_roster_status_snapshot(
                 values,
                 sync_run_id=sync_run_id,
