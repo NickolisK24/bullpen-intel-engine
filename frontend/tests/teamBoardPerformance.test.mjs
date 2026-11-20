@@ -208,3 +208,15 @@ test('renders source-qualified counts independently from a withheld percentage',
   assert.match(html, /1 of 3 scored/)
   assert.match(html, /inputs verified, publication rule pending/)
 })
+
+
+test('renders the qualified Boston percentage from the frozen read', () => {
+  const performance = availableRead.frozenPerformance
+  const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
+    read: { ...availableRead, frozenPerformance: { ...performance, capabilities: {
+      ...performance.capabilities, k_bb_percent: { status: 'qualified', value: '17.7%' },
+    } } },
+  }))
+  assert.match(html, /K-BB%<\/dt>/)
+  assert.match(html, />17\.7%<\/dd>/)
+})

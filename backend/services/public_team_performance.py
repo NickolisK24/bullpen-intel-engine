@@ -42,6 +42,30 @@ METRIC_IDS = (
 )
 
 
+def k_bb_from_official_inputs(inputs):
+    """Author or verify M-003 from the official comparison's pooled inputs."""
+    rule = performance_metrics.CURRENT_ACTIVE_PEN_K_BB
+
+    components = performance_intelligence.AppearanceComponents(**{
+        key: inputs[key] for key in rule.required_row_components
+    })
+    bf = rule.denominator(components)
+    reason = None
+    value = None
+    if bf == 0:
+        reason = rule.denominator_zero_reason
+    elif bf < rule.minimum_sample:
+        reason = 'below_minimum_batters_faced'
+    else:
+        rate = performance_intelligence._exact_ratio(rule.numerator(components), bf, rule.display_precision)
+        value = rule.formatter('0.0' if rate == '-0.0' else rate)
+    return dict(metric_id=rule.metric_id, method_version=rule.version,
+                minimum_sample=rule.minimum_sample, minimum_sample_unit=rule.minimum_sample_unit,
+                minimum_sample_authority=rule.minimum_sample_authority,
+                status='unavailable' if reason else 'qualified', value=value,
+                reason_code=reason, reason_codes=[reason] if reason else [])
+
+
 def build_public_team_performance_payload(team_id, *, board):
     represented = _represented_date(board)
     group = _represented_active_group(board, represented)
@@ -141,7 +165,11 @@ def _build_performance_payload(team_id, represented, group, freshness, *, frozen
             )
     result['limitations'] = [s for s in result['limitations'] if s != ADDITIONAL_METRICS_LIMITATION]
     result['limitations'].append('Only metrics with a qualified sample are shown.')
-    if any(cap['status'] == 'qualified' for cap in caps.values()):
+    if (all(cap['status'] == 'qualified' for cap in caps.values())
+            and all(metric['qualification']['status'] == 'qualified' for metric in result['metrics'])):
+        result['status'] = STATUS_AVAILABLE
+        result['reason_code'] = None
+    elif any(cap['status'] == 'qualified' for cap in caps.values()):
         result['status'] = STATUS_PARTIAL
         result['reason_code'] = 'metric_partially_available'
     return result

@@ -726,6 +726,31 @@ test('qualified HR requires the matching publication, sample, and verified count
 })
 
 
+test('a signed K-BB% needs the registered rule, full comparison and sufficient BF', () => {
+  const proof = {
+    contract: 'team_board_official_pitching_lines_v1', team_id: identity.team_id,
+    through: identity.represented_date, appearances: 1, sample_sha256: 'a'.repeat(64),
+    inputs: { strikeouts: 1, walks: 3, batters_faced: 100 },
+  }
+  const cap = {
+    proof, status: 'qualified', value: '-2.0%', reason_code: null,
+    metric_id: 'M-003', method_version: '1.0.0', minimum_sample: 100,
+    minimum_sample_unit: 'batters_faced', coverage: { official_rows_verified: 1 },
+  }
+  const read = {
+    ...detailsPayload.performance, relief_appearances: 1,
+    official_comparison: { ...proof, lines: [[801, 7, 123, identity.represented_date, 'a'.repeat(64), [0, 1, 3, 100, 2, 0]]] },
+    capabilities: { ...detailsPayload.performance.capabilities, k_bb_percent: cap },
+  }
+  assert.equal(readTeamBoardFrozenPerformance(read, identity), read)
+  for (const change of [{ metric_id: 'M-099' }, { value: '12%' }, { method_version: null },
+    { proof: { ...proof, inputs: { ...proof.inputs, batters_faced: 99 } } }]) {
+    assert.equal(readTeamBoardFrozenPerformance({ ...read, capabilities: {
+      ...read.capabilities, k_bb_percent: { ...cap, ...change },
+    } }, identity), null)
+  }
+})
+
 test('a withheld percentage cannot claim verified inputs without its comparison', () => {
   const read = { ...detailsPayload.performance, capabilities: {
     ...detailsPayload.performance.capabilities,

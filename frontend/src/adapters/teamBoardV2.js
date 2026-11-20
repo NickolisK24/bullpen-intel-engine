@@ -524,7 +524,10 @@ export function readTeamBoardFrozenPerformance(read, publicationIdentity) {
     const evidenceOnly = key === 'k_bb_percent'
       && capability?.status === 'unavailable'
       && capability.reason_code === 'metric_publication_rule_unapproved'
-    if (capability?.status === 'unavailable' && !evidenceOnly) return capability.value !== null
+    if (capability?.status === 'unavailable' && !capability.proof) {
+      return capability.value !== null || Boolean(capability.metric_id) || evidenceOnly
+        || ['below_minimum_batters_faced', 'zero_batters_faced'].includes(capability.reason_code)
+    }
     const receipt = read.official_comparison
     const proof = capability?.proof
     if (!proof || receipt?.contract !== 'team_board_official_pitching_lines_v1'
@@ -536,8 +539,19 @@ export function readTeamBoardFrozenPerformance(read, publicationIdentity) {
       || proof.appearances !== read.relief_appearances
       || capability.coverage?.official_rows_verified !== proof.appearances
       || !/^[a-f0-9]{64}$/.test(proof.sample_sha256)) return true
-    if (evidenceOnly) return capability.value !== null
-    return key === 'k_bb_percent' || capability.status !== 'qualified'
+    if (evidenceOnly) return capability.value !== null || Boolean(capability.metric_id)
+    if (key === 'k_bb_percent') {
+      const { strikeouts, walks, batters_faced: bf } = proof.inputs || {}
+      if (capability.metric_id !== 'M-003' || capability.method_version !== '1.0.0'
+        || ![strikeouts, walks, bf].every(n => Number.isSafeInteger(n) && n >= 0)
+        || strikeouts + walks > bf || capability.minimum_sample !== 100
+        || capability.minimum_sample_unit !== 'batters_faced') return true
+      if (bf < 100) return capability.status !== 'unavailable' || capability.value !== null
+        || capability.reason_code !== (bf === 0 ? 'zero_batters_faced' : 'below_minimum_batters_faced')
+      return capability.status !== 'qualified' || capability.reason_code !== null
+        || typeof capability.value !== 'string' || !/^-?(?:100\.0|(?:0|[1-9]\d?)\.\d)%$/.test(capability.value)
+    }
+    return capability.status !== 'qualified'
       || typeof capability.value !== 'string'
       || !(key === 'home_runs_allowed' ? /^\d+$/ : /^\d+ of \d+ scored$/).test(capability.value)
   })) return null

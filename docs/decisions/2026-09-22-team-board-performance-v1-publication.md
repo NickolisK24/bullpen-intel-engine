@@ -79,3 +79,18 @@ value.
 Proving all strikeout, walk, and BF inputs changes the K-BB% withholding
 reason to `metric_publication_rule_unapproved`. Evidence qualification and
 approval of a public rate remain separate under the metric-family contract.
+
+## November 20, 2026 — Team Board K-BB% (M-003, version 1.0.0)
+
+For the represented active bullpen, how often did strikeouts exceed walks per
+batter faced? Pool all qualifying official lines and calculate
+100 × (strikeouts − base on balls) / batters faced. Official walks include
+intentional walks. Compare every qualifying line under the publication-bound
+contract above. Missing or contradictory official inputs withhold this rate.
+A zero BF denominator is unavailable. The minimum is 100 BF, so changing
+one plate appearance from a neutral outcome to a strikeout or walk moves
+the rate by at most one percentage point. Round the pooled signed percentage
+once, decimal half-up, to one decimal place. A qualified zero displays as
+0.0%. This is descriptive current-active-group context on the Team Board.
+Only new publications apply this rule. Existing packages retain their frozen
+decision. Boston's verified 474 K, 149 BB and 1,834 BF yield 17.7%.

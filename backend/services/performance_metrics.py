@@ -5,12 +5,12 @@ approved metadata. Group resolution, qualifying appearances, sample
 validation, evidence, freshness, limitations and fail-closed publication all
 belong to :mod:`services.performance_intelligence`.
 
-Adding K%, BB%, K-BB%, HR/9, FIP, xFIP or SIERA later means adding a
+Adding K%, BB%, HR/9, FIP, xFIP or SIERA later means adding a
 ``MetricDefinition`` here and registering it — including its own sample
 measure, so publication logic never grows a metric-specific branch. No
 framework change and, by design, almost no framework test.
 
-M-001 ERA and M-002 WHIP are registered for the Team Board only.
+M-001 ERA, M-002 WHIP and M-003 K-BB% are registered for the Team Board only.
 
 M-001's parameters are approved by D-023 through D-030 and are set here. The
 Team Board is its sole approved public surface; SC-05, Team State, Share Card,
@@ -215,12 +215,33 @@ CURRENT_ACTIVE_PEN_WHIP = MetricDefinition(
 )
 
 
+K_BB_AUTHORITY = '2026-11-20-team-board-k-bb'
+CURRENT_ACTIVE_PEN_K_BB = MetricDefinition(
+    metric_id='M-003', public_name='K-BB%', internal_name='Current Active-Pen K-BB%',
+    version='1.0.0', effective_date='2026-11-20',
+    formula='100 * (strikeouts - walks) / batters_faced',
+    numerator=lambda c: 100 * (c.strikeouts - c.walks),
+    denominator=lambda c: c.batters_faced,
+    formatter=lambda value: None if value is None else f'{value}%',
+    denominator_zero_reason='zero_batters_faced',
+    required_row_components=('strikeouts', 'walks', 'batters_faced'),
+    evidence_requirements=('publication_bound_official_pitching_lines',),
+    minimum_sample=100, minimum_sample_unit='batters_faced',
+    minimum_sample_authority=K_BB_AUTHORITY, sample_measure=lambda c: c.batters_faced,
+    display_precision=1, denominator_authority=K_BB_AUTHORITY, rounding_authority=K_BB_AUTHORITY,
+    below_sample_language_authority=K_BB_AUTHORITY, below_sample_public_wording='Fewer than 100 batters faced',
+    evidence_authority=K_BB_AUTHORITY, approved_surfaces=('team_board',),
+)
+
+
 def register_approved_metrics():
     """Idempotent registration of every approved metric."""
     if registry.get(METRIC_CURRENT_ACTIVE_PEN_ERA) is None:
         registry.register(CURRENT_ACTIVE_PEN_ERA)
     if registry.get(METRIC_CURRENT_ACTIVE_PEN_WHIP) is None:
         registry.register(CURRENT_ACTIVE_PEN_WHIP)
+    if registry.get(CURRENT_ACTIVE_PEN_K_BB.metric_id) is None:
+        registry.register(CURRENT_ACTIVE_PEN_K_BB)
     return registry
 
 

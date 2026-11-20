@@ -6,6 +6,13 @@ export const PERFORMANCE_UNAVAILABLE_MESSAGE = 'A governed active-bullpen perfor
 
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
 
+function withheldReason(code) {
+  if (code === 'metric_publication_rule_unapproved') return 'inputs verified, publication rule pending'
+  if (code === 'below_minimum_batters_faced') return 'fewer than 100 batters faced'
+  if (code === 'zero_batters_faced') return 'no batters faced'
+  return 'not published'
+}
+
 function PerformanceSkeleton() {
   return (
     <section className="foundation-section min-w-0" aria-labelledby="performance-title" aria-busy="true" data-testid="performance-skeleton">
@@ -93,7 +100,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
             <details className="type-metadata mt-panel text-text-tertiary">
               <summary className="cursor-pointer">Additional performance context not published</summary>
               <ul className="mt-meta list-disc pl-5">
-                {deferredCapabilities.map(([key, label]) => <li key={key}>{label} — {performance.capabilities[key].reason_code === 'metric_publication_rule_unapproved' ? 'inputs verified, publication rule pending' : 'not published'}</li>)}
+                {deferredCapabilities.map(([key, label]) => <li key={key}>{label} — {withheldReason(performance.capabilities[key].reason_code)}</li>)}
               </ul>
             </details>
           )}
