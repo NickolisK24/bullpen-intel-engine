@@ -36,6 +36,30 @@ function compareTeams(a, b) {
   return byName || a.teamId - b.teamId
 }
 
+function orientationView(orientation, state) {
+  const rest = orientation?.rest
+  const signals = []
+  if (state.available && rest && orientation.rest_reference_date) {
+    for (const [field, label] of [
+      ['rested_arm_count', 'rested'], ['worked_yesterday_count', 'worked yesterday'],
+      ['back_to_back_count', 'back-to-back'],
+    ]) {
+      const count = integerOrNull(rest[field])
+      if (count !== null) signals.push(`${count} ${label}`)
+    }
+  }
+  const movement = orientation?.movement
+  const prior = movement?.previous_label
+  const comparable = state.available && movement?.since && LEAGUE_TEAM_STATE_GROUPS.some(group => group.label === prior)
+  return {
+    signals,
+    referenceDate: signals.length ? orientation.rest_reference_date : null,
+    movement: comparable
+      ? `${prior === state.publicLabel ? 'Unchanged' : `From ${prior}`} since ${movement.since}`
+      : null,
+  }
+}
+
 function normalizeRow(row) {
   if (!row || typeof row !== 'object') return null
   const teamId = integerOrNull(row.team_id)
@@ -57,6 +81,7 @@ function normalizeRow(row) {
     teamName,
     teamAbbreviation,
     teamState,
+    ...orientationView(row.orientation, teamState),
     teamHref: buildTeamBoardHref(row, { source: 'dashboard' }),
   }
 }

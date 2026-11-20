@@ -2068,3 +2068,17 @@ def test_real_build_lead_from_tb09_pair():
     assert again['lead'] == lead
     quiet = tonight_read_model.build_tonight_v1(current, slate[1:], generated_at=datetime(2026, 9, 25))
     assert quiet['lead'] is None                                        # no filler
+
+
+def test_played_slate_browser_fixture_matches_the_retained_publication_digest():
+    """Tonight row 33 as issued before first pitch, MLB game 849832 (CLE 9, CWS 5)."""
+    import json
+    from pathlib import Path
+    from services.tonight_read_model import content_sha256
+
+    fixture = Path(__file__).resolve().parents[2] / 'frontend/tests/fixtures/tonight-2026-10-08.json'
+    payload = json.loads(fixture.read_text())
+    assert payload['edition']['publication']['dashboard_snapshot_id'] == 4572
+    assert payload['edition']['publication']['sync_run_id'] == 93916
+    assert payload['edition']['generated_at'] == '2026-10-08T10:10:17.627935'
+    assert content_sha256(payload) == '69775dea431d0c284276dd8cfcf18abec53d68e71b20e926ce2501278ce61381'

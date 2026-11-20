@@ -12,6 +12,7 @@
 // A null or non-integer count is never shown as zero, and an unexpected Team
 // State fails closed through the shared public Team State adapter.
 
+import { fmtIP } from '../../utils/formatters.js'
 import { readPublicTeamState } from '../../adapters/publicTeamState.js'
 import { formatDateOnly, formatUtcDateTimeEt } from '../../utils/dateDisplay.js'
 
@@ -163,11 +164,15 @@ function restFacts(side) {
   if (rest?.available === true) {
     const rested = count(rest.rested_arm_count)
     if (rested !== null) facts.push({ key: 'rested', text: `${rested} rested` })
+    const used = count(rest.worked_yesterday_count)
+    if (used !== null) facts.push({ key: 'worked_yesterday', text: `${used} worked yesterday` })
     const b2b = count(rest.back_to_back_count)
     if (b2b) facts.push({ key: 'b2b', text: `${b2b} B2B` })
   }
   const threeInFour = count(side?.multi_day_usage?.three_in_four_count)
   if (threeInFour) facts.push({ key: 'three_in_four', text: `${threeInFour} in 3-in-4` })
+  const outs = count(side?.workload_7d?.outs)
+  if (outs !== null) facts.push({ key: 'workload_7d', text: `${fmtIP(null, outs)} bullpen IP / 7d` })
   return { restAvailable: rest?.available === true, facts }
 }
 
@@ -178,6 +183,7 @@ function keyArms(side) {
       key: arm.pitcher_id ?? `${index}-${arm.name}`,
       name: text(arm.name),
       roleLabel: text(arm.role_label),
+      daysSinceAppearance: count(arm.days_since_last_appearance),
       pattern: arm.pattern === 'B2B' || arm.pattern === '3-in-4' ? arm.pattern : null,
     }))
 }

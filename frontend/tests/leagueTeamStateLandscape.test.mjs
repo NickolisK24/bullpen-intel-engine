@@ -242,3 +242,25 @@ test('Dashboard keeps backend Storylines optional and ahead of the governed leag
   assert.match(withStories, /Backend-authored league observation\./)
   assert.doesNotMatch(withStories, /Most of the league|lead the league/)
 })
+
+test('represented rows show three dated counts and movement without filling evidence gaps', () => {
+  const payload = makeLeagueTeamStateListing({ withheld: 1 })
+  const row = payload.teams.find(team => team.team_state.available)
+  const prior = row.team_state.public_label === 'Fresh' ? 'Stretched' : 'Fresh'
+  const orientation = {
+    rest: { rested_arm_count: 4, worked_yesterday_count: 2, back_to_back_count: 0 },
+    rest_reference_date: '2026-10-08', movement: { previous_label: prior, since: '2026-10-06' },
+  }
+  row.orientation = orientation
+  payload.teams.find(team => !team.team_state.available).orientation = orientation
+  const view = getLeagueTeamStateListingView(payload)
+  const html = visibleText(render(React.createElement(LeagueTeamStateLandscape, { view })))
+  assert.ok(html.includes('4 rested · 2 worked yesterday · 0 back-to-back'))
+  assert.ok(html.includes('2026-10-08') && html.includes(`From ${prior} since 2026-10-06`))
+  assert.ok(html.includes('Movement unavailable'))
+  assert.deepEqual(view.exceptions[0].signals, [])
+  assert.equal(view.exceptions[0].movement, null)
+  row.orientation.movement.previous_label = row.team_state.public_label
+  const updated = getLeagueTeamStateListingView(payload).groups.flatMap(group => group.teams)
+  assert.equal(updated.find(team => team.teamId === row.team_id).movement, 'Unchanged since 2026-10-06')
+})

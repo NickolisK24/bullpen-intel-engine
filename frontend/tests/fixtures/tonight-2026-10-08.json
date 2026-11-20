@@ -1,0 +1,371 @@
+{
+  "contract": "tonight_v1",
+  "edition": {
+    "baseball_date": "2026-10-08",
+    "data_through": "2026-10-07",
+    "availability_reference_date": "2026-10-08",
+    "generated_at": "2026-10-08T10:10:17.627935",
+    "publication": {
+      "dashboard_snapshot_id": 4572,
+      "sync_run_id": 93916,
+      "team_board_package_contract": "trusted_team_board_publication_v1"
+    },
+    "schedule_as_of": "2026-10-08T10:06:30.215828Z"
+  },
+  "summary": {
+    "game_count": 1,
+    "games_by_state": {
+      "scheduled": 1,
+      "live": 0,
+      "final": 0,
+      "postponed": 0,
+      "suspended": 0,
+      "uncertain": 0
+    },
+    "team_state_counts": {
+      "fresh": 0,
+      "stretched": 1,
+      "vulnerable": 1,
+      "withheld": 0
+    },
+    "clubs_with_back_to_back_arms": 0,
+    "change_count": 12
+  },
+  "lead": {
+    "lead_type": "team_state_to_vulnerable",
+    "headline": "CLE moved into a Vulnerable bullpen state entering tonight.",
+    "detail": "CLE is scheduled to face CWS.",
+    "team_ids": [
+      114
+    ],
+    "game_pk": 849832,
+    "change_refs": [
+      "a617345776867b7342bf4caa"
+    ],
+    "reason_codes": [
+      "team_state_to_vulnerable"
+    ],
+    "evidence_state": "complete"
+  },
+  "featured_game_pks": [
+    849832
+  ],
+  "games": [
+    {
+      "game_pk": 849832,
+      "game_number": 1,
+      "first_pitch_utc": "2026-10-09T00:00:00Z",
+      "state": "scheduled",
+      "state_as_of": "2026-10-08T10:06:30.215828Z",
+      "away": {
+        "team_id": 114,
+        "abbreviation": "CLE",
+        "name": "Cleveland Guardians",
+        "available": true,
+        "reason_code": null,
+        "team_state": {
+          "public_state": "vulnerable",
+          "public_label": "Vulnerable",
+          "available": true,
+          "reason_code": null
+        },
+        "rest": {
+          "active_arm_count": 7,
+          "rested_arm_count": 2,
+          "worked_yesterday_count": 5,
+          "back_to_back_count": 0,
+          "available": true,
+          "reason_code": null
+        },
+        "multi_day_usage": {
+          "three_in_four_count": 0
+        },
+        "workload_7d": {
+          "appearances": 15,
+          "pitches": 243,
+          "outs": 51,
+          "status": "complete",
+          "reason_codes": []
+        },
+        "key_arms": [
+          {
+            "pitcher_id": 159,
+            "name": "Cade Smith",
+            "role_key": "trust_arm",
+            "role_label": "Trusted Arm",
+            "days_since_last_appearance": 1,
+            "pattern": null
+          },
+          {
+            "pitcher_id": 163,
+            "name": "Erik Sabrowski",
+            "role_key": "bridge_arm",
+            "role_label": "Setup Arm",
+            "days_since_last_appearance": 3,
+            "pattern": null
+          },
+          {
+            "pitcher_id": 166,
+            "name": "Hunter Gaddis",
+            "role_key": "bridge_arm",
+            "role_label": "Setup Arm",
+            "days_since_last_appearance": 1,
+            "pattern": null
+          }
+        ],
+        "rotation": null,
+        "change_refs": [
+          "a617345776867b7342bf4caa"
+        ]
+      },
+      "home": {
+        "team_id": 145,
+        "abbreviation": "CWS",
+        "name": "Chicago White Sox",
+        "available": true,
+        "reason_code": null,
+        "team_state": {
+          "public_state": "stretched",
+          "public_label": "Stretched",
+          "available": true,
+          "reason_code": null
+        },
+        "rest": {
+          "active_arm_count": 8,
+          "rested_arm_count": 3,
+          "worked_yesterday_count": 5,
+          "back_to_back_count": 0,
+          "available": true,
+          "reason_code": null
+        },
+        "multi_day_usage": {
+          "three_in_four_count": 0
+        },
+        "workload_7d": {
+          "appearances": 13,
+          "pitches": 373,
+          "outs": 66,
+          "status": "complete",
+          "reason_codes": []
+        },
+        "key_arms": [
+          {
+            "pitcher_id": 662,
+            "name": "Grant Taylor",
+            "role_key": "trust_arm",
+            "role_label": "Trusted Arm",
+            "days_since_last_appearance": 3,
+            "pattern": null
+          },
+          {
+            "pitcher_id": 665,
+            "name": "Jordan Hicks",
+            "role_key": "bridge_arm",
+            "role_label": "Setup Arm",
+            "days_since_last_appearance": 5,
+            "pattern": null
+          }
+        ],
+        "rotation": null,
+        "change_refs": [
+          "577f64cc0649b701ab2d4530"
+        ]
+      },
+      "context": {
+        "sentence": "CLE enters tonight with a Vulnerable bullpen state, while CWS is Stretched.",
+        "reason_codes": [
+          "team_state_vulnerable"
+        ],
+        "evidence_state": "complete"
+      },
+      "featured": true,
+      "featured_reason_codes": [
+        "vulnerable_team",
+        "team_state_change"
+      ],
+      "links": {
+        "away_team_board": "/bullpen?view=board&team=CLE",
+        "home_team_board": "/bullpen?view=board&team=CWS",
+        "matchup": "/matchup/849832"
+      }
+    }
+  ],
+  "league_changes": [
+    {
+      "change_id": "34b4df4437c806ee93326795",
+      "team_id": 110,
+      "team_abbreviation": "BAL",
+      "change_class": "team_state_changed",
+      "headline": "BAL moved from Fresh to Stretched.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:110",
+      "game_pks": [],
+      "state_change": {
+        "from": "Fresh",
+        "to": "Stretched"
+      }
+    },
+    {
+      "change_id": "a617345776867b7342bf4caa",
+      "team_id": 114,
+      "team_abbreviation": "CLE",
+      "change_class": "team_state_changed",
+      "headline": "CLE moved from Stretched to Vulnerable.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:114",
+      "game_pks": [],
+      "state_change": {
+        "from": "Stretched",
+        "to": "Vulnerable"
+      }
+    },
+    {
+      "change_id": "577f64cc0649b701ab2d4530",
+      "team_id": 145,
+      "team_abbreviation": "CWS",
+      "change_class": "team_state_changed",
+      "headline": "CWS moved from Fresh to Stretched.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:145",
+      "game_pks": [],
+      "state_change": {
+        "from": "Fresh",
+        "to": "Stretched"
+      }
+    },
+    {
+      "change_id": "5dff1f16ee13c56bcc70ae98",
+      "team_id": 158,
+      "team_abbreviation": "MIL",
+      "change_class": "team_state_changed",
+      "headline": "MIL moved from Vulnerable to Stretched.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:158",
+      "game_pks": [],
+      "state_change": {
+        "from": "Vulnerable",
+        "to": "Stretched"
+      }
+    },
+    {
+      "change_id": "4782f7791baf13e8a5eb4157",
+      "team_id": 135,
+      "team_abbreviation": "SD",
+      "change_class": "team_state_changed",
+      "headline": "SD moved from Stretched to Vulnerable.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:135",
+      "game_pks": [],
+      "state_change": {
+        "from": "Stretched",
+        "to": "Vulnerable"
+      }
+    },
+    {
+      "change_id": "f1896055d6b651bfa9f84f94",
+      "team_id": 139,
+      "team_abbreviation": "TB",
+      "change_class": "team_state_changed",
+      "headline": "TB moved from Stretched to Vulnerable.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:139",
+      "game_pks": [],
+      "state_change": {
+        "from": "Stretched",
+        "to": "Vulnerable"
+      }
+    },
+    {
+      "change_id": "9621db38e0b9b4efbd0cffb7",
+      "team_id": 135,
+      "team_abbreviation": "SD",
+      "change_class": "active_bullpen_joined",
+      "headline": "Mason Miller joined the active bullpen.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:135",
+      "game_pks": [],
+      "state_change": null
+    },
+    {
+      "change_id": "01d22908a978795d0e2cda48",
+      "team_id": 144,
+      "team_abbreviation": "ATL",
+      "change_class": "back_to_back_started",
+      "headline": "Raisel Iglesias now has back-to-back usage.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:144",
+      "game_pks": [],
+      "state_change": null
+    },
+    {
+      "change_id": "c1145fee806abe01f6cad67a",
+      "team_id": 144,
+      "team_abbreviation": "ATL",
+      "change_class": "back_to_back_started",
+      "headline": "Dylan Lee now has back-to-back usage.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:144",
+      "game_pks": [],
+      "state_change": null
+    },
+    {
+      "change_id": "38b31a2109f6c70ccd857950",
+      "team_id": 119,
+      "team_abbreviation": "LAD",
+      "change_class": "back_to_back_started",
+      "headline": "Tanner Scott now has back-to-back usage.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:119",
+      "game_pks": [],
+      "state_change": null
+    },
+    {
+      "change_id": "698af731bdded7ceb4fa73c1",
+      "team_id": 119,
+      "team_abbreviation": "LAD",
+      "change_class": "back_to_back_started",
+      "headline": "Edwin Díaz now has back-to-back usage.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:119",
+      "game_pks": [],
+      "state_change": null
+    },
+    {
+      "change_id": "c4c00f8c44d2172af38bb64a",
+      "team_id": 158,
+      "team_abbreviation": "MIL",
+      "change_class": "back_to_back_started",
+      "headline": "Abner Uribe now has back-to-back usage.",
+      "detail": null,
+      "occurred_on": null,
+      "evidence_state": "complete",
+      "source_ref": "team_board_what_changed_v1:4572:4496:158",
+      "game_pks": [],
+      "state_change": null
+    }
+  ],
+  "quiet_day": false,
+  "limitations": []
+}

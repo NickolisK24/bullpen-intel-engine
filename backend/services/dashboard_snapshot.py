@@ -5,6 +5,7 @@ from datetime import timedelta
 from time import perf_counter
 from collections.abc import Mapping
 
+from sqlalchemy import literal_column
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.dashboard_snapshot import DashboardSnapshot
@@ -1123,6 +1124,33 @@ def get_latest_valid_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASH
     return None
 
 
+# Only these Board fields cross the database boundary for the League page.
+# One correlated projection reads the selected edition, including older editions
+# that predate the page. No per-club queries or candidate writes are needed.
+LEAGUE_BOARD_CONTEXT = 'league_board_context'
+_LEAGUE_BOARD_SQL = """(
+    SELECT json_build_object(
+        'contract', board.contract, 'data_through', board.data_through,
+        'availability_reference_date', board.availability_reference_date,
+        'frozen_team_state_by_team_id', board.frozen_team_state_by_team_id,
+        'by_team_id', (
+            SELECT json_object_agg(club.key, row_to_json(facts))
+            FROM json_each(CASE WHEN json_typeof(board.by_team_id) = 'object'
+                                THEN board.by_team_id END) AS club
+            CROSS JOIN LATERAL json_to_record(
+                CASE WHEN json_typeof(club.value) = 'object' THEN club.value END
+            ) AS facts(team json, rest_status json, rest_status_authority json,
+                       frozen_team_state json, frozen_what_changed json)
+        )
+    )
+    FROM json_to_record(dashboard_snapshots.payload::json) AS root(trusted_team_boards json)
+    CROSS JOIN LATERAL json_to_record(
+        CASE WHEN json_typeof(root.trusted_team_boards) = 'object' THEN root.trusted_team_boards END
+    ) AS board(contract text, data_through text, availability_reference_date text,
+               frozen_team_state_by_team_id json, by_team_id json)
+)"""
+
+
 def get_latest_valid_dashboard_snapshot_projection(
     payload_keys,
     snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
@@ -1151,7 +1179,8 @@ def get_latest_valid_dashboard_snapshot_projection(
         DashboardSnapshot.snapshot_generated_at,
     )
     payload_columns = tuple(
-        DashboardSnapshot.payload[key].label(f'payload__{key}')
+        (literal_column(_LEAGUE_BOARD_SQL) if key == LEAGUE_BOARD_CONTEXT else DashboardSnapshot.payload[key])
+        .label(f'payload__{key}')
         for key in keys
     )
     query = (
@@ -1181,6 +1210,8 @@ def get_latest_valid_dashboard_snapshot_projection(
         for key in keys
         if getattr(row, f'payload__{key}') is not None
     }
+    if LEAGUE_BOARD_CONTEXT in payload:
+        payload['trusted_team_boards'] = payload.pop(LEAGUE_BOARD_CONTEXT)
     snapshot = SimpleNamespace(
         id=row.id,
         snapshot_type=row.snapshot_type,

@@ -33,6 +33,7 @@ STATUS_UNAVAILABLE = 'snapshot_unavailable'
 HOME_PAYLOAD_KEYS = ('freshness', 'landscape', 'what_changed_since_yesterday')
 LEAGUE_PAYLOAD_KEYS = (
     'freshness', 'landscape', 'roles', 'injury_il_context', 'roster_readiness',
+    dashboard_snapshot_service.LEAGUE_BOARD_CONTEXT, 'what_changed_since_yesterday',
 )
 STORIES_PAYLOAD_KEYS = ('freshness', 'stories', 'today_flagship')
 TRUST_PAYLOAD_KEYS = ('freshness',)
@@ -171,6 +172,68 @@ def _compact_landscape_context(landscape):
     }
 
 
+def _league_movement(snapshot, team, team_id, state):
+    from services.team_board_snapshot_team_state import receipt_value
+    from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_LABEL_SET
+    from services.what_changed_comparison_identity import ComparisonIdentityInvalid
+
+    present, frozen_state = receipt_value(snapshot, team_id)
+    if not present or frozen_state.get('public_label') != state['public_label']:
+        return None
+    try:
+        changes = public_serving_authority._frozen_what_changed_for_view(snapshot, team, team_id)
+    except ComparisonIdentityInvalid:
+        return None
+    if not changes or changes['state'] == 'unavailable':
+        return None
+    identity = changes['comparison_identity']
+    domain = changes['domains'].get('team_state') or {}
+    if (domain.get('status') != 'complete'
+            or identity['current_snapshot_id'] != snapshot.id
+            or identity['current_sync_run_id'] != snapshot.sync_run_id
+            or identity['current_payload_version'] != snapshot.payload_version
+            or identity['current_data_through'] != state['data_through']):
+        return None
+    since = changes['previous_represented_date']
+    if domain.get('outcome') == 'unchanged':
+        return {'previous_label': state['public_label'], 'since': since}
+    if domain.get('outcome') == 'changed':
+        for event in changes['events']:
+            previous = event.get('previous_value')
+            if (event.get('team_id') == team_id and event.get('domain') == 'team_state'
+                    and event.get('event_type') == 'team_state_changed'
+                    and event.get('current_value') == state['public_label']
+                    and isinstance(previous, str) and previous in PUBLIC_TEAM_STATE_LABEL_SET
+                    and previous != state['public_label']):
+                return {'previous_label': previous, 'since': since}
+    return None
+
+
+def _league_orientation(snapshot, row):
+    from services.team_board_delta_substrate import try_build_rest_status_capture
+
+    team_id = row['team_id']
+    state = row['team_state']
+    if state.get('available') is not True or state.get('data_through') != _iso(snapshot.data_through):
+        return None
+    team, _ = public_serving_authority._team_package(snapshot, team_id)
+    if (not team or not isinstance(team.get('team'), Mapping) or team['team'].get('team_id') != team_id
+            or snapshot.payload['trusted_team_boards'].get('data_through') != _iso(snapshot.data_through)):
+        return None
+    capture = try_build_rest_status_capture(snapshot=snapshot, team_id=team_id) if team.get('rest_status') else None
+    signals = None
+    if capture and capture['value'].get('available') is True:
+        rest = capture['value']
+        signals = {field: rest[field] for field in (
+            'rested_arm_count', 'worked_yesterday_count', 'back_to_back_count',
+        )}
+    return {
+        'rest': signals,
+        'rest_reference_date': _iso(snapshot.availability_reference_date),
+        'movement': _league_movement(snapshot, team, team_id, state),
+    }
+
+
 def build_league_projection(
     snapshot,
     *,
@@ -186,6 +249,8 @@ def build_league_projection(
         reason=reason,
         freshness_builder=freshness_builder,
     )
+    # The League response changed for already-published snapshot identities.
+    result['version'] = '1.1.0'
     if snapshot is None:
         result.update({
             'team_states': build_snapshot_unavailable_listing(
@@ -208,7 +273,9 @@ def build_league_projection(
     )
     payload = snapshot.payload
     result.update({
-        'team_states': deepcopy(listing),
+        'team_states': {**listing, 'teams': [
+            {**row, 'orientation': _league_orientation(snapshot, row)} for row in listing['teams']
+        ]},
         'landscape': _compact_landscape_context(landscape),
         'roles': deepcopy(payload.get('roles')),
         'injury_il_context': deepcopy(payload.get('injury_il_context')),

@@ -311,3 +311,27 @@ test('TN-09 direct entry, refresh, and handoff links reach their destinations', 
   await page.getByTestId('tonight-slate').locator(`[data-game-pk="${payload.games[0].game_pk}"]`).locator('[data-link="team-board"]').first().click()
   await expect(page).toHaveURL(/\/bullpen\?view=board&team=NYY$/)
 })
+
+// Immutable Tonight publication 33, snapshot 4572. MLB game 849832 later
+// finished CLE 9, CWS 5. Replay the pregame edition without a final-state overlay.
+test('retained October 8 pregame edition shows the named arms and their published rest', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const body = JSON.parse(await readFile(new URL('../fixtures/tonight-2026-10-08.json', import.meta.url), 'utf8'))
+  const requests = await installTonightFixture(page, { body })
+  await page.goto('/tonight')
+  const card = page.getByTestId('tonight-slate').locator('[data-game-pk="849832"]')
+  await expect(page.getByTestId('tonight-page')).toContainText(body.lead.headline)
+  await expect(card).toContainText('Cleveland Guardians at Chicago White Sox')
+  await expect(card.getByTestId('tonight-game-status')).toContainText('8:00')
+  await expect(card.getByTestId('tonight-context')).toContainText(body.games[0].context.sentence)
+  await expect(card.getByTestId('tonight-key-arm').filter({ hasText: 'Cade Smith' })).toContainText('1 day since last appearance')
+  await expect(card.getByTestId('tonight-key-arm').filter({ hasText: 'Erik Sabrowski' })).toContainText('Setup Arm · 3 days since last appearance')
+  const cle = card.locator('[data-team="CLE"]')
+  await expect(cle).toContainText('5 worked yesterday')
+  await expect(cle).toContainText('17.0 bullpen IP / 7d')
+  await expect(cle).toContainText('Vulnerable')
+  await expect(card.locator('[data-team="CWS"]')).toContainText('Stretched')
+  await expect(card.getByRole('link', { name: 'Open the Cleveland Guardians Team Board' })).toHaveAttribute('href', /team=CLE/)
+  await expect(card.locator('[data-link="matchup"]')).toHaveAttribute('href', '/matchup/849832')
+  expect(requests).toEqual([TONIGHT_REQUEST])
+})
