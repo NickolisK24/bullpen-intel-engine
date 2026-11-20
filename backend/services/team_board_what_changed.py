@@ -234,9 +234,14 @@ def _workload_events(previous, current, team_id, previous_team, current_team):
             continue
         # Describe actual dated work. A rolling-window decline alone cannot
         # establish that a pitcher appeared or rested on the represented day.
-        prior_work = _day_work(before[pitcher_id], _represented(previous))
-        work = _day_work(after[pitcher_id], _represented(current))
+        prior_day = (prior_reference - timedelta(days=1)).isoformat()
+        day = (reference - timedelta(days=1)).isoformat()
+        prior_work = _day_work(before[pitcher_id], prior_day)
+        work = _day_work(after[pitcher_id], day)
         if work is None or prior_work is None:
+            partial = True
+        elif ((work['appearances'] and day != _represented(current))
+              or (prior_work['appearances'] and prior_day != _represented(previous))):
             partial = True
         elif work['appearances']:
             events.append(_event(

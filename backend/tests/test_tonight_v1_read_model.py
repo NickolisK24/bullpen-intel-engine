@@ -23,6 +23,7 @@ from models.sync_run import SyncRun
 from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
 from models.tonight_publication import TonightPublication, TonightPublicationImmutable
 from services import dashboard_snapshot
+from services import public_team_relief_work as relief
 from services import public_serving_authority
 from services import slate_coverage
 from services import sync as sync_service
@@ -1406,12 +1407,30 @@ def _real_team(snapshot, team_id, state_code, pitcher_ids):
         'frozen_team_state': make_receipt(
             snapshot, team_id, readiness, method_version=EXPECTED_METHOD_VERSION,
         ),
+        'recent_usage_rest_authority': {
+            'method_version': relief.RECENT_USAGE_REST_METHOD_VERSION,
+            'public_contract_version': relief.RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': relief.RECENT_USAGE_REST_CONTRACT,
+            'team_board_package_contract': 'trusted_team_board_publication_v1',
+            'reference_date_policy': relief.RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+            'data_through': snapshot.data_through.isoformat(),
+            'reference_date': snapshot.availability_reference_date.isoformat(),
+        },
         'recent_usage_rest': {
+            'contract': relief.RECENT_USAGE_REST_CONTRACT,
+            'population_basis': relief.RECENT_USAGE_REST_POPULATION_BASIS,
+            'appearance_policy': relief.RECENT_USAGE_REST_APPEARANCE_POLICY,
+            'window_policy': relief.RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+            'thresholds': {'high_pitch_outing_minimum_pitches': 25, 'multi_inning_minimum_outs': 4,
+                           'three_in_four_minimum_distinct_days': 3, 'four_in_six_minimum_distinct_days': 4},
+            'data_through': snapshot.data_through.isoformat(),
+            'reference_date': snapshot.availability_reference_date.isoformat(),
             'status': 'complete',
             'active_pitchers': [{
                 'pitcher_id': pid, 'pitcher_name': f'Arm {pid}',
                 'back_to_back': _wc_fact(False), 'three_in_four': _wc_fact(False),
-                'four_in_six': _wc_fact(False), 'high_pitch_outing': _wc_fact(False),
+                'four_in_six': _wc_fact(False), 'recent_multi_inning': _wc_fact(False),
+                'high_pitch_outing': _wc_fact(False),
             } for pid in pitcher_ids],
             'off_active_historical_contributors': [],
         },
