@@ -486,7 +486,8 @@ def test_league_reads_compact_frozen_rest_and_same_edition_movement(client):
         data_through=current.data_through, availability_reference_date=current.availability_reference_date,
         payload_version=current.payload_version, payload=current.payload))
     db.session.commit()
-    selected = dashboard_snapshot.get_latest_valid_dashboard_snapshot_projection(surfaces.LEAGUE_PAYLOAD_KEYS)
+    selected, reason = surfaces.select_trusted_publication(surfaces.LEAGUE_PAYLOAD_KEYS)
+    assert reason is None
     projected_club = selected.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
     assert 'records' not in projected_club and 'recent_usage_rest' not in projected_club
     row = {'team_id': TEAM_ID, 'team_state': {'available': True, 'public_label': 'Stretched',

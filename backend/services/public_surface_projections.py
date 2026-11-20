@@ -12,6 +12,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Mapping
 
+from sqlalchemy import literal_column
+
+from models.dashboard_snapshot import DashboardSnapshot
+from services.snapshot_read_guard import read_snapshot_first
+from utils.db import db
+
 from services import board_freshness
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import public_serving_authority
@@ -33,7 +39,6 @@ STATUS_UNAVAILABLE = 'snapshot_unavailable'
 HOME_PAYLOAD_KEYS = ('freshness', 'landscape', 'what_changed_since_yesterday')
 LEAGUE_PAYLOAD_KEYS = (
     'freshness', 'landscape', 'roles', 'injury_il_context', 'roster_readiness',
-    dashboard_snapshot_service.LEAGUE_BOARD_CONTEXT, 'what_changed_since_yesterday',
 )
 STORIES_PAYLOAD_KEYS = ('freshness', 'stories', 'today_flagship')
 TRUST_PAYLOAD_KEYS = ('freshness',)
@@ -111,12 +116,52 @@ def _validated_snapshot(snapshot, unavailable_reason=None):
     return (snapshot, None) if reason is None else (None, reason)
 
 
+# Load only the evidence League needs from the edition already selected by
+# the shared snapshot reader. json_to_record parses each club in one pass.
+_LEAGUE_BOARD_SQL = """(
+    SELECT json_build_object(
+        'contract', board.contract, 'data_through', board.data_through,
+        'availability_reference_date', board.availability_reference_date,
+        'frozen_team_state_by_team_id', board.frozen_team_state_by_team_id,
+        'by_team_id', (
+            SELECT json_object_agg(club.key, row_to_json(facts))
+            FROM json_each(CASE WHEN json_typeof(board.by_team_id) = 'object'
+                                THEN board.by_team_id END) AS club
+            CROSS JOIN LATERAL json_to_record(
+                CASE WHEN json_typeof(club.value) = 'object' THEN club.value END
+            ) AS facts(team json, rest_status json, rest_status_authority json,
+                       frozen_team_state json, frozen_what_changed json)
+        )
+    )
+    FROM json_to_record(dashboard_snapshots.payload::json) AS root(trusted_team_boards json)
+    CROSS JOIN LATERAL json_to_record(
+        CASE WHEN json_typeof(root.trusted_team_boards) = 'object' THEN root.trusted_team_boards END
+    ) AS board(contract text, data_through text, availability_reference_date text,
+               frozen_team_state_by_team_id json, by_team_id json)
+)"""
+
+
+def _load_league_board_context(snapshot):
+    identity_path = ('what_changed_since_yesterday', 'comparison', 'identity')
+    query = db.session.query(literal_column(_LEAGUE_BOARD_SQL), DashboardSnapshot.payload[identity_path]).filter(
+        DashboardSnapshot.id == snapshot.id, DashboardSnapshot.sync_run_id == snapshot.sync_run_id,
+    )
+    row = read_snapshot_first(query, snapshot_type=snapshot.snapshot_type,
+                              reference_date='league_orientation', snapshot_version=snapshot.payload_version)
+    if row:
+        # The compact reader returns an untracked projection, never an ORM record.
+        snapshot.payload['trusted_team_boards'] = row[0]
+        snapshot.payload['what_changed_since_yesterday'] = {'comparison': {'identity': row[1]}}
+
+
 def select_trusted_publication(payload_keys):
     """Resolve one trusted publication while reading only named frozen domains."""
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot_projection(
         payload_keys
     )
     if snapshot is not None:
+        if payload_keys == LEAGUE_PAYLOAD_KEYS:
+            _load_league_board_context(snapshot)
         return snapshot, None
     # This is a failure-only diagnostic read. The healthy path never loads the
     # comprehensive payload merely to establish why no projection can be served.
