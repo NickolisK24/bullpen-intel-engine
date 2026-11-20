@@ -121,7 +121,12 @@ from services.narrative_memory import (
     build_team_pitcher_usage_trend_continuity,
     build_team_workload_concentration_continuity,
 )
-from services.pitcher_public_labels import PUBLIC_ROLE_COMPOSITION_KEYS
+from services.club_competition_status import resolve_club_competition_status
+from services.pitcher_public_labels import (
+    PUBLIC_ROLE_COMPOSITION_KEYS,
+    build_public_arm_read,
+    public_arm_context,
+)
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.public_team_relief_work import (
     DEPLOYMENT_PROFILE_METHOD_VERSION,
@@ -777,13 +782,14 @@ def get_pitcher_fatigue(pitcher_id):
     if pitcher is None:
         abort(404)
 
-    score_cutoff = _served_score_cutoff()
+    snapshot = latest_valid_snapshot_source()
+    score_cutoff = snapshot.snapshot_generated_at if snapshot is not None else None
     latest_query = FatigueScore.query.filter_by(pitcher_id=pitcher_id)
     if score_cutoff is not None:
         latest_query = latest_query.filter(FatigueScore.calculated_at <= score_cutoff)
     latest = latest_query.order_by(desc(FatigueScore.calculated_at)).first()
 
-    freshness = _board_freshness_block()
+    freshness = board_freshness.board_freshness_block(snapshot=snapshot)
     reference_date = _public_availability_reference_date(freshness)
 
     # Anchor recent_logs / fatigue_trend on the pitcher's most recent game
@@ -849,6 +855,21 @@ def get_pitcher_fatigue(pitcher_id):
         reference_date,
     )
 
+    product_day = parse_reference_date(freshness.get('product_current_date'))
+    club_active = (
+        score_cutoff is not None and pitcher.team_id is not None and product_day is not None
+        and freshness.get('is_current') is True and reference_date == product_day
+        and resolve_club_competition_status(pitcher.team_id, product_day).is_active
+    )
+    arm_context = public_arm_context(
+        freshness=freshness, product_day=product_day, club_active=club_active,
+        roster=roster_status, data_state=workload_signal.get('data_state'),
+        latest_game_date=(last_workload_appearance or {}).get('game_date'),
+    )
+
+    if arm_context['mode'] != 'current':
+        pitcher_labels = {**pitcher_labels, 'read': build_public_arm_read(roster_status=roster_status)}
+
     recent_work = None
     recent_work_status = {'status': 'available'}
     try:
@@ -875,6 +896,7 @@ def get_pitcher_fatigue(pitcher_id):
 
     return jsonify({
         'pitcher':         pitcher.to_dict(),
+        'arm_context': arm_context,
         # ``current_fatigue`` keeps its name because Pitcher Detail reads the
         # workload facts under it, but it is now the narrowed public view model:
         # counted workload, no composite, no sub-scores, no risk tier, no

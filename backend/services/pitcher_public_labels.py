@@ -1,7 +1,10 @@
 """Backend-authored public labels for pitcher role and workload reads."""
 
 import re
+from datetime import timedelta
 
+from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import parse_reference_date
 from services.roster_authority import (
     ROSTER_STATUS_CATEGORY_ACTIVE,
     ROSTER_STATUS_CATEGORY_UNKNOWN,
@@ -349,6 +352,28 @@ def build_public_arm_read(availability=None, roster_status=None):
     availability, infer roster state, or recalculate workload.
     """
     return _read_label(availability, roster_status=roster_status)
+
+
+def public_arm_context(*, freshness, product_day, club_active, roster, data_state,
+                       latest_game_date):
+    """Scope a represented workload read at serving time, including old packages."""
+    reference = parse_reference_date(freshness.get('availability_reference_date'))
+    through = parse_reference_date(freshness.get('data_through'))
+    game = parse_reference_date(latest_game_date)
+    current = (
+        reference is not None and reference == product_day
+        and through is not None and through <= reference
+        and freshness.get('is_current') is True
+        and not freshness.get('is_stale') and not freshness.get('fail_closed')
+        and club_active and roster.get('is_authoritative') is True
+        and roster.get('is_active_mlb') is True and data_state in FRESH_DATA_STATES
+        and game is not None and reference - timedelta(days=ACTIVE_WINDOW_DAYS) <= game <= through
+    )
+    return {
+        'mode': 'current' if current else 'historical' if through else 'unavailable',
+        'data_through': through.isoformat() if through else None,
+        'days_rest': (reference - game).days if current else None,
+    }
 
 
 def build_pitcher_labels(availability=None, role=None, eligibility=None, roster_status=None):

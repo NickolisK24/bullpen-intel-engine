@@ -1690,6 +1690,20 @@ class TestBoardEndpoint:
             )
             pitcher_id = pitcher.id
 
+        today = date.today()
+        source = SimpleNamespace(snapshot_generated_at=datetime.utcnow())
+        monkeypatch.setattr(bullpen_api, 'latest_valid_snapshot_source', lambda: source)
+
+        def published_freshness(*, snapshot):
+            assert snapshot is source
+            return {
+                'is_current': True, 'data_through': (today - timedelta(days=1)).isoformat(),
+                'availability_reference_date': today.isoformat(), 'product_current_date': today.isoformat(),
+            }
+
+        monkeypatch.setattr(bullpen_api.board_freshness, 'board_freshness_block', published_freshness)
+        monkeypatch.setattr(bullpen_api, 'resolve_club_competition_status',
+                            lambda *_: SimpleNamespace(is_active=True))
         expected_role = {'role_key': 'setup', 'role': 'Setup Arm', 'confidence': 'high'}
         expected_labels = {
             'role': {'key': 'setup_arm', 'label': 'Setup Arm', 'source': 'backend:test'},

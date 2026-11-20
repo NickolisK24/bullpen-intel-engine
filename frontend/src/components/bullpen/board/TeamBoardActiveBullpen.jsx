@@ -42,21 +42,25 @@ export function getActiveBullpenRows(activeBullpen) {
     const appearancesLast7 = countValue(workload.appearances_last_7)
     const pitchesLast7 = countValue(workload.pitches_last_7_days)
     const roleKey = textValue(arm?.public_role_read?.key) || textValue(arm?.public_labels?.role?.key)
-    const read = readPresentation(arm)
+    const current = arm?.arm_context?.mode === 'current'
+    const read = readPresentation(current ? arm : null)
 
     return {
       pitcherId: countValue(arm?.pitcher_id),
       name: textValue(arm?.name) || 'Reliever',
       roleLabel: textValue(arm?.public_role_read?.label) || textValue(arm?.public_labels?.role?.label),
       roleWithheld: roleKey === 'limited_read',
-      readLabel: textValue(arm?.public_labels?.read?.label) || textValue(arm?.availability?.label),
+      readLabel: current
+        ? textValue(arm?.public_labels?.read?.label) || textValue(arm?.availability?.label)
+        : 'Current read withheld',
+      recordedAppearance: !current ? textValue(lastAppearance.game_date || lastAppearance.date) : null,
       readTone: read.tone,
       readMarker: read.marker,
-      daysSince: countValue(workload.days_since_last_appearance),
+      daysSince: current ? countValue(arm.arm_context.days_rest) : null,
       lastGamePitches,
       appearancesLast7,
       pitchesLast7,
-      pattern: workload.back_to_back === true ? 'B2B' : null,
+      pattern: current && workload.back_to_back === true ? 'B2B' : null,
     }
   })
 }
@@ -82,24 +86,18 @@ function firstLimitation(status) {
     : null
 }
 
-function ActiveBullpenHeader({ teamName, populationBasis }) {
+function ActiveBullpenHeader({ teamName, through }) {
   return (
     <header className="mb-panel border-b border-line-default pb-panel tablet:flex tablet:min-w-0 tablet:items-end tablet:justify-between tablet:gap-section">
       <div className="min-w-0">
-        <p className="type-overline text-brand-blue">Current bullpen</p>
         <h2 id="active-bullpen-title" className="mt-meta font-board text-xl font-semibold leading-tight text-text-primary tablet:text-2xl">
           Active Bullpen
           {teamName ? <span className="sr-only"> — {teamName}</span> : null}
         </h2>
         <p className="type-compact mt-meta max-w-reading">
-          Current reliever roles, reads, rest, and recent workload in one scan.
+          Observed roles and workload{through ? ` through ${through}` : ''}.
         </p>
       </div>
-      {populationBasis && (
-        <p className="type-metadata mt-row shrink-0 tablet:mt-0 tablet:max-w-56 tablet:text-right">
-          Current visible active-bullpen population
-        </p>
-      )}
     </header>
   )
 }
@@ -150,7 +148,7 @@ export default function TeamBoardActiveBullpen({
       aria-labelledby="active-bullpen-title"
       data-testid="team-board-active-bullpen"
     >
-      <ActiveBullpenHeader teamName={teamName} populationBasis={activeBullpen?.population_basis} />
+      <ActiveBullpenHeader teamName={teamName} through={read?.freshness?.data_through} />
 
       {hasError ? (
         <SectionState
@@ -180,6 +178,7 @@ export default function TeamBoardActiveBullpen({
                       roleLabel={row.roleLabel}
                       roleWithheld={row.roleWithheld}
                       readLabel={row.readLabel}
+                      partialMessage={row.recordedAppearance ? `Last appearance · ${row.recordedAppearance}` : null}
                       readTone={row.readTone}
                       readMarker={row.readMarker}
                       daysSince={row.daysSince}

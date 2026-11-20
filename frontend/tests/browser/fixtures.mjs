@@ -58,6 +58,7 @@ export const identity = {
 }
 
 const arm = {
+  arm_context: { mode: 'current', days_rest: 2 },
   pitcher_id: 101,
   name: 'Fixture Reliever',
   public_role_read: { key: 'trust_arm', label: 'Trusted Arm', headline: 'Trusted Arm', confidence: 'high' },
@@ -295,6 +296,7 @@ export const discoveryPayload = {
 }
 
 export const pitcherPayload = {
+  arm_context: { mode: 'current', days_rest: 2 },
   pitcher: { id: 101, full_name: 'Fixture Reliever', team_id: 111, team_name: 'Boston Red Sox', team_abbreviation: 'BOS', position: 'P', throws: 'R' },
   current_fatigue: { days_since_last_appearance: 2, appearances_last_7: 1, pitches_last_7_days: 12 },
   availability: { availability_status: 'Available', availability_public_label: 'Available', confidence: 'high', data_state: 'fresh', reasons: ['Three days rest'], limitations: [] },

@@ -9,7 +9,10 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date, timedelta
 
+from services.availability_reference_date import product_current_date
 from services.pitcher_public_labels import (
+    build_public_arm_read,
+    public_arm_context,
     PUBLIC_ROLE_COMPOSITION_KEYS,
     ROLE_PUBLIC_LABELS,
 )
@@ -93,6 +96,7 @@ def _section_status(status, *, reason_code=None, limitations=None, represented_d
 
 
 def _active_arms(board):
+    product_day = product_current_date()
     arms = []
     for group in board.get('groups') or []:
         for card in group.get('pitchers') or []:
@@ -113,11 +117,23 @@ def _active_arms(board):
                 appearances_last_7 = display.get('appearances_last_7')
                 pitches_last_7_days = display.get('pitches_last_7_days')
                 last_appearance = deepcopy(display.get('last_appearance'))
+            roster = card.get('roster_status') or {}
+            last_work = card.get('last_workload_appearance') or {}
+            context = public_arm_context(
+                freshness=board.get('freshness') or {}, product_day=product_day,
+                club_active=(board.get('team_state') or {}).get('available') is True,
+                roster=roster, data_state=card.get('data_state'),
+                latest_game_date=last_work.get('game_date') or last_work.get('date'),
+            )
+            labels = deepcopy(card.get('pitcher_labels') or {})
+            if context['mode'] != 'current':
+                labels['read'] = build_public_arm_read(roster_status=roster)
             arms.append({
+                'arm_context': context,
                 'pitcher_id': card.get('pitcher_id'),
                 'name': card.get('name'),
                 'public_role_read': deepcopy(card.get('public_role_read')),
-                'public_labels': deepcopy(card.get('pitcher_labels')),
+                'public_labels': labels,
                 'availability': {
                     'status': card.get('availability_status'),
                     'label': card.get('availability_public_label'),

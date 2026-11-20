@@ -39,8 +39,9 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const {
     pitcher,
     current_fatigue: cf,
+    arm_context: armContext,
     availability,
-    workload_signal: workloadSignal,
+    workload_signal: representedWorkload,
     roster_status: rosterStatus,
     freshness,
     last_workload_appearance: lastWorkloadAppearance,
@@ -49,18 +50,22 @@ export function PitcherDetailContent({ data, pitcherId }) {
     recent_work_status: recentWorkStatus,
     deployment_context: deploymentContext,
   } = data || {}
+  const current = armContext?.mode === 'current'
+  const workloadSignal = current ? representedWorkload : null
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
   const workloadAppearance = normalizeAppearance(lastWorkloadAppearance)
   const mostRecentAppearance = workloadAppearance
-  const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, productCurrentDate)
-  const hasCurrentRead = Boolean(cf || availability || pitcherLabels)
+  const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, current ? productCurrentDate : null)
+  const hasPitcherEvidence = Boolean(cf || availability || pitcherLabels || mostRecentAppearance || recentWork || deploymentContext)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
   const teamBoardHref = teamReference ? buildTeamBoardHref(teamReference) : null
+  const rosterUnavailable = rosterStatus?.is_authoritative && rosterStatus.is_inactive_context
+    && pitcherLabels?.read?.key === 'unavailable'
   const currentStateFacts = [
-    { label: 'Current Role', value: pitcherLabels?.role?.label },
-    { label: 'Current Read', value: pitcherLabels?.read?.label },
+    { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
+    { label: 'Current Read', value: current || rosterUnavailable ? pitcherLabels?.read?.label : 'Withheld' },
     { label: 'Last Used', value: mostRecentAppearanceLabel },
-    { label: 'Days Rest', value: cf?.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : null },
+    { label: 'Days Rest', value: current && armContext.days_rest != null ? `${armContext.days_rest}d` : null },
     { label: 'Appearances / 7d', value: cf?.appearances_last_7 },
     { label: 'Pitches / 7d', value: cf?.pitches_last_7_days },
   ]
@@ -82,7 +87,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
         </div>
       </div>
 
-      {hasCurrentRead ? (
+      {hasPitcherEvidence ? (
         <div className="min-w-0 p-4 sm:p-5 lg:p-6">
           <section
             className="rounded border border-amber/30 bg-field/70 p-3 shadow-sm sm:p-4"
@@ -91,7 +96,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h2 id="pitcher-current-state-title" className="font-display text-lg tracking-wider text-chalk100">
-                  Current Bullpen Situation
+                  {current ? 'Current Bullpen Situation' : 'Recorded Bullpen Workload'}
                 </h2>
                 <div className="mt-1 font-mono text-xs text-chalk400">
                   {rosterStatus?.label || 'Roster status unavailable'}
@@ -103,6 +108,10 @@ export function PitcherDetailContent({ data, pitcherId }) {
                 </div>
               )}
             </div>
+
+            {!current && cf?.calculated_at && (
+              <p className="mt-2 font-mono text-xs text-chalk400">Workload counts recorded {cf.calculated_at.slice(0, 10)}</p>
+            )}
 
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3">
               {currentStateFacts.map(({ label, value }) => (
@@ -126,7 +135,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
           </section>
 
           <div className="mt-6 space-y-5 border-t border-dirt/70 pt-5 sm:mt-7 sm:space-y-6 sm:pt-6">
-            {availability ? (
+            {current && availability ? (
               <AvailabilitySummary
                 availability={availability}
                 workloadSignal={workloadSignal}

@@ -27,6 +27,7 @@ const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 function arm(overrides = {}) {
   return {
     pitcher_id: 22,
+    arm_context: { mode: 'current', days_rest: 1 },
     name: 'Christopher Longname-Example',
     public_role_read: { key: 'bridge_arm', label: 'Backend Setup Phrase' },
     public_labels: {
@@ -57,6 +58,7 @@ function read(overrides = {}) {
         arm(),
         arm({
           pitcher_id: 11,
+          arm_context: { mode: 'current', days_rest: 0 },
           name: 'Second Arm',
           public_role_read: { key: 'limited_read', label: 'Backend Role Phrase' },
           public_labels: {
@@ -172,6 +174,7 @@ test('renders only authorized workload facts and preserves legitimate zero', () 
 
 test('missing facts use withheld values rather than converted zero', () => {
   const rows = getActiveBullpenRows({ arms: [arm({
+    arm_context: { mode: 'unavailable', days_rest: null },
     last_appearance: null,
     workload: {
       days_since_last_appearance: null,
@@ -187,7 +190,7 @@ test('missing facts use withheld values rather than converted zero', () => {
   assert.equal(rows[0].pitchesLast7, null)
   assert.equal(rows[0].pattern, null)
   const html = render({ read: read({
-    activeBullpen: { population_basis: 'basis', arm_count: 1, arms: [arm({ last_appearance: null, workload: {} })] },
+    activeBullpen: { population_basis: 'basis', arm_count: 1, arms: [arm({ arm_context: null, last_appearance: null, workload: {} })] },
   }) })
   assert.ok(text(html).includes('— rest'))
   assert.ok(text(html).includes('— app'))
@@ -316,5 +319,18 @@ test('the migrated section contains no sorting, ranking, new workload windows, o
     'appearances_last_5', '<Disclosure', 'Why?', 'reason_code',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
+  }
+})
+
+test('Boston season-complete and legacy arms keep dated work without a current arm read', () => {
+  for (const context of [{ mode: 'historical', days_rest: null }, undefined]) {
+    const html = text(render({ read: read({
+      freshness: { data_through: '2026-10-28' },
+      activeBullpen: { arms: [arm({ arm_context: context })] },
+    }) }))
+    for (const expected of ['Current read withheld', '2026-10-28', 'Backend Setup Phrase', '18 last P']) {
+      assert.ok(html.includes(expected), expected)
+    }
+    assert.doesNotMatch(html, /Backend Watch Phrase|1d rest|B2B/)
   }
 })

@@ -16,6 +16,10 @@ export function teamBoardV2Fixture(board, overrides = {}) {
     .map(card => ({
       pitcher_id: card?.pitcher_id ?? null,
       name: card?.name ?? null,
+      arm_context: {
+        mode: board?.freshness?.is_current && board?.team_state?.available ? 'current' : 'historical',
+        days_rest: card?.workload_facts?.days_since_last_appearance ?? null,
+      },
       public_role_read: card?.public_role_read ?? null,
       public_labels: card?.pitcher_labels ?? null,
       availability: {

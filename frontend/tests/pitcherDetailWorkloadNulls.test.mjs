@@ -41,6 +41,7 @@ function detailData(pitchesLastSevenDays) {
       position: 'P',
       throws: 'R',
     },
+    arm_context: { mode: 'current', days_rest: 2 },
     current_fatigue: {
       calculated_at: '2026-08-16T11:00:00',
       days_since_last_appearance: 2,
@@ -196,4 +197,20 @@ test('Pitcher detail uses one eager owner request and the composed recent-work p
   assert.equal(source.includes('max-h-[calc(100vh-3rem)]'), false)
   assert.equal(source.includes('overflow-y-auto'), false)
   assert.equal(source.includes('sticky top-6'), false)
+})
+
+test('historical Murphy detail keeps recorded role and pitch count while withholding current claims', () => {
+  const data = detailData(0)
+  data.pitcher.full_name = 'Owen Murphy'
+  data.pitcher_labels.read.label = 'Clean Option'
+  data.availability = { availability_status: 'Available', data_state: 'stale' }
+  data.last_workload_appearance = { game_date: '2026-09-22', pitches: 50 }
+  for (const context of [{ mode: 'historical' }, undefined]) {
+    const html = renderData({ ...data, arm_context: context })
+    assert.match(html, /Recorded Bullpen Workload/)
+    assert.match(html, /Setup Arm/)
+    assert.match(html, /50 pitches/)
+    assert.equal(currentStateFactValue(html, 'Days Rest'), '—')
+    assert.doesNotMatch(html, /Clean Option|Final availability: Available/)
+  }
 })

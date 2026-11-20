@@ -92,6 +92,8 @@ def test_player_detail_il_60_final_availability_matches_board_override(client):
 
     assert detail['availability']['availability_status'] == 'Unavailable'
     assert detail['availability']['roster_status']['label'] == '60-Day IL'
+    assert detail['pitcher_labels']['read']['key'] == 'unavailable'
+    assert detail['arm_context']['days_rest'] is None
     assert detail['workload_signal']['availability_status'] == 'Available'
     assert any('Roster status: 60-Day IL.' in reason for reason in detail['availability']['reasons'])
     assert any('not available for bullpen planning' in limitation for limitation in detail['availability']['limitations'])
@@ -139,3 +141,28 @@ def test_player_detail_carries_product_day_without_rewriting_persisted_days_rest
 
     assert detail['freshness']['product_current_date'] == '2026-08-25'
     assert detail['current_fatigue']['days_since_last_appearance'] == 3
+
+
+def test_murphy_stale_publication_keeps_workload_and_withholds_present_read(client, monkeypatch):
+    import api.bullpen as api
+
+    with client.application.app_context():
+        pitcher = seed_pitcher('Owen Murphy', 702566, STATUS_ACTIVE)
+        pitcher_id = pitcher.id
+        pitcher.team_id = 144
+        pitcher.team_name = 'Atlanta Braves'
+        pitcher.team_abbreviation = 'ATL'
+        game = GameLog.query.filter_by(pitcher_id=pitcher_id).one()
+        game.game_date = date(2026, 9, 22)
+        game.pitches_thrown = 50
+        db.session.commit()
+    monkeypatch.setattr(api.board_freshness, 'board_freshness_block', lambda **_: {
+        'data_through': '2026-10-28', 'availability_reference_date': '2026-10-30',
+        'product_current_date': '2026-11-19', 'is_current': False,
+    })
+    detail = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
+    assert detail['arm_context'] == {
+        'mode': 'historical', 'data_through': '2026-10-28', 'days_rest': None,
+    }
+    assert detail['pitcher_labels']['read']['key'] == 'limited_read'
+    assert detail['last_workload_appearance'] == {'game_date': '2026-09-22', 'pitches': 50}

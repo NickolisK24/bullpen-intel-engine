@@ -124,6 +124,7 @@ test('Pitcher detail keeps PIT-01 PIT-02 and PIT-03 healthy around workload patt
       position: 'P',
       throws: 'R',
     },
+    arm_context: { mode: 'current', days_rest: 2 },
     current_fatigue: {
       days_since_last_appearance: 1,
       appearances_last_7: 3,
