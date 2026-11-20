@@ -525,7 +525,7 @@ def test_active_bullpen_matches_legacy_population_and_preserves_unknowns():
     assert arms[0]['public_role_read'] == ARM['public_role_read']
     assert set(arms[0]) == {
         'pitcher_id', 'name', 'public_role_read', 'public_labels', 'availability',
-        'last_appearance', 'workload', 'roster_status', 'visibility',
+        'last_appearance', 'workload', 'roster_status', 'visibility', 'arm_context',
     }
     assert 'fatigue_score' not in repr(arms)
     assert '3_in_4' not in repr(arms)
@@ -1894,3 +1894,62 @@ def test_core_and_deferred_envelopes_keep_semantics_separate():
     assert details['section_status']['recent_usage_rest']['status'] == 'available'
     assert details['performance'] == _performance()
     assert details['what_changed'] == _what_changed()
+
+
+@pytest.mark.parametrize('mutation,current', [
+    ('eligible', True), ('season_complete', False), ('old_reference', False),
+    ('stale_arm', False), ('unknown_roster', False), ('failed_freshness', False),
+    ('old_appearance', False), ('unpublished_appearance', False),
+])
+def test_public_arm_currentness_at_serving_time(monkeypatch, mutation, current):
+    import services.team_board_v2 as service
+
+    monkeypatch.setattr(service, 'product_current_date', lambda: date(2026, 8, 17))
+    board = _board()
+    board['freshness'].update(is_current=True, availability_reference_date='2026-08-17')
+    card = board['groups'][1]['pitchers'][0]
+    card['roster_status'].update(is_authoritative=True, is_active_mlb=True)
+    if mutation == 'season_complete':
+        board['team_state'].update(available=False, outcome='season_complete')
+    elif mutation == 'old_reference':
+        board['freshness']['availability_reference_date'] = '2026-08-16'
+    elif mutation == 'stale_arm':
+        card['data_state'] = 'stale'
+    elif mutation == 'unknown_roster':
+        card['roster_status']['is_authoritative'] = False
+    elif mutation == 'old_appearance':
+        card['last_workload_appearance']['date'] = '2026-08-01'
+    elif mutation == 'unpublished_appearance':
+        card['last_workload_appearance']['date'] = '2026-08-17'
+    elif mutation == 'failed_freshness':
+        board['freshness']['fail_closed'] = True
+    original = deepcopy(board)
+    arm = build_team_board_v2_payload(board)['active_bullpen']['arms'][0]
+    assert arm['arm_context'] == {
+        'mode': 'current' if current else 'historical',
+        'data_through': '2026-08-16', 'days_rest': 2 if current else None,
+    }
+    assert arm['public_labels']['read']['key'] == (card['pitcher_labels']['read']['key'] if current else 'limited_read')
+    assert arm['last_appearance'] == card['last_appearance']
+    assert board == original
+
+
+def test_core_revalidation_after_product_midnight_with_same_snapshot(client, monkeypatch):
+    import services.team_board_v2 as service
+
+    board = _board()
+    board['freshness'].update(is_current=True, availability_reference_date='2026-08-17')
+    arm = board['groups'][1]['pitchers'][0]
+    arm['roster_status'].update(is_authoritative=True, is_active_mlb=True)
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', lambda *a, **kw: board)
+    monkeypatch.setattr(service, 'product_current_date', lambda: date(2026, 8, 17))
+    path = '/api/bullpen/teams/1/board-v2/core'
+    current = client.get(path)
+    assert current.get_json()['active_bullpen']['arms'][0]['arm_context']['mode'] == 'current'
+    headers = {'If-None-Match': current.headers['ETag']}
+    assert client.get(path, headers=headers).status_code == 304
+    monkeypatch.setattr(service, 'product_current_date', lambda: date(2026, 8, 18))
+    aged = client.get(path, headers=headers)
+    assert aged.status_code == 200
+    assert aged.get_json()['active_bullpen']['arms'][0]['arm_context']['mode'] == 'historical'
+    assert aged.get_json()['publication_identity'] == current.get_json()['publication_identity']

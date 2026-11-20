@@ -166,7 +166,7 @@ test('PitcherDetail passes final availability workload signal and roster status 
     'utf8',
   )
 
-  assert.ok(source.includes('workload_signal: workloadSignal'))
+  assert.ok(source.includes('workload_signal: representedWorkload'))
   assert.ok(source.includes('roster_status: rosterStatus'))
   assert.ok(source.includes('freshness'))
   assert.ok(source.includes('last_workload_appearance: lastWorkloadAppearance'))
@@ -206,6 +206,7 @@ test('PitcherDetail does not reconstruct a withheld workload appearance from rec
 test('PitcherDetail preserves a backend-authored unknown pitch count', () => {
   const html = renderDetail({
     pitcher: { full_name: 'Known Date Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    arm_context: { mode: 'current', days_rest: 1 },
     current_fatigue: {},
     freshness: {
       data_through: '2026-08-30',
@@ -225,6 +226,7 @@ test('PitcherDetail preserves a backend-authored unknown pitch count', () => {
 test('PitcherDetail preserves an explicit backend-authored zero', () => {
   const html = renderDetail({
     pitcher: { full_name: 'Zero Pitch Arm', team_name: 'Test Club', position: 'P', throws: 'R' },
+    arm_context: { mode: 'current', days_rest: 1 },
     current_fatigue: {},
     freshness: {
       data_through: '2026-08-30',
@@ -248,6 +250,7 @@ test('PitcherDetail leads with availability and workload facts instead of a blac
       position: 'P',
       throws: 'R',
     },
+    arm_context: { mode: 'current', days_rest: 1 },
     current_fatigue: {
       raw_score: 88,
       risk_level: 'CRITICAL',

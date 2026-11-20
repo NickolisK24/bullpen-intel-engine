@@ -1,5 +1,7 @@
 """Answer-first, publication-identified Team Board delivery endpoints."""
 
+from hashlib import sha256
+
 from flask import Blueprint, current_app, jsonify, request
 
 from api.bullpen import _freshness_reference_date
@@ -152,8 +154,11 @@ def get_team_board_core(team_id):
     payload = build_team_board_core_payload(
         board, publication_identity=identity,
     )
+    # The same publication can age from current to historical at ET midnight.
+    response = jsonify(payload)
     return apply_public_delivery_headers(
-        jsonify(payload),
+        response,
+        validator=sha256(response.get_data()).hexdigest(),
         resource='team_board_answer_core',
         identity=identity,
         contract_version=payload.get('contract_version'),

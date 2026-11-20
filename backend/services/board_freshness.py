@@ -178,9 +178,12 @@ def published_snapshot_freshness_block(
     return freshness
 
 
-def board_freshness_block(*, use_published=True):
+def board_freshness_block(*, use_published=True, snapshot=_SNAPSHOT_NOT_SUPPLIED):
     if use_published:
-        published = published_snapshot_freshness_block()
+        published = (
+            published_snapshot_freshness_block() if snapshot is _SNAPSHOT_NOT_SUPPLIED
+            else published_snapshot_freshness_block(snapshot=snapshot)
+        )
         if published is not None:
             return _with_product_current_date(published)
     return _with_product_current_date(sync_status_freshness_block())
