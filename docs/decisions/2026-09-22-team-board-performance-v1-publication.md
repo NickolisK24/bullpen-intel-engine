@@ -56,3 +56,26 @@ TB-06 read and never recompute it from mutable GameLog rows. Core/details
 identity remains the publication fence; a mismatched carrier is withheld
 without withholding earlier Team Board sections. No new selector, migration,
 sync authority, or atomic publication authority is created.
+
+## Publication-bound official comparisons
+
+A candidate can now freeze factual HR allowed and inherited/scored counts.
+The daily writer uses the MLB pitching game logs it already fetched in the same
+sync. The completed-game writer retains the explicit boxscore fields in its
+existing reconciliation checkpoint. A build outside daily acquisition can
+use those checkpoints only while their status, game identity, revision, and
+reconciled count agree. Historical packages keep their original contract.
+
+Each qualifying appearance must match its MLB player, club, game, represented
+date, and relief role. HR requires agreement with an explicitly recorded
+local count. For BF and inherited runners the official line can supply a
+missing local component. A conflicting stored count withholds the affected
+domain. An absent official field never contributes zero. Strikeouts plus all
+official walks cannot exceed BF, and inherited runners scored cannot exceed
+inherited runners. The package retains the compared lines, their content
+digest, and the verified population and totals. A GET reads the package by
+value.
+
+Proving all strikeout, walk, and BF inputs changes the K-BB% withholding
+reason to `metric_publication_rule_unapproved`. Evidence qualification and
+approval of a public rate remain separate under the metric-family contract.

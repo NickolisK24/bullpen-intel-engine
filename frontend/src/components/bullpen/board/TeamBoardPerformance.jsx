@@ -24,20 +24,27 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
   const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
     ? status.status
     : 'unavailable'
-  const metrics = Array.isArray(performance?.metrics)
+  const registeredMetrics = Array.isArray(performance?.metrics)
     ? performance.metrics.filter(metric => textValue(metric?.label))
     : []
+  const capabilityNames = [
+    ['k_bb_percent', 'K-BB%'],
+    ['home_runs_allowed', 'HR allowed'],
+    ['inherited_runner_context', 'Inherited runners'],
+  ]
+  const metrics = [...registeredMetrics]
+  for (const [key, label] of capabilityNames) {
+    const capability = performance?.capabilities?.[key]
+    if (capability?.status === 'qualified') {
+      metrics.push({ key, label, value: capability.value, qualification: { status: 'qualified' } })
+    }
+  }
   const metricColumns = metrics.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
   const summary = textValue(performance?.summary)
   const sampleSummary = textValue(performance?.sample_summary)
   const limitation = (Array.isArray(performance?.limitations) ? performance.limitations : [])
     .find(value => textValue(value))
   const hasGovernedContent = metrics.length > 0 || Boolean(summary)
-  const capabilityNames = [
-    ['k_bb_percent', 'K-BB%'],
-    ['home_runs_allowed', 'HR allowed'],
-    ['inherited_runner_context', 'Inherited runners'],
-  ]
   const deferredCapabilities = capabilityNames.filter(([key]) => performance?.capabilities?.[key]?.status === 'unavailable')
 
   return (
@@ -86,7 +93,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
             <details className="type-metadata mt-panel text-text-tertiary">
               <summary className="cursor-pointer">Additional performance context not published</summary>
               <ul className="mt-meta list-disc pl-5">
-                {deferredCapabilities.map(([key, label]) => <li key={key}>{label} — not published</li>)}
+                {deferredCapabilities.map(([key, label]) => <li key={key}>{label} — {performance.capabilities[key].reason_code === 'metric_publication_rule_unapproved' ? 'inputs verified, publication rule pending' : 'not published'}</li>)}
               </ul>
             </details>
           )}

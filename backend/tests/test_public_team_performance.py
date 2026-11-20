@@ -335,6 +335,7 @@ def test_frozen_read_keeps_active_team_owned_sample_and_deferred_domains(app):
     assert capabilities['home_runs_allowed']['value'] is None
     assert GameLog.__table__.c.home_runs_allowed.default.arg == 0
     assert capabilities['inherited_runner_context'] == {
+        'coverage': {'official_rows_verified': 0},
         'status': 'unavailable',
         'reason_code': 'source_completeness_not_certified',
         'reason_codes': ['source_completeness_not_certified'],
@@ -362,3 +363,64 @@ def test_optional_metric_missing_fields_never_certify_zero(app):
     assert payload['capabilities']['k_bb_percent']['coverage']['rows_with_required_fields'] == 0
     assert payload['capabilities']['home_runs_allowed']['coverage']['rows_with_recorded_hr'] == 35
     assert payload['capabilities']['home_runs_allowed']['value'] is None
+
+
+def test_candidate_binds_full_season_splits_to_selected_club_and_date(app):
+    from copy import deepcopy
+    from services import team_performance_evidence as evidence
+
+    arm = _pitcher('Observed Arm', 700053)
+    _log(arm, 1, outs=108, home_runs=0, strikeouts=7, walks=1)
+    db.session.commit()
+    row = GameLog.query.filter_by(pitcher_id=arm.id).one()
+    split = {
+        'date': row.game_date.isoformat(), 'gameType': 'R',
+        'sport': {'id': 1}, 'team': {'id': TEAM_ID}, 'player': {'id': arm.mlb_id},
+        'game': {'gamePk': row.mlb_game_pk},
+        'stat': {'gamesStarted': 0, 'homeRuns': 0, 'battersFaced': 22, 'strikeOuts': 7,
+                 'baseOnBalls': 1, 'inheritedRunners': 3, 'inheritedRunnersScored': 1},
+    }
+
+    def read():
+        return build_frozen_team_performance_payload(
+            TEAM_ID, records=[{'pitcher_id': arm.id}], represented_date=THROUGH,
+            freshness={'fail_closed': False},
+        )
+
+    def verified(payload):
+        return evidence.valid_comparison(payload, TEAM_ID, THROUGH.isoformat(), [arm.id])
+
+    with evidence.capture_daily_splits():
+        evidence.remember_splits(arm.mlb_id, THROUGH.year, [split])
+        frozen = read()
+        assert verified(frozen)
+        caps = frozen['capabilities']
+        assert caps['home_runs_allowed']['value'] == '0'
+        assert caps['inherited_runner_context']['value'] == '1 of 3 scored'
+        assert caps['k_bb_percent']['proof']['inputs'] == {'strikeouts': 7, 'walks': 1, 'batters_faced': 22}
+        assert caps['k_bb_percent']['value'] is None
+        assert caps['k_bb_percent']['reason_code'] == 'metric_publication_rule_unapproved'
+        corrupted = deepcopy(frozen)
+        corrupted['official_comparison']['lines'][0][-1][0] = 1
+        assert not verified(corrupted)
+        assert not evidence.valid_comparison(frozen, TEAM_ID, '2000-01-01', [arm.id])
+
+        for field, value, affected in [
+            ('homeRuns', 1, 'home_runs_allowed'), ('homeRuns', None, 'home_runs_allowed'),
+            ('battersFaced', 3, 'k_bb_percent'), ('inheritedRunnersScored', 4, 'inherited_runner_context'),
+            ('inheritedRunners', False, 'inherited_runner_context'),
+        ]:
+            changed = dict(split, stat={**split['stat'], field: value})
+            evidence.remember_splits(arm.mlb_id, THROUGH.year, [changed])
+            partial = read()
+            assert partial['capabilities'][affected]['value'] is None
+            assert 'proof' not in partial['capabilities'][affected]
+            assert partial['metrics'] == frozen['metrics']
+            assert verified(partial)
+
+        extra = dict(split, game={'gamePk': row.mlb_game_pk + 1})
+        for invalid in ([split, extra], [split, split], [dict(split, team={'id': OTHER_TEAM_ID})]):
+            evidence.remember_splits(arm.mlb_id, THROUGH.year, invalid)
+            assert read()['capabilities']['home_runs_allowed']['value'] is None
+    assert read()['capabilities']['home_runs_allowed']['value'] is None
+    assert verified(frozen)

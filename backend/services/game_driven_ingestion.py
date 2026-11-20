@@ -55,6 +55,7 @@ from services import game_appearance_extraction as extraction
 from services import game_ingestion_planner as planner
 from services import game_log_reconciliation as reconciliation
 from services import pitcher_identity_reconciliation as pitcher_identity
+from services.team_performance_evidence import game_receipt
 from services.game_appearance_extraction import AppearanceExtractionError
 from utils.db import db
 from utils.time import utc_now_naive
@@ -622,6 +623,9 @@ def _process_one_game(
                 'reconciled_rows': reconciled['reconciled'],
                 'relief_rows': outcome['relief_appearances'],
                 'starters': extraction.starter_identity(appearances),
+                'performance_lines': game_receipt(
+                    item.game_pk, item.game_date, revision, boxscore, appearances,
+                ),
                 'inserted': persisted['inserted'],
                 'updated': persisted['updated'],
             },

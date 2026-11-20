@@ -12,6 +12,7 @@ from datetime import date
 
 from services import performance_intelligence
 from services import performance_metrics
+from services import team_performance_evidence as official
 
 
 CAPABILITY = 'public_team_performance'
@@ -78,10 +79,10 @@ def build_frozen_team_performance_payload(
         'members': members,
         'size': len(members),
     }
-    return _build_performance_payload(team_id, represented, group, freshness or {})
+    return _build_performance_payload(team_id, represented, group, freshness or {}, frozen=True)
 
 
-def _build_performance_payload(team_id, represented, group, freshness):
+def _build_performance_payload(team_id, represented, group, freshness, *, frozen=False):
     if represented is None:
         return _unavailable('represented_date_unavailable', group=group)
     if not group['pitcher_ids']:
@@ -109,7 +110,41 @@ def _build_performance_payload(team_id, represented, group, freshness):
         publication_surface=performance_intelligence.PUBLIC_SURFACE_TEAM_BOARD,
         selection=selection,
     )
-    return _project_reads(reads, represented, selection)
+    result = _project_reads(reads, represented, selection)
+    if not frozen or not selection.is_valid or not selection.rows or freshness.get('fail_closed'):
+        return result
+    rows = selection.rows
+    caps = result['capabilities']
+    comparison = official.load_comparisons(rows, group['pitcher_ids'], team_id, represented)
+    official.qualify(caps, rows, comparison, team_id, represented)
+    if not any('proof' in cap for cap in caps.values()):
+        return result
+
+    result['official_comparison'] = {
+        'contract': official.CONTRACT, 'team_id': team_id,
+        'through': represented.isoformat(), 'fields': list(official.FIELDS),
+        'source': comparison.source, 'lines': comparison.lines,
+    }
+    # A metric-local refusal (e.g. missing earned runs AND hits) can leave
+    # the ERA/WHIP projection without a sample. Use the same selected rows.
+    if result['relief_appearances'] != len(rows):
+        result['relief_appearances'] = len(rows)
+        result['active_pitcher_count'] = group['size']
+        result['pitchers_with_sample'] = len({row.pitcher_id for row in rows})
+        outs = [official.count(row.innings_pitched_outs) for row in rows]
+        if None not in outs:
+            result['innings_pitched'] = performance_intelligence.innings_display(sum(outs))
+            result['sample'].update(recorded_outs=sum(outs), innings_pitched=result['innings_pitched'])
+            result['sample_summary'] = _sample_summary(
+                group['size'], result['pitchers_with_sample'], len(rows),
+                result['innings_pitched'], represented,
+            )
+    result['limitations'] = [s for s in result['limitations'] if s != ADDITIONAL_METRICS_LIMITATION]
+    result['limitations'].append('Only metrics with a qualified sample are shown.')
+    if any(cap['status'] == 'qualified' for cap in caps.values()):
+        result['status'] = STATUS_PARTIAL
+        result['reason_code'] = 'metric_partially_available'
+    return result
 
 
 def _represented_date(board):

@@ -705,3 +705,31 @@ test('Team Board loads the answer core first and defers identified depth', async
     assert.equal(adapterSource.includes(forbidden), false, forbidden)
   }
 })
+
+test('qualified HR requires the matching publication, sample, and verified count', () => {
+  const qualified = {
+    status: 'qualified', value: '0', coverage: { official_rows_verified: 1 },
+    proof: {
+      contract: 'team_board_official_pitching_lines_v1', team_id: identity.team_id,
+      through: identity.represented_date, appearances: 1, sample_sha256: 'a'.repeat(64),
+      inputs: { home_runs_allowed: 0 },
+    },
+  }
+  const read = {
+    ...detailsPayload.performance, relief_appearances: 1,
+    official_comparison: { ...qualified.proof, lines: [[801, 7, 123, identity.represented_date, 'mlb_pitching_game_log', [0, 1, 1, 4, 2, 0]]] },
+    capabilities: { ...detailsPayload.performance.capabilities, home_runs_allowed: qualified },
+  }
+  assert.equal(readTeamBoardFrozenPerformance(read, identity), read)
+  assert.equal(readTeamBoardFrozenPerformance(read, { ...identity, team_id: 999 }), null)
+  assert.equal(readTeamBoardFrozenPerformance({ ...read, relief_appearances: 2 }, identity), null)
+})
+
+
+test('a withheld percentage cannot claim verified inputs without its comparison', () => {
+  const read = { ...detailsPayload.performance, capabilities: {
+    ...detailsPayload.performance.capabilities,
+    k_bb_percent: { status: 'unavailable', value: null, reason_code: 'metric_publication_rule_unapproved' },
+  } }
+  assert.equal(readTeamBoardFrozenPerformance(read, identity), null)
+})

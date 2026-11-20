@@ -521,7 +521,25 @@ export function readTeamBoardFrozenPerformance(read, publicationIdentity) {
     || (metric.qualification.status !== 'qualified' && metric.value !== null))) return null
   if (['k_bb_percent', 'home_runs_allowed', 'inherited_runner_context'].some(key => {
     const capability = read.capabilities[key]
-    return !capability || capability.status !== 'unavailable' || capability.value !== null
+    const evidenceOnly = key === 'k_bb_percent'
+      && capability?.status === 'unavailable'
+      && capability.reason_code === 'metric_publication_rule_unapproved'
+    if (capability?.status === 'unavailable' && !evidenceOnly) return capability.value !== null
+    const receipt = read.official_comparison
+    const proof = capability?.proof
+    if (!proof || receipt?.contract !== 'team_board_official_pitching_lines_v1'
+      || receipt.team_id !== publicationIdentity.team_id || receipt.through !== read.through
+      || !Array.isArray(receipt.lines) || receipt.lines.length !== read.relief_appearances
+      || proof.contract !== receipt.contract
+      || proof.team_id !== publicationIdentity.team_id || proof.through !== read.through
+      || !Number.isInteger(proof.appearances) || proof.appearances <= 0
+      || proof.appearances !== read.relief_appearances
+      || capability.coverage?.official_rows_verified !== proof.appearances
+      || !/^[a-f0-9]{64}$/.test(proof.sample_sha256)) return true
+    if (evidenceOnly) return capability.value !== null
+    return key === 'k_bb_percent' || capability.status !== 'qualified'
+      || typeof capability.value !== 'string'
+      || !(key === 'home_runs_allowed' ? /^\d+$/ : /^\d+ of \d+ scored$/).test(capability.value)
   })) return null
   return read
 }
