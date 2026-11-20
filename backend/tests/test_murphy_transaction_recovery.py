@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -179,12 +180,16 @@ def seed_dependency(session, tx, eid, day, team_id, status):
     session.flush()
 
 
+@pytest.mark.parametrize("fenced_database_url", ["restricted_owner"], indirect=True)
 def test_single_event_recovery(fenced_database_url):
     engine = create_engine(fenced_database_url, isolation_level="SERIALIZABLE")
     role = "murphy_" + uuid4().hex
     approver = "approve_" + role
     try:
         with engine.connect() as conn, conn.begin():
+            assert conn.exec_driver_sql("""SELECT NOT r.rolsuper AND NOT r.rolbypassrls
+                FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+                WHERE p.oid='transaction_history_repair.apply_murphy(integer)'::regprocedure""").scalar_one()
             seed(conn)
             seed_atomic_publication(conn)
             neighbor = """SELECT to_jsonb(p) FROM player_transactions p WHERE transaction_id='943761'"""
@@ -222,6 +227,15 @@ def test_single_event_recovery(fenced_database_url):
             refused(conn, APPROVE, "permission denied")
             refused(conn, "UPDATE player_transactions SET to_team_id=464", "permission denied")
             conn.exec_driver_sql("RESET ROLE")
+            # An unmarked caller must not inherit the repair key on function return.
+            trial = conn.begin_nested()
+            conn.exec_driver_sql(f"SET LOCAL ROLE {role}")
+            conn.exec_driver_sql(APPLY)
+            assert not conn.exec_driver_sql(
+                "SELECT current_setting('baseballos.transaction_owner', true)"
+            ).scalar_one()
+            trial.rollback()
+            conn.exec_driver_sql("SET LOCAL baseballos.transaction_owner = 'caller-context'")
             for setup, error in [
                 ("UPDATE source_observations SET completeness='partial' WHERE id=14270", "no rows"),
                 ("UPDATE source_payload_artifacts SET content_hash='bad' WHERE id=2", "integrity mismatch"),
@@ -249,6 +263,12 @@ def test_single_event_recovery(fenced_database_url):
                     "incomplete transaction response",
                 ),
                 (
+                    """CREATE FUNCTION pg_temp.abort_projection() RETURNS trigger LANGUAGE plpgsql AS
+                   'BEGIN RAISE EXCEPTION ''projection failure''; END'; CREATE TRIGGER stop BEFORE UPDATE
+                   ON player_transactions FOR EACH ROW EXECUTE FUNCTION pg_temp.abort_projection()""",
+                    "projection failure",
+                ),
+                (
                     """CREATE FUNCTION pg_temp.abort_write() RETURNS trigger LANGUAGE plpgsql AS
                    'BEGIN RAISE EXCEPTION ''injected''; END'; CREATE TRIGGER stop BEFORE UPDATE OF
                    status ON repair_requests FOR EACH ROW EXECUTE FUNCTION pg_temp.abort_write()""",
@@ -266,11 +286,13 @@ def test_single_event_recovery(fenced_database_url):
                 initial = contents(conn, tables)
                 conn.exec_driver_sql(f"SET LOCAL ROLE {role}")
                 refused(conn, APPLY, error)
+                assert conn.exec_driver_sql("SHOW baseballos.transaction_owner").scalar_one() == "caller-context"
                 conn.exec_driver_sql("RESET ROLE")
                 assert contents(conn, tables) == initial
                 point.rollback()
             conn.exec_driver_sql(f"SET LOCAL ROLE {role}")
             successor = conn.exec_driver_sql(APPLY).scalar_one()
+            assert conn.exec_driver_sql("SHOW baseballos.transaction_owner").scalar_one() == "caller-context"
             refused(conn, APPLY, "scope|settled")
             conn.exec_driver_sql("RESET ROLE")
             row = conn.execute(

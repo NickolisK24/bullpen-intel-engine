@@ -518,7 +518,7 @@ def _migration_env(url):
 
 
 @pytest.fixture
-def fenced_database_url():
+def fenced_database_url(request):
     """A disposable database built by the real migration chain (fence included)."""
     url = _test_database_url()
     assert_disposable_test_target(url, operation='schedule ownership fence proof')
@@ -527,20 +527,34 @@ def fenced_database_url():
         pytest.skip('The schedule fence is a PostgreSQL trigger; CI backend shards provide it')
     admin = create_engine(parsed.set(database='postgres'), isolation_level='AUTOCOMMIT')
     name = f'schedule_fence_test_{uuid.uuid4().hex[:12]}'
-    with admin.connect() as connection:
-        connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
+    restricted = getattr(request, 'param', None) == 'restricted_owner'
+    owner = f'{name}_owner'
     target = parsed.set(database=name).render_as_string(hide_password=False)
+    migration_url = parsed.set(database=name)
     try:
+        with admin.connect() as connection:
+            if restricted:
+                password = uuid.uuid4().hex
+                connection.exec_driver_sql(
+                    f'CREATE ROLE "{owner}" LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD %s', (password,)
+                )
+                connection.exec_driver_sql(f'CREATE DATABASE "{name}" OWNER "{owner}"')
+                migration_url = migration_url.set(username=owner, password=password)
+            else:
+                connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
         result = subprocess.run(
             [sys.executable, '-m', 'flask', '--app', 'app', 'db', 'upgrade'],
-            cwd=_BACKEND, env=_migration_env(target), capture_output=True, text=True,
+            cwd=_BACKEND, env=_migration_env(migration_url.render_as_string(hide_password=False)),
+            capture_output=True, text=True,
             timeout=300,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         yield target
     finally:
         with admin.connect() as connection:
-            connection.exec_driver_sql(f'DROP DATABASE "{name}" WITH (FORCE)')
+            connection.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            if restricted:
+                connection.exec_driver_sql(f'DROP ROLE IF EXISTS "{owner}"')
         admin.dispose()
 
 
