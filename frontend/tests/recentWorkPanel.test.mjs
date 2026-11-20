@@ -192,6 +192,17 @@ test('renders absence sentences verbatim when supplied', () => {
   assert.ok(htmlIncludes(html, payload.absence_sentence))
 })
 
+test('an appearance keeps its identity and displays only recorded stats', () => {
+  const row = {
+    game_date: '2026-07-03', opponent_abbreviation: 'BOS',
+    innings_pitched: null, innings_pitched_outs: null, pitches_thrown: null,
+    strikeouts: null, walks: 0, hits_allowed: null, runs_allowed: 1,
+  }
+  const html = renderPanel({ payload: { recent_appearances: [row] } })
+  for (const fact of ['2026-07-03', 'vs BOS', '0 BB', '1 R']) assert.ok(htmlIncludes(html, fact))
+  for (const invented of ['0.0 IP', '0 P', '0 K', '0 H']) assert.equal(htmlIncludes(html, invented), false)
+})
+
 test('recent appearance rows stay factual and field-based', () => {
   const html = renderPanel({ payload: recentWorkPayload })
 

@@ -144,16 +144,16 @@ def _appearance_line(log):
         'innings_pitched': log.innings_pitched,
         'innings_pitched_outs': log.innings_pitched_outs,
         'pitches_thrown': log.pitches_thrown,
-        'strikeouts': log.strikeouts or 0,
-        'walks': log.walks or 0,
-        'hits_allowed': log.hits_allowed or 0,
-        'runs_allowed': log.runs_allowed or 0,
-        'save': bool(log.save),
-        'hold': bool(log.hold),
-        'blown_save': bool(log.blown_save),
-        'win': bool(log.win),
-        'loss': bool(log.loss),
-        'save_situation': bool(log.save_situation),
+        'strikeouts': log.strikeouts,
+        'walks': log.walks,
+        'hits_allowed': log.hits_allowed,
+        'runs_allowed': log.runs_allowed,
+        'save': log.save,
+        'hold': log.hold,
+        'blown_save': log.blown_save,
+        'win': log.win,
+        'loss': log.loss,
+        'save_situation': log.save_situation,
     }
 
 
@@ -168,25 +168,23 @@ def _last_appearance_payload(log, anchor):
 
 
 def _last_appearance_sentence(log):
-    opponent = log.opponent_abbreviation or log.opponent or ''
-    parts = [
-        f'Last appearance: {_month_day(log.game_date)} vs {opponent} \u2014 '
-        f'{_ip_text(log.innings_pitched_outs)} IP'
-    ]
-    if log.pitches_thrown is not None:
-        parts.append(f'{log.pitches_thrown} pitches')
-    parts.extend([
-        f'{log.strikeouts or 0} K',
-        f'{log.walks or 0} BB',
-    ])
-    hits = log.hits_allowed or 0
-    runs = log.runs_allowed or 0
-    if hits or runs:
-        parts.extend([
-            f'{hits} H',
-            f'{runs} R',
-        ])
-    return f'{", ".join(parts)}.'
+    lead = f'Last appearance: {_month_day(log.game_date)}'
+    opponent = log.opponent_abbreviation or log.opponent
+    if opponent:
+        lead += f' vs {opponent}'
+
+    stats = []
+    outs = log.innings_pitched_outs
+    if outs is not None:
+        stats.append(f'{outs // 3}.{outs % 3} IP')
+    counts = [(log.pitches_thrown, 'pitches'), (log.strikeouts, 'K'), (log.walks, 'BB')]
+    # The compact summary omits H and R when both are recorded zeroes.
+    if (log.hits_allowed, log.runs_allowed) != (0, 0):
+        counts.extend([(log.hits_allowed, 'H'), (log.runs_allowed, 'R')])
+    stats.extend(f'{value} {label}' for value, label in counts if value is not None)
+    if stats:
+        lead += ' — ' + ', '.join(stats)
+    return lead + '.'
 
 
 def _timing_sentence(game_date, anchor):
@@ -258,11 +256,6 @@ def _workload_window(logs, anchor, window_days):
 
 def _month_day(value):
     return f'{MONTH_NAMES[value.month]} {value.day}'
-
-
-def _ip_text(innings_pitched_outs):
-    outs = innings_pitched_outs or 0
-    return f'{outs // 3}.{outs % 3}'
 
 
 def _appearance_count_text(count):
