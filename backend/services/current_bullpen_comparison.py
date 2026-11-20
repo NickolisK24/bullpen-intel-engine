@@ -12,6 +12,8 @@ import logging
 from typing import Mapping
 
 from services import public_serving_authority as authority
+from services.availability_reference_date import parse_reference_date, product_current_date
+from services.pitcher_public_labels import board_arm_context
 from services.bullpen_board import (
     REST_STATUS_METHOD_VERSION,
     REST_STATUS_PUBLIC_CONTRACT_VERSION,
@@ -73,7 +75,7 @@ def _team_destination(team):
 
 def _team_identity(team_id, team_package):
     team = deepcopy(dict(_mapping(_mapping(team_package).get('team'))))
-    if team.get('team_id') not in (None, team_id):
+    if team.get('team_id') != team_id:
         return None
     team['team_id'] = team_id
     return {
@@ -287,15 +289,27 @@ def _rotation(snapshot, team_id):
     ), partial
 
 
-def _availability(team_package, *, package_date, reference_date):
+def _availability(team_package, *, package_date, reference_date, freshness, day, state):
     package = _mapping(team_package)
     if _roster_counts_withheld(package.get('roster_authority')):
         return None, ()
     records = authority._records_for_view(package, False)
-    groups = group_cards(_board_cards(records))
+    cards = _board_cards(records)
+    ids = {str(card.get('pitcher_id')) for card in cards}
+    expected_ids = {str(value) for value in package.get('default_pitcher_ids') or []}
+    if (not cards or ids != expected_ids or len(ids) != len(cards) or not state or state.get('data_through') != package_date
+            or freshness.get('data_through') != package_date
+            or freshness.get('availability_reference_date') != reference_date
+            or any(board_arm_context(
+                card, freshness=freshness, product_day=day, club_active=True,
+            )['mode'] != 'current' for card in cards)):
+        return None, ()
+    groups = group_cards(cards)
     counts = {group.get('status'): group.get('count') for group in groups}
     required = ('Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable')
     if any(type(counts.get(key)) is not int or counts[key] < 0 for key in required):
+        return None, ()
+    if sum(counts[key] for key in required) != len(cards):
         return None, ()
     # "Unavailable" is the existing public fold of internal Avoid and strict
     # Unavailable.  It is authored here once; the browser never reconstructs it.
@@ -331,6 +345,7 @@ def build_current_bullpen_comparison(
     if (
         package.get('contract') != authority.TEAM_BOARD_PACKAGE_CONTRACT
         or package_date != _iso(getattr(snapshot, 'data_through', None))
+        or reference_date != _iso(getattr(snapshot, 'availability_reference_date', None))
     ):
         return None, REASON_DOMAIN_UNAVAILABLE
 
@@ -367,12 +382,16 @@ def build_current_bullpen_comparison(
     rotation_b, rotation_stamp_b, rotation_partial_b = _safe_project(
         'rotation', _rotation, snapshot, team_b_id, fallback=(None, (), False)
     )
+    freshness = _mapping(snapshot.payload.get('freshness'))
+    day = parse_reference_date(as_of_date) if as_of_date is not None else product_current_date()
     availability_a, availability_stamp_a = _safe_project(
         'availability', _availability, package_a, fallback=(None, ()),
+        freshness=freshness, day=day, state=state_a,
         package_date=package_date, reference_date=reference_date,
     )
     availability_b, availability_stamp_b = _safe_project(
         'availability', _availability, package_b, fallback=(None, ()),
+        freshness=freshness, day=day, state=state_b,
         package_date=package_date, reference_date=reference_date,
     )
 
@@ -438,6 +457,7 @@ def build_current_bullpen_comparison(
         'status': STATUS_PARTIAL if unavailable or partial else STATUS_AVAILABLE,
         'reason_code': None,
         'represented_date': package_date,
+        'availability_reference_date': reference_date,
         'ranking_applied': False,
         'selection_made': False,
         'prediction_applied': False,

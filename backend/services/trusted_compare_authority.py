@@ -7,6 +7,10 @@ publication that lands mid-request cannot produce a mixed comparison.
 """
 
 import logging
+from datetime import datetime, timezone
+
+from services.availability_reference_date import parse_reference_date, product_current_date
+from services.team_board_snapshot_team_state import receipt_value
 
 from flask import jsonify, request
 
@@ -128,6 +132,26 @@ def _scheduled_game_context(game, comparison, directory):
     }
 
 
+def _requires_pregame_edition(source):
+    day = parse_reference_date(source.get('game_date_et'))
+    return (source.get('status') or {}).get('normalized') in ('live', 'completed') or (
+        day is None or day < product_current_date()
+    )
+
+
+def _pregame_eligible(snapshot, source):
+    try:
+        start = datetime.fromisoformat(source['game_time_utc'].replace('Z', '+00:00'))
+        if start.tzinfo is None:
+            return False
+    except (KeyError, AttributeError, ValueError):
+        return False
+    return authority.dashboard_snapshot_service.is_pregame_publication(
+        snapshot, parse_reference_date(source.get('game_date_et')),
+        start.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
 def build_scheduled_game_matchup_payload(
     game, snapshot, *, directory=None, team_state_overrides=None,
 ):
@@ -153,8 +177,20 @@ def build_scheduled_game_matchup_payload(
     home_team_id = source.get('home_team_id')
     comparison = None
     reason = GAME_COMPARISON_UNAVAILABLE
+    pregame = _requires_pregame_edition(source)
+    if pregame:
+        if not _pregame_eligible(snapshot, source):
+            snapshot = None
+            reason = 'trusted_pregame_edition_unavailable'
+
     if snapshot is not None and away_team_id is not None and home_team_id is not None:
         try:
+            if pregame:
+                # Legacy Team State artifacts could have been published after first pitch.
+                team_state_overrides = {
+                    team_id: receipt_value(snapshot, team_id)[1] or {}
+                    for team_id in (away_team_id, home_team_id)
+                }
             # The game's date is the day the rest counts must describe.
             if team_state_overrides is None:
                 comparison, reason = build_current_bullpen_comparison(
@@ -181,6 +217,7 @@ def build_scheduled_game_matchup_payload(
             if isinstance(comparison, dict)
             else 'partial'
         ),
+        'comparison_basis': 'pregame' if pregame and comparison else None,
         'reason_code': None if comparison is not None else reason,
         'ranking_applied': False,
         'selection_made': False,
@@ -218,7 +255,10 @@ def trusted_game_matchup_view(game_pk):
         )
         directory = {}
     try:
-        snapshot = authority.dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+        if _requires_pregame_edition(game.to_dict()) and _not_upcoming_reason(game) is None:
+            snapshot = authority.dashboard_snapshot_service.pregame_dashboard_snapshot(game)
+        else:
+            snapshot = authority.dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     except Exception:  # noqa: BLE001 - game identity remains independently useful
         logger.warning(
             'Scheduled game matchup snapshot read failed for game_pk=%s.',

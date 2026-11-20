@@ -36,12 +36,13 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
   // The backend marks a game that will not be played (cancelled, or removed
   // from MLB's schedule as an unneeded postseason game) as not upcoming.
   const notUpcoming = payload.status === 'not_upcoming'
+  const gameLabelByState = { completed: 'Completed Game', live: 'Live Game' }
 
   return (
     <div className="space-y-6">
       <header className="border-b border-dirt pb-5">
         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">
-          {notUpcoming ? 'Not Played' : 'Scheduled Matchup'}
+          {notUpcoming ? 'Not Played' : (gameLabelByState[game.status?.normalized] || 'Scheduled Matchup')}
         </p>
         <h1 className="mt-2 break-words font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">
           {awayName} at {homeName}
@@ -69,7 +70,9 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
       ) : (
         <EmptyState
           title="Bullpen comparison unavailable"
-          subtitle="The scheduled game is available, but its current bullpen comparison could not be established."
+          subtitle={payload.reason_code === 'trusted_pregame_edition_unavailable'
+            ? 'No trusted pregame comparison is available for this game date.'
+            : 'A bullpen comparison could not be established for this game.'}
         />
       )}
     </div>

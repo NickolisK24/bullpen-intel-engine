@@ -220,6 +220,34 @@ def payload_version_valid(snapshot):
     )
 
 
+def is_pregame_publication(snapshot, game_date, start_utc):
+    """Use durable publication evidence even after the current pointer rotates."""
+    return (
+        snapshot is not None and game_date is not None and start_utc is not None
+        and snapshot.status == SNAPSHOT_STATUS_READY and payload_version_valid(snapshot)
+        and snapshot.sync_run_id is not None and snapshot.published_at is not None
+        and snapshot.published_at < start_utc
+        and snapshot.availability_reference_date == game_date
+        and snapshot.data_through is not None and snapshot.data_through <= game_date
+        and _availability_reference_date_from_payload(snapshot.payload) == game_date
+        and _data_through_from_payload(snapshot.payload) == snapshot.data_through
+        and _payload_slate_coverage_unavailable_reason(snapshot.payload) is None
+    )
+
+
+def pregame_dashboard_snapshot(game):
+    if game.game_date_et is None or game.game_time_utc is None:
+        return None
+    return DashboardSnapshot.query.filter_by(
+        snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD, status=SNAPSHOT_STATUS_READY,
+        payload_version=DASHBOARD_PAYLOAD_VERSION, availability_reference_date=game.game_date_et,
+    ).filter(
+        DashboardSnapshot.sync_run_id.isnot(None),
+        DashboardSnapshot.data_through <= game.game_date_et,
+        DashboardSnapshot.published_at < game.game_time_utc,
+    ).order_by(DashboardSnapshot.published_at.desc(), DashboardSnapshot.id.desc()).first()
+
+
 def snapshot_unavailable_reason(snapshot, sync_status=None):
     if snapshot is None:
         return 'dashboard_snapshot_missing'

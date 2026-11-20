@@ -17,7 +17,7 @@ const includes = (html, value) => html.includes(String(value))
 
 test('renders the aligned current-state domains for both teams', () => {
   const html = render(differingComparison)
-  for (const value of ['Current Bullpen Comparison', 'Aces', 'Bears', 'Fresh', 'Stretched', 'Rested Options', 'Worked Yesterday', 'Back-to-Back', 'Recent Workload', 'Relief Appearances', 'Contributing Relievers', 'Rotation Transfer', 'Short Starts', 'Bullpen Innings', 'Availability', 'On Watch', 'Unavailable']) {
+  for (const value of ['Published Bullpen Comparison', 'Aces', 'Bears', 'Fresh', 'Stretched', 'Rested Options', 'Worked Yesterday', 'Back-to-Back', 'Recent Workload', 'Relief Appearances', 'Contributing Relievers', 'Rotation Transfer', 'Short Starts', 'Bullpen Innings', 'Availability', 'On Watch', 'Unavailable']) {
     assert.ok(includes(html, value), `missing ${value}`)
   }
 })
@@ -117,4 +117,13 @@ test('shows qualified performance with its sample and named rest evidence on bot
   for (const value of ['Fixture published metric', '2.31', '120 innings', 'Fixture Reliever (Setup Arm)', '0d since last appearance']) {
     assert.ok(html.includes(value), value)
   }
+})
+
+test('a pregame comparison identifies its edition and rest reference date', () => {
+  const payload = { ...differingComparison, comparison_basis: 'pregame',
+    comparison: { ...differingComparison.comparison, availability_reference_date: '2026-09-04' } }
+  const html = render(payload)
+  assert.ok(includes(html, 'Pregame Bullpen Comparison'))
+  assert.ok(includes(html, 'Rest reference date: 2026-09-04'))
+  assert.equal(includes(html, 'Current Bullpen Comparison'), false)
 })

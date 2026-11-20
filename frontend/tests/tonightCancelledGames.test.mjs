@@ -101,3 +101,13 @@ test('an ordinary scheduled Matchup is unchanged', () => {
   assert.match(html, /Scheduled Matchup/)
   assert.match(html, /Bullpen comparison unavailable/)
 })
+
+test('a final without a trusted pregame edition retains its game identity', () => {
+  const payload = matchupPayload('partial', 'trusted_pregame_edition_unavailable')
+  payload.game.status = { detailed: 'Final', normalized: 'completed' }
+  const html = render(React.createElement(MatchupPageView, { payload }))
+  assert.match(html, /Completed Game/)
+  assert.match(html, /Away Club at Home Club/)
+  assert.match(html, /No trusted pregame comparison/)
+  assert.doesNotMatch(html, /Scheduled Matchup/)
+})

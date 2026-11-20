@@ -354,6 +354,15 @@ def build_public_arm_read(availability=None, roster_status=None):
     return _read_label(availability, roster_status=roster_status)
 
 
+def board_arm_context(card, *, freshness, product_day, club_active):
+    last_work = card.get('last_workload_appearance') or {}
+    return public_arm_context(
+        freshness=freshness, product_day=product_day, club_active=club_active,
+        roster=card.get('roster_status') or {}, data_state=card.get('data_state'),
+        latest_game_date=last_work.get('game_date') or last_work.get('date'),
+    )
+
+
 def public_arm_context(*, freshness, product_day, club_active, roster, data_state,
                        latest_game_date):
     """Scope a represented workload read at serving time, including old packages."""
