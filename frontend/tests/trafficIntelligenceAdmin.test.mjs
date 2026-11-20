@@ -489,3 +489,13 @@ test('dashboard renders no raw identifiers and uses no privileged browser token'
 test('admin route is excluded from traffic measurement', () => {
   assert.equal(canonicalPage('/admin/product-intelligence'), null)
 })
+
+test('research journeys label observed home-to-matchup transitions and partial historical coverage', () => {
+  const report = reportFixture({ research_journeys: [
+    { from_surface: 'today', to_surface: 'matchup', transitions: 7 },
+  ] })
+  const html = render(React.createElement(TrafficReport, { report }))
+  assert.ok(html.includes('Home / Tonight → Matchup'))
+  assert.ok(html.includes('Coverage begins when each route is instrumented.'))
+  assert.ok(html.includes('>7</span>'))
+})

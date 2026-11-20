@@ -325,3 +325,30 @@ test('request failure is isolated and request excludes token and raw query from 
   assert.equal(request.options.body.includes('do-not-send'), false)
   assert.equal(JSON.parse(request.options.body).utm_source, 'source')
 })
+
+test('direct and subsequent research visits send bounded route templates in one session', () => {
+  const payloads = []
+  const input = {
+    hostname: 'baseballos.app', cryptoObject: cryptoSequence(), storage: storage(), now: 1,
+    fetchImpl: (_url, options) => payloads.push(JSON.parse(options.body)),
+    search: '?q=private-search&season=2026', hash: '#private-fragment',
+  }
+  for (const [index, [pathname, route, surface]] of [
+    ['/tonight', '/tonight', 'today'], ['/search/', '/search', 'search'],
+    ['/matchup/824424', '/matchup/:gameId', 'matchup'],
+    ['/history/team/BOS', '/history/team/:abbr', 'team_history'],
+  ].entries()) {
+    const location = { ...input, pathname, locationKey: String(index) }
+    assert.equal(observeTrafficRoute(location), true, pathname)
+    assert.equal(observeTrafficRoute(location), false)
+    assert.deepEqual(canonicalPage(pathname), { route, surface })
+    assert.equal(payloads[index].route, route)
+    assert.equal(payloads[index].surface, surface)
+    assert.equal(payloads[index].session_id, payloads[0].session_id)
+  }
+  assert.doesNotMatch(JSON.stringify(payloads), /private-search|private-fragment|824424|BOS|season/)
+  for (const path of ['/today', '/matchup/0', '/matchup/game', '/matchup/123/extra',
+    '/history/team/', '/history/team/a@b', '/history/team/BOS/secret']) {
+    assert.equal(canonicalPage(path), null, path)
+  }
+})

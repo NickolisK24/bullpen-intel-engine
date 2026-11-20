@@ -360,3 +360,22 @@ def test_context_migration_adds_nullable_fields_and_useful_indexes():
         migration.downgrade()
         remaining = {column['name'] for column in sa.inspect(connection).get_columns('traffic_page_views')}
         assert {'team_a_ref', 'team_b_ref', 'entry_source', 'evidence_target'}.isdisjoint(remaining)
+
+
+@pytest.mark.parametrize(('route', 'surface'), [
+    ('/tonight', 'today'), ('/search', 'search'),
+    ('/matchup/:gameId', 'matchup'), ('/history/team/:abbr', 'team_history'),
+])
+def test_research_views_persist_only_canonical_route_and_surface(traffic_app, route, surface):
+    client = traffic_app.test_client()
+    for body in (
+        payload(route=route, surface=surface),
+        payload(route=route, surface='dashboard'),
+        payload(route=route, surface=surface, team_ref='BOS'),
+        payload(route=route + '?q=name', surface=surface),
+        payload(route='/matchup/824424', surface='matchup'),
+        payload(route='/history/team/BOS', surface='team_history'),
+    ):
+        client.post('/api/traffic/page-view', json=body)
+    row = TrafficPageView.query.one()
+    assert (row.route, row.surface, row.team_ref) == (route, surface, None)
