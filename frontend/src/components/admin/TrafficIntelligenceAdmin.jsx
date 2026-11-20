@@ -48,6 +48,7 @@ function formatValue(value) {
 }
 
 function formatSurface(value) {
+  if (value === 'today') return 'Home / Tonight'
   return String(value || 'Unknown').replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
@@ -237,6 +238,17 @@ export function TrafficReport({ report }) {
           ['Pages per Session', report.session_depth?.pages_per_session],
         ]} />
         <RankedSection title="Landing Surfaces" rows={report.landing_surfaces} labelKey="surface" valueKey="sessions" />
+        {report.research_journeys && <SectionShell title="Research Journeys">
+          <p className="my-2 text-xs text-chalk400">Consecutive page views received in the same external session during this period. Coverage begins when each route is instrumented.</p>
+          {report.research_journeys.length ? <ul className="space-y-1 text-sm">
+            {report.research_journeys.map(({ from_surface, to_surface, transitions }) => (
+              <li key={from_surface + to_surface} className="flex justify-between gap-3">
+                <span>{formatSurface(from_surface)} → {formatSurface(to_surface)}</span>
+                <span>{formatValue(transitions)}</span>
+              </li>
+            ))}
+          </ul> : <p className="text-sm text-chalk500">No qualifying transitions recorded.</p>}
+        </SectionShell>}
         <RankedSection title="Most Visited Surfaces" rows={report.most_visited_surfaces} labelKey="surface" valueKey="page_views" />
         <RankedSection title="Top Referrer Domains" rows={report.top_referrers} labelKey="referrer_domain" valueKey="sessions" />
         <CampaignSection rows={report.campaigns || []} />

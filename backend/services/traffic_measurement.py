@@ -18,6 +18,10 @@ INTERNAL_REGISTRATION_SOURCE = 'authenticated_email_allowlist'
 
 PUBLIC_ROUTE_SURFACES = {
     '/': 'today',
+    '/tonight': 'today',
+    '/search': 'search',
+    '/matchup/:gameId': 'matchup',
+    '/history/team/:abbr': 'team_history',
     '/dashboard': 'dashboard',
     '/stories': 'stories',
     '/about': 'about',

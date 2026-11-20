@@ -3,6 +3,7 @@ import {
   BULLPEN_VIEWS,
   EVIDENCE_SECTIONS,
   normalizeBullpenSource,
+  normalizeGameId,
   normalizeTeamReference,
 } from './evidenceLinks'
 
@@ -13,6 +14,8 @@ export const TRAFFIC_CANONICAL_HOST = 'baseballos.app'
 
 const STATIC_ROUTES = Object.freeze({
   '/': 'today',
+  '/tonight': 'today',
+  '/search': 'search',
   '/dashboard': 'dashboard',
   '/stories': 'stories',
   '/about': 'about',
@@ -106,6 +109,13 @@ export function canonicalPage(pathname, search = '', hash = '') {
   const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/+$/, '')
   if (STATIC_ROUTES[path]) {
     return { route: path, surface: STATIC_ROUTES[path] }
+  }
+  const matchup = path.match(/^\/matchup\/(\d+)$/)
+  if (matchup && normalizeGameId(matchup[1])) {
+    return { route: '/matchup/:gameId', surface: 'matchup' }
+  }
+  if (/^\/history\/team\/[A-Z0-9-]{2,5}$/i.test(path)) {
+    return { route: '/history/team/:abbr', surface: 'team_history' }
   }
   const pitcherRoute = path.match(/^\/pitcher\/([1-9]\d*)$/)
   if (pitcherRoute) {

@@ -195,9 +195,10 @@ test('host routing: /tonight direct entry and trailing-slash redirect remain', (
   assert.equal(vercel.routes.some(item => item.dest === '/index.html'), false, 'root still served by the filesystem index')
 })
 
-test('pageviews: / keeps its existing surface; /tonight adds no second pageview mapping', () => {
+test('pageviews: both Tonight destinations share one surface and the redirect adds no view', () => {
   assert.deepEqual(canonicalPage('/'), { route: '/', surface: 'today' })
-  assert.equal(canonicalPage('/tonight'), null)
+  assert.deepEqual(canonicalPage('/tonight'), { route: '/tonight', surface: 'today' })
+  assert.equal(canonicalPage('/today'), null)
 })
 
 test('source-of-truth: the cutover adds no data path to Tonight', () => {

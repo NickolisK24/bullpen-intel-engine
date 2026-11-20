@@ -708,3 +708,21 @@ def test_response_contains_no_raw_or_identity_fields(reporting_app):
     walk(report)
     assert 'visitor-return' not in str(report)
     assert 'return-session' not in str(report)
+
+
+def test_research_journeys_count_only_adjacent_external_session_views(reporting_app):
+    for minute, (visitor, session, surface) in enumerate([
+        ('a', 'one', 'today'), ('b', 'two', 'search'), ('a', 'one', 'matchup'),
+        ('b', 'two', 'pitcher_detail'), ('a', 'one', 'bullpen_board'),
+        ('a', 'one', 'team_history'), ('b', 'two', 'search'), ('b', 'two', 'about'),
+        ('b', 'two', 'pitcher_detail'), ('a', 'new', 'matchup'),
+    ]):
+        add_view(datetime(2026, 7, 14, 12, minute), visitor, session, surface=surface)
+    add_view(datetime(2026, 7, 14, 13), 'bot', 'bot-session', surface='today', is_bot=True)
+    add_view(datetime(2026, 7, 14, 13, 1), 'bot', 'bot-session', surface='matchup', is_bot=True)
+    db.session.commit()
+    assert build_traffic_summary(now=NOW)['research_journeys'] == [
+        {'from_surface': 'bullpen_board', 'to_surface': 'team_history', 'transitions': 1},
+        {'from_surface': 'search', 'to_surface': 'pitcher_detail', 'transitions': 1},
+        {'from_surface': 'today', 'to_surface': 'matchup', 'transitions': 1},
+    ]

@@ -260,6 +260,27 @@ def _acquisition(landing_views, total_sessions):
     }
 
 
+def _research_journeys(rows):
+    """Adjacent recorded page views within this period, in server receipt order."""
+    destinations = {
+        'today': {'bullpen_board', 'matchup'},
+        'search': {'pitcher_detail', 'bullpen_board', 'team_history', 'matchup'},
+        'bullpen_board': {'team_history'},
+    }
+    previous = {}
+    counts = Counter()
+    for row in rows:
+        session = (row.visitor_id, row.session_id)
+        origin = previous.get(session)
+        if row.surface in destinations.get(origin, ()):
+            counts[(origin, row.surface)] += 1
+        previous[session] = row.surface
+    return [
+        {'from_surface': origin, 'to_surface': destination, 'transitions': count}
+        for (origin, destination), count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
 def _visited_surfaces(rows):
     counts = Counter(row.surface for row in rows)
     return [
@@ -620,6 +641,7 @@ def build_traffic_summary(range_key='7d', *, now=None):
         'campaigns': acquisition['campaigns'],
         'landing_surfaces': acquisition['landing_surfaces'],
         'most_visited_surfaces': _visited_surfaces(rows),
+        'research_journeys': _research_journeys(rows),
         'bullpen_exploration': _bullpen_exploration(rows),
         'evidence_exploration': _evidence_exploration(rows),
         'shared_link_landings': _shared_link_landings(landing_views),
