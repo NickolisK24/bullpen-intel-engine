@@ -724,3 +724,12 @@ test('qualified HR requires the matching publication, sample, and verified count
   assert.equal(readTeamBoardFrozenPerformance(read, { ...identity, team_id: 999 }), null)
   assert.equal(readTeamBoardFrozenPerformance({ ...read, relief_appearances: 2 }, identity), null)
 })
+
+
+test('a withheld percentage cannot claim verified inputs without its comparison', () => {
+  const read = { ...detailsPayload.performance, capabilities: {
+    ...detailsPayload.performance.capabilities,
+    k_bb_percent: { status: 'unavailable', value: null, reason_code: 'metric_publication_rule_unapproved' },
+  } }
+  assert.equal(readTeamBoardFrozenPerformance(read, identity), null)
+})

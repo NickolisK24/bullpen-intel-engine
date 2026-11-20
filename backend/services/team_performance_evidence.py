@@ -267,6 +267,7 @@ def valid_comparison(read, team_id, through, population):
         return True
     receipt = read.get('official_comparison')
     if (not isinstance(receipt, dict) or receipt.get('contract') != CONTRACT
+            or not isinstance(through, str) or len(through) != 10
             or receipt.get('team_id') != team_id or receipt.get('through') != through
             or receipt.get('source') not in ('mlb_pitching_game_log', 'mlb_final_boxscore')
             or receipt.get('fields') != list(FIELDS)):
