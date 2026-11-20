@@ -49,16 +49,16 @@ export function PublicationDays({ days }) {
 }
 
 export function PitcherPublicationHistory({ pitcherId, latest }) {
-  const [end, setEnd] = useState(latest)
+  const [end, setEnd] = useState(latest || '')
   const { data, loading, error, refetch } = useFetch(
-    options => getPitcherPublicationHistory(pitcherId, end, options), [pitcherId, end],
+    options => end ? getPitcherPublicationHistory(pitcherId, end, options) : null, [pitcherId, end],
   )
   return <section aria-label="Published role and arm reads" className="border-t border-dirt p-4 sm:p-5">
     <h2 className="font-display text-lg text-chalk100">Published role and arm reads</h2>
     <p className="my-2 text-sm text-chalk400">One week by Team Board data-through date. Changes compare consecutive editions for the same club.</p>
-    <label className="text-sm">Week ending <input type="date" className="bg-field text-chalk100" value={end} max={latest}
-      onChange={event => { if (event.target.value && event.target.validity.valid) setEnd(event.target.value) }} /></label>
-    {error ? <p>History unavailable. <button type="button" className="underline" onClick={refetch}>Retry</button></p>
+    <label className="text-sm">Week ending <input type="date" className="bg-field text-chalk100" value={end} min="1900-01-01" max={latest || undefined}
+      onChange={event => { if (event.target.validity.valid) setEnd(event.target.value) }} /></label>
+    {!end ? <p>Select a week to view archived editions.</p> : error ? <p>History unavailable. <button type="button" className="underline" onClick={refetch}>Retry</button></p>
       : loading || data?.through !== end || String(data?.pitcher_id) !== String(pitcherId)
         ? <p aria-live="polite">Loading published editions…</p> : <PublicationDays days={data.days} />}
   </section>

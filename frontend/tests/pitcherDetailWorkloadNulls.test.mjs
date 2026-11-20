@@ -254,3 +254,8 @@ test('history cites both ends of a published change and identifies a missing edi
   for (const text of ['/share/first', '/share/second', 'Setup Arm', 'Trusted Arm', 'Watch Arm',
     'No citable pitcher label']) assert.ok(html.includes(text), text)
 })
+
+test('archived editions remain searchable when the current publication date is missing', () => {
+  const html = renderData({ ...detailData(0), freshness: {} })
+  assert.ok(html.includes('Select a week to view archived editions.'))
+})

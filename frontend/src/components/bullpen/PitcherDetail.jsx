@@ -179,8 +179,8 @@ export function PitcherDetailContent({ data, pitcherId }) {
         </div>
       )}
       <PitcherPerformance performance={data?.performance} />
-      {pitcherId && freshness?.data_through && <PitcherPublicationHistory
-        key={`${pitcherId}-${freshness.data_through}`} pitcherId={pitcherId} latest={freshness.data_through}
+      {pitcherId && <PitcherPublicationHistory
+        key={`${pitcherId}-${freshness?.data_through}`} pitcherId={pitcherId} latest={freshness?.data_through}
       />}
     </article>
   )
