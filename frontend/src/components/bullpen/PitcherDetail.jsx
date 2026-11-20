@@ -8,6 +8,7 @@ import {
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
+import PitcherTrends from './PitcherTrends'
 import WorkloadPatterns from './WorkloadPatterns'
 import ObservedDeployment from './ObservedDeployment'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
@@ -79,8 +80,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
           <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h1>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
-            <span>·</span>
-            <span>Throws {pitcher?.throws}</span>
+            {['L', 'R', 'S', 'B'].includes(pitcher?.throws) && <><span>·</span><span>Throws {pitcher.throws}</span></>}
             {pitcher?.age && <><span>·</span><span>Age {pitcher.age}</span></>}
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
@@ -162,6 +162,8 @@ export function PitcherDetailContent({ data, pitcherId }) {
               error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
             />
           </div>
+
+          <PitcherTrends work={recentWork} pitches={data?.season_pitch_characteristics} deployment={data?.published_deployment} />
 
           <div className="mt-7 grid min-w-0 gap-5 border-t border-dirt/70 pt-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-6 lg:pt-6">
             <WorkloadPatterns workloadSignal={workloadSignal} />

@@ -2,12 +2,20 @@ import { readPublicTeamState } from '../../../adapters/publicTeamState'
 
 const DOMAIN_DEFINITIONS = [
   { key: 'rest', label: 'Rest', rows: [['rested_options', 'Rested Options'], ['worked_yesterday', 'Worked Yesterday'], ['back_to_back', 'Back-to-Back']] },
-  { key: 'workload', label: 'Recent Workload — 7 Days', rows: [['relief_appearances', 'Relief Appearances'], ['contributing_relievers', 'Contributing Relievers'], ['pitches', 'Pitches']] },
+  { key: 'role_rest', label: 'Late-inning and setup rest', rows: [['save_work', 'Recorded saves · last 14 days'], ['late', 'Observed late-inning arms'], ['setup', 'Observed setup arms']] },
+  { key: 'performance', label: 'Active-group performance · regular season', rows: [['active_bullpen_era'], ['active_bullpen_whip'], ['home_runs_allowed'], ['k_bb_percent'], ['inherited_runner_context'], ['sample', 'Sample']] },
+  { key: 'workload', label: 'Recent Workload — 7 Days', rows: [['relief_appearances', 'Relief Appearances'], ['contributing_relievers', 'Contributing Relievers'], ['pitches', 'Pitches'], ['innings', 'Relief Innings']] },
   { key: 'rotation', label: 'Rotation Transfer', rows: [['short_starts', 'Short Starts'], ['bullpen_innings', 'Bullpen Innings']] },
   { key: 'availability', label: 'Availability', rows: [['available', 'Available'], ['on_watch', 'On Watch'], ['limited', 'Limited'], ['unavailable', 'Unavailable']] },
 ]
 
-const displayValue = value => value == null ? '—' : value
+function displayValue(value) {
+  if (Array.isArray(value)) return value.map(arm =>
+    `${arm.name} (${arm.label}) · ${arm.days_since_last_appearance}d since last appearance`
+  ).join(' / ') || '—'
+  if (value && typeof value === 'object') return value.value ?? '—'
+  return value ?? '—'
+}
 
 function domainView(domain, definition) {
   const value = domain || {}
@@ -19,10 +27,10 @@ function domainView(domain, definition) {
     limitations: Array.isArray(value.limitations) ? value.limitations : [],
     rows: definition.rows.map(([key, label]) => ({
       key,
-      label,
+      label: label || value.team_a?.[key]?.label || value.team_b?.[key]?.label,
       valueA: displayValue(value.team_a?.[key]),
       valueB: displayValue(value.team_b?.[key]),
-    })),
+    })).filter(row => row.label),
   }
 }
 

@@ -214,3 +214,19 @@ test('historical Murphy detail keeps recorded role and pitch count while withhol
     assert.doesNotMatch(html, /Clean Option|Final availability: Available/)
   }
 })
+
+test('routed detail shows measured series, incomplete readings and no unknown hand', () => {
+  const data = detailData(41)
+  data.pitcher.throws = null
+  data.recent_work.workload_series = [{ date: '2026-08-10', pitches: 0, opponent: 'BOS' }]
+  data.season_pitch_characteristics = { through: '2026-08-16', months: [
+    { month: '2026-08', types: [{ type: 'FF', pitches: 22, mean_mph: 95.4, mix_percent: 55 }] },
+  ] }
+  const html = renderData(data)
+  for (const value of ['30-day workload', '2026-08-10', 'Season velocity and pitch mix',
+    '22 pitches (55%)', '95.4', 'Inning and leverage usage', 'Observed deployment movement',
+    'Two comparable published seven-day windows are unavailable']) assert.ok(html.includes(value), value)
+  assert.ok(!html.includes('Throws'))
+  data.pitcher.throws = 'L'
+  assert.ok(renderData(data).includes('Throws L'))
+})
