@@ -46,6 +46,18 @@ const SENSITIVE_UTM_PATTERNS = Object.freeze([
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
 ])
 let lastObservedEntry = null
+let firstRoute = true
+let researchVisit = null
+const subscribers = new Set()
+export const currentResearchVisit = () => researchVisit
+export const subscribeResearchVisit = callback => {
+  subscribers.add(callback)
+  return () => subscribers.delete(callback)
+}
+function setResearchVisit(visit) {
+  researchVisit = visit
+  for (const callback of subscribers) callback()
+}
 
 function uuid(cryptoObject = globalThis.crypto) {
   if (!cryptoObject || typeof cryptoObject.randomUUID !== 'function') return null
@@ -232,12 +244,12 @@ export function sendPageView(payload, {
   const token = readAuthToken(storage)
   if (token) headers.Authorization = `Bearer ${token}`
   try {
-    Promise.resolve(fetchImpl(trafficPageViewUrl(configuredBackendOrigin), {
+    return Promise.resolve(fetchImpl(trafficPageViewUrl(configuredBackendOrigin), {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
       keepalive: true,
-    })).catch(() => {})
+    })).then(response => response?.ok === true).catch(() => false)
   } catch {
     // Measurement failures never affect rendering or navigation.
   }
@@ -262,7 +274,13 @@ export function observeTrafficRoute({
 }) {
   if (hostname !== TRAFFIC_CANONICAL_HOST) return false
   const page = canonicalPage(pathname, search, hash)
-  if (!page) return false
+  const initialNavigation = firstRoute
+  firstRoute = false
+  if (!page) {
+    lastObservedEntry = null
+    if (researchVisit) setResearchVisit(null)
+    return false
+  }
   const identity = [
     page.route,
     page.surface,
@@ -279,10 +297,39 @@ export function observeTrafficRoute({
   const payload = buildPageView({ hostname, pathname, search, hash, referrer, storage, now, cryptoObject })
   if (!payload) return false
   lastObservedEntry = dedupeKey
-  sendPageView(payload, { fetchImpl, storage })
+  const sameBoard = page.surface === 'bullpen_board' && researchVisit?.surface === page.surface
+    && researchVisit.team === page.team_ref
+  if (!sameBoard && ['search', 'bullpen_board', 'matchup'].includes(page.surface)) {
+    payload.research_version = 1
+    if (page.surface === 'matchup') payload.matchup_game_pk = Number(pathname.split('/').filter(Boolean).pop())
+  }
+  const startedAt = initialNavigation ? 0 : performance.now()
+  const received = sendPageView(payload, { fetchImpl, storage })
+  if (sameBoard) return true
+  setResearchVisit(payload.research_version ? {
+    surface: page.surface, team: page.team_ref, id: payload.view_id, startedAt, answered: false,
+    submit: async (outcome, elapsed) => {
+      if (!await received) return
+      const body = { view_id: payload.view_id, visitor_id: payload.visitor_id, session_id: payload.session_id, outcome }
+      if (elapsed != null) body.answer_ms = elapsed
+      await fetchImpl(trafficPageViewUrl().replace('/page-view', '/research-answer'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true,
+      })
+    },
+  } : null)
+  return true
+}
+
+export function submitResearchAnswer(visit, outcome) {
+  if (!visit || researchVisit !== visit || visit.answered) return false
+  const elapsed = visit.surface === 'bullpen_board' ? Math.ceil(performance.now() - visit.startedAt) : null
+  setResearchVisit({ ...visit, answered: true })
+  visit.submit(outcome, elapsed).catch(() => {})
   return true
 }
 
 export function resetObservedTrafficEntriesForTests() {
+  firstRoute = true
   lastObservedEntry = null
+  setResearchVisit(null)
 }

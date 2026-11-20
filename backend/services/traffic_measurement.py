@@ -63,7 +63,7 @@ PAYLOAD_KEYS = frozenset({
     'utm_medium',
     'utm_campaign',
     'utm_content',
-    'site_host',
+    'site_host', 'research_version', 'matchup_game_pk',
 })
 
 ENTRY_SOURCE_ALLOWLIST = frozenset({
@@ -361,7 +361,18 @@ def normalize_page_view(payload, *, user_agent=''):
     if supplied_surface != surface or supplied_surface not in SURFACE_ALLOWLIST:
         return None
 
+    version = payload.get('research_version')
+    game_pk = payload.get('matchup_game_pk')
+    if version is not None and (type(version) is not int or version != 1
+                                or surface not in ('search', 'bullpen_board', 'matchup')):
+        return None
+    if game_pk is not None and (version != 1 or surface != 'matchup' or type(game_pk) is not int
+                                or not 0 < game_pk <= 2147483647):
+        return None
+
     return {
+        'research_outcome': 'unanswered' if version == 1 else None,
+        'matchup_game_pk': game_pk,
         'view_id': view_id,
         'visitor_id': visitor_id,
         'session_id': session_id,
@@ -414,3 +425,24 @@ def record_page_view(payload, *, user_agent='', current_user=None, internal_emai
         return 'duplicate'
     db.session.add(TrafficPageView(**normalized))
     return 'inserted'
+
+def record_research_answer(payload):
+    """First answer wins, scoped to the original canonical visit and browser."""
+    if not isinstance(payload, dict) or set(payload) - {'view_id', 'visitor_id', 'session_id', 'outcome', 'answer_ms'}:
+        return False
+    identity = {key: normalize_uuid(payload.get(key)) for key in ('view_id', 'visitor_id', 'session_id')}
+    if not all(identity.values()):
+        return False
+    answer = payload.get('outcome')
+    elapsed = payload.get('answer_ms')
+    if answer in ('correct', 'incorrect'):
+        surface = 'bullpen_board'
+        if type(elapsed) is not int or not 0 <= elapsed <= 1_800_000:
+            return False
+    elif answer in ('answered', 'unanswered_question') and elapsed is None:
+        surface = 'search'
+    else:
+        return False
+    return bool(TrafficPageView.query.filter_by(**identity, site_host=CANONICAL_SITE_HOST, surface=surface,
+                                                research_outcome='unanswered').update(
+        {TrafficPageView.research_outcome: answer, TrafficPageView.answer_ms: elapsed}, synchronize_session=False))

@@ -726,3 +726,29 @@ def test_research_journeys_count_only_adjacent_external_session_views(reporting_
         {'from_surface': 'search', 'to_surface': 'pitcher_detail', 'transitions': 1},
         {'from_surface': 'today', 'to_surface': 'matchup', 'transitions': 1},
     ]
+
+
+def test_research_outcomes_separate_coverage_accuracy_and_actual_first_pitch(reporting_app):
+    from models.play_by_play_foundation import PlayByPlayProcessedGame
+    from services.play_by_play_foundation import SOURCE
+
+    day = datetime(2026, 7, 12, 18)
+    for outcome, elapsed in [('correct', 10000), ('correct', 10001), ('incorrect', 500),
+                             ('unanswered', None), (None, None)]:
+        add_view(day, 'reader', 's', surface='bullpen_board', research_outcome=outcome, answer_ms=elapsed)
+    for outcome in ('unanswered', 'answered', 'unanswered_question'):
+        add_view(day, 'reader', 's', surface='search', research_outcome=outcome).route = '/search'
+    add_view(day, 'reader', 's', surface='search', research_outcome='answered', is_bot=True)
+    db.session.add(PlayByPlayProcessedGame(mlb_game_pk=88, game_date=day.date(), source=SOURCE,
+        source_endpoint='game/88/playByPlay', processing_status='fully_processed', first_pitch_at=day.replace(minute=5)))
+    add_view(day, 'reader', 's').route = '/tonight'
+    for minute, game in [(1, 88), (5, 88), (6, 99)]:
+        add_view(day.replace(minute=minute), 'reader', 's', surface='matchup', matchup_game_pk=game,
+                 research_outcome='unanswered').route = '/matchup/:gameId'
+    db.session.commit()
+    result = build_traffic_summary('7d', now=NOW)['research_outcomes']
+    assert result['board'] == {'views': 4, 'responses': 3, 'correct': 2,
+                               'correct_within_ten_seconds': 1, 'median_correct_seconds': 10.0}
+    assert result['search'] == {'views': 3, 'responses': 2, 'answered': 1}
+    assert result['matchup'] == {'before': 1, 'at_or_after': 1, 'unknown': 1}
+    assert result['tonight_to_matchup'] == {'before': 1, 'at_or_after': 0, 'unknown': 0}

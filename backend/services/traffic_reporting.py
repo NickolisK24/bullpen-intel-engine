@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from statistics import median
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, func
 
+from models.play_by_play_foundation import PlayByPlayProcessedGame
+from services.play_by_play_foundation import SOURCE as FINAL_PLAY_SOURCE
 from models.traffic_internal_visitor import TrafficInternalVisitor
 from models.traffic_page_view import TrafficPageView
 from models.traffic_share_action import TrafficShareAction
@@ -279,6 +282,46 @@ def _research_journeys(rows):
         {'from_surface': origin, 'to_surface': destination, 'transitions': count}
         for (origin, destination), count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
+
+
+def _research_outcomes(rows):
+    board = {'views': 0, 'responses': 0, 'correct': 0, 'correct_within_ten_seconds': 0}
+    correct_times = []
+    search = {'views': 0, 'responses': 0, 'answered': 0}
+    game_ids = {row.matchup_game_pk for row in rows if row.matchup_game_pk}
+    marker = PlayByPlayProcessedGame
+    first_pitch = dict(marker.query.with_entities(marker.mlb_game_pk, marker.first_pitch_at).filter(
+        marker.mlb_game_pk.in_(game_ids), marker.processing_status == marker.STATUS_FULLY_PROCESSED,
+        marker.source == FINAL_PLAY_SOURCE, marker.first_pitch_at.isnot(None),
+    ).all()) if game_ids else {}
+    matchup = {'before': 0, 'at_or_after': 0, 'unknown': 0}
+    from_tonight = matchup.copy()
+    previous = {}
+    for row in rows:
+        session = (row.visitor_id, row.session_id)
+        if row.research_outcome is not None:
+            if row.surface == 'bullpen_board':
+                board['views'] += 1
+                if row.research_outcome in ('correct', 'incorrect'):
+                    board['responses'] += 1
+                    if row.research_outcome == 'correct':
+                        board['correct'] += 1
+                        if row.answer_ms is not None:
+                            correct_times.append(row.answer_ms)
+                        board['correct_within_ten_seconds'] += int(row.answer_ms is not None and row.answer_ms <= 10000)
+            elif row.surface == 'search':
+                search['views'] += 1
+                search['responses'] += int(row.research_outcome in ('answered', 'unanswered_question'))
+                search['answered'] += int(row.research_outcome == 'answered')
+            elif row.surface == 'matchup':
+                pitch = first_pitch.get(row.matchup_game_pk)
+                timing = 'unknown' if pitch is None else ('before' if row.occurred_at < pitch else 'at_or_after')
+                matchup[timing] += 1
+                if previous.get(session) in ('/', '/tonight'):
+                    from_tonight[timing] += 1
+        previous[session] = row.route
+    board['median_correct_seconds'] = round(median(correct_times) / 1000, 2) if correct_times else None
+    return {'board': board, 'search': search, 'matchup': matchup, 'tonight_to_matchup': from_tonight}
 
 
 def _visited_surfaces(rows):
@@ -642,6 +685,7 @@ def build_traffic_summary(range_key='7d', *, now=None):
         'landing_surfaces': acquisition['landing_surfaces'],
         'most_visited_surfaces': _visited_surfaces(rows),
         'research_journeys': _research_journeys(rows),
+        'research_outcomes': _research_outcomes(rows),
         'bullpen_exploration': _bullpen_exploration(rows),
         'evidence_exploration': _evidence_exploration(rows),
         'shared_link_landings': _shared_link_landings(landing_views),

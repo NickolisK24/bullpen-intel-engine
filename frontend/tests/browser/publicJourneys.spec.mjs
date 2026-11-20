@@ -1058,3 +1058,36 @@ test('major routes pass an automated WCAG AA scan', async ({ page }) => {
     expect(results.violations, `${path}: ${results.violations.map(item => item.id).join(', ')}`).toEqual([])
   }
 })
+
+test('reader answers are visit-bound and omit search text and entered pitcher names', async ({ page, baseURL }) => {
+  // Serve the local build under its measurement hostname. All app and API
+  // requests are intercepted, including the traffic writes.
+  await page.route('https://baseballos.app/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.startsWith('/api/')) return route.abort()
+    await route.fulfill({ response: await page.request.get(new URL(path, baseURL).href) })
+  })
+  await installApiFixtures(page)
+  const answers = []
+  const views = []
+  await page.route('**/api/traffic/**', route => {
+    const records = route.request().url().endsWith('/research-answer') ? answers : views
+    records.push(route.request().postDataJSON())
+    return route.fulfill({ status: 202, body: '' })
+  })
+  await page.goto('https://baseballos.app/bullpen?view=board&team=BOS')
+  await page.getByText('Check your Board read').click()
+  await page.getByRole('combobox', { name: 'Published Team State', exact: true }).selectOption(teamBoardCore.team_state.public_label)
+  await page.getByLabel('Name one active bullpen arm').fill('Fixture Reliever')
+  await page.getByRole('button', { name: 'Submit answer' }).click()
+  await expect.poll(() => answers.length).toBe(1)
+  expect(answers[0].outcome).toBe('correct')
+  expect(answers[0].answer_ms).toBeGreaterThan(0)
+  expect(answers[0].view_id).toBe(views.find(view => view.surface === 'bullpen_board').view_id)
+  await page.goto('https://baseballos.app/search')
+  await page.getByRole('searchbox').fill('private-question')
+  await page.getByRole('button', { name: 'No', exact: true }).click()
+  await expect.poll(() => answers.length).toBe(2)
+  expect(answers[1].outcome).toBe('unanswered_question')
+  expect(JSON.stringify([...answers, ...views])).not.toMatch(/private-question|Fixture Reliever/)
+})

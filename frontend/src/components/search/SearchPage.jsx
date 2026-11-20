@@ -1,3 +1,4 @@
+import { SearchAnswer } from '../ResearchAnswer'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { searchDiscovery } from '../../utils/api'
@@ -203,13 +204,14 @@ export function SearchPageView({
           </div>
         )}
       </div>
+      {hasSearch && payload && !loading && !error && payload.status !== 'unavailable' && <SearchAnswer />}
     </div>
   )
 }
 
 export default function SearchPage({ searchFn = searchDiscovery }) {
   const [query, setQuery] = useState('')
-  const [payload, setPayload] = useState(null)
+  const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [retryVersion, setRetryVersion] = useState(0)
@@ -217,7 +219,7 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
 
   useEffect(() => {
     if (normalizedQuery.length < MIN_QUERY_LENGTH) {
-      setPayload(null)
+      setResult(null)
       setLoading(false)
       setError('')
       return undefined
@@ -233,11 +235,11 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
         controller ? { signal: controller.signal, silent: true } : { silent: true },
       )
         .then(response => {
-          if (!cancelled) setPayload(response)
+          if (!cancelled) setResult({ query: normalizedQuery, payload: response })
         })
         .catch(requestError => {
           if (!cancelled && requestError?.name !== 'AbortError') {
-            setPayload(null)
+            setResult(null)
             setError('unavailable')
           }
         })
@@ -256,8 +258,8 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
   return (
     <SearchPageView
       query={query}
-      payload={payload}
-      loading={loading}
+      payload={result?.query === normalizedQuery ? result.payload : null}
+      loading={loading || (normalizedQuery.length >= MIN_QUERY_LENGTH && result?.query !== normalizedQuery && !error)}
       error={error}
       onQueryChange={setQuery}
       onRetry={() => setRetryVersion(value => value + 1)}

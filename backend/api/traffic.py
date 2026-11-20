@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from models.traffic_page_view import TrafficPageView
 from models.traffic_share_action import TrafficShareAction
-from services.traffic_measurement import record_page_view
+from services.traffic_measurement import record_page_view, record_research_answer
 from services.traffic_measurement import parse_internal_emails
 from services.traffic_share_actions import record_share_action
 from services.traffic_reporting import build_traffic_summary
@@ -92,4 +92,14 @@ def share_action():
     except Exception:
         db.session.rollback()
         current_app.logger.exception('Traffic share-action persistence failed.')
+    return '', 202
+
+@traffic_bp.post('/research-answer')
+def research_answer():
+    try:
+        if record_research_answer(request.get_json(silent=True)):
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Traffic research-answer persistence failed.')
     return '', 202

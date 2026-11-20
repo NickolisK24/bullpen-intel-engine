@@ -379,3 +379,20 @@ def test_research_views_persist_only_canonical_route_and_surface(traffic_app, ro
         client.post('/api/traffic/page-view', json=body)
     row = TrafficPageView.query.one()
     assert (row.route, row.surface, row.team_ref) == (route, surface, None)
+
+
+def test_research_answers_are_visit_bound_private_and_first_response_wins(traffic_app):
+    client = traffic_app.test_client()
+    body = payload(surface='search', route='/search', research_version=1)
+    client.post('/api/traffic/page-view', json=body)
+    ids = {key: body[key] for key in ('visitor_id', 'session_id', 'view_id')}
+    answer = {**ids, 'outcome': 'answered'}
+    for bad in ({**answer, 'query': 'private'}, {**answer, 'session_id': str(uuid.uuid4())},
+                {**answer, 'outcome': 'correct', 'answer_ms': 10}):
+        client.post('/api/traffic/research-answer', json=bad)
+    assert TrafficPageView.query.one().research_outcome == 'unanswered'
+    client.post('/api/traffic/research-answer', json=answer)
+    client.post('/api/traffic/research-answer', json={**answer, 'outcome': 'unanswered_question'})
+    assert TrafficPageView.query.one().research_outcome == 'answered'
+    assert normalize_page_view({**body, 'matchup_game_pk': 123}) is None
+    assert normalize_page_view({**body, 'research_version': True}) is None

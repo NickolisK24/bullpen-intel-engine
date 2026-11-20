@@ -313,6 +313,7 @@ class PlayByPlayProcessedGame(db.Model):
     # is persisted only when the caller has independently established a
     # trustworthy observation order (for example, a governed capture
     # manifest).  Local acquisition time is deliberately not used.
+    first_pitch_at = db.Column(db.DateTime)  # UTC start of the first actual MLB pitch
     accepted_pitch_observation_sequence = db.Column(db.Integer)
     accepted_pitch_source_authority = db.Column(db.String(100))
     source = db.Column(db.String(100), nullable=False)

@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pytest
 from flask import Flask
 
+import models.completed_game_context  # Register the optional handler’s table for isolated runs.
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 from models.dashboard_snapshot import DashboardSnapshot
@@ -697,3 +698,29 @@ def test_batted_ball_facts_belong_only_to_the_owning_pitch(app):
         )
         assert replay['pitch_rows']['updated'] == 0
         assert replay['pitch_rows']['unchanged'] == 7
+
+
+def test_research_clock_comes_from_accepted_opening_pitch(app):
+    with app.app_context():
+        _seed_pitchers()
+        box = _boxscore()
+        _ingest(box)
+        pbp = _play_by_play()
+        play = pbp['allPlays'][0]
+        play['about']['inning'] = 1
+        pitch = play['playEvents'][0]
+        pitch['pitchData'] = {'startSpeed': 90}
+        pitch['startTime'] = '2026-08-27T18:04:31-04:00'
+
+        def ingest(seq):
+            play_by_play_foundation.process_final_play_by_play_foundation(
+                _game(), boxscore=box, play_by_play=pbp, game_date=GAME_DATE, observation_sequence=seq)
+            db.session.commit()
+            return PlayByPlayProcessedGame.query.filter_by(mlb_game_pk=GAME_PK).one().first_pitch_at
+
+        assert ingest(1).isoformat() == '2026-08-27T22:04:31'
+        pitch['startTime'] = '2026-08-27T22:07:00Z'
+        assert ingest(1) is None
+        assert ingest(2).isoformat() == '2026-08-27T22:07:00'
+        pitch.pop('startTime')
+        assert ingest(3) is None

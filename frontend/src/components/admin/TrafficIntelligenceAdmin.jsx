@@ -249,6 +249,7 @@ export function TrafficReport({ report }) {
             ))}
           </ul> : <p className="text-sm text-chalk500">No qualifying transitions recorded.</p>}
         </SectionShell>}
+        {report.research_outcomes && <ResearchOutcomes data={report.research_outcomes} />}
         <RankedSection title="Most Visited Surfaces" rows={report.most_visited_surfaces} labelKey="surface" valueKey="page_views" />
         <RankedSection title="Top Referrer Domains" rows={report.top_referrers} labelKey="referrer_domain" valueKey="sessions" />
         <CampaignSection rows={report.campaigns || []} />
@@ -300,6 +301,20 @@ export function DailyTrafficChart({ rows = [] }) {
 
 function SectionShell({ title, children }) {
   return <section className="border border-dirt bg-dugout p-4"><h2 className="font-display text-xl tracking-wide text-chalk100">{title}</h2><div className="mt-3">{children}</div></section>
+}
+
+function ResearchOutcomes({ data: { board, search, matchup, tonight_to_matchup: tonight } }) {
+  return <SectionShell title="Research Outcomes">
+    <dl className="space-y-3 text-sm">
+      <div><dt>Ten-second Board check</dt><dd>{board.correct_within_ten_seconds} of {board.responses} respondents correctly identified the published Team State and named an active arm within ten seconds.</dd>
+        <dd>{board.correct} correct overall · {board.views} instrumented Board visits
+          {board.median_correct_seconds != null && ` · Median correct response: ${board.median_correct_seconds} s`}</dd></div>
+      <div><dt>Search answered the question</dt><dd>{search.answered} yes · {search.responses - search.answered} no · {search.views} instrumented Search visits</dd></div>
+      <div><dt>Matchup visits relative to first pitch</dt><dd>{matchup.before} before · {matchup.at_or_after} at or after · {matchup.unknown} unknown</dd>
+        <dd>Directly from Tonight: {tonight.before} before · {tonight.at_or_after} at or after · {tonight.unknown} unknown</dd></div>
+    </dl>
+    <p className="mt-3 text-xs text-chalk400">Optional answers count once per visit. Board time includes loading and answering from document navigation or an in-app route change. Visits include those without a prompt or response. Matchup timing compares server receipt with MLB’s recorded first pitch once final play-by-play is verified.</p>
+  </SectionShell>
 }
 
 function CountSection({ title, rows }) {
