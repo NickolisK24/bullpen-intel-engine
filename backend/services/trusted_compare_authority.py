@@ -16,6 +16,8 @@ from flask import jsonify, request
 
 from api.query_params import QueryParamError, parse_positive_int_param, query_param_error_response
 from models.slate_game import SlateGame
+from models.dashboard_snapshot import DashboardSnapshot
+from services import dashboard_snapshot
 from services import public_serving_authority as authority
 from services.current_bullpen_comparison import build_current_bullpen_comparison
 from services.team_directory import valid_team_directory
@@ -132,6 +134,34 @@ def _scheduled_game_context(game, comparison, directory):
     }
 
 
+def _is_pregame_publication(snapshot, game_date, start_utc):
+    """Use durable publication evidence even after the current pointer rotates."""
+    return (
+        snapshot is not None and game_date is not None and start_utc is not None
+        and snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY and dashboard_snapshot.payload_version_valid(snapshot)
+        and snapshot.sync_run_id is not None and snapshot.published_at is not None
+        and snapshot.published_at < start_utc
+        and snapshot.availability_reference_date == game_date
+        and snapshot.data_through is not None and snapshot.data_through <= game_date
+        and dashboard_snapshot._availability_reference_date_from_payload(snapshot.payload) == game_date
+        and dashboard_snapshot._data_through_from_payload(snapshot.payload) == snapshot.data_through
+        and dashboard_snapshot._payload_slate_coverage_unavailable_reason(snapshot.payload) is None
+    )
+
+
+def _pregame_dashboard_snapshot(game):
+    if game.game_date_et is None or game.game_time_utc is None:
+        return None
+    return DashboardSnapshot.query.filter_by(
+        snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD, status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+        payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION, availability_reference_date=game.game_date_et,
+    ).filter(
+        DashboardSnapshot.sync_run_id.isnot(None),
+        DashboardSnapshot.data_through <= game.game_date_et,
+        DashboardSnapshot.published_at < game.game_time_utc,
+    ).order_by(DashboardSnapshot.published_at.desc(), DashboardSnapshot.id.desc()).first()
+
+
 def _requires_pregame_edition(source):
     day = parse_reference_date(source.get('game_date_et'))
     return (source.get('status') or {}).get('normalized') in ('live', 'completed') or (
@@ -146,7 +176,7 @@ def _pregame_eligible(snapshot, source):
             return False
     except (KeyError, AttributeError, ValueError):
         return False
-    return authority.dashboard_snapshot_service.is_pregame_publication(
+    return _is_pregame_publication(
         snapshot, parse_reference_date(source.get('game_date_et')),
         start.astimezone(timezone.utc).replace(tzinfo=None),
     )
@@ -256,7 +286,7 @@ def trusted_game_matchup_view(game_pk):
         directory = {}
     try:
         if _requires_pregame_edition(game.to_dict()) and _not_upcoming_reason(game) is None:
-            snapshot = authority.dashboard_snapshot_service.pregame_dashboard_snapshot(game)
+            snapshot = _pregame_dashboard_snapshot(game)
         else:
             snapshot = authority.dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     except Exception:  # noqa: BLE001 - game identity remains independently useful
