@@ -389,10 +389,10 @@ def test_research_answers_are_visit_bound_private_and_first_response_wins(traffi
     answer = {**ids, 'outcome': 'answered'}
     for bad in ({**answer, 'query': 'private'}, {**answer, 'session_id': str(uuid.uuid4())},
                 {**answer, 'outcome': 'correct', 'answer_ms': 10}):
-        client.post('/api/traffic/research-answer', json=bad)
+        client.post('/api/traffic/page-view', json={'research_answer': bad})
     assert TrafficPageView.query.one().research_outcome == 'unanswered'
-    client.post('/api/traffic/research-answer', json=answer)
-    client.post('/api/traffic/research-answer', json={**answer, 'outcome': 'unanswered_question'})
+    client.post('/api/traffic/page-view', json={'research_answer': answer})
+    client.post('/api/traffic/page-view', json={'research_answer': {**answer, 'outcome': 'unanswered_question'}})
     assert TrafficPageView.query.one().research_outcome == 'answered'
     assert normalize_page_view({**body, 'matchup_game_pk': 123}) is None
     assert normalize_page_view({**body, 'research_version': True}) is None

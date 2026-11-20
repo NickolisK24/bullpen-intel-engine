@@ -1071,8 +1071,9 @@ test('reader answers are visit-bound and omit search text and entered pitcher na
   const answers = []
   const views = []
   await page.route('**/api/traffic/**', route => {
-    const records = route.request().url().endsWith('/research-answer') ? answers : views
-    records.push(route.request().postDataJSON())
+    const body = route.request().postDataJSON()
+    if (body.research_answer) answers.push(body.research_answer)
+    else views.push(body)
     return route.fulfill({ status: 202, body: '' })
   })
   await page.goto('https://baseballos.app/bullpen?view=board&team=BOS')

@@ -312,8 +312,8 @@ export function observeTrafficRoute({
       if (!await received) return
       const body = { view_id: payload.view_id, visitor_id: payload.visitor_id, session_id: payload.session_id, outcome }
       if (elapsed != null) body.answer_ms = elapsed
-      await fetchImpl(trafficPageViewUrl().replace('/page-view', '/research-answer'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true,
+      await fetchImpl(trafficPageViewUrl(), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ research_answer: body }), keepalive: true,
       })
     },
   } : null)

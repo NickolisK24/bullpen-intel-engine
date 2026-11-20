@@ -414,6 +414,8 @@ def register_internal_visitor(visitor_id, user, configured_emails):
 
 def record_page_view(payload, *, user_agent='', current_user=None, internal_emails=''):
     """Validate and stage one idempotent page view; the API owns the commit."""
+    if isinstance(payload, dict) and set(payload) == {'research_answer'}:
+        return 'updated' if record_research_answer(payload['research_answer']) else 'rejected'
     normalized = normalize_page_view(payload, user_agent=user_agent)
     if normalized is None:
         return 'rejected'
@@ -425,6 +427,7 @@ def record_page_view(payload, *, user_agent='', current_user=None, internal_emai
         return 'duplicate'
     db.session.add(TrafficPageView(**normalized))
     return 'inserted'
+
 
 def record_research_answer(payload):
     """First answer wins, scoped to the original canonical visit and browser."""
