@@ -50,6 +50,7 @@ from services.completed_game_context_service import (
 )
 from services import evidence_contract
 from services import game_driven_ingestion
+from services import team_performance_evidence
 from services import game_driven_realization
 from services import game_log_reconciliation
 from services import gamelog_source_authority
@@ -4078,6 +4079,8 @@ def sync_recent_logs(
             continue
         fetch_seconds += time.monotonic() - fetch_started
 
+        team_performance_evidence.remember_splits(pitcher.mlb_id, season, splits)
+
         if str(pitcher.mlb_id) in unresolved_fetch_refs:
             dead_letter.resolve_entity_failures(
                 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
@@ -7000,6 +7003,7 @@ def run_postgame_refresh(
     return status
 
 
+@team_performance_evidence.capture_daily_splits()
 def run_daily_sync(
     app,
     days_back: int = 7,

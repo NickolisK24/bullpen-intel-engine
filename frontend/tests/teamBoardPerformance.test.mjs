@@ -194,3 +194,17 @@ test('TB-04 comparison and Performance add no ungoverned charts', async () => {
   assert.equal(performanceSource.includes('svg'), false)
   assert.equal(performanceSource.includes('canvas'), false)
 })
+
+test('renders source-qualified counts independently from a withheld percentage', () => {
+  const performance = availableRead.frozenPerformance
+  const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
+    read: { ...availableRead, frozenPerformance: { ...performance, capabilities: {
+      home_runs_allowed: { status: 'qualified', value: '0' },
+      inherited_runner_context: { status: 'qualified', value: '1 of 3 scored' },
+      k_bb_percent: { status: 'unavailable', value: null, reason_code: 'metric_publication_rule_unapproved' },
+    } } },
+  }))
+  assert.match(html, />0<\/dd>/)
+  assert.match(html, /1 of 3 scored/)
+  assert.match(html, /inputs verified, publication rule pending/)
+})

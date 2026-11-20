@@ -47,6 +47,7 @@ from services.bullpen_population import eligible_bullpen_pitcher_contexts, usage
 from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.public_fatigue_view import public_workload_facts
+from services.team_performance_evidence import valid_comparison
 from services.public_team_performance import (
     FROZEN_CONTRACT as TEAM_BOARD_PERFORMANCE_CONTRACT,
     build_frozen_team_performance_payload,
@@ -1196,13 +1197,7 @@ def _frozen_performance_for_view(snapshot, team_package, team_id):
             isinstance(read.get('window'), Mapping)
             and read['window'].get('through') != represented
         )
-        or not isinstance(read.get('capabilities'), Mapping)
-        or any(
-            not isinstance(read['capabilities'].get(domain), Mapping)
-            or read['capabilities'][domain].get('status') != 'unavailable'
-            or read['capabilities'][domain].get('value') is not None
-            for domain in ('k_bb_percent', 'home_runs_allowed', 'inherited_runner_context')
-        )
+        or not valid_comparison(read, team_id, represented, expected_ids)
         or (
             read.get('status') != 'unavailable'
             and [item.get('metric_id') for item in read.get('metrics') or []]

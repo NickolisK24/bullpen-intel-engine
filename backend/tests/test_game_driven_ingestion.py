@@ -143,6 +143,17 @@ def test_first_processing_inserts_rows_and_completes_the_work_item(app, stub_cli
         assert item.completed_at is not None
         assert item.source_revision
 
+        from services.team_performance_evidence import load_comparisons
+        row = GameLog.query.filter_by(mlb_game_pk=item.mlb_game_pk, games_started=0).one()
+        def compare_checkpoint():
+            return load_comparisons([row], [row.pitcher_id], HOME_TEAM, REFERENCE)
+        assert compare_checkpoint().verified == {
+            'home_runs_allowed': 1, 'k_bb_percent': 1, 'inherited_runner_context': 0,
+        }
+        item.source_revision = 'f' * 64
+        db.session.flush()
+        assert not any(compare_checkpoint().verified.values())
+
 
 def test_missing_completed_game_context_blocks_checkpoint_and_rolls_back(
     app, stub_client, monkeypatch,
