@@ -2189,9 +2189,22 @@ def _inject_exact_predecessor(monkeypatch):
         joined_team = package['by_team_id'][str(TEAM_IDS[2])]
         seen['joined_ids'] = list(joined_team.get('default_pitcher_ids') or ())
         joined_team['default_pitcher_ids'] = []
-        usage = package['by_team_id'][str(TEAM_IDS[0])]['recent_usage_rest']
-        for item in usage.get('active_pitchers') or ():
-            item['back_to_back'] = {**item['back_to_back'], 'value': False}
+        # Author the predecessor's actual usage windows from the fixture's
+        # earlier completed games. Copying today's carrier gives the wrong date.
+        from services.public_team_relief_work import build_recent_usage_rest_carrier, build_recent_usage_rest_coverage
+        prior_team = package['by_team_id'][str(TEAM_IDS[0])]
+        rows = db.session.query(GameLog, Pitcher).join(Pitcher, GameLog.pitcher_id == Pitcher.id).filter(
+            GameLog.appearance_team_id == TEAM_IDS[0], GameLog.game_date <= previous.data_through,
+        ).all()
+        prior_team['recent_usage_rest'] = build_recent_usage_rest_carrier(
+            rows, data_through=previous.data_through, reference_date=previous.availability_reference_date,
+            active_pitchers={r['pitcher_id']: r for r in prior_team['records']
+                             if r['pitcher_id'] in prior_team['default_pitcher_ids']},
+            coverage_by_date=build_recent_usage_rest_coverage(previous.data_through),
+        )
+        prior_team['recent_usage_rest_authority'].update(
+            data_through=str(previous.data_through), reference_date=str(previous.availability_reference_date),
+        )
         previous.payload = {**deepcopy(previous.payload), 'trusted_team_boards': package}
         payload = deepcopy(snapshot.payload)
         payload['what_changed_since_yesterday'] = {

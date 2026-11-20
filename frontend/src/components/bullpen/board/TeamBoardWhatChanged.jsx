@@ -83,7 +83,7 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
 
         {view.comparisonStatus === 'partial' && view.state !== 'unavailable' ? (
           <p className="type-metadata mt-panel text-text-tertiary" role="note">
-            Partial comparison. Not compared: {view.unavailableDomains.map(domain => domain.label).join(', ')}.
+            Partial comparison. Limited coverage: {view.unavailableDomains.map(domain => domain.label).join(', ')}.
           </p>
         ) : null}
       </div>

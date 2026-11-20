@@ -34,6 +34,11 @@ from services.team_board_delta_substrate import (
     SNAPSHOT_TYPE,
     compare_snapshots,
 )
+from services.team_board_what_changed import (
+    ARM_DOMAINS, ARM_HISTORY_CONTRACT, CONTRACT as BOARD_CHANGES_CONTRACT, EVENT_METHOD_VERSION,
+)
+from services.what_changed_comparison_identity import ComparisonIdentityInvalid, build_comparison_identity
+from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
 from services.team_directory import valid_team_directory
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
 from services.transaction_ingestion import WINDOW_STATUS_PARTIAL, WINDOW_STATUS_SUCCESS
@@ -328,12 +333,85 @@ def _history_row(artifact, view):
         'comparison': None,
         'event_overlay': _withheld_event_overlay(EVENT_PRIOR_PUBLICATION_MISSING),
         'events': [],
+        'arm_changes': None,
         'transaction_overlay': {
             'status': TRANSACTION_OVERLAY_UNAVAILABLE,
             'reason_code': TRANSACTION_SOURCE_UNAVAILABLE,
         },
         'transactions': [],
     }
+
+
+def _arm_change_sources(healthy, team_id, session):
+    """Fetch only this club's compact receipts from its artifacts' exact source IDs."""
+    ids = {artifact.source_snapshot_id for artifact, _ in healthy.values()
+           if artifact.subject_type is None and artifact.source_sync_run_id is not None}
+    if not ids:
+        return {}
+    team_path = ('trusted_team_boards', 'by_team_id', str(team_id))
+    rows = session.query(
+        DashboardSnapshot.id, DashboardSnapshot.snapshot_type, DashboardSnapshot.sync_run_id,
+        DashboardSnapshot.payload_version, DashboardSnapshot.data_through,
+        DashboardSnapshot.payload[team_path + ('frozen_arm_changes',)].label('arm_changes'),
+        DashboardSnapshot.payload[team_path + ('frozen_what_changed',)].label('board_changes'),
+        DashboardSnapshot.payload[('what_changed_since_yesterday', 'comparison', 'identity')].label('identity'),
+    ).filter(
+        DashboardSnapshot.id.in_(ids), DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+        DashboardSnapshot.status == 'ready', DashboardSnapshot.published_at.isnot(None),
+    ).all()
+    return {row.id: row for row in rows}
+
+
+def _published_arm_changes(previous, current, sources):
+    pair = []
+    for day, artifact, _ in (previous, current):
+        source = sources.get(artifact.source_snapshot_id)
+        if (source is None or artifact.subject_type is not None or source.data_through != day
+                or source.sync_run_id is None or source.sync_run_id != artifact.source_sync_run_id):
+            return None
+        pair.append(source)
+    before, after = pair
+    legacy = after.arm_changes is None
+    carrier = _as_mapping(after.board_changes if legacy else after.arm_changes)
+    if legacy and (carrier.get('state') not in ('quiet', 'changes')
+                   or carrier.get('method_version') != BOARD_CHANGES_CONTRACT
+                   or carrier.get('current_snapshot_id') != after.id
+                   or carrier.get('previous_snapshot_id') != before.id):
+        return None
+    try:
+        identity = build_comparison_identity(after, before)
+    except ComparisonIdentityInvalid:
+        return None
+    team_id = current[1].team_id
+    if (carrier.get('contract') != (BOARD_CHANGES_CONTRACT if legacy else ARM_HISTORY_CONTRACT) or carrier.get('team_id') != team_id
+            or carrier.get('comparison_identity') != identity or after.identity != identity):
+        return None
+    domains = {key: _as_mapping(carrier.get('domains')).get(key) for key in ARM_DOMAINS}
+    if any(
+        _as_mapping(domain).get('status') not in ('complete', 'partial', 'unavailable', 'not_comparable')
+        for domain in domains.values()
+    ):
+        return None
+    events = carrier.get('events')
+    if not isinstance(events, list):
+        return None
+    if legacy:
+        # A capped legacy read can prove its published events only.
+        events = [e for e in events if _as_mapping(e).get('domain') in ARM_DOMAINS]
+    if any(
+        not isinstance(event, Mapping) or event.get('domain') not in ARM_DOMAINS
+        or domains[event['domain']]['status'] not in ('complete', 'partial')
+        or event.get('team_id') != team_id or type(event.get('subject_id')) is not int
+        or event.get('evidence_status') != 'complete' or event.get('method_version') != EVENT_METHOD_VERSION
+        or event.get('previous_snapshot_id') != before.id or event.get('current_snapshot_id') != after.id
+        or not isinstance(event.get('summary'), str) or not event['summary'].strip()
+        for event in events
+    ):
+        return None
+    return {'domains': domains, 'events': events, 'comparison_identity': identity,
+            'board_limit_applied': legacy and carrier.get('reason_code') == 'event_limit_applied',
+            'citations': {'previous': _citation(previous[1], previous[2]),
+                          'current': _citation(current[1], current[2])}}
 
 
 def _transaction_windows(season, session):
@@ -569,6 +647,7 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
     }
 
     sidecars = _sidecars(healthy, team_id, session)
+    arm_sources = _arm_change_sources(healthy, team_id, session)
     for index in range(1, len(ordered_dates)):
         previous_date = ordered_dates[index - 1]
         current_date = ordered_dates[index]
@@ -588,6 +667,8 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
         rows_by_date[current_date]['comparison'] = comparison
         rows_by_date[current_date]['event_overlay'] = event_overlay
         rows_by_date[current_date]['events'] = events
+        if current_date - previous_date == timedelta(days=1):
+            rows_by_date[current_date]['arm_changes'] = _published_arm_changes(previous, current, arm_sources)
 
     try:
         transaction_coverage = _apply_transaction_overlay(

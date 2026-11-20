@@ -77,6 +77,7 @@ export function historyRowCategory(row) {
     && row?.event_overlay?.outcome === 'changed'
     && (row?.events || []).some(isTeamStateChangeEvent)
   ) return 'meaningful-change'
+  if (row?.arm_changes?.events?.length) return 'arm-change'
   if ((row?.transactions || []).some(event => isQualifiedTransactionEvent(event, row?.represented_date))) {
     return 'roster-context'
   }
@@ -262,6 +263,27 @@ function ExpandedRowDetails({ row, showComparison = true }) {
           primaryCitation={row.artifact?.citation_url}
         />
       ))}
+      {row.arm_changes?.events?.length > 0 && (
+        <section className="mt-3" aria-label="Published pitcher changes">
+          <h3 className="text-sm font-semibold">Pitcher workload and deployment changes</h3>
+          <ul className="mt-1 space-y-1 text-sm">
+            {row.arm_changes.events.map(event => (
+              <li key={`${event.domain}-${event.event_type}-${event.subject_id}`}>{event.summary}</li>
+            ))}
+          </ul>
+          {row.arm_changes.citations?.previous?.citation_url && (
+            <Link className="text-xs underline" to={row.arm_changes.citations.previous.citation_url}>
+              Previous published observation
+            </Link>
+          )}
+        </section>
+      )}
+      {row.arm_changes && (row.arm_changes.board_limit_applied || Object.values(row.arm_changes.domains).some(domain => domain.status !== 'complete')) && (
+        <p className="mt-2 text-xs text-text-tertiary">Pitcher change coverage is partial for this comparison.</p>
+      )}
+      {row.arm_changes === null && (
+        <p className="mt-2 text-xs text-text-tertiary">No published pitcher-change comparison for this date.</p>
+      )}
       <TransactionContext
         overlay={row.transaction_overlay}
         events={row.transactions}
