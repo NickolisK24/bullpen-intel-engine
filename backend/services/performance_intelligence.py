@@ -557,6 +557,11 @@ def build_metric_read(
     if definition is None:
         return _refusal(metric_id, team_id, REFUSAL_UNKNOWN_METRIC, season=season)
 
+    if 'publication_bound_official_pitching_lines' in definition.evidence_requirements:
+        # Mutable GameLog rows alone cannot certify every official BF.
+        return _refusal(metric_id, team_id, 'official_comparison_not_publication_bound',
+                        season=season, definition=definition, publication_surface=publication_surface)
+
     # Freshness is part of the contract, not decoration. A caller may inject one
     # (fixtures, a frozen artifact replay); otherwise it comes from the canonical
     # authority. It is resolved BEFORE the value so an unprovable freshness can

@@ -210,12 +210,31 @@ def qualify(capabilities, rows, comparison, team_id, through):
             'appearances': len(rows), 'sample_sha256': digest, 'inputs': inputs,
         }
         if domain == 'k_bb_percent':
-            # This is a rate, unlike the two factual counts. TB-06 requires a
-            # separately approved metric rule before the verified inputs can publish.
-            reason = 'metric_publication_rule_unapproved'
-            cap.update(reason_code=reason, reason_codes=[reason])
+            cap.update(_k_bb_result(inputs))
         else:
             cap.update(status='qualified', value=display(domain, inputs), reason_code=None, reason_codes=[])
+
+
+def _k_bb_result(inputs):
+    from services.performance_intelligence import AppearanceComponents, _exact_ratio
+    from services.performance_metrics import CURRENT_ACTIVE_PEN_K_BB as K_BB
+
+    components = AppearanceComponents(**{key: inputs[key] for key in DOMAINS['k_bb_percent']})
+    bf = K_BB.denominator(components)
+    reason = None
+    value = None
+    if bf == 0:
+        reason = K_BB.denominator_zero_reason
+    elif bf < K_BB.minimum_sample:
+        reason = 'below_minimum_batters_faced'
+    else:
+        rate = _exact_ratio(K_BB.numerator(components), bf, K_BB.display_precision)
+        value = K_BB.formatter('0.0' if rate == '-0.0' else rate)
+    return dict(metric_id=K_BB.metric_id, method_version=K_BB.version,
+                minimum_sample=K_BB.minimum_sample, minimum_sample_unit=K_BB.minimum_sample_unit,
+                minimum_sample_authority=K_BB.minimum_sample_authority,
+                status='unavailable' if reason else 'qualified', value=value,
+                reason_code=reason, reason_codes=[reason] if reason else [])
 
 
 def display(domain, inputs):
@@ -229,12 +248,12 @@ def valid_capability(domain, cap, *, team_id, through, appearances):
         return False
     evidence_only = (domain == 'k_bb_percent' and cap.get('status') == 'unavailable'
                      and cap.get('value') is None and cap.get('reason_code') == 'metric_publication_rule_unapproved')
-    if cap.get('status') == 'unavailable' and not evidence_only:
-        return cap.get('value') is None and 'proof' not in cap
-    if domain == 'k_bb_percent' and not evidence_only:
-        return False
+    if cap.get('status') == 'unavailable' and 'proof' not in cap:
+        return (cap.get('value') is None and 'metric_id' not in cap
+                and cap.get('reason_code') not in ('metric_publication_rule_unapproved',
+                                                   'zero_batters_faced', 'below_minimum_batters_faced'))
     proof = cap.get('proof')
-    if (not evidence_only and cap.get('status') != 'qualified') or not isinstance(proof, dict):
+    if (domain != 'k_bb_percent' and cap.get('status') != 'qualified') or not isinstance(proof, dict):
         return False
     inputs = proof.get('inputs')
     digest = proof.get('sample_sha256')
@@ -247,8 +266,12 @@ def valid_capability(domain, cap, *, team_id, through, appearances):
             or not isinstance(inputs, dict)
             or any(count(inputs.get(f)) is None for f in DOMAINS[domain])):
         return False
-    if evidence_only:
-        return inputs['strikeouts'] + inputs['walks'] <= inputs['batters_faced']
+    if domain == 'k_bb_percent':
+        if inputs['strikeouts'] + inputs['walks'] > inputs['batters_faced']:
+            return False
+        if evidence_only:
+            return 'metric_id' not in cap  # Preserve the frozen pre-approval package.
+        return all(cap.get(key) == value for key, value in _k_bb_result(inputs).items())
     if domain == 'inherited_runner_context' and inputs['inherited_runners_scored'] > inputs['inherited_runners']:
         return False
     return cap.get('value') == display(domain, inputs)
@@ -276,6 +299,7 @@ def valid_comparison(read, team_id, through, population):
     if not isinstance(lines, list) or len(lines) != read.get('relief_appearances'):
         return False
     keys = set()
+    bf_fields = [list(FIELDS).index(field) for field in DOMAINS['k_bb_percent']]
     for line in lines:
         if not isinstance(line, list) or len(line) != 6:
             return False
@@ -287,6 +311,10 @@ def valid_comparison(read, team_id, through, population):
                 or (game, mlb) in keys):
             return False
         keys.add((game, mlb))
+        if 'k_bb_percent' in qualified:
+            k, bb, bf = (count(inputs[index]) for index in bf_fields)
+            if None in (k, bb, bf) or k + bb > bf:
+                return False
     digest = _digest(lines)
     for domain in qualified:
         proof = caps[domain]['proof']

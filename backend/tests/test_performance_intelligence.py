@@ -137,8 +137,8 @@ def _read(team_id=TEAM_ID, metric_id=M001):
 
 
 # ── Registry ────────────────────────────────────────────────────────────────
-def test_m001_and_m002_are_the_only_approved_metrics():
-    assert pi.registry.metric_ids() == [M001, M002]
+def test_registered_team_board_metrics():
+    assert pi.registry.metric_ids() == [M001, M002, 'M-003']
     definition = pi.registry.get(M001)
     assert definition.public_name == 'Active Bullpen ERA'
     assert definition.internal_name == 'Current Active-Pen ERA'
@@ -147,6 +147,12 @@ def test_m001_and_m002_are_the_only_approved_metrics():
     whip = pi.registry.get(M002)
     assert whip.public_name == 'Active Bullpen WHIP'
     assert whip.formula == '(walks + hits_allowed) * 3 / recorded_outs'
+
+
+def test_k_bb_cannot_publish_from_mutable_game_logs(app):
+    result = _read(metric_id='M-003')
+    assert result['value'] is None
+    assert result['publication']['reason'] == 'official_comparison_not_publication_bound'
 
 
 def test_registry_rejects_duplicate_registration():

@@ -141,7 +141,11 @@ def _build_performance_payload(team_id, represented, group, freshness, *, frozen
             )
     result['limitations'] = [s for s in result['limitations'] if s != ADDITIONAL_METRICS_LIMITATION]
     result['limitations'].append('Only metrics with a qualified sample are shown.')
-    if any(cap['status'] == 'qualified' for cap in caps.values()):
+    if (all(cap['status'] == 'qualified' for cap in caps.values())
+            and all(metric['qualification']['status'] == 'qualified' for metric in result['metrics'])):
+        result['status'] = STATUS_AVAILABLE
+        result['reason_code'] = None
+    elif any(cap['status'] == 'qualified' for cap in caps.values()):
         result['status'] = STATUS_PARTIAL
         result['reason_code'] = 'metric_partially_available'
     return result

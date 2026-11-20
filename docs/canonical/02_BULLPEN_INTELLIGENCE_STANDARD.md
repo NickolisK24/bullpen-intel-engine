@@ -362,12 +362,13 @@ This extends the methodology-versioning requirements in Section 13; it does not 
 |---|---|---|---|---|
 | M-001 | Current Active-Pen ERA | Active Bullpen ERA | Current Active-Pen Performance | Implemented for Team Board — see Section 7C |
 | M-002 | Current Active-Pen WHIP | Active Bullpen WHIP | Current Active-Pen Performance | Implemented for Team Board — see Section 7D |
+| M-003 | Current Active-Pen K-BB% | K-BB% | Current Active-Pen Performance | Team Board, publication-bound official lines only — see the [November 20 decision](../decisions/2026-09-22-team-board-performance-v1-publication.md#november-20-2026--team-board-k-bb-m-003-version-100) |
 
 M-001's formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule **are** established by D-023 through D-030 and recorded in Section 7C. M-002's separately approved authority is recorded in Section 7D. Both are public only on the Team Board and remain subject to the normal trust gates.
 
 No other metric may be added to this registry as implemented, approved for public use, or production-ready.
 
-Candidate later entries — K%, BB%, K-BB%, HR/9, LOB%, inherited-runner outcomes, and FIP/xFIP/SIERA — remain candidates only. Each requires its own approved source, formula, sample, and publication contract before it becomes a registry entry. What each inherits automatically and what it must define for itself is fixed by D-030 and recorded immediately below.
+Candidate later entries — K%, BB%, HR/9, LOB%, inherited-runner outcomes, and FIP/xFIP/SIERA — remain candidates only. Each requires its own approved source, formula, sample, and publication contract before it becomes a registry entry. What each inherits automatically and what it must define for itself is fixed by D-030 and recorded immediately below.
 
 ### What a metric inherits and what it defines
 

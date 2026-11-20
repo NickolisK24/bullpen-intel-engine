@@ -399,7 +399,23 @@ def test_candidate_binds_full_season_splits_to_selected_club_and_date(app):
         assert caps['inherited_runner_context']['value'] == '1 of 3 scored'
         assert caps['k_bb_percent']['proof']['inputs'] == {'strikeouts': 7, 'walks': 1, 'batters_faced': 22}
         assert caps['k_bb_percent']['value'] is None
-        assert caps['k_bb_percent']['reason_code'] == 'metric_publication_rule_unapproved'
+        assert caps['k_bb_percent']['reason_code'] == 'below_minimum_batters_faced'
+        without_proof = deepcopy(frozen)
+        del without_proof['capabilities']['k_bb_percent']['proof']
+        assert not verified(without_proof)
+        old = deepcopy(frozen)
+        old['capabilities']['k_bb_percent'] = {**{k: caps['k_bb_percent'][k] for k in ('coverage', 'proof')},
+            'status': 'unavailable', 'value': None, 'reason_code': 'metric_publication_rule_unapproved'}
+        assert verified(old)
+
+        at_minimum = dict(split, stat={**split['stat'], 'battersFaced': 100})
+        evidence.remember_splits(arm.mlb_id, THROUGH.year, [at_minimum])
+        complete = read()
+        assert verified(complete)
+        assert complete['capabilities']['k_bb_percent']['value'] == '6.0%'
+        assert complete['status'] == 'available'
+        complete['capabilities']['k_bb_percent']['value'] = '7.0%'
+        assert not verified(complete)
         corrupted = deepcopy(frozen)
         corrupted['official_comparison']['lines'][0][-1][0] = 1
         assert not verified(corrupted)
@@ -424,3 +440,19 @@ def test_candidate_binds_full_season_splits_to_selected_club_and_date(app):
             assert read()['capabilities']['home_runs_allowed']['value'] is None
     assert read()['capabilities']['home_runs_allowed']['value'] is None
     assert verified(frozen)
+
+
+@pytest.mark.parametrize('strikeouts,walks,bf,expected,reason', [
+    (474, 149, 1834, '17.7%', None),
+    (0, 1, 400, '-0.3%', None),
+    (1, 0, 400, '0.3%', None),
+    (1, 1, 100, '0.0%', None),
+    (0, 1, 4000, '0.0%', None),
+    (0, 0, 0, None, 'zero_batters_faced'),
+    (7, 1, 99, None, 'below_minimum_batters_faced'),
+])
+def test_k_bb_rate_contract(strikeouts, walks, bf, expected, reason):
+    from services.team_performance_evidence import _k_bb_result
+
+    result = _k_bb_result(dict(strikeouts=strikeouts, walks=walks, batters_faced=bf))
+    assert (result['value'], result['reason_code']) == (expected, reason)
