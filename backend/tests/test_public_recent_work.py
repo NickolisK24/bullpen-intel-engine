@@ -238,6 +238,45 @@ def test_recent_work_last_appearance_same_day_omits_pitch_clause(client):
     )
 
 
+@pytest.mark.parametrize(('hits', 'runs', 'suffix'), [
+    (None, None, ''), (2, None, ', 2 H'), (None, 1, ', 1 R'),
+    (0, None, ', 0 H'), (None, 0, ', 0 R'), (0, 0, ''),
+])
+def test_nullable_appearance_stats_survive_the_route(client, hits, runs, suffix):
+    pitcher = _pitcher()
+    db.session.add(pitcher)
+    db.session.flush()
+    log = _log(pitcher.id, 8102, date(2026, 7, 5), outs=0, pitches=0)
+    db.session.add(log)
+    db.session.flush()
+    # Set persisted NULLs after insert so column defaults cannot disguise the fixture.
+    log.strikeouts = None
+    log.walks = 0
+    log.hits_allowed = hits
+    log.runs_allowed = runs
+    log.save = None
+    db.session.commit()
+
+    body = client.get(f'/api/bullpen/pitchers/{pitcher.id}/recent-work').get_json()
+    for row in (body['last_appearance'], body['recent_appearances'][0]):
+        assert row['strikeouts'] is None and row['walks'] == 0
+        assert row['hits_allowed'] == hits and row['runs_allowed'] == runs
+        assert row['save'] is None and row['hold'] is False
+    assert body['last_appearance']['sentence'] == (
+        f'Last appearance: July 5 vs NYY — 0.0 IP, 0 pitches, 0 BB{suffix}.'
+    )
+
+
+def test_all_unknown_stats_preserve_the_appearance():
+    # Persisted outs are mandatory. Exercise a partial input at the serializer boundary.
+    log = GameLog(game_date=date(2026, 7, 5), opponent_abbreviation='BOS')
+    row = public_recent_work._last_appearance_payload(log, log.game_date)
+    for field in ('innings_pitched', 'innings_pitched_outs', 'pitches_thrown',
+                  'strikeouts', 'walks', 'hits_allowed', 'runs_allowed'):
+        assert row[field] is None
+    assert row['sentence'] == 'Last appearance: July 5 vs BOS.'
+
+
 def test_recent_work_no_anchor_omits_anchored_sections(client, monkeypatch):
     monkeypatch.setattr(
         public_recent_work.board_freshness,
