@@ -1116,7 +1116,7 @@ def _frozen_what_changed_for_view(snapshot, team_package, team_id):
     if any(
         not isinstance(event, Mapping)
         or event.get('domain') not in {
-            'team_state', 'roster', 'workload_rest', 'transactions', 'rotation',
+            'team_state', 'roster', 'workload_rest', 'transactions', 'rotation', 'roles_deployment',
         }
         or event.get('evidence_status') != 'complete'
         or event.get('current_snapshot_id') != getattr(snapshot, 'id', None)

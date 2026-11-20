@@ -492,14 +492,20 @@ deterministically ordered material events. The details route serves this value
 from the trusted Team Board package; it never selects a predecessor or rebuilds
 a comparison from mutable rows.
 
-Comparable v1 domains are the immutable Team State receipts, frozen active
-bullpen membership, newly complete TB-03 usage-pattern facts (back-to-back,
-3-in-4, 4-in-6, and qualifying high-pitch outing), newly appearing verified
-TB-08 transaction identities, and a newly appearing complete TB-07 short
-start. Raw pitch-count differences are not material events. Named-arm role
-movement and ERA/WHIP materiality remain not comparable because no public
-materiality rules govern them; the receipt therefore reports honest partial
-coverage instead of deriving a change.
+The comparison covers Team State, active bullpen membership, verified TB-08
+transactions, new short starts, and named-arm workload and deployment. A
+complete workload pattern can start or end on consecutive comparable usage
+windows. A dated one-day line can report appearances, pitches, and outs.
+Observed deployment movement requires complete, compatible classifications for
+the same pitcher and season phase under the existing seven-day movement rule.
+A change in available signal coverage withholds the comparison.
+
+History uses the exact league snapshot and sync run cited by each published
+Team State artifact. For consecutive represented dates it reads the frozen
+named-arm sequence, including events beyond the Board's five-item limit.
+Earlier packages can supply the events they actually published in What Changed.
+Missing or mismatched predecessors, including same-date replacements, cannot
+supply a comparison. Performance materiality remains outside this contract.
 
 Team State transitions read the same snapshot-bound values used by TB-01.
 Roster events compare pitcher identities and do not infer transaction causes.
@@ -509,8 +515,8 @@ verified addition/removal explains the same membership delta, its exact
 identity and label are attached to that roster event instead of creating a
 duplicate timeline item. Rotation
 events repeat only backend-authored starter/bullpen innings from a new governed
-short start. The priority is Team State, active roster, workload/rest,
-transaction, then rotation; database row order cannot change prominence.
+short start. The priority is Team State, active roster, workload patterns and deployment,
+transactions, rotation, then individual dated relief lines; database row order cannot change prominence.
 
 No material events produces the frozen quiet message, “No material bullpen
 changes since the previous trusted update.” No exact predecessor produces an

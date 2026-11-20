@@ -1,7 +1,8 @@
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
+from services import public_team_relief_work as relief, role_movement
 from services.team_board_snapshot_team_state import make_receipt
 from services.team_board_what_changed import (
     QUIET_COPY, attach_frozen_what_changed, build_frozen_what_changed,
@@ -24,17 +25,35 @@ def _team(snapshot, state_code, pitcher_ids=(7,)):
         'freshness': {'data_through': snapshot.data_through.isoformat()},
     }
     return {
+        'team': {'team_id': TEAM_ID},
+        'recent_usage_rest_authority': {
+            'method_version': relief.RECENT_USAGE_REST_METHOD_VERSION,
+            'public_contract_version': relief.RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': relief.RECENT_USAGE_REST_CONTRACT,
+            'team_board_package_contract': 'trusted_team_board_publication_v1',
+            'reference_date_policy': relief.RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+            'data_through': snapshot.data_through.isoformat(),
+            'reference_date': snapshot.availability_reference_date.isoformat(),
+        },
         'default_pitcher_ids': list(pitcher_ids),
         'records': [{'pitcher_id': pitcher_id, 'name': f'Arm {pitcher_id}'} for pitcher_id in pitcher_ids],
         'frozen_team_state': make_receipt(
             snapshot, TEAM_ID, readiness, method_version=EXPECTED_METHOD_VERSION,
         ),
         'recent_usage_rest': {
+            'contract': relief.RECENT_USAGE_REST_CONTRACT,
+            'population_basis': relief.RECENT_USAGE_REST_POPULATION_BASIS,
+            'appearance_policy': relief.RECENT_USAGE_REST_APPEARANCE_POLICY,
+            'window_policy': relief.RECENT_USAGE_REST_REFERENCE_DATE_POLICY,
+            'thresholds': {'high_pitch_outing_minimum_pitches': 25, 'multi_inning_minimum_outs': 4,
+                           'three_in_four_minimum_distinct_days': 3, 'four_in_six_minimum_distinct_days': 4},
+            'data_through': snapshot.data_through.isoformat(),
+            'reference_date': snapshot.availability_reference_date.isoformat(),
             'status': 'complete',
             'active_pitchers': [{
                 'pitcher_id': pitcher_id, 'pitcher_name': f'Arm {pitcher_id}',
                 'back_to_back': _fact(False), 'three_in_four': _fact(False),
-                'four_in_six': _fact(False), 'high_pitch_outing': _fact(False),
+                'four_in_six': _fact(False), 'recent_multi_inning': _fact(False), 'high_pitch_outing': _fact(False),
             } for pitcher_id in pitcher_ids],
             'off_active_historical_contributors': [],
         },
@@ -46,6 +65,7 @@ def _team(snapshot, state_code, pitcher_ids=(7,)):
 def _snapshot(snapshot_id, represented_date, state_code='operationally_stable', pitcher_ids=(7,)):
     snapshot = SimpleNamespace(
         id=snapshot_id, sync_run_id=snapshot_id + 1000,
+        availability_reference_date=date.fromisoformat(represented_date) + timedelta(days=1),
         data_through=date.fromisoformat(represented_date), payload_version=1,
         snapshot_type='bullpen_dashboard', status='ready', is_published=True,
         published_at=datetime(2026, 9, 22, 12), payload={},
@@ -171,3 +191,91 @@ def test_attachment_freezes_by_value_for_every_team_package():
         'method_version': 'team_board_what_changed_event_v1',
     }]
     assert _frozen_what_changed_for_view(current, team, TEAM_ID) is None
+
+
+def _movement(snapshot, late):
+    from services import team_board_public_deployment_context as context
+
+    team = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    start, end, prior_start, prior_end = role_movement.window_bounds(snapshot.data_through)
+    window = dict(window_days=7, appearances=4, season_phase='regular_season',
+                  known_leverage_appearances=4, high_leverage_appearances=0,
+                  known_entry_appearances=4, eighth_or_later_appearances=0)
+    recent = dict(window, start_date=str(start), through_date=str(end), eighth_or_later_appearances=late)
+    prior = dict(window, start_date=str(prior_start), through_date=str(prior_end))
+    profile = dict(pitcher_id=7, recent_window=recent, prior_window=prior,
+                   **role_movement.classify_observed_role_movement(recent=recent, prior=prior))
+    team['roles_deployment_authority'] = dict(method_version=context.METHOD_VERSION,
+        public_contract_version=context.CONTRACT, team_board_package_contract='trusted_team_board_publication_v1',
+        data_through=str(end))
+    team['roles_deployment'] = dict(contract=context.CONTRACT, method_version=context.METHOD_VERSION,
+        data_through=str(end), window_days=14, team_id=TEAM_ID, profiles=[], role_movement=dict(
+            contract=role_movement.CONTRACT, method_version=role_movement.METHOD_VERSION, data_through=str(end),
+            game_types=sorted(role_movement.GAME_TYPES), status='complete',
+            population_basis=relief.DEPLOYMENT_PROFILE_POPULATION_BASIS, profiles=[profile]))
+    return profile
+
+
+def test_named_arm_history_retains_all_proven_events_before_board_limit():
+    arms = tuple(range(7, 14))
+    previous = _snapshot(1, '2026-09-21', pitcher_ids=arms)
+    current = _snapshot(2, '2026-09-22', pitcher_ids=arms)
+    _pair(previous, current)
+    _movement(previous, 0)
+    movement = _movement(current, 4)
+    for snap in (previous, current):
+        team = snap.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+        for arm in team['recent_usage_rest']['active_pitchers']:
+            arm['back_to_back'] = _fact(snap is previous)
+            arm['windows'] = {'yesterday': {
+                'start_date': str(snap.data_through), 'through_date': str(snap.data_through), 'window_days': 1,
+                'appearances': _fact(1), 'pitches': _fact(12), 'outs': _fact(3),
+            }}
+    attach_frozen_what_changed(current, previous)
+    team = current.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    board = team['frozen_what_changed']
+    assert len(board['events']) == 5 and board['reason_code'] == 'event_limit_applied'
+    history = team['frozen_arm_changes']
+    assert history['comparison_identity'] == board['comparison_identity']
+    events = history['events']
+    assert sum(e['event_type'] == 'back_to_back_ended' for e in events) == 7
+    assert sum(e['event_type'] == 'relief_work_recorded' for e in events) == 7
+    deployed, = [e for e in events if e['domain'] == 'roles_deployment']
+    assert (deployed['previous_value'], deployed['current_value']) == ('stable', 'later_or_higher_leverage')
+    assert 'Arm 7' in deployed['summary'] and 'later-inning' in deployed['summary']
+    movement['recent_window']['known_entry_appearances'] = 99
+    assert not any(e['domain'] == 'roles_deployment' for e in build_frozen_what_changed(previous, current, TEAM_ID)['events'])
+    assert history['domains']['roles_deployment']['status'] == 'complete'
+
+
+def test_partial_prior_fact_or_incompatible_method_cannot_prove_a_transition():
+    previous = _snapshot(1, '2026-09-21')
+    current = _snapshot(2, '2026-09-22')
+    _pair(previous, current)
+    before = previous.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    after = current.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    before['recent_usage_rest']['active_pitchers'][0]['three_in_four'] = _fact(None)
+    after['recent_usage_rest']['active_pitchers'][0]['three_in_four'] = _fact(True)
+    _movement(previous, 0)
+    _movement(current, 4)['method_version'] = 'unknown'
+    result = build_frozen_what_changed(previous, current, TEAM_ID)
+    assert result['events'] == []
+    assert result['domains']['roles_deployment']['status'] == 'partial'
+    before['recent_usage_rest_authority']['method_version'] = 'unknown'
+    assert build_frozen_what_changed(previous, current, TEAM_ID)['domains']['workload_rest']['status'] == 'unavailable'
+
+
+def test_same_movement_does_not_repeat_and_unavailable_signal_is_not_stability():
+    prior = _snapshot(1, '2026-09-21')
+    current = _snapshot(2, '2026-09-22')
+    _pair(prior, current)
+    _movement(prior, 4)
+    profile = _movement(current, 4)
+    read = build_frozen_what_changed(prior, current, TEAM_ID)
+    assert read['domains']['roles_deployment']['status'] == 'complete' and not read['events']
+    profile.update(status='unavailable', movement=None)
+    read = build_frozen_what_changed(prior, current, TEAM_ID)
+    assert read['domains']['roles_deployment']['status'] == 'partial' and not read['events']
+    _movement(current, 0)
+    event, = build_frozen_what_changed(prior, current, TEAM_ID)['events']
+    assert event['current_value'] == 'stable' and event['previous_value'] == 'later_or_higher_leverage'

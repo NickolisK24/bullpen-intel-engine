@@ -616,3 +616,18 @@ test('Team Board exposes a direct History handoff without loading History', () =
   assert.ok(answer.includes('View History'))
   assert.equal(board.includes('getTeamStateHistory'), false)
 })
+
+test('a named deployment change stays visible even when Team State is unchanged', () => {
+  const row = { ...payload.rows[0], artifact: { ...payload.rows[0].artifact, corrected_publication: false },
+    events: [], event_overlay: { status: 'available', outcome: 'unchanged' },
+    arm_changes: { domains: { workload_rest: { status: 'partial' } }, events: [{
+      event_type: 'observed_deployment_changed', domain: 'roles_deployment', subject_id: 7,
+      summary: 'Arm 7: Recent deployment shifted toward later-inning work.',
+    }] },
+  }
+  assert.equal(historyRowCategory(row), 'arm-change')
+  const html = renderToStaticMarkup(React.createElement(MemoryRouter, null,
+    React.createElement(HistoryStateRow, { row })))
+  assert.match(html, /Arm 7: Recent deployment shifted toward later-inning work/)
+  assert.match(html, /coverage is partial/)
+})

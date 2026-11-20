@@ -14,7 +14,7 @@ export const TEAM_BOARD_WHAT_CHANGED_CONTRACT = 'team_board_what_changed_v1'
 export const TEAM_BOARD_RECENT_RELIEF_WORK_CONTRACT = 'team_board_recent_relief_work_v1'
 
 const whatChangedDomains = new Set([
-  'team_state', 'roster', 'workload_rest', 'transactions', 'rotation',
+  'team_state', 'roster', 'workload_rest', 'transactions', 'rotation', 'roles_deployment',
 ])
 
 export function readTeamBoardFrozenWhatChanged(carrier, publicationIdentity) {

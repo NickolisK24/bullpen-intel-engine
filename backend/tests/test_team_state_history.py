@@ -101,13 +101,13 @@ def _payload(represented_date, label='Stretched', code='stretched'):
 
 
 def _publish(represented_date, *, label='Stretched', code='stretched', snapshot_id=5000,
-             render_version='team-state-1.2.0'):
+             render_version='team-state-1.2.0', sync_run_id=None):
     payload = _payload(represented_date, label, code)
     payload['authority']['source_snapshot_id'] = snapshot_id
     artifact = build_share_artifact_draft(
         artifact_type='team_state',
         team_id=TEAM_ID,
-        source_snapshot_id=snapshot_id,
+        source_snapshot_id=snapshot_id, source_sync_run_id=sync_run_id,
         product_date=represented_date,
         payload=payload,
         render_version=render_version,
@@ -919,3 +919,53 @@ def test_transaction_projection_failure_is_local_to_supporting_context(app, monk
     assert payload['rows'][0]['transaction_overlay']['status'] == 'unavailable'
     assert payload['rows'][0]['transactions'] == []
     assert payload['transaction_coverage']['status'] == 'unavailable'
+
+
+def test_history_reads_only_the_published_arm_sequence_for_its_exact_artifact_pair(app):
+    from models.sync_run import SyncRun
+    from services.team_board_what_changed import ARM_HISTORY_CONTRACT, EVENT_METHOD_VERSION
+    from services.what_changed_comparison_identity import build_comparison_identity
+
+    snapshots = []
+    for day in (24, 25):
+        run = SyncRun()
+        db.session.add(run)
+        db.session.flush()
+        snapshot = DashboardSnapshot(snapshot_type='bullpen_dashboard', status='ready',
+            sync_run_id=run.id, data_through=date(2026, 7, day), payload_version=1,
+            published_at=datetime(2026, 7, day, 20), payload={})
+        db.session.add(snapshot)
+        db.session.flush()
+        _publish(snapshot.data_through, snapshot_id=snapshot.id, sync_run_id=run.id)
+        snapshots.append(snapshot)
+    prior, current = snapshots
+    receipt = build_comparison_identity(current, prior)
+    event = dict(event_type='back_to_back_ended', domain='workload_rest', subject_id=17,
+                 summary='History Arm no longer shows back-to-back usage in the usage window.',
+                 team_id=TEAM_ID, previous_snapshot_id=prior.id, current_snapshot_id=current.id,
+                 method_version=EVENT_METHOD_VERSION, evidence_status='complete')
+    changes = dict(contract=ARM_HISTORY_CONTRACT, team_id=TEAM_ID, comparison_identity=receipt,
+                   domains={'workload_rest': {'status': 'complete'}, 'roles_deployment': {'status': 'partial'}},
+                   events=[event])
+    current.payload = {'what_changed_since_yesterday': {'comparison': {'identity': receipt}},
+                       'trusted_team_boards': {'by_team_id': {str(TEAM_ID): {'frozen_arm_changes': changes}}}}
+    db.session.commit()
+    newest, oldest = build_team_state_history('TST', season=2026)['rows']
+    assert oldest['arm_changes'] is None
+    assert newest['arm_changes']['events'] == [event]
+    assert newest['arm_changes']['citations']['previous']['public_id'] == oldest['artifact']['public_id']
+    # Legacy History may show only events actually frozen in the old Board.
+    legacy = dict(changes, contract='team_board_what_changed_v1', method_version='team_board_what_changed_v1',
+                  state='changes', reason_code='event_limit_applied', current_snapshot_id=current.id,
+                  previous_snapshot_id=prior.id)
+    payload = deepcopy(current.payload)
+    team = payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    del team['frozen_arm_changes']
+    team['frozen_what_changed'] = legacy
+    current.payload = payload
+    db.session.commit()
+    read = build_team_state_history('TST', season=2026)['rows'][0]['arm_changes']
+    assert read['events'] == [event] and read['board_limit_applied']
+    # A different healthy artifact on the same date must not inherit the old pair's changes.
+    _publish(prior.data_through, snapshot_id=prior.id + 10000)
+    assert build_team_state_history('TST', season=2026)['rows'][0]['arm_changes'] is None

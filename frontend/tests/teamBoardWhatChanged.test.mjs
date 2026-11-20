@@ -40,7 +40,7 @@ test('renders backend-authored events in their supplied deterministic order', ()
   assert.ok(html.indexOf(changes.events[1].summary) < html.indexOf(changes.events[2].summary))
   assert.match(html, /Since/)
   assert.match(html, /Partial comparison/)
-  assert.match(html, /Roles deployment, Performance/i)
+  assert.match(html, /Observed deployment, Performance/i)
 })
 
 test('quiet, missing-predecessor, partial, loading, and error states remain distinct', () => {
@@ -87,4 +87,14 @@ test('no predictive, evaluative, role-movement, or performance-delta copy is int
   for (const forbidden of ['will pitch', 'manager intent', 'era improved', 'whip worsened', 'moved into setup', 'major concern']) {
     assert.equal(html.includes(forbidden), false)
   }
+})
+
+test('named observed deployment has a pitcher and a deployment evidence handoff', () => {
+  const html = render({ changes: { ...changes, events: [{
+    key: 'move', domain: 'roles_deployment', subjectId: 7,
+    facts: { pitcher_name: 'Sample Arm' }, summary: 'Sample Arm: Recent deployment shifted toward later-inning work.',
+  }] }, onSelectPitcher: () => {} })
+  assert.match(html, /Recent deployment shifted toward later-inning work/)
+  assert.match(html, /Review Sample Arm/)
+  assert.match(html, /href="#roles-deployment-title"/)
 })

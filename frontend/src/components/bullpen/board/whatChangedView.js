@@ -6,6 +6,7 @@ const domainLabels = {
   workload_rest: 'Workload and rest',
   transactions: 'Roster transaction',
   rotation: 'Rotation impact',
+  roles_deployment: 'Observed deployment',
 }
 
 const handoffTargets = {
@@ -13,6 +14,7 @@ const handoffTargets = {
   roster: { href: '#active-bullpen', label: 'Review active bullpen' },
   workload_rest: { href: '#recent-usage', label: 'Review recent usage' },
   transactions: { href: '#roster-transactions', label: 'Review roster changes' },
+  roles_deployment: { href: '#roles-deployment-title', label: 'Review roles and deployment' },
   rotation: { href: '#rotation-impact', label: 'Review rotation impact' },
 }
 

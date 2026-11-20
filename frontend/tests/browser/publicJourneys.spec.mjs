@@ -717,7 +717,7 @@ test('TB-09 frozen material changes stay readable and team-scoped at product wid
       await expect(section).toContainText(`${abbreviation} Fixture Reliever joined the active bullpen.`)
       await expect(section).toContainText('Since')
       await expect(section).toContainText('Partial comparison')
-      await expect(section).toContainText('roles deployment, performance')
+      await expect(section).toContainText('Observed deployment, performance')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     }
   }

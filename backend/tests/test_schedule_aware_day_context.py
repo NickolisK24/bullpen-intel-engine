@@ -391,12 +391,25 @@ def test_recent_usage_rest_consecutive_day_semantics_are_unchanged():
 
 def test_case13_what_changed_across_off_day_manufactures_no_workload_change():
     rows, pitchers = _usage_fixture()
-    before = {'recent_usage_rest': _usage_carrier(rows, SEP[28], pitchers)}
-    after = {'recent_usage_rest': _usage_carrier(rows, SEP[29], pitchers)}
-    events, domain = team_board_what_changed._workload_events(
-        SimpleNamespace(id=1), SimpleNamespace(id=2), CHC, before, after,
-    )
-    assert events == []
+    def frozen_usage(snapshot_id, reference):
+        carrier = _usage_carrier(rows, reference, pitchers)
+        snapshot = SimpleNamespace(id=snapshot_id, data_through=SEP[27],
+                                   availability_reference_date=reference)
+        authority = {
+            'method_version': public_team_relief_work.RECENT_USAGE_REST_METHOD_VERSION,
+            'public_contract_version': public_team_relief_work.RECENT_USAGE_REST_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': carrier['contract'],
+            'team_board_package_contract': 'trusted_team_board_publication_v1',
+            'reference_date_policy': carrier['window_policy'],
+            'data_through': carrier['data_through'], 'reference_date': carrier['reference_date'],
+        }
+        return snapshot, {'recent_usage_rest': carrier, 'recent_usage_rest_authority': authority}
+
+    previous, before = frozen_usage(1, SEP[28])
+    current, after = frozen_usage(2, SEP[29])
+    events, domain = team_board_what_changed._workload_events(previous, current, CHC, before, after)
+    # The calendar window can lose a pattern without a new appearance.
+    assert {event['event_type'] for event in events} == {'back_to_back_ended', 'three_in_four_ended'}
     assert domain['status'] == 'complete'
     # Appearance totals never grow without a game.
     for item_before, item_after in zip(
