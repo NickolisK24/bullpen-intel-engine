@@ -86,17 +86,17 @@ export default function BullpenComparisonView({ payload, sideLabels = null, show
   const destinationPath = buildComparisonHref(teamARef, teamBRef, { section: 'comparison-evidence' })
   const destinationUrl = teamARef && teamBRef ? `${EVIDENCE_CARD_ORIGIN}${destinationPath}` : null
   const cardModel = null
-  const shareText = cardModel?.shareText || `Current ${view.labelA} and ${view.labelB} bullpen operating conditions on BaseballOS.`
+  const shareText = cardModel?.shareText || `Published ${view.labelA} and ${view.labelB} bullpen operating conditions on BaseballOS.`
 
   return (
     <div className="space-y-6">
       <section aria-labelledby="current-bullpen-comparison-heading">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="current-bullpen-comparison-heading" className="font-mono text-xs uppercase tracking-widest text-chalk400">Current Bullpen Comparison</h2>
+            <h2 id="current-bullpen-comparison-heading" className="font-mono text-xs uppercase tracking-widest text-chalk400">{payload.comparison_basis === 'pregame' ? 'Pregame Bullpen Comparison' : 'Published Bullpen Comparison'}</h2>
             {view.representedDate && <FreshnessStamp freshness={{ data_through: view.representedDate }} showExceptional={false} className="mt-2" />}
           </div>
-          <p className="text-xs text-chalk500">Aligned facts from one published snapshot.</p>
+          <p className="text-xs text-chalk500">Aligned facts from one published snapshot. {payload.comparison?.availability_reference_date && <>Rest reference date: {payload.comparison.availability_reference_date}.</>}</p>
         </div>
 
         <div className="grid gap-3 border-y border-dirt py-4 md:grid-cols-2 md:gap-8">

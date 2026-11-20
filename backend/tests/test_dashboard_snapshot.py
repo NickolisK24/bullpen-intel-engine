@@ -2597,3 +2597,40 @@ class TestRepeatedSameDatePublicationPreservesComparison:
             comparison = self._stored_comparison(current)
             assert comparison['comparison_available'] is False
             assert 'no_prior_snapshot' in comparison['reason_codes']
+
+
+def test_final_matchup_selects_pregame_edition_after_pointer_rollover(app):
+    from models.slate_game import SlateGame
+    from tests.test_current_bullpen_comparison import _snapshot
+
+    with app.app_context():
+        run = SyncRun(status='success')
+        db.session.add(run)
+        db.session.flush()
+        game = SlateGame(
+            game_pk=824424, away_team_id=1, home_team_id=2, game_date_et=date(2026, 8, 25),
+            game_time_utc=datetime(2026, 8, 25, 23, 10), normalized_state='completed',
+        )
+        db.session.add(game)
+        editions = []
+        for hour in (10, 12, 23):
+            fixture = _snapshot()
+            row = DashboardSnapshot(
+                snapshot_type='bullpen_dashboard', status='ready', payload_version=1,
+                sync_run_id=run.id, is_published=hour == 23,
+                data_through=fixture.data_through, availability_reference_date=fixture.availability_reference_date,
+                payload=fixture.payload, published_at=datetime(2026, 8, 25, hour, 20),
+            )
+            editions.append(row)
+            db.session.add(row)
+        db.session.commit()
+        client = app.test_client()
+        body = client.get('/api/bullpen/matchups/824424').get_json()
+        assert body['publication_authority']['snapshot_id'] == editions[1].id
+        assert body['comparison_basis'] == 'pregame'
+        game.game_time_utc = datetime(2026, 8, 25, 9)
+        db.session.commit()
+        body = client.get('/api/bullpen/matchups/824424').get_json()
+        assert body['game']['game_pk'] == 824424
+        assert body['reason_code'] == 'trusted_pregame_edition_unavailable'
+        assert body['comparison'] is None and body['publication_authority'] is None

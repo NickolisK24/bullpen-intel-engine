@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from services.availability_reference_date import product_current_date
 from services.pitcher_public_labels import (
     build_public_arm_read,
-    public_arm_context,
+    board_arm_context,
     PUBLIC_ROLE_COMPOSITION_KEYS,
     ROLE_PUBLIC_LABELS,
 )
@@ -118,12 +118,9 @@ def _active_arms(board):
                 pitches_last_7_days = display.get('pitches_last_7_days')
                 last_appearance = deepcopy(display.get('last_appearance'))
             roster = card.get('roster_status') or {}
-            last_work = card.get('last_workload_appearance') or {}
-            context = public_arm_context(
-                freshness=board.get('freshness') or {}, product_day=product_day,
+            context = board_arm_context(
+                card, freshness=board.get('freshness') or {}, product_day=product_day,
                 club_active=(board.get('team_state') or {}).get('available') is True,
-                roster=roster, data_state=card.get('data_state'),
-                latest_game_date=last_work.get('game_date') or last_work.get('date'),
             )
             labels = deepcopy(card.get('pitcher_labels') or {})
             if context['mode'] != 'current':

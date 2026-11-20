@@ -1,7 +1,8 @@
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
 from flask import Flask
 
 from services import current_bullpen_comparison as comparison
@@ -17,6 +18,12 @@ from services.bullpen_board import (
 
 DATA_THROUGH = '2026-08-24'
 REFERENCE_DATE = '2026-08-25'
+
+
+@pytest.fixture(autouse=True)
+def represented_today(monkeypatch):
+    for module in (comparison, trusted_compare_authority):
+        monkeypatch.setattr(module, 'product_current_date', lambda: date.fromisoformat(REFERENCE_DATE))
 
 
 def _record(pitcher_id, status):
@@ -36,7 +43,8 @@ def _record(pitcher_id, status):
         'pitcher_labels': {},
         'public_role_read': {},
         'eligibility': {},
-        'roster_status': {},
+        'roster_status': {'is_authoritative': True, 'is_active_mlb': True},
+        'last_workload_appearance': {'game_date': DATA_THROUGH},
         'visibility': {'is_visible_by_default': True},
     }
 
@@ -79,8 +87,15 @@ def _snapshot():
         data_through=date.fromisoformat(DATA_THROUGH),
         availability_reference_date=date.fromisoformat(REFERENCE_DATE),
         snapshot_generated_at=None,
-        published_at=None,
+        published_at=datetime(2026, 8, 25, 12),
+        status='ready', payload_version=1, snapshot_type='bullpen_dashboard',
         payload={
+            'freshness': {
+                'data_through': DATA_THROUGH, 'availability_reference_date': REFERENCE_DATE,
+                'is_current': True,
+                'slate_coverage': {'slate_date': DATA_THROUGH, 'validations_passed': True,
+                                   'complete_enough_to_publish': True},
+            },
             public_serving_authority.TEAM_BOARD_PACKAGE_KEY: {
                 'contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
                 'data_through': DATA_THROUGH,
@@ -217,7 +232,7 @@ def test_optional_owner_exception_withholds_only_its_domain(monkeypatch):
     assert carrier['domains']['rest']['status'] == 'available'
     assert carrier['domains']['workload']['status'] == 'available'
     assert carrier['domains']['rotation']['status'] == 'available'
-    assert carrier['domains']['availability']['status'] == 'available'
+    assert carrier['domains']['availability']['status'] == 'withheld'
 
 
 def test_mismatched_reference_withholds_only_rotation(monkeypatch):
@@ -368,7 +383,7 @@ def test_scheduled_game_matchup_reuses_carrier_with_away_home_order(monkeypatch)
     assert payload['comparison']['teams']['team_b']['team_id'] == 2
 
 
-def test_scheduled_game_on_another_date_withholds_only_rest(monkeypatch):
+def test_scheduled_game_on_another_date_withholds_day_specific_counts(monkeypatch):
     """A game dated after the publication's availability date (an off-day in
     between, or a rollover before the next publication) must not show that
     publication's "worked yesterday" as the game's rest."""
@@ -383,7 +398,8 @@ def test_scheduled_game_on_another_date_withholds_only_rest(monkeypatch):
     assert domains['rest']['status'] == comparison.STATUS_WITHHELD
     assert domains['rest']['reason_code'] == comparison.REASON_REST_DATE_MISMATCH
     assert domains['rest']['team_a'] is None and domains['rest']['team_b'] is None
-    for name in ('team_state', 'workload', 'rotation', 'availability'):
+    assert domains['availability']['status'] == 'withheld'
+    for name in ('team_state', 'workload', 'rotation'):
         assert domains[name]['status'] != comparison.STATUS_WITHHELD
     assert payload['comparison']['status'] == comparison.STATUS_PARTIAL
 
@@ -562,3 +578,50 @@ def test_pair_copies_qualified_performance_and_named_active_role_rest(monkeypatc
     later, _ = comparison.build_current_bullpen_comparison(snapshot, 1, 2, as_of_date='2026-08-26')
     assert later['domains']['role_rest']['reason_code'] == 'rest_reference_date_mismatch'
     assert later['domains']['performance']['team_b']['active_bullpen_era']['value'] == '2.31'
+
+@pytest.mark.parametrize('condition', ['old_publication', 'historical_arm', 'empty_group', 'missing_record', 'unknown_status'])
+def test_manual_availability_requires_a_current_population_on_both_sides(monkeypatch, condition):
+    _install_owners(monkeypatch)
+    snapshot = _snapshot()
+    team = snapshot.payload['trusted_team_boards']['by_team_id']['1']
+    if condition == 'old_publication':
+        monkeypatch.setattr(comparison, 'product_current_date', lambda: date(2026, 11, 20))
+    elif condition == 'historical_arm':
+        team['records'][0]['roster_status']['is_authoritative'] = False
+    elif condition == 'missing_record':
+        team['records'].pop()
+    elif condition == 'unknown_status':
+        team['records'][0]['availability']['availability_status'] = None
+    else:
+        team['default_pitcher_ids'] = []
+    carrier, _ = comparison.build_current_bullpen_comparison(snapshot, 1, 2)
+    domain = carrier['domains']['availability']
+    assert domain['team_a'] is None and domain['team_b'] is None
+    assert carrier['domains']['workload']['status'] == 'available'
+
+
+@pytest.mark.parametrize('invalid', [None, 'after_start', 'wrong_day', 'missing_time', 'unpublished', 'coverage'])
+def test_completed_game_uses_only_a_trusted_pregame_edition(monkeypatch, invalid):
+    _install_owners(monkeypatch)
+    source = _slate_game().to_dict()
+    source['status']['normalized'] = 'completed'
+    snapshot = _snapshot()
+    if invalid == 'after_start':
+        snapshot.published_at = datetime(2026, 8, 25, 23, 10)
+    elif invalid == 'wrong_day':
+        source['game_date_et'] = '2026-08-24'
+    elif invalid == 'missing_time':
+        source['game_time_utc'] = None
+    elif invalid == 'unpublished':
+        snapshot.published_at = None
+    elif invalid == 'coverage':
+        snapshot.payload['freshness']['slate_coverage'] = {}
+    result = trusted_compare_authority.build_scheduled_game_matchup_payload(source, snapshot)
+    if invalid:
+        assert result['comparison'] is None and result['publication_authority'] is None
+        assert result['reason_code'] == 'trusted_pregame_edition_unavailable'
+    else:
+        assert result['comparison_basis'] == 'pregame'
+        assert result['comparison']['domains']['workload']['status'] == 'available'
+        assert result['comparison']['domains']['team_state']['status'] == 'withheld'
+        assert result['publication_authority']['snapshot_id'] == snapshot.id

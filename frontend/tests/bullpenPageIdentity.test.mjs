@@ -272,7 +272,7 @@ test('comparison keeps a logical heading hierarchy and integrates state into the
       React.createElement(BullpenComparisonView, { payload: differingComparison }),
     ),
   )
-  for (const label of ['Current Bullpen Comparison', 'Full Team Boards']) {
+  for (const label of ['Published Bullpen Comparison', 'Full Team Boards']) {
     assert.ok(
       new RegExp(`<h2[^>]*>${escapeRegExp(label)}</h2>`).test(html),
       `comparison section "${label}" is not a h2`,
