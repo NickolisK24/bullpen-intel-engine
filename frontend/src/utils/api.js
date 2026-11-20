@@ -1238,3 +1238,10 @@ export const getAvailabilityBacktest = (options = {}) => request('/methodology/a
   timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
   ...options,
 })
+
+export const getTeamHistoryPitcher = (team, season, pitcherId, options = {}) => (
+  request(`/bullpen/teams/${encodeURIComponent(team)}/history/pitchers/${encodeURIComponent(pitcherId)}${buildQuery({ season })}`, {
+    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS,
+    ...options,
+  })
+)

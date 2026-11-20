@@ -17,7 +17,7 @@ def _tenth(value, denominator):
     return float((value / denominator).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
 
 
-def season_pitch_characteristics(pitcher, through):
+def season_pitch_characteristics(pitcher, through, *, appearance_team_id=None):
     """Count each retained current pitch once. Withhold incomplete calendar months."""
     if through is None:
         return None
@@ -44,6 +44,9 @@ def season_pitch_characteristics(pitcher, through):
                 GameLog.game_type == 'R', GameLog.game_date.between(through.replace(month=1, day=1), through))
         .order_by(GameLog.game_date, GameLog.mlb_game_pk)
     )
+    if appearance_team_id is not None:
+        rows = rows.filter(GameLog.appearance_team_status == GameLog.APPEARANCE_TEAM_RESOLVED,
+                           GameLog.appearance_team_id == appearance_team_id)
     months = {}
     for (day, _game_pk), outing in groupby(rows, key=lambda r: (r.game_date, r.mlb_game_pk)):
         pitches = list(outing)

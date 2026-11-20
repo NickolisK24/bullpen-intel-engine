@@ -697,6 +697,10 @@ def test_season_pitch_chart_reconciles_current_typed_pitches_to_official_outings
         assert read['months'] == [{'month': '2026-07', 'outings': 1, 'verified_outings': 1,
             'types': [{'type': 'FF', 'pitches': 2, 'mean_mph': 95, 'mix_percent': 66.7},
                       {'type': 'SL', 'pitches': 1, 'mean_mph': None, 'mix_percent': 33.3}]}]
+        old_club = pitcher.team_id
+        pitcher.team_id = 9999
+        assert season_pitch_characteristics(pitcher, day, appearance_team_id=old_club) == read
+        assert not season_pitch_characteristics(pitcher, day, appearance_team_id=9999)['months']
         assert not season_pitch_characteristics(pitcher, date(2026, 7, 2))['months']
         log.pitches_thrown = 4
         assert season_pitch_characteristics(pitcher, day)['months'][0]['types'] == []

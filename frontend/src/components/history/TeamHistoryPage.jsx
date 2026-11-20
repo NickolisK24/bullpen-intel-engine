@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
+import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
 import { getTeamStateHistory } from '../../utils/api'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
@@ -26,8 +27,9 @@ function monthLabel(key) {
   return month >= 1 && month <= 12 ? `${MONTHS[month - 1]} ${year}` : key
 }
 
-function timelineEntries(payload) {
+function timelineEntries(payload, games) {
   const entries = [
+    ...games.map(event => ({ type: 'game', date: event.date, event })),
     ...(payload?.rows || []).map(row => ({ type: 'state', date: row.represented_date, row })),
     ...(payload?.coverage?.missing_dates || []).map(date => ({ type: 'gap', date })),
   ]
@@ -35,9 +37,9 @@ function timelineEntries(payload) {
   return entries
 }
 
-function groupedEntries(payload) {
+function groupedEntries(payload, games) {
   const groups = new Map()
-  for (const entry of timelineEntries(payload)) {
+  for (const entry of timelineEntries(payload, games)) {
     const key = monthKey(entry.date)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(entry)
@@ -388,7 +390,7 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
 
   const teamName = payload.team.team_name || payload.team.team_abbreviation || 'Team'
   const coverage = payload.coverage || {}
-  const groups = groupedEntries(payload)
+  const groups = groupedEntries(payload, payload.workload?.events || [])
   const boardHref = payload.team.team_board_href || buildTeamBoardHref(payload.team)
   const coverageLabel = coverage.start && coverage.end
     ? `${formatFreshnessDate(coverage.start, { includeYear: true })} – ${formatFreshnessDate(coverage.end, { includeYear: true })}`
@@ -415,6 +417,12 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
         </Link>
       </header>
 
+      {payload.workload === null && <p role="status">Historical workload unavailable.</p>}
+      {payload.workload && <>
+        <PitchHistoryPicker key={payload.team.team_abbreviation} team={payload.team.team_abbreviation} season={payload.season} pitchers={payload.workload.pitchers} />
+        <p className="text-sm text-text-secondary">Game context uses retained regular-season MLB records. Published Team States are dated separately.</p>
+        {!payload.workload.events.length && <p>No verified game workload or off-day context for this season.</p>}
+      </>}
       {groups.length === 0 ? (
         <EmptyState
           title="Historical Team State is not available"
@@ -443,7 +451,9 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
               <section key={month} className="scroll-mt-6" aria-labelledby={`history-month-${month}`}>
                 <h2 id={`history-month-${month}`} className="font-board text-xl font-semibold text-text-primary">{monthLabel(month)}</h2>
                 <div className="mt-2">
-                  {entries.map(entry => entry.type === 'gap'
+                  {entries.map(entry => entry.type === 'game'
+                    ? <GameContext key={`game-${entry.date}-${entry.event.game_pks.join('-')}`} event={entry.event} />
+                    : entry.type === 'gap'
                     ? <GapRow key={`gap-${entry.date}`} date={entry.date} />
                     : <HistoryStateRow key={entry.row.artifact.public_id} row={entry.row} />)}
                 </div>
