@@ -27,6 +27,7 @@ from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
 from services import board_freshness
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import tonight_intelligence_snapshot
+from services.pitcher_public_labels import ARM_READ_METHOD_VERSION
 from services.process_memory import log_memory_checkpoint
 from services.availability_population import availability_with_eligibility, current_availability_records
 from services.availability_reference_date import parse_reference_date, product_current_date
@@ -532,6 +533,7 @@ def build_frozen_team_board_package(dashboard_payload):
         by_team_id[str(team_id)] = {
             'team': deepcopy(team_info.get(team_id) or {'team_id': team_id}),
             'records': records,
+            'arm_read_method': ARM_READ_METHOD_VERSION,
             'default_pitcher_ids': default_ids,
             'bullpen_membership_authority': {
                 'method_version': BULLPEN_MEMBERSHIP_METHOD_VERSION,
@@ -1117,6 +1119,7 @@ def _frozen_what_changed_for_view(snapshot, team_package, team_id):
         not isinstance(event, Mapping)
         or event.get('domain') not in {
             'team_state', 'roster', 'workload_rest', 'transactions', 'rotation', 'roles_deployment',
+            'team_burden', 'arm_reads', 'clean_options',
         }
         or event.get('evidence_status') != 'complete'
         or event.get('current_snapshot_id') != getattr(snapshot, 'id', None)
@@ -1320,6 +1323,14 @@ def build_published_team_board(
         payload['frozen_what_changed'] = _frozen_what_changed_for_view(
             snapshot, team_package, team_id,
         )
+        changes = payload['frozen_what_changed'] or {}
+        trend = (changes.get('domains') or {}).get('team_burden') or {}
+        if (payload['workload_overview'] and isinstance(trend.get('deltas'), Mapping)
+                and trend.get('status') in ('partial', 'complete')):
+            payload['workload_overview'].update({
+                'trend_status': trend['status'], 'trend_deltas': trend['deltas'],
+                'trend_previous_date': changes['previous_represented_date'],
+            })
         payload['frozen_recent_relief_work'] = _frozen_recent_relief_work_for_view(
             snapshot, team_package, team_id,
         )

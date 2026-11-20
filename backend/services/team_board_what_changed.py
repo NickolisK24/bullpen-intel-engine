@@ -8,6 +8,7 @@ from typing import Mapping
 
 from services import role_movement
 from services import public_team_relief_work as relief
+from services.pitcher_public_labels import ARM_READ_METHOD_VERSION, READ_PUBLIC_LABELS, board_arm_context
 from services.team_board_snapshot_team_state import compare_exact_team_state
 from services.what_changed_comparison_identity import (
     ComparisonIdentityInvalid,
@@ -26,6 +27,7 @@ DOMAIN_ORDER = {
     'team_state': 1,
     'roster': 2,
     'workload_rest': 3,
+    'arm_reads': 3, 'clean_options': 3, 'team_burden': 5,
     'transactions': 4,
     'rotation': 5,
     'roles_deployment': 3,
@@ -373,6 +375,129 @@ def _rotation_events(previous, current, team_id, previous_team, current_team):
     return events, _domain(status, 'rotation_comparison_partial' if status == 'partial' else None)
 
 
+def _board_reads(snapshot, team_id, team):
+    from services.team_board_delta_substrate import try_build_bullpen_membership_capture
+
+    freshness = _mapping(snapshot.payload.get('freshness'))
+    day = snapshot.availability_reference_date
+    readiness = _mapping(_mapping(team.get('roster_authority')).get('readiness'))
+    if (not day or freshness.get('availability_reference_date') != day.isoformat()
+            or freshness.get('product_current_date', day.isoformat()) != day.isoformat()
+            or freshness.get('data_through') != _represented(snapshot)
+            or team.get('arm_read_method') != ARM_READ_METHOD_VERSION
+            or readiness.get('claims_available') is not True or readiness.get('counts_withheld')):
+        return None
+    membership = try_build_bullpen_membership_capture(snapshot=snapshot, team_id=team_id)
+    records = _indexed(team.get('records') or [])
+    if (not membership or membership['membership_reference_date'] != day.isoformat()
+            or records is None or not membership['member_pitcher_ids']):
+        return None
+    reads = {}
+    for pitcher_id in membership['member_pitcher_ids']:
+        record = records.get(pitcher_id)
+        if record is None:
+            return None
+        read = _mapping(_mapping(record.get('pitcher_labels')).get('read'))
+        key = read.get('key')
+        card = {
+            'roster_status': _mapping(record.get('roster_status')),
+            'last_workload_appearance': _mapping(record.get('last_workload_appearance') or record.get('last_appearance')),
+            'data_state': _mapping(record.get('availability')).get('data_state'),
+        }
+        context = board_arm_context(
+            card,
+            freshness=freshness, product_day=day, club_active=True,
+        )
+        reads[pitcher_id] = (
+            (key, record['name']) if context['mode'] == 'current'
+            and isinstance(key, str) and key in READ_PUBLIC_LABELS and key != 'limited_read'
+            and read.get('label') == READ_PUBLIC_LABELS[key]['label'] else None
+        )
+    return reads
+
+
+def _read_changes(previous, current, team_id, previous_team, current_team, state_result):
+    missing = _domain('unavailable', 'arm_reads_not_comparable')
+    if (state_result['status'] not in {'changed', 'unchanged'}
+            or not previous.availability_reference_date or not current.availability_reference_date
+            or current.availability_reference_date - previous.availability_reference_date != timedelta(days=1)):
+        return [], missing, missing
+    before = _board_reads(previous, team_id, previous_team)
+    after = _board_reads(current, team_id, current_team)
+    if before is None or after is None:
+        return [], missing, missing
+    events = []
+    for pid in sorted(before.keys() & after.keys()):
+        if before[pid] and after[pid] and before[pid][0] != after[pid][0]:
+            old = READ_PUBLIC_LABELS[before[pid][0]]['label']
+            new = READ_PUBLIC_LABELS[after[pid][0]]['label']
+            name = after[pid][1]
+            events.append(_event(
+                'arm_reads', 'arm_read_changed', current=current, previous=previous, team_id=team_id,
+                subject_id=pid, facts={'pitcher_name': name}, previous_value=old, current_value=new,
+                summary=f'{name} moved from {old} to {new}.',
+            ))
+    if None in before.values() or None in after.values():
+        return events, _domain('partial', 'arm_read_evidence_incomplete'), missing
+    old, new = (sum(read[0] == 'clean_option' for read in side.values()) for side in (before, after))
+    if old != new:
+        events.append(_event('clean_options', 'clean_option_count_changed', current=current,
+                             previous=previous, team_id=team_id, previous_value=old, current_value=new,
+                             summary=f'Active arms with a Clean Option read changed from {old} to {new}.'))
+    return events, _domain('complete'), _domain('complete')
+
+
+def _workload_totals(snapshot, team):
+    from services.public_serving_authority import _frozen_workload_overview_for_view
+
+    overview = _mapping(_frozen_workload_overview_for_view(snapshot, team))
+    population = _mapping(_mapping(team.get('workload_windows_authority')).get('population_basis'))
+    if (population != {'basis': relief.WORKLOAD_WINDOWS_POPULATION_BASIS,
+                       'population_authority': relief.WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
+                       'membership_authority': relief.WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY}
+            or overview.get('window_policy') != relief.WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+            or overview.get('population_basis') != relief.WORKLOAD_WINDOWS_POPULATION_BASIS):
+        return {}
+    totals = {}
+    for days in relief.WORKLOAD_OVERVIEW_WINDOW_DAYS:
+        window = _mapping(_mapping(overview.get('windows')).get(f'window_{days}'))
+        if (window.get('through') != _represented(snapshot)
+                or window.get('start') != (snapshot.data_through - timedelta(days=days - 1)).isoformat()):
+            continue
+        for metric in ('appearances', 'pitches', 'outs'):
+            fact = _mapping(window.get(metric))
+            if fact.get('status') == 'complete' and type(fact.get('value')) is int and fact['value'] >= 0:
+                totals[days, metric] = fact['value']
+    return totals
+
+
+def _burden_changes(previous, current, team_id, previous_team, current_team):
+    before = _workload_totals(previous, previous_team)
+    after = _workload_totals(current, current_team)
+    deltas = {}
+    events = []
+    for days in relief.WORKLOAD_OVERVIEW_WINDOW_DAYS:
+        changes = []
+        for metric in ('pitches', 'appearances', 'outs'):
+            key = days, metric
+            if key not in before or key not in after:
+                continue
+            delta = after[key] - before[key]
+            deltas.setdefault(f'window_{days}', {})[metric] = delta
+            if delta:
+                changes.append(f'{metric} {before[key]} to {after[key]}')
+        if days in (7, 14) and changes:
+            events.append(_event(
+                'team_burden', f'workload_{days}_day_changed', current=current, previous=previous,
+                team_id=team_id, summary=f'{days}-day relief workload changed: ' + ', '.join(changes) + '.',
+                facts={'window_days': days, 'deltas': deltas[f'window_{days}']},
+            ))
+    if not deltas:
+        return [], _domain('unavailable', 'workload_windows_not_comparable')
+    complete = sum(map(len, deltas.values())) == 3 * len(relief.WORKLOAD_OVERVIEW_WINDOW_DAYS)
+    return events, _domain('complete' if complete else 'partial', deltas=deltas)
+
+
 def _compare(previous, current, team_id):
     """Compare only immutable carriers selected by the embedded exact-pair identity."""
     represented = _represented(current)
@@ -397,6 +522,8 @@ def _compare(previous, current, team_id):
             'transactions': _domain('unavailable', 'no_prior_trusted_comparison'),
             'rotation': _domain('unavailable', 'no_prior_trusted_comparison'),
             'roles_deployment': _domain('not_comparable', 'no_prior_trusted_comparison'),
+            **{k: _domain('unavailable', 'no_prior_trusted_comparison')
+               for k in ('arm_reads', 'clean_options', 'team_burden')},
             'performance': _domain('not_comparable', 'performance_materiality_not_governed'),
         },
         'reason_code': 'no_prior_trusted_comparison',
@@ -454,6 +581,12 @@ def _compare(previous, current, team_id):
     events.extend(rotation_events)
     deployment, domains['roles_deployment'] = _deployment_events(previous, current, team_id, previous_team, current_team)
     events.extend(deployment)
+    reads, domains['arm_reads'], domains['clean_options'] = _read_changes(
+        previous, current, team_id, previous_team, current_team, state_result,
+    )
+    burden, domains['team_burden'] = _burden_changes(previous, current, team_id, previous_team, current_team)
+    events.extend(reads)
+    events.extend(burden)
     events.sort(key=lambda item: (
         item['event_type'] == 'relief_work_recorded', DOMAIN_ORDER[item['domain']], item.get('event_date') or '',
         item.get('subject_id') or 0, item['event_type'],

@@ -87,3 +87,14 @@ test('the frontend does not aggregate team or contributor baseball facts', async
   assert.equal(adapter.includes('workloadMetricKeys.map(key => [key, readWorkloadMetric(window[key])])'), true)
   assert.equal(component.includes('recentReliefWork'), false)
 })
+
+test('displays signed changes and genuine zeroes only for published window metrics', () => {
+  const carrier = frozenTeamWorkloadFixture()
+  Object.assign(carrier, { trend_status: 'partial', trend_previous_date: '2026-09-01',
+    trend_deltas: { window_7: { appearances: 0, pitches: -11 }, window_14: { outs: 4 } } })
+  const html = render(carrier)
+  for (const text of ['-11 change', '0 change', '+4 change', 'same rolling window through 2026-09-01']) {
+    assert.ok(html.includes(text), text)
+  }
+  assert.equal((html.match(/ change</g) || []).length, 3)
+})

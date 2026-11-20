@@ -33,7 +33,22 @@ function readPresentation(arm) {
   }
 }
 
-export function getActiveBullpenRows(activeBullpen) {
+const patterns = [
+  ['backToBack', 'B2B'], ['threeStraight', '3 straight'], ['threeInFour', '3-in-4'], ['fourInSix', '4-in-6'],
+  ['recentMultiInning', 'Multi-inning'], ['highPitchOuting', '25+ pitches'],
+]
+
+function armPatterns(arm, usage) {
+  if (arm.arm_context?.mode !== 'current') return null
+  if (!usage) return arm.workload?.back_to_back === true ? 'B2B' : null
+  if (!['partial', 'complete'].includes(usage.status)) return null
+  const matches = usage.activePitchers.filter(row => row.pitcherId === arm.pitcher_id)
+  if (matches.length !== 1 || matches[0].rosterState !== 'active') return null
+  return patterns.filter(([key]) => matches[0][key]?.status === 'complete' && matches[0][key].value === true)
+    .map(([, label]) => label).join(' · ') || null
+}
+
+export function getActiveBullpenRows(activeBullpen, usage) {
   const arms = Array.isArray(activeBullpen?.arms) ? activeBullpen.arms : []
   return arms.map(arm => {
     const workload = arm?.workload || {}
@@ -60,7 +75,7 @@ export function getActiveBullpenRows(activeBullpen) {
       lastGamePitches,
       appearancesLast7,
       pitchesLast7,
-      pattern: current && workload.back_to_back === true ? 'B2B' : null,
+      pattern: armPatterns(arm, usage),
     }
   })
 }
@@ -134,7 +149,7 @@ export default function TeamBoardActiveBullpen({
   const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
     ? status.status
     : 'unavailable'
-  const rows = getActiveBullpenRows(activeBullpen)
+  const rows = getActiveBullpenRows(activeBullpen, read?.recentUsageRest)
   const showLastGamePitches = rows.some(row => row.lastGamePitches != null)
   const limitation = firstLimitation(status)
   const hasError = Boolean(error)

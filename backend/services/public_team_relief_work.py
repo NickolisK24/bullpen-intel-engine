@@ -547,6 +547,10 @@ def _recent_usage_rest_pitcher(
         ),
     )
 
+    three_straight = _pattern_fact(
+        matched=all(anchor - timedelta(days=i) in relief_dates for i in range(3)),
+        window_state=_classified_window_state(rows, coverage, anchor - timedelta(days=2), anchor, classes),
+    )
     three_start = anchor - timedelta(days=RECENT_USAGE_REST_THREE_IN_FOUR_DAYS - 1)
     three_dates = {day for day in relief_dates if three_start <= day <= anchor}
     three_in_four = _pattern_fact(
@@ -610,6 +614,7 @@ def _recent_usage_rest_pitcher(
         'days_since_last_appearance': days_since,
         'pitched_yesterday': pitched_yesterday,
         'back_to_back': back_to_back,
+        'three_straight': three_straight,
         'three_in_four': three_in_four,
         'four_in_six': four_in_six,
         'recent_multi_inning': multi_inning,
@@ -1183,6 +1188,7 @@ def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids):
         'window_policy': WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
         'population_basis': WORKLOAD_WINDOWS_POPULATION_BASIS,
         'windows': windows, 'concentration_7_day': concentration,
+        # A single edition cannot establish a trend. Serving joins the exact-pair receipt.
         'trend_status': RECENT_USAGE_REST_UNAVAILABLE,
     }
 

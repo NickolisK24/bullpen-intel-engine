@@ -78,6 +78,11 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
                     {metrics.map(metric => (
                       <td key={metric.key} className="px-1 py-panel text-right tablet:px-panel" aria-label={`${window.label} ${metric.label}: ${window[metric.key]?.status === 'complete' ? window[metric.key].value : window[metric.key]?.status || 'unknown'}`}>
                         <WorkloadMetric fact={window[metric.key]} />
+                        {window.trend?.[metric.key] != null && (
+                          <span className="block type-metadata text-text-secondary">
+                            {window.trend[metric.key] > 0 ? '+' : ''}{window.trend[metric.key]} change
+                          </span>
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -85,7 +90,7 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
               </tbody>
             </table>
           </div>
-          <p className="type-compact mt-meta text-text-tertiary">Baseball-date windows through {workload.dataThrough}. Each metric reflects its own evidence state.</p>
+          <p className="type-compact mt-meta text-text-tertiary">Baseball-date windows through {workload.dataThrough}. {workload.trendDate ? `Changes compare each window with the same rolling window through ${workload.trendDate}.` : 'No comparable prior workload trend is published.'}</p>
           <div className="mt-panel border-t border-line-subtle pt-panel">
             <h3 className="type-overline text-brand-gold">Seven-day pitch contributors</h3>
             {concentration?.status === 'complete' ? (
