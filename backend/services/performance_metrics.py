@@ -10,10 +10,10 @@ Adding K%, BB%, HR/9, FIP, xFIP or SIERA later means adding a
 measure, so publication logic never grows a metric-specific branch. No
 framework change and, by design, almost no framework test.
 
-M-001 ERA, M-002 WHIP and M-003 K-BB% are registered for the Team Board only.
+M-001 ERA, M-002 WHIP and M-003 K-BB% are authored for the Team Board only. Matchup/Compare can redisplay qualified frozen values.
 
 M-001's parameters are approved by D-023 through D-030 and are set here. The
-Team Board is its sole approved public surface; SC-05, Team State, Share Card,
+Team Board is its sole approved calculation surface; SC-05, Team State, Share Card,
 and every other surface remain blocked.
 """
 

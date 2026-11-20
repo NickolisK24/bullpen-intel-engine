@@ -95,7 +95,7 @@ test('empty payload renders a local unavailable state', () => {
 
 test('view preserves backend order and exact values', () => {
   const v = view.getComparisonView(differingComparison)
-  assert.deepEqual(v.domains.map(domain => domain.key), ['rest', 'workload', 'rotation', 'availability'])
+  assert.deepEqual(v.domains.map(domain => domain.key), ['rest', 'role_rest', 'performance', 'workload', 'rotation', 'availability'])
   assert.equal(v.labelA, 'Aces')
   assert.equal(v.labelB, 'Bears')
   assert.equal(v.representedDate, '2026-06-04')
@@ -105,4 +105,16 @@ test('request component retains one comparison request and no per-domain fan-out
   const component = await import('node:fs/promises').then(fs => fs.readFile(new URL('../src/components/bullpen/board/TeamBullpenComparison.jsx', import.meta.url), 'utf8'))
   assert.equal((component.match(/getTeamBullpenComparison\(/g) || []).length, 1)
   for (const forbidden of ['/board-v2', 'recent-work', 'rotation', 'workload-pattern']) assert.equal(component.includes(forbidden), false)
+})
+
+test('shows qualified performance with its sample and named rest evidence on both sides', () => {
+  const domains = structuredClone(differingComparison.comparison.domains)
+  const performance = { active_bullpen_era: { label: 'Fixture published metric', value: '2.31' }, sample: '120 innings' }
+  const arms = { setup: [{ name: 'Fixture Reliever', label: 'Setup Arm', days_since_last_appearance: 0 }] }
+  domains.performance = { status: 'available', team_a: performance, team_b: performance }
+  domains.role_rest = { status: 'available', team_a: arms, team_b: arms }
+  const html = render(makeComparison({ domains }))
+  for (const value of ['Fixture published metric', '2.31', '120 innings', 'Fixture Reliever (Setup Arm)', '0d since last appearance']) {
+    assert.ok(html.includes(value), value)
+  }
 })

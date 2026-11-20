@@ -50,7 +50,7 @@ function DomainSection({ domain, labelA, labelB }) {
             {[[labelA, 'valueA'], [labelB, 'valueB']].map(([label, valueKey]) => (
               <div key={label} className="border-l border-dirt pl-3">
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-chalk500">{label}</p>
-                <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5">
+                <dl className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-4 gap-y-1.5">
                   {domain.rows.map(row => (
                     <div key={row.key} className="contents">
                       <dt className="text-sm text-chalk400">{row.label}</dt>

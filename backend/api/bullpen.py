@@ -30,6 +30,7 @@ from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
 )
+from services.pitcher_trends import published_pitcher_deployment, season_pitch_characteristics
 from services.public_fatigue_view import public_availability, public_workload_facts
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
@@ -894,6 +895,18 @@ def get_pitcher_fatigue(pitcher_id):
         )
         deployment_context = _unavailable_pitcher_deployment_context(freshness)
 
+    trends = {}
+    for key, reader, args in (
+        ('published_deployment', published_pitcher_deployment, (snapshot, pitcher)),
+        ('season_pitch_characteristics', season_pitch_characteristics,
+         (pitcher, getattr(snapshot, 'data_through', None))),
+    ):
+        try:
+            with db.session.begin_nested():
+                trends[key] = reader(*args)
+        except Exception:
+            current_app.logger.exception('Optional %s unavailable for pitcher %s', key, pitcher_id)
+            trends[key] = None
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         'arm_context': arm_context,
@@ -914,6 +927,7 @@ def get_pitcher_fatigue(pitcher_id):
         'recent_work':       recent_work,
         'recent_work_status': recent_work_status,
         'deployment_context': deployment_context,
+        **trends,
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [public_workload_facts(s) for s in history],
     })

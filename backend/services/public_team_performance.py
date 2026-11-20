@@ -472,3 +472,27 @@ __all__ = [
     'build_public_team_performance_payload',
     'build_frozen_team_performance_payload',
 ]
+
+
+def frozen_comparison_metrics(read):
+    """Matchup/Compare may repeat these qualified Team Board observations by value."""
+    definitions = {metric.metric_id: metric for metric in (
+        performance_metrics.CURRENT_ACTIVE_PEN_ERA, performance_metrics.CURRENT_ACTIVE_PEN_WHIP,
+    )}
+    values = {}
+    versions = []
+    for metric in read['metrics']:
+        definition = definitions.get(metric.get('metric_id'))
+        if not definition or metric.get('method_version') != definition.version:
+            return {}, ()
+        versions.append(definition.version)
+        if ((metric.get('qualification') or {}).get('status') == 'qualified'
+                and (metric.get('evidence_state') or {}).get('status') == 'complete'
+                and metric.get('value') is not None):
+            values[metric['key']] = {'label': definition.public_name, 'value': metric['value']}
+    for key, label in (('home_runs_allowed', 'HR allowed'), ('inherited_runner_context', 'Inherited runners'),
+                       ('k_bb_percent', performance_metrics.CURRENT_ACTIVE_PEN_K_BB.public_name)):
+        cap = read['capabilities'].get(key) or {}
+        if cap.get('status') == 'qualified':
+            values[key] = {'label': label, 'value': cap['value']}
+    return values, versions

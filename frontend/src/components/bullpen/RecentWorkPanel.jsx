@@ -46,6 +46,13 @@ function RecentWorkSummary({ workload, inningsLastSevenDays }) {
     },
     { label: 'Appearances / 14d', value: displayValue(window14?.appearances) },
     { label: 'Pitches / 14d', value: displayValue(window14?.pitches_total) },
+    ...[3, 30].flatMap(days => {
+      const window = workload?.[`window_${days}`]
+      return window ? [
+        { label: `Appearances / ${days}d`, value: displayValue(window.appearances) },
+        { label: `Pitches / ${days}d`, value: displayValue(window.pitches_total) },
+      ] : []
+    }),
   ]
   const hasSummary = isFilled(inningsLastSevenDays) || window14
 

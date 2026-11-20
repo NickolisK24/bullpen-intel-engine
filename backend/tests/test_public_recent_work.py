@@ -117,6 +117,7 @@ def test_recent_work_anchor_sourced_from_public_freshness_and_exact_payload(clie
         'roster_status',
         'last_appearance',
         'recent_appearances',
+        'workload_series',
         'workload',
     }
     assert body['capability'] == 'public_recent_work'
@@ -627,3 +628,73 @@ def _assert_recent_work_api_guard(source):
         source,
         flags=re.I,
     )
+
+
+def test_season_pitch_chart_reconciles_current_typed_pitches_to_official_outings(client):
+    from models.play_by_play_foundation import GamePitchEvent, PlayByPlayProcessedGame
+    from services.pitcher_trends import season_pitch_characteristics
+    from services.play_by_play_foundation import SOURCE
+
+    with client.application.app_context():
+        pitcher = _pitcher()
+        db.session.add(pitcher)
+        db.session.flush()
+        day = date(2026, 7, 3)
+        log = _log(pitcher.id, 8001, day, pitches=3)
+        log.games_started = 0
+        log.appearance_team_id = pitcher.team_id
+        log.appearance_team_status = 'resolved'
+        marker = PlayByPlayProcessedGame(mlb_game_pk=8001, game_date=day, game_type='R',
+            processing_status='fully_processed', pitches_seen=3, pitches_stored=3, current_pitch_count=3,
+            pitch_fingerprint='a' * 64, source=SOURCE, source_endpoint='game/8001/playByPlay')
+        db.session.add_all([log, marker])
+        for index, (code, speed) in enumerate([('FF', 94), ('FF', 96), ('SL', None)]):
+            db.session.add(GamePitchEvent(mlb_game_pk=8001, game_date=day, game_type='R', at_bat_index=1,
+                play_event_index=index, pitcher_id=pitcher.id, pitcher_mlb_id=pitcher.mlb_id,
+                fielding_team_id=pitcher.team_id, pitch_type_code=code, start_speed=speed,
+                source=SOURCE, source_endpoint=marker.source_endpoint,
+                source_revision='b' * 64, event_fingerprint='b' * 64))
+        read = season_pitch_characteristics(pitcher, day)
+        assert read['months'] == [{'month': '2026-07', 'outings': 1, 'verified_outings': 1,
+            'types': [{'type': 'FF', 'pitches': 2, 'mean_mph': 95, 'mix_percent': 66.7},
+                      {'type': 'SL', 'pitches': 1, 'mean_mph': None, 'mix_percent': 33.3}]}]
+        assert not season_pitch_characteristics(pitcher, date(2026, 7, 2))['months']
+        log.pitches_thrown = 4
+        assert season_pitch_characteristics(pitcher, day)['months'][0]['types'] == []
+        log.pitches_thrown = 3
+        marker.processing_status = 'incomplete'
+        assert season_pitch_characteristics(pitcher, day)['months'][0]['verified_outings'] == 0
+
+
+def test_pitcher_chart_reads_exact_published_profile_and_window_pair(client):
+    from datetime import datetime
+    from types import SimpleNamespace
+    from models.dashboard_snapshot import DashboardSnapshot
+    from models.sync_run import SyncRun
+    from services.pitcher_trends import published_pitcher_deployment
+    from tests.test_team_board_what_changed import TEAM_ID, _movement, _snapshot
+
+    with client.application.app_context():
+        source = _snapshot(1, '2026-09-22')
+        movement = _movement(source, 4)
+        team = source.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+        context = {'pitcher_id': 7, 'entry_inning': {'by_inning': [{'inning': 8, 'appearances': 4}]}}
+        team['roles_deployment']['profiles'] = [{
+            'team_id': TEAM_ID, 'pitcher_id': 7, 'public_role_read': {}, 'context': context,
+        }]
+        run = SyncRun(status='success')
+        db.session.add(run)
+        db.session.flush()
+        snapshot = DashboardSnapshot(snapshot_type='bullpen_dashboard', sync_run_id=run.id,
+            data_through=source.data_through, is_published=True, published_at=datetime(2026, 9, 23),
+            payload=source.payload)
+        db.session.add(snapshot)
+        db.session.flush()
+        arm = SimpleNamespace(id=7, team_id=TEAM_ID)
+        read = published_pitcher_deployment(snapshot, arm)
+        assert read['context'] == context
+        assert read['movement'] == movement
+        arm.id = 8
+        assert published_pitcher_deployment(snapshot, arm) is None
+        arm.id, arm.team_id = 7, TEAM_ID + 1
+        assert published_pitcher_deployment(snapshot, arm) is None

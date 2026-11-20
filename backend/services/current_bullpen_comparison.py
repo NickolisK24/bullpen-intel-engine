@@ -49,6 +49,8 @@ logger = logging.getLogger(__name__)
 DOMAIN_MESSAGES = {
     'team_state': 'Team State comparison is unavailable for this publication.',
     'rest': 'Rest comparison is unavailable for this publication.',
+    'role_rest': 'Named late-inning and setup rest is unavailable for this publication.',
+    'performance': 'Active-group performance is unavailable for this publication.',
     'rest_date': 'Rest counts describe a different day than this game.',
     'workload': 'Recent workload comparison is unavailable for this publication.',
     'rotation': 'Rotation transfer comparison is unavailable for this publication.',
@@ -156,6 +158,56 @@ def _rest(team_package):
     )
 
 
+def _role_rest(snapshot, team_id, package):
+    if _roster_counts_withheld(package.get('roster_authority')):
+        return None, ()
+    usage = authority._frozen_recent_usage_rest_for_view(snapshot, package)
+    roles = authority._frozen_roles_deployment_for_view(snapshot, package, team_id)
+    if not usage or usage.get('status') not in ('complete', 'partial') or not roles:
+        return None, ()
+    active = usage.get('active_pitchers') or []
+    profiles = roles['profiles']
+    rest_by_id = {item['pitcher_id']: item for item in active}
+    if (len(rest_by_id) != len(active)
+            or len({p['pitcher_id'] for p in profiles}) != len(profiles)):
+        return None, ()
+    sides = {'late': [], 'setup': [], 'save_work': []}
+    for profile in profiles:
+        read = profile['public_role_read']
+        group = {'trust_arm': 'late', 'bridge_arm': 'setup'}.get(read.get('key'))
+        arm = rest_by_id.get(profile['pitcher_id'])
+        if not arm or arm.get('roster_state') != 'active':
+            continue
+        days = _mapping(arm.get('days_since_last_appearance'))
+        name = profile.get('pitcher_name')
+        if name and days.get('status') == 'complete' and type(days.get('value')) is int and days['value'] >= 0:
+            line = {'name': name, 'label': read['label'], 'pitcher_id': profile['pitcher_id'],
+                    'days_since_last_appearance': days['value']}
+            if group:
+                sides[group].append(line)
+            saves = _mapping(profile.get('observed_profile')).get('saves')
+            if type(saves) is int and saves > 0:
+                sides['save_work'].append(line)
+    if not any(sides.values()):
+        return None, ()
+    return sides, (roles['method_version'], usage['contract'], usage['data_through'], usage['reference_date'])
+
+
+def _performance(snapshot, team_id, package):
+    read = authority._frozen_performance_for_view(snapshot, package, team_id)
+    if not read or read.get('status') == 'unavailable':
+        return None, ()
+    window = _mapping(read.get('window'))
+    from services.public_team_performance import frozen_comparison_metrics
+
+    values, versions = frozen_comparison_metrics(read)
+    if not values or not read.get('sample_summary'):
+        return None, ()
+    values['sample'] = read.get('sample_summary')
+    return values, (read['contract_version'], read['population_basis'], window.get('policy'),
+                    window.get('start'), window.get('through'), *versions)
+
+
 def _workload(snapshot, team_id):
     capture = try_build_workload_window_capture(snapshot=snapshot, team_id=team_id)
     if not isinstance(capture, Mapping):
@@ -167,11 +219,20 @@ def _workload(snapshot, team_id):
         or not window
     ):
         return None, ()
+    packages = snapshot.payload[authority.TEAM_BOARD_PACKAGE_KEY]['by_team_id']
+    overview = authority._frozen_workload_overview_for_view(snapshot, packages.get(str(team_id)) or {})
+    dated = _mapping(_mapping(_mapping(overview).get('windows')).get('window_7'))
+    outs = _mapping(dated.get('outs'))
+    innings = None
+    if (dated.get('through') == _iso(snapshot.data_through) and outs.get('status') == 'complete'
+            and type(outs.get('value')) is int and outs['value'] >= 0):
+        innings = f"{outs['value'] // 3}.{outs['value'] % 3}"
     return {
         'window_days': 7,
         'relief_appearances': window.get('relief_appearances'),
         'contributing_relievers': window.get('pitchers_in_relief'),
         'pitches': window.get('pitches_total'),
+        'innings': innings,
     }, (
         capture.get('method_version'),
         capture.get('public_contract_version'),
@@ -346,6 +407,24 @@ def build_current_bullpen_comparison(
             stamp_a=availability_stamp_a, stamp_b=availability_stamp_b,
         ),
     }
+    for domain, project in (('performance', _performance), ('role_rest', _role_rest)):
+        if domain == 'role_rest' and (
+            reference_date != _iso(snapshot.availability_reference_date)
+            or (as_of_date is not None and _iso(as_of_date) != reference_date)
+        ):
+            domains[domain] = _withheld_domain(domain, REASON_REST_DATE_MISMATCH, message_key='rest_date')
+            continue
+        side_a, stamp_a = _safe_project(domain, project, snapshot, team_a_id, package_a, fallback=(None, ()))
+        side_b, stamp_b = _safe_project(domain, project, snapshot, team_b_id, package_b, fallback=(None, ()))
+        incomplete = False
+        if domain == 'performance' and side_a and side_b:
+            comparable = (side_a.keys() & side_b.keys()) - {'sample'}
+            if not comparable:
+                domains[domain] = _withheld_domain(domain)
+                continue
+            incomplete = side_a.keys() != side_b.keys()
+        domains[domain] = _aligned_domain(domain, side_a, side_b, stamp_a=stamp_a,
+                                          stamp_b=stamp_b, partial=incomplete)
     unavailable = [name for name, domain in domains.items() if domain['status'] == STATUS_WITHHELD]
     partial = [name for name, domain in domains.items() if domain['status'] == STATUS_PARTIAL]
     limitations = [domains[name]['message'] for name in unavailable]

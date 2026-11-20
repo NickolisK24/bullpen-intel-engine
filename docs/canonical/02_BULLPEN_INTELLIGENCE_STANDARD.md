@@ -171,6 +171,8 @@ Rolling arm windows should include 2, 3, 5, 7, 14, and 30 days; appearances, pit
 
 Approved fields include pitch type, release speed, spin, movement, release point, extension, arm angle, location, and result. Approved derivations include velocity, release, extension, and pitch-mix changes against versioned baselines.
 
+Pitcher Detail displays monthly descriptive measurements from retained final MLB play-by-play (`monthly_recorded_relief_pitches_v1`). The sample is the pitcher's logged regular-season relief outings through the represented date. Each included month requires fully processed games, resolved pitcher and appearance-team identity, and complete pitch types and counts matching the official outing totals. Unknown starter status withholds the month. Each type's share uses all verified pitches in the month. Its mean release speed requires a valid reading for every pitch of that type. The chart identifies the month and sample and makes no change classification.
+
 A pitch-characteristic change is evidence of change, never evidence of injury.
 
 ### Leverage and situation - Partial
@@ -364,7 +366,7 @@ This extends the methodology-versioning requirements in Section 13; it does not 
 | M-002 | Current Active-Pen WHIP | Active Bullpen WHIP | Current Active-Pen Performance | Implemented for Team Board — see Section 7D |
 | M-003 | Current Active-Pen K-BB% | K-BB% | Current Active-Pen Performance | Team Board, publication-bound official lines only — see the [November 20 decision](../decisions/2026-09-22-team-board-performance-v1-publication.md#november-20-2026--team-board-k-bb-m-003-version-100) |
 
-M-001's formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule **are** established by D-023 through D-030 and recorded in Section 7C. M-002's separately approved authority is recorded in Section 7D. Both are public only on the Team Board and remain subject to the normal trust gates.
+M-001's formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule **are** established by D-023 through D-030 and recorded in Section 7C. M-002's separately approved authority is recorded in Section 7D. Both have their canonical public home on the Team Board. Matchup and Compare may display qualified values copied from both teams’ aligned frozen performance reads, with represented date and sample.
 
 No other metric may be added to this registry as implemented, approved for public use, or production-ready.
 
@@ -495,7 +497,7 @@ Every qualifying row must carry non-null, non-negative hits, walks, and recorded
 
 M-002 independently adopts **108 recorded outs (36.0 innings)** as its minimum sample. This is not inherited from ERA: it is a separate M-002 decision over the same innings denominator and family window. At 108 outs one added hit or walk moves exact WHIP by `3 / 108 = 0.027777...`, bounding a single-event movement below 0.03 before display rounding. Below the threshold no numeric WHIP is published, and the existing **Not Enough Innings Yet** read carries the current and required innings.
 
-Evidence adds exact hit and walk totals and the three required row inputs to M-002's existing four-level family chain. Team State, Share Artifact, historical comparison, rankings, and every non-Team-Board surface remain blocked.
+Evidence adds exact hit and walk totals and the three required row inputs to M-002's existing four-level family chain. Team State, Share Artifact, historical comparison, and rankings remain blocked. The aligned Matchup and Compare display uses the Team Board values under Section 7B.
 
 ## 8. Public Vocabulary
 

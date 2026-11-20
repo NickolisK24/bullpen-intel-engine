@@ -168,7 +168,9 @@ def test_exact_canonical_domains_project_without_full_board_payload(monkeypatch)
     carrier, reason = comparison.build_current_bullpen_comparison(_snapshot(), 1, 2)
 
     assert reason is None
-    assert carrier['status'] == 'available'
+    assert carrier['status'] == 'partial'
+    assert carrier['domains']['role_rest']['status'] == 'withheld'
+    assert carrier['domains']['performance']['status'] == 'withheld'
     assert carrier['teams']['team_a']['team_board_href'] == '/bullpen?view=board&team=ACE&source=comparison'
     assert carrier['domains']['team_state']['team_a']['public_label'] == 'Fresh'
     assert carrier['domains']['rest']['team_a'] == {
@@ -529,3 +531,34 @@ def test_source_has_no_board_reconstruction_or_winner_fields():
     carrier_source = open(comparison.__file__, encoding='utf-8').read().lower()
     for forbidden in ('winner', 'advantage', 'recommendation', "'score'", "'rank'"):
         assert forbidden not in carrier_source
+
+
+def test_pair_copies_qualified_performance_and_named_active_role_rest(monkeypatch):
+    snapshot = _snapshot()
+    _install_owners(monkeypatch)
+    def roles(_snapshot, package, team_id):
+        return {'method_version': 'roles_v1', 'profiles': [
+            {'pitcher_id': team_id * 100, 'pitcher_name': 'Named arm',
+             'public_role_read': {'key': 'bridge_arm', 'label': 'Setup Arm'}}]}
+    def usage(_snapshot, package):
+        return {'status': 'complete', 'contract': 'usage_v1', 'reference_date': REFERENCE_DATE,
+                'data_through': DATA_THROUGH, 'active_pitchers': [
+                    {'pitcher_id': package['team']['team_id'] * 100, 'roster_state': 'active',
+                     'days_since_last_appearance': {'status': 'complete', 'value': 0}}]}
+    def performance(_snapshot, package, team_id):
+        return {'status': 'partial', 'population_basis': 'active', 'contract_version': 'v1',
+                'window': {'policy': 'regular', 'start': '2026-01-01', 'through': DATA_THROUGH},
+                'metrics': [{'key': 'active_bullpen_era', 'metric_id': 'M-001', 'method_version': '1.1.0',
+                             'qualification': {'status': 'qualified'}, 'evidence_state': {'status': 'complete'},
+                             'value': '2.31'}], 'sample_summary': '120 innings', 'capabilities': {}}
+    monkeypatch.setattr(comparison.authority, '_frozen_performance_for_view', performance)
+    monkeypatch.setattr(comparison.authority, '_frozen_recent_usage_rest_for_view', usage)
+    monkeypatch.setattr(comparison.authority, '_frozen_roles_deployment_for_view', roles)
+    carrier, _ = comparison.build_current_bullpen_comparison(snapshot, 1, 2)
+    domains = carrier['domains']
+    assert domains['role_rest']['team_b']['setup'] == [
+        {'name': 'Named arm', 'pitcher_id': 200, 'label': 'Setup Arm', 'days_since_last_appearance': 0}]
+    assert domains['performance']['team_a'] == {'active_bullpen_era': {'label': 'Active Bullpen ERA', 'value': '2.31'}, 'sample': '120 innings'}
+    later, _ = comparison.build_current_bullpen_comparison(snapshot, 1, 2, as_of_date='2026-08-26')
+    assert later['domains']['role_rest']['reason_code'] == 'rest_reference_date_mismatch'
+    assert later['domains']['performance']['team_b']['active_bullpen_era']['value'] == '2.31'

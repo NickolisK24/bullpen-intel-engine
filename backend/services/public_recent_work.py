@@ -9,7 +9,7 @@ from services import board_freshness
 
 RECENT_LINES_MAX = 8
 LOOKBACK_DAYS = 30
-WINDOW_DAYS = (7, 14)
+WINDOW_DAYS = (3, 7, 14, 30)
 CAPABILITY = 'public_recent_work'
 
 MONTH_NAMES = (
@@ -77,6 +77,13 @@ def build_public_recent_work_payload(pitcher_id, *, pitcher=None, freshness=None
     payload['recent_appearances'] = [
         _appearance_line(log)
         for log in logs[:RECENT_LINES_MAX]
+    ]
+    # Chart every recorded outing, including both ends of a doubleheader.
+    # Missing pitch counts and calendar days without records remain distinct.
+    payload['workload_series'] = [
+        {'date': log.game_date.isoformat(), 'game_pk': log.mlb_game_pk,
+         'pitches': log.pitches_thrown, 'opponent': log.opponent_abbreviation}
+        for log in reversed(logs)
     ]
     if logs:
         payload['last_appearance'] = _last_appearance_payload(logs[0], anchor)
