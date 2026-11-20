@@ -375,7 +375,7 @@ def _rotation_events(previous, current, team_id, previous_team, current_team):
     return events, _domain(status, 'rotation_comparison_partial' if status == 'partial' else None)
 
 
-def _board_reads(snapshot, team_id, team):
+def frozen_board_reads(snapshot, team_id, team, *, include_limited=False):
     from services.team_board_delta_substrate import try_build_bullpen_membership_capture
 
     freshness = _mapping(snapshot.payload.get('freshness'))
@@ -410,7 +410,7 @@ def _board_reads(snapshot, team_id, team):
         )
         reads[pitcher_id] = (
             (key, record['name']) if context['mode'] == 'current'
-            and isinstance(key, str) and key in READ_PUBLIC_LABELS and key != 'limited_read'
+            and isinstance(key, str) and key in READ_PUBLIC_LABELS and (include_limited or key != 'limited_read')
             and read.get('label') == READ_PUBLIC_LABELS[key]['label'] else None
         )
     return reads
@@ -422,8 +422,8 @@ def _read_changes(previous, current, team_id, previous_team, current_team, state
             or not previous.availability_reference_date or not current.availability_reference_date
             or current.availability_reference_date - previous.availability_reference_date != timedelta(days=1)):
         return [], missing, missing
-    before = _board_reads(previous, team_id, previous_team)
-    after = _board_reads(current, team_id, current_team)
+    before = frozen_board_reads(previous, team_id, previous_team)
+    after = frozen_board_reads(current, team_id, current_team)
     if before is None or after is None:
         return [], missing, missing
     events = []

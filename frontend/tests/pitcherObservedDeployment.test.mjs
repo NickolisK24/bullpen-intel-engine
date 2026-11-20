@@ -201,13 +201,15 @@ test('deployment failure leaves PIT-01 through PIT-04 healthy', () => {
     assert.ok(html.includes(expected), expected)
   }
   assert.equal((html.match(/<h1\b/g) || []).length, 1)
-  assert.equal((html.match(/<h2\b/g) || []).length, 5)
+  assert.equal((html.match(/<h2\b/g) || []).length, 7)
   const sectionOrder = [
     'Current Bullpen Situation',
     'Availability',
     'Recent Work',
     'Workload Patterns',
     'Observed Deployment',
+    'Individual relief performance',
+    'Published role and arm reads',
   ].map(label => html.indexOf(label))
   assert.ok(sectionOrder.every(index => index >= 0))
   assert.deepEqual([...sectionOrder].sort((a, b) => a - b), sectionOrder)

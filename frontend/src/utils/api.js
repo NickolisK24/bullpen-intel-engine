@@ -529,6 +529,10 @@ export const searchDiscovery   = (params = {}, options = {}) => {
   })
 }
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
+export const getPitcherPublicationHistory = (id, through, options = {}) => request(
+  `/bullpen/pitchers/${encodeURIComponent(id)}/publication-history${buildQuery({ through })}`,
+  { timeoutMs: DEFERRED_DETAIL_TIMEOUT_MS, ...options },
+)
 export const getPitcherRecentWork = (id, options = {}) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`, {
   timeoutMs: DEFERRED_DETAIL_TIMEOUT_MS,
   ...options,

@@ -121,6 +121,7 @@ def game_receipt(game_pk, game_date, revision, boxscore, appearances):
         stats = (entry.get('stats') or {}).get('pitching') or {}
         lines[str(player)] = {
             'team': appearance['team_id'], 'role': appearance.get('appearance_role'),
+            'earned_runs': count(stats.get('earnedRuns')),
             **{field: count(stats.get(key)) for field, key in FIELDS.items()},
         }
     return {'contract': CONTRACT, 'game_pk': game_pk, 'date': str(game_date),
@@ -136,7 +137,14 @@ def load_comparisons(rows, pitcher_ids, team_id, through):
     if _daily_splits.get():
         return compare(rows, identities, _season_receipts(identities, through, team_id), team_id,
                        source='mlb_pitching_game_log')
+    return compare(rows, identities, completed_game_receipts(rows), team_id)
+
+
+def completed_game_receipts(rows):
+    """Final box-score evidence for just the requested appearance games."""
     games = {row.mlb_game_pk for row in rows}
+    if not games:
+        return {}
     items = GameIngestionWorkItem.query.filter(
         GameIngestionWorkItem.mlb_game_pk.in_(games),
         GameIngestionWorkItem.status == GameIngestionWorkItem.STATUS_COMPLETED,
@@ -153,7 +161,7 @@ def load_comparisons(rows, pitcher_ids, team_id, through):
                 and all(isinstance(line, dict) for line in receipt['lines'].values())
                 and len(receipt['lines']) == item.rows_expected == item.rows_reconciled):
             receipts[item.mlb_game_pk] = receipt
-    return compare(rows, identities, receipts, team_id)
+    return receipts
 
 
 def compare(rows, identities, receipts, team_id, *, source='mlb_final_boxscore'):
