@@ -210,31 +210,10 @@ def qualify(capabilities, rows, comparison, team_id, through):
             'appearances': len(rows), 'sample_sha256': digest, 'inputs': inputs,
         }
         if domain == 'k_bb_percent':
-            cap.update(_k_bb_result(inputs))
+            from services.public_team_performance import k_bb_from_official_inputs
+            cap.update(k_bb_from_official_inputs(inputs))
         else:
             cap.update(status='qualified', value=display(domain, inputs), reason_code=None, reason_codes=[])
-
-
-def _k_bb_result(inputs):
-    from services.performance_intelligence import AppearanceComponents, _exact_ratio
-    from services.performance_metrics import CURRENT_ACTIVE_PEN_K_BB as K_BB
-
-    components = AppearanceComponents(**{key: inputs[key] for key in DOMAINS['k_bb_percent']})
-    bf = K_BB.denominator(components)
-    reason = None
-    value = None
-    if bf == 0:
-        reason = K_BB.denominator_zero_reason
-    elif bf < K_BB.minimum_sample:
-        reason = 'below_minimum_batters_faced'
-    else:
-        rate = _exact_ratio(K_BB.numerator(components), bf, K_BB.display_precision)
-        value = K_BB.formatter('0.0' if rate == '-0.0' else rate)
-    return dict(metric_id=K_BB.metric_id, method_version=K_BB.version,
-                minimum_sample=K_BB.minimum_sample, minimum_sample_unit=K_BB.minimum_sample_unit,
-                minimum_sample_authority=K_BB.minimum_sample_authority,
-                status='unavailable' if reason else 'qualified', value=value,
-                reason_code=reason, reason_codes=[reason] if reason else [])
 
 
 def display(domain, inputs):
@@ -271,7 +250,8 @@ def valid_capability(domain, cap, *, team_id, through, appearances):
             return False
         if evidence_only:
             return 'metric_id' not in cap  # Preserve the frozen pre-approval package.
-        return all(cap.get(key) == value for key, value in _k_bb_result(inputs).items())
+        from services.public_team_performance import k_bb_from_official_inputs
+        return all(cap.get(key) == value for key, value in k_bb_from_official_inputs(inputs).items())
     if domain == 'inherited_runner_context' and inputs['inherited_runners_scored'] > inputs['inherited_runners']:
         return False
     return cap.get('value') == display(domain, inputs)

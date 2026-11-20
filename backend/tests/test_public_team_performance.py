@@ -452,7 +452,7 @@ def test_candidate_binds_full_season_splits_to_selected_club_and_date(app):
     (7, 1, 99, None, 'below_minimum_batters_faced'),
 ])
 def test_k_bb_rate_contract(strikeouts, walks, bf, expected, reason):
-    from services.team_performance_evidence import _k_bb_result
+    from services.public_team_performance import k_bb_from_official_inputs
 
-    result = _k_bb_result(dict(strikeouts=strikeouts, walks=walks, batters_faced=bf))
+    result = k_bb_from_official_inputs(dict(strikeouts=strikeouts, walks=walks, batters_faced=bf))
     assert (result['value'], result['reason_code']) == (expected, reason)
