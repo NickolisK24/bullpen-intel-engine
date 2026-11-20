@@ -230,3 +230,27 @@ test('routed detail shows measured series, incomplete readings and no unknown ha
   data.pitcher.throws = 'L'
   assert.ok(renderData(data).includes('Throws L'))
 })
+
+test('individual performance discloses both outing samples and preserves zero and withheld rates', () => {
+  const metrics = Object.fromEntries(['era', 'whip', 'k_bb_percent', 'hr9', 'inherited'].map(key =>
+    [key, { value: null, covered: 0 }]))
+  const window = { start: '2026-01-01', through: '2026-09-28', outings: 2, metrics }
+  const html = renderData({ ...detailData(0), performance: {
+    season: window, recent: { ...window, start: '2026-08-30', outings: 1,
+      metrics: { ...metrics, era: { value: '0.00', covered: 1 } } },
+  } })
+  for (const text of ['Individual relief performance', 'Season to date', 'Last 30 days', '0.00',
+    '1/1 with inputs', '0/2 with inputs', 'Withheld', 'Published role and arm reads']) assert.ok(html.includes(text), text)
+})
+
+test('history cites both ends of a published change and identifies a missing edition', async () => {
+  const { PublicationDays } = await server.ssrLoadModule('/src/components/bullpen/PitcherPerformanceHistory.jsx')
+  const html = renderToStaticMarkup(React.createElement(PublicationDays, { days: [
+    { date: '2026-09-28', edition: { team: 'BOS', role: 'Trusted Arm', read: 'Watch Arm',
+      snapshot_id: 9, citation: '/share/second', reference_date: '2026-09-29' },
+      changes: { role: { from: 'Setup Arm', citation: '/share/first' } } },
+    { date: '2026-09-26', edition: null, changes: {} },
+  ] }))
+  for (const text of ['/share/first', '/share/second', 'Setup Arm', 'Trusted Arm', 'Watch Arm',
+    'No citable pitcher label']) assert.ok(html.includes(text), text)
+})

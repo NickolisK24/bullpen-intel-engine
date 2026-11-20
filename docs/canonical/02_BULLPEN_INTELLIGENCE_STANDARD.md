@@ -173,6 +173,21 @@ Approved fields include pitch type, release speed, spin, movement, release point
 
 Pitcher Detail displays monthly descriptive measurements from retained final MLB play-by-play (`monthly_recorded_relief_pitches_v1`). The sample is the pitcher's logged regular-season relief outings through the represented date. Each included month requires fully processed games, resolved pitcher and appearance-team identity, and complete pitch types and counts matching the official outing totals. Unknown starter status withholds the month. Each type's share uses all verified pitches in the month. Its mean release speed requires a valid reading for every pitch of that type. The chart identifies the month and sample and makes no change classification.
 
+Pitcher Detail’s individual relief sample (`recorded_pitcher_relief_v1`, November 20, 2026) covers one pitcher across clubs in recorded regular-season games with confirmed relief use. Both windows end on the dashboard’s data-through date. The recent window covers up to 30 calendar days within the season. The season window starts January 1. The appearance ledger supplies integer outs, hits, and walks. A completed game receipt bound to the matching game, date, pitcher, club, role, and source revision supplies official comparison for earned runs, home runs, strikeouts minus walks, and inherited-runner outcomes.
+
+| Individual figure | Calculation over the window |
+|---|---|
+| ERA | 27 × earned runs / recorded outs |
+| WHIP | 3 × (hits + walks) / recorded outs |
+| K−BB% | 100 × (strikeouts − walks) / batters faced |
+| HR per 9 IP | 27 × home runs / recorded outs |
+| Inherited runners scored | Runners scored out of runners inherited |
+
+These descriptive figures require at least one recorded relief appearance and complete inputs for every included appearance. Rates require a positive denominator and round half-up to two decimal places. Each figure discloses its input coverage and, when complete, its denominator. The sample describes recorded outings and carries no league ranking or full-season coverage certification.
+
+Published pitcher history cites the Team State edition bound to the archived league Board, including its snapshot and sync identity. The timeline uses the Board’s data-through date and displays the separate arm-read reference date. Consecutive, same-club editions with supported labels can show a change. Missing dates stay visible. Readers can select an earlier week.
+
+
 A pitch-characteristic change is evidence of change, never evidence of injury.
 
 ### Leverage and situation - Partial

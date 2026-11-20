@@ -30,6 +30,8 @@ from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
 )
+from services.pitcher_publication_history import pitcher_publication_history
+from services.pitcher_performance import pitcher_performance
 from services.pitcher_trends import published_pitcher_deployment, season_pitch_characteristics
 from services.public_fatigue_view import public_availability, public_workload_facts
 from services.availability_snapshot import (
@@ -776,6 +778,18 @@ def _unavailable_pitcher_deployment_context(freshness):
     }
 
 
+@bullpen_bp.get('/pitchers/<int:pitcher_id>/publication-history')
+def get_pitcher_publication_history(pitcher_id):
+    pitcher = db.get_or_404(Pitcher, pitcher_id)
+    try:
+        end = date.fromisoformat(request.args.get('through', ''))
+        if end.year < 1900 or end == date.max:
+            raise ValueError
+    except ValueError:
+        return jsonify({'error': 'A valid history end date is required.'}), 400
+    return jsonify(pitcher_publication_history(pitcher, end))
+
+
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])
 def get_pitcher_fatigue(pitcher_id):
     """Get detailed fatigue profile for a single pitcher."""
@@ -897,6 +911,7 @@ def get_pitcher_fatigue(pitcher_id):
 
     trends = {}
     for key, reader, args in (
+        ('performance', pitcher_performance, (pitcher, getattr(snapshot, 'data_through', None))),
         ('published_deployment', published_pitcher_deployment, (snapshot, pitcher)),
         ('season_pitch_characteristics', season_pitch_characteristics,
          (pitcher, getattr(snapshot, 'data_through', None))),

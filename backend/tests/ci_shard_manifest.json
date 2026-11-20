@@ -1483,7 +1483,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 560.78,
+      "measured_seconds": 562.88,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1852,6 +1852,10 @@
         {
           "path": "tests/test_wp01_correction_manifest.py",
           "measured_seconds": 2.0
+        },
+        {
+          "path": "tests/test_pitcher_performance_history.py",
+          "measured_seconds": 2.1
         }
       ]
     }
