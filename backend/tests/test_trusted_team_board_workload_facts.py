@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import event
+from sqlalchemy.orm.attributes import flag_modified
 
 from api.bullpen import _board_records_from_authority_records
 from models.fatigue_score import FatigueScore
@@ -970,6 +971,9 @@ def test_missing_workload_window_carrier_withholds_only_board_v2_overview(truste
     team = package['by_team_id'][str(TEAM_ID)]
     team.pop('workload_windows')
     team.pop('workload_windows_authority')
+    # Both HTTP readers must see the same persisted legacy publication.
+    flag_modified(trusted_app['snapshot'], 'payload')
+    db.session.commit()
 
     board_after = app.test_client().get(
         f'/api/bullpen/teams/{TEAM_ID}/board'
