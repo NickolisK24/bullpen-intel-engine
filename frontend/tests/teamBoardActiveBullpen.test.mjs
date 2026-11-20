@@ -334,3 +334,16 @@ test('Boston season-complete and legacy arms keep dated work without a current a
     assert.doesNotMatch(html, /Backend Watch Phrase|1d rest|B2B/)
   }
 })
+
+test('matches published usage by active pitcher and suppresses incomplete and historical patterns', () => {
+  const group = read().activeBullpen
+  const fact = (value, status = 'complete') => ({ value, status })
+  const usage = { status: 'partial', activePitchers: [{
+    pitcherId: group.arms[0].pitcher_id, rosterState: 'active', backToBack: fact(false),
+    threeStraight: fact(true), threeInFour: fact(true), fourInSix: fact(true), highPitchOuting: fact(true),
+    recentMultiInning: fact(true, 'partial'),
+  }] }
+  assert.equal(getActiveBullpenRows(group, usage)[0].pattern, '3 straight · 3-in-4 · 4-in-6 · 25+ pitches')
+  group.arms[0].arm_context = { mode: 'historical' }
+  assert.equal(getActiveBullpenRows(group, usage)[0].pattern, null)
+})

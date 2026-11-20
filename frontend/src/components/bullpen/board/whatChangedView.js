@@ -3,6 +3,9 @@ import { formatDateOnly } from '../../../utils/dateDisplay'
 const domainLabels = {
   team_state: 'Team State',
   roster: 'Active bullpen',
+  arm_reads: 'Arm read',
+  clean_options: 'Clean options',
+  team_burden: 'Team workload',
   workload_rest: 'Workload and rest',
   transactions: 'Roster transaction',
   rotation: 'Rotation impact',
@@ -11,6 +14,9 @@ const domainLabels = {
 
 const handoffTargets = {
   team_state: { href: '#team-board-answer', label: 'Review Team State' },
+  team_burden: { href: '#workload-overview-title', label: 'Review workload overview' },
+  arm_reads: { href: '#active-bullpen', label: 'Review active bullpen' },
+  clean_options: { href: '#active-bullpen', label: 'Review active bullpen' },
   roster: { href: '#active-bullpen', label: 'Review active bullpen' },
   workload_rest: { href: '#recent-usage', label: 'Review recent usage' },
   transactions: { href: '#roster-transactions', label: 'Review roster changes' },

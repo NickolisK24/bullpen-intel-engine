@@ -190,6 +190,7 @@ def test_recent_usage_rest_carrier_uses_full_rows_before_five_date_truncation():
     assert _fact_value(item, 'days_since_last_appearance') == 1
     assert _fact_value(item, 'pitched_yesterday') is True
     assert _fact_value(item, 'back_to_back') is True
+    assert _fact_value(item, 'three_straight') is True
     assert _fact_value(item, 'three_in_four') is True
     assert _fact_value(item, 'four_in_six') is True
     assert _fact_value(item, 'recent_multi_inning') is True
@@ -224,6 +225,7 @@ def test_recent_usage_rest_windows_use_inclusive_calendar_boundaries():
     )
     windows = carrier['active_pitchers'][0]['windows']
 
+    assert carrier['active_pitchers'][0]['three_straight']['value'] is False
     assert windows['yesterday']['start_date'] == anchor.isoformat()
     assert windows['yesterday']['appearances']['value'] == 1
     assert windows['last_3_days']['start_date'] == '2026-07-05'
@@ -256,6 +258,7 @@ def test_recent_usage_rest_complete_absence_is_zero_and_false():
         assert window['outs']['value'] == 0
     assert _fact_value(item, 'pitched_yesterday') is False
     assert _fact_value(item, 'back_to_back') is False
+    assert _fact_value(item, 'three_straight') is False
     assert _fact_value(item, 'three_in_four') is False
     assert _fact_value(item, 'four_in_six') is False
     assert _fact_value(item, 'recent_multi_inning') is False
@@ -286,7 +289,7 @@ def test_recent_usage_rest_incomplete_evidence_never_becomes_zero_or_false():
 
     assert carrier['status'] == 'partial'
     for fact_name in (
-        'back_to_back', 'three_in_four', 'four_in_six',
+        'back_to_back', 'three_straight', 'three_in_four', 'four_in_six',
         'recent_multi_inning', 'high_pitch_outing',
     ):
         assert item[fact_name]['value'] is None

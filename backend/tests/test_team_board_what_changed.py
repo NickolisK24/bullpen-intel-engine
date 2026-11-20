@@ -279,3 +279,121 @@ def test_same_movement_does_not_repeat_and_unavailable_signal_is_not_stability()
     _movement(current, 0)
     event, = build_frozen_what_changed(prior, current, TEAM_ID)['events']
     assert event['current_value'] == 'stable' and event['previous_value'] == 'later_or_higher_leverage'
+
+
+def _install_board_inputs(snapshot, read_key, pitch_count):
+    from services import public_serving_authority as authority, team_board_delta_substrate as delta
+    from services.pitcher_public_labels import ARM_READ_METHOD_VERSION, READ_PUBLIC_LABELS
+
+    package = snapshot.payload['trusted_team_boards']
+    team = package['by_team_id'][str(TEAM_ID)]
+    ref = snapshot.availability_reference_date.isoformat()
+    day = snapshot.data_through.isoformat()
+    package['availability_reference_date'] = ref
+    snapshot.payload['freshness'] = {'availability_reference_date': ref, 'data_through': day, 'is_current': True}
+    team['arm_read_method'] = ARM_READ_METHOD_VERSION
+    team['roster_authority'] = {'readiness': {'claims_available': True}}
+    team['bullpen_membership_authority'] = {
+        'method_version': authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+        'public_contract_version': authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+        'carrier_contract_version': authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+        'team_board_package_contract': package['contract'],
+        'population_basis': delta._canonical_membership_population_basis(),
+        'reference_date_policy': authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+        'membership_reference_date': ref,
+    }
+    team['records'][0].update({
+        'pitcher_labels': {'read': READ_PUBLIC_LABELS[read_key]},
+        'roster_status': {'is_authoritative': True, 'is_active_mlb': True},
+        'availability': {'data_state': 'fresh'}, 'last_workload_appearance': {'game_date': day},
+    })
+    team['workload_windows_authority'] = {
+        'method_version': relief.WORKLOAD_WINDOWS_METHOD_VERSION,
+        'public_contract_version': relief.WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
+        'team_board_package_contract': package['contract'], 'data_through': day,
+        'population_basis': {'basis': relief.WORKLOAD_WINDOWS_POPULATION_BASIS,
+                             'population_authority': relief.WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
+                             'membership_authority': relief.WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY},
+        'reference_date_policy': relief.WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+    }
+    team['workload_windows'] = {
+        'contract': relief.WORKLOAD_WINDOWS_CARRIER_CONTRACT, 'data_through': day,
+        'overview': {
+            'contract': relief.WORKLOAD_OVERVIEW_CONTRACT, 'data_through': day,
+            'window_policy': relief.WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+            'population_basis': relief.WORKLOAD_WINDOWS_POPULATION_BASIS,
+            'windows': {
+                f'window_{n}': {
+                    'start': (snapshot.data_through - timedelta(days=n-1)).isoformat(),
+                    'through': day, 'pitches': _fact(pitch_count), 'appearances': _fact(1), 'outs': _fact(3),
+                } for n in (3, 7, 14, 30)
+            },
+        },
+    }
+    return team
+
+
+def test_board_changes_use_exact_windows_public_arm_reads_and_complete_population():
+    previous, current = _snapshot(1, '2026-09-21'), _snapshot(2, '2026-09-22')
+    _pair(previous, current)
+    before = _install_board_inputs(previous, 'clean_option', 15)
+    after = _install_board_inputs(current, 'watch_arm', 0)
+    result = build_frozen_what_changed(previous, current, TEAM_ID)
+    events = {event['event_type']: event for event in result['events']}
+    assert events['arm_read_changed']['summary'] == 'Arm 7 moved from Clean Option to Watch Arm.'
+    assert events['clean_option_count_changed']['current_value'] == 0
+    assert events['workload_7_day_changed']['facts']['deltas']['pitches'] == -15
+    assert 'pitches 15 to 0' in events['workload_14_day_changed']['summary']
+    trend = result['domains']['team_burden']
+    assert trend['status'] == 'complete'
+    assert trend['deltas']['window_30'] == {'pitches': -15, 'appearances': 0, 'outs': 0}
+
+    before['workload_windows']['overview']['windows']['window_7']['pitches'] = _fact(None, status='unknown')
+    after['records'][0]['availability']['data_state'] = 'stale'
+    result = build_frozen_what_changed(previous, current, TEAM_ID)
+    assert result['domains']['team_burden']['status'] == 'partial'
+    assert 'pitches' not in result['domains']['team_burden']['deltas']['window_7']
+    assert [e['event_type'] for e in result['events']] == ['workload_14_day_changed']
+    assert result['domains']['clean_options']['status'] == 'unavailable'
+
+    after['workload_windows']['overview']['population_basis'] = 'different'
+    result = build_frozen_what_changed(previous, current, TEAM_ID)
+    assert result['domains']['team_burden']['status'] == 'unavailable'
+    assert not result['events']
+
+def test_served_overview_uses_the_same_frozen_comparison_as_what_changed():
+    from services.public_serving_authority import build_published_team_board
+
+    previous, current = _snapshot(1, '2026-09-21'), _snapshot(2, '2026-09-22')
+    current.snapshot_generated_at = None
+    _pair(previous, current)
+    _install_board_inputs(previous, 'watch_arm', 0)
+    _install_board_inputs(current, 'clean_option', 12)
+    attach_frozen_what_changed(current, previous)
+    board = build_published_team_board(TEAM_ID, snapshot_override=current, include_recent_usage_rest=True)
+    assert board['workload_overview']['trend_status'] == 'complete'
+    assert board['workload_overview']['trend_previous_date'] == '2026-09-21'
+    assert board['workload_overview']['trend_deltas']['window_7']['pitches'] == 12
+    assert len(board['frozen_what_changed']['events']) == 4
+
+    team = current.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    team['frozen_what_changed']['previous_snapshot_id'] += 1
+    board = build_published_team_board(TEAM_ID, snapshot_override=current, include_recent_usage_rest=True)
+    assert board['frozen_what_changed'] is None
+    assert 'trend_deltas' not in board['workload_overview']
+
+
+def test_historical_or_incompatible_arm_reads_leave_team_workload_comparable():
+    previous, current = _snapshot(1, '2026-09-21'), _snapshot(2, '2026-09-22')
+    _pair(previous, current)
+    before = _install_board_inputs(previous, 'clean_option', 0)
+    _install_board_inputs(current, 'watch_arm', 15)
+    for field, invalid in [('arm_read_method', 'older'), ('roster_authority', {}),
+                           ('default_pitcher_ids', [7, 8])]:
+        saved = before[field]
+        before[field] = invalid
+        result = build_frozen_what_changed(previous, current, TEAM_ID)
+        assert result['domains']['clean_options']['status'] == 'unavailable'
+        assert result['domains']['arm_reads']['status'] == 'unavailable'
+        assert result['domains']['team_burden']['status'] == 'complete'
+        before[field] = saved

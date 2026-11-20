@@ -15,6 +15,7 @@ export const TEAM_BOARD_RECENT_RELIEF_WORK_CONTRACT = 'team_board_recent_relief_
 
 const whatChangedDomains = new Set([
   'team_state', 'roster', 'workload_rest', 'transactions', 'rotation', 'roles_deployment',
+  'team_burden', 'arm_reads', 'clean_options',
 ])
 
 export function readTeamBoardFrozenWhatChanged(carrier, publicationIdentity) {
@@ -458,12 +459,18 @@ export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
     || !publicationIdentity || carrier.data_through !== publicationIdentity.represented_date
     || publicationIdentity.publication_authority_contract !== 'trusted_dashboard_publication_v1'
     || !carrier.windows || typeof carrier.windows !== 'object') return null
+  const trendDate = ['complete', 'partial'].includes(carrier.trend_status)
+    && typeof carrier.trend_previous_date === 'string' ? carrier.trend_previous_date : null
   const windows = workloadWindowKeys.map(days => {
     const window = carrier.windows[`window_${days}`]
     if (!window || typeof window.start !== 'string' || window.through !== carrier.data_through) return null
     const metrics = Object.fromEntries(workloadMetricKeys.map(key => [key, readWorkloadMetric(window[key])]))
     if (workloadMetricKeys.some(key => !metrics[key])) return null
-    return { days, label: `${days} Days`, start: window.start, through: window.through, ...metrics }
+    const deltas = carrier.trend_deltas?.[`window_${days}`]
+    const trend = Object.fromEntries(workloadMetricKeys.filter(key =>
+      trendDate && metrics[key].status === 'complete' && Number.isSafeInteger(deltas?.[key])
+    ).map(key => [key, deltas[key]]))
+    return { days, label: `${days} Days`, start: window.start, through: window.through, ...metrics, trend }
   })
   if (windows.some(window => !window)) return null
   const source = carrier.concentration_7_day
@@ -481,6 +488,7 @@ export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
     contract: carrier.contract,
     dataThrough: carrier.data_through,
     windows,
+    trendDate,
     concentration: {
       status: source.status,
       reasonCodes: Array.isArray(source.reason_codes) ? [...source.reason_codes] : [],
@@ -628,6 +636,7 @@ function readUsagePitcher(pitcher) {
     daysSinceLastAppearance: readEvidenceFact(pitcher.days_since_last_appearance),
     pitchedYesterday: readEvidenceFact(pitcher.pitched_yesterday),
     backToBack: readEvidenceFact(pitcher.back_to_back),
+    threeStraight: readEvidenceFact(pitcher.three_straight),
     threeInFour: readEvidenceFact(pitcher.three_in_four),
     fourInSix: readEvidenceFact(pitcher.four_in_six),
     recentMultiInning: readEvidenceFact(pitcher.recent_multi_inning),
