@@ -631,3 +631,24 @@ test('a named deployment change stays visible even when Team State is unchanged'
   assert.match(html, /Arm 7: Recent deployment shifted toward later-inning work/)
   assert.match(html, /coverage is partial/)
 })
+
+test('History keeps final game context distinct from a publication gap and links the source', () => {
+  const html = render({ payload: { ...payload, workload: {
+    pitchers: [{ id: 1, name: 'Test arm' }],
+    events: [{ date: '2026-08-01', kind: 'game', game_pks: [800], extra_innings: true,
+      workload: { starter_outs: 11, bullpen_outs: 19, short_start: true } }],
+  } } })
+  for (const label of ['Final game workload', 'Extra innings', 'Short start', 'Starter 3.2 IP',
+    'Bullpen 6.1 IP', 'https://www.mlb.com/gameday/800', 'Test arm']) assert.ok(html.includes(label), label)
+})
+
+test('pitch trends compare the same pitch across adjacent covered months only', async () => {
+  const { PitchMonths } = await server.ssrLoadModule('/src/components/history/HistoryWorkload.jsx')
+  const sample = (month, mean_mph, mix_percent) => ({ month, outings: 2, verified_outings: 2,
+    types: [{ type: 'FF', pitches: 12, mean_mph, mix_percent }] })
+  const html = renderToStaticMarkup(React.createElement(PitchMonths, { months: [
+    sample('2026-04', 92, 60), sample('2026-05', 94, 55), sample('2026-07', null, 75),
+  ] }))
+  for (const text of ['+2 mph', '-5 pp', 'Speed unknown']) assert.ok(html.includes(text))
+  assert.ok(!html.includes('+20 pp'))
+})

@@ -931,6 +931,29 @@ test('Pitcher, matchup, and history direct entries retain primary identities', a
   await expect(page.getByRole('heading', { level: 1, name: 'Boston Red Sox Team State History' })).toBeVisible()
 })
 
+test('History loads club pitch trends on selection and preserves workload dates', async ({ page }) => {
+  await installApiFixtures(page)
+  await page.route('**/teams/BOS/history?*', route => route.fulfill({ json: {
+    ...historyPayload, workload: { pitchers: [{ id: 101, name: 'Fixture Reliever' }], events: [
+      { date: '2026-08-25', kind: 'off_day', game_pks: [123, 125] },
+    ] },
+  } }))
+  let requests = 0
+  await page.route('**/history/pitchers/101?season=2026', route => {
+    requests++
+    return route.fulfill({ json: { months: [
+      { month: '2026-07', verified_outings: 2, outings: 2, types: [{ type: 'FF', pitches: 11, mean_mph: 94, mix_percent: 55 }] },
+      { month: '2026-08', verified_outings: 1, outings: 1, types: [{ type: 'FF', pitches: 5, mean_mph: 93, mix_percent: 50 }] },
+    ] } })
+  })
+  await page.goto('/history/team/BOS')
+  await expect(page.getByText('Scheduled off-day')).toBeVisible()
+  expect(requests).toBe(0)
+  await page.getByRole('combobox', { name: 'Pitcher' }).selectOption('101')
+  await expect(page.getByText(/93 mph.*-1 mph.*50% mix.*-5 pp/)).toBeVisible()
+  expect(requests).toBe(1)
+})
+
 test('share artifact remains readable with native evidence and destination links', async ({ page }) => {
   await installApiFixtures(page)
   await page.goto('/share/fixture-share')

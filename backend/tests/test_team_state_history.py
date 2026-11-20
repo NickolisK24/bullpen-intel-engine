@@ -969,3 +969,57 @@ def test_history_reads_only_the_published_arm_sequence_for_its_exact_artifact_pa
     # A different healthy artifact on the same date must not inherit the old pair's changes.
     _publish(prior.data_through, snapshot_id=prior.id + 10000)
     assert build_team_state_history('TST', season=2026)['rows'][0]['arm_changes'] is None
+
+
+def test_history_workload_matches_final_game_identity_and_corroborates_off_days(client):
+    from models.scheduled_game import ScheduledGame
+    from models.team_game_pitching_split import TeamGamePitchingSplit
+    from services.team_game_pitching_splits import SOURCE
+
+    def seed(day, pk, status='final', outs=12):
+        when = date(2026, 7, day)
+        db.session.add(ScheduledGame(team_id=TEAM_ID, game_date=when, game_pk=pk, game_type='R', status_state=status))
+        split = TeamGamePitchingSplit(team_id=TEAM_ID, game_date=when, mlb_game_pk=pk, game_type='R', source=SOURCE,
+            starter_identity_status='known', split_completeness_status='complete', calendar_context_status='complete',
+            suspended_resumed_linkage_status='none', starter_outs_recorded=outs, bullpen_outs_recorded=30-outs,
+            total_team_outs=30, off_day_before=True, off_day_after=True, extra_inning_indicator=True)
+        db.session.add(split)
+        return split
+
+    seed(1, 801)
+    seed(3, 803, outs=3)
+    seed(5, 805, status='scheduled')
+    partial = seed(7, 807)
+    partial.split_completeness_status = 'unknown'
+    path = '/api/bullpen/teams/TST/history'
+    data = client.get(path).get_json()['workload']
+    assert [event['date'] for event in data['events']] == ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-07']
+    game, off, opener, partial_game = data['events']
+    assert game['workload'] == {'starter_outs': 12, 'bullpen_outs': 18, 'short_start': True}
+    assert game['extra_innings'] and off['game_pks'] == [801, 803]
+    assert not opener['workload']['short_start']
+    assert opener['week'] == {'final_games': 2, 'verified_games': 2, 'bullpen_outs': 45}
+    assert partial_game['week'] == {'final_games': 3, 'verified_games': 2, 'bullpen_outs': None}
+    assert partial_game['workload'] is None
+    seed(2, 802, status='suspended')
+    assert all(event['kind'] != 'off_day' for event in client.get(path).get_json()['workload']['events'])
+    assert client.get(path + '/pitchers/2147483648').status_code == 400
+    assert client.get(path + '/pitchers/999999').status_code == 404
+    assert client.get('/api/bullpen/teams/NOPE/history/pitchers/1').status_code == 404
+
+
+def test_club_pitch_history_selects_by_outing_team_and_withholds_unverified_mix(client):
+    from models.game_log import GameLog
+
+    pitcher = Pitcher(mlb_id=910002, full_name='Former arm', team_id=111, team_abbreviation='BOS')
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=9001, game_date=date(2026, 7, 1),
+                           game_type='R', games_started=0, innings_pitched=1.0, innings_pitched_outs=3, pitches_thrown=12,
+                           appearance_team_id=TEAM_ID, appearance_team_status='resolved'))
+    hist = '/api/bullpen/teams/TST/history'
+    assert client.get(hist).get_json()['workload']['pitchers'] == [{'id': pitcher.id, 'name': 'Former arm'}]
+    url = f'{hist}/pitchers/{pitcher.id}?season=2026'
+    assert client.get(url).get_json()['months'] == [
+        {'month': '2026-07', 'outings': 1, 'verified_outings': 0, 'types': []}]
+    assert client.get(url.replace('TST', 'BOS')).status_code == 404

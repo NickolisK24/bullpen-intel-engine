@@ -14,6 +14,7 @@ import logging
 from typing import Mapping
 
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from models.dashboard_snapshot import DashboardSnapshot
@@ -39,6 +40,8 @@ from services.team_board_what_changed import (
 )
 from services.what_changed_comparison_identity import ComparisonIdentityInvalid, build_comparison_identity
 from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+from services.availability_reference_date import product_current_date
+from services.team_history_context import retained_club_history
 from services.team_directory import valid_team_directory
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
 from services.transaction_ingestion import WINDOW_STATUS_PARTIAL, WINDOW_STATUS_SUCCESS
@@ -624,9 +627,7 @@ def _unavailable_transaction_overlay(rows_by_date, ordered_dates):
     }
 
 
-def build_team_state_history(team_abbreviation, *, season, session=None):
-    """Return one bounded, immutable Team State timeline response."""
-    session = session or db.session
+def history_season(season):
     try:
         season = int(season)
     except (TypeError, ValueError):
@@ -634,7 +635,18 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
     if season < 1876 or season > 9999:
         raise ValueError('season_invalid')
 
-    team = _team_for_abbreviation(team_abbreviation, valid_team_directory())
+    return season
+
+
+def history_team(abbreviation):
+    return _team_for_abbreviation(abbreviation, valid_team_directory())
+
+
+def build_team_state_history(team_abbreviation, *, season, session=None):
+    """Return one bounded, immutable Team State timeline response."""
+    session = session or db.session
+    season = history_season(season)
+    team = history_team(team_abbreviation)
     if team is None:
         return None
     team_id = int(team['team_id'])
@@ -707,7 +719,7 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
     missing_dates = sorted(set(missing_dates) | set(invalid_within_coverage))
     season_start, season_end = _season_bounds(season)
 
-    return {
+    result = {
         'capability': CAPABILITY,
         'contract': CONTRACT,
         'status': STATUS_AVAILABLE if ordered_dates else STATUS_QUIET,
@@ -734,6 +746,13 @@ def build_team_state_history(team_abbreviation, *, season, session=None):
             'History includes only retained, integrity-verified Team State publications. Missing dates are not backfilled.'
         ],
     }
+
+    try:
+        result['workload'] = retained_club_history(team_id, season_start, min(season_end, product_current_date()), session)
+    except SQLAlchemyError:
+        logger.exception('Historical workload unavailable team_id=%s season=%s', team_id, season)
+        result['workload'] = None
+    return result
 
 
 __all__ = ['CAPABILITY', 'CONTRACT', 'build_team_state_history']
