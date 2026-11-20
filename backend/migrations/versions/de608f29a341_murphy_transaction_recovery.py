@@ -184,8 +184,7 @@ END $$;
 
 APPLY = """
 CREATE FUNCTION transaction_history_repair.apply_murphy(request_id integer) RETURNS integer
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
-SET baseballos.transaction_owner = '' AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     req public.repair_requests%ROWTYPE;
     tx public.player_transactions%ROWTYPE;
@@ -197,6 +196,7 @@ DECLARE
     canonical text;
     successor integer;
     affected integer[];
+    previous_owner text;
     approved integer[] := ARRAY[1421545,1421789,1431943,1432187];
 BEGIN
     PERFORM transaction_history_repair.require_certified_schema();
@@ -261,10 +261,14 @@ BEGIN
         source_observation_id,fact_schema_version,fact_json,fact_fingerprint,created_at)
     VALUES (tx.id,2,prior.id,evidence_id,1,canonical::json,encode(sha256(convert_to(canonical,'UTF8')),'hex'),now())
     RETURNING id INTO successor;
+    -- A non-superuser can set a custom placeholder locally, but cannot declare
+    -- it in CREATE FUNCTION's SET clause. Scope the marker to the fenced UPDATE.
+    previous_owner := current_setting('baseballos.transaction_owner',true);
     PERFORM set_config('baseballos.transaction_owner',tx.transaction_key,true);
     UPDATE public.player_transactions SET to_team_id=464,current_version_number=2,source_observation_id=evidence_id,
         correction_count=correction_count+1,last_corrected_at=now(),correction_source=tx.source,
         sync_run_id=NULL,updated_at=now() WHERE id=tx.id RETURNING * INTO STRICT tx;
+    PERFORM set_config('baseballos.transaction_owner',coalesce(previous_owner,''),true);
     IF tx.to_team_id IS DISTINCT FROM 464 OR tx.current_version_number IS DISTINCT FROM 2
        OR tx.source_observation_id IS DISTINCT FROM evidence_id THEN RAISE EXCEPTION 'write suppressed'; END IF;
     UPDATE public.evidence_objects SET recompute_status='recompute_needed',
