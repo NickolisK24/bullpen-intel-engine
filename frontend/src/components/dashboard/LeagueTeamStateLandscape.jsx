@@ -35,6 +35,12 @@ function TeamRow({ team, showState = true }) {
           <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-chalk500">{team.teamState.statusLabel || 'Read unavailable'}</span>
         )}
       </Link>
+      {showState && (
+        <div className="px-2 pb-2 text-xs leading-relaxed text-chalk400">
+          {team.signals.length > 0 && <p>{team.signals.join(' · ')} <span>({team.referenceDate})</span></p>}
+          <p>{team.movement || 'Movement unavailable'}</p>
+        </div>
+      )}
       {!showState && (
         <p className="px-2 pb-2 text-[11px] leading-relaxed text-chalk600">
           {team.teamState.unavailableMessage}

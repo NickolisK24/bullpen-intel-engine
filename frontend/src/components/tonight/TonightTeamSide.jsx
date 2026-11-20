@@ -49,7 +49,7 @@ export default function TonightTeamSide({ side }) {
       ) : (
         <>
           {side.facts.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-chalk300" aria-label={`${side.name} bullpen rest`}>
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-chalk300" aria-label={`${side.name} bullpen rest and workload`}>
               {side.facts.map(fact => (
                 <li key={fact.key} className="whitespace-nowrap" data-fact={fact.key}>{fact.text}</li>
               ))}
@@ -68,6 +68,9 @@ export default function TonightTeamSide({ side }) {
                   <li key={arm.key} className="min-w-0 break-words" data-testid="tonight-key-arm">
                     <span className="text-chalk100">{arm.name}</span>
                     {arm.roleLabel && <span className="text-xs text-chalk400"> · {arm.roleLabel}</span>}
+                    {arm.daysSinceAppearance !== null && (
+                      <span className="text-xs text-chalk300"> · {arm.daysSinceAppearance} {arm.daysSinceAppearance === 1 ? 'day' : 'days'} since last appearance</span>
+                    )}
                     {arm.pattern && <span className="whitespace-nowrap font-mono text-xs text-amber"> · {arm.pattern}</span>}
                   </li>
                 ))}

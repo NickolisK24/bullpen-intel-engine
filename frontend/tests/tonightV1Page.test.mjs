@@ -325,8 +325,8 @@ test('29. key arms show name, role label and pattern', () => {
   const away = teamSide(1)
   const html = renderGame(singleGame({}, { away }))
   const arms = [...html.matchAll(/data-testid="tonight-key-arm">([\s\S]*?)<\/li>/g)].map(m => textOf(m[1]))
-  assert.ok(arms.includes('BOS Trust Arm · Trust arm · B2B'))
-  assert.ok(arms.includes('BOS Bridge Arm · Bridge arm'))
+  assert.ok(arms.includes('BOS Trust Arm · Trust arm · 1 day since last appearance · B2B'))
+  assert.ok(arms.includes('BOS Bridge Arm · Bridge arm · 2 days since last appearance'))
 })
 
 test('30. rotation renders only when present, in the compact form', () => {
@@ -522,4 +522,14 @@ test('TN-11.8: the game-link footer sentence renders only when games render', ()
   const edition = section(renderPage({ payload: productionPayload() }), 'tonight-go-deeper')
   assert.match(textOf(edition), /Every game above links to both Team Boards and its Matchup\./)
   assert.match(textOf(edition), /Browse Team Boards/)
+})
+
+test('named rest preserves same-day use and withholds a missing appearance interval', () => {
+  const away = teamSide(0)
+  away.key_arms[0].days_since_last_appearance = 0
+  away.key_arms[1].days_since_last_appearance = null
+  const html = renderGame(singleGame({}, { away }))
+  const arms = [...html.matchAll(/data-testid="tonight-key-arm">([\s\S]*?)<\/li>/g)].map(m => textOf(m[1]))
+  assert.match(arms[0], /0 days since last appearance/)
+  assert.doesNotMatch(arms[1], /days? since last appearance/)
 })

@@ -12,6 +12,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Mapping
 
+from sqlalchemy import literal_column
+
+from models.dashboard_snapshot import DashboardSnapshot
+from services.snapshot_read_guard import read_snapshot_first
+from utils.db import db
+
 from services import board_freshness
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import public_serving_authority
@@ -110,12 +116,52 @@ def _validated_snapshot(snapshot, unavailable_reason=None):
     return (snapshot, None) if reason is None else (None, reason)
 
 
+# Load only the evidence League needs from the edition already selected by
+# the shared snapshot reader. json_to_record parses each club in one pass.
+_LEAGUE_BOARD_SQL = """(
+    SELECT json_build_object(
+        'contract', board.contract, 'data_through', board.data_through,
+        'availability_reference_date', board.availability_reference_date,
+        'frozen_team_state_by_team_id', board.frozen_team_state_by_team_id,
+        'by_team_id', (
+            SELECT json_object_agg(club.key, row_to_json(facts))
+            FROM json_each(CASE WHEN json_typeof(board.by_team_id) = 'object'
+                                THEN board.by_team_id END) AS club
+            CROSS JOIN LATERAL json_to_record(
+                CASE WHEN json_typeof(club.value) = 'object' THEN club.value END
+            ) AS facts(team json, rest_status json, rest_status_authority json,
+                       frozen_team_state json, frozen_what_changed json)
+        )
+    )
+    FROM json_to_record(dashboard_snapshots.payload::json) AS root(trusted_team_boards json)
+    CROSS JOIN LATERAL json_to_record(
+        CASE WHEN json_typeof(root.trusted_team_boards) = 'object' THEN root.trusted_team_boards END
+    ) AS board(contract text, data_through text, availability_reference_date text,
+               frozen_team_state_by_team_id json, by_team_id json)
+)"""
+
+
+def _load_league_board_context(snapshot):
+    identity_path = ('what_changed_since_yesterday', 'comparison', 'identity')
+    query = db.session.query(literal_column(_LEAGUE_BOARD_SQL), DashboardSnapshot.payload[identity_path]).filter(
+        DashboardSnapshot.id == snapshot.id, DashboardSnapshot.sync_run_id == snapshot.sync_run_id,
+    )
+    row = read_snapshot_first(query, snapshot_type=snapshot.snapshot_type,
+                              reference_date='league_orientation', snapshot_version=snapshot.payload_version)
+    if row:
+        # The compact reader returns an untracked projection, never an ORM record.
+        snapshot.payload['trusted_team_boards'] = row[0]
+        snapshot.payload['what_changed_since_yesterday'] = {'comparison': {'identity': row[1]}}
+
+
 def select_trusted_publication(payload_keys):
     """Resolve one trusted publication while reading only named frozen domains."""
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot_projection(
         payload_keys
     )
     if snapshot is not None:
+        if payload_keys == LEAGUE_PAYLOAD_KEYS:
+            _load_league_board_context(snapshot)
         return snapshot, None
     # This is a failure-only diagnostic read. The healthy path never loads the
     # comprehensive payload merely to establish why no projection can be served.
@@ -171,6 +217,68 @@ def _compact_landscape_context(landscape):
     }
 
 
+def _league_movement(snapshot, team, team_id, state):
+    from services.team_board_snapshot_team_state import receipt_value
+    from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_LABEL_SET
+    from services.what_changed_comparison_identity import ComparisonIdentityInvalid
+
+    present, frozen_state = receipt_value(snapshot, team_id)
+    if not present or frozen_state.get('public_label') != state['public_label']:
+        return None
+    try:
+        changes = public_serving_authority._frozen_what_changed_for_view(snapshot, team, team_id)
+    except ComparisonIdentityInvalid:
+        return None
+    if not changes or changes['state'] == 'unavailable':
+        return None
+    identity = changes['comparison_identity']
+    domain = changes['domains'].get('team_state') or {}
+    if (domain.get('status') != 'complete'
+            or identity['current_snapshot_id'] != snapshot.id
+            or identity['current_sync_run_id'] != snapshot.sync_run_id
+            or identity['current_payload_version'] != snapshot.payload_version
+            or identity['current_data_through'] != state['data_through']):
+        return None
+    since = changes['previous_represented_date']
+    if domain.get('outcome') == 'unchanged':
+        return {'previous_label': state['public_label'], 'since': since}
+    if domain.get('outcome') == 'changed':
+        for event in changes['events']:
+            previous = event.get('previous_value')
+            if (event.get('team_id') == team_id and event.get('domain') == 'team_state'
+                    and event.get('event_type') == 'team_state_changed'
+                    and event.get('current_value') == state['public_label']
+                    and isinstance(previous, str) and previous in PUBLIC_TEAM_STATE_LABEL_SET
+                    and previous != state['public_label']):
+                return {'previous_label': previous, 'since': since}
+    return None
+
+
+def _league_orientation(snapshot, row):
+    from services.team_board_delta_substrate import try_build_rest_status_capture
+
+    team_id = row['team_id']
+    state = row['team_state']
+    if state.get('available') is not True or state.get('data_through') != _iso(snapshot.data_through):
+        return None
+    team, _ = public_serving_authority._team_package(snapshot, team_id)
+    if (not team or not isinstance(team.get('team'), Mapping) or team['team'].get('team_id') != team_id
+            or snapshot.payload['trusted_team_boards'].get('data_through') != _iso(snapshot.data_through)):
+        return None
+    capture = try_build_rest_status_capture(snapshot=snapshot, team_id=team_id) if team.get('rest_status') else None
+    signals = None
+    if capture and capture['value'].get('available') is True:
+        rest = capture['value']
+        signals = {field: rest[field] for field in (
+            'rested_arm_count', 'worked_yesterday_count', 'back_to_back_count',
+        )}
+    return {
+        'rest': signals,
+        'rest_reference_date': _iso(snapshot.availability_reference_date),
+        'movement': _league_movement(snapshot, team, team_id, state),
+    }
+
+
 def build_league_projection(
     snapshot,
     *,
@@ -186,6 +294,8 @@ def build_league_projection(
         reason=reason,
         freshness_builder=freshness_builder,
     )
+    # The League response changed for already-published snapshot identities.
+    result['version'] = '1.1.0'
     if snapshot is None:
         result.update({
             'team_states': build_snapshot_unavailable_listing(
@@ -208,7 +318,9 @@ def build_league_projection(
     )
     payload = snapshot.payload
     result.update({
-        'team_states': deepcopy(listing),
+        'team_states': {**listing, 'teams': [
+            {**row, 'orientation': _league_orientation(snapshot, row)} for row in listing['teams']
+        ]},
         'landscape': _compact_landscape_context(landscape),
         'roles': deepcopy(payload.get('roles')),
         'injury_il_context': deepcopy(payload.get('injury_il_context')),

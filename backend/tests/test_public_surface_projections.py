@@ -452,3 +452,53 @@ def test_projection_snapshot_query_reads_only_requested_json_domains(client):
     assert 'trusted_team_boards' not in selected.payload
     assert len(statements) == 1
     assert 'payload' in statements[0].lower()
+
+
+def test_league_reads_compact_frozen_rest_and_same_edition_movement(client):
+    from services import public_surface_projections as surfaces
+    from services import team_board_delta_substrate as delta
+    from services.team_board_what_changed import attach_frozen_what_changed
+    from tests.test_team_board_what_changed import TEAM_ID, _pair, _snapshot as board_snapshot
+
+    previous = board_snapshot(41, '2026-09-21')
+    current = board_snapshot(42, '2026-09-22', 'operationally_constrained')
+    _pair(previous, current)
+    pkg = current.payload['trusted_team_boards']
+    club = pkg['by_team_id'][str(TEAM_ID)]
+    ref = current.availability_reference_date.isoformat()
+    pkg['availability_reference_date'] = ref
+    club['rest_status'] = {
+        'available': True, 'active_arm_count': 6, 'rested_arm_count': 4, 'worked_yesterday_count': 2,
+        'back_to_back_count': 0, 'summary': 'Four rested arms.', 'reason_code': None,
+    }
+    club['rest_status_authority'] = {
+        'method_version': delta.REST_STATUS_METHOD_VERSION,
+        'public_contract_version': delta.REST_STATUS_PUBLIC_CONTRACT_VERSION,
+        'team_board_package_contract': pkg['contract'],
+        'population_basis': delta._canonical_rest_status_population_basis(),
+        'reference_date_policy': delta.REST_STATUS_REFERENCE_DATE_POLICY, 'availability_reference_date': ref,
+    }
+    attach_frozen_what_changed(current, previous)
+    db.session.add(SyncRun(id=current.sync_run_id, status='success'))
+    db.session.flush()
+    db.session.add(DashboardSnapshot(id=current.id, sync_run_id=current.sync_run_id,
+        snapshot_type=current.snapshot_type, status='ready', is_published=True, published_at=current.published_at,
+        data_through=current.data_through, availability_reference_date=current.availability_reference_date,
+        payload_version=current.payload_version, payload=current.payload))
+    db.session.commit()
+    selected, reason = surfaces.select_trusted_publication(surfaces.LEAGUE_PAYLOAD_KEYS)
+    assert reason is None
+    projected_club = selected.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    assert 'records' not in projected_club and 'recent_usage_rest' not in projected_club
+    row = {'team_id': TEAM_ID, 'team_state': {'available': True, 'public_label': 'Stretched',
+                                             'data_through': '2026-09-22'}}
+    result = surfaces._league_orientation(selected, row)
+    assert result == {'rest': {'rested_arm_count': 4, 'worked_yesterday_count': 2, 'back_to_back_count': 0},
+                      'rest_reference_date': '2026-09-23',
+                      'movement': {'previous_label': 'Fresh', 'since': '2026-09-21'}}
+    projected_club['rest_status_authority']['availability_reference_date'] = '2026-09-22'
+    assert surfaces._league_orientation(selected, row)['rest'] is None
+    selected.payload['what_changed_since_yesterday'] = {}
+    assert surfaces._league_orientation(selected, row)['movement'] is None
+    row['team_state']['available'] = False
+    assert surfaces._league_orientation(selected, row) is None
