@@ -5,7 +5,7 @@ from hashlib import sha256
 from flask import Blueprint, current_app, jsonify, request
 
 from api.bullpen import _freshness_reference_date
-from services import dashboard_snapshot as dashboard_snapshot_service
+from services.team_board_snapshot_read import latest_team_board_snapshot
 from services.game_context import build_team_game_context
 from services.public_serving_authority import build_published_team_board
 from services.public_team_relief_work import (
@@ -48,7 +48,7 @@ def _team_missing(board):
 
 def _select_core_board(team_id, *, include_recent_usage_rest=False):
     """Select the trusted publication once and keep it for every core field."""
-    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    snapshot = latest_team_board_snapshot(team_id)
     if snapshot is None:
         return None, build_published_team_board(
             team_id, snapshot_override=snapshot,
