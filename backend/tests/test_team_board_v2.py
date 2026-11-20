@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
+from tests.test_schedule_ingestion import fenced_app, fenced_database_url  # noqa: F401
 
 import api.team_board_v2 as team_board_v2_api
 import services.public_serving_authority as public_authority
@@ -53,9 +54,9 @@ def client(monkeypatch):
     app = Flask(__name__)
     app.register_blueprint(team_board_v2_api.team_board_v2_bp, url_prefix='/api/bullpen')
     monkeypatch.setattr(
-        team_board_v2_api.dashboard_snapshot_service,
-        'get_latest_valid_dashboard_snapshot',
-        lambda: _snapshot(),
+        team_board_v2_api,
+        'latest_team_board_snapshot',
+        lambda team_id: _snapshot(),
     )
     return app.test_client()
 TEAM_STATE = {
@@ -1476,7 +1477,7 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
     selected = _snapshot(1900)
     calls = {'latest': 0, 'board': 0}
 
-    def latest():
+    def latest(team_id):
         calls['latest'] += 1
         return selected if calls['latest'] == 1 else _snapshot(1901)
 
@@ -1488,8 +1489,8 @@ def test_answer_core_selects_one_publication_and_skips_every_optional_owner(
         return _board()
 
     monkeypatch.setattr(
-        team_board_v2_api.dashboard_snapshot_service,
-        'get_latest_valid_dashboard_snapshot', latest,
+        team_board_v2_api,
+        'latest_team_board_snapshot', latest,
     )
     monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     for name in ('build_team_game_context',):
@@ -1649,6 +1650,9 @@ def test_deferred_identity_resolver_requires_trusted_publication_and_team():
             return self.value
 
     class Session:
+        def get_bind(self):
+            return SimpleNamespace(dialect=SimpleNamespace(name='sqlite'))
+
         def __init__(self, value):
             self.value = value
 
@@ -1953,3 +1957,93 @@ def test_core_revalidation_after_product_midnight_with_same_snapshot(client, mon
     assert aged.status_code == 200
     assert aged.get_json()['active_bullpen']['arms'][0]['arm_context']['mode'] == 'historical'
     assert aged.get_json()['publication_identity'] == current.get_json()['publication_identity']
+
+
+def test_postgres_frozen_source_rechecks_selection_and_row_version(fenced_app, monkeypatch):
+    from datetime import timedelta
+    from models.dashboard_snapshot import DashboardSnapshot
+    from models.sync_run import SyncRun
+    from services import dashboard_snapshot as dashboards
+    from services import team_board_snapshot_read as reader
+    from services.team_board_snapshot_team_state import receipt_value
+    from utils.db import db
+
+    today = dashboards.product_current_date()
+    represented = today.isoformat()
+    run = SyncRun()
+    db.session.add(run)
+    db.session.flush()
+
+    def publish(marker):
+        snapshot = DashboardSnapshot(
+            snapshot_type=dashboards.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+            is_published=True, status='ready', sync_run_id=run.id,
+            data_through=today, availability_reference_date=today,
+            payload_version=dashboards.DASHBOARD_PAYLOAD_VERSION,
+            payload={
+                'freshness': {
+                    'data_through': represented, 'availability_reference_date': represented,
+                    'slate_coverage': {
+                        'slate_date': represented, 'validations_passed': True,
+                        'complete_enough_to_publish': True,
+                    },
+                },
+                'unused': 'x' * 8000,
+                'trusted_team_boards': {
+                    'contract': public_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+                    'data_through': represented,
+                    'by_team_id': {'111': {'marker': marker}, '133': {'marker': 'other'}},
+                    'frozen_team_state_by_team_id': {'111': {'malformed': True}},
+                },
+            },
+        )
+        db.session.add(snapshot)
+        db.session.commit()
+        return snapshot
+
+    original = publish('first')
+    selected = reader.latest_team_board_snapshot(111)
+    assert selected.id == original.id
+    assert selected.payload['trusted_team_boards']['by_team_id'] == {'111': {'marker': 'first'}}
+    assert receipt_value(selected, 111) == receipt_value(original, 111)
+    source = fenced_app.extensions[reader._CACHE_KEY]
+    selected.payload['trusted_team_boards']['by_team_id']['111'].clear()
+    again = reader.exact_team_board_snapshot(original.id, 111, db.session)
+    assert again.payload['trusted_team_boards']['by_team_id']['111']['marker'] == 'first'
+    other = reader.latest_team_board_snapshot(133)
+    assert other.payload['trusted_team_boards']['by_team_id'] == {'133': {'marker': 'other'}}
+    assert receipt_value(other, 133) == receipt_value(original, 133)
+    assert fenced_app.extensions[reader._CACHE_KEY] is source
+
+    monkeypatch.setattr(dashboards, 'product_current_date', lambda: today + timedelta(days=40))
+    assert reader.latest_team_board_snapshot(111) is None
+    monkeypatch.setattr(dashboards, 'product_current_date', lambda: today)
+    original.is_published = False
+    db.session.commit()
+    assert reader.latest_team_board_snapshot(111) is None
+    archived = reader.exact_team_board_snapshot(original.id, 111, db.session)
+    assert archived.is_published is False
+    assert fenced_app.extensions[reader._CACHE_KEY].row_version != source.row_version
+
+    monkeypatch.setattr(reader, '_MAX_BYTES', 2000)
+    newer = publish('second')
+    assert reader.latest_team_board_snapshot(111).id == newer.id
+    compact = fenced_app.extensions[reader._CACHE_KEY]
+    assert compact.team_key == '111'
+    assert reader.latest_team_board_snapshot(111).payload['trusted_team_boards']['by_team_id']['111']['marker'] == 'second'
+    assert fenced_app.extensions[reader._CACHE_KEY] is compact
+    assert reader.latest_team_board_snapshot(133).payload['trusted_team_boards']['by_team_id']['133']['marker'] == 'other'
+    historical = reader.exact_team_board_snapshot(original.id, 111, db.session)
+    assert historical.payload['trusted_team_boards']['by_team_id']['111']['marker'] == 'first'
+
+    # A legacy package may have a receipt on a different team. The authority
+    # checks across clubs before allowing artifact fallback for the target.
+    legacy = deepcopy(original.payload)
+    package = legacy['trusted_team_boards']
+    del package['frozen_team_state_by_team_id']
+    package['by_team_id']['133']['frozen_team_state'] = {'malformed': True}
+    original.payload = legacy
+    db.session.commit()
+    historical = reader.exact_team_board_snapshot(original.id, 111, db.session)
+    assert historical.payload == legacy
+    assert receipt_value(historical, 111) == receipt_value(original, 111)

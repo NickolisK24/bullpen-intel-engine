@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Mapping
 
-from models.dashboard_snapshot import DashboardSnapshot
+from services.team_board_snapshot_read import exact_team_board_snapshot
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services.public_serving_authority import (
     PUBLICATION_AUTHORITY_CONTRACT,
@@ -149,11 +149,7 @@ def resolve_team_board_snapshot(identity, *, team_id, session):
     normalized = normalize_team_board_identity(identity)
     if normalized['team_id'] != int(team_id):
         raise TeamBoardIdentityMismatch('team_board_team_mismatch')
-    snapshot = (
-        session.query(DashboardSnapshot)
-        .filter(DashboardSnapshot.id == normalized['snapshot_id'])
-        .one_or_none()
-    )
+    snapshot = exact_team_board_snapshot(normalized['snapshot_id'], team_id, session)
     if snapshot is None:
         raise TeamBoardIdentityMismatch('team_board_publication_missing')
     if (
