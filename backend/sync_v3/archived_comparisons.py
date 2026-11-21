@@ -57,27 +57,23 @@ def compare_archived_competition(report, reference):
     clubs = {str(k): v for k, v in report['clubs'].items()}
     if report['calendar_source'] is None or report['missing_decisions'] or clubs.keys() != reference.team_receipts.keys():
         return dict(result, status='incomplete_competition_evidence')
+    missing_context = []
+    withheld = {}
     for club, context in clubs.items():
-        if context.get('reference_date') != report['reference_date'] or context.get('team_id') != int(club):
-            return dict(result, status='club_reference_mismatch')
-    missing_context = sorted(int(club) for club in clubs if reference.team_receipts[club].get('season_context') is None)
-    if missing_context:
-        withheld = {}
-        for team in missing_context:
-            key = str(team)
-            archived = reference.team_receipts[key]['value']
-            context = clubs[key]
-            if archived.get('available') is True and context['status'] == 'season_complete':
-                projected = public_team_state(dict(season_context=context, freshness=dict(data_through=reference.provenance['data_through'])))
-                withheld[key] = dict(archived_label=archived['public_label'], replayed_outcome=projected['outcome'],
-                                     replayed_reason=projected['reason_code'])
-        return dict(result, status='archived_competition_context_missing', clubs_missing_context=missing_context,
-                    archived_claims_withheld_under_replayed_rules=withheld)
-    for club in clubs:
-        if reference.team_receipts[club]['season_context'].get('reference_date') != reference.availability_reference:
+        archived = reference.team_receipts[club].get('season_context')
+        if (context.get('reference_date') != report['reference_date'] or context.get('team_id') != int(club)
+                or (archived is not None and (archived.get('reference_date') != reference.availability_reference
+                                              or archived.get('team_id') != int(club)))):
             return dict(result, status='club_reference_mismatch')
     for club, context in clubs.items():
         observed = reference.team_receipts[club]
+        if observed.get('season_context') is None:
+            missing_context.append(int(club))
+            if observed['value'].get('available') is True and context['status'] == 'season_complete':
+                projected = public_team_state(dict(season_context=context, freshness=dict(data_through=reference.provenance['data_through'])))
+                withheld[club] = dict(archived_label=observed['value']['public_label'], replayed_outcome=projected['outcome'],
+                                      replayed_reason=projected['reason_code'])
+            continue
         delta = _field_differences(context, observed['season_context'])
         if delta:
             result['differences'][club] = dict(season_context=delta)
@@ -88,5 +84,8 @@ def compare_archived_competition(report, reference):
             result['season_complete_projections_compared'] += 1
             if delta:
                 result['differences'].setdefault(club, {})['season_complete_projection'] = delta
+    if missing_context:
+        return dict(result, clubs_compared=len(clubs) - len(missing_context), status='archived_competition_context_missing',
+                    clubs_missing_context=sorted(missing_context), archived_claims_withheld_under_replayed_rules=withheld)
     return dict(result, clubs_compared=len(clubs),
                 status='competition_fields_differ' if result['differences'] else 'competition_fields_match')

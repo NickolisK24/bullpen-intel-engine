@@ -118,7 +118,7 @@ def test_competition_compares_the_governed_scope_independently_of_the_edition(tm
     del reference.team_receipts['111']['season_context']
     older = compare_archived_competition(report, reference)
     assert older['status'] == 'archived_competition_context_missing'
-    assert older['clubs_missing_context'] == [111] and older['clubs_compared'] == 0
+    assert older['clubs_missing_context'] == [111] and older['clubs_compared'] == 29
 
     assert older['archived_claims_withheld_under_replayed_rules'] == {}
     clubs[111].update(status='season_complete', basis='postseason_series_lost', last_final_game_date='2026-10-10')
@@ -126,5 +126,16 @@ def test_competition_compares_the_governed_scope_independently_of_the_edition(tm
     older = compare_archived_competition(report, reference)
     assert older['archived_claims_withheld_under_replayed_rules'] == {
         '111': dict(archived_label='Fresh', replayed_outcome='season_complete', replayed_reason='postseason_series_lost')}
+    clubs[119]['basis'] = 'different_basis'
+    mixed = compare_archived_competition(report, reference)
+    assert mixed['status'] == 'archived_competition_context_missing' and mixed['clubs_compared'] == 29
+    assert mixed['differences']['119']['season_context']['basis']['candidate'] == 'different_basis'
+    archived = reference.team_receipts['119']['season_context']
+    for key, wrong in [('team_id', 111), ('reference_date', '2026-10-29')]:
+        original = archived[key]
+        archived[key] = wrong
+        refused = compare_archived_competition(report, reference)
+        assert refused['status'] == 'club_reference_mismatch' and refused['clubs_compared'] == 0
+        archived[key] = original
     clubs[111]['team_id'] = 119
     assert compare_archived_competition(report, reference)['status'] == 'club_reference_mismatch'
