@@ -970,3 +970,20 @@ A receipt can create the first revision of an identity, create a revision that s
 The August 7, 2024 replay returned 173 distinct receipts across six pages. They created 17 schedule identities, 17 final records and 59 roster records. Both refused receipts had zero canonical effects. Repeating the same fixture retained the same receipt IDs and totals. The August 28, 2017 restored capture had 895 receipts, including one transaction response that created 38 identities. Its 32- and six-row detail pages accounted for all 38 and linked them to the original response. A controlled correction separately verified that a later revision retained its predecessor and an identical observation pointed back to the original creating receipt.
 
 On the August 2017 restore, reading all 28 receipt pages took a median 93.83 ms across five local passes. With the candidate confirmation index on source and revision, five passes took a median 85.62 ms and returned identical counts. After removing the index from the disposable comparison database the median was 102.76 ms. These timings cover the local trace reader.
+
+For game 492054 on August 28, 2017, the restored capture’s boxscore receipt 979 had SHA-256 `116b516d56b32e3e67b286121eafc699190637d876c0b5ec6f5f1e8054d5afc7` and created canonical revision 204. Its recorded impacts covered ten pitchers and two clubs for that baseball date. In selection revision 4, 1,197 frozen snapshots across 13 methodologies directly cited that receipt. The impact count identifies baseball records affected by the new final. A snapshot citation identifies an input used by a calculation. It cannot establish that the receipt changed the resulting Team State or triggered a new publication.
+
+To inspect the cited snapshots for this restored edition, run the following read in the disposable database. For another restore, use the receipt ID supplied by its trace and match the digest. Continue from the last snapshot ID for subsequent pages.
+
+```sql
+SELECT h.id, h.subject, h.mlb_id, h.represented, h.methodology, h.revision, h.semantic_digest
+FROM candidate.core_selections s
+JOIN candidate.generation_inputs g ON g.generation = s.generation
+JOIN candidate.workload_history h ON h.id = g.snapshot
+JOIN candidate.workload_history_sources hs ON hs.snapshot = h.id
+JOIN candidate.fetches f ON f.id = hs.source_id
+WHERE s.revision = 4 AND f.id = 979
+  AND f.sha256 = '116b516d56b32e3e67b286121eafc699190637d876c0b5ec6f5f1e8054d5afc7'
+  AND h.id > 0
+ORDER BY h.id LIMIT 32;
+```
