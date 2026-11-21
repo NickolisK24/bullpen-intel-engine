@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+import pytest
+
 from sync_v3.performance import final_performance_counts, performance_line, performance_windows
 
 
@@ -164,3 +166,24 @@ def test_league_change_retains_the_board_event_identity_and_frozen_revision():
     assert change['headline'] == 'KC recorded a 3.2-inning start.'
     assert change['detail'] == 'The bullpen recorded 5.1 innings.'
     assert change['source_ref'] == 'generation/rotation-digest'
+
+
+@pytest.mark.parametrize('joined', [True, False])
+def test_tonight_requires_bullpen_membership_on_the_roster_moves_present_date(joined):
+    from sync_v3.product_reads import _league_changes
+
+    club = dict(team_id=141, team_abbreviation='TOR', orientation=None, team_state=dict(public_label=None))
+    event = dict(event_id='official-move', kind='active_roster_added' if joined else 'active_roster_removed',
+                 current=joined, previous=not joined, player=599998, pitcher_name='Leonel Campos')
+    day = date(2017, 8, 28 if joined else 27)
+
+    def changes(observed, population, move=event):
+        evidence = [(141, [move], 'roster-proof', 'bullpen-proof', observed, population)]
+        return _league_changes([club], {}, [], 'edition', '2017-08-28', evidence)
+
+    item, = changes(day, {'599998': {}})
+    assert item['change_class'] == ('active_bullpen_joined' if joined else 'active_bullpen_left')
+    assert item['change_id'] == 'official-move' and item['source_ref'] == 'edition/roster-proof/bullpen-proof'
+    assert changes(day, {'453286': {}}) == []
+    assert changes(date(2017, 8, 27 if joined else 28), {'599998': {}}) == []
+    assert changes(day, {'599998': {}}, dict(event, previous=None)) == []

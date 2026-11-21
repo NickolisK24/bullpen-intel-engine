@@ -595,7 +595,40 @@ def _aligned_performance(away, home):
     return _aligned_domain('performance', a, b, stamp_a=stamp_a, stamp_b=stamp_b, partial=a.keys() != b.keys())
 
 
-def _league_changes(teams, citations, rotation_changes, generation, represented):
+def _slate_roster_moves(cur, generation, through):
+    """Qualify an official roster move with the dated bullpen on its membership side."""
+    cur.execute("""WITH entries AS (
+                     SELECT h.id,h.mlb_id,h.methodology,h.facts,h.semantic_digest FROM candidate.generation_inputs g
+                     JOIN candidate.workload_history h ON h.id=g.snapshot
+                     WHERE g.generation=%s AND h.subject='team' AND h.represented=%s
+                       AND h.methodology IN ('candidate_depth_changes_v1','candidate_readiness_changes_v1')
+                   ), sides AS (
+                     SELECT change.mlb_id AS team,change.facts->'events' AS events,change.semantic_digest AS receipt,
+                            d.id AS depth,r.id AS readiness,r.semantic_digest AS population_receipt,
+                            r.represented,r.facts->'arms' AS arms
+                     FROM entries change JOIN candidate.change_inputs di ON di.change_snapshot=change.id
+                     JOIN candidate.workload_history d ON d.id=di.input_snapshot
+                     JOIN entries paired ON paired.mlb_id=change.mlb_id AND paired.methodology='candidate_readiness_changes_v1'
+                     JOIN candidate.change_inputs ri ON ri.change_snapshot=paired.id
+                     JOIN candidate.workload_history r ON r.id=ri.input_snapshot AND r.represented=d.represented
+                     WHERE change.methodology='candidate_depth_changes_v1' AND change.facts->>'status'='complete'
+                       AND jsonb_array_length(change.facts->'events')>0 AND r.facts->>'membership_date'=r.represented::text
+                       AND r.facts->>'reference_date'=(r.represented+1)::text
+                       AND r.facts->>'reason' IS NULL AND r.facts->'comparison'->>'team_states_compared'='1'
+                   )
+                   SELECT team,events,receipt,population_receipt,represented,arms FROM sides
+                   WHERE EXISTS (
+                     SELECT 1 FROM candidate.workload_history_sources hs JOIN candidate.fetches f ON f.id=hs.source_id
+                     JOIN candidate.confirmations c ON c.source_id=f.id AND c.domain='roster'
+                     WHERE hs.snapshot IN (depth,readiness) AND f.endpoint='/teams/'||team::text||'/roster'
+                       AND f.parameters=jsonb_build_object('rosterType','active','date',represented::text)
+                       AND c.identity=team::text||'/active/'||represented::text
+                     HAVING count(DISTINCT hs.snapshot)=2 AND count(DISTINCT c.revision_id)=1
+                   ) ORDER BY team,represented""", (generation, through))
+    return cur.fetchall()
+
+
+def _league_changes(teams, citations, rotation_changes, generation, represented, roster_moves=()):
     """Project qualified changes from the same dated revisions used by Board and History."""
     from services import tonight_read_model as tonight
     changes = []
@@ -628,6 +661,25 @@ def _league_changes(teams, citations, rotation_changes, generation, represented)
                                 headline=f'{abbreviation} recorded a {starter}-inning start.',
                                 detail=f'The bullpen recorded {bullpen} innings.',
                                 source_ref=f'{generation}/{receipt}', game_pks=[event['game']], state_change=None))
+    from datetime import date, timedelta
+    from services.editorial_voice_contract_v1 import find_editorial_violations
+    current_day = date.fromisoformat(represented)
+    for team, events, receipt, population_receipt, day, arms in roster_moves:
+        for event in events:
+            joined = event['kind'] == 'active_roster_added'
+            if (event['kind'] not in ('active_roster_added', 'active_roster_removed')
+                    or event['previous'] is not (event['kind'] == 'active_roster_removed') or event['current'] is not joined
+                    or day != (current_day if joined else current_day - timedelta(days=1))
+                    or str(event['player']) not in arms or not event['pitcher_name']):
+                continue
+            verb = 'joined' if joined else 'left'
+            headline = f"{event['pitcher_name']} {verb} the active bullpen."
+            if find_editorial_violations(headline, terms=tonight.LEAGUE_CHANGE_BANNED_TERMS):
+                continue
+            changes.append(dict(change_id=event['event_id'], team_id=team, team_abbreviation=abbreviations[team],
+                                change_class=f'active_bullpen_{verb}', occurred_on=represented, evidence_state='complete',
+                                headline=headline, detail=None,
+                                source_ref=f'{generation}/{receipt}/{population_receipt}', game_pks=[], state_change=None))
     result = []
     per_team = {}
     for change in sorted(changes, key=tonight._league_change_order):
@@ -688,8 +740,10 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s
                        AND h.methodology='candidate_rotation_changes_v1' AND h.subject='team'
                        AND h.represented=%s ORDER BY h.mlb_id""", (generation, league['data_through']))
-        changes = _league_changes(league['teams'], league['citations'], cur.fetchall(), generation, league['data_through'])
-        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_and_short_starts',
+        rotation_changes = cur.fetchall()
+        roster_moves = _slate_roster_moves(cur, generation, league['data_through'])
+        changes = _league_changes(league['teams'], league['citations'], rotation_changes, generation, league['data_through'], roster_moves)
+        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_qualified_roster_moves_and_short_starts',
                       featured_game_pks=[], lead=None, limitations=['additional_league_change_classes_unverified'])
         if game_pk is not None and all(row.game_pk != game_pk for row in games):
             return dict(result, status='game_outside_represented_slate')
