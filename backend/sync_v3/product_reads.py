@@ -370,6 +370,7 @@ def _pitcher_directory(cur, digest):
             # An active-roster departure and a retained forty-man membership
             # describe independent facts, even when they concern the same club.
             players[mlb]['roster_observation'] = member['roster_observation']
+            players[mlb]['position'] = member['position']
         else:
             players[mlb] = member
     if unresolved:

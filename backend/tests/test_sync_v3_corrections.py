@@ -1062,6 +1062,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             if identity_mode != 'absent':
                 old, = read_search(worker, 'Former Boston')['search']['groups'][1]['results']
                 assert old['metadata']['historical_departure'] == removal
+                assert old['metadata']['position'] == 'P'
                 assert old['id'] == 8999 and old['metadata']['team_id'] is None
                 assert old['metadata']['roster_status'] == 'UNKNOWN'
                 traded = read_pitcher(worker, 9110)
@@ -1088,6 +1089,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert departed_page['identity']['historical_departure'] == removal
                 assert departed_page['identity']['roster_observation']['membership'] == '40Man'
                 assert departed_page['identity']['team_id'] is None
+                assert departed_page['identity']['position'] == old['metadata']['position']
                 assert read_pitcher_history(worker, old['id'], through_revision=1)['rows'][0]['events'] == [removal]
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
