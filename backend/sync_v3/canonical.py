@@ -77,14 +77,21 @@ def reconcile_final(cur, pk, body, source_id, observed_at):
     for side in ('home','away'):
         if body['teams'][side]['team']['id'] != game['teams'][side]['team']['id']:
             raise Refused('Boxscore side differs from official schedule')
-    appearances = extract_game_appearances(game=game, pitching_lines=_extract_pitching_lines_from_boxscore(body),
+    pitching_lines = _extract_pitching_lines_from_boxscore(body)
+    for line in pitching_lines:
+        innings = line['stats'].get('inningsPitched')
+        if innings is None or not str(innings).strip():
+            raise Refused('Official innings pitched missing for pitcher')
+    appearances = extract_game_appearances(game=game, pitching_lines=pitching_lines,
                                           pitcher_order=order, game_date=game['officialDate'])
     for side in ('home','away'):
         lines = [a for a in appearances if a['side'] == side]
         if {a['pitcher_mlb_id'] for a in lines} != set(order[side]) or sum(a['is_starter'] for a in lines) != 1:
             raise Refused('Incomplete or contradictory pitching lineup')
         total = body['teams'][side].get('teamStats', {}).get('pitching', {}).get('inningsPitched')
-        if total is None or parse_mlb_innings_to_outs(total) != sum(a['outs_recorded'] for a in lines):
+        if total is None or not str(total).strip():
+            raise Refused('Official innings pitched missing for team')
+        if parse_mlb_innings_to_outs(total) != sum(a['outs_recorded'] for a in lines):
             raise Refused('Official team pitching outs do not reconcile')
     version = accept(cur, 'final', pk, appearances, source_id, observed_at, context_id=schedule_source)
     if version is None:

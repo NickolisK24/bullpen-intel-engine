@@ -212,6 +212,7 @@ def team_from_calendar(calendar, team, through, roster):
                                   innings_pitched_outs=line['outs_recorded'])
             rows.append((log, pitcher))
     facts = _team_workload_overview(rows, through, coverage, active.keys())
+    facts['contract'] = 'candidate_club_relief_workload_v1'
     concentration = facts['concentration_7_day']
     # A dated MLB active roster includes starters and position players. The
     # frozen Board bullpen cohort is a downstream publication dependency.
@@ -227,3 +228,46 @@ def team_from_calendar(calendar, team, through, roster):
     return {'mlb_team_id': team, 'player_id_namespace': 'mlb',
             'roster_source': roster[1] if roster else None,
             'workload_sources': sorted(sources), 'facts': facts}
+
+
+def outing_pitch_comparison(calendar, player, through):
+    """Compare the latest single outing with previous outings in the same 30 days."""
+    first = through - timedelta(days=29)
+    result = {'contract': 'candidate_outing_pitch_comparison_v1', 'mlb_player_id': player,
+              'start': first.isoformat(), 'through': through.isoformat(), 'facts': None,
+              'sources': [], 'reason': None}
+    outings = []
+    sources = set()
+    for offset in range(30):
+        day = first + timedelta(days=offset)
+        observed, gap = calendar.get(day, (None, 'missing_complete_schedule'))
+        if observed is None:
+            result['reason'] = gap
+            return result
+        sources.update(observed['sources'])
+        outings.extend((day, line) for line in observed['lines'] if line['pitcher_mlb_id'] == player)
+    result['sources'] = sorted(sources)
+    if not outings:
+        result['reason'] = 'no_observed_workload_appearance'
+        return result
+    last = outings[-1][0]
+    prior = [line for day, line in outings if day < last]
+    latest = [line for day, line in outings if day == last]
+    if any(line['workload_class'] == BULLPEN_WORKLOAD_UNKNOWN for _, line in outings):
+        result['reason'] = 'workload_class_unknown'
+    elif len(latest) != 1:
+        result['reason'] = 'latest_outing_order_unknown'
+    elif not prior:
+        result['reason'] = 'no_prior_outings_in_window'
+    elif any(line['pitches_thrown'] is None for _, line in outings):
+        result['reason'] = 'pitch_count_unknown'
+    else:
+        pitches = latest[0]['pitches_thrown']
+        prior_counts = [line['pitches_thrown'] for line in prior]
+        result['facts'] = {
+            'last_outing_date': last.isoformat(), 'last_game_pk': latest[0]['game_pk'],
+            'last_outing_pitches': pitches, 'prior_outings': len(prior),
+            'prior_total_pitches': sum(prior_counts), 'prior_max_pitches': max(prior_counts),
+            'difference_from_prior_max': pitches - max(prior_counts),
+        }
+    return result

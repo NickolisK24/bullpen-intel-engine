@@ -113,13 +113,19 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None):
                 print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
             if pitcher is not None or team is not None:
                 import json
-                from sync_v3.workload import load_calendar, rest_from_calendar, team_workload, windows_from_calendar
+                from sync_v3.workload import (
+                    load_calendar, outing_pitch_comparison, rest_from_calendar, team_workload, windows_from_calendar,
+                )
                 with worker, worker.cursor() as cur:
                     calendar = load_calendar(cur, through, team=team)
                     result = team_workload(cur, calendar, team, through) if team is not None else {
                         'windows': windows_from_calendar(calendar, pitcher, through),
                         'rest': rest_from_calendar(calendar, pitcher, through),
+                        'pitch_comparison': outing_pitch_comparison(calendar, pitcher, through),
                     }
+                    if team is not None:
+                        from sync_v3.comparison import compare_team_workload
+                        result['boxscore_windows_compared'] = compare_team_workload(cur, calendar, result)
                     print(json.dumps(result, sort_keys=True))
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified')
             if withheld:
