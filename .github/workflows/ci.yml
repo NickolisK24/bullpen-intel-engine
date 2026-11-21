@@ -169,6 +169,16 @@ jobs:
       - name: Install backend test dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Locate the local PostgreSQL server for isolated sync rehearsals
+        if: matrix.shard == 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          bindir="$(pg_config --bindir)"
+          test -x "$bindir/initdb"
+          test -x "$bindir/pg_ctl"
+          echo "SYNC_V3_TEST_PG_BIN=$bindir" >> "$GITHUB_ENV"
+
       - name: Resolve the files this shard owns
         run: |
           set -euo pipefail

@@ -1856,6 +1856,26 @@
         {
           "path": "tests/test_pitcher_performance_history.py",
           "measured_seconds": 2.1
+        },
+        {
+          "path": "tests/test_sync_v3_corrections.py",
+          "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_discovery.py",
+          "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_evidence.py",
+          "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_membership.py",
+          "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_queue.py",
+          "measured_seconds": 1.0
         }
       ]
     }

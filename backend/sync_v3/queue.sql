@@ -25,3 +25,4 @@ CREATE TABLE candidate.attempts (
     CHECK ((finished_at IS NULL) = (outcome IS NULL))
 );
 GRANT SELECT, INSERT, UPDATE ON candidate.jobs, candidate.attempts TO sync_v3_worker;
+CREATE INDEX jobs_pending_request ON candidate.jobs(budget,md5(payload::text)) WHERE state='pending';

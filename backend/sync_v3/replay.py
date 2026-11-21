@@ -33,12 +33,21 @@ def run_fixture(connection, filename):
 
     results = run_cycle(connection, day, lookup, teams=fixture['team_ids'], clock=lambda: at,
                         max_jobs=256, budget='historical')
+    errors = []
     with connection, connection.cursor() as cur:
         for oid, status in results:
             if status != 'received':
-                raise ValueError(f'Unqualified fixture observation {oid}: {status}')
+                cur.execute('''SELECT f.endpoint,f.parameters,coalesce(r.reason,f.reason),f.sha256
+                               FROM candidate.fetches f LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                               WHERE f.id=%s''', (oid,))
+                errors.append((status, *cur.fetchone()))
+                continue
             evidence.replay(cur, oid)
         cur.execute("SELECT state,count(*) FROM candidate.jobs GROUP BY state")
-        if cur.fetchall() != [('done', len(results))]:
-            raise ValueError('Replay left unfinished obligations')
+        states = dict(cur.fetchall())
+        if errors or states != {'done': len(results)}:
+            from sync_v3.comparison import compare_finals
+            games, lines = compare_finals(cur)
+            raise ValueError(f'Replay withheld: {len(results)} observations; {games} accepted finals, '
+                             f'{lines} verified lines; job states={states}; unresolved={errors}')
     return len(results)
