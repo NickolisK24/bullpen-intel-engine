@@ -1321,6 +1321,16 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                     assert pitcher_row['generation'] == generation and pitcher_row['events'] == events
                     assert detail['identity']['roster_observation']['membership'] == '40Man'
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
+            if identity_mode == 'complete':
+                from sync_v3.history_delivery import historical_history_app
+                client = historical_history_app(connect).test_client()
+                route = '/api/sync-v3/history/teams/111/revisions/'
+                response = client.get(route + str(page['next_revision']))
+                assert response.status_code == 200 and response.get_json() == older
+                assert client.get(route + '999').status_code == 404
+                assert client.get(route + '0').status_code == 404
+                assert client.get(route + str(2**63)).status_code == 404
+                assert client.post(route + '1').status_code == 405
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
             if identity_mode != 'absent':
                 starter_rows = read_pitcher_history(worker, 8997, through_revision=3, limit=3)['rows']

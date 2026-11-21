@@ -20,6 +20,7 @@ const {
   HistoryStateRow,
   TeamHistoryPageView,
   historyRowCategory,
+  matchesHistoryCursor,
 } = await server.ssrLoadModule('/src/components/history/TeamHistoryPage.jsx')
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { buildTeamHistoryHref } = await server.ssrLoadModule('/src/utils/evidenceLinks.js')
@@ -698,4 +699,18 @@ test('Pitcher shows only his cited changes for the represented club and date', a
   assert.equal(html.split('Short start').length - 1, 1)
   assert.ok(html.includes('correct-source') && html.includes('https://www.mlb.com/gameday/845'))
   assert.ok(!html.includes('stale-source'))
+})
+
+
+test('earlier decisions must continue the exact historical club and predecessor chain', () => {
+  const page = { scope: 'isolated_historical_team_history', current_serving_eligible: false,
+    status: 'historical_decisions', team: 111, rows: [
+      { selection_revision: 3, predecessor: 2 }, { selection_revision: 2, predecessor: 1 }], next_revision: 1 }
+  assert.ok(matchesHistoryCursor(page, 111, 3))
+  assert.ok(!matchesHistoryCursor(page, 118, 3))
+  assert.ok(!matchesHistoryCursor(page, 111, 4))
+  for (const invalid of [{ next_revision: 3 }, { scope: 'team_state_history' }, { current_serving_eligible: true },
+    { rows: [page.rows[0], page.rows[0]] }, { rows: [] }]) {
+    assert.ok(!matchesHistoryCursor({ ...page, ...invalid }, 111, 3))
+  }
 })

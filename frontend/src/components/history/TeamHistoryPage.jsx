@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
-import { getTeamStateHistory } from '../../utils/api'
+import { getHistoricalTeamDecisions, getTeamStateHistory } from '../../utils/api'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
 import { formatFreshnessDate } from '../UI/Freshness'
@@ -384,10 +384,36 @@ function GapRow({ date }) {
   )
 }
 
-function HistoricalSelectionHistory({ payload }) {
+export function matchesHistoryCursor(page, team, revision) {
+  if (page?.scope !== 'isolated_historical_team_history' || page.current_serving_eligible !== false
+      || page.status !== 'historical_decisions' || page.team !== team || !Array.isArray(page.rows)
+      || !page.rows.length || page.rows.length > 30) return false
+  return page.rows.every((row, index) => {
+    const expected = revision - index
+    return expected > 0 && row?.selection_revision === expected && row.predecessor === (expected === 1 ? null : expected - 1)
+  }) && page.next_revision === page.rows.at(-1).predecessor
+}
+
+function EarlierDecisions({ team, revision }) {
+  const read = useFetch(options => getHistoricalTeamDecisions(team, revision, options), [team, revision])
+  if (read.loading) return <LoadingPane message="Loading earlier decisions…" />
+  if (read.error) return <ErrorState message={read.error} onRetry={read.refetch} />
+  const page = read.data
+  if (!matchesHistoryCursor(page, team, revision)) {
+    return <ErrorState message="Earlier History decisions could not be verified." onRetry={read.refetch} />
+  }
+  return <HistoricalSelectionHistory payload={page} continuation />
+}
+
+function HistoricalSelectionHistory({ payload, continuation = false }) {
+  const [expanded, setExpanded] = useState(false)
+  const last = payload.rows.at(-1)
+  const cursor = payload.next_revision
+  const canContinue = Number.isSafeInteger(cursor) && cursor > 0 && cursor < last?.selection_revision
+    && cursor === last.predecessor
   return (
-    <section className="mx-auto max-w-5xl space-y-5 px-4 py-6">
-      <h1 className="font-board text-2xl font-semibold">{payload.team_name} historical rehearsal</h1>
+    <section className={continuation ? "space-y-5" : "mx-auto max-w-5xl space-y-5 px-4 py-6"}>
+      {!continuation && <h1 className="font-board text-2xl font-semibold">{payload.team_name} historical rehearsal</h1>}
       {payload.status === 'unknown_revision' && <p>Requested History revision unavailable.</p>}
       {payload.rows.map(row => {
         const state = readPublicTeamState(row.team_state)
@@ -406,7 +432,11 @@ function HistoricalSelectionHistory({ payload }) {
           </> : <p>No historical generation selected.</p>}
         </article>
       })}
-      {payload.next_revision != null && <p>Earlier decisions continue at revision {payload.next_revision}.</p>}
+      {canContinue && (expanded
+        ? <EarlierDecisions key={cursor} team={payload.team} revision={cursor} />
+        : <button type="button" className="min-h-11 text-brand-blue underline" onClick={() => setExpanded(true)}>
+          Load earlier decisions from revision {cursor}
+        </button>)}
     </section>
   )
 }
@@ -415,7 +445,7 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
   if (loading) return <LoadingPane message="Loading Team State history…" />
   if (error) return <ErrorState message={error} onRetry={onRetry} />
   if (payload?.scope === 'isolated_historical_team_history' && payload.current_serving_eligible === false) {
-    return <HistoricalSelectionHistory payload={payload} />
+    return <HistoricalSelectionHistory key={`${payload.team}-${payload.rows[0]?.selection_revision}`} payload={payload} />
   }
   if (!payload?.team) return <ErrorState message="This team history destination is unavailable." onRetry={onRetry} />
 

@@ -551,6 +551,11 @@ export const getTeamStateHistory = (teamAbbreviation, season = 2026, options = {
     ...options,
   })
 )
+export const getHistoricalTeamDecisions = (team, revision, options = {}) => (
+  request(`/sync-v3/history/teams/${team}/revisions/${revision}`, {
+    timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options,
+  })
+)
 export const getTeamReliefWork = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/relief-work`)
 // Tonight's Bullpen Board — existing availability classifications grouped for a
 // coach-facing read. Presentation only (no ranking/selection).
