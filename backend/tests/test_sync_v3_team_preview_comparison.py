@@ -96,3 +96,26 @@ def test_archived_available_read_keeps_uncounted_members_separate():
     with pytest.raises(ValueError, match='decision differs'):
         reproduce_available_state(dict(inputs, readiness=dict(readiness, team_state_evidence=dict(
             evidence, decisive_rule='fresh_coverage'))), observed, 111)
+
+
+def test_board_count_substitution_cannot_certify_page_reproduction():
+    from services.team_story_previews import build_team_story_preview
+    from sync_v3.team_preview_comparison import compare_readiness_count_render, reproduce_competition_page
+    from tests.test_team_story_previews import _team, _board, GENERATED_AT, PUBLISHED_AT
+
+    club = next(club for club in MLB_CLUBS if club.abbreviation == 'TOR')
+    team = _team(club.team_id, club.team_name, club.abbreviation)
+    board = _board(team)
+    board['context'] = dict(health=dict(reasons=['Two relievers are in the On Watch group.']))
+    body = render_team_story_html(build_team_story_preview(team, board=board, generated_at=GENERATED_AT)).encode()
+    pub = dict(publication_snapshot_id=SNAPSHOT_ID, sync_run_id=SYNC_RUN_ID, data_through=DATA_THROUGH, published_at=PUBLISHED_AT)
+    export = dict(story_previews=0, generated_at=GENERATED_AT)
+    counts = dict(available=0, monitor=2, limited=0, avoid=0, unavailable=0)
+    inputs = dict(readiness=dict(availability_distribution=counts))
+    args = (body, club, inputs, board['team_state'], pub)
+    assert compare_readiness_count_render(*args, export) == 'bytes_match'
+    assert compare_readiness_count_render(*args, dict(export, story_previews=1)) == 'story_inputs_unverified'
+    counts['monitor'] = 1
+    assert compare_readiness_count_render(*args, export) == 'bytes_differ'
+    page = compare_team_page(body.decode(), club, publication=pub)
+    assert reproduce_competition_page(body, page, club, board['team_state'], pub, export) == 'additional_story_or_board_inputs_required'

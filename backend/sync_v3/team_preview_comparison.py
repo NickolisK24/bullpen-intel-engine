@@ -40,25 +40,42 @@ def compare_team_page(text, club, *, publication=None):
 
 def reproduce_competition_page(body, page, club, state, publication, export):
     """Replay the Board-only branch where the observed state excludes every current baseball point."""
-    from services.public_serving_authority import PUBLICATION_AUTHORITY_CONTRACT
     from services.team_state_public_vocabulary import is_competition_withholding
-    from services.team_story_previews import build_team_story_preview, render_team_story_html
 
     if page['representation'] == 'withheld':
         return 'withheld_delivery'
     if export.get('story_previews') != 0 or not is_competition_withholding(state):
         return 'additional_story_or_board_inputs_required'
+    if _render_board_page(club, dict(team_state=state), publication, export) != body:
+        raise ValueError(f'Observed publication inputs do not reproduce the archived page: {club.abbreviation}')
+    return 'reproduced'
+
+
+def _render_board_page(club, board, publication, export):
+    from services.public_serving_authority import PUBLICATION_AUTHORITY_CONTRACT
+    from services.team_story_previews import build_team_story_preview, render_team_story_html
+
     if not export.get('generated_at') or not publication.get('published_at'):
         raise ValueError('Historical rendering requires both export and publication timestamps')
     team = dict(team_id=club.team_id, team_name=club.team_name, team_abbreviation=club.abbreviation)
     authority = dict(contract=PUBLICATION_AUTHORITY_CONTRACT, snapshot_id=publication['publication_snapshot_id'],
                      sync_run_id=publication['sync_run_id'], data_through=publication['data_through'],
                      published_at=publication['published_at'])
-    preview = build_team_story_preview(team, board=dict(publication_authority=authority, team_state=state),
+    preview = build_team_story_preview(team, board=dict(board, publication_authority=authority),
                                       generated_at=export['generated_at'], expected_snapshot_id=authority['snapshot_id'])
-    if render_team_story_html(preview).encode('utf-8') != body:
-        raise ValueError(f'Observed publication inputs do not reproduce the archived page: {club.abbreviation}')
-    return 'reproduced'
+    return render_team_story_html(preview).encode('utf-8')
+
+
+def compare_readiness_count_render(body, club, inputs, state, publication, export):
+    """Compare page bytes when substituting the archived Team State population for Board cards."""
+    from services.bullpen_board import BOARD_GROUP_ORDER, build_team_context
+
+    if export.get('story_previews') != 0:
+        return 'story_inputs_unverified'
+    distribution = inputs['readiness']['availability_distribution']
+    groups = [dict(status=status, count=distribution[status.lower()]) for status in BOARD_GROUP_ORDER]
+    board = dict(team_state=state, context=build_team_context(groups))
+    return 'bytes_match' if _render_board_page(club, board, publication, export) == body else 'bytes_differ'
 
 
 def reproduce_available_state(inputs, observed, team_id):
@@ -169,8 +186,12 @@ def compare_team_export(report_path, expected_digest, root, *, publication_proof
                     if page['team_state'] != state.get('public_label') or (page['team_state'] is not None) != state['available']:
                         raise ValueError(f'Team preview differs from its observed Team State: {name}')
                     if state['available']:
-                        page['available_state_replay'] = reproduce_available_state(
-                            observed.available_inputs[str(page['team_id'])], state, page['team_id'])
+                        inputs = observed.available_inputs[str(page['team_id'])]
+                        replay = reproduce_available_state(inputs, state, page['team_id'])
+                        page['available_state_replay'] = replay
+                        if replay['status'] == 'reproduced':
+                            page['render_using_team_state_counts'] = compare_readiness_count_render(
+                                body, files[name], inputs, state, publication, export)
                     compared += 1
                 if contexts is not None:
                     context = contexts[page['team_id']]
