@@ -23,10 +23,24 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
     prefix = 'frontend/public/share/'
     with Path(pages_path).open('rb') as pages_file, Path(report_path).open('rb') as report_file, \
             _open_verified(pages_file, pages_digest) as pages, _open_verified(report_file, report_digest) as report:
-        if len(report.namelist()) != len(set(report.namelist())):
+        members = set(report.namelist())
+        if len(report.namelist()) != len(members):
             raise ValueError('Ambiguous delivery report entries')
-        export = json.loads(report.read('share-export-result.json'))
-        rows = json.loads(report.read('share-generated-digest.json'))
+        scheduled = {'share-export-result.json', 'share-generated-digest.json'}
+        distribution = {'share-export.json', 'share-digest.json', 'share-digest-postbuild.json'}
+        if members & distribution:
+            if members & scheduled or not (distribution | {'publication.json'}) <= members:
+                raise ValueError('Ambiguous or incomplete share distribution report')
+            manifest = report.read('share-digest-postbuild.json')
+            if manifest != report.read('share-digest.json'):
+                raise ValueError('Share distribution digest changed during build')
+            export = json.loads(report.read('share-export.json'))
+        else:
+            if not scheduled <= members:
+                raise ValueError('Incomplete scheduled share delivery report')
+            manifest = report.read('share-generated-digest.json')
+            export = json.loads(report.read('share-export-result.json'))
+        rows = json.loads(manifest)
         digests = {row['path']: row['sha256'] for row in rows}
         fallback = 'frontend/public/share-404.html'
         names = pages.namelist()

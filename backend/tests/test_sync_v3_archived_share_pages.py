@@ -51,6 +51,37 @@ def archive(tmp_path, route, kind, *, export_snapshot=42, run=24, through=None, 
     return pages, sha256(pages.read_bytes()).hexdigest(), report, sha256(report.read_bytes()).hexdigest(), root
 
 
+def test_distribution_requires_a_consistent_postbuild_manifest_and_publication(app, monkeypatch, tmp_path):
+    from services.share_artifact_previews import build_share_artifact_preview, write_share_artifact_pages
+    from tests.test_share_artifact_previews import _published
+
+    artifact = _published(monkeypatch)
+    write_share_artifact_pages([build_share_artifact_preview(artifact)], tmp_path / 'public')
+    route = tmp_path / 'public' / 'share' / artifact.public_id / 'index.html'
+    pub = dict(status='ok', publication_snapshot_id=42, sync_run_id=24, data_through='2026-07-01')
+    pages, page_hash, scheduled, _, root = archive(tmp_path, route, 'team_state', through=pub['data_through'],
+                                                publication=pub)
+    with ZipFile(scheduled) as old:
+        manifest = old.read('share-generated-digest.json')
+        members = {'publication.json': old.read('publication.json'), 'share-export.json': old.read('share-export-result.json'),
+                   'share-digest.json': manifest, 'share-digest-postbuild.json': manifest}
+
+    def verify(files):
+        path = tmp_path / 'distribution.zip'
+        with ZipFile(path, 'w') as report:
+            for name, content in files.items():
+                report.writestr(name, content)
+        return compare_share_pages(pages, page_hash, path, sha256(path.read_bytes()).hexdigest(), root)
+
+    assert verify(members)['delivery_publication_compared']
+    with pytest.raises(ValueError, match='digest changed during build'):
+        verify({**members, 'share-digest-postbuild.json': b'[]'})
+    with pytest.raises(ValueError, match='Ambiguous or incomplete'):
+        verify({**members, 'share-generated-digest.json': manifest})
+    with pytest.raises(ValueError, match='Ambiguous or incomplete'):
+        verify({name: body for name, body in members.items() if name != 'publication.json'})
+
+
 def test_matching_bytes_require_public_delivery_identity(app, monkeypatch, tmp_path):
     from services.share_artifact_previews import build_share_artifact_preview, write_share_artifact_pages
     from tests.test_share_artifact_previews import _published
