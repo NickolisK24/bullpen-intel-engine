@@ -152,8 +152,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                         'season_deployment': pitcher_season_deployment(cur, pitcher, through),
                     }
                     if pitcher is not None:
-                        from sync_v3.deployment import pitcher_pitch_history
-                        result['pitch_history'] = pitcher_pitch_history(cur, pitcher, through, result['season_deployment'])
+                        from sync_v3.deployment import pitcher_measurement_history
+                        result.update(pitcher_measurement_history(cur, pitcher, through, result['season_deployment']))
                     if team is not None:
                         from sync_v3.comparison import compare_team_workload
                         result['boxscore_windows_compared'] = compare_team_workload(cur, calendar, result)

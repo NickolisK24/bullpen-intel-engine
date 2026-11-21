@@ -164,6 +164,17 @@ def completed_game_receipts(rows):
     return receipts
 
 
+def consistent_domain_counts(domain, line):
+    fields = DOMAINS[domain]
+    if any(count(line.get(field)) is None for field in fields):
+        return False
+    if domain == 'k_bb_percent':
+        return line['strikeouts'] + line['walks'] <= line['batters_faced']
+    if domain == 'inherited_runner_context':
+        return line['inherited_runners_scored'] <= line['inherited_runners']
+    return True
+
+
 def compare(rows, identities, receipts, team_id, *, source='mlb_final_boxscore'):
     counts = dict.fromkeys(DOMAINS, 0)
     totals = dict.fromkeys(FIELDS, 0)
@@ -191,12 +202,9 @@ def compare(rows, identities, receipts, team_id, *, source='mlb_final_boxscore')
         for domain, fields in DOMAINS.items():
             if domain == 'home_runs_allowed' and count(row.home_runs_allowed) is None:
                 continue
-            if any(count(line.get(f)) is None or
-                   getattr(row, f, None) not in (None, line[f]) for f in fields):
+            if not consistent_domain_counts(domain, line):
                 continue
-            if domain == 'k_bb_percent' and line['strikeouts'] + line['walks'] > line['batters_faced']:
-                continue
-            if domain == 'inherited_runner_context' and line['inherited_runners_scored'] > line['inherited_runners']:
+            if any(getattr(row, f, None) not in (None, line[f]) for f in fields):
                 continue
             counts[domain] += 1
             for f in fields:

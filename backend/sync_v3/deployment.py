@@ -10,6 +10,7 @@ from services.game_finality import classify_status
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync import _extract_leverage_index
 from services.team_board_public_deployment_context import _recorded_li, entry_from_ordered_events, movement_window_evidence
+from sync_v3.performance import final_performance_counts, performance_line, performance_windows
 from sync_v3.discovery import calendar_requests
 from sync_v3.pitch_measurements import game_pitch_samples, monthly_pitch_sample
 from sync_v3.evidence import latest_qualified_source, replay
@@ -125,6 +126,7 @@ def _from_schedule(cur, game, day, schedule_source, *, include_pitch_samples=Fal
                 'games_finished': row['games_finished'], 'outs': row['outs_recorded'],
             })
             if include_pitch_samples:
+                result['relief_appearances'][-1]['performance_counts'] = final_performance_counts(row, stats)
                 result['relief_appearances'][-1]['pitch_tracking'] = samples.get(key) or {
                     'reason': tracking_reason, 'types': [], 'tracked_pitches': None,
                     'official_pitches': row['pitches_thrown'],
@@ -179,12 +181,14 @@ def club_role_movement(cur, team, through):
             'complete_game_coverage': not gaps, 'gaps': gaps, 'sources': sources, 'profiles': profiles}
 
 
-def pitcher_pitch_history(cur, player, through, season):
+def pitcher_measurement_history(cur, player, through, season):
     """Use the reconciled official log to enumerate every expected regular-season relief outing."""
     result = {'through': through.isoformat(), 'mlb_player_id': player, 'months': [],
               'season_sources': season['sources'], 'reason': season['reason']}
+    performance = {'season_sources': season['sources'], 'games': [], 'reason': season['reason'], 'windows': None}
     if season['facts'] is None:
-        return result
+        return {'pitch_history': result, 'performance': performance}
+    lines = []
     required = set(season['facts']['season']['games'])
     log = replay(cur, season['sources']['gameLog']).body
     by_month = defaultdict(list)
@@ -199,9 +203,16 @@ def pitcher_pitch_history(cur, player, through, season):
         arm = next((r for r in game['relief_appearances'] or () if r['mlb_player_id'] == player
                     and r['mlb_team_id'] == outing['team']['id']), None)
         tracking = arm['pitch_tracking'] if arm else {'reason': game['reason'] or 'official_relief_line_missing'}
+        counts = arm['performance_counts'] if arm else {}
+        lines.append(performance_line(day, counts, outing['stat']))
+        performance['games'].append({'game_pk': pk, 'team_id': outing['team']['id'], 'date': day.isoformat(),
+                                     'boxscore': game['sources'].get('boxscore'),
+                                     'schedule': game['sources'].get('schedule'),
+                                     'reason': None if arm else tracking['reason']})
         by_month[day.strftime('%Y-%m')].append((pk, game['sources'], tracking))
     for month, outings in sorted(by_month.items()):
         result['months'].append({'month': month, **monthly_pitch_sample([r[2] for r in outings]),
                                  'games': [{'game_pk': pk, 'sources': sources, 'reason': sample['reason']}
                                            for pk, sources, sample in sorted(outings)]})
-    return result
+    performance['windows'] = performance_windows(through, lines)
+    return {'pitch_history': result, 'performance': performance}
