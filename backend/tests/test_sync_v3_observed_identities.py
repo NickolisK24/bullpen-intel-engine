@@ -139,3 +139,44 @@ def test_competition_compares_the_governed_scope_independently_of_the_edition(tm
         archived[key] = original
     clubs[111]['team_id'] = 119
     assert compare_archived_competition(report, reference)['status'] == 'club_reference_mismatch'
+
+
+def test_earlier_publication_can_supply_an_absent_route_only_to_a_new_edition(tmp_path):
+    from contextlib import closing
+    from dataclasses import replace
+    from datetime import date
+    import os
+    import psycopg2
+    from sync_v3.generation import freeze_generation, verify_generation
+    from sync_v3.public_identities import load_reference
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    path = tmp_path / 'proof.zip'
+    primary = from_observed_publication(path, write_proof(path))
+    day = date(2017, 8, 28)
+    earlier = replace(primary, observed_at='2026-10-30T10:00:00Z', rows=[primary.rows[0], dict(id=51, mlb_id=544150)])
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        with pytest.raises(ValueError, match='earlier observed publication'):
+            install(owner, identity_export=earlier, earlier_identity_exports=[primary])
+        install(owner, identity_export=primary)
+        first = freeze_generation(worker, day)
+        with owner, owner.cursor() as cur:
+            load_reference(cur, earlier)
+        second = freeze_generation(worker, day)
+        assert first != second
+        with owner, owner.cursor() as cur:
+            load_reference(cur, dict(source='BaseballOS.pitchers', observed_at='2020-01-01T00:00:00Z',
+                                     rows=[dict(id=52, mlb_id=544151)]))
+        assert freeze_generation(worker, day) == second
+        for digest, expected in [(first, primary.rows), (second, [*primary.rows, earlier.rows[-1]])]:
+            verify_generation(worker, digest)
+            with worker, worker.cursor() as cur:
+                cur.execute("""SELECT mlb_id,pitcher_id FROM candidate.edition_pitcher_ids(%s)""", (digest,))
+                assert sorted(cur.fetchall()) == sorted((r['mlb_id'], r['id']) for r in expected)
+        with pytest.raises(psycopg2.errors.ForeignKeyViolation), owner, owner.cursor() as cur:
+            load_reference(cur, replace(earlier, observed_at='2026-10-20T10:00:00Z', rows=[dict(id=51, mlb_id=544151)]))
+        assert freeze_generation(worker, day) == second

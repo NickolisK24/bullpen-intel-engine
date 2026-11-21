@@ -9,7 +9,7 @@ def test_contradictory_or_anonymous_departure_preserves_unrelated_routable_playe
 
     class Cursor:
         def execute(self, sql, args):
-            assert args == ('pinned',)
+            assert args == ('pinned', 'pinned')
 
         def __iter__(self):
             for player, club, name in [(10, 111, 'A'), (30, 137, None), (40, 137, 'B'), (40, 120, 'B')]:
@@ -26,7 +26,7 @@ def test_contradictory_or_anonymous_departure_preserves_unrelated_routable_playe
 def test_forty_man_identity_conflicts_withhold_only_disputed_members():
     class Cursor:
         def execute(self, sql, args):
-            assert args == ('40Man', 'candidate', product_reads.DOMAINS['depth'][1], '40Man', '40Man', '40Man', '40Man')
+            assert args == ('40Man', 'candidate', 'candidate', product_reads.DOMAINS['depth'][1], '40Man', '40Man', '40Man', '40Man')
 
         def __iter__(self):
             for team, mlb, name, sha in [(111, 1, 'One', 'a'), (111, 1, 'One', 'a'), (111, 2, 'Two', 'a'),

@@ -271,8 +271,8 @@ def _public_arms(cur, digest):
             players[mlb] = dict(mlb_id=mlb, team_id=team, name=name, position=position, public_id=None)
     if export is None:
         return players, 'public_id_mapping_unavailable'
-    cur.execute('SELECT mlb_id,pitcher_id FROM candidate.public_pitcher_ids WHERE export=%s AND mlb_id=ANY(%s)',
-                (export, sorted(players)))
+    cur.execute('SELECT mlb_id,pitcher_id FROM candidate.edition_pitcher_ids(%s) WHERE mlb_id=ANY(%s)',
+                (digest, sorted(players)))
     mapping = dict(cur)
     for mlb, public_id in mapping.items():
         players[mlb]['public_id'] = public_id
@@ -292,15 +292,14 @@ def _roster_identities(cur, digest, kind, excluded):
                      AND c.identity=h.mlb_id::text || '/' || %s || '/' || h.represented::text
                    JOIN candidate.revisions r ON r.id=c.revision_id
                    CROSS JOIN LATERAL jsonb_array_elements(r.facts->'members') m(member)
-                   LEFT JOIN candidate.public_pitcher_ids p ON p.export=edition.manifest->>'public_identity_export'
-                     AND p.mlb_id=(m.member->>'id')::bigint
+                   LEFT JOIN candidate.edition_pitcher_ids(%s) p ON p.mlb_id=(m.member->>'id')::bigint
                    WHERE edition.digest=%s AND h.subject='team' AND h.methodology=%s
                      AND h.facts->'views'->%s->>'reason' IS NULL
                      AND (%s <> 'active' OR h.facts#>>'{active_profiles,reason}' IS DISTINCT FROM 'mlb_active_rosters_disagree')
                      AND (h.facts->'views'->%s->'pitchers') ? (m.member->>'id')
                      AND f.endpoint='/teams/' || h.mlb_id::text || '/roster'
                      AND f.parameters=jsonb_build_object('date',h.represented::text,'rosterType',%s::text)
-                   ORDER BY h.mlb_id,f.sha256""", (kind, digest, DOMAINS['depth'][1], kind, kind, kind, kind))
+                   ORDER BY h.mlb_id,f.sha256""", (kind, digest, digest, DOMAINS['depth'][1], kind, kind, kind, kind))
     players, conflicts = {}, set()
     for team, day, facts, inputs, sha, member, public_id in cur:
         mlb = member['id']
@@ -329,11 +328,10 @@ def _pitcher_directory(cur, digest):
                    FROM candidate.generations edition JOIN candidate.generation_inputs g ON g.generation=edition.digest
                    JOIN candidate.workload_history h ON h.id=g.snapshot
                    CROSS JOIN LATERAL jsonb_array_elements(h.facts->'events') e(event)
-                   LEFT JOIN candidate.public_pitcher_ids p ON p.export=edition.manifest->>'public_identity_export'
-                     AND p.mlb_id=(e.event->>'player')::integer
+                   LEFT JOIN candidate.edition_pitcher_ids(%s) p ON p.mlb_id=(e.event->>'player')::integer
                    WHERE edition.digest=%s AND h.subject='team' AND h.methodology='candidate_depth_changes_v1'
                      AND h.facts->>'status'='complete' AND e.event->>'kind'='active_roster_removed'
-                   ORDER BY h.mlb_id,e.event->>'event_id'""", (digest,))
+                   ORDER BY h.mlb_id,e.event->>'event_id'""", (digest, digest))
     unresolved = set()
     for club, represented, facts, inputs, revision, lineage, event, public_id in cur:
         mlb = event['player']
@@ -952,6 +950,14 @@ def read_pitcher(connection, public_id, *, revision=None):
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
             return dict(result, status='outside_represented_bullpens' if status == 'mapped' else status)
+        cur.execute("""SELECT e.digest,e.observed_at,e.payload->>'source',e.payload->'publication_reference'
+                       FROM candidate.edition_identity_archives(%s) AS a(digest)
+                       JOIN candidate.public_pitcher_ids p ON p.export=a.digest
+                       JOIN candidate.public_identity_export e ON e.digest=p.export
+                       WHERE p.mlb_id=%s AND p.pitcher_id=%s ORDER BY e.observed_at,e.digest""",
+                    (digest, player['mlb_id'], public_id))
+        result['identity_sources'] = [dict(export_digest=export, observed_at=at.isoformat(), source=source,
+                                           publication=publication) for export, at, source, publication in cur]
         result['represented_events'] = _pitcher_events(cur, player, selected)
         result['pitcher'] = dict(id=public_id, mlb_id=player['mlb_id'], full_name=player['name'],
                                  position=player['position'], team_id=player['team_id'])

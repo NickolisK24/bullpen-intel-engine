@@ -222,7 +222,7 @@ def verify_board_history(connection, board):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=()):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -253,10 +253,11 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 from sync_v3.replay import ReplayWithheld, install, run_fixture
                 import json
                 reference = json.loads(Path(identity_fixture).read_text()) if identity_fixture else None
+                from sync_v3.public_identities import from_observed_publication
                 if identity_proof:
-                    from sync_v3.public_identities import from_observed_publication
                     reference = from_observed_publication(*identity_proof)
-                install(owner, identity_export=reference)
+                earlier = [from_observed_publication(*proof) for proof in earlier_identity_proofs]
+                install(owner, identity_export=reference, earlier_identity_exports=earlier)
                 count = 0
                 for filename in fixture:
                     try:
@@ -492,6 +493,8 @@ if __name__ == '__main__':
     identities.add_argument('--identity-proof', nargs=2, metavar=('ZIP','SHA256'),
                             help='Use identities observed in a verified archived BaseballOS publication')
     identities.add_argument('--identity-fixture', help='Optional sanitized local export of BaseballOS pitcher identity columns')
+    parser.add_argument('--earlier-identity-proof', action='append', nargs=2, default=[], metavar=('ZIP', 'SHA256'),
+                        help='Also pin identity pairs from an earlier observed publication (repeatable)')
     parser.add_argument('--team-preview-export', nargs=3, metavar=('REPORT', 'SHA256', 'CHECKOUT'),
                         help='Reproduce archived season-complete team pages from the retrospective competition read')
     parser.add_argument('--exercise-selection', action='store_true',
@@ -506,6 +509,8 @@ if __name__ == '__main__':
     ))
     if (args.identity_fixture or args.identity_proof) and not args.fixture:
         parser.error('An identity reference requires an offline source fixture')
+    if args.earlier_identity_proof and not args.identity_proof:
+        parser.error('--earlier-identity-proof requires --identity-proof')
     if args.team_preview_export and not (args.competition and args.identity_proof):
         parser.error('--team-preview-export requires --competition and --identity-proof')
     if args.exercise_selection and not args.build_generation:
@@ -521,4 +526,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export, args.earlier_identity_proof)

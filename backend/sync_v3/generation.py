@@ -159,10 +159,16 @@ def _assemble(cur, through):
                     stale_inputs=stale_inputs, stale_comparisons=stale_comparisons, contract='candidate_generation_inventory_v1', represented=through.isoformat(),
                     availability_reference=reference.isoformat(), clubs=clubs, members=members, missing=missing,
                     current_serving_eligible=False)
-    cur.execute('SELECT digest FROM candidate.public_identity_export ORDER BY observed_at DESC LIMIT 1')
+    cur.execute("SELECT digest, payload ? 'publication_reference' FROM candidate.public_identity_export ORDER BY observed_at DESC LIMIT 1")
     identity_export = cur.fetchone()
     if identity_export:
         manifest['public_identity_export'] = identity_export[0]
+        if identity_export[1]:
+            cur.execute("""SELECT digest FROM candidate.public_identity_export
+                           WHERE payload ? 'publication_reference' AND digest<>%s ORDER BY digest""", (identity_export[0],))
+            earlier = [row[0] for row in cur]
+            if earlier:
+                manifest['earlier_public_identity_exports'] = earlier
     return manifest, parents, schedule_sources
 
 
@@ -399,7 +405,14 @@ def _inspect(cur, digest, compare_latest):
             raise ValueError('Declared games disagree with pinned calendar')
     if 'public_identity_export' in manifest:
         from sync_v3.public_identities import verify_reference
-        verify_reference(cur, manifest['public_identity_export'])
+        source, latest = verify_reference(cur, manifest['public_identity_export'])
+        archives = manifest.get('earlier_public_identity_exports', [])
+        if archives != sorted(set(archives)):
+            raise ValueError('Invalid supplemental identity archive inventory')
+        for earlier in archives:
+            archive_source, observed = verify_reference(cur, earlier)
+            if archive_source != 'BaseballOS.observed_team_state_publication' or archive_source != source or observed >= latest:
+                raise ValueError('Expected a prior observed identity archive')
     coverage = review_coverage(manifest)
     rosters = compare_membership(cur, digest, through.isoformat())
     games = compare_games(cur, digest, manifest)

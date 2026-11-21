@@ -1205,6 +1205,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             pitcher = read_pitcher(worker, 9111)
             assert pitcher['generation'] == board['generation']
             if identity_mode != 'absent':
+                citation, = pitcher['identity_sources']
+                assert citation['source'] == 'BaseballOS.pitchers' and citation['publication'] is None
+                assert len(citation['export_digest']) == 64
                 assert board['active_bullpen'][0]['public_pitcher_id'] == 9111
                 assert pitcher['identity']['mlb_id'] == 11101 and pitcher['identity']['name'] == arm[0]['primary_label']
                 assert pitcher['arm_context'] == displayed_arm['arm_context']

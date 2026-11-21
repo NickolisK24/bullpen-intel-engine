@@ -97,6 +97,8 @@ try {
     await link('Open Former Boston Reliever').click()
     await expect(heading('Former Boston Reliever')).toBeVisible()
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
+    await page.getByText('Pitcher identity sources', { exact: true }).click()
+    await expect(page.getByText('BaseballOS pitcher identity export', { exact: false })).toBeVisible()
     await expect(page.getByText('Removed from the active roster', { exact: false })).toHaveCount(1)
     await visit('/pitcher/8999?rehearsalRevision=2')
     await expect(heading('Former Boston Reliever')).toBeVisible()

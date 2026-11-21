@@ -107,6 +107,18 @@ export function PitcherDetailContent({ data, pitcherId }) {
             {pitcher?.age && <><span>·</span><span>Age {pitcher.age}</span></>}
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
+          {historicalEdition && data.identity_sources?.length > 0 && (
+            <details className="mt-2 text-xs text-chalk400">
+              <summary>Pitcher identity sources</summary>
+              <p>MLB {pitcher.mlb_id} · BaseballOS {pitcher.id}</p>
+              <ul>{data.identity_sources.map(source => (
+                <li key={source.export_digest}>
+                  {source.publication ? `BaseballOS snapshot ${source.publication.snapshot_id}` : 'BaseballOS pitcher identity export'}
+                  {' · Observed '}{source.observed_at.slice(0, 10)}
+                </li>
+              ))}</ul>
+            </details>
+          )}
         </div>
       </div>
 

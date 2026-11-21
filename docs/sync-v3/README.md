@@ -626,3 +626,21 @@ APP_ENV=test AUTO_SYNC=false SYNC_V3_TEST_BROWSER=1 \
 ```
 
 The fixture exercises the same revision-bound browser assertions using synthetic data. The 2017 replay used separately acquired retrospective MLB evidence. Neither run measures production parity or transfers publication authority.
+
+### Recovering historical pitcher routes from publication proofs
+
+The optional, repeatable `--earlier-identity-proof ZIP SHA256` argument supplements `--identity-proof` with earlier, independently verified BaseballOS publications. The frozen edition pins each export digest. A pitcher route requires an explicit MLB/public ID pair in a pinned export and the existing dated baseball evidence for the player. Each Pitcher Detail response cites only the exports containing its pair. Their observation dates are independent of the roster date. Conflicting assignments fail the database identity constraint. The primary proof continues to supply the reference dates and club receipts for publication comparisons.
+
+For the August 28, 2017 edition, snapshots 5656 and 5751 independently identified Albert Suárez (MLB 544150, BaseballOS 51). Snapshot 5843 omitted him. With both earlier archives loaded, private revision 2 retained the same 30 Team States and recovered the Giants route. Search for `Albert Suarez` returned one pitcher, and his detail and dated history resolved. Represented bullpen routes increased from 18 to 19 of 232. The other 213 remained withheld. Revision 1 retained its original Board and withheld route. The new generation digest was `473a4f7fe512bbf81aabde3f0c23e733c54ae6c0a231a42a9e9dd367e0572095`.
+
+Use these additional arguments with the historical day fixtures, `--through 2017-08-28 --build-generation --exercise-selection`, and the separately retained May 7 game evidence described above. The three archive digests were checked against GitHub Actions artifact metadata.
+
+```sh
+--identity-proof "$PROOF_5843" 209f55a6904abf9602946e9b8f5ea5ce836ee398f662442fe199c7dbf169d449 \
+--earlier-identity-proof "$PROOF_5751" 55490a0af6b058a1c2b9263c07d45e7a25b83e7ef8738f927e67b46386aed4fc \
+--earlier-identity-proof "$PROOF_5656" 156e3d33a02c9724540990f448f47de8050d88d140dcdcc3dde1eabcbcdfa945
+```
+
+[Snapshot 5843, artifact 14657943570](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/44794472956) · [Snapshot 5751, artifact 12969263858](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/41040263609) · [Snapshot 5656, artifact 12834450920](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/40727951878)
+
+Three further proofs produced the same result for the original 214 withheld routes. Snapshots 5338 and 5369 contained 380 pitcher identities each, and snapshot 5433 contained 379. All three supported only the Suárez pair among the withheld routes. They were inspected independently of the archives pinned by revision 2. [October 22 proof](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/39803505675) · [October 23 proof](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/39975286406) · [GitHub Actions run 40100640174, artifact 12562352789](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/40100640174)

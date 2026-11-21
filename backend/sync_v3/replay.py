@@ -16,12 +16,18 @@ class ReplayWithheld(ValueError):
     """All receipts persisted, but some candidate work remains unqualified."""
 
 
-def install(owner, *, identity_export=None):
+def install(owner, *, identity_export=None, earlier_identity_exports=()):
     with owner, owner.cursor() as cur:
         for module in (queue, evidence, canonical, history, public_identities, selection):
             cur.execute(Path(module.__file__).with_suffix('.sql').read_text())
         if identity_export is not None:
             public_identities.load_reference(cur, identity_export)
+        for earlier in earlier_identity_exports:
+            if (not isinstance(identity_export, public_identities.ObservedIdentityExport)
+                    or not isinstance(earlier, public_identities.ObservedIdentityExport)
+                    or datetime.fromisoformat(earlier.observed_at) >= datetime.fromisoformat(identity_export.observed_at)):
+                raise ValueError('Supplemental identities require an earlier observed publication')
+            public_identities.load_reference(cur, earlier)
 
 
 def run_fixture(connection, filename):

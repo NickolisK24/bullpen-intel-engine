@@ -141,3 +141,4 @@ def verify_reference(cur, digest):
     cur.execute('SELECT mlb_id,pitcher_id FROM candidate.public_pitcher_ids WHERE export=%s ORDER BY mlb_id', (digest,))
     if [dict(mlb_id=mlb,id=pid) for mlb,pid in cur] != row[0]['rows']:
         raise ValueError('Public pitcher identities disagree with the pinned export')
+    return row[0]['source'], row[1]
