@@ -44,3 +44,69 @@ def test_retry_capture_and_offline_replay():
                     cur.execute("UPDATE candidate.payloads SET encoded_json=''")
         finally:
             worker.close()
+
+
+def test_distinct_offline_captures_in_one_poll_slot_keep_both_observations(tmp_path):
+    from contextlib import closing
+    from datetime import date
+    import json
+    from pathlib import Path
+    from sync_v3.replay import install, run_fixture
+    from sync_v3.rosters import roster_on
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    original = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    day = date.fromisoformat(original['baseball_date'])
+    fixtures = []
+    for minute in (1, 2):
+        original['observed_at'] = f'{day}T10:0{minute}:00Z'
+        roster = next(r for r in original['responses'] if r['params'].get('rosterType') == 'active')
+        roster['body']['roster'] = [{'person': {'id': 100 + minute}, 'position': {'code': '1'}}]
+        path = tmp_path / f'{minute}.json'
+        path.write_text(json.dumps(original))
+        fixtures.append(path)
+    for order in (fixtures, list(reversed(fixtures))):
+        with isolated_cluster(pg) as (owner, connect):
+            install(owner)
+            with closing(connect()) as db:
+                for file in order:
+                    run_fixture(db, file)
+                assert run_fixture(db, order[-1]) == 0
+                with db, db.cursor() as cur:
+                    facts, _ = roster_on(cur, 111, 'active', day)
+                    assert [member['id'] for member in facts['members']] == [102]
+                    cur.execute("""SELECT extract(minute FROM received_at)::int FROM candidate.fetches
+                                   WHERE parameters->>'rosterType'='active' ORDER BY received_at""")
+                    assert cur.fetchall() == [(1,), (2,)]
+
+
+def test_unadmitted_fixture_observation_is_recoverable_without_reconciling_it(tmp_path):
+    from contextlib import closing
+    from hashlib import sha256
+    import json
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    extra = {'endpoint': '/teams/147/roster', 'params': {'rosterType':'active', 'date': fixture['baseball_date']},
+             'body': {'roster': [{'person': {'id': 102}, 'position': {'code': '1'}}]}}
+    fixture['responses'].append(extra)
+    path = tmp_path / 'retained.json'
+    path.write_text(json.dumps(fixture))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_fixture(db, path)
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT p.encoded_json,r.sha256 FROM candidate.captured_requests r
+                               JOIN candidate.payloads p USING (sha256) WHERE r.endpoint=%s""", (extra['endpoint'],))
+                body, digest = cur.fetchone()
+                assert sha256(body).hexdigest() == digest and json.loads(bytes(body)) == extra['body']
+                cur.execute("SELECT count(*) FROM candidate.fetches WHERE endpoint=%s", (extra['endpoint'],))
+                assert cur.fetchone() == (0,)
+                cur.execute("SELECT count(*) FROM candidate.revisions WHERE domain='roster' AND identity LIKE '147/%%'")
+                assert cur.fetchone() == (0,)

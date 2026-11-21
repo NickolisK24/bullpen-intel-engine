@@ -79,7 +79,7 @@ def _day_by_scope(cur, day, scopes):
     results = {scope: ({'lines': [], 'official_lines': [], 'series': {}, 'sources': {row[0]}}, None)
                for scope in scopes}
     present = {g['gamePk'] for entry in schedule.body['dates'] for g in entry['games']}
-    missing = missing_listings(cur, schedule.request.params(), present, game_type='R')
+    missing = missing_listings(cur, schedule.request.params(), present, game_types={'R'})
     for scope in scopes:
         if scope in missing or (scope is None and missing):
             results[scope] = None, 'previous_listing_requires_absence_proof'

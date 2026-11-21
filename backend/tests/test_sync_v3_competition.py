@@ -175,3 +175,42 @@ def test_snapshot_recovers_missing_calendar_and_preserves_rejected_roster():
                 cur.execute('SELECT 1 FROM candidate.workload_history_sources WHERE snapshot=%s AND source_id=%s',
                             (latest[0], refused))
                 assert cur.fetchone() == (1,)
+
+
+def test_intelligence_versions_bind_each_domain_to_its_own_inputs():
+    from contextlib import closing
+    import json
+    import os
+    from pathlib import Path
+    from sync_v3.intelligence_history import DOMAINS, rebuild_intelligence, record_intelligence
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    source = Path(__file__).parent / 'fixtures/sync_v3/played.json'
+    day = date.fromisoformat(json.loads(source.read_text())['baseball_date'])
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            ids = {'team': 147, 'pitcher': 102, 'game': 12345}
+            initial = {domain: record_intelligence(db, domain, ids[subject], day)
+                       for domain, (subject, _, _) in DOMAINS.items()}
+            with pytest.raises(ValueError, match='official MLB'):
+                record_intelligence(db, 'rotation', 9999, day)
+            run_fixture(db, source)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT id FROM candidate.fetches WHERE endpoint='/schedule'")
+                slate = cur.fetchone()[0]
+            changes = rebuild_intelligence(db, slate)
+            assert len(changes) == 5
+            assert all(revision == 2 for _, revision, _ in changes)
+            assert rebuild_intelligence(db, slate) == changes
+            with db, db.cursor() as cur:
+                cur.execute("SELECT methodology,predecessor FROM candidate.workload_history WHERE revision=2")
+                assert dict(cur) == {DOMAINS[d][1]: initial[d][0] for d in ('roles','schedule','game_deployment','rotation','pitcher_rest')}
+                cur.execute("SELECT facts FROM candidate.workload_history WHERE subject='game' AND revision=2")
+                facts, = cur.fetchone()
+                assert facts['game_pk'] == 12345 and facts['relief_appearances'][0]['mlb_player_id'] == 102
+                assert facts['reason'] is None and facts['entry_reason'] == 'missing_complete_plays'

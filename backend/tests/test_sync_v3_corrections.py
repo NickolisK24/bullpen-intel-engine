@@ -441,6 +441,10 @@ def test_disappearing_final_withholds_affected_workload_and_retains_both_schedul
             assert replacement[1] == 2 and replacement[2] != original[2]
             assert rebuild_for_observation(db, receipt) == [replacement]
             with db, db.cursor() as cur:
+                from sync_v3.deployment import club_role_movement
+                movement = club_role_movement(cur, 147, day)
+                assert movement['gaps'][day.isoformat()] == ['previous_listing_requires_absence_proof']
+                assert movement['profiles'] == []
                 for scope in (None, 111, 147):
                     assert regular_day(cur, day, team=scope) == (None, 'previous_listing_requires_absence_proof')
                 assert regular_day(cur, day, team=118)[1] is None

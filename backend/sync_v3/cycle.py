@@ -12,10 +12,12 @@ from sync_v3.discovery import (affiliate_directory_request, calendar_requests, c
                                game_requests, pitcher_requests, roster_requests)
 
 
-def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
+def enqueue_requests(cur, requests, now, *, budget, day, cause=None, capture=None):
     for request in requests:
         payload = {'endpoint': request.endpoint, 'params': request.params()}
-        if cause is not None:
+        if capture is not None:
+            payload['capture'] = capture
+        if capture is None and cause is not None:
             # A queued fetch will observe the change. In-flight or completed
             # requests may have reached the provider before the new signal.
             cur.execute('''SELECT 1 FROM candidate.jobs WHERE budget=%s AND state='pending'
@@ -25,29 +27,30 @@ def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
                 continue
         # Same request in the same policy slot deduplicates across restart.
         slot = int(now.timestamp()) // request.poll_seconds
-        identity = sha256(evidence.encode_json([budget, str(day), slot, request.poll_seconds, payload, cause])).hexdigest()
+        key = [budget, str(day), payload] if capture else [budget, str(day), slot, request.poll_seconds, payload, cause]
+        identity = sha256(evidence.encode_json(key)).hexdigest()
         queue.enqueue(cur, identity, payload, now, budget=budget, product_date=day)
 
 
-def plan_children(cur, observation_id, acquisition, budget, now, day):
+def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture=None):
     if acquisition.request.endpoint == '/schedule' and 'season' in acquisition.request.params():
         # A retrospective season listing cannot revise the one-day final/schedule authority.
         return
     canonical.observe(cur, observation_id, acquisition)
-    affected = rosters.observe(cur, observation_id, acquisition)
+    affected = rosters.observe(cur, observation_id, acquisition, replay_batch=capture is not None)
     if affected:
         day = date.fromisoformat(acquisition.request.params()['endDate'])
         enqueue_requests(cur, roster_requests(day, affected), now,
-                         budget=budget, day=day, cause=observation_id)
+                         budget=budget, day=day, cause=observation_id, capture=capture)
     if acquisition.request.endpoint == '/teams/affiliates':
         directory = depth_directory(acquisition.request, acquisition.body)
-        enqueue_requests(cur, depth_roster_requests(day, directory), now, budget=budget, day=day)
+        enqueue_requests(cur, depth_roster_requests(day, directory), now, budget=budget, day=day, capture=capture)
     if acquisition.request.endpoint == '/schedule':
         represented = acquisition.request.params()['startDate']
         requests = game_requests(date.fromisoformat(represented), acquisition.body,
-                                 now=acquisition.retrieved_at, reconciled=canonical.recently_reconciled(
+                                 now=acquisition.retrieved_at, reconciled=() if capture else canonical.recently_reconciled(
                                      cur, observation_id, acquisition.retrieved_at))
-        enqueue_requests(cur, requests, now, budget=budget, day=date.fromisoformat(represented))
+        enqueue_requests(cur, requests, now, budget=budget, day=date.fromisoformat(represented), capture=capture)
 
 
 def schedule_request(cur, day, now, schedule):
@@ -66,7 +69,9 @@ def schedule_request(cur, day, now, schedule):
 
 
 def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, budget='current', max_jobs=32,
-              clock=lambda: datetime.now(timezone.utc)):
+              clock=lambda: datetime.now(timezone.utc), capture=None):
+    if capture is not None and budget != 'historical':
+        raise ValueError('A captured batch requires the historical budget')
     if type(max_jobs) is not int or not 1 <= max_jobs <= 256:
         raise ValueError('Cycle limit must be between one and 256 jobs')
     with connection, connection.cursor() as cur:
@@ -79,14 +84,14 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         if competition:
             requests += (competition_calendar_request(day.year),)
         requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)
-        enqueue_requests(cur, requests, now, budget=budget, day=day)
+        enqueue_requests(cur, requests, now, budget=budget, day=day, capture=capture)
 
     receipts = []
     for _ in range(max_jobs):
         with connection, connection.cursor() as cur:
-            claimed = queue.claim(cur, clock(), budget=budget, product_date=day)
+            claimed = queue.claim(cur, clock(), budget=budget, product_date=day, capture=capture)
         if not claimed:
             break
         receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=lambda c, oid, acquired:
-                                         plan_children(c, oid, acquired, budget, clock(), day)))
+                                         plan_children(c, oid, acquired, budget, clock(), day, capture=capture)))
     return receipts

@@ -59,7 +59,7 @@ def _sample(cur, subject, mlb_id, through):
             slates = replay(cur, receipt[0]).body['dates']
             if gaps[day] == 'previous_listing_requires_absence_proof':
                 present = {g['gamePk'] for slate in slates for g in slate['games']}
-                for team, receipts in missing_listings(cur, request.params(), present, game_type='R').items():
+                for team, receipts in missing_listings(cur, request.params(), present, game_types={'R'}).items():
                     if subject == 'pitcher' or team == mlb_id:
                         lineage.update(receipts)
             for slate in slates:

@@ -14,6 +14,7 @@ from sync_v3.performance import final_performance_counts, performance_line, perf
 from sync_v3.discovery import calendar_requests
 from sync_v3.handoff import game_handoffs
 from sync_v3.pitch_measurements import game_pitch_samples, monthly_pitch_sample
+from sync_v3.schedule_context import missing_listings
 from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.workload import _game_workload
 
@@ -153,7 +154,12 @@ def club_role_movement(cur, team, through):
             gaps[represented] = ['missing_complete_schedule']
             continue
         sources[represented] = {'schedule': source, 'games': {}}
-        for entry in replay(cur, source).body['dates']:
+        dates = replay(cur, source).body['dates']
+        present = {game['gamePk'] for entry in dates for game in entry['games']}
+        if team in missing_listings(cur, schedule.params(), present, game_types=role_movement.GAME_TYPES):
+            gaps[represented] = ['previous_listing_requires_absence_proof']
+            continue
+        for entry in dates:
             for game in entry['games']:
                 if game['gameType'] not in role_movement.GAME_TYPES:
                     continue

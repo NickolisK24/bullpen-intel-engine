@@ -7,6 +7,7 @@ from psycopg2.extras import Json
 from services.mlb_api import mlb_client
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import roster_entry_player_id
+from sync_v3.dependencies import consult
 from sync_v3.evidence import latest_source_status
 from sync_v3.canonical import Refused, accept
 from sync_v3.roster_scope import classify_roster_team
@@ -48,7 +49,7 @@ def roster_facts(capture):
             'members': [members[person] for person in sorted(members)]}
 
 
-def observe(cur, source_id, capture):
+def observe(cur, source_id, capture, *, replay_batch=False):
     req = capture.request
     if req.endpoint.endswith('/roster') and 'hydrate' not in req.params():
         facts = roster_facts(capture)
@@ -67,7 +68,11 @@ def observe(cur, source_id, capture):
         if not record['transaction_id']:
             raise Refused('Official transaction identity is required')
         revision = accept(cur, 'transaction', record['transaction_id'], record, source_id, capture.retrieved_at)
-        if revision:
+        if replay_batch:
+            # Independently captured dated roster responses exist even when another
+            # fixture has already confirmed the same transaction. Preserve their scope.
+            teams.update(t for t in (record['from_team_id'], record['to_team_id']) if t in MLB_TEAM_IDS)
+        elif revision:
             cur.execute('SELECT source_id FROM candidate.revisions WHERE id=%s', (revision,))
             if cur.fetchone()[0] == source_id:
                 teams.update(t for t in (record['from_team_id'], record['to_team_id']) if t in MLB_TEAM_IDS)
@@ -95,15 +100,20 @@ def membership_on(cur, team, kind, represented, player):
 def dated_pitcher_sources(cur, player, represented):
     """Positive identity proof for an arm with no qualifying relief appearance."""
     endpoints = [f'/teams/{team}/roster' for team in sorted(MLB_TEAM_IDS)]
-    cur.execute("""SELECT latest.id FROM unnest(%s::text[]) AS club(endpoint)
-                   CROSS JOIN LATERAL (
+    params = {'date': represented.isoformat(), 'rosterType': 'active'}
+    cur.execute("""SELECT club.endpoint,latest.id,(latest.outcome='received' AND r.facts->'members' @> %s)
+                   FROM unnest(%s::text[]) AS club(endpoint)
+                   LEFT JOIN LATERAL (
                        SELECT f.id, f.outcome FROM candidate.fetches f
                        WHERE f.endpoint=club.endpoint AND f.parameters=%s
-                       ORDER BY f.received_at DESC, f.id DESC LIMIT 1
-                   ) latest
-                   JOIN candidate.confirmations c ON c.source_id=latest.id AND c.domain='roster'
-                   JOIN candidate.revisions r ON r.id=c.revision_id
-                   WHERE latest.outcome='received' AND r.facts->'members' @> %s
-                   ORDER BY latest.id""", (endpoints, Json({'date': represented.isoformat(), 'rosterType': 'active'}),
-                                           Json([{'id': player, 'position': '1'}])))
-    return [row[0] for row in cur]
+                       ORDER BY f.received_at DESC,f.id DESC LIMIT 1
+                   ) latest ON true
+                   LEFT JOIN candidate.confirmations c ON c.source_id=latest.id AND c.domain='roster'
+                   LEFT JOIN candidate.revisions r ON r.id=c.revision_id
+                   ORDER BY latest.id""", (Json([{'id': player, 'position': '1'}]), endpoints, Json(params)))
+    sources = []
+    for endpoint, source, present in cur:
+        consult(cur, endpoint, params, source)
+        if present:
+            sources.append(source)
+    return sources

@@ -21,3 +21,13 @@ CREATE TABLE candidate.refusals (
     reason text NOT NULL
 );
 GRANT SELECT,INSERT ON candidate.refusals TO sync_v3_worker;
+
+CREATE TABLE candidate.captured_requests (
+    capture text NOT NULL CHECK (length(capture)=64),
+    endpoint text NOT NULL,
+    parameters jsonb NOT NULL,
+    received_at timestamptz NOT NULL,
+    sha256 text NOT NULL REFERENCES candidate.payloads(sha256),
+    PRIMARY KEY (capture,endpoint,parameters)
+);
+GRANT SELECT,INSERT ON candidate.captured_requests TO sync_v3_worker;

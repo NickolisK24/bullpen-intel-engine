@@ -155,3 +155,21 @@ For an accepted final revision, `sync_v3.history.rebuild_for_final` refreshes th
 Use `--snapshot --readiness-team TEAM_ID --through YYYY-MM-DD` to freeze a club's represented Team State, individual arm reads, coverage and independent comparison. Accepted and refused evidence receipts are retained alongside the exact request scopes consulted, including requests with no receipt. A later observation can therefore recover a previously missing input. `sync_v3.readiness_history.rebuild_readiness` selects only latest snapshots that depended on the observed request. Snapshot construction and dependency recording share one serializable transaction.
 
 Two PostgreSQL 17.6 clusters replayed the August 7, 2024 evidence in opposite fixture orders. Both produced identical input and semantic digests for Boston, Kansas City and New York, covering 23 arm decisions. Injecting a malformed Lucas Erceg game-log response superseded Kansas City's snapshot with `incomplete_roster_role_evidence` and retained its prior Stretched read. Repeating the rebuild reused the same revision. All of these snapshots carry `current_serving_eligible=false`.
+
+### Replaying daily intelligence history
+
+`--snapshot-domain` freezes one of nine calculations under its own methodology and records each dependency in the same transaction. Use `--team` for readiness, rotation, schedule, depth, roles or group_performance. Use `--pitcher` for pitcher_profile or pitcher_rest, and `--game` for game_deployment. Each replay reports both the semantic digest and the digest of its input evidence. Add `--since YYYY-MM-DD` to rebuild every represented day through the inclusive `--through` date. The existing workload snapshot commands remain available.
+
+From the backend directory, this command exercises the game snapshot on the checked-in synthetic fixture:
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$(pg_config --bindir)" \
+  --fixture tests/fixtures/sync_v3/played.json --game 12345 \
+  --snapshot-domain game_deployment --through 2026-07-29
+```
+
+`sync_v3.intelligence_history.rebuild_intelligence` refreshes latest snapshots that consulted a changed request. A PostgreSQL test supplied one previously missing daily slate. Five dependent snapshots acquired successors, the other four kept their original revisions, and repeating the rebuild produced no duplicates.
+
+The historical MLB rehearsal used 27 captures in two fresh PostgreSQL 17.6 clusters. All 3,161 supplied parsed responses were archived in each cluster. There were 920 responses preserved solely as acquisition evidence in each order. The archive keeps the endpoint, parameters, retrieval time and payload digest even when transaction validation withholds downstream roster processing. Raw HTTP wire bytes are outside this archive's contract.
+
+Loading those captures in reverse reproduced the same facts and input digests for all nine sampled calculations. The comparison included Kansas City's rotation, schedule, affiliate depth, active-group performance and observed roles, Lucas Erceg's workload and pitch profile, and game 746604. Rehearsal jobs use the capture's content identity so two actual observations taken during the same polling interval both survive replay. Ordinary acquisition retains its polling policy.

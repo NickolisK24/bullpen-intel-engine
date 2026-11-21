@@ -1,6 +1,6 @@
 CREATE TABLE candidate.workload_history (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    subject text NOT NULL CHECK (subject IN ('team','pitcher')),
+    subject text NOT NULL CHECK (subject IN ('team','pitcher','game')),
     mlb_id integer NOT NULL CHECK (mlb_id > 0),
     represented date NOT NULL,
     methodology text NOT NULL,

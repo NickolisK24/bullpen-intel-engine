@@ -38,7 +38,7 @@ def _club_rows(games, team, day):
     return rows, None
 
 
-def missing_listings(cur, params, present, *, game_type=None):
+def missing_listings(cur, params, present, *, game_types=None):
     # A game disappearing from a subsequent league response is governed by a
     # separate retirement proof. Preserve the uncertainty in an offline read.
     cur.execute("""SELECT DISTINCT ON (c.identity) f.id,r.facts
@@ -48,7 +48,7 @@ def missing_listings(cur, params, present, *, game_type=None):
                    ORDER BY c.identity, f.received_at DESC, f.id DESC""", (Json(params), [str(pk) for pk in present]))
     missing = {}
     for source, game in cur:
-        if game_type and game['gameType'] != game_type:
+        if game_types and game['gameType'] not in game_types:
             continue
         row = _parse_game(game)
         if not is_unplayed_terminal_schedule_row(row['status_state'], row['status_code']):
