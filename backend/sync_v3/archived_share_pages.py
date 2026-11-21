@@ -8,6 +8,7 @@ from zipfile import ZipFile
 
 from scripts.verify_generated_share_previews import _meta
 from services.share_artifact_public import is_valid_public_id
+from services.share_artifact_previews import build_share_artifact_preview, render_share_artifact_html
 
 
 def _open_verified(source, digest):
@@ -17,8 +18,8 @@ def _open_verified(source, digest):
     return ZipFile(source)
 
 
-def compare_share_pages(pages_path, pages_digest, report_path, report_digest, share_root):
-    """Verify archived HTML and the offline delivery tree without accessing application state."""
+def compare_share_pages(pages_path, pages_digest, report_path, report_digest, share_root, *, stored_artifacts=()):
+    """Compare delivery bytes and, when supplied, reproduce pages from isolated historical artifact records."""
     prefix = 'frontend/public/share/'
     with Path(pages_path).open('rb') as pages_file, Path(report_path).open('rb') as report_file, \
             _open_verified(pages_file, pages_digest) as pages, _open_verified(report_file, report_digest) as report:
@@ -42,6 +43,8 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
             raise ValueError('Share fallback differs from its delivery digest')
         types = {}
         dates = []
+        source_pairs = set()
+        pages_with_source_pair = 0
         for name in names:
             public_id, separator, filename = name.partition('/')
             if not is_valid_public_id(public_id) or public_id in ('.', '..') or not separator or filename != 'index.html':
@@ -52,12 +55,28 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
             meta = _meta(page.decode('utf-8'))
             if meta.get('representation') != 'immutable_share_artifact' or meta.get('public-id') != public_id:
                 raise ValueError(f'Historical share identity differs for {public_id}')
+            if meta.get('snapshot-id') and meta.get('sync-run-id'):
+                source_pairs.add((meta['snapshot-id'], meta['sync-run-id']))
+                pages_with_source_pair += 1
             kind = meta['artifact-type']
             types[kind] = types.get(kind, 0) + 1
             dates.append(date.fromisoformat(meta['data-through']))
         if types != export['artifact_type_counts']:
             raise ValueError('Historical share artifact types differ')
-        return dict(scope='historical_rendered_pages', pages=len(names), artifact_types=types,
+        compared = set()
+        for artifact in stored_artifacts:
+            public_id = artifact.public_id
+            path = f'{prefix}{public_id}/index.html'
+            if public_id in compared or path not in paths:
+                raise ValueError(f'Unexpected stored share identity: {public_id}')
+            preview = build_share_artifact_preview(artifact)
+            rendered = render_share_artifact_html(preview).encode('utf-8')
+            if sha256(rendered).hexdigest() != digests[path]:
+                raise ValueError(f'Stored share record does not reproduce {public_id}')
+            compared.add(public_id)
+        return dict(scope='historical_rendered_pages', stored_records_compared=len(compared),
+                    pages_without_record_comparison=len(names) - len(compared), distinct_source_pairs=len(source_pairs),
+                    pages_with_source_pair=pages_with_source_pair, pages=len(names), artifact_types=types,
                     earliest_data_through=min(dates).isoformat(), latest_data_through=max(dates).isoformat(),
                     export_snapshot=export['publication_snapshot_id'], export_sync_run=export['publication_sync_run_id'])
 
