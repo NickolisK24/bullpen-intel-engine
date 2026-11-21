@@ -132,7 +132,11 @@ def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=
                    ORDER BY revision DESC LIMIT 1""", scope)
     previous = cur.fetchone()
     if previous and previous[2:] == (content_hash, input_hash):
-        return previous[0], previous[1], content_hash
+        # Identical source bodies may have been acquired again. Freeze the new
+        # receipt links once so a rebuild can settle its outstanding scope.
+        cur.execute('SELECT source_id FROM candidate.workload_history_sources WHERE snapshot=%s', (previous[0],))
+        if {row[0] for row in cur} == set(sources):
+            return previous[0], previous[1], content_hash
     revision = previous[1] + 1 if previous else 1
     cur.execute("""INSERT INTO candidate.workload_history
                    (subject,mlb_id,represented,methodology,revision,predecessor,semantic_digest,input_digest,facts)

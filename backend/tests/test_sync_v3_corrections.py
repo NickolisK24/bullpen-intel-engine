@@ -679,6 +679,21 @@ def test_generation_keeps_all_clubs_and_pins_immutable_event_inputs():
                                SELECT min(id),'/schedule','{}'::jsonb FROM candidate.workload_history""")
             assert verify_generation(db, first)['snapshots'] == 2
             assert verify_generation(db, blank)['snapshots'] == 0
+            # A valid content hash alone cannot certify omitted scopes or an invented empty slate.
+            from hashlib import sha256
+            from psycopg2.extras import Json
+            from sync_v3.evidence import encode_json
+            for altered, error in (
+                (dict(empty, missing=[]), 'scope coverage'),
+                (dict(empty, availability_reference=str(end)), 'scope coverage'),
+                (dict(empty, slate=dict(empty['slate'], games=[], reason=None)), 'pinned successful receipt'),
+            ):
+                digest = sha256(encode_json(altered)).hexdigest()
+                with db, db.cursor() as cur:
+                    cur.execute('INSERT INTO candidate.generations (digest,represented,manifest) VALUES (%s,%s,%s)',
+                                (digest, end, Json(altered)))
+                with pytest.raises(ValueError, match=error):
+                    verify_generation(db, digest)
             with pytest.raises(psycopg2.errors.RaiseException, match='membership is sealed'), db, db.cursor() as cur:
                 cur.execute('INSERT INTO candidate.generation_inputs SELECT %s,min(id) FROM candidate.workload_history',
                             (blank,))

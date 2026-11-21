@@ -1,6 +1,7 @@
 """Assemble an immutable inventory of one represented candidate generation."""
 
 from hashlib import sha256
+import json
 
 from psycopg2.extras import Json
 
@@ -65,45 +66,40 @@ def _slate(cur, day):
     if missing:
         result['reason'] = 'previous_listing_requires_absence_proof'
         return result, {source}.union(*missing.values())
-    result['games'] = []
+    result['games'] = _competitive_games(games)
+    result['reason'] = None
+    return result, {source}
+
+
+def _competitive_games(games):
+    result = []
     for game in sorted(games, key=lambda item: item['gamePk']):
         if game['gameType'] in GAME_TYPES:
             status = classify_status(game['status'])
-            result['games'].append(dict(game_pk=game['gamePk'], game_type=game['gameType'],
-                                        home=game['teams']['home']['team']['id'], away=game['teams']['away']['team']['id'],
-                                        status=status.state, final=status.final_status))
-    result['reason'] = None
-    return result, {source}
+            result.append(dict(game_pk=game['gamePk'], game_type=game['gameType'],
+                               home=game['teams']['home']['team']['id'], away=game['teams']['away']['team']['id'],
+                               status=status.state, final=status.final_status))
+    return result
 
 
 def freeze_generation(connection, through):
     return _transaction(connection, _freeze, through)
 
 
-def _freeze(cur, through):
-    membership, reference = trusted_slate_reference_dates(through)
-    if membership != through or reference is None:
-        raise ValueError('A represented baseball date is required')
+CLUB_INPUTS = {DOMAINS[d][1]: d for d in ('depth', 'readiness', 'rotation')}
+
+
+def _inventory(through, reference, team_inputs, slate):
     club_methods = {method for subject, method, _ in DOMAINS.values() if subject == 'team'} | {METHODOLOGY}
     club_methods.update(f'candidate_{domain}_changes_v1' for domain in COMPARISONS if domain != 'pitcher_rest')
     pitcher_methods = {METHODOLOGY, DOMAINS['pitcher_rest'][1], DOMAINS['pitcher_profile'][1],
                       'candidate_pitcher_rest_changes_v1'}
     game_method = DOMAINS['game_deployment'][1]
-    cur.execute("""SELECT DISTINCT ON (subject,mlb_id,methodology) subject,mlb_id,methodology,id,revision,
-                   semantic_digest,input_digest,CASE WHEN methodology=ANY(%s) THEN facts END
-                   FROM candidate.workload_history WHERE represented=%s
-                   ORDER BY subject,mlb_id,methodology,revision DESC""",
-                ([DOMAINS[d][1] for d in ('depth', 'readiness', 'rotation')], through))
-    snapshots = {}
-    for subject, entity, method, sid, revision, semantic, inputs, facts in cur:
-        snapshots[subject, entity, method] = (sid, revision, semantic, inputs, facts)
     expected, clubs = set(), []
     for team in sorted(MLB_TEAM_IDS):
         expected.update(('team', team, method) for method in club_methods)
-        def team_facts(domain):
-            row = snapshots.get(('team', team, DOMAINS[domain][1]))
-            return row[-1] if row else None
-        depth, rotation = team_facts('depth'), team_facts('rotation')
+        inputs = team_inputs.get(team, {})
+        depth, rotation = inputs.get('depth'), inputs.get('rotation')
         pitchers, games = None, None
         if depth:
             view = depth['views']['active']
@@ -112,17 +108,37 @@ def _freeze(cur, through):
                 pitchers = sorted(map(int, view['pitchers']))
                 expected.update(('pitcher', player, method) for player in pitchers for method in pitcher_methods)
         if rotation:
-            slate = rotation['dates'][through.isoformat()]
-            if not slate['reason']:
-                games = sorted(game['game_pk'] for game in slate['games'])
+            club_day = rotation['dates'][through.isoformat()]
+            if not club_day['reason']:
+                games = sorted(game['game_pk'] for game in club_day['games'])
                 expected.update(('game', game, game_method) for game in games)
         clubs.append(dict(team=team, pitchers=pitchers, regular_season_finals=games,
-                          readiness=_readiness_status(team, through, reference, team_facts('readiness'))))
-    slate, seen = _slate(cur, through)
-    next_slate, upcoming = _slate(cur, reference)
+                          readiness=_readiness_status(team, through, reference, inputs.get('readiness'))))
     for game in slate['games'] or ():
         if game['final']:
             expected.add(('game', game['game_pk'], game_method))
+    return expected, clubs
+
+
+def _freeze(cur, through):
+    membership, reference = trusted_slate_reference_dates(through)
+    if membership != through or reference is None:
+        raise ValueError('A represented baseball date is required')
+    cur.execute("""SELECT DISTINCT ON (subject,mlb_id,methodology) subject,mlb_id,methodology,id,revision,
+                   semantic_digest,input_digest,CASE WHEN methodology=ANY(%s) THEN facts END
+                   FROM candidate.workload_history WHERE represented=%s
+                   ORDER BY subject,mlb_id,methodology,revision DESC""",
+                (list(CLUB_INPUTS), through))
+    snapshots = {}
+    for subject, entity, method, sid, revision, semantic, inputs, facts in cur:
+        snapshots[subject, entity, method] = (sid, revision, semantic, inputs, facts)
+    slate, seen = _slate(cur, through)
+    next_slate, upcoming = _slate(cur, reference)
+    team_inputs = {}
+    for (subject, entity, method), snapshot in snapshots.items():
+        if subject == 'team' and method in CLUB_INPUTS:
+            team_inputs.setdefault(entity, {})[CLUB_INPUTS[method]] = snapshot[-1]
+    expected, clubs = _inventory(through, reference, team_inputs, slate)
     schedule_sources = sorted(seen | upcoming)
     cur.execute('''SELECT parameters,received_at,sha256,outcome FROM candidate.fetches WHERE id=ANY(%s)
                    ORDER BY parameters,received_at,sha256,outcome''', (schedule_sources,))
@@ -304,6 +320,9 @@ def _verify(cur, digest):
     members = {(m['subject'], m['mlb_id'], m['method']): m for m in manifest['members']}
     if len(members) != len(manifest['members']) or members.keys() & {tuple(s) for s in manifest['missing']}:
         raise ValueError('Inconsistent candidate scope inventory')
+    declared = set(members)
+    missing = [tuple(s) for s in manifest['missing']]
+    team_inputs = {}
     # Pitch profiles and game facts can be large. Keep memory bounded during full verification.
     with cur.connection.cursor(name='verify_candidate_members') as stream:
         stream.itersize = 8
@@ -320,23 +339,51 @@ def _verify(cur, digest):
             if evidence_digest(receipts, requests) != inputs:
                 raise ValueError('Pinned snapshot sources disagree with the frozen input digest')
             actual = sha256(encode_json([subject, entity, day.isoformat(), method, facts])).hexdigest()
+            if subject == 'team' and method in CLUB_INPUTS:
+                team_inputs.setdefault(entity, {})[CLUB_INPUTS[method]] = facts
             member = members.pop((subject, entity, method), None)
             if (not member or day != through or member['revision'] != revision or member['input_digest'] != inputs
                     or semantic != actual or member['semantic_digest'] != actual):
                 raise ValueError('Pinned candidate snapshot disagrees with the manifest')
+    _, reference = trusted_slate_reference_dates(through)
+    expected_scopes, clubs = _inventory(through, reference, team_inputs, manifest['slate'])
+    if (clubs != manifest['clubs'] or manifest['availability_reference'] != reference.isoformat()
+            or declared.union(missing) != expected_scopes or len(missing) != len(set(missing))):
+        raise ValueError('Pinned facts disagree with declared club or scope coverage')
     if members:
         raise ValueError('Missing pinned candidate snapshots')
-    cur.execute("""SELECT f.parameters,f.received_at,f.outcome,f.sha256,p.encoded_json
+    cur.execute("""SELECT f.parameters,f.received_at,f.outcome,f.sha256,p.encoded_json,f.endpoint,coalesce(r.reason,f.reason)
                    FROM candidate.generation_sources s JOIN candidate.fetches f ON f.id=s.source
-                   LEFT JOIN candidate.payloads p ON p.sha256=f.sha256 WHERE s.generation=%s
-                   ORDER BY f.parameters,f.received_at,f.sha256,f.outcome""", (digest,))
+                   LEFT JOIN candidate.payloads p ON p.sha256=f.sha256 LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                   WHERE s.generation=%s
+                   ORDER BY f.parameters,f.received_at,f.sha256,f.outcome,f.id""", (digest,))
     calendars = []
-    for params, at, outcome, expected, payload in cur:
+    dates = (through, reference)
+    requests = [calendar_requests(day)[0].params() for day in dates]
+    by_date = [[], []]
+    for params, at, outcome, expected, payload, endpoint, reason in cur:
+        if endpoint != '/schedule' or params not in requests:
+            raise ValueError('Unexpected source in pinned calendars')
+        by_date[requests.index(params)].append((outcome, reason, payload))
         if expected is not None and (payload is None or sha256(payload).hexdigest() != expected):
             raise ValueError('Calendar payload digest mismatch')
         calendars.append(dict(parameters=params, received_at=at.isoformat(), digest=expected, outcome=outcome))
     if calendars != manifest['calendar_sources']:
         raise ValueError('Pinned calendars disagree with the manifest')
+    for index, key in enumerate(('slate', 'next_slate')):
+        slate = manifest[key]
+        if slate['represented'] != dates[index].isoformat():
+            raise ValueError('Misaligned pinned calendar date')
+        if slate['reason']:
+            if slate['games'] is not None:
+                raise ValueError('Withheld calendar declares games')
+            continue
+        receipts = by_date[index]
+        if len(receipts) != 1 or receipts[0][:2] != ('received', None) or receipts[0][2] is None:
+            raise ValueError('Calendar lacks a pinned successful receipt')
+        games = [g for entry in json.loads(bytes(receipts[0][2]))['dates'] for g in entry['games']]
+        if slate['games'] != _competitive_games(games):
+            raise ValueError('Declared games disagree with pinned calendar')
     coverage = review_coverage(manifest)
     rosters = compare_membership(cur, digest, through.isoformat())
     games = compare_games(cur, digest, manifest)

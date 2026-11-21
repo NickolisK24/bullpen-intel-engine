@@ -235,6 +235,19 @@ def test_generation_detects_new_roster_receipt_before_snapshot_rebuild(tmp_path)
                                 (generation,))
                     assert cur.fetchone()[0] == stale
 
+            # The club and slate were observed again with identical source bodies.
+            fixture['observed_at'] = '2026-11-21T12:00:00Z'
+            path.write_text(json.dumps(fixture))
+            run_fixture(db, path)
+            depth = record_intelligence(db, 'depth', 111, day)
+            workload = record_workload(db, 'team', 111, day)
+            rebuilt = freeze_generation(db, day)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT manifest->'stale_inputs' FROM candidate.generations WHERE digest=%s", (rebuilt,))
+                assert cur.fetchone()[0] == []
+            assert record_intelligence(db, 'depth', 111, day) == depth
+            assert record_workload(db, 'team', 111, day) == workload
+
 
 def test_candidate_membership_requires_matching_entities_dates_and_official_roster_receipt():
     from sync_v3.cohort import _club_membership
