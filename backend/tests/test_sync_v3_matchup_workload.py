@@ -49,3 +49,18 @@ def test_game_date_controls_both_sides_of_the_rest_comparison():
         assert result['reason_code'] == 'rest_reference_date_mismatch'
         assert result['team_a'] is None and result['team_b'] is None
     assert _matchup_rest(side, dict(side, rest=None), '2024-08-08')['status'] == 'withheld'
+
+
+def test_competitive_matchup_projects_the_board_counts_and_withholds_an_unobserved_week(snapshot):
+    from sync_v3.product_reads import _seven_day_side
+
+    overview = snapshot['windows']['workload']
+    week = overview['windows']['window_7']
+    for field, value in [('appearances', 18), ('outs', 47), ('pitches', 245)]:
+        week[field] = dict(status='complete', value=value)
+    overview['concentration_7_day'] = dict(status='unavailable', pitcher_count=None)
+    assert _seven_day_side(overview, 8) == dict(window_days=7, relief_appearances=18, pitches=245,
+                                             contributing_relievers=8, innings='15.2')
+    for field in ('appearances', 'pitches', 'outs'):
+        week[field] = dict(status='unavailable', value=None, reason_codes=['missing_game'])
+    assert _seven_day_side(overview, None) is None

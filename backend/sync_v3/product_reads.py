@@ -501,9 +501,6 @@ def _matchup_workload(snapshot, through):
     """Project only seven-day club relief totals verified against the pinned finals."""
     from datetime import timedelta
     from services.public_team_relief_work import WORKLOAD_WINDOWS_POPULATION_BASIS, WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
-    from services.rotation_support_pressure import _baseball_innings
-    from services.tonight_read_model import _workload_7d
-
     evidence = snapshot['windows']
     overview = evidence['workload']
     week = overview['windows']['window_7']
@@ -512,10 +509,20 @@ def _matchup_workload(snapshot, through):
             or overview['population_basis'] != WORKLOAD_WINDOWS_POPULATION_BASIS
             or overview['window_policy'] != WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY):
         return None
-    counts = _workload_7d(overview)
     concentration = overview['concentration_7_day']
+    count = concentration['pitcher_count'] if concentration['status'] == 'complete' else None
+    return _seven_day_side(overview, count)
+
+
+def _seven_day_side(overview, contributor_count):
+    from services.rotation_support_pressure import _baseball_innings
+    from services.tonight_read_model import _workload_7d
+
+    counts = _workload_7d(overview)
+    if all(counts[k] is None for k in ('appearances', 'pitches', 'outs')):
+        return None
     return dict(window_days=7, relief_appearances=counts['appearances'], pitches=counts['pitches'],
-                contributing_relievers=concentration['pitcher_count'] if concentration['status'] == 'complete' else None,
+                contributing_relievers=contributor_count,
                 innings=_baseball_innings(counts['outs']) if counts['outs'] is not None else None)
 
 
@@ -726,7 +733,7 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                         and start.isoformat() <= represented <= end.isoformat()
                         and line['games_started'] == 0 and line['save'] == 1):
                     save_games.setdefault((club, line['pitcher_mlb_id']), set()).add(pk)
-        sides, role_rests = {}, {}
+        sides, role_rests, workloads, workload_methods = {}, {}, {}, {}
         for row in league['teams']:
             team = row['team_id']
             if team not in clubs:
@@ -763,7 +770,17 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                                    back_to_back=inputs.get('back_to_back'))))
                 public_usage[player['public_id']] = usage.get(mlb)
             role_rests[team] = named_role_rest(active, named)
-            overview = facts[team, METHODOLOGY]['windows']['workload']
+            if facts[team, reads].get('workload_scope') == 'competitive_postseason_window':
+                from sync_v3.team_board_windows import board_workload_windows
+                regular = appearance_ledger(cur, generation, 'team', team, end)
+                playoff = postseason_appearances(cur, generation, 'team', team, end, team)
+                overview = board_workload_windows(cur, generation, team, end, regular, playoff)
+                workloads[team] = _seven_day_side(overview, overview['contributing_relievers_7d'])
+                workload_methods[team] = 'official_competitive_club_relief'
+            else:
+                overview = facts[team, METHODOLOGY]['windows']['workload']
+                workloads[team] = _matchup_workload(facts[team, METHODOLOGY], end)
+                workload_methods[team] = METHODOLOGY
             sides[team] = dict(team_id=team, abbreviation=row['team_abbreviation'], name=row['team_name'],
                                available=state['available'], reason_code=state['reason_code'],
                                team_state={k: state[k] for k in ('public_state','public_label','available','reason_code')},
@@ -774,7 +791,6 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         result['games'] = sorted((tonight._game_card(row, sides[row.away_team_id], sides[row.home_team_id])
                                   for row in games), key=tonight._game_order)
         performances = {team: _performance_window(facts[team, DOMAINS['group_performance'][1]], 'season') for team in clubs}
-        workloads = {team: _matchup_workload(facts[team, METHODOLOGY], end) for team in clubs}
         league_by_club = {row['team_id']: row for row in league['teams']}
         game_dates = {row.game_pk: row.game_date_et.isoformat() for row in games}
         from models.slate_game import SlateGame
@@ -809,8 +825,10 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                                stamp_b=rotation_stamp, partial=bool(limitations), limitations=limitations)
             away_work = workloads[card['away']['team_id']]
             home_work = workloads[card['home']['team_id']]
-            work_stamp = (generation, league['data_through'], METHODOLOGY)
-            card['workload'] = _aligned_domain('workload', away_work, home_work, stamp_a=work_stamp, stamp_b=work_stamp,
+            work_stamp = (generation, league['data_through'])
+            card['workload'] = _aligned_domain('workload', away_work, home_work,
+                                               stamp_a=(*work_stamp, workload_methods[away_row['team_id']]),
+                                               stamp_b=(*work_stamp, workload_methods[home_row['team_id']]),
                                                partial=any(None in side.values() for side in (away_work, home_work) if side))
             card['role_rest'] = _aligned_domain('role_rest', role_rests[card['away']['team_id']],
                                                 role_rests[card['home']['team_id']], stamp_a=stamp, stamp_b=stamp)

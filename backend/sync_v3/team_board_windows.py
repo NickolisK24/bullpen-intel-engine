@@ -99,6 +99,7 @@ def board_workload_windows(cur, digest, team, through, regular, postseason):
             day, through.year, season_digest, slates[day], daily[day], expected[day], verified)
         coverage[key] = dict(complete_enough_to_publish=reason is None, reason_codes=[reason] if reason else [])
     logs = []
+    outings = []
     for line in regular['appearances'] + postseason['appearances']:
         day = date.fromisoformat(line['game_date'])
         if line['appearance_team_id'] != team or not start <= day <= through:
@@ -109,7 +110,15 @@ def board_workload_windows(cur, digest, team, through, regular, postseason):
         log = SimpleNamespace(game_date=day, games_started=0, pitches_thrown=line['pitches_thrown'],
                               innings_pitched_outs=line['innings_pitched_outs'])
         logs.append(log)
-    return dict(data_through=through.isoformat(), windows=team_relief_windows(logs, through, coverage),
+        if day >= through - timedelta(days=6):
+            outings.append((line['game_pk'], line.get('mlb_id')))
+    windows = team_relief_windows(logs, through, coverage)
+    appearances = windows['window_7']['appearances']
+    count = None
+    if (appearances['status'] == 'complete' and appearances['value'] == len(outings) == len(set(outings))
+            and all(type(player) is int and player > 0 for _, player in outings)):
+        count = len({player for _, player in outings})
+    return dict(data_through=through.isoformat(), windows=windows, contributing_relievers_7d=count,
                 season_calendar_digest=season_digest,
                 regular_citation=regular['citation'], postseason_citation=postseason['citation'])
 
