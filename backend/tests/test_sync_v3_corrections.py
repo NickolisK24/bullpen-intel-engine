@@ -1434,10 +1434,13 @@ def test_pitcher_chart_preserves_individual_outings_and_missing_counts():
                     opponent_abbreviation='BOS')
 
     window = dict(start='2026-09-01', through='2026-09-30', population='all_pitching_appearances', gaps={})
-    regular = dict(window, appearances=[line(n) for n in reversed(range(1, 9))])
-    postseason = dict(window, appearances=[line(9)])
+    regular = dict(window, citation={'input_digest': 'regular'}, appearances=[line(n) for n in reversed(range(1, 9))])
+    postseason = dict(window, citation={'input_digest': 'postseason'}, appearances=[line(9)])
     work = pitcher_recent_work(regular, postseason)
     assert [r['game_pk'] for r in work['workload_series']] == list(range(901, 910))
+    assert work['scope'] == 'regular_season_and_verified_postseason' and work['status'] == 'verified_games_only'
+    assert [r['game_pk'] for r in work['appearances']] == list(range(909, 900, -1))
+    assert work['regular_citation'] == regular['citation'] and work['postseason_citation'] == postseason['citation']
     assert work['workload_series'][0]['pitches'] is None
     assert len(work['recent_appearances']) == RECENT_LINES_MAX and work['recent_appearances'][0] == line(9)
     with pytest.raises(ValueError, match='Conflicting'):
@@ -1447,7 +1450,12 @@ def test_pitcher_chart_preserves_individual_outings_and_missing_counts():
     empty = pitcher_recent_work(dict(regular, appearances=[], gaps={'2026-09-01': 'missing_complete_schedule'}),
                                 dict(postseason, appearances=[]))
     assert empty['workload_series'] == [] and 'No verified outings' in empty['absence_sentence']
+    assert empty['status'] == 'partial' and empty['regular_gaps'] and empty['postseason_gaps'] == {}
     assert 'workload' not in empty
+    postseason_gap = {'2026-09-10': 'conflicting_pinned_appearance_versions'}
+    partial = pitcher_recent_work(regular, dict(postseason, gaps=postseason_gap))
+    assert partial['status'] == 'partial' and partial['postseason_gaps'] == postseason_gap
+    assert partial['regular_gaps'] == {} and partial['appearances'] == work['appearances']
 
 
 def test_team_relief_games_keep_doubleheaders_missing_measures_and_club_ownership():

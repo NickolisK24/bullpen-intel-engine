@@ -146,8 +146,14 @@ def pitcher_recent_work(regular, postseason):
     note = 'Includes verified regular-season and postseason outings.'
     if regular['gaps'] or postseason['gaps']:
         note += ' Some dates have incomplete evidence.'
-    result = dict(regular, data_through=regular['through'], workload_series=series,
-                  workload_series_note=note, recent_appearances=list(reversed(ordered[-RECENT_LINES_MAX:])))
+    latest_first = list(reversed(ordered))
+    result = dict(scope='regular_season_and_verified_postseason', population=regular['population'],
+                  status='partial' if regular['gaps'] or postseason['gaps'] else 'verified_games_only',
+                  start=regular['start'], through=regular['through'], data_through=regular['through'],
+                  regular_citation=regular['citation'], postseason_citation=postseason['citation'],
+                  regular_gaps=regular['gaps'], postseason_gaps=postseason['gaps'],
+                  appearances=latest_first, recent_appearances=latest_first[:RECENT_LINES_MAX],
+                  workload_series=series, workload_series_note=note)
     if not ordered:
         result['absence_sentence'] = 'No verified outings in the available records for this window.'
     return result
