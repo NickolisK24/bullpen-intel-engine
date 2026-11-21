@@ -1682,7 +1682,9 @@ def test_trust_reports_acquisition_only_for_retained_response_bodies():
             assert preview_trust(db, first) == failed
 
 
-def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path):
+@pytest.mark.parametrize('failure', ['invalid_single_game_stat', 'uncredited_game_and_boxscore_disagree',
+                                     'uncredited_game_requires_official_final'])
+def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path, failure):
     from contextlib import closing
     from copy import deepcopy
     from hashlib import sha256
@@ -1703,7 +1705,14 @@ def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path):
                and r['params']['stats'] == 'gameLog')
     valid = log['body']
     log['body'] = deepcopy(valid)
-    log['body']['stats'][0]['splits'][0]['stat']['gamesPitched'] = 0
+    split = log['body']['stats'][0]['splits'][0]
+    split['stat']['gamesPitched'] = 0
+    if failure != 'invalid_single_game_stat':
+        split['stat'] = dict(gamesPitched=0, gamesPlayed=0, gamesStarted=0, numberOfPitches=0,
+                             battersFaced=0, outs=0, inningsPitched='0.0', saves=0, holds=0,
+                             saveOpportunities=0, gamesFinished=0)
+    if failure == 'uncredited_game_requires_official_final':
+        split.update(date=str(day - timedelta(days=60)), game=dict(gamePk=22222))
     refused_digest = sha256(encode_json(log['body'])).hexdigest()
     path = tmp_path / 'roster-day.json'
     with isolated_cluster(pg) as (owner, connect):
@@ -1716,8 +1725,16 @@ def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path):
             before = freeze_generation(db, day)
             refusal, = preview_trust(db, before)['withheld_role_evidence']
             assert refusal['team_id'] == 111 and refusal['membership_date'] == str(day)
-            assert refusal['failed_profiles'] == [dict(mlb_player_id=11101, reason='invalid_single_game_stat')]
-            assert {r['endpoint'] for r in refusal['receipts']} == {'/teams/111/roster', '/people/11101/stats'}
+            expected = dict(mlb_player_id=11101, reason=failure)
+            endpoints = {'/teams/111/roster', '/people/11101/stats'}
+            if failure != 'invalid_single_game_stat':
+                conflict = failure == 'uncredited_game_and_boxscore_disagree'
+                expected['game_evidence'] = dict(game_pk=split['game']['gamePk'], game_date=split['date'], team_id=111,
+                                                 stage='boxscore_disagreement' if conflict else 'qualified_schedule_required')
+                if conflict:
+                    endpoints.update(['/schedule', f"/game/{split['game']['gamePk']}/boxscore"])
+            assert refusal['failed_profiles'] == [expected]
+            assert {r['endpoint'] for r in refusal['receipts']} == endpoints
             log_receipt, = [r for r in refusal['receipts'] if r['parameters'].get('stats') == 'gameLog']
             assert log_receipt['sha256'] == refused_digest
             for receipt in played['responses']:

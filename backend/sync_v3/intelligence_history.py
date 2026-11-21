@@ -27,6 +27,9 @@ def _readiness(cur, team, through):
         'calendar_source', 'reference_slate_source', 'decision_sources', 'roster_source', 'workload_sources', 'profiles')}
     facts['verified_decisions'] = sorted(report['decision_sources'])
     facts['profile_status'] = {player: profile['reason'] for player, profile in report.get('profiles', {}).items()}
+    game_evidence = {player: p['game_evidence'] for player, p in report.get('profiles', {}).items() if 'game_evidence' in p}
+    if game_evidence:
+        facts['profile_game_evidence'] = game_evidence
     return facts
 
 

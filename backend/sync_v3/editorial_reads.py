@@ -10,7 +10,7 @@ from services import rotation_context as rotation_layer
 from services import role_stability_context as stability
 from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.editorial_league_baseline import league_concentration
-from sync_v3.discovery import pitcher_requests
+from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
@@ -231,18 +231,27 @@ def _withheld_role_evidence(cur, digest, withheld):
     if not teams:
         return []
     cur.execute("""SELECT h.mlb_id,h.id,h.semantic_digest,h.facts->>'reason',h.facts->'profile_status',
-                          h.facts->>'membership_date' FROM candidate.generation_inputs g
+                          h.facts->>'membership_date',h.facts->'profile_game_evidence' FROM candidate.generation_inputs g
                    JOIN candidate.workload_history h ON h.id=g.snapshot
                    WHERE g.generation=%s AND h.subject='team' AND h.methodology=%s AND h.mlb_id=ANY(%s)
                    ORDER BY h.mlb_id""", (digest, DOMAINS['readiness'][1], teams))
     results = []
-    for team, snapshot, facts_digest, reason, profiles, membership in cur.fetchall():
+    for team, snapshot, facts_digest, reason, profiles, membership, games in cur.fetchall():
         if reason != withheld[team]:
             continue
         failures = {int(player): status for player, status in profiles.items() if status}
         roster = f'/teams/{team}/roster'
         requests = {(r.endpoint, r.parameters) for r in pitcher_requests(date.fromisoformat(membership), failures)}
         requests.add((roster, (('date', membership), ('rosterType', 'active'))))
+        failed_profiles = []
+        for player, status in sorted(failures.items()):
+            profile = dict(mlb_player_id=player, reason=status)
+            game = (games or {}).get(str(player))
+            if game:
+                profile['game_evidence'] = game
+                slate = calendar_requests(date.fromisoformat(game['game_date']))[0]
+                requests.update([(slate.endpoint, slate.parameters), (f"/game/{game['game_pk']}/boxscore", ())])
+            failed_profiles.append(profile)
         endpoints = sorted({endpoint for endpoint, _ in requests})
         cur.execute("""SELECT f.endpoint,f.parameters,f.sha256,f.received_at,f.outcome FROM candidate.workload_history_sources hs
                        JOIN candidate.fetches f ON f.id=hs.source_id WHERE hs.snapshot=%s AND f.endpoint=ANY(%s)
@@ -254,8 +263,7 @@ def _withheld_role_evidence(cur, digest, withheld):
             receipts.append(dict(endpoint=endpoint, parameters=params, sha256=sha, outcome=outcome,
                                  acquired_at=acquired.isoformat() if sha else None))
         results.append(dict(team_id=team, membership_date=membership, reason=reason, facts_digest=facts_digest,
-                            failed_profiles=[dict(mlb_player_id=player, reason=failures[player])
-                                             for player in sorted(failures)], receipts=receipts))
+                            failed_profiles=failed_profiles, receipts=receipts))
     return results
 
 

@@ -20,7 +20,9 @@ COUNT_FIELDS = ('gamesPitched', 'gamesStarted', 'outs', 'saves', 'holds', 'saveO
 
 
 class BaselineWithheld(ValueError):
-    pass
+    def __init__(self, reason, *, game_evidence=None):
+        super().__init__(reason)
+        self.game_evidence = game_evidence
 
 
 def _splits(body, kind):
@@ -111,26 +113,31 @@ def _check_retained_finals(cur, player, rows):
 
 
 def _confirm_uncredited(cur, player, team, pk, day):
+    scope = dict(game_pk=pk, game_date=day.isoformat(), team_id=team)
+
+    def missing(stage):
+        return BaselineWithheld('uncredited_game_requires_official_final', game_evidence=dict(scope, stage=stage))
+
     if cur is None:
-        raise BaselineWithheld('uncredited_game_requires_official_final')
+        raise missing('isolated_final_check_required')
     schedule = calendar_requests(day)[0]
     receipt = latest_qualified_source(cur, schedule.endpoint, schedule.params())
     if receipt is None:
-        raise BaselineWithheld('uncredited_game_requires_official_final')
+        raise missing('qualified_schedule_required')
     games = [game for entry in replay(cur, receipt).body['dates'] for game in entry['games']
              if game['gamePk'] == pk and game.get('gameType') == 'R']
     if len(games) != 1:
-        raise BaselineWithheld('uncredited_game_requires_official_final')
-    final, _ = _game_workload(cur, games[0], day, receipt)
+        raise missing('regular_game_listing_required')
+    final, reason = _game_workload(cur, games[0], day, receipt)
     if final is None:
-        raise BaselineWithheld('uncredited_game_requires_official_final')
+        raise missing(reason or 'official_final_required')
     lines, (box_receipt, _) = final
     box = replay(cur, box_receipt).body
     sides = [side for side in box['teams'].values() if player in side['pitchers']]
     if (len(sides) != 1 or sides[0]['team']['id'] != team
             or not uncredited_pitching_line(sides[0]['players'][f'ID{player}']['stats']['pitching'])
             or any(line['pitcher_mlb_id'] == player for line in lines)):
-        raise BaselineWithheld('uncredited_game_and_boxscore_disagree')
+        raise BaselineWithheld('uncredited_game_and_boxscore_disagree', game_evidence=dict(scope, stage='boxscore_disagreement'))
 
 
 def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
@@ -214,6 +221,8 @@ def pitcher_season_deployment(cur, player, through):
             result['facts'] = season_deployment_facts(player, through, *bodies, cur=cur)
         except BaselineWithheld as exc:
             result['reason'] = str(exc)
+            if exc.game_evidence is not None:
+                result['game_evidence'] = exc.game_evidence
         except (AttributeError, KeyError, TypeError, ValueError):
             result['reason'] = 'invalid_official_stat_shape'
     return result

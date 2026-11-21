@@ -101,6 +101,8 @@ def active_group_population(cur, team, through):
         player = member['id']
         profile = pitcher_season_deployment(cur, player, through)
         result['profiles'][player] = {'sources': profile['sources'], 'reason': profile['reason']}
+        if 'game_evidence' in profile:
+            result['profiles'][player]['game_evidence'] = profile['game_evidence']
         if profile['reason']:
             result['reason'] = 'incomplete_roster_role_evidence'
             return result, {}
