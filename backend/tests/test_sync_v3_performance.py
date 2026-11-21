@@ -210,3 +210,28 @@ def test_tonight_patterns_follow_source_identity_and_eligible_start_classes():
     assert result[0]['headline'] == 'Sammy Solís now has back-to-back usage.'
     assert _slate_pitcher_patterns(rows, 'edition', '2017-08-28', {}) == []
     assert _slate_pitcher_patterns(rows, 'edition', '2017-08-28', {42: dict(team_id=141, name='Sammy Solís')}) == []
+
+
+def test_transaction_qualification_preserves_dates_and_requires_independent_pitcher_evidence():
+    from datetime import date
+    from sync_v3.transaction_reads import _qualified_event
+
+    day = date(2017, 8, 27)
+    facts = dict(transaction_id=10, player_mlb_id=100, transaction_type_code='CU',
+                 transaction_date=str(day), effective_date='2017-08-28', from_team_id=552, to_team_id=120)
+    observation = dict(team_id=120, membership='active', represented=str(day), roster_digest='a' * 64)
+    pitcher = dict(mlb_id=100, public_id=14, position='P', name='Fixture Pitcher',
+                   team_id=120, roster_observation=observation)
+    source = dict(acquired_at='2026-11-21T00:00:00+00:00')
+    event = _qualified_event(facts, 2, pitcher, day, source)
+    assert event['label'] == 'Recalled' and event['pitcher']['pitcher_id'] == 14
+    assert event['transaction_date'] == str(day) and event['effective_date'] == '2017-08-28'
+    assert event['transaction_revision'] == 2 and event['roster_digest'] == observation['roster_digest']
+    for other in (dict(pitcher, public_id=None), dict(pitcher, mlb_id=101),
+                  dict(pitcher, roster_observation=dict(observation, represented='2017-08-28')),
+                  dict(pitcher, team_id=552, roster_observation=dict(observation, team_id=552)),
+                  dict(pitcher, roster_observation=dict(observation, membership='affiliate'))):
+        assert _qualified_event(facts, 2, other, day, source) is None
+    for change in (dict(to_team_id=118), dict(transaction_type_code='UNKNOWN'),
+                   dict(transaction_date='2017-08-26'), dict(participant_position_code='6')):
+        assert _qualified_event(dict(facts, **change), 2, pitcher, day, source) is None

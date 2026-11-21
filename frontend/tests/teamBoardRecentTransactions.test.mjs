@@ -78,3 +78,21 @@ test('one details request retains final What Changed and rotation-to-transaction
   assert.ok(boardSource.indexOf('<TeamBoardWhatChanged') < boardSource.indexOf('<TeamBoardRotationImpact'))
   assert.ok(boardSource.indexOf('<TeamBoardRotationImpact') < boardSource.indexOf('<TeamBoardRecentTransactions'))
 })
+
+test('historical transactions keep reported and effective dates and withhold a mismatched receipt', async () => {
+  const { default: component } = await server.ssrLoadModule('/src/components/history/HistoricalTransactions.jsx')
+  const through = '2017-08-27'
+  const source = { parameters: { sportId: 1, startDate: through, endDate: through }, acquired_at: '2026-11-21',
+    digest: 'receipt', outcome: 'received', reason: null }
+  const event = { description: 'Fixture Pitcher was recalled.', transaction_date: through,
+    effective_date: '2017-08-28', transaction_key: 'official-1', to_team_id: 120 }
+  const value = { team: 120, represented: through, coverage: 'retained_league_response', status: 'partial', events: [event], source }
+  const html = data => renderToStaticMarkup(React.createElement(component, { transactions: data, through, team: 120 }))
+  assert.match(html(value), /was recalled\. Reported 2017-08-27\. Effective 2017-08-28/)
+  assert.match(html(value), /Some club records lack verified/)
+  for (const changed of [{ ...value, source: null }, { ...value, events: [{ ...event, to_team_id: 111 }] },
+    { ...value, source: { ...source, parameters: { ...source.parameters, endDate: '2017-08-28' } } }]) {
+    assert.match(html(changed), /Transaction evidence unavailable/)
+    assert.doesNotMatch(html(changed), /was recalled/)
+  }
+})

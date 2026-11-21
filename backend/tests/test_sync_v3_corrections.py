@@ -862,6 +862,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     prior = next(f for f in fixtures if f['baseball_date'] == str(prior_day))
     played = next(f for f in fixtures if f['baseball_date'] == str(day))
     prior['team_ids'] = [111]
+    official = next(r['body'] for r in played['responses'] if r['endpoint'] == '/transactions')
+    official['transactions'] = [
+        dict(id=77, date=str(day), effectiveDate=str(day + timedelta(days=1)), typeCode='CU',
+             person=dict(id=11101), fromTeam=dict(id=422), toTeam=dict(id=111)),
+        dict(id=78, date=str(day), typeCode='CU', person=dict(id=777777), toTeam=dict(id=111)),
+    ]
     for original in played['responses']:
         if original['endpoint'] != '/teams/111/roster' or 'hydrate' in original['params']:
             continue
@@ -1152,6 +1158,17 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
+            official = board['official_transactions']
+            assert official['source']['reported_records'] == official['source']['confirmed_transactions'] == 2
+            assert official['status'] == 'partial'
+            if identity_mode == 'absent':
+                assert official['withheld'] == 2 and official['events'] == []
+            else:
+                event, = official['events']
+                assert official['withheld'] == 1 and event['pitcher']['pitcher_id'] == 9111
+                assert event['description'] == 'Rehearsal Arm 11101 was recalled.'
+                assert event['transaction_date'] == str(day) and event['effective_date'] == str(day + timedelta(days=1))
+                assert len(event['roster_digest']) == len(event['transaction_facts_digest']) == 64
             from sync_v3.rehearse import verify_board_history, verify_editorial_evidence
             journey = verify_board_history(worker, board)
             with pytest.raises(RuntimeError, match='Selected Team Board and History disagree'):

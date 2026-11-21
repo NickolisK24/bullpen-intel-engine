@@ -1,3 +1,4 @@
+import HistoricalTransactions from './HistoricalTransactions'
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
@@ -425,6 +426,8 @@ function HistoricalSelectionHistory({ payload, continuation = false }) {
             <p>Data through <time>{row.represented}</time> · Availability reference <time>{row.availability_reference}</time></p>
             <p>{state.publicLabel || state.statusLabel || state.unavailableMessage}</p>
             <HistoricalChanges row={row} team={payload.team} />
+            {row.official_transactions?.events?.length > 0 &&
+              <HistoricalTransactions transactions={row.official_transactions} team={payload.team} through={row.represented} />}
             {row.calendar_context.events.map(event => <GameContext key={event.kind + event.game_pks.join('-')} event={event} />)}
             {row.calendar_context.calendar_limitation && <p>Calendar evidence is incomplete.</p>}
             <details><summary>Team State evidence</summary>

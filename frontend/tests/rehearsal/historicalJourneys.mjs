@@ -77,6 +77,8 @@ try {
     await expect(heading('Boston Red Sox')).toBeVisible()
     const generation = new URL(page.url()).searchParams.get('rehearsalGeneration')
     assert.match(generation, /^[a-f0-9]{64}$/)
+    const recallText = 'Rehearsal Arm 11101 was recalled. Reported 2026-07-29. Effective 2026-07-30.'
+    await expect(page.getByText(recallText, { exact: true })).toBeVisible()
     const reliefGame = page.getByRole('region', { name: 'Recent relief games' }).locator('tbody tr')
     await expect(reliefGame).toHaveCount(1)
     await expect(reliefGame.locator('td').nth(1)).toHaveText('1')
@@ -131,6 +133,7 @@ try {
     await expect(page.getByText('Removed from the active roster', { exact: false })).toHaveCount(0)
 
     await visit('/history/team/BOS?rehearsalRevision=3')
+    await expect(page.getByText(recallText, { exact: true }).first()).toBeVisible()
     await expect(heading('Boston Red Sox historical rehearsal')).toBeVisible()
     const rollback = page.getByRole('article').filter({ has: heading('Revision 3 · Rollback') }).first()
     const departure = rollback.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'Former Boston Reliever' }) })

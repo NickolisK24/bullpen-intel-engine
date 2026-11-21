@@ -1,3 +1,4 @@
+import HistoricalTransactions from '../../history/HistoricalTransactions'
 import HistoricalPitchHand from '../HistoricalPitchHand'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../../hooks/useFetch'
@@ -171,6 +172,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         represented={data.data_through} />
     </section>
     <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
+    <HistoricalTransactions transactions={data.official_transactions} team={team} through={data.data_through} />
     <HistoricalRosterListings roster={data.roster_depth_evidence} team={team} through={data.data_through} />
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />

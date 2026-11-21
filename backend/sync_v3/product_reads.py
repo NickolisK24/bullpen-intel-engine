@@ -9,6 +9,7 @@ from services.team_state_public_vocabulary import (
 )
 from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances, team_relief_games
 from sync_v3.depth import roster_depth_evidence
+from sync_v3.transaction_reads import team_transactions
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -280,7 +281,7 @@ def _public_arms(cur, digest):
     return players, 'mapped' if players.keys() == mapping.keys() else 'public_id_mapping_incomplete'
 
 
-def _roster_identities(cur, digest, kind, excluded):
+def _roster_identities(cur, digest, kind, excluded, *, player_ids=None):
     """Resolve named pitching identities from an exact dated MLB roster receipt."""
     if kind not in ('active', '40Man'):
         raise ValueError('Unsupported MLB membership type')
@@ -298,9 +299,10 @@ def _roster_identities(cur, digest, kind, excluded):
                      AND h.facts->'views'->%s->>'reason' IS NULL
                      AND (%s <> 'active' OR h.facts#>>'{active_profiles,reason}' IS DISTINCT FROM 'mlb_active_rosters_disagree')
                      AND (h.facts->'views'->%s->'pitchers') ? (m.member->>'id')
+                     AND (%s::bigint[] IS NULL OR (m.member->>'id')::bigint=ANY(%s::bigint[]))
                      AND f.endpoint='/teams/' || h.mlb_id::text || '/roster'
                      AND f.parameters=jsonb_build_object('date',h.represented::text,'rosterType',%s::text)
-                   ORDER BY h.mlb_id,f.sha256""", (kind, digest, digest, DOMAINS['depth'][1], kind, kind, kind, kind))
+                   ORDER BY h.mlb_id,f.sha256""", (kind, digest, digest, DOMAINS['depth'][1], kind, kind, kind, player_ids, player_ids, kind))
     players, conflicts = {}, set()
     for team, day, facts, inputs, sha, member, public_id in cur:
         mlb = member['id']
@@ -1064,6 +1066,7 @@ def read_team_board(connection, team, *, revision=None):
                              **_historical_arm_display(listing['data_through'])))
         from datetime import date
         through = date.fromisoformat(listing['data_through'])
+        result['official_transactions'] = team_transactions(cur, generation, team, through)
         result['roster_depth_evidence'] = roster_depth_evidence(blocks['depth'], team, through)
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
@@ -1240,6 +1243,7 @@ def read_team_history(connection, team, *, through_revision, limit=14):
         if selected[1]:
             method = DOMAINS['readiness'][1]
             ready = _blocks(cur, selected[1], 'team', team, {method: 'readiness'})['readiness']
+            row['official_transactions'] = team_transactions(cur, selected[1], team, selected[2])
             row.update(team_state=_dated_team_state(ready['value'], selected[2], selected[3]),
                        readiness_citation=ready['citation'])
         return row
