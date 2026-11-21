@@ -1,3 +1,5 @@
+import { buildRehearsalPitcherHref } from '../../utils/evidenceLinks'
+
 const labels = {
   active_roster_added: 'Added to the active roster',
   active_roster_removed: 'Removed from the active roster',
@@ -44,15 +46,15 @@ function transition(event) {
 function EventList({ events, pitcherRoutes, revision, generation }) {
   return <ul>{events.map(({ event, citation, team }) => {
     const change = transition(event)
-    const pitcherId = pitcherRoutes?.[event.event_id]
+    const pitcherHref = buildRehearsalPitcherHref(pitcherRoutes?.[event.event_id], revision, generation)
     return <li key={event.event_id} className="py-1">
       <details><summary>{eventLabel(event.kind)}
         {event.player && ` · ${event.pitcher_name || 'MLB pitcher ' + event.player}`}
         {change && ` · ${change}`}
       </summary>
         {event.game && <a className="underline" href={`https://www.mlb.com/gameday/${event.game}`}>MLB game {event.game}</a>}
-        {Number.isSafeInteger(pitcherId) && pitcherId > 0 && Number.isSafeInteger(revision) && revision > 0 && /^[a-f0-9]{64}$/.test(generation) &&
-          <p><a className="underline" href={`/pitcher/${pitcherId}?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Pitcher Detail for this revision</a></p>}
+        {pitcherHref &&
+          <p><a className="underline" href={pitcherHref}>Pitcher Detail for this revision</a></p>}
         <p>MLB club {team}</p>
         <p className="break-all">Event {event.event_id}</p>
         <p className="break-all">Comparison source digest {citation.input_digest}</p>

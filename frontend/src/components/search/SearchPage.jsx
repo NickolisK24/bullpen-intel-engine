@@ -1,11 +1,13 @@
 import { SearchAnswer } from '../ResearchAnswer'
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { searchDiscovery } from '../../utils/api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { searchDiscovery, searchRehearsalEdition } from '../../utils/api'
 import {
   buildMatchupHref,
+  buildRehearsalPitcherHref,
   buildPitcherHref,
   buildTeamBoardHref,
+  parseRehearsalRevision,
 } from '../../utils/evidenceLinks'
 import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
 import { formatFreshnessDate } from '../UI/Freshness'
@@ -60,16 +62,21 @@ function resultContext(result = {}) {
   return [result.secondary_label].filter(Boolean)
 }
 
-function ResultLink({ result }) {
-  const href = buildDiscoveryResultHref(result)
-  if (!href || !result?.primary_label) return null
+function ResultLink({ result, edition }) {
+  let href = buildDiscoveryResultHref(result)
+  if (edition) {
+    href = result.entity_type === 'pitcher' && result.metadata?.player_id === result.id
+      ? buildRehearsalPitcherHref(result.id, edition.revision, edition.generation)
+      : null
+  }
+  if (!result?.primary_label || (!edition && !href)) return null
+  const Element = href ? Link : 'div'
   const context = resultContext(result)
   return (
     <li>
-      <Link
-        to={href}
+      <Element
+        {...(href ? { to: href, 'aria-label': `Open ${result.primary_label}` } : {})}
         className="block min-w-0 rounded-sm border border-dirt bg-field/45 px-3 py-3 transition-colors hover:border-amber/40 hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/70"
-        aria-label={`Open ${result.primary_label}`}
       >
         <span className="block break-words text-sm font-medium text-chalk100">
           {result.primary_label}
@@ -81,19 +88,19 @@ function ResultLink({ result }) {
             ))}
           </span>
         )}
-      </Link>
+      </Element>
     </li>
   )
 }
 
-function SearchGroup({ group }) {
+function SearchGroup({ group, edition }) {
   const label = GROUP_LABELS[group.entity_type] || 'Results'
   const headingId = `search-group-${group.entity_type}`
   return (
     <section aria-labelledby={headingId} className="min-w-0 border-t border-dirt pt-4 lg:border-t-0 lg:border-l lg:pl-5 first:lg:border-l-0 first:lg:pl-0">
       <div className="flex items-center justify-between gap-3">
         <h2 id={headingId} className="font-mono text-xs uppercase tracking-[0.18em] text-chalk300">
-          {label}
+          {edition && group.entity_type === 'matchup' ? 'Matchups on this date' : label}
         </h2>
         {group.status === 'available' && (
           <span className="font-mono text-[10px] text-chalk600">{group.results.length}</span>
@@ -106,7 +113,7 @@ function SearchGroup({ group }) {
       ) : (
         <ul className="mt-3 grid gap-2">
           {group.results.map(result => (
-            <ResultLink key={`${result.entity_type}-${result.id}`} result={result} />
+            <ResultLink key={`${result.entity_type}-${result.id}`} result={result} edition={edition} />
           ))}
         </ul>
       )}
@@ -119,6 +126,8 @@ export function SearchPageView({
   payload = null,
   loading = false,
   error = '',
+  historical = false,
+  edition = null,
   onQueryChange,
   onRetry,
 }) {
@@ -139,7 +148,9 @@ export function SearchPageView({
         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">Search / Discovery</p>
         <h1 className="mt-2 font-display text-3xl tracking-wide text-chalk100 sm:text-4xl">Search BaseballOS</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
-          Find a team, reliever, or today&apos;s scheduled matchup and open its canonical BaseballOS destination.
+          {historical
+            ? `Historical rehearsal${payload?.represented_date ? ` · ${payload.represented_date}` : ''}. Search team, reliever, and matchup evidence for this edition.`
+            : "Find a team, reliever, or today's scheduled matchup and open its canonical BaseballOS destination."}
         </p>
       </header>
 
@@ -196,20 +207,41 @@ export function SearchPageView({
           </div>
         ) : payload?.result_count === 0 && payload?.status !== 'partial' ? (
           <p className="rounded-sm border border-dirt bg-field/30 px-4 py-5 text-sm text-chalk400">
-            No teams, relievers, or today&apos;s matchups match “{normalizedQuery}”.
+            {historical ? "No teams, relievers, or represented matchups match" : "No teams, relievers, or today's matchups match"} “{normalizedQuery}”.
           </p>
         ) : (
           <div className="grid min-w-0 gap-5 lg:grid-cols-3" aria-label="Search results">
-            {groups.map(group => <SearchGroup key={group.entity_type} group={group} />)}
+            {groups.map(group => <SearchGroup key={group.entity_type} group={group} edition={edition} />)}
           </div>
         )}
       </div>
-      {hasSearch && payload && !loading && !error && payload.status !== 'unavailable' && <SearchAnswer />}
+      {!historical && hasSearch && payload && !loading && !error && payload.status !== 'unavailable' && <SearchAnswer />}
     </div>
   )
 }
 
 export default function SearchPage({ searchFn = searchDiscovery }) {
+  const [params] = useSearchParams()
+  let revision
+  try {
+    revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
+  } catch (error) {
+    return <p role="alert">{error.message}</p>
+  }
+  return <SearchEdition key={revision ?? 'public'} revision={revision} publicSearch={searchFn} />
+}
+
+function SearchEdition({ revision, publicSearch }) {
+  const searchFn = useCallback(async (params, options) => {
+    if (revision === null) return { payload: await publicSearch(params, options), edition: null }
+    const response = await searchRehearsalEdition(revision, params, options)
+    if (response?.status !== 'represented' || response.selection_revision !== revision
+      || response.current_serving_eligible !== false || typeof response.generation !== 'string'
+      || !/^[a-f0-9]{64}$/.test(response.generation) || response.search?.query !== params.q) {
+      throw new Error('The historical search edition could not be verified.')
+    }
+    return { payload: response.search, edition: { revision, generation: response.generation } }
+  }, [revision, publicSearch])
   const [query, setQuery] = useState('')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -235,7 +267,7 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
         controller ? { signal: controller.signal, silent: true } : { silent: true },
       )
         .then(response => {
-          if (!cancelled) setResult({ query: normalizedQuery, payload: response })
+          if (!cancelled) setResult({ query: normalizedQuery, ...response })
         })
         .catch(requestError => {
           if (!cancelled && requestError?.name !== 'AbortError') {
@@ -257,6 +289,8 @@ export default function SearchPage({ searchFn = searchDiscovery }) {
 
   return (
     <SearchPageView
+      historical={revision !== null}
+      edition={result?.edition}
       query={query}
       payload={result?.query === normalizedQuery ? result.payload : null}
       loading={loading || (normalizedQuery.length >= MIN_QUERY_LENGTH && result?.query !== normalizedQuery && !error)}

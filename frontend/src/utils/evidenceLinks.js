@@ -102,6 +102,12 @@ export function parseRehearsalRevision(param, repeated) {
   return revision
 }
 
+export function buildRehearsalPitcherHref(pitcherId, revision, generation) {
+  if (!Number.isSafeInteger(pitcherId) || pitcherId < 1 || !Number.isSafeInteger(revision) || revision < 1
+    || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) return null
+  return `/pitcher/${pitcherId}?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`
+}
+
 export function normalizePitcherId(pitcherId) {
   return positiveInteger(pitcherId)
 }

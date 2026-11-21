@@ -529,6 +529,10 @@ export const searchDiscovery   = (params = {}, options = {}) => {
     ...options,
   })
 }
+export const searchRehearsalEdition = (revision, params, options = {}) => request(
+  `/sync-v3/revisions/${revision}/search${buildQuery(params)}`,
+  { timeoutMs: COMPACT_QUERY_TIMEOUT_MS, ...options },
+)
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
 export const getPitcherPublicationHistory = (id, through, options = {}) => request(
   `/bullpen/pitchers/${encodeURIComponent(id)}/publication-history${buildQuery({ through })}`,

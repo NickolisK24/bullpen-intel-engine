@@ -203,6 +203,20 @@ test('unified discovery routes every entity to its canonical destination', () =>
   assert.equal(buildDiscoveryResultHref(matchup), '/matchup/880001')
 })
 
+test('historical discovery links the mapped pitcher to the represented edition', () => {
+  const payload = structuredClone(discoveryPayload)
+  const pitcher = payload.groups[1].results[0]
+  pitcher.metadata.player_id = pitcher.id
+  const edition = { revision: 3, generation: 'a'.repeat(64) }
+  const view = () => renderDiscovery({ historical: true, edition, payload })
+  const html = view()
+  assert.ok(html.includes(`href="/pitcher/12345?rehearsalRevision=3&amp;rehearsalGeneration=${edition.generation}"`))
+  assert.ok(html.includes('Matchups on this date'))
+  assert.ok(!html.includes('href="/matchup/') && !html.includes('href="/bullpen'))
+  pitcher.metadata.player_id += 1
+  assert.ok(!view().includes('href="/pitcher/'))
+})
+
 test('unified discovery preserves duplicate-name identities instead of choosing one', () => {
   const duplicatePayload = structuredClone(discoveryPayload)
   duplicatePayload.result_count = 2
