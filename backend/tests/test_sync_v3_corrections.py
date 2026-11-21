@@ -314,7 +314,7 @@ def test_all_star_final_retains_lines_without_attributing_workload_to_an_mlb_clu
 
 def test_rolling_snapshots_keep_predecessors_and_scope_a_final_correction(monkeypatch):
     from contextlib import closing
-    from sync_v3.history import affected_workload, rebuild_for_final, record_workload
+    from sync_v3.history import affected_workload, rebuild_for_final, rebuild_for_observation, record_workload
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
     if not pg:
@@ -340,7 +340,17 @@ def test_rolling_snapshots_keep_predecessors_and_scope_a_final_correction(monkey
                 initial_final = cur.fetchone()[0]
             recovered, = rebuild_for_final(db, initial_final)
             assert recovered[1] == 2 and recovered[2] != missing[2]
-            first = record_workload(db, 'pitcher', 102, end)
+            from concurrent.futures import ThreadPoolExecutor
+            from threading import Barrier
+            ready = Barrier(2)
+            def simultaneous_build():
+                with closing(connect()) as other:
+                    ready.wait(timeout=10)
+                    return record_workload(other, 'pitcher', 102, end)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                builds = [pool.submit(simultaneous_build) for _ in range(2)]
+                first, duplicate = (build.result(timeout=30) for build in builds)
+            assert first == duplicate and first[1] == 1
             assert record_workload(db, 'pitcher', 102, end) == first
             team = record_workload(db, 'team', 147, end)
             record_workload(db, 'team', 111, end)
@@ -377,6 +387,17 @@ def test_rolling_snapshots_keep_predecessors_and_scope_a_final_correction(monkey
                 assert cur.fetchall() == [(None, 15), (first[0], 24)]
                 cur.execute('SELECT count(*) FROM candidate.workload_history_sources WHERE snapshot=%s', (first[0],))
                 assert cur.fetchone()[0] > 0
+            source['teams']['home']['teamStats']['pitching']['inningsPitched'] = '8.0'
+            run_cycle(db, day, fetch, teams=[111], clock=lambda: at + timedelta(days=6))
+            with db, db.cursor() as cur:
+                cur.execute("SELECT max(id) FROM candidate.fetches WHERE endpoint='/game/12345/boxscore'")
+                refused_box = cur.fetchone()[0]
+            rebuild_for_observation(db, refused_box)
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT facts->'windows'->'3'->'facts', facts->'coverage_gaps'->>%s
+                               FROM candidate.workload_history WHERE subject='pitcher' AND mlb_id=102 AND represented=%s
+                               ORDER BY revision DESC LIMIT 1""", (day.isoformat(), end))
+                assert cur.fetchone() == (None, 'missing_compatible_final')
 
 
 def test_changed_bulk_follower_also_invalidates_the_unchanged_opener():
@@ -389,3 +410,81 @@ def test_changed_bulk_follower_also_invalidates_the_unchanged_opener():
     follower = dict(common, pitcher_mlb_id=2, games_started=0, is_reliever=True, outs_recorded=BULK_FOLLOWER_MIN_OUTS)
     assert final_impacts([start, follower], [start, dict(follower, outs_recorded=BULK_FOLLOWER_MIN_OUTS-1)]) == {
         ('pitcher', 1, day), ('pitcher', 2, day), ('team', 111, day)}
+
+
+def test_disappearing_final_withholds_affected_workload_and_retains_both_schedules(tmp_path):
+    from contextlib import closing
+    from sync_v3.history import rebuild_for_observation, record_workload
+    from sync_v3.replay import run_fixture
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    base = Path(__file__).parent / 'fixtures/sync_v3'
+    played = json.loads((base / 'played.json').read_text())
+    day = date.fromisoformat(played['baseball_date'])
+    quiet = json.loads((base / 'quiet.json').read_text().replace('2026-11-21', day.isoformat()))
+    quiet['observed_at'] = '2026-08-03T10:00:00Z'
+    changed = tmp_path / 'quiet.json'
+    changed.write_text(json.dumps(quiet))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_fixture(db, base / 'played.json')
+            original = record_workload(db, 'team', 147, day)
+            run_fixture(db, changed)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT max(id) FROM candidate.fetches WHERE endpoint='/schedule'")
+                receipt = cur.fetchone()[0]
+            replacement, = rebuild_for_observation(db, receipt)
+            assert replacement[1] == 2 and replacement[2] != original[2]
+            assert rebuild_for_observation(db, receipt) == [replacement]
+            with db, db.cursor() as cur:
+                for scope in (None, 111, 147):
+                    assert regular_day(cur, day, team=scope) == (None, 'previous_listing_requires_absence_proof')
+                assert regular_day(cur, day, team=118)[1] is None
+            identifier, _, _ = record_workload(db, 'team', 147, day)
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT count(*) FROM candidate.workload_history_sources s
+                               JOIN candidate.fetches f ON f.id=s.source_id
+                               WHERE s.snapshot=%s AND f.endpoint='/schedule'""", (identifier,))
+                assert cur.fetchone() == (2,)
+
+
+def test_active_roster_revision_rebuilds_identity_after_last_outing_leaves_window(tmp_path):
+    from contextlib import closing
+    from sync_v3.history import rebuild_for_observation, record_workload
+    from sync_v3.replay import run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    base = Path(__file__).parent / 'fixtures/sync_v3/quiet.json'
+    fixture = json.loads(base.read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            roster = next(r for r in fixture['responses'] if r['params'].get('rosterType') == 'active')
+            roster['body']['roster'] = [{'person': {'id': 98765}, 'position': {'code': '1'}}]
+            copied = tmp_path / 'roster.json'
+            copied.write_text(json.dumps(fixture))
+            run_fixture(db, copied)
+            first = record_workload(db, 'pitcher', 98765, day)
+            fixture['observed_at'] = '2026-11-23T12:00:00Z'
+            roster['body']['roster'][0]['person']['id'] = 98766
+            copied.write_text(json.dumps(fixture))
+            run_fixture(db, copied)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT max(id) FROM candidate.fetches WHERE parameters->>'rosterType'='active'")
+                receipt = cur.fetchone()[0]
+            revised, = rebuild_for_observation(db, receipt)
+            assert revised[1] == 2 and revised[2] != first[2]
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT facts->'windows'->'3'->'player_observed' FROM candidate.workload_history
+                               WHERE id=ANY(%s) ORDER BY revision""", ([first[0], revised[0]],))
+                assert cur.fetchall() == [(True,), (False,)]
+                cur.execute('SELECT 1 FROM candidate.workload_history_sources WHERE snapshot=%s AND source_id=%s',
+                            (revised[0], receipt))
+                assert cur.fetchone() == (1,)

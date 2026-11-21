@@ -20,6 +20,7 @@ from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import replay
 from sync_v3.rosters import dated_pitcher_sources, roster_on
+from sync_v3.schedule_context import missing_listings
 
 
 WINDOWS = (3, 5, 7, 14, 30)
@@ -82,6 +83,11 @@ def _day_by_scope(cur, day, scopes):
     schedule = replay(cur, row[0])
     results = {scope: ({'lines': [], 'official_lines': [], 'series': {}, 'sources': {row[0]}}, None)
                for scope in scopes}
+    present = {g['gamePk'] for entry in schedule.body['dates'] for g in entry['games']}
+    missing = missing_listings(cur, schedule.request.params(), present, game_type='R')
+    for scope in scopes:
+        if scope in missing or (scope is None and missing):
+            results[scope] = None, 'previous_listing_requires_absence_proof'
     for entry in schedule.body['dates']:
         for game in entry['games']:
             if game['gameType'] != 'R':

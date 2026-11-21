@@ -37,21 +37,23 @@ def _club_rows(games, team, day):
     return rows, None
 
 
-def _missing_listing(cur, team, params, present):
+def missing_listings(cur, params, present, *, game_type=None):
     # A game disappearing from a subsequent league response is governed by a
     # separate retirement proof. Preserve the uncertainty in an offline read.
-    cur.execute("""SELECT DISTINCT ON (c.identity) c.identity, r.facts
+    cur.execute("""SELECT DISTINCT ON (c.identity) f.id,r.facts
                    FROM candidate.fetches f JOIN candidate.confirmations c ON c.source_id=f.id
                    JOIN candidate.revisions r ON r.id=c.revision_id
-                   WHERE f.endpoint='/schedule' AND f.parameters=%s AND c.domain='schedule'
-                   ORDER BY c.identity, f.received_at DESC, f.id DESC""", (Json(params),))
-    for identity, game in cur:
-        if int(identity) in present or team not in {g['team']['id'] for g in game['teams'].values()}:
+                   WHERE f.endpoint='/schedule' AND f.parameters=%s AND c.domain='schedule' AND NOT (c.identity=ANY(%s))
+                   ORDER BY c.identity, f.received_at DESC, f.id DESC""", (Json(params), [str(pk) for pk in present]))
+    missing = {}
+    for source, game in cur:
+        if game_type and game['gameType'] != game_type:
             continue
         row = _parse_game(game)
         if not is_unplayed_terminal_schedule_row(row['status_state'], row['status_code']):
-            return True
-    return False
+            for side in game['teams'].values():
+                missing.setdefault(side['team']['id'], set()).add(source)
+    return missing
 
 
 def club_schedule_context(cur, team, reference):
@@ -73,7 +75,7 @@ def club_schedule_context(cur, team, reference):
         if source is not None:
             games = [g for entry in replay(cur, source).body['dates'] for g in entry['games']]
             dated, reason = _club_rows(games, team, day)
-            if _missing_listing(cur, team, request.params(), {g['gamePk'] for g in games}):
+            if team in missing_listings(cur, request.params(), {g['gamePk'] for g in games}):
                 reason = 'previous_listing_requires_absence_proof'
         if reason:
             result['gaps'][key] = reason

@@ -2,13 +2,17 @@
 
 from datetime import date
 from hashlib import sha256
+import re
 
 from psycopg2.extras import Json
+
+from services.mlb_club_directory import MLB_TEAM_IDS
 
 from sync_v3.comparison import compare_team_workload
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
 from sync_v3.rosters import dated_pitcher_sources
+from sync_v3.schedule_context import missing_listings
 from sync_v3.workload import WINDOWS, load_calendar, team_workload, windows_from_calendar
 
 
@@ -20,14 +24,24 @@ def _sample(cur, subject, mlb_id, through):
         calendar = load_calendar(cur, through, team=mlb_id)
         report = team_workload(cur, calendar, mlb_id, through)
         lineage = set(report['workload_sources'])
-        if report['roster_source'] is not None:
-            lineage.add(report['roster_source'])
+        roster = latest_source_status(cur, f'/teams/{mlb_id}/roster', {'date': through.isoformat(), 'rosterType': 'active'})
+        if roster:
+            lineage.add(roster[0])
         facts = {'workload': report['facts'], 'compared_windows': compare_team_workload(cur, calendar, report)}
     elif subject == 'pitcher':
         calendar = load_calendar(cur, through)
         identity = dated_pitcher_sources(cur, mlb_id, through)
         windows = windows_from_calendar(calendar, mlb_id, through, identity_sources=identity)
         lineage = set(identity)
+        # Preserve the receipt that removed a previously attested identity, or
+        # refused its latest observation, even when another club still confirms it.
+        cur.execute("""SELECT DISTINCT (facts->>'team')::integer FROM candidate.revisions
+                       WHERE domain='roster' AND identity=ANY(%s) AND facts->'members' @> %s""",
+                    ([f'{t}/active/{through}' for t in MLB_TEAM_IDS], Json([{'id': mlb_id, 'position': '1'}])))
+        for team, in cur.fetchall():
+            roster = latest_source_status(cur, f'/teams/{team}/roster', {'date': through.isoformat(), 'rosterType': 'active'})
+            if roster:
+                lineage.add(roster[0])
         facts = {}
         for days, window in windows.items():
             lineage.update(window['sources'])
@@ -42,7 +56,13 @@ def _sample(cur, subject, mlb_id, through):
             continue
         lineage.add(receipt[0])
         if receipt[1] == 'received' and receipt[2] is None:
-            for slate in replay(cur, receipt[0]).body['dates']:
+            slates = replay(cur, receipt[0]).body['dates']
+            if gaps[day] == 'previous_listing_requires_absence_proof':
+                present = {g['gamePk'] for slate in slates for g in slate['games']}
+                for team, receipts in missing_listings(cur, request.params(), present, game_type='R').items():
+                    if subject == 'pitcher' or team == mlb_id:
+                        lineage.update(receipts)
+            for slate in slates:
                 for game in slate['games']:
                     teams = {side['team']['id'] for side in game['teams'].values()}
                     if game['gameType'] == 'R' and (subject == 'pitcher' or mlb_id in teams):
@@ -129,3 +149,60 @@ def _rebuild(cur, revision):
 def rebuild_for_final(connection, revision):
     """Refresh only previously frozen scopes touched by this final, in one transaction."""
     return _transaction(connection, _rebuild, revision)
+
+
+def _rebuild_receipt(cur, receipt):
+    cur.execute('SELECT endpoint,parameters FROM candidate.fetches WHERE id=%s', (receipt,))
+    row = cur.fetchone()
+    if not row:
+        raise ValueError('Unknown receipt')
+    endpoint, params = row
+    if endpoint == '/schedule' and 'startDate' in params:
+        day = date.fromisoformat(params['startDate'])
+        if calendar_requests(day)[0].params() != params:
+            raise ValueError('Unsupported schedule scope')
+        # Even a quiet slate supplies negative evidence. A failed or corrected
+        # league response can change coverage for every subject inside this window.
+        cur.execute("""SELECT DISTINCT subject,mlb_id,represented FROM candidate.workload_history
+                       WHERE methodology=%s AND represented BETWEEN %s AND %s::date + %s
+                       ORDER BY 1,2,3""", (METHODOLOGY, day, day, max(WINDOWS)-1))
+    elif endpoint.startswith('/teams/') and endpoint.endswith('/roster') and set(params) == {'date','rosterType'}:
+        if params['rosterType'] != 'active':
+            return []
+        day = date.fromisoformat(params['date'])
+        team = int(endpoint.split('/')[2])
+        # Positive pitcher identity proofs use dated active membership from any
+        # club. Include previous memberships when a corrected roster removes one.
+        cur.execute("""WITH players AS (
+                           SELECT DISTINCT (member->>'id')::integer AS id
+                           FROM candidate.revisions r, LATERAL jsonb_array_elements(r.facts->'members') member
+                           WHERE r.domain='roster' AND r.identity=%s AND member->>'position'='1'
+                       )
+                       SELECT DISTINCT subject,mlb_id,represented FROM candidate.workload_history
+                       WHERE methodology=%s AND represented=%s AND (
+                           (subject='team' AND mlb_id=%s) OR (subject='pitcher' AND mlb_id IN (SELECT id FROM players))
+                       ) ORDER BY 1,2,3""", (f'{team}/active/{day}', METHODOLOGY, day, team))
+    elif (box := re.fullmatch(r'/game/([1-9][0-9]*)/boxscore', endpoint)) and not params:
+        # Even an unusable latest box can withdraw coverage. Use dated schedule
+        # evidence for its game and sides since an invalid box has no authority.
+        cur.execute("""WITH games AS (
+                           SELECT DISTINCT (f.parameters->>'startDate')::date AS day,
+                               (r.facts->'teams'->'home'->'team'->>'id')::integer AS home,
+                               (r.facts->'teams'->'away'->'team'->>'id')::integer AS away
+                           FROM candidate.confirmations c JOIN candidate.fetches f ON f.id=c.source_id
+                           JOIN candidate.revisions r ON r.id=c.revision_id
+                           WHERE c.domain='schedule' AND c.identity=%s AND r.facts->>'gameType'='R'
+                       )
+                       SELECT DISTINCT subject,mlb_id,represented FROM candidate.workload_history h
+                       JOIN games g ON h.represented BETWEEN g.day AND g.day + %s
+                       WHERE h.methodology=%s AND (h.subject='pitcher' OR h.mlb_id IN (g.home,g.away))
+                       ORDER BY 1,2,3""", (box[1], max(WINDOWS)-1, METHODOLOGY))
+    else:
+        raise ValueError('Expected a dated schedule, roster or game boxscore receipt')
+    scopes = cur.fetchall()
+    return [_append(cur, *scope) for scope in scopes]
+
+
+def rebuild_for_observation(connection, receipt):
+    """Refresh the windows relying on a retained schedule, roster or boxscore observation."""
+    return _transaction(connection, _rebuild_receipt, receipt)
