@@ -32,7 +32,11 @@ def accept(cur, domain, identity, facts, source_id, observed_at, *, context_id=N
     current = cur.fetchone()
     if current:
         if observed_at < current[3]:
-            return None
+            # An out-of-order copy of the sole, identical daily listing is still
+            # the actual finality evidence its subsequently fetched boxscore saw.
+            # Never bridge a changed listing or mutate a canonical revision here.
+            if domain != 'schedule' or current[1] != 1 or current[2] != facts:
+                return None
         if observed_at == current[3] and current[2] != facts:
             raise Refused('Contradictory evidence at the same source instant')
     if current and current[2] == facts:

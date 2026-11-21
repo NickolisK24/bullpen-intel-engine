@@ -8,6 +8,7 @@ from services.roster_evidence import roster_entry_player_id
 from services.roster_status_sync import _two_way_eligible
 from sync_v3.discovery import affiliate_directory_request, depth_directory, depth_roster_requests
 from sync_v3.evidence import latest_qualified_source, latest_source_status, replay
+from sync_v3.roster_scope import NON_PITCHING_POSITIONS
 from sync_v3.rosters import roster_on
 
 
@@ -34,7 +35,7 @@ def _pitchers(body, team, parent, kind):
             return None, 'pitcher_population_unresolved'
         code, = positions
         if code not in ('1', 'Y') and not any(_two_way_eligible(r) for r in entries):
-            if code not in ('2', '3', '4', '5', '6', '7', '8', '9', '10', 'O', 'I'):
+            if code not in NON_PITCHING_POSITIONS:
                 return None, 'pitcher_population_unresolved'
             continue
         hands = {(r['person'].get('pitchHand') or {}).get('code') for r in entries}

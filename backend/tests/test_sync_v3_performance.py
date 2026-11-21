@@ -73,12 +73,15 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     finals = [official]
     monkeypatch.setattr(group, 'regular_day', lambda cur, day, team:
                         ({'official_lines': finals, 'sources': [7]}, None) if day == THROUGH else (None, 'missing'))
+    facts['members'].extend([dict(member, id=13, position='O'), dict(member, id=14, position='I')])
     result = group.active_group_performance(None, 118, THROUGH)
     assert result['reason'] is None and result['windows']['season']['appearances'] == 1
     assert result['dates'][THROUGH.isoformat()]['outings'] == [[2, 12]]
     finals.append(dict(official, game_pk=4))
     assert group.active_group_performance(None, 118, THROUGH)['reason'] == 'official_game_log_and_final_population_conflict'
     sources[1]['roster'].append({'position': {'code': '10'}, 'twoWayEligible': True})
+    assert group.active_group_performance(None, 118, THROUGH)['reason'] == 'two_way_role_evidence_unresolved'
+    sources[1]['roster'][-1] = {'position': {'code': 'Y'}}
     assert group.active_group_performance(None, 118, THROUGH)['reason'] == 'two_way_role_evidence_unresolved'
     sources[1]['roster'].pop()
     member['status'] = None

@@ -16,7 +16,7 @@ from sync_v3.comparison import compare_readiness
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
 from sync_v3.schedule_context import missing_listings
-from sync_v3.history import METHODOLOGY, _transaction
+from sync_v3.history import METHODOLOGY, _transaction, evidence_digest
 from sync_v3.intelligence_history import DOMAINS
 
 
@@ -231,6 +231,33 @@ def build_batch(connection, through, limit):
     return dict(before=initial, after=freeze_generation(connection, through), processed=selected)
 
 
+def review_coverage(manifest):
+    """Explain the scope of a verified research generation before any public contract review."""
+    clubs = manifest['clubs']
+    if sorted(club['team'] for club in clubs) != sorted(MLB_TEAM_IDS):
+        raise ValueError('Readiness accounting requires 30 distinct MLB clubs')
+    compared, season_complete, withheld = [], [], {}
+    for club in clubs:
+        if club['readiness'] == 'compared':
+            compared.append(club['team'])
+        elif club['readiness'] == 'season_complete':
+            season_complete.append(club['team'])
+        else:
+            withheld[club['team']] = club['readiness']
+    if withheld:
+        status = 'incomplete_readiness'
+    elif not compared:
+        status = 'all_clubs_season_complete'
+    else:
+        status = 'represented_readiness_accounted'
+    return dict(readiness_status=status, compared=sorted(compared), season_complete=sorted(season_complete),
+                withheld=withheld, missing_active_populations=[c['team'] for c in clubs if c['pitchers'] is None],
+                missing_snapshot_count=len(manifest['missing']), stale_inputs=manifest['stale_inputs'],
+                stale_comparisons=manifest['stale_comparisons'],
+                slate_reason=manifest['slate']['reason'], next_slate_reason=manifest['next_slate']['reason'],
+                current_serving_eligible=False)
+
+
 def verify_generation(connection, digest):
     """Independently recount the pinned inventory, including its immutable facts and calendars."""
     return _transaction(connection, _verify, digest)
@@ -252,10 +279,18 @@ def _verify(cur, digest):
     # Pitch profiles and game facts can be large. Keep memory bounded during full verification.
     with cur.connection.cursor(name='verify_candidate_members') as stream:
         stream.itersize = 8
-        stream.execute("""SELECT h.subject,h.mlb_id,h.represented,h.methodology,h.revision,h.semantic_digest,h.input_digest,h.facts
+        stream.execute("""SELECT h.id,h.subject,h.mlb_id,h.represented,h.methodology,h.revision,h.semantic_digest,h.input_digest,h.facts
                        FROM candidate.generation_inputs p JOIN candidate.workload_history h ON h.id=p.snapshot
                        WHERE p.generation=%s""", (digest,))
-        for subject, entity, day, method, revision, semantic, inputs, facts in stream:
+        for sid, subject, entity, day, method, revision, semantic, inputs, facts in stream:
+            cur.execute("""SELECT f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
+                           FROM candidate.workload_history_sources hs JOIN candidate.fetches f ON f.id=hs.source_id
+                           LEFT JOIN candidate.refusals r ON r.source_id=f.id WHERE hs.snapshot=%s""", (sid,))
+            receipts = cur.fetchall()
+            cur.execute('SELECT endpoint,parameters FROM candidate.history_requests WHERE snapshot=%s', (sid,))
+            requests = [(endpoint, tuple(sorted(params.items()))) for endpoint, params in cur]
+            if evidence_digest(receipts, requests) != inputs:
+                raise ValueError('Pinned snapshot sources disagree with the frozen input digest')
             actual = sha256(encode_json([subject, entity, day.isoformat(), method, facts])).hexdigest()
             member = members.pop((subject, entity, method), None)
             if (not member or day != through or member['revision'] != revision or member['input_digest'] != inputs
@@ -274,5 +309,5 @@ def _verify(cur, digest):
         calendars.append(dict(parameters=params, received_at=at.isoformat(), digest=expected, outcome=outcome))
     if calendars != manifest['calendar_sources']:
         raise ValueError('Pinned calendars disagree with the manifest')
-    return dict(digest=digest, clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
+    return dict(digest=digest, coverage=review_coverage(manifest), clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
                 missing_scopes=len(manifest['missing']), calendar_receipts=len(calendars), current_serving_eligible=False)

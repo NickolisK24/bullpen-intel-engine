@@ -51,8 +51,14 @@ def run_fixture(connection, filename):
             cur.execute('''INSERT INTO candidate.captured_requests VALUES (%s,%s,%s,%s,%s)
                            ON CONFLICT DO NOTHING''',
                         (capture, endpoint, Json(dict(params)), observation.retrieved_at, digest))
-    results = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()), clock=lambda: at,
-                        depth_teams=fixture.get('depth_teams', ()), competition=fixture.get('competition', False), max_jobs=256, budget='historical', capture=capture)
+    results = []
+    while True:
+        batch = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()),
+                          clock=lambda: at, depth_teams=fixture.get('depth_teams', ()),
+                          competition=fixture.get('competition', False), max_jobs=256, budget='historical', capture=capture)
+        results.extend(batch)
+        if len(batch) < 256:
+            break
     errors = []
     with connection, connection.cursor() as cur:
         for oid, status in results:

@@ -2,6 +2,8 @@
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 
+NON_PITCHING_POSITIONS = frozenset(('2', '3', '4', '5', '6', '7', '8', '9', '10', 'O', 'I'))
+
 MLB_MEMBERSHIP_TYPES = ('active_roster', 'forty_man_roster')
 
 

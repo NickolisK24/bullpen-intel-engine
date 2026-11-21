@@ -111,14 +111,18 @@ def _append(cur, subject, mlb_id, through):
     return _store(cur, subject, mlb_id, through, METHODOLOGY, facts, sources)
 
 
+def evidence_digest(receipts, requests):
+    # Observation IDs depend on load order. Stable request scopes and content digests do not.
+    inputs = sorted({encode_json(row) for row in receipts})
+    descriptors = [encode_json(['request', endpoint, dict(params)]) for endpoint, params in sorted(requests)]
+    return sha256(b'\n'.join(inputs + descriptors)).hexdigest()
+
+
 def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=()):
     cur.execute('''SELECT f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
                    FROM candidate.fetches f LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.id=ANY(%s)''', (sources,))
-    # Observation IDs depend on load order. Stable request scopes and content digests do not.
-    inputs = sorted({encode_json(row) for row in cur})
-    request_descriptors = [encode_json(['request', endpoint, dict(params)]) for endpoint, params in sorted(requests)]
-    input_hash = sha256(b'\n'.join(inputs + request_descriptors)).hexdigest()
+    input_hash = evidence_digest(cur.fetchall(), requests)
     content_hash = sha256(encode_json([subject, mlb_id, through.isoformat(), methodology, facts])).hexdigest()
     scope = (subject, mlb_id, through, methodology)
     cur.execute("""SELECT id,revision,semantic_digest,input_digest FROM candidate.workload_history

@@ -14,6 +14,7 @@ from services.roster_status_sync import _two_way_eligible
 from services.team_performance_evidence import DOMAINS, display
 from sync_v3.evidence import replay
 from sync_v3.performance import SOURCE_FIELDS, performance_line
+from sync_v3.roster_scope import NON_PITCHING_POSITIONS
 from sync_v3.rosters import roster_on
 from sync_v3.season_deployment import pitcher_season_deployment
 from sync_v3.workload import regular_day
@@ -80,7 +81,8 @@ def active_group_population(cur, team, through):
         return result, {}
     facts, result['roster_source'] = roster
     raw_roster = replay(cur, result['roster_source']).body['roster']
-    if any(_two_way_eligible(entry) and (entry.get('position') or {}).get('code') != '1'
+    if any((entry.get('position') or {}).get('code') == 'Y' or
+           (_two_way_eligible(entry) and (entry.get('position') or {}).get('code') != '1')
            for entry in raw_roster):
         result['reason'] = 'two_way_role_evidence_unresolved'
         return result, {}
@@ -91,7 +93,7 @@ def active_group_population(cur, team, through):
     arms, logs, splits = [], {}, {}
     for member in facts['members']:
         position = member['position']
-        if position in ('2', '3', '4', '5', '6', '7', '8', '9', '10'):
+        if position in NON_PITCHING_POSITIONS:
             continue
         if position != '1' or member['status'] != 'A':
             result['reason'] = 'active_pitching_population_unresolved'

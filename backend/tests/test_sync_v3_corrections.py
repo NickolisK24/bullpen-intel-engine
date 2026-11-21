@@ -673,9 +673,12 @@ def test_generation_keeps_all_clubs_and_pins_immutable_event_inputs():
             with db, db.cursor() as cur:
                 assert load(cur, second)['stale_comparisons'] == [['team', 118, 'candidate_readiness_changes_v1']]
                 assert load(cur, first)['stale_comparisons'] == [] and load(cur, blank) == empty
+            import psycopg2
+            with pytest.raises(psycopg2.errors.RaiseException, match='provenance is sealed'), db, db.cursor() as cur:
+                cur.execute("""INSERT INTO candidate.history_requests
+                               SELECT min(id),'/schedule','{}'::jsonb FROM candidate.workload_history""")
             assert verify_generation(db, first)['snapshots'] == 2
             assert verify_generation(db, blank)['snapshots'] == 0
-            import psycopg2
             with pytest.raises(psycopg2.errors.RaiseException, match='membership is sealed'), db, db.cursor() as cur:
                 cur.execute('INSERT INTO candidate.generation_inputs SELECT %s,min(id) FROM candidate.workload_history',
                             (blank,))
@@ -706,3 +709,36 @@ def test_generation_batches_resume_on_another_connection_without_repeating_compl
                 cur.execute("SELECT manifest FROM candidate.generations WHERE digest=%s", (second['after'],))
                 manifest = cur.fetchone()[0]
                 assert len(manifest['members']) == 3 and not manifest['current_serving_eligible']
+
+
+def test_older_same_day_schedule_can_confirm_only_an_identical_unrevised_listing(tmp_path):
+    from contextlib import closing
+    from sync_v3.replay import ReplayWithheld, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    played = Path(__file__).parent / 'fixtures/sync_v3/played.json'
+    data = json.loads(played.read_text())
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_fixture(db, played)
+            data['observed_at'] = '2026-07-30T00:45:00Z'
+            copy = tmp_path / 'same.json'
+            copy.write_text(json.dumps(data))
+            run_fixture(db, copy)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT count(*),count(DISTINCT revision_id) FROM candidate.confirmations WHERE domain='schedule'")
+                assert cur.fetchone() == (2, 1)
+                assert compare_finals(cur) == (1, 3)
+            data['observed_at'] = '2026-07-30T00:30:00Z'
+            schedule = next(r for r in data['responses'] if r['endpoint'] == '/schedule')
+            schedule['body']['dates'][0]['games'][0]['teams']['home']['score'] = 9
+            copy.write_text(json.dumps(data))
+            with pytest.raises(ReplayWithheld, match='Official final schedule'):
+                run_fixture(db, copy)
+            with db, db.cursor() as cur:
+                cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='schedule'")
+                assert cur.fetchone() == (2,)
+                assert compare_finals(cur) == (1, 3)

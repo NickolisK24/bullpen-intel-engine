@@ -264,6 +264,9 @@ def _freeze_changes(cur, domain, identity, through):
     cur.execute('SELECT DISTINCT endpoint,parameters FROM candidate.history_requests WHERE snapshot=ANY(%s)', (parents,))
     requests = {(endpoint, tuple(sorted(params.items()))) for endpoint, params in cur}
     snapshot = _store(cur, subject, identity, through, f'candidate_{domain}_changes_v1', report, receipts, requests)
+    cur.execute('SELECT creation_xid=pg_current_xact_id() FROM candidate.workload_history WHERE id=%s', (snapshot[0],))
+    if not cur.fetchone()[0]:
+        return snapshot
     cur.executemany("""INSERT INTO candidate.change_inputs VALUES (%s,%s)
                        ON CONFLICT DO NOTHING""", [(snapshot[0], parent) for parent in parents])
     return snapshot

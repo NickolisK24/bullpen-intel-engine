@@ -110,3 +110,29 @@ def test_unadmitted_fixture_observation_is_recoverable_without_reconciling_it(tm
                 assert cur.fetchone() == (0,)
                 cur.execute("SELECT count(*) FROM candidate.revisions WHERE domain='roster' AND identity LIKE '147/%%'")
                 assert cur.fetchone() == (0,)
+
+
+def test_large_offline_capture_drains_successive_bounded_batches(tmp_path):
+    from contextlib import closing
+    from datetime import date
+    import json
+    import os
+    from pathlib import Path
+    from sync_v3.discovery import pitcher_requests
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    data = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    data['pitcher_ids'] = list(range(10001, 10130))
+    for req in pitcher_requests(date.fromisoformat(data['baseball_date']), data['pitcher_ids']):
+        data['responses'].append(dict(endpoint=req.endpoint, params=req.params(), body={'stats': []}))
+    path = tmp_path / 'league.json'
+    path.write_text(json.dumps(data))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            assert run_fixture(db, path) == len(data['responses']) > 256
+            assert run_fixture(db, path) == 0

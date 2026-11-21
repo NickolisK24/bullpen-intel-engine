@@ -1,4 +1,5 @@
 CREATE TABLE candidate.workload_history (
+    creation_xid xid8 NOT NULL DEFAULT pg_current_xact_id(),
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     subject text NOT NULL CHECK (subject IN ('team','pitcher','game')),
     mlb_id integer NOT NULL CHECK (mlb_id > 0),
@@ -17,7 +18,10 @@ CREATE TABLE candidate.workload_history_sources (
     source_id bigint NOT NULL REFERENCES candidate.fetches(id),
     PRIMARY KEY (snapshot, source_id)
 );
-GRANT SELECT, INSERT ON candidate.workload_history, candidate.workload_history_sources TO sync_v3_worker;
+GRANT SELECT ON candidate.workload_history TO sync_v3_worker;
+GRANT INSERT (subject,mlb_id,represented,methodology,revision,predecessor,semantic_digest,input_digest,facts)
+    ON candidate.workload_history TO sync_v3_worker;
+GRANT SELECT, INSERT ON candidate.workload_history_sources TO sync_v3_worker;
 CREATE INDEX workload_history_by_date ON candidate.workload_history(methodology, represented);
 
 CREATE TABLE candidate.history_requests (
@@ -36,6 +40,28 @@ CREATE TABLE candidate.change_inputs (
     CHECK (change_snapshot <> input_snapshot)
 );
 GRANT SELECT, INSERT ON candidate.change_inputs TO sync_v3_worker;
+
+CREATE FUNCTION candidate.require_snapshot_build_transaction() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE parent_id bigint;
+BEGIN
+    IF TG_TABLE_NAME = 'change_inputs' THEN
+        parent_id := NEW.change_snapshot;
+    ELSE
+        parent_id := NEW.snapshot;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM candidate.workload_history
+                   WHERE id=parent_id AND creation_xid=pg_current_xact_id()) THEN
+        RAISE EXCEPTION 'Historical snapshot provenance is sealed';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER seal_snapshot_sources BEFORE INSERT ON candidate.workload_history_sources
+    FOR EACH ROW EXECUTE FUNCTION candidate.require_snapshot_build_transaction();
+CREATE TRIGGER seal_snapshot_requests BEFORE INSERT ON candidate.history_requests
+    FOR EACH ROW EXECUTE FUNCTION candidate.require_snapshot_build_transaction();
+CREATE TRIGGER seal_change_inputs BEFORE INSERT ON candidate.change_inputs
+    FOR EACH ROW EXECUTE FUNCTION candidate.require_snapshot_build_transaction();
 
 CREATE TABLE candidate.generations (
     creation_xid xid8 NOT NULL DEFAULT pg_current_xact_id(),
