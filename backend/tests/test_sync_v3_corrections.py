@@ -742,3 +742,35 @@ def test_older_same_day_schedule_can_confirm_only_an_identical_unrevised_listing
                 cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='schedule'")
                 assert cur.fetchone() == (2,)
                 assert compare_finals(cur) == (1, 3)
+
+
+def test_generation_link_failure_rolls_back_manifest_and_keeps_previous_generation():
+    from contextlib import closing
+    import psycopg2
+    from sync_v3.generation import freeze_generation, verify_generation
+    from sync_v3.intelligence_history import record_intelligence
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2024, 8, 7)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            first = freeze_generation(db, day)
+            record_intelligence(db, 'readiness', 118, day)
+            with owner, owner.cursor() as cur:
+                cur.execute("""CREATE FUNCTION candidate.rehearsal_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+                               BEGIN RAISE EXCEPTION 'fixture interruption'; END; $$""")
+                cur.execute("""CREATE TRIGGER rehearsal_failure BEFORE INSERT ON candidate.generation_inputs
+                               FOR EACH ROW EXECUTE FUNCTION candidate.rehearsal_failure()""")
+            with pytest.raises(psycopg2.errors.RaiseException, match='fixture interruption'):
+                freeze_generation(db, day)
+            assert verify_generation(db, first)['snapshots'] == 0
+            with db, db.cursor() as cur:
+                cur.execute('SELECT digest FROM candidate.generations')
+                assert cur.fetchall() == [(first,)]
+            with owner, owner.cursor() as cur:
+                cur.execute('DROP TRIGGER rehearsal_failure ON candidate.generation_inputs')
+            second = freeze_generation(db, day)
+            assert verify_generation(db, second)['snapshots'] == 1

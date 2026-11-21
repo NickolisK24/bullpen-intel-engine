@@ -214,3 +214,21 @@ def test_intelligence_versions_bind_each_domain_to_its_own_inputs():
                 facts, = cur.fetchone()
                 assert facts['game_pk'] == 12345 and facts['relief_appearances'][0]['mlb_player_id'] == 102
                 assert facts['reason'] is None and facts['entry_reason'] == 'missing_complete_plays'
+
+
+def test_core_candidate_review_distinguishes_withholding_and_completed_comparison():
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3.generation import review_core_candidate
+
+    teams = sorted(MLB_TEAM_IDS)
+    coverage = dict(readiness_status='represented_readiness_accounted', compared=teams, withheld={},
+                    stale_inputs=[], stale_comparisons=[], missing_snapshot_count=0, slate_reason=None,
+                    next_slate_reason=None, missing_active_populations=[])
+    roster = dict(multiple_clubs={}, clubs={t: 'matched' for t in teams})
+    games = dict(finals={123: 'matched'}, open_games=[])
+    assert review_core_candidate(coverage, roster, games)['status'] == 'core_comparison_complete'
+    assert review_core_candidate(coverage, roster, dict(games, open_games=[124])) == {
+        'status': 'withheld', 'reason_codes': ['represented_slate_still_open']}
+    offseason = dict(coverage, readiness_status='all_clubs_season_complete', compared=[], missing_snapshot_count=30)
+    assert review_core_candidate(offseason, roster, games)['status'] == 'season_complete_withholding'
+    assert review_core_candidate(dict(offseason, stale_inputs=[1]), roster, games)['status'] == 'withheld'

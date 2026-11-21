@@ -230,3 +230,21 @@ def test_generation_detects_new_roster_receipt_before_snapshot_rebuild(tmp_path)
                     cur.execute("SELECT manifest->'stale_inputs' FROM candidate.generations WHERE digest=%s",
                                 (generation,))
                     assert cur.fetchone()[0] == stale
+
+
+def test_candidate_membership_requires_matching_entities_dates_and_official_roster_receipt():
+    from sync_v3.cohort import _club_membership
+
+    day = '2024-08-07'
+    reads = dict(readiness=dict(team=118, membership_date=day, team_state={'public_code': 'stretched'},
+                                reason=None, arms={'102': {}}),
+                 depth=dict(team=118, represented=day, views={'active': {'pitchers': {'102': {}, '103': {}},
+                                                                          'reason': None}}),
+                 group_performance=dict(team=118, through=day, members=[{'player': 102}], reason=None))
+    receipts = {key: {7} for key in reads}
+    assert _club_membership(118, day, reads, receipts) == 'matched'
+    assert _club_membership(118, day, reads, dict(receipts, depth={8})) == 'dated_roster_receipts_differ_or_missing'
+    reads['group_performance']['members'][0]['player'] = 103
+    assert _club_membership(118, day, reads, receipts) == 'active_bullpen_identity_conflict'
+    reads['depth']['represented'] = '2024-08-06'
+    assert _club_membership(118, day, reads, receipts) == 'misaligned_population_snapshot'

@@ -190,3 +190,17 @@ def test_deployment_change_requires_same_qualified_signal_on_adjacent_dates():
             revised = deployment_changes(cur, 118, end)
             assert revised['events'] == [] and revised['status'] == 'partial_deployment_coverage'
             assert deployment_changes(cur, 118, end, revisions=(1, 1)) == first
+
+
+def test_generation_game_comparison_recounts_official_side_and_outs():
+    from sync_v3.cohort import _official_relief
+
+    played = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    box = next(r['body'] for r in played['responses'] if r['endpoint'].endswith('/boxscore'))
+    game = dict(game_pk=12345, home=147, away=111)
+    facts = dict(game_pk=12345, relief_appearances=[dict(mlb_team_id=147, mlb_player_id=102, outs=9)])
+    assert _official_relief(game, facts, box) == 'matched'
+    facts['relief_appearances'][0]['outs'] = 8
+    assert _official_relief(game, facts, box) == 'official_relief_lines_disagree'
+    box['teams']['home']['players']['ID102']['stats']['pitching']['gamesPitched'] = 0
+    assert _official_relief(game, facts, box) == 'unverified_relief_appearance'

@@ -12,6 +12,7 @@ from services.pitcher_public_labels import build_public_arm_read
 from services.team_state_public_vocabulary import PUBLIC_STATE_LABELS
 from services.team_state_vnext_production_proof import _reference_date_alignment
 from sync_v3.change_history import COMPARISONS
+from sync_v3.cohort import compare_games, compare_membership, verify_change_lineage
 from sync_v3.comparison import compare_readiness
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
@@ -264,6 +265,7 @@ def verify_generation(connection, digest):
 
 
 def _verify(cur, digest):
+    cur.execute('SET TRANSACTION READ ONLY')
     cur.execute('SELECT represented,manifest FROM candidate.generations WHERE digest=%s', (digest,))
     stored = cur.fetchone()
     if not stored:
@@ -309,5 +311,36 @@ def _verify(cur, digest):
         calendars.append(dict(parameters=params, received_at=at.isoformat(), digest=expected, outcome=outcome))
     if calendars != manifest['calendar_sources']:
         raise ValueError('Pinned calendars disagree with the manifest')
-    return dict(digest=digest, coverage=review_coverage(manifest), clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
+    coverage = review_coverage(manifest)
+    rosters = compare_membership(cur, digest, through.isoformat())
+    games = compare_games(cur, digest, manifest)
+    return dict(digest=digest, coverage=coverage, roster_comparison=rosters, game_comparison=games,
+                historical_changes=verify_change_lineage(cur, digest, through),
+                core_candidate_review=review_core_candidate(coverage, rosters, games),
+                clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
                 missing_scopes=len(manifest['missing']), calendar_receipts=len(calendars), current_serving_eligible=False)
+
+
+def review_core_candidate(coverage, rosters, games):
+    """Scope the historical readiness and final-game review. Public serving requires separate proof."""
+    reasons = []
+    if coverage['stale_inputs'] or coverage['stale_comparisons']:
+        reasons.append('superseded_evidence')
+    active = coverage['compared']
+    if coverage['readiness_status'] == 'all_clubs_season_complete' and not reasons:
+        return dict(status='season_complete_withholding', reason_codes=[])
+    if coverage['withheld']:
+        reasons.append('unresolved_club_readiness')
+    if coverage['missing_snapshot_count']:
+        reasons.append('missing_candidate_scopes')
+    if coverage['slate_reason'] or coverage['next_slate_reason']:
+        reasons.append('incomplete_represented_schedule')
+    if set(active).intersection(coverage['missing_active_populations']):
+        reasons.append('missing_dated_population')
+    if rosters['multiple_clubs'] or any(rosters['clubs'].get(team) != 'matched' for team in active):
+        reasons.append('active_membership_unverified')
+    if games['open_games']:
+        reasons.append('represented_slate_still_open')
+    if any(value != 'matched' for value in games['finals'].values()):
+        reasons.append('official_final_unverified')
+    return dict(status='withheld' if reasons else 'core_comparison_complete', reason_codes=reasons)
