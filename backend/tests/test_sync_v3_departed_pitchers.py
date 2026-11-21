@@ -59,7 +59,7 @@ def test_quiet_search_skips_pitcher_directory_and_preserves_optional_group_bound
     from unittest.mock import Mock
     cursor = Mock()
     monkeypatch.setattr(product_reads, '_read_transaction', lambda connection, run: run(cursor))
-    monkeypatch.setattr(product_reads, '_selected', lambda cur, rev: (1, 'edition', None, '2026-10-30'))
+    monkeypatch.setattr(product_reads, '_selected', lambda cur, rev: (1, 'edition', date(2026, 10, 28), '2026-10-30'))
     calls = []
 
     def unavailable(cur, digest):
@@ -71,6 +71,7 @@ def test_quiet_search_skips_pitcher_directory_and_preserves_optional_group_bound
     quiet = product_reads.read_search(None, 'B')
     assert calls == [] and quiet['search']['status'] == 'quiet'
     assert quiet['pitcher_identity_status'] == 'not_evaluated'
+    assert quiet['data_through'] == '2026-10-28' and quiet['search']['represented_date'] == '2026-10-30'
     result = product_reads.read_search(None, 'Boston')
     assert calls == ['edition'] and result['search']['status'] == 'partial'
     teams, pitchers, matchups = result['search']['groups']

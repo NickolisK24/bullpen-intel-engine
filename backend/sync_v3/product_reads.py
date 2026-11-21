@@ -8,7 +8,7 @@ from services.team_state_public_vocabulary import (
     public_team_state, team_state_unavailable,
 )
 from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances, team_relief_games
-from sync_v3.depth import roster_depth_evidence
+from sync_v3.depth import named_roster_lists, roster_depth_evidence
 from sync_v3.transaction_reads import prior_transaction_days, slate_transaction_changes, team_transactions
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
@@ -1078,6 +1078,7 @@ def read_team_board(connection, team, *, revision=None):
         result['prior_transaction_days'] = (prior_transaction_days(cur, generation, team, through)
                                             if result['official_transactions']['status'] != 'unavailable' else [])
         result['roster_depth_evidence'] = roster_depth_evidence(blocks['depth'], team, through)
+        result['roster_listings'] = named_roster_lists(blocks['depth'], result['roster_depth_evidence'], directory)
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
         from sync_v3.team_board_windows import board_concentration, board_workload_windows

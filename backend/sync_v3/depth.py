@@ -141,3 +141,23 @@ def roster_depth_evidence(depth, team, through):
     return dict(result, active_listed=len(active['pitchers']), forty_man_listed=len(forty['pitchers']),
                 forty_man_listed_outside_active=outside, status_codes=codes,
                 reason='off_active_bullpen_population_unverified')
+
+
+def named_roster_lists(depth, evidence, directory):
+    """Display the frozen club lists even when a BaseballOS pitcher route is unknown."""
+    if evidence['active_listed'] is None:
+        return None
+    team = evidence['team']
+    active = depth['value']['views']['active']['pitchers']
+    lists = {}
+    for kind, ids in [('active', sorted(map(int, active))), ('forty_man_only', evidence['forty_man_listed_outside_active'])]:
+        rows = []
+        for mlb in ids:
+            person = directory.get(mlb, {})
+            receipt = person.get('roster_observation', {})
+            matches = person.get('team_id') == team if kind == 'active' else (
+                receipt.get('team_id') == team and receipt.get('membership') == '40Man'
+                and receipt.get('represented') == evidence['represented'])
+            rows.append(dict(mlb_id=mlb, name=person.get('name') if matches else None))
+        lists[kind] = rows
+    return lists

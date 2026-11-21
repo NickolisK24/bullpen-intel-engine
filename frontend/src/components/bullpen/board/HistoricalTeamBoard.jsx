@@ -52,12 +52,20 @@ export function HistoricalGroupPerformance({ performance, team, through }) {
   </section>
 }
 
-export function HistoricalRosterListings({ roster, team, through }) {
+export function HistoricalRosterListings({ roster, listings, team, through }) {
   const covered = roster?.team === team && roster.represented === through
     && Number.isSafeInteger(roster.active_listed) && Number.isSafeInteger(roster.forty_man_listed)
     && roster.active_listed >= 0 && roster.forty_man_listed >= 0
     && Array.isArray(roster.forty_man_listed_outside_active)
     && roster.forty_man_listed_outside_active.length <= roster.forty_man_listed
+  const active = listings?.active, outside = listings?.forty_man_only
+  const validRow = row => Number.isSafeInteger(row?.mlb_id) && row.mlb_id > 0
+    && (row.name === null || (typeof row.name === 'string' && row.name.trim().length > 0))
+  const listsCovered = covered && Array.isArray(active) && Array.isArray(outside)
+    && active.length === roster.active_listed && outside.length === roster.forty_man_listed_outside_active.length
+    && [...active, ...outside].every(validRow)
+    && new Set([...active, ...outside].map(row => row.mlb_id)).size === active.length + outside.length
+    && outside.every((row, index) => row.mlb_id === roster.forty_man_listed_outside_active[index])
   return <section aria-labelledby="historical-roster-listings">
     <h2 id="historical-roster-listings">Pitchers on MLB roster lists</h2>
     {covered ? <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -65,6 +73,12 @@ export function HistoricalRosterListings({ roster, team, through }) {
       <div><dt>40-man list</dt><dd>{roster.forty_man_listed}</dd></div>
       <div><dt>Listed on the 40-man roster only</dt><dd>{roster.forty_man_listed_outside_active.length}</dd></div>
     </dl> : <p>Roster comparison unavailable for this date.</p>}
+    {listsCovered && <details><summary>Pitchers listed for {through}</summary>
+      {[[active, 'Active roster'], [outside, '40-man roster only']].map(([rows, title]) => <div key={title}>
+        <h3>{title}</h3>
+        {rows.length ? <ul>{rows.map(row => <li key={row.mlb_id}>{row.name || `MLB player ${row.mlb_id}`}</li>)}</ul> : <p>None listed.</p>}
+      </div>)}
+    </details>}
   </section>
 }
 
@@ -184,7 +198,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         </Link>
       </div>)}
     </details>}
-    <HistoricalRosterListings roster={data.roster_depth_evidence} team={team} through={data.data_through} />
+    <HistoricalRosterListings roster={data.roster_depth_evidence} listings={data.roster_listings} team={team} through={data.data_through} />
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />

@@ -106,7 +106,7 @@ def test_league_concentration_requires_the_whole_window(defect, expected):
 
 
 def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
-    from sync_v3.depth import roster_depth_evidence
+    from sync_v3.depth import named_roster_lists, roster_depth_evidence
 
     day = date(2024, 8, 7)
     active = dict(reason=None, pitchers={'1': dict(status_codes=['A'])})
@@ -121,6 +121,14 @@ def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
     assert evidence['status_codes'] == {2: ['D60', 'RM'], 12: ['D15']}
     assert evidence['reason'] == 'off_active_bullpen_population_unverified'
     assert evidence['citation'] == depth['citation']
+    directory = {
+        1: dict(team_id=111, name='Other club'),
+        2: dict(name='Prior listing', roster_observation=dict(team_id=118, membership='40Man', represented='2024-08-06')),
+        12: dict(name='Dated name', roster_observation=dict(team_id=118, membership='40Man', represented=str(day))),
+    }
+    assert named_roster_lists(depth, evidence, directory) == dict(
+        active=[dict(mlb_id=1, name=None)],
+        forty_man_only=[dict(mlb_id=2, name=None), dict(mlb_id=12, name='Dated name')])
     for team, when in [(111, day), (118, date(2024, 8, 8))]:
         with pytest.raises(ValueError, match='another club or date'):
             roster_depth_evidence(depth, team, when)
@@ -133,6 +141,7 @@ def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
     refused = roster_depth_evidence(depth, 118, day)
     assert (refused['active_listed'], refused['forty_man_listed']) == (None, None)
     assert refused['forty_man_listed_outside_active'] is None and refused['reason'] == 'parent_club_conflict'
+    assert named_roster_lists(depth, refused, directory) is None
 
 
 def test_historical_editorial_selection_preserves_governed_suppression_without_loading_live_context(monkeypatch):

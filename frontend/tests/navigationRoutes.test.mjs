@@ -215,6 +215,15 @@ test('dated roster listing counts preserve a verified empty comparison and withh
   const team = 111, through = '2017-08-28'
   const roster = { team, represented: through, active_listed: 3, forty_man_listed: 3, forty_man_listed_outside_active: [] }
   const show = value => render(React.createElement(HistoricalRosterListings, { roster: value, team, through }))
+  const rows = [{ mlb_id: 10, name: 'Active Starter' }, { mlb_id: 11, name: null }, { mlb_id: 12, name: 'Active Reliever' }]
+  const list = outside => render(React.createElement(HistoricalRosterListings, {
+    roster: { ...roster, forty_man_listed_outside_active: [45] }, team, through,
+    listings: { active: rows, forty_man_only: outside },
+  }))
+  const named = list([{ mlb_id: 45, name: 'Reserve Pitcher' }])
+  for (const text of ['Active Starter', 'MLB player 11', 'Reserve Pitcher']) assert.ok(named.includes(text))
+  assert.ok(!named.includes('/pitcher/'))
+  for (const id of [10, 46]) assert.ok(!list([{ mlb_id: id, name: 'Wrong member' }]).includes('Wrong member'))
   assert.ok(show(roster).includes('Listed on the 40-man roster only</dt><dd>0</dd>'))
   for (const overrides of [{ team: 141 }, { represented: '2017-08-29' }, { forty_man_listed_outside_active: null }]) {
     const html = show({ ...roster, ...overrides })

@@ -1255,6 +1255,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert stories['roster_depth_evidence']['forty_man_listed_outside_active'] == [701234, 701235]
             assert stories['roster_depth_evidence']['citation'] == board['sections']['depth']['citation']
             assert stories['roster_depth_evidence'] == board['roster_depth_evidence']
+            assert board['roster_listings']['forty_man_only'] == [
+                dict(mlb_id=701234, name='Former Boston Reliever'), dict(mlb_id=701235, name='Reserve Pitcher')]
+            assert dict(mlb_id=11100, name='Rehearsal Arm 11100') in board['roster_listings']['active']
             assert stories['coverage']['bullpen_optionality_context'] == 'complete_dated_arm_reads'
             assert stories['coverage']['role_stability_context'] == 'incomplete_comparison_calendar'
             assert stories['coverage']['bullpen_concentration_context'] == 'complete_calendar'
