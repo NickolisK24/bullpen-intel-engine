@@ -1,7 +1,7 @@
 """Describe official relief deployment in one date-bound candidate game."""
 
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 from services.play_by_play_foundation import _normalize_events
@@ -11,6 +11,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync import _extract_leverage_index
 from services.team_board_public_deployment_context import _recorded_li, entry_from_ordered_events, movement_window_evidence
 from sync_v3.discovery import calendar_requests
+from sync_v3.pitch_measurements import game_pitch_samples, monthly_pitch_sample
 from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.workload import _game_workload
 
@@ -67,7 +68,7 @@ def qualified_entries(game, day, lines, plays):
             for club, pitcher in expected}, None
 
 
-def game_deployment(cur, game_pk, day):
+def game_deployment(cur, game_pk, day, *, include_pitch_samples=False):
     result = {'game_pk': game_pk, 'baseball_date': day.isoformat(), 'sources': {},
               'relief_appearances': None, 'reason': None}
     sources = result['sources']
@@ -81,10 +82,10 @@ def game_deployment(cur, game_pk, day):
     if game is None or game['gameType'] not in role_movement.GAME_TYPES:
         result['reason'] = 'missing_competitive_game'
         return result
-    return _from_schedule(cur, game, day, sources['schedule'])
+    return _from_schedule(cur, game, day, sources['schedule'], include_pitch_samples=include_pitch_samples)
 
 
-def _from_schedule(cur, game, day, schedule_source):
+def _from_schedule(cur, game, day, schedule_source, *, include_pitch_samples=False):
     game_pk = game['gamePk']
     sources = {'schedule': schedule_source}
     result = {'game_pk': game_pk, 'game_type': game['gameType'], 'baseball_date': day.isoformat(),
@@ -104,6 +105,10 @@ def _from_schedule(cur, game, day, schedule_source):
             reason = 'plays_predate_final_boxscore'
         else:
             entries, reason = qualified_entries(game, day, lines, receipt.body['allPlays'])
+    if include_pitch_samples:
+        samples, tracking_reason = {}, reason
+        if reason is None:
+            samples, tracking_reason = game_pitch_samples(game, day, lines, receipt.body['allPlays'])
     result['entry_reason'] = reason
     result['relief_appearances'] = []
     for row in lines:
@@ -119,6 +124,11 @@ def _from_schedule(cur, game, day, schedule_source):
                 'save': row['save'], 'hold': row['hold'],
                 'games_finished': row['games_finished'], 'outs': row['outs_recorded'],
             })
+            if include_pitch_samples:
+                result['relief_appearances'][-1]['pitch_tracking'] = samples.get(key) or {
+                    'reason': tracking_reason, 'types': [], 'tracked_pitches': None,
+                    'official_pitches': row['pitches_thrown'],
+                }
     return result
 
 
@@ -167,3 +177,31 @@ def club_role_movement(cur, team, through):
                              **role_movement.classify_observed_role_movement(recent=recent, prior=prior)})
     return {'contract': role_movement.CONTRACT, 'mlb_team_id': team, 'through': through.isoformat(),
             'complete_game_coverage': not gaps, 'gaps': gaps, 'sources': sources, 'profiles': profiles}
+
+
+def pitcher_pitch_history(cur, player, through, season):
+    """Use the reconciled official log to enumerate every expected regular-season relief outing."""
+    result = {'through': through.isoformat(), 'mlb_player_id': player, 'months': [],
+              'season_sources': season['sources'], 'reason': season['reason']}
+    if season['facts'] is None:
+        return result
+    required = set(season['facts']['season']['games'])
+    log = replay(cur, season['sources']['gameLog']).body
+    by_month = defaultdict(list)
+    for outing in log['stats'][0]['splits']:
+        day = date.fromisoformat(outing['date'])
+        if day > through:
+            continue
+        pk = outing['game']['gamePk']
+        if pk not in required:
+            continue
+        game = game_deployment(cur, pk, day, include_pitch_samples=True)
+        arm = next((r for r in game['relief_appearances'] or () if r['mlb_player_id'] == player
+                    and r['mlb_team_id'] == outing['team']['id']), None)
+        tracking = arm['pitch_tracking'] if arm else {'reason': game['reason'] or 'official_relief_line_missing'}
+        by_month[day.strftime('%Y-%m')].append((pk, game['sources'], tracking))
+    for month, outings in sorted(by_month.items()):
+        result['months'].append({'month': month, **monthly_pitch_sample([r[2] for r in outings]),
+                                 'games': [{'game_pk': pk, 'sources': sources, 'reason': sample['reason']}
+                                           for pk, sources, sample in sorted(outings)]})
+    return result

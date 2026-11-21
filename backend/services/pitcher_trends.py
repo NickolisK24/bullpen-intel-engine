@@ -17,6 +17,22 @@ def _tenth(value, denominator):
     return float((value / denominator).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
 
 
+def pitch_type_summary(code, pitches, total, measured, speed_sum):
+    mean = _tenth(speed_sum, pitches) if measured == pitches else None
+    return {'type': code, 'pitches': pitches, 'mean_mph': mean,
+            'mix_percent': _tenth(Decimal(100 * pitches), total)}
+
+
+def summarized_pitch_types(speeds_by_type):
+    total = sum(map(len, speeds_by_type.values()))
+    values = []
+    for code, speeds in sorted(speeds_by_type.items()):
+        known = [v for v in speeds if v is not None and isfinite(v) and v > 0]
+        speed_sum = sum((Decimal(str(v)) for v in known), Decimal(0))
+        values.append(pitch_type_summary(code, len(speeds), total, len(known), speed_sum))
+    return values
+
+
 def season_pitch_characteristics(pitcher, through, *, appearance_team_id=None):
     """Count each retained current pitch once. Withhold incomplete calendar months."""
     if through is None:
@@ -64,15 +80,7 @@ def season_pitch_characteristics(pitcher, through, *, appearance_team_id=None):
     result = []
     for month, sample in months.items():
         types = sample.pop('types')
-        total = sum(map(len, types.values()))
-        values = []
-        if sample['verified_outings'] == sample['outings']:
-            for code, speeds in sorted(types.items()):
-                mean = None
-                if all(v is not None and isfinite(v) and v > 0 for v in speeds):
-                    mean = _tenth(sum(Decimal(str(v)) for v in speeds), len(speeds))
-                values.append({'type': code, 'pitches': len(speeds), 'mean_mph': mean,
-                               'mix_percent': _tenth(Decimal(100 * len(speeds)), total)})
+        values = summarized_pitch_types(types) if sample['verified_outings'] == sample['outings'] else []
         result.append({'month': month, **sample, 'types': values})
     return {'method_version': 'monthly_recorded_relief_pitches_v1', 'source': SOURCE,
             'through': through.isoformat(), 'months': result}

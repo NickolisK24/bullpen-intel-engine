@@ -659,9 +659,10 @@ def _normalize_pitch_events(
     home_team_id,
     away_team_id,
     sync_run_id,
+    local_pitcher_ids=None,
 ):
-    pitcher_ids = _pitcher_ids_for_events(all_plays)
-    local_pitcher_ids = _local_pitcher_ids(pitcher_ids)
+    if local_pitcher_ids is None:
+        local_pitcher_ids = _local_pitcher_ids(_pitcher_ids_for_events(all_plays))
     pitches = []
     unresolved_pitchers = 0
 
