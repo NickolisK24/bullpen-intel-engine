@@ -1,11 +1,12 @@
 import { useSearchParams } from 'react-router-dom'
-import { parseRehearsalRevision } from '../../utils/evidenceLinks'
+import { readRehearsalEdition } from '../../utils/evidenceLinks'
 import { useFetch } from '../../hooks/useFetch'
-import { getLeagueProjection, getRehearsalLeague } from '../../utils/api'
-import { Disclosure, ErrorState, FreshnessStamp, LoadingPane, UnavailableDataState } from '../UI'
+import { getLeagueProjection } from '../../utils/api'
+import { Disclosure, ErrorState, FreshnessStamp, UnavailableDataState } from '../UI'
+import HistoricalLeague from './HistoricalLeague'
 import DashboardStorylines from './DashboardStorylines'
 import LeagueTeamStateLandscape from './LeagueTeamStateLandscape'
-import { getLeagueTeamStateListingView, historicalLeagueView } from './leagueTeamStateListingView'
+import { getLeagueTeamStateListingView } from './leagueTeamStateListingView'
 import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
@@ -18,32 +19,12 @@ import {
 // leads, while backend-authored storylines and independent context stay intact.
 export default function Dashboard() {
   const [params] = useSearchParams()
-  if (!params.has('rehearsalRevision') && !params.has('rehearsalGeneration')) return <PublicDashboard />
   try {
-    const revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
-    const generation = params.get('rehearsalGeneration')
-    if (!revision || (generation !== null && (!/^[a-f0-9]{64}$/.test(generation) || params.getAll('rehearsalGeneration').length > 1))) {
-      throw new Error('Invalid historical League edition.')
-    }
-    return <HistoricalLeague key={JSON.stringify([revision, generation])} revision={revision} generation={generation} />
+    const edition = readRehearsalEdition(params)
+    return edition ? <HistoricalLeague key={JSON.stringify(edition)} {...edition} /> : <PublicDashboard />
   } catch (error) {
     return <ErrorState message={error.message} />
   }
-}
-
-function HistoricalLeague({ revision, generation }) {
-  const league = useFetch(async options => {
-    const page = await getRehearsalLeague(revision, options)
-    const view = historicalLeagueView(page, revision, generation)
-    if (!view) throw new Error('The requested historical League edition could not be verified.')
-    return view
-  }, [revision, generation])
-  if (league.loading) return <LoadingPane message="Loading historical League…" />
-  if (league.error) return <ErrorState message={league.error} onRetry={league.refetch} />
-  return <main className="mx-auto max-w-7xl p-6">
-    <h1 className="mb-4 font-display text-3xl">Historical League · Revision {revision}</h1>
-    <LeagueTeamStateLandscape view={league.data} historical />
-  </main>
 }
 
 function PublicDashboard() {

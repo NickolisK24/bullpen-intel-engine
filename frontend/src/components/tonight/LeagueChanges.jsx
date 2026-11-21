@@ -1,13 +1,15 @@
 import { Link } from 'react-router-dom'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { buildRehearsalTeamBoardHref, buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { leagueChangeView } from './tonightView'
 
 // Backend order is authoritative: items are rendered as served, never grouped
 // or re-sorted. The headline leads; team and date sit on a quieter meta row
 // that also carries the Team Board handoff.
-export default function LeagueChanges({ changes }) {
+export default function LeagueChanges({ changes, edition }) {
   const items = (Array.isArray(changes) ? changes : [])
-    .map(change => leagueChangeView(change, buildTeamBoardHref(change?.team_abbreviation)))
+    .map(change => leagueChangeView(change, edition
+      ? buildRehearsalTeamBoardHref(change?.team_id, edition.revision, edition.generation)
+      : buildTeamBoardHref(change?.team_abbreviation)))
     .filter(Boolean)
   if (items.length === 0) return null
   return (

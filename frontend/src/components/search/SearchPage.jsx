@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { searchDiscovery, searchRehearsalEdition } from '../../utils/api'
 import {
   buildMatchupHref,
+  buildRehearsalMatchupHref,
   buildRehearsalPitcherHref,
   buildRehearsalTeamBoardHref,
   buildPitcherHref,
@@ -75,7 +76,7 @@ function ResultLink({ result, edition }) {
     }
     if (result.entity_type === 'matchup' && Number.isSafeInteger(result.id) && result.id > 0
         && result.metadata?.game_pk === result.id) {
-      href = `${buildMatchupHref(result.id)}?rehearsalRevision=${edition.revision}&rehearsalGeneration=${edition.generation}`
+      href = buildRehearsalMatchupHref(result.id, edition.revision, edition.generation)
     }
   }
   if (!result?.primary_label || (!edition && !href)) return null

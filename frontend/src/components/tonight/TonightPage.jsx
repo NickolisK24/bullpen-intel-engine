@@ -1,7 +1,9 @@
 import { useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getTonightV1 } from '../../utils/api'
+import { getRehearsalTonight, getTonightV1 } from '../../utils/api'
+import { buildRehearsalMatchupHref, buildRehearsalTeamBoardHref, readRehearsalEdition } from '../../utils/evidenceLinks'
+import { ErrorState } from '../UI'
 import FeaturedGames from './FeaturedGames'
 import LeadDevelopment from './LeadDevelopment'
 import LeagueChanges from './LeagueChanges'
@@ -75,6 +77,63 @@ export function TonightPageView({ payload, loading = false, error = null, onRetr
 }
 
 export default function TonightPage() {
+  const [params] = useSearchParams()
+  try {
+    const edition = readRehearsalEdition(params)
+    return edition ? <HistoricalTonight key={JSON.stringify(edition)} {...edition} /> : <PublicTonight />
+  } catch (error) {
+    return <ErrorState message={error.message} />
+  }
+}
+
+export function historicalSlate(page, revision, generation) {
+  if (page?.scope !== 'isolated_historical_core' || page.status !== 'represented' || page.current_serving_eligible !== false
+    || page.selection_revision !== revision || typeof page.generation !== 'string' || !/^[a-f0-9]{64}$/.test(page.generation)
+    || (generation !== null && page.generation !== generation) || !page.data_through || !page.availability_reference
+    || !Array.isArray(page.games) || page.summary?.game_count !== page.games.length
+    || page.quiet_day !== (page.games.length === 0) || !Array.isArray(page.league_changes)) return null
+  const ids = new Set()
+  const games = []
+  for (const game of page.games) {
+    const pk = game?.game_pk
+    const matchup = buildRehearsalMatchupHref(pk, revision, page.generation)
+    const away = buildRehearsalTeamBoardHref(game?.away?.team_id, revision, page.generation)
+    const home = buildRehearsalTeamBoardHref(game?.home?.team_id, revision, page.generation)
+    const authority = game?.historical_availability
+    if (!matchup || ids.has(pk) || !away || !home || away === home
+        || authority?.generation !== page.generation || authority.current_serving_eligible !== false
+        || authority.reference_date !== page.availability_reference || authority.data_through !== page.data_through) return null
+    ids.add(pk)
+    games.push({ ...game, links: { matchup, away_team_board: away, home_team_board: home } })
+  }
+  if (page.league_changes.some(change => change?.occurred_on !== page.data_through
+    || !change.source_ref?.startsWith(page.generation + '/'))) return null
+  return { ...page, games }
+}
+
+function HistoricalTonight({ revision, generation }) {
+  const slate = useFetch(async options => {
+    const page = historicalSlate(await getRehearsalTonight(revision, options), revision, generation)
+    if (!page) throw new Error('The requested historical slate could not be verified.')
+    return page
+  }, [revision, generation])
+  if (slate.loading) return <TonightLoading />
+  if (slate.error) return <ErrorState message={slate.error} onRetry={slate.refetch} />
+  const page = slate.data
+  return <main className="mx-auto min-w-0 max-w-6xl p-6">
+    <h1 className="font-display text-3xl">Historical Tonight · {page.availability_reference}</h1>
+    <p>Data through {page.data_through} · Revision {revision}</p>
+    {page.quiet_day ? <p>No games on the represented slate.</p> : <>
+      <LeadDevelopment lead={page.lead} games={page.games} />
+      <FeaturedGames payload={page} />
+      <TonightSlate games={page.games} />
+    </>}
+    <LeagueChanges changes={page.league_changes} edition={{ revision, generation: page.generation }} />
+    <Link className="underline" to={`/dashboard?rehearsalRevision=${revision}&rehearsalGeneration=${page.generation}`}>Open this League edition</Link>
+  </main>
+}
+
+function PublicTonight() {
   const headingRef = useRef(null)
   const fetchTonight = useCallback(options => getTonightV1(options), [])
   const { data, loading, error, refetch } = useFetch(fetchTonight, [fetchTonight])

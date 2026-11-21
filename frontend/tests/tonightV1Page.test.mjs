@@ -27,7 +27,7 @@ after(async () => {
 })
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
-const { TonightPageView } = await server.ssrLoadModule('/src/components/tonight/TonightPage.jsx')
+const { TonightPageView, historicalSlate } = await server.ssrLoadModule('/src/components/tonight/TonightPage.jsx')
 const { default: TonightGameCard } = await server.ssrLoadModule('/src/components/tonight/TonightGameCard.jsx')
 const view = await server.ssrLoadModule('/src/components/tonight/tonightView.js')
 const { metadataForLocation } = await server.ssrLoadModule('/src/utils/publicRouteMetadata.js')
@@ -532,4 +532,27 @@ test('named rest preserves same-day use and withholds a missing appearance inter
   const arms = [...html.matchAll(/data-testid="tonight-key-arm">([\s\S]*?)<\/li>/g)].map(m => textOf(m[1]))
   assert.match(arms[0], /0 days since last appearance/)
   assert.doesNotMatch(arms[1], /days? since last appearance/)
+})
+
+test('historical slate binds game navigation and distinguishes an off-day from missing evidence', () => {
+  const generation = 'a'.repeat(64), revision = 3
+  const page = { scope: 'isolated_historical_core', status: 'represented', selection_revision: revision,
+    generation, current_serving_eligible: false, data_through: '2024-08-07', availability_reference: '2024-08-08',
+    summary: { game_count: 0 }, games: [], quiet_day: true, league_changes: [] }
+  const read = p => historicalSlate(p, revision, generation)
+  assert.equal(read(page).quiet_day, true)
+  for (const patch of [{ status: 'schedule_unavailable' }, { quiet_day: false }, { summary: { game_count: 1 } },
+    { selection_revision: 1 }, { generation: 'f'.repeat(64) }, { current_serving_eligible: true }]) {
+    assert.equal(read({ ...page, ...patch }), null)
+  }
+  const game = { game_pk: 88, home: { team_id: 111 }, away: { team_id: 110 },
+    historical_availability: { generation, current_serving_eligible: false, data_through: page.data_through,
+      reference_date: page.availability_reference } }
+  const played = { ...page, games: [game], quiet_day: false, summary: { game_count: 1 } }
+  const { links } = read(played).games[0]
+  assert.equal(links.matchup, `/matchup/88?rehearsalRevision=3&rehearsalGeneration=${generation}`)
+  assert.ok(links.home_team_board.includes('team=111&rehearsalRevision=3'))
+  assert.equal(read({ ...played, games: [game, game], summary: { game_count: 2 } }), null)
+  assert.equal(read({ ...played, availability_reference: page.data_through }), null)
+  assert.equal(read({ ...played, league_changes: [{ occurred_on: page.data_through, source_ref: 'different' }] }), null)
 })

@@ -102,6 +102,22 @@ export function parseRehearsalRevision(param, repeated) {
   return revision
 }
 
+export function readRehearsalEdition(params) {
+  if (!params.has('rehearsalRevision') && !params.has('rehearsalGeneration')) return null
+  const revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
+  const generation = params.get('rehearsalGeneration')
+  if (!revision || (generation !== null && (!/^[a-f0-9]{64}$/.test(generation) || params.getAll('rehearsalGeneration').length > 1))) {
+    throw new Error('Invalid historical rehearsal edition.')
+  }
+  return { revision, generation }
+}
+
+export function buildRehearsalMatchupHref(game, revision, generation) {
+  if (!Number.isSafeInteger(game) || game < 1 || !Number.isSafeInteger(revision) || revision < 1
+    || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) return null
+  return `${buildMatchupHref(game)}?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`
+}
+
 export function buildRehearsalTeamBoardHref(team, revision, generation) {
   if (!Number.isSafeInteger(team) || team < 1 || !Number.isSafeInteger(revision) || revision < 1
     || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) return null
