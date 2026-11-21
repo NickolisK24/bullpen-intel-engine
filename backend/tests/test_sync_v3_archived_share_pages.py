@@ -8,16 +8,15 @@ from sync_v3.archived_share_pages import compare_share_pages
 from tests.test_share_artifact_previews import app
 
 
-def test_frozen_pages_require_matching_archive_manifest_and_delivery_tree(tmp_path):
-    root = tmp_path / 'share'
-    route = root / 'abc' / 'index.html'
-    route.parent.mkdir(parents=True)
-    meta = {'representation': 'immutable_share_artifact', 'public-id': 'abc', 'artifact-type': 'team_state',
-            'data-through': '2026-08-17'}
-    body = '\n'.join(f'<meta name="baseballos:{k}" content="{v}" />' for k, v in meta.items()).encode()
-    route.write_bytes(body)
-    fallback = tmp_path / 'share-404.html'
-    fallback.write_bytes(b'fallback')
+def test_frozen_pages_require_matching_archive_manifest_and_delivery_tree(app, monkeypatch, tmp_path):
+    from services.share_artifact_previews import build_share_artifact_preview, write_share_artifact_pages
+    from tests.test_share_artifact_previews import _published
+
+    artifact = _published(monkeypatch)
+    preview = build_share_artifact_preview(artifact)
+    write_share_artifact_pages([preview], tmp_path / 'public')
+    route = tmp_path / 'public' / 'share' / artifact.public_id / 'index.html'
+    body = route.read_bytes()
     args = archive(tmp_path, route, 'team_state')
     assert compare_share_pages(*args)['export_snapshot'] == 42
     with pytest.raises(ValueError, match='GitHub digest'):
@@ -30,7 +29,7 @@ def test_frozen_pages_require_matching_archive_manifest_and_delivery_tree(tmp_pa
         compare_share_pages(*args)
 
 
-def archive(tmp_path, route, kind):
+def archive(tmp_path, route, kind, *, export_snapshot=42):
     root = route.parents[1]
     name = route.relative_to(root).as_posix()
     body = route.read_bytes()
@@ -44,10 +43,34 @@ def archive(tmp_path, route, kind):
             dict(path='frontend/public/share-404.html', sha256=sha256(fallback.read_bytes()).hexdigest())]
     with ZipFile(report, 'w') as z:
         z.writestr('share-generated-digest.json', json.dumps(rows))
-        z.writestr('share-export-result.json', json.dumps(dict(status='ok', output=dict(files=files),
+        z.writestr('share-export-result.json', json.dumps(dict(status='ok', output=dict(files=files, count=1, fallback='frontend/public/share-404.html'),
                    artifacts=1, previews=1, artifact_type_counts={kind: 1},
-                   publication_snapshot_id=42, publication_sync_run_id=24)))
+                   publication_snapshot_id=export_snapshot, publication_sync_run_id=24)))
     return pages, sha256(pages.read_bytes()).hexdigest(), report, sha256(report.read_bytes()).hexdigest(), root
+
+
+def test_matching_bytes_require_public_delivery_identity(app, monkeypatch, tmp_path):
+    from services.share_artifact_previews import build_share_artifact_preview, write_share_artifact_pages
+    from tests.test_share_artifact_previews import _published
+
+    artifact = _published(monkeypatch)
+    write_share_artifact_pages([build_share_artifact_preview(artifact)], tmp_path / 'public')
+    route = tmp_path / 'public' / 'share' / artifact.public_id / 'index.html'
+    # A historical candidate digest identifies a rehearsal, even if both archives and the delivery tree agree.
+    for identity in (None, 'b' * 64, 0, True):
+        with pytest.raises(ValueError, match='no authorizing publication snapshot'):
+            compare_share_pages(*archive(tmp_path, route, 'team_state', export_snapshot=identity))
+    body = route.read_text()
+    wrong = body.replace(f'https://baseballos.app/share/{artifact.public_id}', 'https://baseballos.app/share/another')
+    assert wrong != body
+    route.write_text(wrong)
+    with pytest.raises(ValueError, match='does not match its public_id'):
+        compare_share_pages(*archive(tmp_path, route, 'team_state'))
+    route.write_text(body)
+    fallback = tmp_path / 'public' / 'share-404.html'
+    fallback.write_text(body)
+    with pytest.raises(ValueError, match='fallback'):
+        compare_share_pages(*archive(tmp_path, route, 'team_state'))
 
 
 @pytest.mark.parametrize('kind', ['team_state', 'since_yesterday_change'])

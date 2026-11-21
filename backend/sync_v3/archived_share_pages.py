@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from zipfile import ZipFile
 
-from scripts.verify_generated_share_previews import _meta
+from scripts.verify_generated_share_previews import _meta, verify as verify_delivery
 from services.share_artifact_public import is_valid_public_id
 from services.share_artifact_previews import build_share_artifact_preview, render_share_artifact_html
 
@@ -34,13 +34,16 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
         paths = {prefix + name for name in names}
         root = Path(share_root)
         local = {prefix + p.relative_to(root).as_posix() for p in root.glob('*/index.html')}
-        if (export['status'] != 'ok' or not names or len(names) != len(paths)
+        if (export['status'] != 'ok' or export['output'].get('fallback') != fallback or not names or len(names) != len(paths)
                 or len(declared) != len(names) or set(declared) != paths or local != paths
                 or len(rows) != len(digests) or set(digests) != paths | {fallback}
                 or export['artifacts'] != len(names) or export['previews'] != len(names)):
             raise ValueError('Historical share inventory differs')
         if sha256((root.parent / 'share-404.html').read_bytes()).hexdigest() != digests[fallback]:
             raise ValueError('Share fallback differs from its delivery digest')
+        snapshot = export.get('publication_snapshot_id')
+        if type(snapshot) is not int or snapshot < 1:
+            raise ValueError('Historical share export has no authorizing publication snapshot ID')
         types = {}
         dates = []
         source_pairs = set()
@@ -63,6 +66,13 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
             dates.append(date.fromisoformat(meta['data-through']))
         if types != export['artifact_type_counts']:
             raise ValueError('Historical share artifact types differ')
+        # The report names paths in the exporting checkout. Use only the enumerated,
+        # validated local files when repeating its public delivery checks.
+        output = dict(export['output'], files=[str(root / name) for name in names],
+                      fallback=str(root.parent / 'share-404.html'))
+        violations, _ = verify_delivery(dict(export, output=output), root.parent)
+        if violations:
+            raise ValueError(f'Historical share delivery failed verification: {violations[0]}')
         compared = set()
         for artifact in stored_artifacts:
             public_id = artifact.public_id
