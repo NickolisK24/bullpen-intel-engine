@@ -1,5 +1,6 @@
 """Review the league writer's choices against one immutable historical edition."""
 from datetime import date
+from functools import cache
 from hashlib import sha256
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ from services.game_context import landscape_team_groups
 from services.mlb_club_directory import MLB_CLUBS
 from services.team_state_public_vocabulary import TEAM_STATE_SEASON_COMPLETE
 from services.story_feed import build_canonical_story_feed, canonical_story_team_descriptors
+from sync_v3.editorial_league_baseline import league_concentration
 from sync_v3.editorial_reads import _club_story
 from sync_v3.evidence import encode_json
 from sync_v3.intelligence_history import DOMAINS
@@ -50,10 +52,11 @@ def read_story_feed_review(connection, *, revision):
         if unresolved:
             return dict(result, status='incomplete_league_availability', unresolved_clubs=sorted(unresolved))
         descriptors = canonical_story_team_descriptors(landscape_team_groups(records))
+        read_baseline = cache(league_concentration)
         writers, receipts = {}, {}
         for descriptor in descriptors:
             team = descriptor['team_id']
-            review, writers[team] = _club_story(cur, team, selected, revision)
+            review, writers[team] = _club_story(cur, team, selected, revision, read_league_baseline=read_baseline)
             receipts[team] = review['story_selection'] or dict(status='withheld', reason=review['qualification'])
         feed = build_canonical_story_feed(descriptors, as_of_date=reference,
                                           story_builder=lambda team, as_of_date: writers[team])

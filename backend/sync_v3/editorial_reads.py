@@ -113,7 +113,7 @@ def read_story_observations(connection, team, *, revision=None):
     return _read_transaction(connection, lambda cur: _club_story(cur, team, _selected(cur, revision), revision)[0])
 
 
-def _club_story(cur, team, selected, revision):
+def _club_story(cur, team, selected, revision, *, read_league_baseline=league_concentration):
     result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
                   observations=None, story_selection=None, selection_revision=selected[0] if selected else None)
     if not selected or selected[1] is None:
@@ -164,7 +164,7 @@ def _club_story(cur, team, selected, revision):
     club = next(club for club in MLB_CLUBS if club.team_id == team)
     layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
     coverage = dict(result['coverage'], rotation_context='complete_calendar')
-    baseline, coverage['league_concentration'], result['league_concentration_citation'] = league_concentration(cur, digest, through)
+    baseline, coverage['league_concentration'], result['league_concentration_citation'] = read_league_baseline(cur, digest, through)
     concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through, baseline)
     if concentration_layer:
         layers['bullpen_concentration_context'] = concentration_layer

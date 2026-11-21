@@ -1572,6 +1572,11 @@ def assert_rollback_product_responses(client, generation, departure, matchup_gam
         team: dict(values['readiness'], methodology='candidate_regular_readiness_v1')
         for team, values in responses['league']['citations'].items()}
     assert all(item['club_copy_sha256'] and item['feed_copy_sha256'] for item in feed['items'])
+    from unittest.mock import patch
+    from sync_v3.editorial_league_baseline import league_concentration
+    with patch('sync_v3.story_feed_review.league_concentration', wraps=league_concentration) as baseline:
+        assert client.get(prefix + '/stories').get_json() == feed
+        assert baseline.call_count == 1
     assert client.get('/api/sync-v3/revisions/999/stories').status_code == 404
     assert responses['trust']['trusted_snapshot_id'] is None
     assert client.get(f'/api/sync-v3/revisions/2/teams/111/events/{event_id}').status_code == 404
