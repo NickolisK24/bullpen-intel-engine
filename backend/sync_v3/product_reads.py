@@ -429,6 +429,28 @@ def read_search(connection, query, *, revision=None, limit=5):
     return _read_transaction(connection, search)
 
 
+def _matchup_workload(snapshot, through):
+    """Project only seven-day club relief totals verified against the pinned finals."""
+    from datetime import timedelta
+    from services.public_team_relief_work import WORKLOAD_WINDOWS_POPULATION_BASIS, WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+    from services.rotation_support_pressure import _baseball_innings
+    from services.tonight_read_model import _workload_7d
+
+    evidence = snapshot['windows']
+    overview = evidence['workload']
+    week = overview['windows']['window_7']
+    if ('window_7' not in evidence['compared_windows'] or overview['data_through'] != through.isoformat()
+            or week['through'] != through.isoformat() or week['start'] != (through - timedelta(days=6)).isoformat()
+            or overview['population_basis'] != WORKLOAD_WINDOWS_POPULATION_BASIS
+            or overview['window_policy'] != WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY):
+        return None
+    counts = _workload_7d(overview)
+    concentration = overview['concentration_7_day']
+    return dict(window_days=7, relief_appearances=counts['appearances'], pitches=counts['pitches'],
+                contributing_relievers=concentration['pitcher_count'] if concentration['status'] == 'complete' else None,
+                innings=_baseball_innings(counts['outs']) if counts['outs'] is not None else None)
+
+
 def _season_comparison(facts):
     """Repeat only the qualified, represented active bullpen's official season facts."""
     from services import performance_metrics as rules
@@ -648,9 +670,15 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         result['games'] = sorted((tonight._game_card(row, sides[row.away_team_id], sides[row.home_team_id])
                                   for row in games), key=tonight._game_order)
         performances = {team: _season_comparison(facts[team, DOMAINS['group_performance'][1]]) for team in clubs}
+        workloads = {team: _matchup_workload(facts[team, METHODOLOGY], end) for team in clubs}
         for card in result['games']:
             stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
                      DOMAINS['pitcher_rest'][1])
+            away_work = workloads[card['away']['team_id']]
+            home_work = workloads[card['home']['team_id']]
+            work_stamp = (generation, league['data_through'], METHODOLOGY)
+            card['workload'] = _aligned_domain('workload', away_work, home_work, stamp_a=work_stamp, stamp_b=work_stamp,
+                                               partial=any(None in side.values() for side in (away_work, home_work) if side))
             card['role_rest'] = _aligned_domain('role_rest', role_rests[card['away']['team_id']],
                                                 role_rests[card['home']['team_id']], stamp_a=stamp, stamp_b=stamp)
             card['performance'] = _aligned_performance(performances[card['away']['team_id']],
