@@ -71,23 +71,23 @@ def _aggregate(rows):
     return {'appearances': len(rows), 'metrics': metrics, 'descriptive_hr9': hr9}
 
 
-def active_group_performance(cur, team, through):
+def active_group_population(cur, team, through):
     result = {'team': team, 'through': through.isoformat(), 'roster_source': None, 'profiles': {},
               'members': [], 'windows': None, 'reason': None}
     roster = roster_on(cur, team, 'active', through)
     if not roster:
         result['reason'] = 'missing_dated_active_roster'
-        return result
+        return result, {}
     facts, result['roster_source'] = roster
     raw_roster = replay(cur, result['roster_source']).body['roster']
     if any(_two_way_eligible(entry) and (entry.get('position') or {}).get('code') != '1'
            for entry in raw_roster):
         result['reason'] = 'two_way_role_evidence_unresolved'
-        return result
+        return result, {}
     start = through - timedelta(days=ROLE_WINDOW_DAYS)
     if start.year != through.year:
         result['reason'] = 'role_window_precedes_season_source'
-        return result
+        return result, {}
     arms, logs, splits = [], {}, {}
     for member in facts['members']:
         position = member['position']
@@ -95,31 +95,38 @@ def active_group_performance(cur, team, through):
             continue
         if position != '1' or member['status'] != 'A':
             result['reason'] = 'active_pitching_population_unresolved'
-            return result
+            return result, {}
         player = member['id']
         profile = pitcher_season_deployment(cur, player, through)
         result['profiles'][player] = {'sources': profile['sources'], 'reason': profile['reason']}
         if profile['reason']:
             result['reason'] = 'incomplete_roster_role_evidence'
-            return result
+            return result, {}
         splits[player] = replay(cur, profile['sources']['gameLog']).body['stats'][0]['splits']
         logs[player] = _role_logs(splits[player], start, through)
         arms.append(SimpleNamespace(id=player, mlb_id=player, position='P', active=True, full_name=member['name'],
                                     roster_status='active', roster_status_source='mlb_stats_api:roster_sync:active'))
     contexts = eligible_bullpen_pitcher_contexts(arms, reference_date=through, logs_by_pitcher=logs,
                                                   use_role_authority=True)
+    result['members'] = [{'player': context['pitcher'].id, 'role': context['eligibility']['role']}
+                         for context in contexts]
+    if not contexts:
+        result['reason'] = 'active_group_empty'
+    return result, splits
+
+
+def active_group_performance(cur, team, through):
+    result, splits = active_group_population(cur, team, through)
+    if result['reason']:
+        return result
     expected = defaultdict(dict)
-    for context in contexts:
-        player = context['pitcher'].id
-        result['members'].append({'player': player, 'role': context['eligibility']['role']})
+    for member in result['members']:
+        player = member['player']
         for split in splits[player]:
             day = date.fromisoformat(split['date'])
             if day <= through and split['team']['id'] == team and split['stat']['gamesStarted'] == 0:
                 expected[day][split['game']['gamePk'], player] = split['stat']
-    if not contexts:
-        result['reason'] = 'active_group_empty'
-        return result
-    members = {c['pitcher'].id for c in contexts}
+    members = {m['player'] for m in result['members']}
     return _club_windows(cur, team, through, members, expected, result)
 
 

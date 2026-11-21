@@ -26,7 +26,10 @@ def inspect_response(request, body, acquired_at):
     endpoint, params = request.endpoint, request.params()
     if not isinstance(body, dict) or acquired_at.utcoffset() is None:
         raise ValueError('Expected a JSON object and a timezone-aware acquisition time')
-    if endpoint == '/schedule':
+    if endpoint == '/schedule' and 'season' in params:
+        from sync_v3.competition_calendar import calendar_games
+        calendar_games(params, body)
+    elif endpoint == '/schedule':
         day = date.fromisoformat(params['startDate'])
         if params.get('endDate') != day.isoformat() or params.get('sportId') != 1:
             raise ValueError('Unsupported schedule scope')

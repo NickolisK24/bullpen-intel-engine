@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters
-from sync_v3.discovery import (affiliate_directory_request, calendar_requests, depth_directory, depth_roster_requests,
+from sync_v3.discovery import (affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 
 
@@ -30,6 +30,9 @@ def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
 
 
 def plan_children(cur, observation_id, acquisition, budget, now, day):
+    if acquisition.request.endpoint == '/schedule' and 'season' in acquisition.request.params():
+        # A retrospective season listing cannot revise the one-day final/schedule authority.
+        return
     canonical.observe(cur, observation_id, acquisition)
     affected = rosters.observe(cur, observation_id, acquisition)
     if affected:
@@ -62,7 +65,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc)):
     if type(max_jobs) is not int or not 1 <= max_jobs <= 256:
         raise ValueError('Cycle limit must be between one and 256 jobs')
@@ -73,6 +76,8 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
             schedule = schedule_request(cur, day, now, schedule)
         depth_teams = sorted(set(depth_teams))
         requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers))
+        if competition:
+            requests += (competition_calendar_request(day.year),)
         requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)
         enqueue_requests(cur, requests, now, budget=budget, day=day)
 

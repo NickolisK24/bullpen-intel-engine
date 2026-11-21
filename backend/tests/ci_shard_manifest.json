@@ -1870,6 +1870,10 @@
           "measured_seconds": 1.0
         },
         {
+          "path": "tests/test_sync_v3_competition.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_sync_v3_deployment.py",
           "measured_seconds": 2.0
         },

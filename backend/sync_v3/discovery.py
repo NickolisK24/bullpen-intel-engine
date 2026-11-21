@@ -123,3 +123,9 @@ def game_requests(day: date, schedule, *, now: datetime, reconciled=(), correcte
             interval = 300 if until <= timedelta(hours=1) else 1800
             requests.append(_request(f'/api/v1.1/game/{pk}/feed/live', interval))
     return tuple(requests)
+
+
+def competition_calendar_request(year):
+    fields = ('totalGames,dates,date,games,gamePk,gameType,season,officialDate,status,abstractGameState,'
+              'detailedState,statusCode,teams,home,away,team,id,score,isWinner,gamesInSeries')
+    return _request('/schedule', 21600, sportId=1, season=year, gameTypes='R,F,D,L,W', fields=fields)
