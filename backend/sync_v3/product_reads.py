@@ -269,36 +269,40 @@ def _public_arms(cur, digest):
     return players, 'mapped' if players.keys() == mapping.keys() else 'public_id_mapping_incomplete'
 
 
-def _forty_man_identities(cur, digest, excluded):
-    """Project confirmed members of a dated MLB forty-man list. No active status follows from inclusion."""
+def _roster_identities(cur, digest, kind, excluded):
+    """Resolve named pitching identities from an exact dated MLB roster receipt."""
+    if kind not in ('active', '40Man'):
+        raise ValueError('Unsupported MLB membership type')
     cur.execute("""SELECT h.mlb_id,h.represented,h.semantic_digest,h.input_digest,f.sha256,m.member,p.pitcher_id
                    FROM candidate.generations edition JOIN candidate.generation_inputs g ON g.generation=edition.digest
                    JOIN candidate.workload_history h ON h.id=g.snapshot
                    JOIN candidate.workload_history_sources hs ON hs.snapshot=h.id
                    JOIN candidate.fetches f ON f.id=hs.source_id
                    JOIN candidate.confirmations c ON c.source_id=f.id AND c.domain='roster'
-                     AND c.identity=h.mlb_id::text || '/40Man/' || h.represented::text
+                     AND c.identity=h.mlb_id::text || '/' || %s || '/' || h.represented::text
                    JOIN candidate.revisions r ON r.id=c.revision_id
                    CROSS JOIN LATERAL jsonb_array_elements(r.facts->'members') m(member)
                    LEFT JOIN candidate.public_pitcher_ids p ON p.export=edition.manifest->>'public_identity_export'
                      AND p.mlb_id=(m.member->>'id')::bigint
                    WHERE edition.digest=%s AND h.subject='team' AND h.methodology=%s
-                     AND h.facts#>>'{views,40Man,reason}' IS NULL
-                     AND (h.facts#>'{views,40Man,pitchers}') ? (m.member->>'id')
+                     AND h.facts->'views'->%s->>'reason' IS NULL
+                     AND (%s <> 'active' OR h.facts#>>'{active_profiles,reason}' IS DISTINCT FROM 'mlb_active_rosters_disagree')
+                     AND (h.facts->'views'->%s->'pitchers') ? (m.member->>'id')
                      AND f.endpoint='/teams/' || h.mlb_id::text || '/roster'
-                     AND f.parameters=jsonb_build_object('date',h.represented::text,'rosterType','40Man')
-                   ORDER BY h.mlb_id,f.sha256""", (digest, DOMAINS['depth'][1]))
+                     AND f.parameters=jsonb_build_object('date',h.represented::text,'rosterType',%s::text)
+                   ORDER BY h.mlb_id,f.sha256""", (kind, digest, DOMAINS['depth'][1], kind, kind, kind, kind))
     players, conflicts = {}, set()
     for team, day, facts, inputs, sha, member, public_id in cur:
         mlb = member['id']
         if mlb in excluded or mlb in conflicts:
             continue
         name = member.get('name')
-        observation = dict(team_id=team, membership='40Man', represented=day.isoformat(),
+        observation = dict(team_id=team, membership=kind, represented=day.isoformat(),
                            facts_digest=facts, input_digest=inputs, roster_digest=sha)
-        player = dict(mlb_id=mlb, name=name, public_id=public_id, team_id=None,
+        player = dict(mlb_id=mlb, name=name, public_id=public_id, team_id=team if kind == 'active' else None,
                       position={'1': 'P', 'Y': 'TWP'}.get(member.get('position')), roster_observation=observation)
-        if not isinstance(name, str) or not name.strip() or (mlb in players and players[mlb] != player):
+        if (not isinstance(name, str) or not name.strip() or (kind == 'active' and member.get('status') != 'A')
+                or (mlb in players and players[mlb] != player)):
             conflicts.add(mlb)
             players.pop(mlb, None)
         else:
@@ -307,7 +311,7 @@ def _forty_man_identities(cur, digest, excluded):
 
 
 def _pitcher_directory(cur, digest):
-    """Add named departures from this edition without inferring a receiving club or current role."""
+    """Resolve this edition’s bullpen, dated roster memberships and named departures."""
     players, status = _public_arms(cur, digest)
     if status == 'official_pitcher_identity_unresolved':
         return players, status
@@ -344,8 +348,23 @@ def _pitcher_directory(cur, digest):
                             historical_departure=departure)
         if public_id is None and status == 'mapped':
             status = 'public_id_mapping_incomplete'
+    active, disputed = _roster_identities(cur, digest, 'active', unresolved)
+    for mlb, member in active.items():
+        previous = players.get(mlb)
+        if previous is None:
+            players[mlb] = member
+        elif previous['team_id'] is None:
+            departure = previous['historical_departure']
+            if departure['team'] == member['team_id']:
+                disputed.add(mlb)
+            else:
+                players[mlb] = dict(member, historical_departure=departure)
+        elif previous['team_id'] != member['team_id']:
+            disputed.add(mlb)
+    for mlb in disputed:
+        players.pop(mlb, None)
     active_ids = {mlb for mlb, player in players.items() if player['team_id'] is not None}
-    roster, conflicts = _forty_man_identities(cur, digest, unresolved | active_ids)
+    roster, conflicts = _roster_identities(cur, digest, '40Man', unresolved | disputed | active_ids)
     for mlb, member in roster.items():
         if mlb in players:
             # An active-roster departure and a retained forty-man membership
@@ -355,9 +374,9 @@ def _pitcher_directory(cur, digest):
             players[mlb] = member
     if unresolved:
         return players, 'historical_departure_identity_unresolved'
-    if conflicts:
+    if conflicts or disputed:
         return players, 'roster_directory_partial'
-    if status == 'mapped' and any(player['public_id'] is None for player in roster.values()):
+    if status == 'mapped' and any(player['public_id'] is None for player in players.values()):
         status = 'public_id_mapping_incomplete'
     return players, status
 
@@ -732,11 +751,14 @@ def read_pitcher(connection, public_id, *, revision=None):
         if player['team_id'] is None:
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
             return dict(result, status=kind, identity=player, sections={})
+        depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
+        result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
+        if (player.get('roster_observation') or {}).get('membership') == 'active':
+            return dict(result, status='dated_active_pitcher', identity=player, sections={},
+                        recent_work=appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through))
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
-        depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
-        result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         changes = _events(cur, player['team_id'], sequence)
         events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
         if player.get('historical_departure'):
@@ -800,6 +822,9 @@ def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
             departure = player.get('historical_departure')
             return dict(status='historical_roster_departure' if departure else 'dated_roster_identity',
                         identity=player, events=[departure] if departure else [])
+        if (player.get('roster_observation') or {}).get('membership') == 'active':
+            departure = player.get('historical_departure')
+            return dict(status='dated_active_pitcher', identity=player, events=[departure] if departure else [])
         mlb, club = player['mlb_id'], player['team_id']
         readiness_method = DOMAINS['readiness'][1]
         role_method = DOMAINS['pitcher_profile'][1]

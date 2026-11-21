@@ -847,7 +847,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
     if not pg:
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
-    day, fixtures = league_fixtures()
+    day, fixtures = league_fixtures(boston_starter=True)
     from copy import deepcopy
     prior_day = day - timedelta(days=1)
     prior = next(f for f in fixtures if f['baseball_date'] == str(prior_day))
@@ -888,7 +888,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 cur.execute('CREATE TABLE public.pitchers(id integer PRIMARY KEY,mlb_id integer UNIQUE NOT NULL)')
                 cur.executemany('INSERT INTO public.pitchers VALUES (%s,%s)',
                                 [(team + 9000, team * 100 + 1) for team in MLB_TEAM_IDS])
-                cur.execute('INSERT INTO public.pitchers VALUES (8999,701234),(8998,701235)')
+                cur.execute('INSERT INTO public.pitchers VALUES (8999,701234),(8998,701235),(8997,11100)')
             with owner, owner.cursor() as cur:
                 cur.execute('SET TRANSACTION READ ONLY')
                 cur.execute('SELECT id,mlb_id FROM public.pitchers ORDER BY id')
@@ -950,6 +950,18 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 arm = read_search(worker, 'Rehearsal Arm 11101')['search']['groups'][1]['results']
                 assert len(arm) == 1 and arm[0]['id'] == 9111 and arm[0]['metadata']['team_id'] == 111
                 assert arm[0]['metadata']['position'] == 'P' and arm[0]['metadata']['roster_status'] == 'ACTIVE'
+                starter, = read_search(worker, 'Rehearsal Arm 11100')['search']['groups'][1]['results']
+                assert starter['id'] == 8997 and starter['metadata']['roster_status'] == 'ACTIVE'
+                detail = read_pitcher(worker, starter['id'])
+                assert detail['status'] == 'dated_active_pitcher' and detail['sections'] == {}
+                assert detail['identity']['team_id'] == 111
+                start, = detail['recent_work']['appearances']
+                assert start['role'] == 'start' and start['innings_pitched_outs'] == 12
+                observation = detail['identity']['roster_observation']
+                assert observation['membership'] == 'active' and observation['represented'] == str(day)
+                assert len(observation['roster_digest']) == 64
+                dated = read_pitcher_history(worker, starter['id'], through_revision=1)['rows'][0]
+                assert dated['identity'] == detail['identity'] and dated['events'] == []
             else:
                 assert pitchers['status'] == 'unavailable' and pitchers['results'] == []
             assert matchups['status'] == 'available' and len(matchups['results']) == 1

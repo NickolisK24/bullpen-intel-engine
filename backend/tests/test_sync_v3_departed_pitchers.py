@@ -17,7 +17,7 @@ def test_contradictory_or_anonymous_departure_preserves_unrelated_routable_playe
                 yield club, date(2026, 10, 6), 'facts', 'inputs', 1, [], event, 42 if player == 10 else 44
 
     monkeypatch.setattr(product_reads, '_public_arms', arms)
-    monkeypatch.setattr(product_reads, '_forty_man_identities', lambda *args: ({}, set()))
+    monkeypatch.setattr(product_reads, '_roster_identities', lambda *args: ({}, set()))
     players, status = product_reads._pitcher_directory(Cursor(), 'pinned')
     assert status == 'historical_departure_identity_unresolved'
     assert players == {20: dict(team_id=120, public_id=43)}
@@ -26,13 +26,29 @@ def test_contradictory_or_anonymous_departure_preserves_unrelated_routable_playe
 def test_forty_man_identity_conflicts_withhold_only_disputed_members():
     class Cursor:
         def execute(self, sql, args):
-            assert args == ('candidate', product_reads.DOMAINS['depth'][1])
+            assert args == ('40Man', 'candidate', product_reads.DOMAINS['depth'][1], '40Man', '40Man', '40Man', '40Man')
 
         def __iter__(self):
             for team, mlb, name, sha in [(111, 1, 'One', 'a'), (111, 1, 'One', 'a'), (111, 2, 'Two', 'a'),
                                           (111, 3, None, 'a'), (120, 2, 'Two', 'b'), (120, 4, 'Four', 'b')]:
                 yield team, date(2026, 10, 6), 'facts', 'inputs', sha, dict(id=mlb, name=name, position='1'), mlb+10
 
-    players, conflicts = product_reads._forty_man_identities(Cursor(), 'candidate', {4})
+    players, conflicts = product_reads._roster_identities(Cursor(), 'candidate', '40Man', {4})
     assert set(players) == {1} and conflicts == {2, 3}
     assert players[1]['team_id'] is None and players[1]['roster_observation']['team_id'] == 111
+
+
+def test_active_roster_requires_one_club_and_active_status():
+    class Cursor:
+        def execute(self, sql, args):
+            assert args[0] == 'active'
+
+        def __iter__(self):
+            for club, player, status in [(111, 10, 'A'), (120, 10, 'A'), (111, 11, 'RM'), (111, 12, 'A')]:
+                member = dict(id=player, name=f'Player {player}', position='1', status=status)
+                yield club, date(2026, 10, 7), 'facts', 'inputs', 'digest', member, None
+
+    players, conflicts = product_reads._roster_identities(Cursor(), 'candidate', 'active', set())
+    assert conflicts == {10, 11}
+    assert list(players) == [12] and players[12]['team_id'] == 111
+    assert players[12]['public_id'] is None

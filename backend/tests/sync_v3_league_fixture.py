@@ -26,7 +26,7 @@ def _fixture(day, games, teams=(), responses=(), **options):
                                                  _response(transactions, dict(transactions=[])), *responses], **options)
 
 
-def _club(day, team, game, template):
+def _club(day, team, game, template, include_starter):
     staff = deepcopy(template)
     staff['team']['id'] = team
     staff.update(players={}, pitchers=[])
@@ -45,21 +45,28 @@ def _club(day, team, game, template):
         kind = request.params()['rosterType']
         members = [] if kind == 'nonRosterInvitees' else [
             dict(person=arm['person'], position=arm['position'], status=dict(code='A'), parentTeamId=team)]
+        if include_starter and members:
+            starter = staff['players'][f"ID{staff['pitchers'][0]}"]
+            members.append(dict(person=starter['person'], position=starter['position'], status=dict(code='A'), parentTeamId=team))
         responses.append(_response(request, dict(teamId=team, rosterType=kind, roster=members)))
     from utils.innings import parse_mlb_innings_to_outs
-    outs = parse_mlb_innings_to_outs(arm['stats']['pitching']['inningsPitched'])
     arm['stats']['pitching'].update(saves=int(team in (110,111)), holds=0, saveOpportunities=int(team in (110,111)), gamesFinished=1)
-    stats = dict(arm['stats']['pitching'], outs=outs, gamesPitched=1)
-    split = dict(player=dict(id=reliever), team=dict(id=team), sport=dict(id=1), stat=stats, season=str(day.year),
-                 gameType='R', date=str(day), game=dict(gamePk=game))
-    for request in pitcher_requests(day, [reliever]):
-        kind = request.params()['stats']
-        responses.append(_response(request, dict(stats=[
-            dict(type=dict(displayName=kind), group=dict(displayName='pitching'), splits=[split])])))
-    return staff, reliever, responses
+    members = staff['pitchers'] if include_starter else [reliever]
+    for player in members:
+        line = staff['players'][f'ID{player}']['stats']['pitching']
+        if player != reliever:
+            line.update(saves=0, holds=0, saveOpportunities=0, gamesFinished=0)
+        stats = dict(line, outs=parse_mlb_innings_to_outs(line['inningsPitched']), gamesPitched=1)
+        split = dict(player=dict(id=player), team=dict(id=team), sport=dict(id=1), stat=stats, season=str(day.year),
+                     gameType='R', date=str(day), game=dict(gamePk=game))
+        for request in pitcher_requests(day, [player]):
+            kind = request.params()['stats']
+            responses.append(_response(request, dict(stats=[
+                dict(type=dict(displayName=kind), group=dict(displayName='pitching'), splits=[split])])))
+    return staff, members, responses
 
 
-def league_fixtures(*, idle_next_day=False):
+def league_fixtures(*, idle_next_day=False, boston_starter=False):
     played = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
     day = date.fromisoformat(played['baseball_date'])
     bodies = {item['endpoint']: item['body'] for item in played['responses']}
@@ -76,9 +83,9 @@ def league_fixtures(*, idle_next_day=False):
         sides = {}
         for side, team in [('home', home), ('away', away)]:
             game['teams'][side]['team']['id'] = team
-            sides[side], reliever, club = _club(day, team, pk, staff)
+            sides[side], pitchers, club = _club(day, team, pk, staff, boston_starter and team == 111)
             responses.extend(club)
-            players.append(reliever)
+            players.extend(pitchers)
         games.append(game)
         for suffix, body in [('boxscore', dict(teams=sides)), ('playByPlay', dict(allPlays=[])), ('linescore', dict(innings=[]))]:
             responses.append(dict(endpoint=f'/game/{pk}/{suffix}', params={}, body=body))
