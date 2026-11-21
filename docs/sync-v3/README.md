@@ -348,10 +348,13 @@ From `backend`, compare the static delivery tree with independently digest-pinne
 python -m sync_v3.archived_share_pages "$PAGES_ZIP" \
   2b56cf9d2ded8f44287df301935d5c469cde5c95f96dd326711dd90f24e6e681 \
   "$DELIVERY_REPORT_ZIP" 8adf91796d085960aec9e8e69d6fd66ed4ef73347f84f8fab12e6e56dea7e918 \
-  ../frontend/public/share
+  ../frontend/public/share --publication-proof "$PROOF_ZIP" \
+  209f55a6904abf9602946e9b8f5ea5ce836ee398f662442fe199c7dbf169d449
 ```
 
 Artifact 14657712979 contains the exported pages. Artifact 14659061276 records the page set and content digests. All 10,174 links and their HTML bytes matched, covering 9,358 Team State pages and 816 Since Yesterday pages with data through July 23–October 28, 2026. The separately delivered invalid-link fallback also matched. Snapshot 5843 identifies the export; each page retains its original historical identity. These archives preserve rendered output. Rebuilding an original page from its underlying frozen artifact still requires the original artifact record. Current candidate facts cannot establish its contents.
+
+When the delivery archive contains `publication.json`, the checker verifies its snapshot, sync run and workload date against the Share export. The optional `--publication-proof` also requires that delivery record and verifies all three fields against a digest-pinned, postcommit-observed publisher proof. In run 44794472956, snapshot 5843, sync run 98300 and workload through October 28 agreed across the three records for all 10,174 delivered pages. The separate proof for snapshot 5751 was refused. The 1,557 historical source pairs carried by the pages retain their original identities. The observed proof retained its inconclusive cross-version assertion.
 
 The archive check also repeats the existing public delivery verifier against the local copy, including canonical URLs, social previews and the invalid-link fallback. The export must identify a positive integer publication snapshot ID. Verifying the identity in an archive does not establish the lifecycle of its underlying database record.
 

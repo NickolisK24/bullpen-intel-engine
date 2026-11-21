@@ -29,7 +29,7 @@ def test_frozen_pages_require_matching_archive_manifest_and_delivery_tree(app, m
         compare_share_pages(*args)
 
 
-def archive(tmp_path, route, kind, *, export_snapshot=42):
+def archive(tmp_path, route, kind, *, export_snapshot=42, run=24, through=None, publication=None):
     root = route.parents[1]
     name = route.relative_to(root).as_posix()
     body = route.read_bytes()
@@ -42,10 +42,12 @@ def archive(tmp_path, route, kind, *, export_snapshot=42):
     rows = [dict(path=files[0], sha256=sha256(body).hexdigest()),
             dict(path='frontend/public/share-404.html', sha256=sha256(fallback.read_bytes()).hexdigest())]
     with ZipFile(report, 'w') as z:
+        if publication is not None:
+            z.writestr('publication.json', json.dumps(publication))
         z.writestr('share-generated-digest.json', json.dumps(rows))
         z.writestr('share-export-result.json', json.dumps(dict(status='ok', output=dict(files=files, count=1, fallback='frontend/public/share-404.html'),
                    artifacts=1, previews=1, artifact_type_counts={kind: 1},
-                   publication_snapshot_id=export_snapshot, publication_sync_run_id=24)))
+                   publication_snapshot_id=export_snapshot, publication_sync_run_id=run, publication_data_through=through)))
     return pages, sha256(pages.read_bytes()).hexdigest(), report, sha256(report.read_bytes()).hexdigest(), root
 
 
@@ -109,3 +111,30 @@ def test_reproduce_frozen_share_from_stored_record(app, monkeypatch, tmp_path, k
         patch.setattr(retained, 'integrity_hash', '0' * 64)
         with db.session.no_autoflush, pytest.raises(ValueError, match='not safely previewable'):
             compare_share_pages(*changed, stored_artifacts=[retained])
+
+
+def test_share_export_must_agree_with_delivery_and_observed_publication(app, monkeypatch, tmp_path):
+    from services.share_artifact_previews import build_share_artifact_preview, write_share_artifact_pages
+    from tests.test_share_artifact_previews import _published
+    from tests.test_sync_v3_observed_identities import write_proof
+
+    artifact = _published(monkeypatch)
+    write_share_artifact_pages([build_share_artifact_preview(artifact)], tmp_path / 'public')
+    route = tmp_path / 'public' / 'share' / artifact.public_id / 'index.html'
+    proof = tmp_path / 'proof.zip'
+    reference = (proof, write_proof(proof))
+    through = '2026-10-28'
+    publication = dict(publication_snapshot_id=12, sync_run_id=15, data_through=through, status='ok')
+
+    def inputs(record, run=15):
+        return archive(tmp_path, route, 'team_state', export_snapshot=12, run=run, through=through, publication=record)
+
+    result = compare_share_pages(*inputs(publication), publication_proof=reference)
+    assert result['delivery_publication_compared'] and result['observed_publication']['snapshot_id'] == 12
+    assert result['stored_records_compared'] == 0
+    for record in (None, dict(publication, status='failed'), dict(publication, publication_snapshot_id=13),
+                   dict(publication, data_through='2026-10-27'), dict(publication, sync_run_id=16)):
+        with pytest.raises(ValueError, match='delivery publication'):
+            compare_share_pages(*inputs(record), publication_proof=reference)
+    with pytest.raises(ValueError, match='differs from the observed publication'):
+        compare_share_pages(*inputs(dict(publication, sync_run_id=16), run=16), publication_proof=reference)

@@ -18,7 +18,7 @@ def _open_verified(source, digest):
     return ZipFile(source)
 
 
-def compare_share_pages(pages_path, pages_digest, report_path, report_digest, share_root, *, stored_artifacts=()):
+def compare_share_pages(pages_path, pages_digest, report_path, report_digest, share_root, *, stored_artifacts=(), publication_proof=None):
     """Compare delivery bytes and, when supplied, reproduce pages from isolated historical artifact records."""
     prefix = 'frontend/public/share/'
     with Path(pages_path).open('rb') as pages_file, Path(report_path).open('rb') as report_file, \
@@ -44,6 +44,27 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
         snapshot = export.get('publication_snapshot_id')
         if type(snapshot) is not int or snapshot < 1:
             raise ValueError('Historical share export has no authorizing publication snapshot ID')
+        has_publication = 'publication.json' in report.namelist()
+        observed = None
+        if has_publication or publication_proof is not None:
+            publication = json.loads(report.read('publication.json')) if has_publication else None
+            run = export.get('publication_sync_run_id')
+            through = export.get('publication_data_through')
+            if (type(run) is not int or run < 1 or not isinstance(through, str) or not through
+                    or not isinstance(publication, dict) or publication.get('status') != 'ok'
+                    or type(publication.get('publication_snapshot_id')) is not int
+                    or type(publication.get('sync_run_id')) is not int
+                    or (snapshot, run, through) != (publication['publication_snapshot_id'],
+                                                    publication['sync_run_id'], publication.get('data_through'))):
+                raise ValueError('Share export disagrees with its delivery publication')
+            if date.fromisoformat(through).isoformat() != through:
+                raise ValueError('Invalid share publication data-through date')
+            if publication_proof is not None:
+                from sync_v3.public_identities import from_observed_publication
+                observed = from_observed_publication(*publication_proof).provenance
+                if (snapshot, run, through) != (observed['snapshot_id'], observed['sync_run_id'], observed['data_through']):
+                    raise ValueError('Share export differs from the observed publication')
+
         types = {}
         dates = []
         source_pairs = set()
@@ -88,6 +109,7 @@ def compare_share_pages(pages_path, pages_digest, report_path, report_digest, sh
                     pages_without_record_comparison=len(names) - len(compared), distinct_source_pairs=len(source_pairs),
                     pages_with_source_pair=pages_with_source_pair, pages=len(names), artifact_types=types,
                     earliest_data_through=min(dates).isoformat(), latest_data_through=max(dates).isoformat(),
+                    delivery_publication_compared=has_publication, observed_publication=observed,
                     export_snapshot=export['publication_snapshot_id'], export_sync_run=export['publication_sync_run_id'])
 
 
@@ -95,4 +117,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for arg in ('pages_path', 'pages_digest', 'report_path', 'report_digest', 'share_root'):
         parser.add_argument(arg)
+    parser.add_argument('--publication-proof', nargs=2, metavar=('ZIP', 'SHA256'))
     print(json.dumps(compare_share_pages(**vars(parser.parse_args())), sort_keys=True))
