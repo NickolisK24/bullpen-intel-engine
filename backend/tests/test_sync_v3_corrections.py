@@ -1239,9 +1239,18 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                         assert group['status'] == 'unavailable' and group['results'] == []
             else:
                 assert pitcher['status'] == discovery['pitcher_identity_status']
-            refreshed = dict(fixtures[-1], observed_at=f'{day + timedelta(days=3)}T12:00:00Z')
-            path.write_text(json.dumps(refreshed))
+            # Correct the prior dated club list: the later omission no longer proves a departure.
+            corrected_prior = deepcopy(prior)
+            corrected_prior['observed_at'] = f'{day + timedelta(days=3)}T11:00:00Z'
+            for receipt in corrected_prior['responses']:
+                if receipt['endpoint'] == '/teams/111/roster' and receipt['params']['rosterType'] == 'active':
+                    members = receipt['body']['roster']
+                    members[:] = [member for member in members if member['person']['id'] != 701234]
+                else:
+                    receipt.setdefault('retrieved_at', prior['observed_at'])
+            path.write_text(json.dumps(corrected_prior))
             run_fixture(worker, path)
+            record_intelligence(worker, 'depth', 111, prior_day)
             second = settle(worker)
             assert first != second
             with pytest.raises(SelectionWithheld, match='superseded_generation'):
@@ -1292,6 +1301,25 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert game_event['workload'] == dict(starter_outs=12, bullpen_outs=15, short_start=True)
             assert game_event['week'] == dict(final_games=1, verified_games=1, bullpen_outs=15)
             assert game_event['extra_innings'] is None
+            departure, = [item for item in history['events'] if item['event'].get('player') == 701234]
+            event_id = departure['event']['event_id']
+            corrected_board = read_team_board(worker, 111, revision=2)
+            assert departure not in corrected_board['what_changed']['events']
+            with pytest.raises(RuntimeError, match='History citation'):
+                verify_editorial_evidence(worker, corrected_board, [departure])
+            for revision, generation, expected in ((1, first, departure), (2, second, None), (3, first, departure)):
+                receipt = read_event_evidence(worker, 111, event_id, revision=revision)
+                assert receipt['generation'] == generation and receipt['selection_revision'] == revision
+                assert receipt['evidence'] == expected
+                assert receipt['status'] == ('missing_event' if expected is None else 'represented')
+                if identity_mode != 'absent':
+                    detail = read_pitcher(worker, 8999, revision=revision)
+                    assert detail['status'] == ('dated_roster_identity' if expected is None else 'historical_roster_departure')
+                    events = [] if expected is None else [departure]
+                    assert detail['represented_events'] == events
+                    pitcher_row, = read_pitcher_history(worker, 8999, through_revision=revision, limit=1)['rows']
+                    assert pitcher_row['generation'] == generation and pitcher_row['events'] == events
+                    assert detail['identity']['roster_observation']['membership'] == '40Man'
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
             if identity_mode != 'absent':
@@ -1317,7 +1345,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 cur.execute('SELECT revision,predecessor,action,generation FROM candidate.core_selections ORDER BY revision')
                 assert cur.fetchall() == [(1,None,'select',first), (2,1,'select',second), (3,2,'rollback',first)]
             assert select_generation(reviewer, second, expected_revision=3) == 4
-            path.write_text(json.dumps(dict(refreshed, observed_at=f'{day + timedelta(days=4)}T12:00:00Z')))
+            path.write_text(json.dumps(dict(fixtures[-1], observed_at=f'{day + timedelta(days=4)}T12:00:00Z')))
             run_fixture(worker, path)
             third = settle(worker)
             ready = Barrier(2)
