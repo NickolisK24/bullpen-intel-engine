@@ -1738,8 +1738,10 @@ def test_trust_reports_acquisition_only_for_retained_response_bodies():
             run_cycle(db, day, missing, teams=[], clock=lambda: stamp)
             first = freeze_generation(db, day)
             failed = preview_trust(db, first)
-            assert failed['sources'] == [dict(outcome='failed', refusal_reason='TimeoutError', receipts=1,
+            assert failed['sources'] == [dict(outcome='failed', refusal_reason='TimeoutError', receipts=2,
                                               earliest_acquisition=None, latest_acquisition=None)]
+            assert failed['transaction_source']['acquired_at'] is None
+            assert failed['transaction_source']['recorded_at'] == stamp.isoformat()
             later = stamp + timedelta(days=1)
             run_cycle(db, day, lambda *a, **kw: {}, teams=[], clock=lambda: later)
             invalid = preview_trust(db, freeze_generation(db, day))
@@ -1878,3 +1880,43 @@ def test_frozen_roster_depth_digest_matches_stored_mlb_identity_keys():
             with db, db.cursor() as cur:
                 cur.execute('SELECT count(*) FROM candidate.workload_history')
                 assert cur.fetchone() == (1,)
+
+
+def test_frozen_transaction_receipt_distinguishes_missing_empty_and_refused():
+    from contextlib import closing
+    from sync_v3.generation import freeze_generation, verify_generation
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2026, 7, 29)
+    at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            original = freeze_generation(db, day)
+            revisions = []
+            recall = {'id': 12, 'date': str(day), 'effectiveDate': str(day + timedelta(days=1)),
+                      'person': {'id': 600000}, 'typeCode': 'CL'}
+            for offset, records in enumerate(([], [recall], [{}])):
+                def fetch(endpoint, params):
+                    if endpoint == '/transactions':
+                        return {'transactions': records}
+                    assert endpoint == '/schedule'
+                    return {'dates': [], 'totalGames': 0}
+
+                run_cycle(db, day, fetch, teams=[], clock=lambda: at + timedelta(days=offset))
+                revisions.append(freeze_generation(db, day))
+            assert len({original, *revisions}) == 4
+            assert verify_generation(db, original)['transaction_source'] is None
+            empty, accepted, refused = (verify_generation(db, key)['transaction_source'] for key in revisions)
+            assert empty['parameters'] == {'sportId': 1, 'startDate': str(day), 'endDate': str(day)}
+            assert empty['reported_records'] == 0 and empty['reason'] is None
+            assert refused['reported_records'] is None and refused['reason']
+            assert empty['confirmed_transactions'] == 0
+            assert accepted['reported_records'] == accepted['confirmed_transactions'] == 1
+            assert accepted['revisions_digest'] != empty['revisions_digest']
+            assert 'revisions_digest' not in refused
+            assert empty['digest'] != refused['digest']
+            assert freeze_generation(db, day) == revisions[-1]

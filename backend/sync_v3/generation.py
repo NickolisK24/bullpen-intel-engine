@@ -71,6 +71,32 @@ def _slate(cur, day):
     return result, {source}
 
 
+def _transaction_receipt(params, acquired, outcome, digest, payload, reason):
+    if digest is not None and (payload is None or sha256(payload).hexdigest() != digest):
+        raise ValueError('Transaction payload digest mismatch')
+    count = None
+    if outcome == 'received' and reason is None:
+        if payload is None:
+            raise ValueError('Transaction receipt lacks its payload')
+        count = len(json.loads(bytes(payload))['transactions'])
+    return dict(parameters=params, recorded_at=acquired.isoformat(),
+                acquired_at=acquired.isoformat() if digest else None, outcome=outcome,
+                digest=digest, reason=reason, reported_records=count)
+
+
+def _confirmed_transactions(cur, source):
+    cur.execute("""SELECT c.identity,r.revision,r.facts FROM candidate.confirmations c
+                   JOIN candidate.revisions r ON r.id=c.revision_id AND r.domain=c.domain AND r.identity=c.identity
+                   WHERE c.source_id=%s AND c.domain='transaction' ORDER BY c.identity""", (source,))
+    return cur.fetchall()
+
+
+def _bind_transaction_revisions(cur, source, receipt):
+    if receipt['reported_records'] is not None:
+        rows = _confirmed_transactions(cur, source)
+        receipt.update(confirmed_transactions=len(rows), revisions_digest=sha256(encode_json(rows)).hexdigest())
+
+
 def _competitive_games(games):
     result = []
     for game in sorted(games, key=lambda item: item['gamePk']):
@@ -169,11 +195,22 @@ def _assemble(cur, through):
             earlier = [row[0] for row in cur]
             if earlier:
                 manifest['earlier_public_identity_exports'] = earlier
-    return manifest, parents, schedule_sources
+    transaction_request = calendar_requests(through)[1]
+    receipt = latest_source_status(cur, transaction_request.endpoint, transaction_request.params())
+    sources = schedule_sources
+    if receipt:
+        source, outcome, reason = receipt
+        cur.execute("""SELECT f.parameters,f.received_at,f.sha256,p.encoded_json FROM candidate.fetches f
+                       LEFT JOIN candidate.payloads p USING (sha256) WHERE f.id=%s""", (source,))
+        params, acquired, fingerprint, payload = cur.fetchone()
+        manifest['transaction_source'] = _transaction_receipt(params, acquired, outcome, fingerprint, payload, reason)
+        _bind_transaction_revisions(cur, source, manifest['transaction_source'])
+        sources = [*schedule_sources, source]
+    return manifest, parents, sources
 
 
 def _freeze(cur, through):
-    manifest, parents, schedule_sources = _assemble(cur, through)
+    manifest, parents, sources = _assemble(cur, through)
     digest = sha256(encode_json(manifest)).hexdigest()
     cur.execute("""INSERT INTO candidate.generations (digest,represented,manifest) VALUES (%s,%s,%s)
                    ON CONFLICT DO NOTHING RETURNING digest""", (digest, through, Json(manifest)))
@@ -182,7 +219,7 @@ def _freeze(cur, through):
     cur.executemany("""INSERT INTO candidate.generation_inputs VALUES (%s,%s) ON CONFLICT DO NOTHING""",
                     [(digest, parent) for parent in parents])
     cur.executemany('INSERT INTO candidate.generation_sources VALUES (%s,%s) ON CONFLICT DO NOTHING',
-                    [(digest, source) for source in schedule_sources])
+                    [(digest, source) for source in sources])
     return digest
 
 
@@ -392,7 +429,7 @@ def _inspect(cur, digest, compare_latest):
         raise ValueError('Pinned facts disagree with declared club or scope coverage')
     if members:
         raise ValueError('Missing pinned candidate snapshots')
-    cur.execute("""SELECT f.parameters,f.received_at,f.outcome,f.sha256,p.encoded_json,f.endpoint,coalesce(r.reason,f.reason)
+    cur.execute("""SELECT f.parameters,f.received_at,f.outcome,f.sha256,p.encoded_json,f.endpoint,coalesce(r.reason,f.reason),f.id
                    FROM candidate.generation_sources s JOIN candidate.fetches f ON f.id=s.source
                    LEFT JOIN candidate.payloads p ON p.sha256=f.sha256 LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE s.generation=%s
@@ -401,13 +438,26 @@ def _inspect(cur, digest, compare_latest):
     dates = (through, reference)
     requests = [calendar_requests(day)[0].params() for day in dates]
     by_date = [[], []]
-    for params, at, outcome, expected, payload, endpoint, reason in cur:
+    transaction = None
+    transaction_request = calendar_requests(through)[1]
+    transaction_source_id = None
+    for params, at, outcome, expected, payload, endpoint, reason, source_id in cur:
+        if endpoint == transaction_request.endpoint:
+            if transaction is not None or params != transaction_request.params():
+                raise ValueError('Unexpected pinned transaction scope')
+            transaction_source_id = source_id
+            transaction = _transaction_receipt(params, at, outcome, expected, payload, reason)
+            continue
         if endpoint != '/schedule' or params not in requests:
             raise ValueError('Unexpected source in pinned calendars')
         by_date[requests.index(params)].append((outcome, reason, payload))
         if expected is not None and (payload is None or sha256(payload).hexdigest() != expected):
             raise ValueError('Calendar payload digest mismatch')
         calendars.append(dict(parameters=params, received_at=at.isoformat(), digest=expected, outcome=outcome))
+    if transaction is not None:
+        _bind_transaction_revisions(cur, transaction_source_id, transaction)
+    if transaction != manifest.get('transaction_source'):
+        raise ValueError('Pinned transaction receipt disagrees with the manifest')
     if calendars != manifest['calendar_sources']:
         raise ValueError('Pinned calendars disagree with the manifest')
     for index, key in enumerate(('slate', 'next_slate')):
@@ -442,7 +492,7 @@ def _inspect(cur, digest, compare_latest):
                 historical_changes=verify_change_lineage(cur, digest, through),
                 core_candidate_review=review_core_candidate(coverage, rosters, games),
                 clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
-                missing_scopes=len(manifest['missing']), calendar_receipts=len(calendars), current_serving_eligible=False)
+                missing_scopes=len(manifest['missing']), calendar_receipts=len(calendars), transaction_source=transaction, current_serving_eligible=False)
     if compare_latest:
         inventory, _, _ = _assemble(cur, through)
         current = sha256(encode_json(inventory)).hexdigest()

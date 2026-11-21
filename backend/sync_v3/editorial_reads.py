@@ -300,7 +300,7 @@ def _trust(cur, revision, preview):
     return dict(status='candidate_preview' if preview else 'verified_historical_inventory',
                 generation=digest, selection_revision=sequence,
                 represented=review['represented'], availability_reference=review['availability_reference'],
-                methods=methods, sources=sources,
+                methods=methods, sources=sources, transaction_source=review['transaction_source'],
                 withheld_role_evidence=_withheld_role_evidence(cur, digest, review['coverage']['withheld']),
                 coverage=review['coverage'], roster_comparison=review['roster_comparison'],
                 game_comparison=review['game_comparison'], comparison=review['core_candidate_review'],
