@@ -94,8 +94,10 @@ try {
     await expect(contributors).toContainText('15 pitches')
     const board = new URL(page.url()).pathname + new URL(page.url()).search
     await expect(link('Rehearsal Arm 11101').locator('..')).toContainText('1 appearance · 15 pitches')
+    await expect(link('Rehearsal Arm 11101').locator('..')).toContainText('Throws L · MLB profile observed 2026-07-30')
     await link('Rehearsal Arm 11101').click()
     await expect(heading('Rehearsal Arm 11101')).toBeVisible()
+    await expect(page.getByText('Throws L · MLB profile observed 2026-07-30', { exact: true })).toBeVisible()
     await expect(page.locator('dt').filter({ hasText: 'Appearances / 7d' }).locator('..').locator('dd')).toHaveText('1')
     await expect(page.locator('dt').filter({ hasText: 'Days since bullpen outing' }).locator('..').locator('dd'))
       .toHaveText('1 as of 2026-07-30')

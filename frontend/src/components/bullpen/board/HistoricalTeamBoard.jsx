@@ -1,3 +1,4 @@
+import HistoricalPitchHand from '../HistoricalPitchHand'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../../hooks/useFetch'
 import { getRehearsalTeamBoard } from '../../../utils/api'
@@ -150,6 +151,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         const week = historicalPitcherWorkload(arm.weekly_workload?.value, data.data_through)
         return <li key={arm.mlb_id}>
           {href ? <Link className="underline" to={href}>{label}</Link> : label}
+          <HistoricalPitchHand hand={arm.pitch_hand} className="block" />
           {week ? <p>{week.appearances ?? 'Unknown'} {week.appearances === 1 ? 'appearance' : 'appearances'} · {' '}
             {week.pitches_thrown == null ? 'Pitch count unavailable' : `${week.pitches_thrown} pitches`}</p>
             : <p>Seven-day workload unavailable.</p>}

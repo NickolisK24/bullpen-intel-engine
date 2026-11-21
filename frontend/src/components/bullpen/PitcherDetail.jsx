@@ -11,6 +11,7 @@ import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
 import { PitcherPerformance, PitcherPublicationHistory } from './PitcherPerformanceHistory'
 import { HistoricalPitcherChanges } from '../history/HistoricalChanges'
+import HistoricalPitchHand from './HistoricalPitchHand'
 import PitcherTrends from './PitcherTrends'
 import WorkloadPatterns from './WorkloadPatterns'
 import ObservedDeployment from './ObservedDeployment'
@@ -127,7 +128,8 @@ export function PitcherDetailContent({ data, pitcherId }) {
           <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name || (historicalEdition ? 'Pitcher identity unavailable' : null)}</h1>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
-            {['L', 'R', 'S', 'B'].includes(pitcher?.throws) && <><span>·</span><span>Throws {pitcher.throws}</span></>}
+            {historicalEdition ? <HistoricalPitchHand hand={data.pitch_hand} />
+              : ['L', 'R', 'S', 'B'].includes(pitcher?.throws) && <><span>·</span><span>Throws {pitcher.throws}</span></>}
             {pitcher?.age && <><span>·</span><span>Age {pitcher.age}</span></>}
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>

@@ -198,6 +198,18 @@ test('historical group performance scopes qualified values and preserves a withh
   assert.ok(!show({ ...performance, through: '2017-08-27' }).includes('HR allowed'))
 })
 
+test('historical throwing hand retains the MLB profile observation date', async () => {
+  const { default: HistoricalPitchHand } = await server.ssrLoadModule('/src/components/bullpen/HistoricalPitchHand.jsx')
+  const hand = { basis: 'official_person_attribute_at_retrieval', value: 'L', reason: null,
+    citation: { facts_digest: 'e'.repeat(64) }, observed_at: '2026-11-21T23:12:00-05:00' }
+  const show = props => render(React.createElement(HistoricalPitchHand, { hand: props }))
+  assert.match(show(hand), /MLB profile observed .*2026-11-22/)
+  for (const invalid of [{ basis: 'projected' }, { value: null }, { reason: 'conflict' },
+    { observed_at: null }, { observed_at: 'unknown' }, { observed_at: '2026-11-21' }, { citation: null }]) {
+    assert.equal(show({ ...hand, ...invalid }), '')
+  }
+})
+
 test('dated roster listing counts preserve a verified empty comparison and withhold missing evidence', async () => {
   const { HistoricalRosterListings } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
   const team = 111, through = '2017-08-28'
