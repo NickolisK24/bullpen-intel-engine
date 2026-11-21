@@ -1827,3 +1827,34 @@ def test_historical_pitcher_deployment_keeps_the_qualified_sample_with_partial_b
     assert conflict['status'] == 'withheld' and conflict['reason'] == 'game_log_and_boxscore_relief_population_disagree'
     quiet = historical_relief_profile(no_relief, dict(ledger, appearances=[dict(line, role='start')]), 7, through)
     assert quiet['status'] == 'complete' and quiet['profile'] is None
+
+
+def test_frozen_roster_depth_digest_matches_stored_mlb_identity_keys():
+    from contextlib import closing
+    from hashlib import sha256
+    from sync_v3.evidence import encode_json
+    from sync_v3.history import _store
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2017, 8, 28)
+    method = 'candidate_roster_depth_v1'
+    scope = ('team', 109, day, method)
+    facts = {'affiliate_views': {419: {'pitchers': {}}, 1991: {'pitchers': {}}},
+             'measurements': [-0.0, 1e20, 0.001]}
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            with db, db.cursor() as cur:
+                sid, revision, digest = _store(cur, *scope, facts, [])
+                cur.execute('SELECT facts FROM candidate.workload_history WHERE id=%s', (sid,))
+                persisted, = cur.fetchone()
+                assert digest == sha256(encode_json(['team', 109, str(day), method, persisted])).hexdigest()
+                assert _store(cur, *scope, persisted, []) == (sid, revision, digest)
+            with pytest.raises(ValueError, match='Duplicate JSON object key'):
+                with db, db.cursor() as cur:
+                    _store(cur, *scope, {'affiliate_views': {419: {}, '419': None}}, [])
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.workload_history')
+                assert cur.fetchone() == (1,)

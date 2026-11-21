@@ -2,6 +2,7 @@
 
 from datetime import date
 from hashlib import sha256
+import json
 import re
 
 from psycopg2.extras import Json
@@ -130,18 +131,32 @@ def encoded_evidence_digest(receipts, requests):
     return sha256(b'\n'.join(inputs + descriptors)).hexdigest()
 
 
+def _unique_object(pairs):
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError('Duplicate JSON object key in historical snapshot')
+    return result
+
+
 def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=()):
     cur.execute('''SELECT f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
                    FROM candidate.fetches f LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.id=ANY(%s)''', (sources,))
     input_hash = evidence_digest(cur.fetchall(), requests)
-    content_hash = sha256(encode_json([subject, mlb_id, through.isoformat(), methodology, facts])).hexdigest()
+    # Hash PostgreSQL's stored representation. JSONB makes MLB ID keys strings
+    # and normalizes numbers such as negative zero. Reject colliding keys before
+    # JSONB could discard one of their values.
+    serialized = json.dumps(facts, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
+    json.loads(serialized, object_pairs_hook=_unique_object)
     scope = (subject, mlb_id, through, methodology)
-    cur.execute("""SELECT id,revision,semantic_digest,input_digest FROM candidate.workload_history
-                   WHERE (subject,mlb_id,represented,methodology)=(%s,%s,%s,%s)
-                   ORDER BY revision DESC LIMIT 1""", scope)
-    previous = cur.fetchone()
-    if previous and previous[2:] == (content_hash, input_hash):
+    cur.execute("""SELECT %s::jsonb, (
+                       SELECT json_build_array(id,revision,semantic_digest,input_digest)
+                       FROM candidate.workload_history
+                       WHERE (subject,mlb_id,represented,methodology)=(%s,%s,%s,%s)
+                       ORDER BY revision DESC LIMIT 1)""", (serialized, *scope))
+    document, previous = cur.fetchone()
+    content_hash = sha256(encode_json([subject, mlb_id, through.isoformat(), methodology, document])).hexdigest()
+    if previous and tuple(previous[2:]) == (content_hash, input_hash):
         # Identical source bodies may have been acquired again. Freeze the new
         # receipt links once so a rebuild can settle its outstanding scope.
         cur.execute('SELECT source_id FROM candidate.workload_history_sources WHERE snapshot=%s', (previous[0],))
@@ -151,7 +166,7 @@ def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=
     cur.execute("""INSERT INTO candidate.workload_history
                    (subject,mlb_id,represented,methodology,revision,predecessor,semantic_digest,input_digest,facts)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                (*scope, revision, previous[0] if previous else None, content_hash, input_hash, Json(facts)))
+                (*scope, revision, previous[0] if previous else None, content_hash, input_hash, serialized))
     identifier = cur.fetchone()[0]
     cur.executemany('INSERT INTO candidate.workload_history_sources VALUES (%s,%s)',
                     [(identifier, source) for source in sources])

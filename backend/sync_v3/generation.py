@@ -383,7 +383,8 @@ def _inspect(cur, digest, compare_latest):
             member = members.pop((subject, entity, method), None)
             if (not member or day != through or member['revision'] != revision or member['input_digest'] != inputs
                     or semantic != actual or member['semantic_digest'] != actual):
-                raise ValueError('Pinned candidate snapshot disagrees with the manifest')
+                raise ValueError(f'Pinned candidate snapshot disagrees with the manifest: '
+                                 f'{subject} {entity}, {day}, {method} revision {revision}')
     _, reference = trusted_slate_reference_dates(through)
     expected_scopes, clubs = _inventory(through, reference, team_inputs, manifest['slate'])
     if (clubs != manifest['clubs'] or manifest['availability_reference'] != reference.isoformat()
