@@ -74,6 +74,53 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
+def verify_board_history(connection, board):
+    """Follow all offered pitcher identities from one selected Board to the corresponding history reads."""
+    from sync_v3.product_reads import read_pitcher, read_pitcher_history, read_team_history
+
+    revision, digest = board['selection_revision'], board['generation']
+    team = board['team']['team_id']
+    history = read_team_history(connection, team, through_revision=revision, limit=1)
+    row, = history['rows']
+    changes = board['what_changed']
+    if (board['current_serving_eligible'] or history['current_serving_eligible'] or history['team'] != team
+            or changes['current_serving_eligible'] or changes['team'] != team or row['selection_revision'] != revision
+            or row['generation'] != digest or row['represented'] != board['data_through']
+            or any(changes[key] != row[key] for key in ('generation', 'selection_revision', 'represented',
+                                                        'status', 'events', 'comparisons'))):
+        raise RuntimeError('Selected Team Board and History disagree')
+    verified, withheld = [], []
+    for arm in board['active_bullpen']:
+        mlb, public_id = arm['mlb_id'], arm['public_pitcher_id']
+        if public_id is None:
+            withheld.append(mlb)
+            continue
+        detail = read_pitcher(connection, public_id, revision=revision)
+        timeline = read_pitcher_history(connection, public_id, through_revision=revision, limit=1)
+        dated, = timeline['rows']
+        if (detail['status'] != 'represented' or dated['status'] != 'represented'
+                or detail['generation'] != digest or dated['generation'] != digest
+                or detail['selection_revision'] != revision or dated['selection_revision'] != revision
+                or detail['current_serving_eligible'] or timeline['current_serving_eligible']
+                or detail['data_through'] != row['represented'] or dated['represented'] != row['represented']
+                or detail['availability_reference'] != dated['availability_reference']
+                or detail['availability_reference'] != board['availability_reference']):
+            raise RuntimeError(f'Pitcher {public_id} edition disagrees with the selected Board')
+        identity = detail['identity']
+        if (identity['team_id'] != team or identity['mlb_id'] != mlb or identity['public_id'] != public_id
+                or identity['name'] != arm['name'] or identity != dated['identity']
+                or timeline['public_pitcher_id'] != public_id or detail['public_pitcher_id'] != public_id):
+            raise RuntimeError(f'Pitcher {public_id} identity disagrees with the selected Board')
+        deployment = detail['sections']['pitcher_profile']['value']['deployment']
+        if (detail['represented_events'] != dated['events'] or dated['arm']['read'] != arm['read']
+                or detail['arm_context'] != arm['arm_context'] or detail['display_read'] != arm['display_read']
+                or (deployment['facts'] or {}).get('observed_role') != dated['role']):
+            raise RuntimeError(f'Pitcher {public_id} evidence disagrees with the selected Board or History')
+        verified.append(dict(mlb_id=mlb, public_pitcher_id=public_id))
+    return dict(generation=digest, selection_revision=revision, team_id=team, team_events=len(row['events']),
+                verified_pitcher_routes=verified, withheld_pitcher_mlb_ids=withheld, current_serving_eligible=False)
+
+
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
         deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None):
     with isolated_cluster(bindir) as (owner, connect):
@@ -285,13 +332,16 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             if listing['generation'] != digest or len(listing['teams']) != 30:
                                 raise RuntimeError('League listing disagrees with the selection')
                             print(json.dumps(dict(historical_league=listing)))
-                            if team is not None:
-                                from sync_v3.product_reads import read_team_board
-                                board = read_team_board(worker, team, revision=revision)
-                                if (board['generation'] != digest or board['team']['team_id'] != team
+                            from sync_v3.product_reads import read_team_board
+                            clubs = [team] if team is not None else [row['team_id'] for row in listing['teams']]
+                            for club in clubs:
+                                board = read_team_board(worker, club, revision=revision)
+                                if (board['generation'] != digest or board['team']['team_id'] != club
                                         or board['current_serving_eligible']):
                                     raise RuntimeError('Historical Team Board differs from its isolated selection')
-                                print(json.dumps(dict(historical_team_board=board)))
+                                if team is not None:
+                                    print(json.dumps(dict(historical_team_board=board)))
+                                print(json.dumps(dict(board_history_verification=verify_board_history(worker, board))))
                             slate = read_game_cards(worker, revision=revision)
                             if slate['generation'] != digest:
                                 raise RuntimeError('Game cards disagree with the selected generation')

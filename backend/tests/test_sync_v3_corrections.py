@@ -1064,6 +1064,21 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
+            from sync_v3.rehearse import verify_board_history
+            journey = verify_board_history(worker, board)
+            if identity_mode == 'absent':
+                assert journey['verified_pitcher_routes'] == [] and journey['withheld_pitcher_mlb_ids'] == [11101]
+            else:
+                assert journey['verified_pitcher_routes'] == [dict(mlb_id=11101, public_pitcher_id=9111)]
+                assert journey['withheld_pitcher_mlb_ids'] == []
+                wrong = dict(board['active_bullpen'][0], mlb_id=11100)
+                with pytest.raises(RuntimeError, match='disagrees with the selected Board'):
+                    verify_board_history(worker, dict(board, active_bullpen=[wrong]))
+                wrong_read = dict(board['active_bullpen'][0], display_read=None)
+                with pytest.raises(RuntimeError, match='evidence disagrees'):
+                    verify_board_history(worker, dict(board, active_bullpen=[wrong_read]))
+            with pytest.raises(RuntimeError, match='Board and History disagree'):
+                verify_board_history(worker, dict(board, what_changed=dict(board['what_changed'], events=[])))
             displayed_arm = board['active_bullpen'][0]
             assert displayed_arm['arm_context'] == dict(mode='historical', data_through=str(day), days_rest=None)
             assert displayed_arm['display_read']['key'] == 'limited_read'
