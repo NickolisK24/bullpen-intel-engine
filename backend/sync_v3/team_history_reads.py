@@ -64,10 +64,15 @@ def confirmed_extra_innings(schedule, lines, day):
         totals[club] = totals.get(club, 0) + line['outs_recorded']
     if set(totals) != {side['team']['id'] for side in schedule['teams'].values()} or len(totals) != 2:
         return None
-    beyond_regulation = max(totals.values()) > 3 * regulation
+    fewest, most = sorted(totals.values())
+    # Before either club records an out in the next inning, both have completed the prior inning.
+    completed_before_last_out = (most - 1) // 3 if most else 0
+    if fewest < 3 * completed_before_last_out:
+        return None
+    beyond_regulation = most > 3 * regulation
     inning = (schedule.get('linescore') or {}).get('currentInning')
     if type(inning) is int and inning > 0:
-        if max(totals.values()) > 3 * inning:
+        if fewest < 3 * (inning - 1) or most > 3 * inning:
             return None
         return inning > regulation
     return True if beyond_regulation else None

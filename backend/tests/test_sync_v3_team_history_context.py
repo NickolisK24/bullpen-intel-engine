@@ -32,6 +32,13 @@ def test_extra_innings_requires_final_evidence_against_scheduled_length():
     assert confirmed_extra_innings(game, lines, day) is True
     assert confirmed_extra_innings(dict(game, linescore=dict(currentInning=7)), lines, day) is None
     assert confirmed_extra_innings(dict(game, scheduledInnings=9), lines, day) is None
-    assert confirmed_extra_innings(dict(game, scheduledInnings=9, linescore=dict(currentInning=9)), lines, day) is False
+    nine = dict(game, scheduledInnings=9, linescore=dict(currentInning=9))
+    assert confirmed_extra_innings(nine, lines, day) is None
+    walkoff = [dict(team_id=1, outs_recorded=27), dict(team_id=2, outs_recorded=24)]
+    assert confirmed_extra_innings(nine, walkoff, day) is False
+    assert confirmed_extra_innings(dict(nine, linescore=dict(currentInning=10)), walkoff, day) is None
+    assert confirmed_extra_innings(game, [lines[0], dict(team_id=2, outs_recorded=17)], day) is None
+    impossible_tenth = [dict(team_id=1, outs_recorded=28), dict(team_id=2, outs_recorded=25)]
+    assert confirmed_extra_innings(dict(game, scheduledInnings=9), impossible_tenth, day) is None
     assert confirmed_extra_innings(dict(game, resumeDate='2024-07-28'), lines, day) is None
     assert confirmed_extra_innings(game, lines[:1], day) is None
