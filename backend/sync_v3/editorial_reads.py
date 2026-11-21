@@ -13,7 +13,7 @@ from sync_v3.editorial_league_baseline import league_concentration
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
-from sync_v3.product_reads import _empty_selection_status, _public_arms, _read_transaction, _selected, read_team_events
+from sync_v3.product_reads import _blocks, _empty_selection_status, _public_arms, _read_transaction, _selected, read_team_events
 
 
 def _optionality(cur, digest, team, reference):
@@ -84,6 +84,27 @@ def _stability(cur, digest, team, through):
     return layer, 'complete_comparison_windows', citation
 
 
+def _roster_depth_evidence(depth, team, through):
+    """Describe dated MLB roster listings without assigning off-active pitchers a bullpen role."""
+    facts = depth['value']
+    if facts['team'] != team or facts['represented'] != through.isoformat():
+        raise ValueError('Story roster evidence belongs to another club or date')
+    result = dict(team=team, represented=facts['represented'], citation=depth['citation'],
+                  forty_man_listed_outside_active=None, status_codes=None)
+    active, forty = (facts['views'][kind] for kind in ('active', '40Man'))
+    for view in (active, forty):
+        if view['reason'] or view['pitchers'] is None:
+            return dict(result, reason=view['reason'] or 'missing_dated_roster')
+    if (facts.get('active_profiles') or {}).get('reason') == 'mlb_active_rosters_disagree':
+        return dict(result, reason='mlb_active_rosters_disagree')
+    outside = sorted(int(player) for player in forty['pitchers'].keys() - active['pitchers'].keys())
+    if outside != facts['forty_man_outside_active']:
+        raise ValueError('Story roster comparison disagrees with its frozen depth snapshot')
+    codes = {player: forty['pitchers'][str(player)]['status_codes'] for player in outside}
+    return dict(result, forty_man_listed_outside_active=outside, status_codes=codes,
+                reason='off_active_bullpen_population_unverified')
+
+
 def read_story_observations(connection, team, *, revision=None):
     clubs = {club.team_id: club for club in MLB_CLUBS}
     if type(team) is not int or team not in clubs:
@@ -99,6 +120,9 @@ def read_story_observations(connection, team, *, revision=None):
             return dict(result, qualification=_empty_selection_status(selected, revision))
         _, digest, through, reference = selected
         result.update(generation=digest, represented=through.isoformat())
+        depth = _blocks(cur, digest, 'team', team, {DOMAINS['depth'][1]: 'depth'})['depth']
+        roster = _roster_depth_evidence(depth, team, through)
+        result.update(roster_depth_evidence=roster, coverage={'injury_context': roster['reason']})
         cur.execute("""SELECT h.id,h.facts,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
                        AND h.mlb_id=%s AND h.methodology=%s""", (digest, team, DOMAINS['rotation'][1]))
@@ -138,7 +162,7 @@ def read_story_observations(connection, team, *, revision=None):
             return dict(result, qualification='missing_pinned_final')
         club = clubs[team]
         layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
-        coverage = {'rotation_context': 'complete_calendar'}
+        coverage = dict(result['coverage'], rotation_context='complete_calendar')
         baseline, coverage['league_concentration'], result['league_concentration_citation'] = league_concentration(cur, digest, through)
         concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through, baseline)
         if concentration_layer:
