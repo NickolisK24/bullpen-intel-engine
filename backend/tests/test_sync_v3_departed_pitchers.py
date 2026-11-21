@@ -52,3 +52,25 @@ def test_active_roster_requires_one_club_and_active_status():
     assert conflicts == {10, 11}
     assert list(players) == [12] and players[12]['team_id'] == 111
     assert players[12]['public_id'] is None
+
+
+def test_quiet_search_skips_pitcher_directory_and_preserves_optional_group_boundary(monkeypatch):
+    from unittest.mock import Mock
+    cursor = Mock()
+    monkeypatch.setattr(product_reads, '_read_transaction', lambda connection, run: run(cursor))
+    monkeypatch.setattr(product_reads, '_selected', lambda cur, rev: (1, 'edition', None, '2026-10-30'))
+    calls = []
+
+    def unavailable(cur, digest):
+        calls.append(digest)
+        raise ValueError('No pitcher directory for this edition')
+
+    monkeypatch.setattr(product_reads, '_pitcher_directory', unavailable)
+    monkeypatch.setattr(product_reads, '_schedule_rows', lambda *args: [])
+    quiet = product_reads.read_search(None, 'B')
+    assert calls == [] and quiet['search']['status'] == 'quiet'
+    assert quiet['pitcher_identity_status'] == 'not_evaluated'
+    result = product_reads.read_search(None, 'Boston')
+    assert calls == ['edition'] and result['search']['status'] == 'partial'
+    teams, pitchers, matchups = result['search']['groups']
+    assert teams['results'] and pitchers['status'] == 'unavailable' and matchups['status'] == 'available'

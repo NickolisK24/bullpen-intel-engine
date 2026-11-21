@@ -955,6 +955,18 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert discovery['search']['status'] == ('partial' if identity_mode == 'absent' else 'available')
             teams, pitchers, matchups = discovery['search']['groups']
             assert teams['results'][0]['id'] == 111
+            if identity_mode == 'complete':
+                from unittest.mock import patch
+
+                def broken_directory(cur, generation):
+                    cur.execute('SELECT 1 / 0')
+
+                with patch('sync_v3.product_reads._pitcher_directory', broken_directory):
+                    partial = read_search(worker, 'Boston')
+                results = partial['search']['groups']
+                assert partial['pitcher_identity_status'] == 'pitcher_directory_unavailable'
+                assert partial['search']['status'] == 'partial' and results[1]['status'] == 'unavailable'
+                assert results[0] == teams and results[2] == matchups and matchups['results']
             if identity_mode != 'absent':
                 arm = read_search(worker, 'Rehearsal Arm 11101')['search']['groups'][1]['results']
                 assert len(arm) == 1 and arm[0]['id'] == 9111 and arm[0]['metadata']['team_id'] == 111
@@ -1049,11 +1061,15 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             removal, = (item for item in history['events'] if item['event']['kind'] == 'active_roster_removed' and item['event']['player'] == 701234)
             if identity_mode != 'absent':
                 old, = read_search(worker, 'Former Boston')['search']['groups'][1]['results']
+                assert old['metadata']['historical_departure'] == removal
                 assert old['id'] == 8999 and old['metadata']['team_id'] is None
                 assert old['metadata']['roster_status'] == 'UNKNOWN'
                 traded = read_pitcher(worker, 9110)
                 assert traded['status'] == 'represented' and traded['identity']['team_id'] == 110
                 origin = traded['identity']['historical_departure']
+                new_club, = read_search(worker, traded['identity']['name'])['search']['groups'][1]['results']
+                assert new_club['metadata']['team_id'] == 110
+                assert new_club['metadata']['historical_departure'] == origin
                 assert origin['team'] == 111 and origin in traded['represented_events'] and origin in history['events']
                 assert origin in read_pitcher_history(worker, 9110, through_revision=1)['rows'][0]['events']
                 reserve, = read_search(worker, 'Reserve Pitcher')['search']['groups'][1]['results']

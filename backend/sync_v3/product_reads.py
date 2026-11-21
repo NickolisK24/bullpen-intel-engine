@@ -397,9 +397,20 @@ def read_search(connection, query, *, revision=None, limit=5):
         sequence, digest, _, reference = selected
         directory = {c.team_id: dict(team_id=c.team_id, team_abbreviation=c.abbreviation, team_name=c.team_name)
                      for c in MLB_CLUBS}
-        players, mapping_status = _pitcher_directory(cur, digest)
+        mapping_status = 'not_evaluated'
+
         def pitchers(text, count, day):
             from services.pitcher_search import _match_rank, _normalize_search_text
+            nonlocal mapping_status
+            mapping_status = 'pitcher_directory_unavailable'
+            cur.execute('SAVEPOINT search_pitcher_directory')
+            try:
+                players, mapping_status = _pitcher_directory(cur, digest)
+            except Exception:
+                cur.execute('ROLLBACK TO SAVEPOINT search_pitcher_directory')
+                raise
+            finally:
+                cur.execute('RELEASE SAVEPOINT search_pitcher_directory')
             if mapping_status not in ('mapped', 'public_id_mapping_incomplete'):
                 raise ValueError(mapping_status)
             ranked = []
@@ -416,8 +427,9 @@ def read_search(connection, query, *, revision=None, limit=5):
                 item = dict(entity_type='pitcher', id=pid, primary_label=name, secondary_label=team.get('team_name'),
                             metadata=dict(player_id=pid, player_name=name, position=player['position'], roster_status=STATUS_ACTIVE if team else STATUS_UNKNOWN,
                                           team_id=player['team_id'], team_name=team.get('team_name')))
-                if 'roster_observation' in player:
-                    item['metadata']['roster_observation'] = player['roster_observation']
+                for evidence in ('roster_observation', 'historical_departure'):
+                    if evidence in player:
+                        item['metadata'][evidence] = player[evidence]
                 ranked.append((rank, _normalize_search_text(name), pid, item))
             return [row[-1] for row in sorted(ranked)[:count]]
         def matchups(text, clubs, day, count):
