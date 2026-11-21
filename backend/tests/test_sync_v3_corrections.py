@@ -1091,6 +1091,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert concentration['top_3_share'] == 1
             else:
                 assert concentration['reason_codes'] == ['contributor_identity_unresolved']
+                assert concentration['unresolved_contributor_mlb_ids'] == [11101]
                 assert concentration['top_contributor'] is None
             games = board['recent_relief_games']
             assert games['status'] == 'verified_games_only' and games['regular_gaps'] == ledger['gaps']
@@ -1380,3 +1381,8 @@ def test_board_concentration_keeps_a_transferred_pitchers_appearance_with_his_ol
     disputed = board_concentration(day, seven, lines, names, dict(population, members=[dict(player=200)]))
     assert disputed['reason_codes'] == ['bullpen_membership_unconfirmed']
     assert disputed['active_current_contribution'] is None
+
+    for order in (lines, list(reversed(lines))):
+        unresolved = board_concentration(day, seven, order, {}, population)
+        assert unresolved['unresolved_contributor_mlb_ids'] == [100, 200]
+        assert unresolved['contributors'] == [] and unresolved['top_3_share'] is None

@@ -113,27 +113,31 @@ def board_concentration(through, seven, appearances, directory, population):
     """Rank game-side contributors using frozen public pitcher identities and the dated bullpen cohort."""
     rows, active = [], set()
     members = {member['player'] for member in population['members']}
-    reason = None
     if seven['pitches']['status'] == 'complete':
-        for line in appearances:
-            if not seven['start'] <= line['game_date'] <= seven['through']:
-                continue
-            mlb = line['mlb_id']
+        recent = [line for line in appearances if seven['start'] <= line['game_date'] <= seven['through']]
+        missing = set()
+        for mlb in {line['mlb_id'] for line in recent}:
             player = directory.get(mlb)
             if not player or player['public_id'] is None or not player.get('name'):
-                reason = 'contributor_identity_unresolved'
-                break
+                missing.add(mlb)
+        if missing:
+            withheld = dict(seven, pitches=dict(status='unavailable', value=None,
+                                                reason_codes=['contributor_identity_unresolved']))
+            return dict(team_relief_concentration([], through, withheld, set()),
+                        unresolved_contributor_mlb_ids=sorted(missing))
+        for line in recent:
+            mlb = line['mlb_id']
+            player = directory[mlb]
             if (population['reason'] or population['through'] != through.isoformat()
                     or line['appearance_team_id'] != population['team']
                     or (mlb in members and player['team_id'] != population['team'])):
-                reason = 'bullpen_membership_unconfirmed'
-                break
+                withheld = dict(seven, pitches=dict(status='unavailable', value=None,
+                                                    reason_codes=['bullpen_membership_unconfirmed']))
+                return team_relief_concentration([], through, withheld, set())
             pitcher = SimpleNamespace(id=player['public_id'], full_name=player['name'])
             if mlb in members:
                 active.add(pitcher.id)
             log = SimpleNamespace(game_date=date.fromisoformat(line['game_date']), games_started=0,
                                   pitches_thrown=line['pitches_thrown'], innings_pitched_outs=line['innings_pitched_outs'])
             rows.append((log, pitcher))
-    if reason:
-        seven = dict(seven, pitches=dict(status='unavailable', value=None, reason_codes=[reason]))
     return team_relief_concentration(rows, through, seven, active)
