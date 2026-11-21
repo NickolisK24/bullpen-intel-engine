@@ -1334,6 +1334,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 adapter = historical_history_app(connect, page_size=2)
                 if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
                     run_historical_browser_journeys(adapter, 'rollback')
+                    run_historical_browser_journeys(adapter, 'selected-slate')
                 client = adapter.test_client()
                 assert_rollback_product_responses(client, first, departure, matchup['historical_comparison']['game'])
                 entry = client.get('/api/sync-v3/history/teams/BOS/revisions/3')

@@ -37,7 +37,30 @@ try {
   const visit = path => page.goto(origin + path)
   const heading = name => page.getByRole('heading', { name, exact: true })
   const link = name => page.getByRole('link', { name, exact: true })
-  if (process.argv[3] === 'off-day') {
+  if (process.argv[3] === 'selected-slate') {
+    const revision = Number(process.argv[4] ?? 1)
+    assert(Number.isSafeInteger(revision) && revision > 0)
+    const prefix = '/api/sync-v3/revisions/' + revision
+    await visit('/dashboard?rehearsalRevision=' + revision)
+    await expect(page.getByRole('link', { name: /Open the Team Board for/ })).toHaveCount(30)
+    await link('Open the Team Board for Boston Red Sox').click()
+    await expect(heading('Boston Red Sox')).toBeVisible()
+    const generation = new URL(page.url()).searchParams.get('rehearsalGeneration')
+    assert.match(generation, /^[a-f0-9]{64}$/)
+    await link('Inspect evidence for this edition').click()
+    await expect(heading('Historical evidence · Revision ' + revision)).toBeVisible({ timeout: 30_000 })
+
+    await visit(`/tonight?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`)
+    const card = page.getByTestId('tonight-game-card').first()
+    await expect(card).toBeVisible()
+    const game = await card.getAttribute('data-game-pk')
+    assert.match(game, /^[1-9][0-9]*$/)
+    await card.locator('[data-link="matchup"]').first().click()
+    await expect(heading('Historical Bullpen Comparison')).toBeVisible()
+    assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
+    assert.deepEqual(reads, ['league', 'teams/111/board', 'trust', 'tonight', 'matchups/' + game]
+      .map(suffix => prefix + '/' + suffix))
+  } else if (process.argv[3] === 'off-day') {
     await visit('/tonight?rehearsalRevision=1')
     await expect(page.getByText('No games on the represented slate.')).toBeVisible()
     await expect(page.getByTestId('tonight-game-card')).toHaveCount(0)

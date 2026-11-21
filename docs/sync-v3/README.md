@@ -608,3 +608,21 @@ The 2017 official season calendar records games 526475 (Minnesota at New York) a
 A PostgreSQL 17.6 replay retained each schedule before its corresponding final. The missing pitching decision kept the outcome unresolved. After the finals, the October 5, 2017 read classified Minnesota and Colorado as eliminated and New York and Arizona as active. The isolated classifier used the official winning pitcher, game-side score and winner flags. The August 28 roster-profile screen covered all 30 clubs, with one separately corroborated uncredited listing for Jorge De La Rosa.
 
 Across those nine seasons, a second PostgreSQL replay verified the prior-day decisions for all 18 single-game Wild Cards against their daily schedules and canonical finals. In each case the losing club qualified as season complete after the game. The season-schedule game IDs and the daily boxscore decisions were checked independently.
+
+### Selected historical edition, August 28, 2017
+
+On an isolated PostgreSQL 17.6 server, the August 28 workload and August 29 availability slate produced generation `8b839ac447baf13850d5e53113b052056c9ac48cc8635dfff7d170ad2f62eeff`. The reviewer selected it as local revision 1. All 1,854 calculation scopes settled. The core comparison reported ten matched finals and historical Team States for 30 clubs (six Fresh, 16 Stretched, eight Vulnerable). The 371 listed pitchers supplied 742 game-log and date-range responses. Five daily transaction inputs retained refusals (August 15, 16, 19, 23 and 26). Core selection certifies only the domains covered by its contract.
+
+The product rehearsal checked all 15 August 29 games across Tonight, Search and Matchup. It checked Board and History for all 30 clubs, including 88 team events. The archived identity export supported 18 pitcher routes. Another 214 MLB identities withheld a public pitcher route. Static previews withheld trusted publication. The Chromium journey followed League → Boston → Trust and Tonight → Matchup using five local GETs pinned to revision 1. Trust took longer than the browser assertion’s original five-second wait in one run. The assertion allows 30 seconds for this evidence page; this is a functional check, not a latency certification.
+
+A backup taken with 174 calculation scopes outstanding restored into a fresh disposable cluster. Batches of 75, 75 and 24 reconstructed the same digest. Repeating selection returned revision 1; rollback cleared the private selection at revision 2. Revision 1 continued to serve the original 30-club edition.
+
+From `backend`, with frontend dependencies and Chromium installed, run the checked-in selected-slate and rollback fixtures with:
+
+```sh
+APP_ENV=test AUTO_SYNC=false SYNC_V3_TEST_BROWSER=1 \
+  SYNC_V3_TEST_CHROMIUM="$(command -v chromium)" SYNC_V3_TEST_PG_BIN="$(pg_config --bindir)" \
+  python -m pytest -q 'tests/test_sync_v3_corrections.py::test_isolated_core_selection_and_recovery[complete]'
+```
+
+The fixture exercises the same revision-bound browser assertions using synthetic data. The 2017 replay used separately acquired retrospective MLB evidence. Neither run measures production parity or transfers publication authority.
