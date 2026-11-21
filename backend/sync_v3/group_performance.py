@@ -151,11 +151,14 @@ def _club_windows(cur, team, through, members, expected, result):
         if due:
             result['dates'][day.isoformat()] = {'sources': observed['sources'] if observed else [],
                                                 'reason': reason, 'outings': [list(key) for key in sorted(due)]}
-        for key, stats in due.items():
+        for key, stats in sorted(due.items()):
             final = finals.get(key, {})
             counts = {field: final.get(field) for field in SOURCE_FIELDS}
             counts['outs'] = final.get('outs_recorded')
             row, official = performance_line(day, counts, stats)
+            if row.source_conflicts:
+                conflicts = result['dates'][day.isoformat()].setdefault('source_conflicts', [])
+                conflicts.append({'game_pk': key[0], 'player': key[1], 'fields': row.source_conflicts})
             values = {**official, 'innings_pitched_outs': row.innings_pitched_outs, 'hits_allowed': row.hits_allowed,
                       'walks': row.walks}
             # WHIP needs the walk count even if strikeout or batter coverage is missing.

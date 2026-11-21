@@ -213,11 +213,14 @@ def pitcher_measurement_history(cur, player, through, season):
                     and r['mlb_team_id'] == outing['team']['id']), None)
         tracking = arm['pitch_tracking'] if arm else {'reason': game['reason'] or 'official_relief_line_missing'}
         counts = arm['performance_counts'] if arm else {}
-        lines.append(performance_line(day, counts, outing['stat']))
-        performance['games'].append({'game_pk': pk, 'team_id': outing['team']['id'], 'date': day.isoformat(),
-                                     'boxscore': game['sources'].get('boxscore'),
-                                     'schedule': game['sources'].get('schedule'),
-                                     'reason': None if arm else tracking['reason']})
+        row, official = performance_line(day, counts, outing['stat'])
+        lines.append((row, official))
+        evidence = {'game_pk': pk, 'team_id': outing['team']['id'], 'date': day.isoformat(),
+                    'boxscore': game['sources'].get('boxscore'), 'schedule': game['sources'].get('schedule'),
+                    'reason': None if arm else tracking['reason']}
+        if row.source_conflicts:
+            evidence['source_conflicts'] = row.source_conflicts
+        performance['games'].append(evidence)
         by_month[day.strftime('%Y-%m')].append((pk, game['sources'], tracking))
     for month, outings in sorted(by_month.items()):
         result['months'].append({'month': month, **monthly_pitch_sample([r[2] for r in outings]),

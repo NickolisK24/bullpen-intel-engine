@@ -26,12 +26,14 @@ def final_performance_counts(line, official):
 
 def performance_line(day, final, log):
     """Preserve the expected outing even when its final or one measurement is missing."""
-    agreed = {}
+    agreed, conflicts = {}, {}
     for name, key in SOURCE_FIELDS.items():
         value = final.get(name)
         if value is not None and (log.get(key) is None or count(log[key]) == value):
             agreed[name] = value
-    row = SimpleNamespace(game_date=day, innings_pitched_outs=final.get('outs'),
+        elif value is not None and count(log.get(key)) is not None:
+            conflicts[name] = {'boxscore': value, 'game_log': log[key]}
+    row = SimpleNamespace(game_date=day, source_conflicts=conflicts, innings_pitched_outs=final.get('outs'),
                           walks=agreed.get('walks'), hits_allowed=agreed.get('hits_allowed'))
     official = {}
     if 'earned_runs' in agreed:

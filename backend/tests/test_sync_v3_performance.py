@@ -24,6 +24,7 @@ def test_missing_earlier_final_withholds_season_but_complete_recent_window_quali
 def test_conflicting_missing_and_impossible_measurements_are_withheld_independently():
     counts = final_performance_counts(dict(FINAL, home_runs_allowed=None), dict(STATS, inheritedRunnersScored=2))
     line = performance_line(THROUGH, counts, dict(STATS, strikeOuts=3, inheritedRunnersScored=2))
+    assert line[0].source_conflicts == {'strikeouts': {'game_log': 3, 'boxscore': 2}}
     metrics = performance_windows(THROUGH, [line])['recent']['metrics']
     assert metrics['whip']['value'] == '1.00'
     for k in ('hr9', 'inherited', 'k_bb_percent'):
@@ -79,6 +80,12 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     result = group.active_group_performance(None, 118, THROUGH)
     assert result['reason'] is None and result['windows']['season']['appearances'] == 1
     assert result['dates'][THROUGH.isoformat()]['outings'] == [[2, 12]]
+    assert 'source_conflicts' not in result['dates'][THROUGH.isoformat()]
+    official['batters_faced'] = 3
+    result = group.active_group_performance(None, 118, THROUGH)
+    assert result['dates'][THROUGH.isoformat()]['source_conflicts'] == [
+        {'game_pk': 2, 'player': 12, 'fields': {'batters_faced': {'game_log': 4, 'boxscore': 3}}}]
+    assert result['windows']['season']['metrics']['k_bb_percent']['value'] is None
     finals.append(dict(official, game_pk=4))
     assert group.active_group_performance(None, 118, THROUGH)['reason'] == 'official_game_log_and_final_population_conflict'
     sources[1]['roster'].append({'position': {'code': '10'}, 'twoWayEligible': True})
