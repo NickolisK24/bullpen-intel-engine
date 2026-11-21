@@ -199,3 +199,46 @@ def test_earlier_publication_can_supply_an_absent_route_only_to_a_new_edition(tm
         with pytest.raises(psycopg2.errors.ForeignKeyViolation), owner, owner.cursor() as cur:
             load_reference(cur, replace(earlier, observed_at='2026-10-20T10:00:00Z', rows=[dict(id=51, mlb_id=544151)]))
         assert freeze_generation(worker, day) == second
+
+
+def test_postseason_round_receipts_cannot_cross_pitcher_stage_or_season():
+    from datetime import date, datetime, timezone
+    from sync_v3.discovery import pitcher_requests
+    from sync_v3.sources import inspect_response
+
+    day = date(2026, 10, 19)
+    base = pitcher_requests(day, [669330])
+    *regular, stage = pitcher_requests(day, [669330], postseason_rounds=['L', 'L'])
+    assert tuple(regular) == base and stage.params()['gameType'] == 'L'
+    split = dict(player={'id': 669330}, sport={'id': 1}, season='2026', gameType='L')
+    group = dict(type={'displayName': 'gameLog'}, group={'displayName': 'pitching'})
+    def inspect(rows):
+        return inspect_response(stage, dict(stats=[dict(group, splits=rows)]), datetime.now(timezone.utc))
+    assert inspect([split]).status == inspect([]).status == 'received'
+    for wrong in [dict(gameType='R'), dict(player={'id': 1}), dict(season='2025'), dict(sport={'id': 11})]:
+        with pytest.raises(ValueError, match='requested player, round or season'):
+            inspect([dict(split, **wrong)])
+    with pytest.raises(ValueError, match='Unknown postseason round'):
+        pitcher_requests(day, [669330], postseason_rounds=['P'])
+
+
+def test_postseason_arm_comparison_requires_consistent_final_and_game_log():
+    from datetime import date
+    from sync_v3.postseason_arm_comparison import _compare_arm
+
+    stats = dict(gamesPitched=1, gamesStarted=0, outs=3, inningsPitched='1.0', numberOfPitches=11,
+                 saves=0, holds=0, saveOpportunities=0, gamesFinished=0)
+    split = dict(game={'gamePk': 849815}, gameType='L', date='2026-10-19', team={'id': 139}, stat=stats)
+    line = dict(pitcher_mlb_id=669330, game_pk=849815, game_date='2026-10-19', team_id=139, round='L',
+                outs_recorded=3, pitches_thrown=11)
+    def compare(splits, lines):
+        return _compare_arm(669330, splits, lines, date(2026, 10, 20), dict(archived={}))
+    checked = compare([split], [line])
+    assert checked['games_compared'] == [849815] and checked['reason'] is None and not checked['matches']
+    assert compare([], [])['reason'] == 'no_recent_verified_workload'
+    assert compare([split, dict(date='2026-10-21')], [line]) == checked
+    assert compare([dict(split, gameType='D')], [line])['reason'] == 'round_and_final_disagree'
+    assert compare([split, split], [line])['reason'] == 'duplicate_game_log_appearance'
+    assert compare([dict(split, stat=dict(stats, numberOfPitches=True))], [line])['reason'] == 'invalid_round_game_log'
+    assert compare([split], [])['reason'] == 'game_log_and_final_population_conflict'
+    assert compare([split], [dict(line, team_id=158)])['reason'] == 'missing_or_conflicting_workload'

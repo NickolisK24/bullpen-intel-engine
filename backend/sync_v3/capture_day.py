@@ -13,14 +13,14 @@ from sync_v3.discovery import (affiliate_directory_request, calendar_requests, c
 from sync_v3.sources import inspect_response, transport_endpoint
 
 
-def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, active_profiles=False):
+def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, active_profiles=False, postseason_rounds=()):
     if path.exists():
         raise FileExistsError(path)
     depth_teams = sorted(set(depth_teams))
     teams, pitchers = sorted(set(teams).union(depth_teams)), sorted(set(pitchers))
     client = MLBApiClient()
     requests = list(calendar_requests(day)) + list(roster_requests(day, teams))
-    requests.extend(pitcher_requests(day, pitchers))
+    requests.extend(pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds))
     requests.extend(affiliate_directory_request(day, club) for club in depth_teams)
     if competition:
         requests.append(competition_calendar_request(day.year))
@@ -46,7 +46,7 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
                     if team in teams:
                         population, reason = _pitchers(body, team, team, 'active')
                         if reason is None:
-                            requests.extend(pitcher_requests(day, population.keys()-discovered_pitchers))
+                            requests.extend(pitcher_requests(day, population.keys()-discovered_pitchers, postseason_rounds=postseason_rounds))
                             discovered_pitchers.update(population)
                 elif request.endpoint == '/teams/affiliates':
                     requests.extend(depth_roster_requests(day, depth_directory(request, body)))
@@ -64,6 +64,8 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
             out.write('],')
             meta = {'baseball_date':day.isoformat(), 'observed_at':datetime.now(timezone.utc).isoformat(),
                     'team_ids':list(teams), 'pitcher_ids':sorted(discovered_pitchers), 'depth_teams':depth_teams, 'competition':competition, 'provider':'MLB Stats API','kind':'retrospective'}
+            if postseason_rounds:
+                meta['postseason_rounds'] = sorted(set(postseason_rounds))
             out.write(json.dumps(meta)[1:])
             out.flush()
             # A concurrent capture cannot overwrite an earlier successful observation.
@@ -84,5 +86,7 @@ if __name__ == '__main__':
     parser.add_argument('--depth-team', action='append', type=int)
     parser.add_argument('--active-profiles', action='store_true', help='Capture dated and season pitching stats for the requested active MLB lists')
     parser.add_argument('--competition', action='store_true', help='Retain the official competitive season calendar')
+    parser.add_argument('--postseason-round', choices=('F', 'D', 'L', 'W'), action='append', default=[],
+                        help='Also capture pitching game logs from this playoff round for requested pitcher profiles')
     args = parser.parse_args()
-    print(f'{capture(args.day, args.output, args.team or MLB_TEAM_IDS, args.pitcher or (), args.depth_team or (), args.competition, args.active_profiles)} official responses captured')
+    print(f'{capture(args.day, args.output, args.team or MLB_TEAM_IDS, args.pitcher or (), args.depth_team or (), args.competition, args.active_profiles, args.postseason_round)} official responses captured')

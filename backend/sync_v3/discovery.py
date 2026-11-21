@@ -29,7 +29,11 @@ def calendar_requests(day):
     )
 
 
-def pitcher_requests(day, players):
+def pitcher_requests(day, players, *, postseason_rounds=()):
+    from services.club_competition_status import POSTSEASON_GAME_TYPES
+    rounds = sorted(set(postseason_rounds))
+    if not set(rounds).issubset(POSTSEASON_GAME_TYPES):
+        raise ValueError('Unknown postseason round for pitcher game logs')
     players = set(players)
     if any(type(player) is not int or player <= 0 for player in players):
         raise ValueError('Pitcher discovery requires positive MLB player identities')
@@ -40,6 +44,8 @@ def pitcher_requests(day, players):
         requests.append(_request(endpoint, 21600, stats='gameLog', limit=1000, **scope))
         requests.append(_request(endpoint, 21600, stats='byDateRange', startDate=f'{day.year}-01-01',
                                  endDate=day.isoformat(), **scope))
+        for stage in rounds:
+            requests.append(_request(endpoint, 21600, stats='gameLog', limit=1000, **dict(scope, gameType=stage)))
     return tuple(requests)
 
 

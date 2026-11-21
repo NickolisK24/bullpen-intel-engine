@@ -63,7 +63,8 @@ def run_fixture(connection, filename):
     while True:
         batch = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()),
                           clock=lambda: at, depth_teams=fixture.get('depth_teams', ()),
-                          competition=fixture.get('competition', False), max_jobs=256, budget='historical', capture=capture)
+                          competition=fixture.get('competition', False), postseason_rounds=fixture.get('postseason_rounds', ()),
+                          max_jobs=256, budget='historical', capture=capture)
         results.extend(batch)
         if len(batch) < 256:
             break

@@ -277,7 +277,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 reference = json.loads(Path(identity_fixture).read_text()) if identity_fixture else None
                 from sync_v3.public_identities import from_observed_publication
                 if identity_proof:
-                    reference = from_observed_publication(*identity_proof)
+                    reference = from_observed_publication(*identity_proof, include_available_inputs=readiness_team is not None)
                 earlier = [from_observed_publication(*proof) for proof in earlier_identity_proofs]
                 install(owner, identity_export=reference, earlier_identity_exports=earlier)
                 count = 0
@@ -335,6 +335,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     report = represented_readiness(cur, readiness_team, through)
                     report['comparison'] = compare_readiness(report)
                     print(json.dumps(report, sort_keys=True))
+                    if identity_proof and report['reason'] == 'regular_season_workload_scope_required':
+                        from sync_v3.postseason_arm_comparison import compare_postseason_arms
+                        print(json.dumps(compare_postseason_arms(cur, readiness_team, through, reference), sort_keys=True))
             elif competition:
                 import json
                 from sync_v3.competition_calendar import competition_status

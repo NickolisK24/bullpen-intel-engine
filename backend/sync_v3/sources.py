@@ -35,13 +35,24 @@ def inspect_response(request, body, acquired_at):
             raise ValueError('Unsupported schedule scope')
         game_requests(day, body, now=acquired_at)
     elif re.fullmatch(r'/people/[1-9][0-9]*/stats', endpoint):
+        from services.club_competition_status import POSTSEASON_GAME_TYPES
         groups = body.get('stats')
+        stage = params.get('gameType')
+        postseason = stage in POSTSEASON_GAME_TYPES and params.get('stats') == 'gameLog'
         if (not isinstance(groups, list) or params.get('stats') not in ('byDateRange', 'gameLog')
-                or params.get('gameType') != 'R' or params.get('group') != 'pitching' or params.get('sportIds') != 1
+                or (stage != 'R' and not postseason) or params.get('group') != 'pitching' or params.get('sportIds') != 1
                 or any(not isinstance(g, dict) or (g.get('type') or {}).get('displayName') != params['stats']
                        or (g.get('group') or {}).get('displayName') != 'pitching'
                        or not isinstance(g.get('splits'), list) for g in groups)):
             raise ValueError('Unexpected official pitcher stats scope')
+        if postseason:
+            player = int(endpoint.split('/')[2])
+            if (type(params.get('season')) is not int or len(groups) > 1 or any(
+                    not isinstance(split, dict) or split.get('gameType') != stage or (split.get('player') or {}).get('id') != player
+                    or str(split.get('season')) != str(params.get('season'))
+                    or (split.get('sport') or {}).get('id') != 1
+                    for group in groups for split in group['splits'])):
+                raise ValueError('Postseason game log differs from the requested player, round or season')
     elif endpoint == '/teams/affiliates':
         depth_directory(request, body)
     elif endpoint == '/transactions':
