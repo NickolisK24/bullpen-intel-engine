@@ -322,3 +322,28 @@ test('historical pitcher returns to the same club and edition', () => {
     assert.ok(!renderData({ ...data, ...delta }).includes('Open San Francisco Giants Team Board'))
   }
 })
+
+test('historical outing date and elapsed days require the selected player and reference date', () => {
+  const days = { status: 'complete', value: 4, last_appearance_date: '2017-08-25' }
+  const outing = { status: 'complete', value: 17, game_date: '2017-08-25' }
+  const rest = { mlb_player_id: 544150, through: '2017-08-28', reference: '2017-08-29',
+    facts: { days_since_last_appearance: days, last_bullpen_appearance: outing } }
+  const data = { ...detailData(41), scope: 'isolated_historical_core', pitcher: { mlb_id: 544150 },
+    data_through: rest.through, availability_reference: rest.reference }
+  function fact(restValue, label) {
+    return currentStateFactValue(renderData({ ...data, sections: { pitcher_rest: { value: { rest: restValue } } } }), label)
+  }
+  const date = 'Last regular-season bullpen outing'
+  const elapsed = 'Days since bullpen outing'
+  assert.equal(fact(rest, date), 'Aug 25 • 17 pitches')
+  assert.equal(fact(rest, elapsed), '4 as of 2017-08-29')
+  for (const last of [null, { ...outing, status: 'unknown' }, { ...outing, game_date: '2017-08-24' }]) {
+    assert.equal(fact({ ...rest, facts: { ...rest.facts, last_bullpen_appearance: last } }, date),
+      'Aug 25 • Pitch count unavailable')
+  }
+  for (const delta of [{ mlb_player_id: 1 }, { through: '2017-08-27' }, { reference: '2017-08-30' },
+    { facts: { ...rest.facts, days_since_last_appearance: { ...days, status: 'unknown' } } }]) {
+    assert.equal(fact({ ...rest, ...delta }, date), '—')
+    assert.equal(fact({ ...rest, ...delta }, elapsed), '—')
+  }
+})

@@ -24,6 +24,22 @@ export function matchesPitcherEdition(page, pitcherId, revision, generation) {
     && Number.isSafeInteger(page.pitcher.mlb_id) && page.pitcher.mlb_id > 0 && page.pitcher.mlb_id === page.identity.mlb_id
 }
 
+function historicalBullpenTiming(data) {
+  const rest = data.sections?.pitcher_rest?.value?.rest
+  if (!rest || !data.data_through || !data.availability_reference ||
+      rest.through !== data.data_through || rest.reference !== data.availability_reference ||
+      !Number.isSafeInteger(rest.mlb_player_id) || rest.mlb_player_id !== data.pitcher?.mlb_id) return null
+  const days = rest.facts?.days_since_last_appearance
+  if (days?.status !== 'complete' || !Number.isSafeInteger(days.value) || days.value < 0 ||
+      !days.last_appearance_date) return null
+  const outing = rest.facts.last_bullpen_appearance
+  const appearance = normalizeAppearance({
+    game_date: days.last_appearance_date,
+    pitches: outing?.status === 'complete' && outing.game_date === days.last_appearance_date ? outing.value : null,
+  })
+  return appearance ? { appearance, days: days.value } : null
+}
+
 export default function PitcherDetail({ pitcherId, revisionParam = null, repeated = false, generation = null }) {
   const { data, loading, error, refetch } = useFetch(
     async options => {
@@ -77,8 +93,8 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const current = !historicalEdition && armContext?.mode === 'current'
   const workloadSignal = current ? representedWorkload : null
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
-  const workloadAppearance = normalizeAppearance(lastWorkloadAppearance)
-  const mostRecentAppearance = workloadAppearance
+  const historicalTiming = historicalEdition ? historicalBullpenTiming(data) : null
+  const mostRecentAppearance = historicalEdition ? historicalTiming?.appearance : normalizeAppearance(lastWorkloadAppearance)
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, current ? productCurrentDate : null)
   const hasPitcherEvidence = Boolean(cf || availability || pitcherLabels || mostRecentAppearance || recentWork || deploymentContext)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
@@ -94,8 +110,10 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const currentStateFacts = [
     { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
     { label: 'Current Read', value: current || rosterUnavailable ? pitcherLabels?.read?.label : 'Withheld' },
-    { label: 'Last Used', value: mostRecentAppearanceLabel },
-    { label: 'Days Rest', value: current && armContext.days_rest != null ? `${armContext.days_rest}d` : null },
+    { label: historicalEdition ? 'Last regular-season bullpen outing' : 'Last Used', value: mostRecentAppearanceLabel },
+    historicalEdition
+      ? { label: 'Days since bullpen outing', value: historicalTiming && `${historicalTiming.days} as of ${data.availability_reference}` }
+      : { label: 'Days Rest', value: current && armContext.days_rest != null ? `${armContext.days_rest}d` : null },
     { label: 'Appearances / 7d', value: historicalEdition ? datedWorkload?.appearances : cf?.appearances_last_7 },
     { label: 'Pitches / 7d', value: historicalEdition ? datedWorkload?.pitches_thrown : cf?.pitches_last_7_days },
   ]

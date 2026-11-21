@@ -81,6 +81,8 @@ try {
     await link('Rehearsal Arm 11101').click()
     await expect(heading('Rehearsal Arm 11101')).toBeVisible()
     await expect(page.locator('dt').filter({ hasText: 'Appearances / 7d' }).locator('..').locator('dd')).toHaveText('1')
+    await expect(page.locator('dt').filter({ hasText: 'Days since bullpen outing' }).locator('..').locator('dd'))
+      .toHaveText('1 as of 2026-07-30')
     await link('Open Boston Red Sox Team Board').click()
     await expect(heading('Boston Red Sox')).toBeVisible()
     assert.equal(page.url(), origin + board)
