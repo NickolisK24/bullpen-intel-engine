@@ -74,7 +74,7 @@ function DomainSection({ domain, labelA, labelB }) {
   )
 }
 
-export default function BullpenComparisonView({ payload, sideLabels = null, showShare = true }) {
+export default function BullpenComparisonView({ payload, sideLabels = null, showShare = true, historical = false }) {
   const view = getComparisonView(payload)
   if (!view.hasComparison) return <EmptyState title="Comparison unavailable" subtitle="This comparison could not be established from the current publication." />
 
@@ -93,10 +93,10 @@ export default function BullpenComparisonView({ payload, sideLabels = null, show
       <section aria-labelledby="current-bullpen-comparison-heading">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="current-bullpen-comparison-heading" className="font-mono text-xs uppercase tracking-widest text-chalk400">{payload.comparison_basis === 'pregame' ? 'Pregame Bullpen Comparison' : 'Published Bullpen Comparison'}</h2>
+            <h2 id="current-bullpen-comparison-heading" className="font-mono text-xs uppercase tracking-widest text-chalk400">{historical ? 'Historical Bullpen Comparison' : payload.comparison_basis === 'pregame' ? 'Pregame Bullpen Comparison' : 'Published Bullpen Comparison'}</h2>
             {view.representedDate && <FreshnessStamp freshness={{ data_through: view.representedDate }} showExceptional={false} className="mt-2" />}
           </div>
-          <p className="text-xs text-chalk500">Aligned facts from one published snapshot. {payload.comparison?.availability_reference_date && <>Rest reference date: {payload.comparison.availability_reference_date}.</>}</p>
+          <p className="text-xs text-chalk500">{historical ? 'Facts from the selected historical rehearsal.' : 'Aligned facts from one published snapshot.'} {payload.comparison?.availability_reference_date && <>Rest reference date: {payload.comparison.availability_reference_date}.</>}</p>
         </div>
 
         <div className="grid gap-3 border-y border-dirt py-4 md:grid-cols-2 md:gap-8">
@@ -110,15 +110,15 @@ export default function BullpenComparisonView({ payload, sideLabels = null, show
         </div>
       </section>
 
-      <section aria-labelledby="comparison-team-boards-heading">
+      {!historical && <section aria-labelledby="comparison-team-boards-heading">
         <h2 id="comparison-team-boards-heading" className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h2>
         <div className="flex flex-wrap gap-3">
           <TeamBoardLink team={view.teamA} label={view.labelA} />
           <TeamBoardLink team={view.teamB} label={view.labelB} />
         </div>
-      </section>
+      </section>}
 
-      {showShare && <div className="flex justify-end border-t border-dirt pt-4">
+      {!historical && showShare && <div className="flex justify-end border-t border-dirt pt-4">
         <EvidenceShareMenu
           cardModel={cardModel}
           destinationUrl={destinationUrl}

@@ -1,7 +1,7 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getScheduledGameMatchup } from '../../utils/api'
-import { normalizeGameId } from '../../utils/evidenceLinks'
+import { getScheduledGameMatchup, getRehearsalMatchup } from '../../utils/api'
+import { normalizeGameId, parseRehearsalRevision } from '../../utils/evidenceLinks'
 import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
 import { formatFreshnessDate } from '../UI/Freshness'
 import { EmptyState, ErrorState, LoadingPane } from '../UI'
@@ -15,7 +15,7 @@ function gameStatus(status) {
   return status?.detailed || status?.normalized || status?.abstract || null
 }
 
-export function MatchupPageView({ payload, loading = false, error = null, onRetry = null }) {
+export function MatchupPageView({ payload, loading = false, error = null, onRetry = null, historical = false }) {
   if (loading) {
     return <LoadingPane message="Loading scheduled game matchup…" />
   }
@@ -42,7 +42,7 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
     <div className="space-y-6">
       <header className="border-b border-dirt pb-5">
         <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-metadata-accent">
-          {notUpcoming ? 'Not Played' : (gameLabelByState[game.status?.normalized] || 'Scheduled Matchup')}
+          {historical ? 'Historical matchup rehearsal' : notUpcoming ? 'Not Played' : (gameLabelByState[game.status?.normalized] || 'Scheduled Matchup')}
         </p>
         <h1 className="mt-2 break-words font-display text-3xl leading-tight tracking-wide text-chalk100 sm:text-4xl">
           {awayName} at {homeName}
@@ -65,6 +65,7 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
         <BullpenComparisonView
           payload={payload}
           sideLabels={{ teamA: `Away · ${awayName}`, teamB: `Home · ${homeName}` }}
+          historical={historical}
           showShare={false}
         />
       ) : (
@@ -82,16 +83,54 @@ export function MatchupPageView({ payload, loading = false, error = null, onRetr
 export default function MatchupPage() {
   const { gameId: rawGameId } = useParams()
   const gameId = normalizeGameId(rawGameId)
-  const matchup = useFetch(
-    options => (gameId == null
-      ? Promise.reject(new Error('This Matchup destination does not contain a valid game ID.'))
-      : getScheduledGameMatchup(gameId, options)),
-    [gameId],
-  )
+  const [params] = useSearchParams()
+  const generation = params.get('rehearsalGeneration')
+  let revision
+  try {
+    revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
+    if (generation !== null && (revision === null || !/^[a-f0-9]{64}$/.test(generation)
+        || params.getAll('rehearsalGeneration').length > 1)) throw new Error('Invalid historical rehearsal generation.')
+  } catch (error) {
+    return <ErrorState message={error.message} />
+  }
+  return <MatchupEdition key={JSON.stringify([gameId, revision, generation])} {...{ gameId, revision, generation }} />
+}
+
+export function historicalMatchupPayload(response, gameId, revision, generation) {
+  const comparison = response?.historical_comparison
+  const game = comparison?.game
+  const card = response?.games?.[0]
+  const sidesMatch = (side, key) => Number.isSafeInteger(game?.[side]?.team_id)
+    && game[side].team_id === card?.[side]?.team_id && game[side].team_id === comparison?.teams?.[key]?.team_id
+  if (response?.status !== 'represented' || response.scope !== 'isolated_historical_core'
+      || response.selection_revision !== revision || response.current_serving_eligible !== false
+      || typeof response.generation !== 'string' || !/^[a-f0-9]{64}$/.test(response.generation)
+      || (generation !== null && response.generation !== generation)
+      || comparison?.scope !== response.scope || comparison.selection_revision !== revision
+      || comparison.generation !== response.generation || comparison.current_serving_eligible !== false
+      || comparison.publication_authority !== null || !['available', 'partial'].includes(comparison.status)
+      || response.games?.length !== 1 || card?.game_pk !== gameId || game?.game_pk !== gameId
+      || !response.data_through || comparison.represented_date !== response.data_through
+      || !response.availability_reference || comparison.availability_reference_date !== response.availability_reference
+      || game.reference_date !== response.availability_reference || !sidesMatch('away', 'team_a')
+      || !sidesMatch('home', 'team_b') || game.home.team_id === game.away.team_id) {
+    throw new Error('The requested historical matchup edition could not be verified.')
+  }
+  return { game, comparison }
+}
+
+function MatchupEdition({ gameId, revision, generation }) {
+  const matchup = useFetch(async options => {
+    if (gameId == null) throw new Error('This Matchup destination does not contain a valid game ID.')
+    if (revision === null) return getScheduledGameMatchup(gameId, options)
+    const response = await getRehearsalMatchup(revision, gameId, options)
+    return historicalMatchupPayload(response, gameId, revision, generation)
+  }, [gameId, revision, generation])
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <MatchupPageView
+        historical={revision !== null}
         payload={matchup.data}
         loading={matchup.loading}
         error={matchup.error}

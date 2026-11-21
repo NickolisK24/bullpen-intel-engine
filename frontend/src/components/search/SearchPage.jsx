@@ -68,6 +68,10 @@ function ResultLink({ result, edition }) {
     href = result.entity_type === 'pitcher' && result.metadata?.player_id === result.id
       ? buildRehearsalPitcherHref(result.id, edition.revision, edition.generation)
       : null
+    if (result.entity_type === 'matchup' && Number.isSafeInteger(result.id) && result.id > 0
+        && result.metadata?.game_pk === result.id) {
+      href = `${buildMatchupHref(result.id)}?rehearsalRevision=${edition.revision}&rehearsalGeneration=${edition.generation}`
+    }
   }
   if (!result?.primary_label || (!edition && !href)) return null
   const Element = href ? Link : 'div'

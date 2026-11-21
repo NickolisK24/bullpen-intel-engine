@@ -21,7 +21,7 @@ after(async () => {
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const { legacyPitcherDestination } = await server.ssrLoadModule('/src/components/bullpen/BullpenRoute.jsx')
-const { MatchupPageView } = await server.ssrLoadModule('/src/components/bullpen/MatchupPage.jsx')
+const { MatchupPageView, historicalMatchupPayload } = await server.ssrLoadModule('/src/components/bullpen/MatchupPage.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -141,6 +141,27 @@ test('standalone Matchup keeps game identity when comparison is unavailable', ()
   const html = render(React.createElement(MatchupPageView, { payload }))
   assert.ok(htmlIncludes(html, 'Aces at Bears'))
   assert.ok(htmlIncludes(html, 'Bullpen comparison unavailable'))
+})
+
+test('historical Matchup binds comparison, game, teams, and dates to the selected edition', () => {
+  const revision = 3, generation = 'a'.repeat(64), gameId = 10101
+  const edition = { scope: 'isolated_historical_core', current_serving_eligible: false, selection_revision: revision, generation }
+  const away = { team_id: 111 }, home = { team_id: 110 }
+  const game = { game_pk: gameId, away, home, reference_date: '2024-08-07' }
+  const comparison = { ...edition, game, status: 'partial', publication_authority: null,
+    represented_date: '2024-08-06', availability_reference_date: game.reference_date, teams: { team_a: away, team_b: home } }
+  const response = { ...edition, status: 'represented', games: [game], historical_comparison: comparison,
+    availability_reference: game.reference_date, data_through: comparison.represented_date }
+  const read = value => historicalMatchupPayload(value, gameId, revision, generation)
+  assert.deepEqual(read(response), { game, comparison })
+  for (const overrides of [{ selection_revision: 2 }, { generation: 'f'.repeat(64) }, { current_serving_eligible: true },
+    { games: [] }, { games: [{...game, game_pk: gameId + 1}] }, { data_through: '2024-08-05' }]) {
+    assert.throws(() => read({ ...response, ...overrides }), /could not be verified/)
+  }
+  for (const overrides of [{ publication_authority: {} }, { generation: 'f'.repeat(64) }, { selection_revision: 1 },
+    { teams: { team_a: home, team_b: away } }, { game: { ...game, reference_date: '2024-08-08' } }]) {
+    assert.throws(() => read({ ...response, historical_comparison: { ...comparison, ...overrides } }), /could not be verified/)
+  }
 })
 
 test('standalone Matchup owns one eager request with no Team Board fan-out', () => {

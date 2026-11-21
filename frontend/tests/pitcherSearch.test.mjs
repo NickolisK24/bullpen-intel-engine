@@ -213,6 +213,8 @@ test('historical discovery links the mapped pitcher to the represented edition',
   assert.ok(html.includes(`href="/pitcher/12345?rehearsalRevision=3&amp;rehearsalGeneration=${edition.generation}"`))
   assert.ok(html.includes('Matchups on this date'))
   assert.ok(!html.includes('href="/matchup/') && !html.includes('href="/bullpen'))
+  payload.groups[2].results[0].metadata.game_pk = 880001
+  assert.ok(view().includes(`href="/matchup/880001?rehearsalRevision=3&amp;rehearsalGeneration=${edition.generation}"`))
   pitcher.metadata.player_id += 1
   assert.ok(!view().includes('href="/pitcher/'))
 })
