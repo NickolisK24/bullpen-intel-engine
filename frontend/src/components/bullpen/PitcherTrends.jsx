@@ -55,7 +55,7 @@ export default function PitcherTrends({ work, deployment, pitches }) {
   }
   return (
     <section aria-label="Pitcher trends" className="mt-6 grid min-w-0 gap-5 md:grid-cols-2">
-      <Chart title="30-day workload" caption={work?.data_through && `Pitches per recorded outing through ${work.data_through}`}
+      <Chart title="30-day workload" caption={work?.data_through && [`Pitches per recorded outing through ${work.data_through}`, work.workload_series_note].filter(Boolean).join(' · ')}
         rows={dates.map(p => ({ label: [p.date, p.opponent].filter(Boolean).join(' · '), value: p.pitches }))}
         empty={work?.absence_sentence || 'Outing pitch counts unavailable.'} />
       <Chart title="Season velocity and pitch mix" rows={pitchRows}

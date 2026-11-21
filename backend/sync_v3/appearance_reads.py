@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from services.mlb_club_directory import MLB_CLUBS
-from services.public_recent_work import LOOKBACK_DAYS, _appearance_line
+from services.public_recent_work import LOOKBACK_DAYS, RECENT_LINES_MAX, _appearance_line
 from sync_v3.history import METHODOLOGY
 
 
@@ -90,3 +90,26 @@ def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs
                 population='game_side_relief' if subject=='team' else 'all_pitching_appearances',
                 through=through.isoformat(), start=start.isoformat(), gaps=gaps, appearances=kept,
                 citation=dict(methodology=methodology, facts_digest=semantic, input_digest=inputs))
+
+
+def pitcher_recent_work(regular, postseason):
+    """Present confirmed outings from both ledgers without asserting coverage of missing games."""
+    if (regular['through'] != postseason['through'] or regular['start'] != postseason['start']
+            or regular['population'] != 'all_pitching_appearances' or postseason['population'] != regular['population']):
+        raise ValueError('Pitcher appearance windows or populations disagree')
+    rows = regular['appearances'] + postseason['appearances']
+    if len({r['mlb_id'] for r in rows}) > 1:
+        raise ValueError('Appearance ledgers contain different pitchers')
+    if len({r['game_pk'] for r in rows}) != len(rows):
+        raise ValueError('Conflicting regular-season and postseason appearances for one pitcher')
+    ordered = sorted(rows, key=lambda r: (r['game_date'], r['game_number'] is None, r['game_number'] or 0, r['game_pk']))
+    series = [dict(date=r['game_date'], game_pk=r['game_pk'], pitches=r['pitches_thrown'],
+                   opponent=r['opponent_abbreviation']) for r in ordered]
+    note = 'Includes verified regular-season and postseason outings.'
+    if regular['gaps'] or postseason['gaps']:
+        note += ' Some dates have incomplete evidence.'
+    result = dict(regular, data_through=regular['through'], workload_series=series,
+                  workload_series_note=note, recent_appearances=list(reversed(ordered[-RECENT_LINES_MAX:])))
+    if not ordered:
+        result['absence_sentence'] = 'No verified outings in the available records for this window.'
+    return result

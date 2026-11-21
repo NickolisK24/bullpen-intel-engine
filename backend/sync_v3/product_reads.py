@@ -7,7 +7,7 @@ from services.team_state_public_vocabulary import (
     INTERNAL_TO_PUBLIC_STATE, PUBLIC_STATE_LABELS, TEAM_STATE_READINESS_UNAVAILABLE,
     public_team_state, team_state_unavailable,
 )
-from sync_v3.appearance_reads import appearance_ledger, postseason_appearances
+from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -903,11 +903,12 @@ def read_pitcher(connection, public_id, *, revision=None):
             return dict(result, status=kind, identity=player, sections={})
         depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
         result['postseason_work'] = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, player['team_id'])
+        regular = appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through)
+        result['recent_work'] = pitcher_recent_work(regular, result['postseason_work'])
         result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         if (player.get('roster_observation') or {}).get('membership') == 'active':
-            return dict(result, status='dated_active_pitcher', identity=player, sections={},
-                        recent_work=appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through))
+            return dict(result, status='dated_active_pitcher', identity=player, sections={})
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
@@ -922,8 +923,7 @@ def read_pitcher(connection, public_id, *, revision=None):
         events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
         if player.get('historical_departure'):
             events.append(player['historical_departure'])
-        return dict(result, status='represented', identity=player, sections=blocks, represented_events=events,
-                    recent_work=appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through))
+        return dict(result, status='represented', identity=player, sections=blocks, represented_events=events)
     return _read_transaction(connection, pitcher)
 
 

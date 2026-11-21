@@ -1111,7 +1111,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert pitcher['arm_context'] == displayed_arm['arm_context']
                 assert pitcher['display_read'] == displayed_arm['display_read']
                 assert pitcher['pitch_hand'] == hand
-                assert pitcher['recent_work']['appearances'] == ledger['appearances']
+                work = pitcher['recent_work']
+                assert work['appearances'] == ledger['appearances']
+                assert work['recent_appearances'] == work['appearances']
+                assert work['workload_series'] == [dict(date=str(day), game_pk=pk, pitches=15,
+                                                        opponent=line['opponent_abbreviation'])]
+                assert 'incomplete evidence' in work['workload_series_note'] and 'absence_sentence' not in work
                 chart = pitcher['season_pitch_characteristics']
                 assert chart['through'] == str(day) and chart['months'][0]['outings'] == 1
                 assert chart['months'][0]['verified_outings'] == 0 and chart['months'][0]['types'] == []
@@ -1278,3 +1283,29 @@ def test_updated_identity_export_cannot_reassign_a_public_route_or_rewrite_an_ol
                 assert dict(cur) == {first:original, second:updated}
                 verify_reference(cur, original)
                 verify_reference(cur, updated)
+
+
+def test_pitcher_chart_preserves_individual_outings_and_missing_counts():
+    from sync_v3.appearance_reads import pitcher_recent_work
+    from services.public_recent_work import RECENT_LINES_MAX
+
+    def line(n):
+        return dict(mlb_id=17, game_pk=900+n, game_number=n if n < 3 else 1,
+                    game_date=f'2026-09-{max(2,n):02}', pitches_thrown=None if n == 1 else n,
+                    opponent_abbreviation='BOS')
+
+    window = dict(start='2026-09-01', through='2026-09-30', population='all_pitching_appearances', gaps={})
+    regular = dict(window, appearances=[line(n) for n in reversed(range(1, 9))])
+    postseason = dict(window, appearances=[line(9)])
+    work = pitcher_recent_work(regular, postseason)
+    assert [r['game_pk'] for r in work['workload_series']] == list(range(901, 910))
+    assert work['workload_series'][0]['pitches'] is None
+    assert len(work['recent_appearances']) == RECENT_LINES_MAX and work['recent_appearances'][0] == line(9)
+    with pytest.raises(ValueError, match='Conflicting'):
+        pitcher_recent_work(regular, dict(postseason, appearances=[line(2)]))
+    with pytest.raises(ValueError, match='different pitchers'):
+        pitcher_recent_work(regular, dict(postseason, appearances=[dict(line(9), mlb_id=18)]))
+    empty = pitcher_recent_work(dict(regular, appearances=[], gaps={'2026-09-01': 'missing_complete_schedule'}),
+                                dict(postseason, appearances=[]))
+    assert empty['workload_series'] == [] and 'No verified outings' in empty['absence_sentence']
+    assert 'workload' not in empty
