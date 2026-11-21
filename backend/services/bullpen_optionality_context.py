@@ -207,6 +207,10 @@ def _last_workload_label(logs, reference_date):
         (_date_value(_value(log, 'game_date')) for log in valid),
         default=None,
     )
+    return last_workload_label_for_date(latest, reference_date)
+
+
+def last_workload_label_for_date(latest, reference_date):
     if latest is None or reference_date is None:
         return None
     diff = (reference_date - latest).days

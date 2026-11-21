@@ -840,7 +840,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     from sync_v3.replay import run_fixture
     from sync_v3.selection import SelectionWithheld, select_generation
     from sync_v3.product_reads import read_league, preview_league, read_team_events, read_search, read_game_cards
-    from sync_v3.product_reads import read_team_board, read_pitcher, read_team_history
+    from sync_v3.product_reads import read_team_board, read_pitcher, read_team_history, read_pitcher_history
     from sync_v3.editorial_reads import read_event_evidence, read_story_observations, read_trust
     from tests.sync_v3_league_fixture import league_fixtures
 
@@ -931,6 +931,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert game['metadata']['reference_date'] == str(day + timedelta(days=1))
             slate = read_game_cards(worker)
             assert slate['quiet_day'] is False and len(slate['games']) == 15
+            assert slate['summary']['game_count'] == 15
+            assert 10101 in slate['featured_game_pks'] and slate['lead'] is None
+            boston = next(card for card in slate['games'] if card['game_pk'] == 10101)
+            assert boston['away']['rotation']['status'] == 'partial'
+            assert boston['away']['rotation']['bullpen_innings'] == '5.0'
             for card in slate['games']:
                 lookup = read_search(worker, str(card['game_pk']), revision=1)['search']['groups'][2]['results']
                 assert [entry['id'] for entry in lookup] == [card['game_pk']]
@@ -938,6 +943,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert matchup['games'] == [next(row for row in slate['games'] if row['game_pk'] == game['id'])]
             assert matchup['generation'] == discovery['generation']
             assert matchup['games'][0]['away']['rest']['worked_yesterday_count'] == 1
+            named = matchup['games'][0]['role_rest']
+            if identity_mode == 'complete':
+                assert named['team_a']['save_work'][0]['pitcher_id'] == 9111
+                assert named['team_a']['save_work'][0]['days_since_last_appearance'] == 1
+            else:
+                assert named['status'] == 'withheld'
             assert read_game_cards(worker, game_pk=9999)['status'] == 'game_outside_represented_slate'
             history = read_team_events(worker, 111)
             assert history['generation'] == league['generation'] and history['represented'] == str(day)
@@ -951,10 +962,20 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             share_input = read_event_evidence(worker, 111, event['event']['event_id'], revision=1)
             assert share_input['evidence'] == event and share_input['trusted_snapshot_id'] is None
             stories = read_story_observations(worker, 111)
-            assert stories['qualification'] == 'rotation_compared' and len(stories['source_games']) == 1
-            assert stories['observations']['observation_count'] == 1
-            assert stories['observations']['strongest_observation']['type'] == 'rotation_pressure'
-            assert read_story_observations(worker, 110)['observations']['observation_count'] == 0
+            assert stories['qualification'] == 'game_lines_compared' and len(stories['source_games']) == 1
+            kinds = {item['type'] for item in stories['observations']['observations']}
+            assert {'rotation_pressure', 'concentration_pressure'} <= kinds
+            assert stories['coverage']['bullpen_optionality_context'] == 'complete_dated_arm_reads'
+            assert stories['coverage']['bullpen_concentration_context'] == 'complete_calendar'
+            pk, = stories['source_games']
+            boxscore = next(item['body'] for fixture in fixtures for item in fixture['responses']
+                            if item['endpoint'] == f'/game/{pk}/boxscore')
+            from hashlib import sha256
+            from sync_v3.evidence import encode_json
+            assert stories['boxscore_digests'] == {str(pk): [sha256(encode_json(boxscore)).hexdigest()]}
+            other = read_story_observations(worker, 110)['observations']
+            other_kinds = {item['type'] for item in other['observations']}
+            assert 'concentration_pressure' in other_kinds and 'rotation_pressure' not in other_kinds
             trust = read_trust(worker, revision=1)
             assert trust['generation'] == board['generation'] and trust['comparison']['status'] == 'core_comparison_complete'
             assert sum(group['receipts'] for group in trust['sources']) > len(league['teams'])
@@ -1009,6 +1030,16 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert page['rows'][0]['events'] == history['events'] and page['next_revision'] == 1
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
+            timeline = read_pitcher_history(worker, 9111, through_revision=3, limit=2)
+            assert [item['generation'] for item in timeline['rows']] == [first, second]
+            if identity_mode == 'complete':
+                restored = timeline['rows'][0]
+                assert restored['identity'] == pitcher['identity'] and restored['events'] == pitcher['represented_events']
+                assert restored['arm']['read'] == board['active_bullpen'][0]['read']
+                assert restored['role']['through'] == str(day) and restored['role']['reference'] == restored['availability_reference']
+                assert len(restored['citations']) == 2
+            else:
+                assert all(item['status'] == discovery['pitcher_identity_status'] for item in timeline['rows'])
             assert read_league(worker, revision=2)['generation'] == second
             assert read_league(worker, revision=20)['status'] == 'unknown_revision'
             with worker, worker.cursor() as cur:
@@ -1033,3 +1064,74 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             with worker, worker.cursor() as cur:
                 cur.execute('SELECT count(*),max(revision) FROM candidate.core_selections')
                 assert cur.fetchone() == (5,5)
+
+
+def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
+    from contextlib import closing
+    from sync_v3.generation import build_batch
+    from sync_v3.product_reads import read_game_cards, read_league, read_search
+    from sync_v3.replay import run_fixture
+    from sync_v3.selection import select_generation
+    from tests.sync_v3_league_fixture import league_fixtures
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day, fixtures = league_fixtures(idle_next_day=True)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
+            path = tmp_path / 'day.json'
+            for fixture in fixtures:
+                path.write_text(json.dumps(fixture))
+                run_fixture(worker, path)
+            for _ in range(15):
+                batch = build_batch(worker, day, 75)
+                if not batch['processed']:
+                    break
+            else:
+                pytest.fail('Off-day candidate did not settle')
+            revision = select_generation(reviewer, batch['after'], expected_revision=0)
+            league = read_league(worker, revision=revision)
+            slate = read_game_cards(worker, revision=revision)
+            assert len(league['teams']) == 30 and league['generation'] == slate['generation']
+            assert slate['status'] == 'represented' and slate['quiet_day'] is True and slate['games'] == []
+            assert read_game_cards(worker, game_pk=10101)['status'] == 'game_outside_represented_slate'
+            group = read_search(worker, 'Boston', revision=revision)['search']['groups'][2]
+            assert group['results'] == [] and group['status'] != 'unavailable'
+
+
+def test_updated_identity_export_cannot_reassign_a_public_route_or_rewrite_an_older_generation():
+    from contextlib import closing
+    import psycopg2
+    from sync_v3.generation import freeze_generation
+    from sync_v3.public_identities import load_reference, verify_reference
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    base = dict(source='BaseballOS.pitchers', observed_at='2024-08-02T10:00:00Z', rows=[dict(mlb_id=12, id=34)])
+    newer = dict(base, observed_at='2024-08-03T10:00:00Z', rows=[*base['rows'], dict(mlb_id=13, id=35)])
+    day = date(2024, 8, 1)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            with owner, owner.cursor() as cur:
+                original = load_reference(cur, base)
+            first = freeze_generation(db, day)
+            with owner, owner.cursor() as cur:
+                updated = load_reference(cur, newer)
+                assert load_reference(cur, dict(newer, rows=list(reversed(newer['rows'])))) == updated
+                load_reference(cur, dict(base, observed_at='2024-08-01T10:00:00Z'))
+            for row in [dict(mlb_id=12, id=35), dict(mlb_id=14, id=34)]:
+                with pytest.raises(psycopg2.errors.ForeignKeyViolation), owner, owner.cursor() as cur:
+                    load_reference(cur, dict(newer, observed_at='2024-08-04T10:00:00Z', rows=[row]))
+            with pytest.raises(psycopg2.errors.UniqueViolation), owner, owner.cursor() as cur:
+                load_reference(cur, dict(newer, rows=base['rows']))
+            second = freeze_generation(db, day)
+            assert first != second
+            with db, db.cursor() as cur:
+                cur.execute("SELECT digest,manifest->>'public_identity_export' FROM candidate.generations")
+                assert dict(cur) == {first:original, second:updated}
+                verify_reference(cur, original)
+                verify_reference(cur, updated)

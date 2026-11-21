@@ -48,7 +48,8 @@ def _club(day, team, game, template):
         responses.append(_response(request, dict(teamId=team, rosterType=kind, roster=members)))
     from utils.innings import parse_mlb_innings_to_outs
     outs = parse_mlb_innings_to_outs(arm['stats']['pitching']['inningsPitched'])
-    stats = dict(arm['stats']['pitching'], outs=outs, gamesPitched=1, saves=0, holds=0, saveOpportunities=0, gamesFinished=1)
+    arm['stats']['pitching'].update(saves=int(team in (110,111)), holds=0, saveOpportunities=int(team in (110,111)), gamesFinished=1)
+    stats = dict(arm['stats']['pitching'], outs=outs, gamesPitched=1)
     split = dict(player=dict(id=reliever), team=dict(id=team), sport=dict(id=1), stat=stats, season=str(day.year),
                  gameType='R', date=str(day), game=dict(gamePk=game))
     for request in pitcher_requests(day, [reliever]):
@@ -58,7 +59,7 @@ def _club(day, team, game, template):
     return staff, reliever, responses
 
 
-def league_fixtures():
+def league_fixtures(*, idle_next_day=False):
     played = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
     day = date.fromisoformat(played['baseball_date'])
     bodies = {item['endpoint']: item['body'] for item in played['responses']}
@@ -66,7 +67,10 @@ def league_fixtures():
     staff = bodies['/game/12345/boxscore']['teams']['home']
     teams = sorted(MLB_TEAM_IDS)
     games, responses, players = [], [], []
-    for index, (home, away) in enumerate(zip(teams[::2], teams[1::2])):
+    pairings = list(zip(teams[::2], teams[1::2]))
+    # Boston and Baltimore meet tomorrow after facing different opponents.
+    played_pairs = [(home, pairings[(index + 1) % len(pairings)][1]) for index, (home, _) in enumerate(pairings)]
+    for index, (home, away) in enumerate(played_pairs):
         pk = 10000 + index
         game = dict(deepcopy(example), gamePk=pk, season=str(day.year))
         sides = {}
@@ -79,14 +83,17 @@ def league_fixtures():
         for suffix, body in [('boxscore', dict(teams=sides)), ('playByPlay', dict(allPlays=[])), ('linescore', dict(innings=[]))]:
             responses.append(dict(endpoint=f'/game/{pk}/{suffix}', params={}, body=body))
     following = day + timedelta(days=1)
+    scheduled = following + timedelta(days=int(idle_next_day))
     upcoming = deepcopy(games)
-    for game in upcoming:
-        game.update(gamePk=game['gamePk'] + 100, officialDate=str(following), gameDate=f'{following}T22:00:00Z',
+    for game, (home, away) in zip(upcoming, pairings):
+        game['teams']['home']['team']['id'] = home
+        game['teams']['away']['team']['id'] = away
+        game.update(gamePk=game['gamePk'] + 100, officialDate=str(scheduled), gameDate=f'{scheduled}T22:00:00Z',
                     status=dict(statusCode='S', abstractGameState='Preview', detailedState='Scheduled'))
-    season = dict(totalGames=30, dates=_slate(day, games)['dates'] + _slate(following, upcoming)['dates'])
+    season = dict(totalGames=30, dates=_slate(day, games)['dates'] + _slate(scheduled, upcoming)['dates'])
     responses.append(_response(competition_calendar_request(day.year), season))
     quiet = [_fixture(day - timedelta(days=n), []) for n in reversed(range(1, ACTIVE_WINDOW_DAYS))]
     feeds = [dict(endpoint=f"/../v1.1/game/{game['gamePk']}/feed/live", params={},
                   body=dict(gamePk=game['gamePk'], liveData={})) for game in upcoming]
-    next_slate = dict(_fixture(following, upcoming, responses=feeds), observed_at=f'{following}T16:00:00Z')
+    next_slate = dict(_fixture(following, [] if idle_next_day else upcoming, responses=[] if idle_next_day else feeds), observed_at=f'{following}T16:00:00Z')
     return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players), next_slate]

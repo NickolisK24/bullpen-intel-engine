@@ -159,7 +159,7 @@ def _assemble(cur, through):
                     stale_inputs=stale_inputs, stale_comparisons=stale_comparisons, contract='candidate_generation_inventory_v1', represented=through.isoformat(),
                     availability_reference=reference.isoformat(), clubs=clubs, members=members, missing=missing,
                     current_serving_eligible=False)
-    cur.execute('SELECT digest FROM candidate.public_identity_export')
+    cur.execute('SELECT digest FROM candidate.public_identity_export ORDER BY observed_at DESC LIMIT 1')
     identity_export = cur.fetchone()
     if identity_export:
         manifest['public_identity_export'] = identity_export[0]

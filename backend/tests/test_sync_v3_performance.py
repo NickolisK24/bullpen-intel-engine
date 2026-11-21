@@ -87,3 +87,38 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     member['status'] = None
     blocked = group.active_group_performance(None, 118, THROUGH)
     assert blocked['windows'] is None and blocked['reason'] == 'active_pitching_population_unresolved'
+
+
+def test_matchup_requires_a_shared_qualified_season_metric_and_matching_window():
+    from sync_v3.group_performance import _aggregate
+    from sync_v3.product_reads import _season_comparison, _aligned_performance
+    row = dict(innings_pitched_outs=3, earned_runs=1, hits_allowed=1, walks=0, strikeouts=1, batters_faced=4,
+               home_runs_allowed=0, inherited_runners=1, inherited_runners_scored=0)
+
+    def side(rows, through=str(THROUGH)):
+        return _season_comparison(dict(members=[{'player': 7}], through=through, windows={
+            'season': dict(start='2024-01-01', **_aggregate(rows))}))
+
+    full = side([row] * 36)
+    incomplete = side([row] * 35 + [dict(row, batters_faced=None)])
+    result = _aligned_performance(full, incomplete)
+    assert result['status'] == 'partial' and 'k_bb_percent' not in result['team_b']
+    assert result['team_a']['k_bb_percent']['value'] == '25.0%'
+    assert result['team_b']['active_bullpen_era']['value'] == '9.00'
+    assert result['team_b']['sample']['relief_appearances'] == 36
+    assert 'descriptive_hr9' not in result['team_a']
+    assert _aligned_performance(full, side([]))['status'] == 'withheld'
+    assert _aligned_performance(full, side([row]*36, through='2024-08-08'))['status'] == 'withheld'
+
+
+def test_league_change_retains_the_board_event_identity_and_frozen_revision():
+    from sync_v3.product_reads import _league_state_changes
+    row = dict(team_id=118, team_abbreviation='KC', team_state=dict(public_label='Stretched'),
+               orientation=dict(movement=dict(previous_label='Vulnerable', since='2024-08-06', event_id='stored-state-event')))
+    citations = {118: {'changes': {'facts_digest':'change-digest'}}}
+    change, = _league_state_changes([row], citations, 'frozen-generation', '2024-08-07')
+    assert change['change_id'] == 'stored-state-event'
+    assert change['source_ref'] == 'frozen-generation/change-digest'
+    assert change['state_change'] == {'from':'Vulnerable', 'to':'Stretched'}
+    row['orientation']['movement'] = None
+    assert _league_state_changes([row], citations, 'frozen-generation', '2024-08-07') == []

@@ -167,12 +167,18 @@ def _role_rest(snapshot, team_id, package):
     roles = authority._frozen_roles_deployment_for_view(snapshot, package, team_id)
     if not usage or usage.get('status') not in ('complete', 'partial') or not roles:
         return None, ()
-    active = usage.get('active_pitchers') or []
-    profiles = roles['profiles']
+    sides = named_role_rest(usage.get('active_pitchers') or [], roles['profiles'])
+    if sides is None:
+        return None, ()
+    return sides, (roles['method_version'], usage['contract'], usage['data_through'], usage['reference_date'])
+
+
+def named_role_rest(active, profiles):
+    """Project named role and rest facts from an already aligned active population."""
     rest_by_id = {item['pitcher_id']: item for item in active}
     if (len(rest_by_id) != len(active)
             or len({p['pitcher_id'] for p in profiles}) != len(profiles)):
-        return None, ()
+        return None
     sides = {'late': [], 'setup': [], 'save_work': []}
     for profile in profiles:
         read = profile['public_role_read']
@@ -191,8 +197,8 @@ def _role_rest(snapshot, team_id, package):
             if type(saves) is int and saves > 0:
                 sides['save_work'].append(line)
     if not any(sides.values()):
-        return None, ()
-    return sides, (roles['method_version'], usage['contract'], usage['data_through'], usage['reference_date'])
+        return None
+    return sides
 
 
 def _performance(snapshot, team_id, package):

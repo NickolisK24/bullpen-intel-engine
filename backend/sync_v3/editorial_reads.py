@@ -1,9 +1,38 @@
 """Evidence for editorial review from a selected historical candidate."""
+from datetime import date
+
 from services.mlb_club_directory import MLB_CLUBS
-from services.rotation_context import build_rotation_context
+from services.bullpen_optionality_context import build_bullpen_optionality_context, last_workload_label_for_date
+from services import bullpen_concentration_context as concentration
+from services import rotation_context as rotation_layer
+from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
-from sync_v3.product_reads import _read_transaction, _selected, read_team_events
+from sync_v3.product_reads import _public_arms, _read_transaction, _selected, read_team_events
+
+
+def _optionality(cur, digest, team, reference):
+    cur.execute("""SELECT h.facts FROM candidate.generation_inputs g JOIN candidate.workload_history h
+                   ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team' AND h.mlb_id=%s
+                   AND h.methodology=%s""", (digest, team, DOMAINS['readiness'][1]))
+    facts, = cur.fetchone()
+    if facts['reason'] or facts['reference_date'] != reference or not facts['arms']:
+        return None
+    identities, _ = _public_arms(cur, digest)
+    records, latest = [], {}
+    for key, arm in facts['arms'].items():
+        player = int(key)
+        identity = identities.get(player)
+        if not identity or identity['team_id'] != team or arm['reason'] or not arm['read']:
+            return None
+        read = arm['read']
+        records.append(dict(player_id=player, name=identity['name'], availability=read['availability']))
+        latest[player] = date.fromisoformat(read['last_workload'])
+    ref = date.fromisoformat(reference)
+    layer = build_bullpen_optionality_context(records, reference_date=ref)
+    for option in layer['clean_workload_options']:
+        option['last_workload'] = last_workload_label_for_date(latest[option['player_id']], ref)
+    return layer
 
 
 def read_story_observations(connection, team, *, revision=None):
@@ -15,7 +44,7 @@ def read_story_observations(connection, team, *, revision=None):
 
     def read(cur):
         selected = _selected(cur, revision)
-        result = dict(scope='isolated_historical_rotation', generation=None, current_serving_eligible=False,
+        result = dict(scope='isolated_historical_game_lines', generation=None, current_serving_eligible=False,
                       observations=None, qualification='no_selected_generation')
         if not selected or selected[1] is None:
             return result
@@ -30,13 +59,17 @@ def read_story_observations(connection, team, *, revision=None):
         if len(dates) != 14 or any(day['reason'] for day in dates.values()):
             return dict(result, qualification='incomplete_rotation_calendar')
         expected = {game['game_pk']: day for day, data in dates.items() for game in data['games']}
-        cur.execute("""SELECT DISTINCT r.id,c.identity,r.facts FROM candidate.workload_history_sources s
+        cur.execute("""SELECT r.id,c.identity,r.facts,min(c.source_id),array_agg(DISTINCT f.sha256 ORDER BY f.sha256)
+                       FROM candidate.workload_history_sources s
                        JOIN candidate.confirmations c ON c.source_id=s.source_id AND c.domain='final'
                        JOIN candidate.revisions r ON r.id=c.revision_id
-                       WHERE s.snapshot=%s AND c.identity=ANY(%s) ORDER BY c.identity,r.id""",
+                       JOIN candidate.fetches f ON f.id=c.source_id
+                       WHERE s.snapshot=%s AND c.identity=ANY(%s) GROUP BY r.id,c.identity ORDER BY c.identity,r.id""",
                     (snapshot, [str(pk) for pk in expected]))
         games, logs = set(), []
-        for _, identity, lines in cur:
+        names_complete = True
+        body_digests = {}
+        for _, identity, lines, receipt, digests in cur.fetchall():
             pk = int(identity)
             if pk in games:
                 return dict(result, qualification='conflicting_pinned_game_versions')
@@ -44,16 +77,44 @@ def read_story_observations(connection, team, *, revision=None):
             club_lines = [line for line in lines if line['team_id'] == team]
             if not club_lines or any(line['game_date'] != expected[pk] for line in club_lines):
                 return dict(result, qualification='unverified_club_game')
-            logs.extend(dict(line, mlb_game_pk=pk, game_type='R', innings_pitched_outs=line['outs_recorded'])
-                        for line in club_lines)
+            body_digests[identity] = digests
+            box = replay(cur, receipt).body if len(digests) == 1 else None
+            for line in club_lines:
+                mlb = line['pitcher_mlb_id']
+                side = box['teams'][line['side']] if box else {}
+                person = side.get('players', {}).get(f'ID{mlb}', {}).get('person') or {}
+                name = person.get('fullName') if person.get('id') == mlb else None
+                if not name and line['games_started'] == 0:
+                    names_complete = False
+                logs.append(dict(line, mlb_game_pk=pk, game_type='R', player_id=mlb, pitcher_name=name,
+                                 innings_pitched_outs=line['outs_recorded']))
         if games != expected.keys():
             return dict(result, qualification='missing_pinned_final')
         club = clubs[team]
-        context = build_rotation_context(logs, reference_date=through)
+        layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
+        coverage = {'rotation_context': 'complete_calendar'}
+        if names_complete:
+            layers['bullpen_concentration_context'] = concentration.build_bullpen_concentration_context(
+                logs, reference_date=through)
+            coverage['bullpen_concentration_context'] = 'complete_calendar'
+        else:
+            coverage['bullpen_concentration_context'] = 'missing_official_reliever_identity'
+        # Both legacy builders normally receive currently assigned players. The pinned final
+        # proves the club at appearance, including for a player who subsequently transferred.
+        legacy_scope = {rotation_layer.CURRENT_ASSIGNMENT_LIMITATION, concentration.CURRENT_ASSIGNMENT_LIMITATION}
+        for layer in layers.values():
+            layer['limitations'] = [text for text in layer.get('limitations', []) if text not in legacy_scope]
+            layer['limitations'].append('The official final pitching line establishes the club at appearance.')
+        optionality = _optionality(cur, digest, team, reference)
+        if optionality:
+            layers['bullpen_optionality_context'] = optionality
+        coverage['bullpen_optionality_context'] = 'complete_dated_arm_reads' if optionality else 'incomplete_arm_reads'
         payload = build_team_story_observation_payload(dict(
             team_id=team, team_name=club.team_name, team_abbreviation=club.abbreviation,
-            reference_date=reference, data_through_date=through.isoformat(), rotation_context=context))
-        return dict(result, qualification='rotation_compared', source_games=sorted(games), observations=payload)
+            reference_date=reference, data_through_date=through.isoformat(), **layers))
+        return dict(result, qualification='game_lines_compared', coverage=coverage, source_games=sorted(games),
+                    boxscore_digests=body_digests,
+                    observations=payload)
     return _read_transaction(connection, read)
 
 
@@ -88,10 +149,10 @@ def read_trust(connection, *, revision=None):
                            SELECT hs.source_id FROM candidate.generation_inputs g
                            JOIN candidate.workload_history_sources hs ON hs.snapshot=g.snapshot WHERE g.generation=%s
                            UNION SELECT source FROM candidate.generation_sources WHERE generation=%s)
-                       SELECT f.outcome,r.reason,count(*),min(f.received_at),max(f.received_at)
+                       SELECT f.outcome,coalesce(r.reason,f.reason),count(*),min(f.received_at),max(f.received_at)
                        FROM receipts s JOIN candidate.fetches f ON f.id=s.source_id
                        LEFT JOIN candidate.refusals r ON r.source_id=f.id
-                       GROUP BY f.outcome,r.reason ORDER BY f.outcome,r.reason""", (digest, digest))
+                       GROUP BY f.outcome,coalesce(r.reason,f.reason) ORDER BY 1,2""", (digest, digest))
         sources = [dict(outcome=outcome, refusal_reason=reason, receipts=n,
                         earliest_acquisition=first.isoformat(), latest_acquisition=last.isoformat())
                    for outcome, reason, n, first, last in cur]

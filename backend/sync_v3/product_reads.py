@@ -54,7 +54,8 @@ def _movement(change, current, snapshot):
         previous = event['previous']
     else:
         previous = current
-    return dict(previous_label=PUBLIC_STATE_LABELS[previous], since=before['represented'])
+    return dict(previous_label=PUBLIC_STATE_LABELS[previous], since=before['represented'],
+                event_id=events[0]['event_id'] if events else None)
 
 
 def _orientation(facts, change, digest):
@@ -309,11 +310,71 @@ def read_search(connection, query, *, revision=None, limit=5):
     return _read_transaction(connection, search)
 
 
+def _season_comparison(facts):
+    """Repeat only the qualified, represented active bullpen's official season facts."""
+    from services import performance_metrics as rules
+    from services.public_team_performance import WINDOW_POLICY, frozen_comparison_metrics
+
+    window = (facts.get('windows') or {}).get('season')
+    if facts.get('reason') or not window or not window['appearances']:
+        return None, ()
+    metrics = window['metrics']
+    rows = []
+    capabilities = {}
+    for key, definition in [('active_bullpen_era', rules.CURRENT_ACTIVE_PEN_ERA),
+                            ('active_bullpen_whip', rules.CURRENT_ACTIVE_PEN_WHIP)]:
+        metric = metrics[definition.metric_id]
+        qualified = metric['reason'] is None and metric['covered'] == window['appearances']
+        rows.append(dict(key=key, metric_id=definition.metric_id, method_version=definition.version,
+                         value=metric['value'], qualification=dict(status='qualified' if qualified else 'unavailable'),
+                         evidence_state=dict(status='complete' if qualified else 'unavailable')))
+    for key in ('home_runs_allowed', 'inherited_runner_context', 'k_bb_percent'):
+        metric = metrics[key]
+        if metric['reason'] is None and metric['value'] is not None and metric['covered'] == window['appearances']:
+            capabilities[key] = dict(status='qualified', value=metric['value'])
+    values, versions = frozen_comparison_metrics(dict(metrics=rows, capabilities=capabilities))
+    if not values:
+        return None, ()
+    values['sample'] = dict(active_pitchers=len(facts['members']), relief_appearances=window['appearances'],
+                            start=window['start'], through=facts['through'])
+    stamp = (DOMAINS['group_performance'][1], WINDOW_POLICY, window['start'], facts['through'], *versions)
+    return values, stamp
+
+
+def _aligned_performance(away, home):
+    from services.current_bullpen_comparison import _aligned_domain, _withheld_domain
+    a, stamp_a = away
+    b, stamp_b = home
+    if not a or not b or not ((a.keys() & b.keys()) - {'sample'}):
+        return _withheld_domain('performance')
+    return _aligned_domain('performance', a, b, stamp_a=stamp_a, stamp_b=stamp_b, partial=a.keys() != b.keys())
+
+
+def _league_state_changes(teams, citations, generation, represented):
+    """Cite only transitions that survived League's exact readiness comparison."""
+    from services import tonight_read_model as tonight
+    changes = []
+    for row in teams:
+        movement = (row['orientation'] or {}).get('movement')
+        current = row['team_state']['public_label']
+        if not movement or not current or movement['previous_label'] == current:
+            continue
+        previous = movement['previous_label']
+        team = row['team_id']
+        receipt = citations[team]['changes']['facts_digest']
+        changes.append(dict(change_id=movement['event_id'], team_id=team, team_abbreviation=row['team_abbreviation'],
+                            change_class='team_state_changed', occurred_on=represented, evidence_state='complete',
+                            headline=f"{row['team_abbreviation']} moved from {previous} to {current}.", detail=None,
+                            source_ref=f'{generation}/{receipt}', game_pks=[], state_change={'from':previous, 'to':current}))
+    return sorted(changes, key=tonight._league_change_order)[:tonight.LEAGUE_CHANGES_TOTAL]
+
+
 def read_game_cards(connection, *, revision=None, game_pk=None):
     """Serve the same historical game card to the isolated slate and game detail."""
     from datetime import date
     from services import tonight_read_model as tonight
-    from services.rotation_support_pressure import _baseball_innings
+    from services.current_bullpen_comparison import _aligned_domain, named_role_rest
+    from services.rotation_support_pressure import _baseball_innings, _split_limitation_reasons
     from sync_v3.history import METHODOLOGY
 
     if revision is not None and (type(revision) is not int or revision < 1):
@@ -333,17 +394,22 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
             slate = _schedule_rows(cur, generation, date.fromisoformat(league['availability_reference']))
         except ValueError as exc:
             return dict(result, status='schedule_unavailable', reason=str(exc))
-        playable = [row for row in slate if not tonight.is_cancelled_slate_row(row)]
-        result['quiet_day'] = not playable
-        games = [row for row in playable if game_pk is None or row.game_pk == game_pk]
+        ids = {club.team_id for club in MLB_CLUBS}
+        games = [row for row in slate if not tonight.is_cancelled_slate_row(row)
+                 and row.home_team_id in ids and row.away_team_id in ids]
+        changes = _league_state_changes(league['teams'], league['citations'], generation, league['data_through'])
+        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_transitions',
+                      featured_game_pks=[], lead=None, limitations=['additional_league_change_classes_unverified'])
+        if game_pk is not None and all(row.game_pk != game_pk for row in games):
+            return dict(result, status='game_outside_represented_slate')
         if not games:
-            return dict(result, status='game_outside_represented_slate' if game_pk else 'represented')
+            return dict(result, summary=tonight._summary([], {}, changes))
         clubs = {team for row in games for team in (row.home_team_id, row.away_team_id)}
         reads, rotation = DOMAINS['readiness'][1], DOMAINS['rotation'][1]
         cur.execute("""SELECT h.mlb_id,h.methodology,h.facts FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
                        AND h.mlb_id=ANY(%s) AND h.methodology=ANY(%s)""",
-                    (generation, sorted(clubs), [METHODOLOGY, reads, rotation]))
+                    (generation, sorted(clubs), [METHODOLOGY, reads, rotation, DOMAINS['group_performance'][1]]))
         facts = {(team, method): body for team, method, body in cur}
         arms = {int(player) for team in clubs for player in facts[team, reads]['arms']}
         cur.execute("""SELECT h.mlb_id,h.facts->'rest'->'facts' FROM candidate.generation_inputs g
@@ -357,7 +423,37 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                        WHERE g.generation=%s AND h.subject='pitcher' AND h.mlb_id=ANY(%s) AND h.methodology=%s""",
                     (generation, sorted(arms), DOMAINS['pitcher_profile'][1]))
         roles = dict(cur)
-        sides = {}
+        from services.public_team_relief_work import DEPLOYMENT_PROFILE_WINDOW_DAYS
+        from datetime import timedelta
+        end = date.fromisoformat(league['data_through'])
+        start = end - timedelta(days=DEPLOYMENT_PROFILE_WINDOW_DAYS - 1)
+        cur.execute("""SELECT DISTINCT h.mlb_id,c.identity,r.id,r.facts
+                       FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
+                       JOIN candidate.workload_history_sources hs ON hs.snapshot=h.id
+                       JOIN candidate.confirmations c ON c.source_id=hs.source_id AND c.domain='final'
+                       JOIN candidate.revisions r ON r.id=c.revision_id
+                       WHERE g.generation=%s AND h.methodology=%s AND h.mlb_id=ANY(%s)""",
+                    (generation, rotation, sorted(clubs)))
+        save_games = {}
+        versions, ambiguous = set(), set()
+        represented_games = {
+            (club, game['game_pk']): day for club in clubs
+            for day, daily in facts[club, rotation]['dates'].items() if not daily['reason']
+            for game in daily['games']
+        }
+        for club, pk, _, lines in cur:
+            represented = represented_games.get((club, int(pk)))
+            if represented is None:
+                continue
+            if (club, pk) in versions:
+                ambiguous.add(club)
+            versions.add((club, pk))
+            for line in lines:
+                if (line['team_id'] == club and line['game_date'] == represented
+                        and start.isoformat() <= represented <= end.isoformat()
+                        and line['games_started'] == 0 and line['save'] == 1):
+                    save_games.setdefault((club, line['pitcher_mlb_id']), set()).add(pk)
+        sides, role_rests = {}, {}
         for row in league['teams']:
             team = row['team_id']
             if team not in clubs:
@@ -369,8 +465,12 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
             rest = dict(counts, available=True, active_arm_count=len(ids)) if counts else None
             pressure = facts[team, rotation]['windows']['7']['pressure']
             if pressure and pressure.get('games_analyzed'):
-                pressure = dict(pressure, bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
-            key_arms, public_usage = [], {}
+                limitations = _split_limitation_reasons(
+                    pressure['excluded_game_reasons'], games_in_window=pressure['games_in_window'],
+                    games_analyzed=pressure['games_analyzed'], source_window_partial=bool(pressure['games_excluded']))
+                pressure = dict(pressure, status='partial' if limitations else 'complete',
+                                bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
+            key_arms, public_usage, active, named = [], {}, [], []
             for mlb in ids:
                 if mlb not in identities or identities[mlb]['public_id'] is None:
                     continue
@@ -379,10 +479,17 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 availability = read.get('availability') or {}
                 inputs = availability.get('inputs') or {}
                 role = build_pitcher_labels(availability, roles.get(mlb))['role']
+                pid = player['public_id']
+                active.append(dict(pitcher_id=pid, roster_state='active',
+                                   days_since_last_appearance=usage.get(mlb, {}).get('days_since_last_appearance')))
+                saves = len(save_games[team, mlb]) if team not in ambiguous and (team, mlb) in save_games else None
+                named.append(dict(pitcher_id=pid, pitcher_name=player['name'], public_role_read=role,
+                                  observed_profile=dict(saves=saves)))
                 key_arms.append(dict(pitcher_id=player['public_id'], name=player['name'], public_role_read=role,
                                      workload=dict(days_since_last_appearance=inputs.get('days_rest'),
                                                    back_to_back=inputs.get('back_to_back'))))
                 public_usage[player['public_id']] = usage.get(mlb)
+            role_rests[team] = named_role_rest(active, named)
             overview = facts[team, METHODOLOGY]['windows']['workload']
             sides[team] = dict(team_id=team, abbreviation=row['team_abbreviation'], name=row['team_name'],
                                available=state['available'], reason_code=state['reason_code'],
@@ -393,7 +500,20 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                rotation=tonight._rotation(pressure), key_arms=tonight._key_arms(key_arms, public_usage), change_refs=[])
         result['games'] = sorted((tonight._game_card(row, sides[row.away_team_id], sides[row.home_team_id])
                                   for row in games), key=tonight._game_order)
-        result['limitations'] = ['public_change_references_unverified']
+        performances = {team: _season_comparison(facts[team, DOMAINS['group_performance'][1]]) for team in clubs}
+        for card in result['games']:
+            stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
+                     DOMAINS['pitcher_rest'][1])
+            card['role_rest'] = _aligned_domain('role_rest', role_rests[card['away']['team_id']],
+                                                role_rests[card['home']['team_id']], stamp_a=stamp, stamp_b=stamp)
+            card['performance'] = _aligned_performance(performances[card['away']['team_id']],
+                                                       performances[card['home']['team_id']])
+        tonight.attach_change_refs(sides.values(), changes)
+        result['featured_game_pks'] = tonight.apply_featured_games(result['games'], changes)
+        result['lead'] = tonight.select_lead(result['games'], changes)
+        result['summary'] = tonight._summary(result['games'], sides, changes)
+        if game_pk is not None:
+            result['games'] = [game for game in result['games'] if game['game_pk'] == game_pk]
         if identity_status != 'mapped':
             result['limitations'].append(identity_status)
         return result
@@ -471,30 +591,72 @@ def read_pitcher(connection, public_id, *, revision=None):
     return _read_transaction(connection, pitcher)
 
 
-def read_team_history(connection, team, *, through_revision, limit=14):
-    """Page through actual isolated selection and recovery decisions, retaining gaps and supersessions."""
-    from services.mlb_club_directory import MLB_TEAM_IDS
-    if type(team) is not int or team not in MLB_TEAM_IDS:
-        raise ValueError('Expected an MLB team identity')
+def _decision_page(connection, through_revision, limit, project):
     if type(through_revision) is not int or through_revision < 1 or type(limit) is not int or not 1 <= limit <= 30:
         raise ValueError('History requires a positive revision and a limit from 1 to 30')
 
     def history(cur):
-        head = _selected(cur, through_revision)
-        if head is None:
-            return dict(status='unknown_revision', rows=[], next_revision=None, current_serving_eligible=False)
         cur.execute("""SELECT s.revision,s.generation,g.represented,g.manifest->>'availability_reference',
                               s.action,s.predecessor FROM candidate.core_selections s
                        LEFT JOIN candidate.generations g ON g.digest=s.generation
                        WHERE s.revision<=%s ORDER BY s.revision DESC LIMIT %s""", (through_revision, limit+1))
         page = cur.fetchall()
+        if not page or page[0][0] != through_revision:
+            return dict(status='unknown_revision', rows=[], next_revision=None, current_serving_eligible=False)
         rows = []
-        for sequence, digest, represented, reference, action, predecessor in page[:limit]:
-            selected = (sequence, digest, represented, reference)
-            changes = _event_slice(cur, team, sequence, selected)
-            rows.append(dict(selection_revision=sequence, predecessor=predecessor, action=action, generation=digest,
-                             represented=changes['represented'], events=changes['events'],
-                             comparisons=changes['comparisons'], status=changes['status']))
-        return dict(status='historical_decisions', team=team, rows=rows, next_revision=page[limit][0]
-                    if len(page)>limit else None, current_serving_eligible=False)
+        for sequence, digest, day, reference, action, predecessor in page[:limit]:
+            row = dict(selection_revision=sequence, predecessor=predecessor, action=action, generation=digest,
+                       represented=day.isoformat() if day else None)
+            row.update(project(cur, (sequence, digest, day, reference)))
+            rows.append(row)
+        return dict(status='historical_decisions', rows=rows, next_revision=page[limit][0] if len(page)>limit else None,
+                    current_serving_eligible=False)
     return _read_transaction(connection, history)
+
+
+def read_team_history(connection, team, *, through_revision, limit=14):
+    """Page through actual isolated selection and recovery decisions, retaining gaps and supersessions."""
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    if type(team) is not int or team not in MLB_TEAM_IDS:
+        raise ValueError('Expected an MLB team identity')
+
+    def team_changes(cur, selected):
+        changes = _event_slice(cur, team, selected[0], selected)
+        return {key: changes[key] for key in ('events', 'comparisons', 'status')}
+    return dict(_decision_page(connection, through_revision, limit, team_changes), team=team)
+
+
+def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
+    """Reproduce the club assignment, published-candidate read and deployment evidence at each decision."""
+    if type(public_id) is not int or public_id < 1:
+        raise ValueError('Expected a BaseballOS public pitcher identity')
+
+    def arm_history(cur, selected):
+        sequence, digest, day, reference = selected
+        if digest is None:
+            return dict(status='no_selected_generation', events=[])
+        players, status = _public_arms(cur, digest)
+        if status != 'mapped':
+            return dict(status=status, events=[])
+        player = next((p for p in players.values() if p['public_id'] == public_id), None)
+        if player is None:
+            return dict(status='outside_represented_bullpens', events=[])
+        mlb, club = player['mlb_id'], player['team_id']
+        readiness_method = DOMAINS['readiness'][1]
+        role_method = DOMAINS['pitcher_profile'][1]
+        cur.execute("""SELECT h.facts->'arms'->%s,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
+                       JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s
+                       AND h.subject='team' AND h.mlb_id=%s AND h.methodology=%s""", (str(mlb), digest, club, readiness_method))
+        arm, facts, inputs = cur.fetchone()
+        cur.execute("""SELECT h.facts#>'{deployment,facts,observed_role}',h.semantic_digest,h.input_digest
+                       FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
+                       WHERE g.generation=%s AND h.subject='pitcher' AND h.mlb_id=%s AND h.methodology=%s""",
+                    (digest, mlb, role_method))
+        role, role_facts, role_inputs = cur.fetchone()
+        changes = _event_slice(cur, club, sequence, selected)
+        events = [row for row in changes['events'] if row['event'].get('player') == mlb]
+        return dict(status='represented', identity=player, availability_reference=reference, arm=arm, role=role,
+                    events=events, citations={
+                        readiness_method: dict(facts_digest=facts, input_digest=inputs),
+                        role_method: dict(facts_digest=role_facts, input_digest=role_inputs)})
+    return dict(_decision_page(connection, through_revision, limit, arm_history), public_pitcher_id=public_id)
