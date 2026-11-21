@@ -8,6 +8,7 @@ from services.team_state_public_vocabulary import (
     public_team_state, team_state_unavailable,
 )
 from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances, team_relief_games
+from sync_v3.depth import roster_depth_evidence
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -893,6 +894,7 @@ def read_team_board(connection, team, *, revision=None):
                              **_historical_arm_display(listing['data_through'])))
         from datetime import date
         through = date.fromisoformat(listing['data_through'])
+        result['roster_depth_evidence'] = roster_depth_evidence(blocks['depth'], team, through)
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
         from sync_v3.team_board_windows import board_concentration, board_workload_windows

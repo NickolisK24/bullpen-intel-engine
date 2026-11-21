@@ -701,3 +701,9 @@ The historical Board also renders the seven-day pitch contributors from its sele
 The Board reads the selected club's seven- and fourteen-day regular-season rotation windows. It shows short starts, starter outs and relief outs after rotation starts, together with the number of games analyzed. Opener/bulk-follower games, bullpen games and excluded games are counted separately. Missing dates withhold the affected window.
 
 In the August 28, 2017 private edition, a separate count from 193 official MLB boxscores matched both windows on all 30 Boards in Chromium. Across the 386 club-game lines in the fourteen-day window, 381 were rotation starts and five were opener/bulk-follower games. The 381 starts included 78 short starts, 6,397 starter outs and 3,713 subsequent relief outs. In the seven-day window, Boston recorded two short starts in seven rotation starts, 125 starter outs and 61 relief outs.
+
+### Dated MLB roster lists on the Team Board
+
+The Board and Stories use the same club, date, depth citation and governed comparison of the active and 40-man pitcher lists. The Board shows the two list sizes and the number of pitchers listed only in the 40-man response. Conflicting parent or active-roster evidence withholds the comparison. These counts describe official list membership. Bullpen role and availability require separate evidence.
+
+For August 28, 2017, all 30 Boards in Chromium matched a comparison of the 60 retrospective MLB roster responses, including every MLB ID in the 40-man-only set. Those responses contained 371 active pitcher listings and 699 40-man pitcher listings, with 328 listed outside the active list. Boston had eight active listings, 26 on the 40-man list and 18 listed only on the latter.

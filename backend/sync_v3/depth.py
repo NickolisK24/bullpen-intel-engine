@@ -119,3 +119,25 @@ def club_depth(cur, team, day):
         result['affiliate_assignments'] = {p: clubs[0] for p, clubs in assignments.items()
                                            if p not in result['assignment_conflicts']}
     return result
+
+
+def roster_depth_evidence(depth, team, through):
+    """Describe dated MLB roster listings without assigning off-active pitchers a bullpen role."""
+    facts = depth['value']
+    if facts['team'] != team or facts['represented'] != through.isoformat():
+        raise ValueError('Historical roster evidence belongs to another club or date')
+    result = dict(team=team, represented=facts['represented'], citation=depth['citation'],
+                  active_listed=None, forty_man_listed=None, forty_man_listed_outside_active=None, status_codes=None)
+    active, forty = (facts['views'][kind] for kind in ('active', '40Man'))
+    for view in (active, forty):
+        if view['reason'] or view['pitchers'] is None:
+            return dict(result, reason=view['reason'] or 'missing_dated_roster')
+    if (facts.get('active_profiles') or {}).get('reason') == 'mlb_active_rosters_disagree':
+        return dict(result, reason='mlb_active_rosters_disagree')
+    outside = sorted(int(player) for player in forty['pitchers'].keys() - active['pitchers'].keys())
+    if outside != facts['forty_man_outside_active']:
+        raise ValueError('Historical roster comparison disagrees with its frozen depth snapshot')
+    codes = {player: forty['pitchers'][str(player)]['status_codes'] for player in outside}
+    return dict(result, active_listed=len(active['pitchers']), forty_man_listed=len(forty['pitchers']),
+                forty_man_listed_outside_active=outside, status_codes=codes,
+                reason='off_active_bullpen_population_unverified')

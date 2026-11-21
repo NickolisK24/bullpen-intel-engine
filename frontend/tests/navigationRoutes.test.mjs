@@ -198,6 +198,18 @@ test('historical group performance scopes qualified values and preserves a withh
   assert.ok(!show({ ...performance, through: '2017-08-27' }).includes('HR allowed'))
 })
 
+test('dated roster listing counts preserve a verified empty comparison and withhold missing evidence', async () => {
+  const { HistoricalRosterListings } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
+  const team = 111, through = '2017-08-28'
+  const roster = { team, represented: through, active_listed: 3, forty_man_listed: 3, forty_man_listed_outside_active: [] }
+  const show = value => render(React.createElement(HistoricalRosterListings, { roster: value, team, through }))
+  assert.ok(show(roster).includes('Listed on the 40-man roster only</dt><dd>0</dd>'))
+  for (const overrides of [{ team: 141 }, { represented: '2017-08-29' }, { forty_man_listed_outside_active: null }]) {
+    const html = show({ ...roster, ...overrides })
+    assert.ok(html.includes('Roster comparison unavailable') && !html.includes('<dd>'))
+  }
+})
+
 test('historical rotation separates recorded starts, nonrotation games, and missing coverage', async () => {
   const { HistoricalRotation } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
   const team = 111, through = '2017-08-28'

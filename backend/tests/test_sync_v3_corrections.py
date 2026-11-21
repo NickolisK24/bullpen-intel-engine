@@ -1181,6 +1181,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert stories['coverage']['injury_context'] == 'off_active_bullpen_population_unverified'
             assert stories['roster_depth_evidence']['forty_man_listed_outside_active'] == [701234, 701235]
             assert stories['roster_depth_evidence']['citation'] == board['sections']['depth']['citation']
+            assert stories['roster_depth_evidence'] == board['roster_depth_evidence']
             assert stories['coverage']['bullpen_optionality_context'] == 'complete_dated_arm_reads'
             assert stories['coverage']['role_stability_context'] == 'incomplete_comparison_calendar'
             assert stories['coverage']['bullpen_concentration_context'] == 'complete_calendar'

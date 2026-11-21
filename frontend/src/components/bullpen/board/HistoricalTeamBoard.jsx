@@ -48,6 +48,22 @@ export function HistoricalGroupPerformance({ performance, team, through }) {
   </section>
 }
 
+export function HistoricalRosterListings({ roster, team, through }) {
+  const covered = roster?.team === team && roster.represented === through
+    && Number.isSafeInteger(roster.active_listed) && Number.isSafeInteger(roster.forty_man_listed)
+    && roster.active_listed >= 0 && roster.forty_man_listed >= 0
+    && Array.isArray(roster.forty_man_listed_outside_active)
+    && roster.forty_man_listed_outside_active.length <= roster.forty_man_listed
+  return <section aria-labelledby="historical-roster-listings">
+    <h2 id="historical-roster-listings">Pitchers on MLB roster lists</h2>
+    {covered ? <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div><dt>Active list</dt><dd>{roster.active_listed}</dd></div>
+      <div><dt>40-man list</dt><dd>{roster.forty_man_listed}</dd></div>
+      <div><dt>Listed on the 40-man roster only</dt><dd>{roster.forty_man_listed_outside_active.length}</dd></div>
+    </dl> : <p>Roster comparison unavailable for this date.</p>}
+  </section>
+}
+
 export function HistoricalRotation({ rotation, team, through }) {
   const windows = rotation?.team === team && rotation.through === through ? rotation.windows : null
   return <section aria-labelledby="historical-rotation">
@@ -141,6 +157,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         represented={data.data_through} />
     </section>
     <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
+    <HistoricalRosterListings roster={data.roster_depth_evidence} team={team} through={data.data_through} />
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />

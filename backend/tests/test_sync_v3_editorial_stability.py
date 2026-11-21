@@ -106,6 +106,8 @@ def test_league_concentration_requires_the_whole_window(defect, expected):
 
 
 def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
+    from sync_v3.depth import roster_depth_evidence
+
     day = date(2024, 8, 7)
     active = dict(reason=None, pitchers={'1': dict(status_codes=['A'])})
     forty = dict(reason=None, pitchers={**active['pitchers'], '12': dict(status_codes=['D15']),
@@ -113,19 +115,21 @@ def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
     facts = dict(team=118, represented=str(day), views={'active': active, '40Man': forty},
                  forty_man_outside_active=[2, 12])
     depth = dict(value=facts, citation=dict(input_digest='captured'))
-    evidence = editorial_reads._roster_depth_evidence(depth, 118, day)
+    evidence = roster_depth_evidence(depth, 118, day)
     assert evidence['forty_man_listed_outside_active'] == [2, 12]
+    assert (evidence['active_listed'], evidence['forty_man_listed']) == (1, 3)
     assert evidence['status_codes'] == {2: ['D60', 'RM'], 12: ['D15']}
     assert evidence['reason'] == 'off_active_bullpen_population_unverified'
     assert evidence['citation'] == depth['citation']
     for team, when in [(111, day), (118, date(2024, 8, 8))]:
         with pytest.raises(ValueError, match='another club or date'):
-            editorial_reads._roster_depth_evidence(depth, team, when)
+            roster_depth_evidence(depth, team, when)
     inconsistent = dict(depth, value=dict(facts, forty_man_outside_active=[2]))
     with pytest.raises(ValueError, match='disagrees with its frozen depth'):
-        editorial_reads._roster_depth_evidence(inconsistent, 118, day)
+        roster_depth_evidence(inconsistent, 118, day)
     facts['active_profiles'] = dict(reason='mlb_active_rosters_disagree')
-    assert editorial_reads._roster_depth_evidence(depth, 118, day)['status_codes'] is None
+    assert roster_depth_evidence(depth, 118, day)['status_codes'] is None
     forty.update(reason='parent_club_conflict', pitchers=None)
-    refused = editorial_reads._roster_depth_evidence(depth, 118, day)
+    refused = roster_depth_evidence(depth, 118, day)
+    assert (refused['active_listed'], refused['forty_man_listed']) == (None, None)
     assert refused['forty_man_listed_outside_active'] is None and refused['reason'] == 'parent_club_conflict'
