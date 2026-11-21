@@ -61,6 +61,52 @@ def reproduce_competition_page(body, page, club, state, publication, export):
     return 'reproduced'
 
 
+def reproduce_available_state(inputs, observed, team_id):
+    """Recompute a historical status-only state from its recorded counts and thresholds."""
+    from services.team_state_public_vocabulary import public_team_state
+    from services.team_state_vnext_production_proof import _reproduce_contract_a
+    from services.publication_truth_certification import contract_a_state
+    from sync_v3.evidence import encode_json
+
+    if not all(inputs.get(key) for key in ('readiness', 'reference_dates', 'arm_reads')):
+        return dict(status='missing_archived_readiness_inputs')
+    readiness = inputs['readiness']
+    evidence = readiness['team_state_evidence']
+    dates = inputs['reference_dates']
+    group = inputs['arm_reads']
+    if (readiness['team']['team_id'] != team_id or group['team_id'] != team_id
+            or dates['membership_reference_date'] != group['membership_reference_date']
+            or dates['availability_reference_date'] != group['availability_reference_date']
+            or encode_json(public_team_state(readiness)) != encode_json(observed)):
+        raise ValueError(f'Frozen readiness does not reproduce the observed state for {team_id}')
+    if evidence.get('basis') != 'status_only':
+        return dict(status='partition_basis_outside_replay')
+    dist = readiness['availability_distribution']
+    buckets = ('available', 'monitor', 'limited', 'avoid', 'unavailable', 'unknown')
+    if any(type(dist[k]) is not int or dist[k] < 0 for k in (*buckets, 'total')):
+        raise ValueError(f'Invalid availability counts for {team_id}')
+    counts = dict(active_pitcher_count=dist['total'], clean_count=dist['available'],
+                  moderate_count=dist['monitor'] + dist['limited'], severe_count=dist['avoid'] + dist['unavailable'],
+                  unknown_count=dist['unknown'])
+    recorded = [row['pitcher_id'] for row in group['records']]
+    missing = group['missing_record_pitcher_ids']
+    members = group['member_pitcher_ids']
+    if (sum(dist[k] for k in buckets) != dist['total'] or len(recorded) != dist['total']
+            or len(set(recorded + missing)) != len(recorded) + len(missing)
+            or sorted(recorded + missing) != sorted(members)
+            or any(type(evidence[k]) is not int or counts[k] != evidence[k] for k in counts)):
+        raise ValueError(f'Archived readiness partition differs for {team_id}')
+    rule = _reproduce_contract_a(evidence)
+    if rule['reproduced'] is not True or rule['status_code'] != readiness['readiness']['status_code']:
+        raise ValueError(f'Archived Team State decision differs for {team_id}')
+    current_state, current_rule = contract_a_state(counts['clean_count'], counts['severe_count'], counts['active_pitcher_count'])
+    agrees = current_state == observed['public_state'] and current_rule == {
+        'status_code': rule['status_code'], 'decisive_rule': rule['decisive_rule']}
+    return dict(status='reproduced', team_state=observed['public_label'], decisive_rule=rule['decisive_rule'],
+                current_partition_rule_matches=agrees,
+                counted_pitchers=len(recorded), members_without_records=sorted(missing))
+
+
 def compare_team_export(report_path, expected_digest, root, *, publication_proof=None, competition=None):
     """Replay the owner delivery gate against the checkout corresponding to a pinned Actions export."""
     from hashlib import sha256
@@ -96,7 +142,7 @@ def compare_team_export(report_path, expected_digest, root, *, publication_proof
     observed = None
     if publication_proof is not None:
         from sync_v3.public_identities import from_observed_publication
-        observed = from_observed_publication(*publication_proof)
+        observed = from_observed_publication(*publication_proof, include_available_inputs=True)
         if any(observed.provenance[key] != publication[field] for key, field in (
                 ('snapshot_id', 'publication_snapshot_id'), ('sync_run_id', 'sync_run_id'), ('data_through', 'data_through'))):
             raise ValueError('Observed Team State receipts belong to another publication')
@@ -122,6 +168,9 @@ def compare_team_export(report_path, expected_digest, root, *, publication_proof
                 if page['representation'] == 'dated_team_read':
                     if page['team_state'] != state.get('public_label') or (page['team_state'] is not None) != state['available']:
                         raise ValueError(f'Team preview differs from its observed Team State: {name}')
+                    if state['available']:
+                        page['available_state_replay'] = reproduce_available_state(
+                            observed.available_inputs[str(page['team_id'])], state, page['team_id'])
                     compared += 1
                 if contexts is not None:
                     context = contexts[page['team_id']]

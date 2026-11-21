@@ -68,3 +68,31 @@ def test_competition_page_reproduction_requires_original_copy_and_complete_input
     for changed_export, changed_state in [(dict(export, story_previews=1), state), (export, dict(state, available=True))]:
         assert reproduce_competition_page(body, page, club, changed_state, pub, changed_export) == 'additional_story_or_board_inputs_required'
     assert reproduce_competition_page(body, dict(page, representation='withheld'), club, state, pub, export) == 'withheld_delivery'
+
+
+def test_archived_available_read_keeps_uncounted_members_separate():
+    from services.team_state_public_vocabulary import public_team_state
+    from sync_v3.team_preview_comparison import reproduce_available_state
+    from tests.test_team_state_vnext_production_proof import _evidence
+
+    state = 'operationally_stressed'
+    dist = dict(total=2, available=0, monitor=1, limited=1, avoid=0, unavailable=0, unknown=0)
+    evidence = _evidence(0, 2, 0, 0, status_code=state, decisive_rule='margin_floor')
+    dates = dict(membership_reference_date='2026-10-27', availability_reference_date='2026-10-28')
+    group = dict(team_id=111, member_pitcher_ids=[1, 2, 3], missing_record_pitcher_ids=[3],
+                 records=[dict(pitcher_id=1), dict(pitcher_id=2)], **dates)
+    readiness = dict(team=dict(team_id=111), readiness=dict(status_code=state), availability_distribution=dist,
+                     freshness=dict(data_through='2026-10-27'), team_state_evidence=evidence)
+    inputs = dict(readiness=readiness, reference_dates=dates, arm_reads=group)
+    observed = public_team_state(readiness)
+    receipt = reproduce_available_state(inputs, observed, 111)
+    assert receipt['team_state'] == 'Vulnerable' and receipt['current_partition_rule_matches']
+    assert receipt['counted_pitchers'] == 2 and receipt['members_without_records'] == [3]
+    assert reproduce_available_state({}, observed, 111)['status'] == 'missing_archived_readiness_inputs'
+    with pytest.raises(ValueError, match='partition differs'):
+        reproduce_available_state(dict(inputs, arm_reads=dict(group, missing_record_pitcher_ids=[2])), observed, 111)
+    with pytest.raises(ValueError, match='observed state'):
+        reproduce_available_state(inputs, dict(observed, public_label='Fresh'), 111)
+    with pytest.raises(ValueError, match='decision differs'):
+        reproduce_available_state(dict(inputs, readiness=dict(readiness, team_state_evidence=dict(
+            evidence, decisive_rule='fresh_coverage'))), observed, 111)

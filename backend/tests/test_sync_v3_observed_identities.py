@@ -119,3 +119,12 @@ def test_competition_compares_the_governed_scope_independently_of_the_edition(tm
     older = compare_archived_competition(report, reference)
     assert older['status'] == 'archived_competition_context_missing'
     assert older['clubs_missing_context'] == [111] and older['clubs_compared'] == 0
+
+    assert older['archived_claims_withheld_under_replayed_rules'] == {}
+    clubs[111].update(status='season_complete', basis='postseason_series_lost', last_final_game_date='2026-10-10')
+    reference.team_receipts['111']['value'].update(available=True, public_label='Fresh')
+    older = compare_archived_competition(report, reference)
+    assert older['archived_claims_withheld_under_replayed_rules'] == {
+        '111': dict(archived_label='Fresh', replayed_outcome='season_complete', replayed_reason='postseason_series_lost')}
+    clubs[111]['team_id'] = 119
+    assert compare_archived_competition(report, reference)['status'] == 'club_reference_mismatch'

@@ -1,5 +1,5 @@
 """A pinned, opt-in copy of the public Pitcher.id to MLB identity relation for offline reads."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -18,9 +18,10 @@ class ObservedIdentityExport:
     membership_reference: str
     availability_reference: str
     team_receipts: dict
+    available_inputs: dict = field(default_factory=dict)
 
 
-def from_observed_publication(path, expected_sha256):
+def from_observed_publication(path, expected_sha256, *, include_available_inputs=False):
     """Read public identity pairs only from a digest-pinned, postcommit-observed proof archive."""
     from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_state_vnext_production_proof import _digest
@@ -80,7 +81,9 @@ def from_observed_publication(path, expected_sha256):
                                   dict(archive_sha256=expected_sha256, receipt_digest=digest,
                                        snapshot_id=pub['dashboard_snapshot_id'], sync_run_id=pub['sync_run_id'],
                                        data_through=pub['data_through'], inconclusive_assertions=proof['inconclusive_assertions']),
-                                  pub['expected_membership_reference_date'], pub['expected_availability_reference_date'], receipts)
+                                  pub['expected_membership_reference_date'], pub['expected_availability_reference_date'], receipts,
+                                  {club: inputs[club] for club in clubs if receipts[club]['value'].get('available') is True}
+                                  if include_available_inputs else {})
 
 
 def load_reference(cur, reference):

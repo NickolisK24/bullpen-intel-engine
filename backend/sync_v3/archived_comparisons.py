@@ -57,13 +57,24 @@ def compare_archived_competition(report, reference):
     clubs = {str(k): v for k, v in report['clubs'].items()}
     if report['calendar_source'] is None or report['missing_decisions'] or clubs.keys() != reference.team_receipts.keys():
         return dict(result, status='incomplete_competition_evidence')
+    for club, context in clubs.items():
+        if context.get('reference_date') != report['reference_date'] or context.get('team_id') != int(club):
+            return dict(result, status='club_reference_mismatch')
     missing_context = sorted(int(club) for club in clubs if reference.team_receipts[club].get('season_context') is None)
     if missing_context:
-        return dict(result, status='archived_competition_context_missing', clubs_missing_context=missing_context)
-    for club, context in clubs.items():
-        observed = reference.team_receipts[club]
-        if (context.get('reference_date') != report['reference_date'] or context.get('team_id') != int(club)
-                or (observed.get('season_context') or {}).get('reference_date') != reference.availability_reference):
+        withheld = {}
+        for team in missing_context:
+            key = str(team)
+            archived = reference.team_receipts[key]['value']
+            context = clubs[key]
+            if archived.get('available') is True and context['status'] == 'season_complete':
+                projected = public_team_state(dict(season_context=context, freshness=dict(data_through=reference.provenance['data_through'])))
+                withheld[key] = dict(archived_label=archived['public_label'], replayed_outcome=projected['outcome'],
+                                     replayed_reason=projected['reason_code'])
+        return dict(result, status='archived_competition_context_missing', clubs_missing_context=missing_context,
+                    archived_claims_withheld_under_replayed_rules=withheld)
+    for club in clubs:
+        if reference.team_receipts[club]['season_context'].get('reference_date') != reference.availability_reference:
             return dict(result, status='club_reference_mismatch')
     for club, context in clubs.items():
         observed = reference.team_receipts[club]
