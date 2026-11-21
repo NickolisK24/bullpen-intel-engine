@@ -141,3 +141,50 @@ def test_dated_affiliates_replay_independently_of_mlb_membership(tmp_path):
                 assert [key for key, in cur] == [f'111/40Man/{day}', f'111/active/{day}']
         finally:
             worker.close()
+
+
+def test_historical_roster_events_require_both_full_club_lists(tmp_path):
+    import json
+    import os
+    from contextlib import closing
+    from pathlib import Path
+
+    from sync_v3.change_history import roster_changes
+    from sync_v3.intelligence_history import record_intelligence
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    quiet = (Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text()
+    team = 111
+    end = date(2026, 11, 22)
+
+    def archive(db, day, participants, hour):
+        data = json.loads(quiet.replace('2026-11-21', day.isoformat()))
+        data['observed_at'] = f'{day}T{hour}:00:00Z'
+        active = next(row for row in data['responses'] if row['params'].get('rosterType') == 'active')
+        active['body']['roster'] = [
+            {'person': {'id': pid, 'fullName': str(pid)}, 'position': {'code': code}}
+            for pid, code in participants]
+        path = tmp_path / 'club.json'
+        path.write_text(json.dumps(data))
+        run_fixture(db, path)
+        record_intelligence(db, 'depth', team, day)
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            archive(db, date(2026, 11, 21), [(101, '1'), (102, '1'), (104, '3')], '10')
+            archive(db, end, [(101, '3'), (103, '1'), (104, '1')], '10')
+            with db, db.cursor() as cur:
+                first = roster_changes(cur, team, end)
+                assert first['status'] == 'complete'
+                assert [(e['kind'], e['player']) for e in first['events']] == [
+                    ('active_roster_removed', 102), ('active_roster_added', 103)]
+            archive(db, end, [], '12')
+            with db, db.cursor() as cur:
+                revised = roster_changes(cur, team, end)
+                assert revised['status'] == 'missing_complete_club_list' and revised['events'] == []
+                assert roster_changes(cur, team, end, revisions=(1, 1)) == first
