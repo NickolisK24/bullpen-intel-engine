@@ -436,3 +436,16 @@ A partial October 30, 2024 World Series fixture verified one official final and 
 The selection rehearsal emits `historical_trust` for either outcome. A selected edition has a selector revision. A withheld candidate can be inspected by digest with `sync_v3.editorial_reads.preview_trust`; its status is `candidate_preview` and its selection revision is null. Both reads verify the frozen inventory and report the two baseball dates, methods, source receipt counts, coverage for each of the 30 clubs, and game and roster comparison results. The separate selection result records the decision at the time of review. Only receipts with a retained response body can establish an acquisition timestamp. A failed fetch still contributes to the failure count.
 
 For the partial October 30, 2024 fixture, the Trust preview matched World Series game 775296. It reported missing competitive schedule evidence for all 30 club readiness calculations and a missing complete October 31 slate. Nine pinned receipts contained responses. Another 18 pinned receipts represented failed lookups in the local fixture and had no acquisition dates. The counts cover the inputs cited by this candidate.
+
+### Static Team Board delivery
+
+From `backend`, compare a retained GitHub Actions delivery report with the matching generated tree. The optional publication proof independently binds each dated page’s Team State to its observed receipt.
+
+```sh
+python -m sync_v3.team_preview_comparison "$DELIVERY_REPORT_ZIP" "$REPORT_SHA256" "$CHECKOUT" \
+  --publication-proof "$PROOF_ZIP" "$PROOF_SHA256"
+```
+
+The comparison runs the existing team delivery verifier, checks the exact 30 MLB clubs and fallback against the file digests, and follows both the visible link and the redirect to the club’s Team Board. A dated page must cite the publication snapshot, sync run and workload date. A withheld page retains its club route and reason. The isolated selection rehearsal passes each candidate Board through the existing preview renderer. It requires that the resulting page withhold public claims because the candidate has no trusted publication authority.
+
+Two deliveries used snapshot 5843 and sync run 98300 with workload through October 28, 2026. Distribution run 44716734983 (artifact 14620151702, Git commit `ce0e3384`) produced 30 dated previews. Run 44794472956 (artifact 14659061276, Git commit `9ea5ac93`) produced 29. Pittsburgh alone changed, to `no_trusted_publication`. The job log identifies team 134 and the export’s withholding reason. It does not explain why the renderer lacked Pittsburgh’s snapshot receipt. All dated previews in both exports agreed with the observed Team State receipts in artifact 14657943570. All 30 clubs were season complete. A dated preview in these exports carried no current Team State label.

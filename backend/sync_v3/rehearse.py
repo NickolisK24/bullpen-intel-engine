@@ -193,8 +193,18 @@ def verify_board_history(connection, board):
                 or (deployment['facts'] or {}).get('observed_role') != dated['role']):
             raise RuntimeError(f'Pitcher {public_id} evidence disagrees with the selected Board or History')
         verified.append(dict(mlb_id=mlb, public_pitcher_id=public_id))
+    from services.mlb_club_directory import MLB_CLUBS
+    from services.team_story_previews import build_team_story_preview, render_team_story_html
+    from sync_v3.team_preview_comparison import compare_team_page
+
+    club = next(club for club in MLB_CLUBS if club.team_id == team)
+    preview = build_team_story_preview(board['team'], board=board)
+    page = compare_team_page(render_team_story_html(preview), club)
+    if page['withheld_reason'] != 'no_trusted_publication':
+        raise RuntimeError('Candidate Team Board did not withhold its public preview')
     editorial = verify_editorial_evidence(connection, board, row['events'])
     return dict(generation=digest, selection_revision=revision, team_id=team, team_events=len(row['events']), editorial=editorial,
+                static_team_preview=page,
                 verified_pitcher_routes=verified, withheld_pitcher_mlb_ids=withheld, current_serving_eligible=False)
 
 
