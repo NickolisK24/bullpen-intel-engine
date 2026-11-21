@@ -335,3 +335,41 @@ def test_profile_rechecks_the_schedule_that_authorized_an_overlapping_final():
                         with pytest.raises(BaselineWithheld, match='overlapping_boxscore_schedule_unconfirmed'):
                             _check_retained_finals(cur, 102, [row])
                     assert source in reads.receipts
+
+
+def test_latest_ten_membership_spans_seasons_and_withholds_an_unresolved_tie():
+    from sync_v3.membership_usage import _most_recent
+    from sync_v3.season_deployment import BaselineWithheld
+
+    previous = [dict(day=date(2025, 9, d), pk=d) for d in range(1, 12)]
+    current = dict(day=date(2026, 4, 3), pk=12)
+    selected = _most_recent([current, *previous])
+    assert [r['pk'] for r in selected] == list(range(12, 2, -1))
+    with pytest.raises(BaselineWithheld, match='boundary_ambiguous'):
+        _most_recent([current, *previous, dict(previous[2], pk=13)])
+    with pytest.raises(BaselineWithheld, match='duplicate_eligibility_game'):
+        _most_recent([current, *previous, current])
+
+
+def test_eligibility_round_requires_date_scoped_official_totals():
+    from sync_v3.season_deployment import BaselineWithheld, qualified_game_rows
+    through = date(2026, 10, 19)
+    stats = dict(gamesPitched=1, gamesStarted=0, outs=3, inningsPitched='1.0',
+                 saves=0, holds=0, saveOpportunities=0, gamesFinished=1)
+    line = dict(date=str(through), gameType='L', season='2026', sport={'id': 1}, team={'id': 139},
+                player={'id': 669330}, game={'gamePk': 849815}, stat=stats)
+    def body(kind, rows):
+        return dict(stats=[dict(type={'displayName': kind}, group={'displayName': 'pitching'}, splits=rows)])
+    def qualify(lines, totals, stage='L'):
+        return qualified_game_rows(669330, through, lines, totals, cur=None, game_type=stage, allow_empty=True)
+    empty = {'stats': []}
+    assert not qualify(empty, empty)[0]
+    log = body('gameLog', [line])
+    total = body('byDateRange', [dict(sport={'id': 1}, team={'id': 139}, stat=stats)])
+    rows, excluded = qualify(log, total)
+    assert rows[139][0]['pk'] == 849815 and excluded == []
+    for incomplete in [(log, empty), (empty, total)]:
+        with pytest.raises(BaselineWithheld, match='log_and_dated_totals_disagree'):
+            qualify(*incomplete)
+    with pytest.raises(BaselineWithheld, match='game_log_identity_or_season_conflict'):
+        qualify(log, total, stage='D')

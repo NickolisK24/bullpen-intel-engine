@@ -68,7 +68,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), round_totals=False, budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc), capture=None):
     if capture is not None and budget != 'historical':
         raise ValueError('A captured batch requires the historical budget')
@@ -80,7 +80,7 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
         depth_teams = sorted(set(depth_teams))
-        requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds))
+        requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
         if competition:
             requests += (competition_calendar_request(day.year),)
         requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)

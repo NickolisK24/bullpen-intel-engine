@@ -79,6 +79,31 @@ def _observed_role(rows, through):
             'role': classify_usage_role(logs, reference_date=reference) if start.year == through.year else None}
 
 
+def check_pitcher_final(player, expected, lines):
+    pk = expected['pk']
+    appearances = [r for r in lines if r['pitcher_mlb_id'] == player]
+    if len(appearances) != 1:
+        raise BaselineWithheld('game_log_and_boxscore_player_conflict')
+    line, = appearances
+    counts = expected['counts']
+    expected_line = {
+        'team_id': expected['team'], 'game_date': expected['day'].isoformat(),
+        'games_started': counts['gamesStarted'], 'outs_recorded': counts['outs'],
+    }
+    for field, key in [('hold', 'holds'), ('save', 'saves'), ('games_finished', 'gamesFinished'),
+                       ('save_situation', 'saveOpportunities')]:
+        if line[field] is not None:
+            expected_line[field] = counts[key]
+    differences = {field: {'game_log': value, 'boxscore': line[field]}
+                   for field, value in expected_line.items() if value != line[field]}
+    if differences:
+        raise BaselineWithheld('game_log_and_boxscore_line_conflict', game_evidence={
+            'game_pk': pk, 'game_date': expected['day'].isoformat(), 'team_id': expected['team'],
+            'differences': differences,
+        })
+    return line
+
+
 def _check_retained_finals(cur, player, rows):
     endpoints = [f"/game/{r['pk']}/boxscore" for r in rows]
     for endpoint in endpoints:
@@ -119,31 +144,12 @@ def _check_retained_finals(cur, player, rows):
             raise BaselineWithheld('overlapping_boxscore_unconfirmed')
         if schedule_outcome != 'received' or revision is None:
             raise BaselineWithheld('overlapping_boxscore_schedule_unconfirmed')
-        appearances = [r for r in lines if r['pitcher_mlb_id'] == player]
-        if len(appearances) != 1:
-            raise BaselineWithheld('game_log_and_boxscore_player_conflict')
-        line, = appearances
-        counts = expected['counts']
-        expected_line = {
-            'team_id': expected['team'], 'game_date': expected['day'].isoformat(),
-            'games_started': counts['gamesStarted'], 'outs_recorded': counts['outs'],
-        }
-        for field, key in [('hold', 'holds'), ('save', 'saves'), ('games_finished', 'gamesFinished'),
-                           ('save_situation', 'saveOpportunities')]:
-            if line[field] is not None:
-                expected_line[field] = counts[key]
-        differences = {field: {'game_log': value, 'boxscore': line[field]}
-                       for field, value in expected_line.items() if value != line[field]}
-        if differences:
-            raise BaselineWithheld('game_log_and_boxscore_line_conflict', game_evidence={
-                'game_pk': pk, 'game_date': expected['day'].isoformat(), 'team_id': expected['team'],
-                'differences': differences,
-            })
+        check_pitcher_final(player, expected, lines)
         verified.append(pk)
     return sorted(verified)
 
 
-def _confirm_uncredited(cur, player, team, pk, day):
+def _confirm_uncredited(cur, player, team, pk, day, game_type):
     scope = dict(game_pk=pk, game_date=day.isoformat(), team_id=team)
 
     def missing(stage):
@@ -156,9 +162,9 @@ def _confirm_uncredited(cur, player, team, pk, day):
     if receipt is None:
         raise missing('qualified_schedule_required')
     games = [game for entry in replay(cur, receipt).body['dates'] for game in entry['games']
-             if game['gamePk'] == pk and game.get('gameType') == 'R']
+             if game['gamePk'] == pk and game.get('gameType') == game_type]
     if len(games) != 1:
-        raise missing('regular_game_listing_required')
+        raise missing('regular_game_listing_required' if game_type == 'R' else 'postseason_game_listing_required')
     final, reason = _game_workload(cur, games[0], day, receipt)
     if final is None:
         raise missing(reason or 'official_final_required')
@@ -171,14 +177,18 @@ def _confirm_uncredited(cur, player, team, pk, day):
         raise BaselineWithheld('uncredited_game_and_boxscore_disagree', game_evidence=dict(scope, stage='boxscore_disagreement'))
 
 
-def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
-    """Check complete per-club totals before separating starts and relief."""
+def qualified_game_rows(player, through, log, dated_totals, *, cur, game_type, allow_empty=False):
+    """Reconcile official single-game lines with independently requested dated MLB totals."""
+    from services.club_competition_status import COMPETITIVE_GAME_TYPES
+    if game_type not in COMPETITIVE_GAME_TYPES:
+        raise ValueError('Expected a competitive MLB game type')
     by_club = defaultdict(list)
     seen = set()
     uncredited = []
-    for item in _splits(log, 'gameLog'):
+    splits = [] if allow_empty and log.get('stats') == [] else _splits(log, 'gameLog')
+    for item in splits:
         if (item.get('sport', {}).get('id') != 1 or item.get('player', {}).get('id') != player
-                or item.get('gameType') != 'R'
+                or item.get('gameType') != game_type
                 or str(item.get('season')) != str(through.year)):
             raise BaselineWithheld('game_log_identity_or_season_conflict')
         day = date.fromisoformat(item['date'])
@@ -197,17 +207,18 @@ def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
         except ValueError as exc:
             raise BaselineWithheld(str(exc)) from exc
         if no_appearance:
-            _confirm_uncredited(cur, player, team, pk, day)
+            _confirm_uncredited(cur, player, team, pk, day, game_type)
             uncredited.append(pk)
             continue
         if counts['gamesPitched'] != 1 or any(counts[k] > 1 for k in ('gamesStarted', 'saves', 'holds', 'saveOpportunities', 'gamesFinished')):
             raise BaselineWithheld('invalid_single_game_stat')
         by_club[team].append({'pk': pk, 'day': day, 'team': team, 'counts': counts,
                               'li': _recorded_li(_extract_leverage_index(item['stat']))})
-    if not by_club:
+    if not by_club and not allow_empty:
         raise BaselineWithheld('no_supported_season_sample')
     totals = {}
-    for item in _splits(dated_totals, 'byDateRange'):
+    dated = [] if allow_empty and dated_totals.get('stats') == [] else _splits(dated_totals, 'byDateRange')
+    for item in dated:
         sport = item.get('sport', {}).get('id')
         if type(sport) is not int:
             raise BaselineWithheld('missing_dated_stats_sport')
@@ -226,6 +237,13 @@ def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
             or any(_sum(rows) != totals[team] for team, rows in by_club.items())
             or (None in totals and _sum(all_rows) != totals[None])):
         raise BaselineWithheld('log_and_dated_totals_disagree')
+    return by_club, uncredited
+
+
+def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
+    """Check complete per-club totals before separating starts and relief."""
+    by_club, uncredited = qualified_game_rows(player, through, log, dated_totals, cur=cur, game_type='R')
+    all_rows = [row for rows in by_club.values() for row in rows]
     recent_start = through - timedelta(days=13)
     checked = _check_retained_finals(cur, player, all_rows) if cur is not None else []
     return {**({'uncredited_games': sorted(uncredited)} if uncredited else {}),

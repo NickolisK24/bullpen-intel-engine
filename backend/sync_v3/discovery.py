@@ -29,7 +29,7 @@ def calendar_requests(day):
     )
 
 
-def pitcher_requests(day, players, *, postseason_rounds=()):
+def pitcher_requests(day, players, *, postseason_rounds=(), round_totals=False):
     from services.club_competition_status import POSTSEASON_GAME_TYPES
     rounds = sorted(set(postseason_rounds))
     if not set(rounds).issubset(POSTSEASON_GAME_TYPES):
@@ -45,7 +45,11 @@ def pitcher_requests(day, players, *, postseason_rounds=()):
         requests.append(_request(endpoint, 21600, stats='byDateRange', startDate=f'{day.year}-01-01',
                                  endDate=day.isoformat(), **scope))
         for stage in rounds:
-            requests.append(_request(endpoint, 21600, stats='gameLog', limit=1000, **dict(scope, gameType=stage)))
+            stage_scope = dict(scope, gameType=stage)
+            requests.append(_request(endpoint, 21600, stats='gameLog', limit=1000, **stage_scope))
+            if round_totals:
+                requests.append(_request(endpoint, 21600, stats='byDateRange', startDate=f'{day.year}-01-01',
+                                         endDate=day.isoformat(), **stage_scope))
     return tuple(requests)
 
 

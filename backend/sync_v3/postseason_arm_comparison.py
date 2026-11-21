@@ -46,8 +46,57 @@ def _compare_arm(player, splits, lines, availability, evidence):
     arm, reason = _represented_arm(player, window, lines, availability)
     if arm is None:
         return dict(evidence, reason=reason, replay=None)
-    return dict(evidence, reason=None, replay=arm['arm_read'], matches=arm['arm_read'] == evidence['archived'],
+    return dict(evidence, reason=None, availability_status=arm['availability']['availability_status'], replay=arm['arm_read'], matches=arm['arm_read'] == evidence['archived'],
                 games_compared=arm['games_compared'])
+
+
+def _method_replay(membership, arms, through, archive_receipt):
+    from types import SimpleNamespace
+    from services.availability import AVAILABILITY_METHOD_VERSION, classify_availability
+    from services.fatigue import calculate_fatigue
+    from services.pitcher_public_labels import build_public_arm_read
+    from services.team_readiness_coverage import assess_team_coverage
+    from services.team_state_public_vocabulary import is_publishable_state, public_state_for
+    from team_operations.bullpen_readiness import (
+        _availability_distribution, _contract_a_decision, _coverage_inventory, _handedness_coverage,
+        _normalize_pitcher_record, _team_state_partition,
+    )
+    from team_operations.contracts import TeamOperationsFreshnessMetadata, TeamOperationsTrustMetadata
+
+    stamp = archive_receipt.get('availability_method_version')
+    result = dict(method=AVAILABILITY_METHOD_VERSION, archive_method=stamp, current_serving_eligible=False,
+                  same_method_comparable=stamp == AVAILABILITY_METHOD_VERSION, quiet_arms={})
+    if membership['status'] != 'matched' or set(membership['candidate']) != set(arms):
+        return dict(result, status='withheld', reason='independent_membership_required')
+    reference = through + timedelta(days=1)
+    records = []
+    for player, arm in arms.items():
+        status = arm.get('availability_status')
+        current = arm['reason'] is None
+        if arm['reason'] == 'no_recent_verified_workload':
+            latest = membership['samples'][player]['latest_workload']
+            if latest and date.fromisoformat(latest['game_date']) < reference - timedelta(days=ACTIVE_WINDOW_DAYS):
+                log = SimpleNamespace(game_date=date.fromisoformat(latest['game_date']), pitches_thrown=latest['pitches'],
+                                      innings_pitched_outs=latest['outs'])
+                score = calculate_fatigue(SimpleNamespace(id=player), [log], reference_date=reference)
+                availability = classify_availability(score, [], reference_date=reference, latest_game_date=log.game_date)
+                status = availability['availability_status']
+                result['quiet_arms'][player] = dict(latest_workload=latest, data_state=availability['data_state'],
+                                                    replay=build_public_arm_read(availability), archive=arm['archived'])
+        if status is None:
+            return dict(result, status='withheld', reason=arm['reason'], player=player)
+        records.append(_normalize_pitcher_record(dict(availability_status=status, has_availability=True,
+                                                      has_current_workload=current)))
+    coverage = assess_team_coverage(authority_complete=True, source_current=True, active_bullpen_count=len(records),
+                                    usable_record_count=len(records), unresolved_record_count=0)
+    partition = _team_state_partition(_availability_distribution(records))
+    code, rule, inputs = _contract_a_decision(
+        partition, _coverage_inventory(records), _handedness_coverage(records),
+        TeamOperationsFreshnessMetadata('current', data_through=str(through)),
+        TeamOperationsTrustMetadata(coverage.confidence, data_state=coverage.data_state, governance_state='internal_uncertified'))
+    return dict(result, status='historical_method_replay', partition=partition, decisive_rule=rule,
+                decisive_inputs=inputs, team_state=public_state_for(code) if is_publishable_state(code) else None,
+                archived_label=archive_receipt['value'].get('public_label'))
 
 
 def compare_postseason_arms(cur, club, through, reference):
@@ -125,6 +174,22 @@ def compare_postseason_arms(cur, club, through, reference):
                 splits.extend(groups[0]['splits'])
         else:
             result['arms'][player] = _compare_arm(player, splits, lines, availability, evidence)
+    from sync_v3.membership_usage import represented_membership
+    from sync_v3.competition_calendar import calendar_games
+    from sync_v3.discovery import competition_calendar_request
+
+    season_games = calendar_games(competition_calendar_request(through.year).params(), calendar)
+    prior_rounds = {row['game_type'] for day, row, _ in season_games.values()
+                    if day <= through and row['game_type'] in POSTSEASON_GAME_TYPES}
+    membership = represented_membership(cur, club, through, roster, prior_rounds)
+    result['membership_comparison'] = membership
+    if membership['status'] == 'represented':
+        published = {row['mlb_id'] for row in group['records']}
+        candidate = set(membership['candidate'])
+        membership.update(status='matched' if candidate == published else 'membership_differs',
+                          archive=sorted(published), only_candidate=sorted(candidate-published),
+                          only_archive=sorted(published-candidate))
+    result['availability_method_replay'] = _method_replay(membership, result['arms'], through, reference.team_receipts[str(club)])
     matches = sum(arm.get('matches') is True for arm in result['arms'].values())
     differences = sum(arm.get('matches') is False for arm in result['arms'].values())
     return dict(result, status='compared_archived_cohort' if matches + differences else 'no_comparable_arm_reads',

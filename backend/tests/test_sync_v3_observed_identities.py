@@ -242,3 +242,25 @@ def test_postseason_arm_comparison_requires_consistent_final_and_game_log():
     assert compare([dict(split, stat=dict(stats, numberOfPitches=True))], [line])['reason'] == 'invalid_round_game_log'
     assert compare([split], [])['reason'] == 'game_log_and_final_population_conflict'
     assert compare([split], [dict(line, team_id=158)])['reason'] == 'missing_or_conflicting_workload'
+
+
+def test_archived_quiet_arm_uses_only_a_confirmed_prior_outing_and_matching_cohort():
+    from datetime import date
+    from sync_v3.postseason_arm_comparison import _method_replay
+
+    through = date(2026, 10, 19)
+    receipt = dict(value={'public_label': 'Vulnerable'})
+    prior = dict(game_pk=823407, game_date='2026-09-26', pitches=12, outs=3)
+    membership = dict(status='matched', candidate=[811315], samples={811315: dict(latest_workload=prior)})
+    arms = {811315: dict(reason='no_recent_verified_workload', archived={'label': 'Limited Read'})}
+    replay = _method_replay(membership, arms, through, receipt)
+    assert replay['status'] == 'historical_method_replay'
+    assert not replay['same_method_comparable'] and not replay['current_serving_eligible']
+    assert replay['quiet_arms'][811315]['replay']['label'] == 'Clean Option'
+    assert replay['quiet_arms'][811315]['data_state'] == 'stale'
+    assert _method_replay(membership, {}, through, receipt)['reason'] == 'independent_membership_required'
+    arms[811315]['reason'] = 'missing_round_game_log'
+    assert _method_replay(membership, arms, through, receipt)['status'] == 'withheld'
+    arms[811315]['reason'] = 'no_recent_verified_workload'
+    prior['game_date'] = '2026-10-06'
+    assert _method_replay(membership, arms, through, receipt)['status'] == 'withheld'
