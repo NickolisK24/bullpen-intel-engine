@@ -492,3 +492,41 @@ def test_active_roster_revision_rebuilds_identity_after_last_outing_leaves_windo
                 cur.execute('SELECT 1 FROM candidate.workload_history_sources WHERE snapshot=%s AND source_id=%s',
                             (revised[0], receipt))
                 assert cur.fetchone() == (1,)
+
+
+def test_late_postponed_listing_cannot_overrule_another_dates_final(tmp_path):
+    from contextlib import closing
+    from sync_v3.replay import run_fixture
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    base = Path(__file__).parent / 'fixtures/sync_v3'
+    played = json.loads((base / 'played.json').read_text())
+    final_day = date.fromisoformat(played['baseball_date'])
+    earlier = final_day - timedelta(days=1)
+    postponed = json.loads((base / 'quiet.json').read_text().replace('2026-11-21', earlier.isoformat()))
+    postponed['observed_at'] = '2026-08-05T12:00:00Z'
+    slate = next(row['body'] for row in played['responses'] if row['endpoint'] == '/schedule')
+    slate['dates'][0]['date'] = earlier.isoformat()
+    slate['dates'][0]['games'][0]['status'] = {
+        'abstractGameState': 'Final', 'statusCode': 'DR', 'detailedState': 'Postponed'}
+    next(row for row in postponed['responses'] if row['endpoint'] == '/schedule')['body'] = slate
+    file = tmp_path / 'postponed.json'
+    file.write_text(json.dumps(postponed))
+    for order in ((file, base / 'played.json'), (base / 'played.json', file)):
+        with isolated_cluster(pg) as (owner, connect):
+            install(owner)
+            with closing(connect()) as db:
+                for fixture in order:
+                    run_fixture(db, fixture)
+                with db, db.cursor() as cur:
+                    assert compare_finals(cur) == (1, 3)
+                    before, reason = regular_day(cur, earlier, team=147)
+                    assert reason is None and before['lines'] == []
+                    closed, reason = regular_day(cur, final_day, team=147)
+                    assert reason is None and [r['pitcher_mlb_id'] for r in closed['lines']] == [102]
+                    cur.execute("""SELECT f.parameters->>'startDate' FROM candidate.revisions r
+                                   JOIN candidate.fetches f ON f.id=r.context_id WHERE r.domain='final'""")
+                    assert cur.fetchall() == [(final_day.isoformat(),)]

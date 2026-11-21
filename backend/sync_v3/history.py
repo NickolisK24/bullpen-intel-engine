@@ -198,7 +198,7 @@ def _rebuild_receipt(cur, receipt):
                                (r.facts->'teams'->'away'->'team'->>'id')::integer AS away
                            FROM candidate.confirmations c JOIN candidate.fetches f ON f.id=c.source_id
                            JOIN candidate.revisions r ON r.id=c.revision_id
-                           WHERE c.domain='schedule' AND c.identity=%s AND r.facts->>'gameType'='R'
+                           WHERE c.domain='schedule' AND split_part(c.identity,'/',1)=%s AND r.facts->>'gameType'='R'
                        )
                        SELECT DISTINCT subject,mlb_id,represented FROM candidate.workload_history h
                        JOIN games g ON h.represented BETWEEN g.day AND g.day + %s

@@ -8,6 +8,7 @@ from services.game_finality import classify_game_finality
 from services.game_appearance_extraction import extract_game_appearances
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync import _extract_pitching_lines_from_boxscore, _pitcher_order_by_side
+from sync_v3.discovery import calendar_requests
 from utils.innings import parse_mlb_innings_to_outs
 
 
@@ -74,10 +75,17 @@ def game_identity(game):
             'scores': {side: game['teams'][side].get('score') for side in ('home', 'away')}}
 
 
-def reconcile_final(cur, pk, body, source_id, observed_at):
-    cur.execute("""SELECT r.facts,c.source_id FROM candidate.confirmations c JOIN candidate.revisions r
-                   ON r.id=c.revision_id WHERE c.domain='schedule' AND c.identity=%s
-                   ORDER BY c.observed_at DESC,c.source_id DESC LIMIT 1""", (str(pk),))
+def reconcile_final(cur, pk, body, source_id, observed_at, day):
+    # Makeup listings share one game identity across different calendar dates.
+    # Only the requesting date's slate observed by boxscore acquisition can
+    # establish its finality. A later removal/refusal cannot fall back to an old row.
+    cur.execute("""WITH slate AS (
+                       SELECT id,outcome FROM candidate.fetches WHERE endpoint='/schedule' AND parameters=%s
+                       AND received_at<=%s ORDER BY received_at DESC,id DESC LIMIT 1
+                   ) SELECT r.facts,c.source_id FROM slate s JOIN candidate.confirmations c ON c.source_id=s.id
+                   JOIN candidate.revisions r ON r.id=c.revision_id
+                   WHERE s.outcome='received' AND c.domain='schedule' AND c.identity IN (%s,%s)""",
+                (Json(calendar_requests(day)[0].params()), observed_at, f'{pk}/{day}', str(pk)))
     row = cur.fetchone()
     if not row or not classify_game_finality(row[0], boxscore=body).is_final_and_usable:
         raise Refused('Official final schedule and usable boxscore required')
@@ -140,22 +148,22 @@ def final_impacts(prior, appearances):
     return impacts
 
 
-def observe(cur, source_id, capture):
+def observe(cur, source_id, capture, day):
     req, body, at = capture.request, capture.body, capture.retrieved_at
     if req.endpoint == '/schedule':
         for entry in body['dates']:
             for item in entry['games']:
                 facts = game_identity(item)
-                accept(cur, 'schedule', facts['gamePk'], facts, source_id, at)
+                accept(cur, 'schedule', f"{facts['gamePk']}/{entry['date']}", facts, source_id, at)
     elif req.endpoint.endswith('/boxscore'):
-        reconcile_final(cur, int(req.endpoint.split('/')[2]), body, source_id, at)
+        reconcile_final(cur, int(req.endpoint.split('/')[2]), body, source_id, at, day)
 
 
 def recently_reconciled(cur, schedule_source, observed_at):
     """Audit a final again after a day or after a material schedule revision."""
-    cur.execute("""SELECT DISTINCT s.identity FROM candidate.confirmations s
+    cur.execute("""SELECT DISTINCT split_part(s.identity,'/',1) FROM candidate.confirmations s
                    JOIN LATERAL (SELECT context_id,observed_at FROM candidate.confirmations f
-                       WHERE f.domain='final' AND f.identity=s.identity
+                       WHERE f.domain='final' AND f.identity=split_part(s.identity,'/',1)
                        ORDER BY f.observed_at DESC,f.source_id DESC LIMIT 1) f ON TRUE
                    JOIN candidate.confirmations old ON old.source_id=f.context_id
                        AND old.domain='schedule' AND old.identity=s.identity

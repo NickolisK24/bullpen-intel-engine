@@ -31,3 +31,5 @@ CREATE TABLE candidate.impacts (
 );
 CREATE INDEX impacts_by_entity_date ON candidate.impacts(entity_type,entity_id,represented);
 GRANT SELECT,INSERT ON candidate.impacts TO sync_v3_worker;
+CREATE INDEX schedule_confirmations_by_game ON candidate.confirmations(split_part(identity,'/',1),source_id)
+    WHERE domain='schedule';

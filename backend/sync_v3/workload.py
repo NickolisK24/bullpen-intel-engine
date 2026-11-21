@@ -58,14 +58,14 @@ def _game_workload(cur, game, day, schedule_source):
                        AND c.domain='final' AND c.identity=%s
                    LEFT JOIN candidate.revisions r ON r.id=c.revision_id
                    LEFT JOIN candidate.confirmations old ON old.source_id=c.context_id
-                       AND old.domain='schedule' AND old.identity=c.identity
+                       AND old.domain='schedule' AND old.identity IN (c.identity,%s)
                    LEFT JOIN candidate.confirmations s ON s.source_id=%s AND
-                       s.domain='schedule' AND s.identity=c.identity
+                       s.domain='schedule' AND s.identity IN (c.identity,%s)
                    WHERE f.endpoint=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
-                (str(pk),schedule_source,f'/game/{pk}/boxscore'))
+                (str(pk), f'{pk}/{day}', schedule_source, f'{pk}/{day}', f'/game/{pk}/boxscore'))
     final = cur.fetchone()
     consult(cur, f'/game/{pk}/boxscore', {}, final[1] if final else None, final[2] if final else None)
-    if not final or final[0] is None or final[3] != 'received' or final[4] != final[5]:
+    if not final or final[0] is None or final[3] != 'received' or final[4] is None or final[4] != final[5]:
         return None, 'missing_compatible_final'
     return (final[0], (final[1], final[2])), None
 

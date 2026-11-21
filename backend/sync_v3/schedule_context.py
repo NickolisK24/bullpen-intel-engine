@@ -41,11 +41,11 @@ def _club_rows(games, team, day):
 def missing_listings(cur, params, present, *, game_types=None):
     # A game disappearing from a subsequent league response is governed by a
     # separate retirement proof. Preserve the uncertainty in an offline read.
-    cur.execute("""SELECT DISTINCT ON (c.identity) f.id,r.facts
+    cur.execute("""SELECT DISTINCT ON (split_part(c.identity,'/',1)) f.id,r.facts
                    FROM candidate.fetches f JOIN candidate.confirmations c ON c.source_id=f.id
                    JOIN candidate.revisions r ON r.id=c.revision_id
-                   WHERE f.endpoint='/schedule' AND f.parameters=%s AND c.domain='schedule' AND NOT (c.identity=ANY(%s))
-                   ORDER BY c.identity, f.received_at DESC, f.id DESC""", (Json(params), [str(pk) for pk in present]))
+                   WHERE f.endpoint='/schedule' AND f.parameters=%s AND c.domain='schedule' AND NOT (split_part(c.identity,'/',1)=ANY(%s))
+                   ORDER BY split_part(c.identity,'/',1), f.received_at DESC, f.id DESC""", (Json(params), [str(pk) for pk in present]))
     missing = {}
     for source, game in cur:
         if game_types and game['gameType'] not in game_types:

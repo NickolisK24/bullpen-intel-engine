@@ -36,7 +36,7 @@ def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture
     if acquisition.request.endpoint == '/schedule' and 'season' in acquisition.request.params():
         # A retrospective season listing cannot revise the one-day final/schedule authority.
         return
-    canonical.observe(cur, observation_id, acquisition)
+    canonical.observe(cur, observation_id, acquisition, day)
     affected = rosters.observe(cur, observation_id, acquisition, replay_batch=capture is not None)
     if affected:
         day = date.fromisoformat(acquisition.request.params()['endDate'])
