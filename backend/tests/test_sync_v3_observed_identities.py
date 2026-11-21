@@ -114,3 +114,8 @@ def test_competition_compares_the_governed_scope_independently_of_the_edition(tm
     clubs[111]['basis'] = 'changed'
     delta = compare_archived_competition(report, reference)
     assert delta['differences']['111']['season_context']['basis'] == {'candidate': 'changed'}
+
+    del reference.team_receipts['111']['season_context']
+    older = compare_archived_competition(report, reference)
+    assert older['status'] == 'archived_competition_context_missing'
+    assert older['clubs_missing_context'] == [111] and older['clubs_compared'] == 0

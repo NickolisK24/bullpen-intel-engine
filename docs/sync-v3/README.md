@@ -449,3 +449,19 @@ python -m sync_v3.team_preview_comparison "$DELIVERY_REPORT_ZIP" "$REPORT_SHA256
 The comparison runs the existing team delivery verifier, checks the exact 30 MLB clubs and fallback against the file digests, and follows both the visible link and the redirect to the club’s Team Board. A dated page must cite the publication snapshot, sync run and workload date. A withheld page retains its club route and reason. The isolated selection rehearsal passes each candidate Board through the existing preview renderer. It requires that the resulting page withhold public claims because the candidate has no trusted publication authority.
 
 Two deliveries used snapshot 5843 and sync run 98300 with workload through October 28, 2026. Distribution run 44716734983 (artifact 14620151702, Git commit `ce0e3384`) produced 30 dated previews. Run 44794472956 (artifact 14659061276, Git commit `9ea5ac93`) produced 29. Pittsburgh alone changed, to `no_trusted_publication`. The job log identifies team 134 and the export’s withholding reason. It does not explain why the renderer lacked Pittsburgh’s snapshot receipt. All dated previews in both exports agreed with the observed Team State receipts in artifact 14657943570. All 30 clubs were season complete. A dated preview in these exports carried no current Team State label.
+
+With the publication proof supplied, the comparison can also reproduce dated pages whose observed Team State withholds for competition reasons and whose export declares zero Story previews. In that case the existing renderer uses the frozen non-state message and omits the current baseball point. The replay takes the club identity from the MLB directory, the Team State from the observed publication receipt, and the dates and publication identifiers from the pinned delivery report. It compares the rendered UTF-8 bytes to the archived digest-verified page. A missing receipt, a withheld page or a need for additional Board or Story inputs is reported separately.
+
+The renderer reproduced 30 of 30 dated pages in the earlier snapshot 5843 delivery, including Pittsburgh. It reproduced 29 of 29 dated pages in the later delivery. Pittsburgh’s later withheld page was verified as delivered. The published season-complete receipt does not establish why that export lacked a Board receipt for Pittsburgh.
+
+To derive the season-complete state from MLB inputs, run the existing PostgreSQL rehearsal with one `--fixture` per retained day:
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$PG_BIN" --competition --through 2026-10-30 \
+  "${fixture_args[@]}" --identity-proof "$PROOF_ZIP" "$PROOF_SHA256" \
+  --team-preview-export "$DELIVERY_REPORT_ZIP" "$REPORT_SHA256" "$CHECKOUT"
+```
+
+Here `fixture_args` is a shell array of `--fixture PATH` pairs. The 24-day fixture set supplied 553 retained MLB responses, 40 finals and 406 pitching lines. The rehearsal derived all 30 clubs’ competition states, compared them with the postcommit receipts, and used the derived Team State plus the archived publication identifiers and timestamps to reproduce the same 30 and 29 pages. Reversing the 24 fixture files produced identical per-club reproduction results for both exports. A replay containing only the October 30 fixture refused with `incomplete_competition_evidence` before reporting any reproduced pages.
+
+The same replay compared all 30 season-complete projections with the independently observed receipts for snapshot 5827. Snapshot 5751 shared the workload and availability dates but omitted competition context for all 30 clubs. The comparator reports those missing club receipts and leaves their historical claims intact.

@@ -45,3 +45,26 @@ def test_export_requires_the_full_club_denominator_even_when_counts_agree(tmp_pa
         z.writestr('publication.json', '{}')
     with pytest.raises(ValueError, match='30 clubs'):
         compare_team_export(report, sha256(report.read_bytes()).hexdigest(), tmp_path)
+
+
+def test_competition_page_reproduction_requires_original_copy_and_complete_inputs():
+    from services.team_story_previews import build_team_story_preview
+    from sync_v3.team_preview_comparison import reproduce_competition_page
+    from tests.test_team_story_previews import _team, _board, GENERATED_AT, PUBLISHED_AT
+
+    club = next(club for club in MLB_CLUBS if club.abbreviation == 'TOR')
+    team = _team(club.team_id, club.team_name, club.abbreviation)
+    board = _board(team)
+    state = dict(available=False, outcome='season_complete', public_label=None, unavailable_message='Season complete.')
+    board['team_state'] = state
+    preview = build_team_story_preview(team, board=board, generated_at=GENERATED_AT)
+    body = render_team_story_html(preview).encode()
+    pub = dict(publication_snapshot_id=SNAPSHOT_ID, sync_run_id=SYNC_RUN_ID, data_through=DATA_THROUGH, published_at=PUBLISHED_AT)
+    export = dict(story_previews=0, generated_at=GENERATED_AT)
+    page = compare_team_page(body.decode(), club, publication=pub)
+    assert reproduce_competition_page(body, page, club, state, pub, export) == 'reproduced'
+    with pytest.raises(ValueError, match='do not reproduce'):
+        reproduce_competition_page(body.replace(b'Season complete.', b'Bullpen fresh.'), page, club, state, pub, export)
+    for changed_export, changed_state in [(dict(export, story_previews=1), state), (export, dict(state, available=True))]:
+        assert reproduce_competition_page(body, page, club, changed_state, pub, changed_export) == 'additional_story_or_board_inputs_required'
+    assert reproduce_competition_page(body, dict(page, representation='withheld'), club, state, pub, export) == 'withheld_delivery'

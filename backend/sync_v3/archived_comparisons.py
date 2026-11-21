@@ -57,6 +57,9 @@ def compare_archived_competition(report, reference):
     clubs = {str(k): v for k, v in report['clubs'].items()}
     if report['calendar_source'] is None or report['missing_decisions'] or clubs.keys() != reference.team_receipts.keys():
         return dict(result, status='incomplete_competition_evidence')
+    missing_context = sorted(int(club) for club in clubs if reference.team_receipts[club].get('season_context') is None)
+    if missing_context:
+        return dict(result, status='archived_competition_context_missing', clubs_missing_context=missing_context)
     for club, context in clubs.items():
         observed = reference.team_receipts[club]
         if (context.get('reference_date') != report['reference_date'] or context.get('team_id') != int(club)

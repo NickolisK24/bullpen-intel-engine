@@ -38,7 +38,30 @@ def compare_team_page(text, club, *, publication=None):
                 team_state=meta.get('team-state'), snapshot_id=meta.get('snapshot-id'), sync_run_id=meta.get('sync-run-id'), data_through=meta.get('data-through'))
 
 
-def compare_team_export(report_path, expected_digest, root, *, publication_proof=None):
+def reproduce_competition_page(body, page, club, state, publication, export):
+    """Replay the Board-only branch where the observed state excludes every current baseball point."""
+    from services.public_serving_authority import PUBLICATION_AUTHORITY_CONTRACT
+    from services.team_state_public_vocabulary import is_competition_withholding
+    from services.team_story_previews import build_team_story_preview, render_team_story_html
+
+    if page['representation'] == 'withheld':
+        return 'withheld_delivery'
+    if export.get('story_previews') != 0 or not is_competition_withholding(state):
+        return 'additional_story_or_board_inputs_required'
+    if not export.get('generated_at') or not publication.get('published_at'):
+        raise ValueError('Historical rendering requires both export and publication timestamps')
+    team = dict(team_id=club.team_id, team_name=club.team_name, team_abbreviation=club.abbreviation)
+    authority = dict(contract=PUBLICATION_AUTHORITY_CONTRACT, snapshot_id=publication['publication_snapshot_id'],
+                     sync_run_id=publication['sync_run_id'], data_through=publication['data_through'],
+                     published_at=publication['published_at'])
+    preview = build_team_story_preview(team, board=dict(publication_authority=authority, team_state=state),
+                                      generated_at=export['generated_at'], expected_snapshot_id=authority['snapshot_id'])
+    if render_team_story_html(preview).encode('utf-8') != body:
+        raise ValueError(f'Observed publication inputs do not reproduce the archived page: {club.abbreviation}')
+    return 'reproduced'
+
+
+def compare_team_export(report_path, expected_digest, root, *, publication_proof=None, competition=None):
     """Replay the owner delivery gate against the checkout corresponding to a pinned Actions export."""
     from hashlib import sha256
     from pathlib import Path
@@ -77,19 +100,39 @@ def compare_team_export(report_path, expected_digest, root, *, publication_proof
         if any(observed.provenance[key] != publication[field] for key, field in (
                 ('snapshot_id', 'publication_snapshot_id'), ('sync_run_id', 'sync_run_id'), ('data_through', 'data_through'))):
             raise ValueError('Observed Team State receipts belong to another publication')
+    contexts = None
+    if competition is not None:
+        from sync_v3.archived_comparisons import compare_archived_competition
+        from services.team_state_public_vocabulary import public_team_state
+        comparison = compare_archived_competition(competition, observed)
+        if comparison['status'] != 'competition_fields_match':
+            raise ValueError(f"Competition replay cannot establish this edition: {comparison['status']}")
+        contexts = {int(team): context for team, context in competition['clubs'].items()}
     pages = []
     compared = 0
+    reproduced = 0
     for name, digest in digests.items():
         body = (root / name).read_bytes()
         if sha256(body).hexdigest() != digest:
             raise ValueError(f'Team delivery digest differs for {name}')
         if name != fallback:
             page = compare_team_page(body.decode('utf-8'), files[name], publication=publication)
-            if observed is not None and page['representation'] == 'dated_team_read':
+            if observed is not None:
                 state = observed.team_receipts[str(page['team_id'])]['value']
-                if page['team_state'] != state.get('public_label') or (page['team_state'] is not None) != state['available']:
-                    raise ValueError(f'Team preview differs from its observed Team State: {name}')
-                compared += 1
+                if page['representation'] == 'dated_team_read':
+                    if page['team_state'] != state.get('public_label') or (page['team_state'] is not None) != state['available']:
+                        raise ValueError(f'Team preview differs from its observed Team State: {name}')
+                    compared += 1
+                if contexts is not None:
+                    context = contexts[page['team_id']]
+                    state = None
+                    if context['status'] == 'season_complete':
+                        state = public_team_state(dict(season_context=context,
+                                                       freshness=dict(data_through=publication['data_through'])))
+                page['reproduction'] = reproduce_competition_page(body, page, files[name], state, publication, export)
+                reproduced += int(page['reproduction'] == 'reproduced')
+            else:
+                page['reproduction'] = 'no_observed_publication_proof'
             pages.append(page)
     local = dict(output, files=[str(root / name) for name in files], fallback=str(root / fallback))
     violations, _ = verify(dict(export, output=local), root / 'frontend/public', root)
@@ -97,6 +140,7 @@ def compare_team_export(report_path, expected_digest, root, *, publication_proof
         raise ValueError(violations)
     return dict(publication_snapshot_id=publication['publication_snapshot_id'], sync_run_id=publication['sync_run_id'],
                 data_through=publication['data_through'], observed_team_states_compared=compared,
+                pages_reproduced=reproduced, competition_replayed=competition is not None,
                 pages=sorted(pages, key=lambda row: row['team_id']))
 
 
