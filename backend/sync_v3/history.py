@@ -9,6 +9,7 @@ from psycopg2.extras import Json
 from services.mlb_club_directory import MLB_TEAM_IDS
 
 from sync_v3.comparison import compare_team_workload
+from sync_v3.dependencies import capture_reads
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
 from sync_v3.rosters import dated_pitcher_sources
@@ -107,8 +108,9 @@ def record_workload(connection, subject, mlb_id, through):
 
 def _append(cur, subject, mlb_id, through):
     cur.execute('SELECT pg_advisory_xact_lock(hashtext(%s),%s)', (subject, mlb_id))
-    facts, sources = _sample(cur, subject, mlb_id, through)
-    return _store(cur, subject, mlb_id, through, METHODOLOGY, facts, sources)
+    with capture_reads(cur) as reads:
+        facts, sources = _sample(cur, subject, mlb_id, through)
+    return _store(cur, subject, mlb_id, through, METHODOLOGY, facts, sorted(reads.receipts.union(sources)), reads.requests)
 
 
 def evidence_digest(receipts, requests):

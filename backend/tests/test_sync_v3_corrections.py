@@ -774,3 +774,34 @@ def test_generation_link_failure_rolls_back_manifest_and_keeps_previous_generati
                 cur.execute('DROP TRIGGER rehearsal_failure ON candidate.generation_inputs')
             second = freeze_generation(db, day)
             assert verify_generation(db, second)['snapshots'] == 1
+
+
+def test_generation_event_build_reuses_qualified_inputs_and_revisits_new_receipts(monkeypatch):
+    from contextlib import closing
+    from sync_v3 import history
+    from sync_v3.generation import _build_change_set
+    from sync_v3.replay import run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2026, 11, 21)
+    quiet = Path(__file__).parent / 'fixtures/sync_v3/quiet.json'
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            for d in (day-timedelta(days=1), day):
+                history.record_workload(db, 'team', 111, d)
+            builds = []
+            original = history._append
+            def counted(cur, subject, entity, represented):
+                builds.append(represented)
+                return original(cur, subject, entity, represented)
+            monkeypatch.setattr(history, '_append', counted)
+            old = history._transaction(db, _build_change_set, 'team', 'team', 111, day)
+            assert not builds
+            run_fixture(db, quiet)
+            new = history._transaction(db, _build_change_set, 'team', 'team', 111, day)
+            assert builds == [day] and new[1] == old[1] + 1
+            assert history._transaction(db, _build_change_set, 'team', 'team', 111, day) == new
+            assert builds == [day]

@@ -204,6 +204,7 @@ def test_generation_detects_new_roster_receipt_before_snapshot_rebuild(tmp_path)
     from pathlib import Path
 
     from sync_v3.generation import freeze_generation
+    from sync_v3.history import record_workload, METHODOLOGY
     from sync_v3.intelligence_history import record_intelligence
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
@@ -218,14 +219,17 @@ def test_generation_detects_new_roster_receipt_before_snapshot_rebuild(tmp_path)
         install(owner)
         with closing(connect()) as db:
             record_intelligence(db, 'depth', 111, day)
+            record_workload(db, 'team', 111, day)
             first = freeze_generation(db, day)
             path.write_text(json.dumps(fixture))
             run_fixture(db, path)
             second = freeze_generation(db, day)
             record_intelligence(db, 'depth', 111, day)
+            record_workload(db, 'team', 111, day)
             third = freeze_generation(db, day)
             with db, db.cursor() as cur:
-                for generation, stale in [(first, []), (second, [['team', 111, 'candidate_roster_depth_v1']]),
+                for generation, stale in [(first, []), (second, [['team', 111, METHODOLOGY],
+                                                        ['team', 111, 'candidate_roster_depth_v1']]),
                                           (third, [])]:
                     cur.execute("SELECT manifest->'stale_inputs' FROM candidate.generations WHERE digest=%s",
                                 (generation,))

@@ -183,15 +183,45 @@ def _superseded(cur, parents):
                    JOIN candidate.workload_history h ON h.id=s.snapshot
                    WHERE NOT EXISTS (SELECT 1 FROM candidate.workload_history_sources hs
                                      WHERE hs.snapshot=h.id AND hs.source_id=l.id)
-                   ORDER BY 1,2,3""", (parents, parents))
+                   UNION
+                   SELECT h.subject,h.mlb_id,h.methodology FROM candidate.workload_history h
+                   WHERE h.id=ANY(%s) AND h.methodology=%s AND NOT EXISTS (
+                       SELECT 1 FROM candidate.history_requests r WHERE r.snapshot=h.id)
+                   ORDER BY 1,2,3""", (parents, parents, parents, METHODOLOGY))
     stale_inputs = cur.fetchall()
     return stale_comparisons, stale_inputs
 
 
+def _build_change_set(cur, domain, subject, entity, through):
+    from datetime import timedelta
+    from sync_v3.change_history import _freeze_changes, refresh_existing_changes
+    from sync_v3.history import _append as append_workload
+    from sync_v3.intelligence_history import _append as append_intelligence
+
+    method = METHODOLOGY if domain == 'team' else DOMAINS[domain][1]
+    days = (through - timedelta(days=1), through)
+    cur.execute('SELECT pg_advisory_xact_lock(hashtext(%s),%s)', (subject, entity))
+    cur.execute("""SELECT DISTINCT ON (represented) represented,id FROM candidate.workload_history
+                   WHERE subject=%s AND mlb_id=%s AND methodology=%s AND represented BETWEEN %s AND %s
+                   ORDER BY represented,revision DESC""", (subject, entity, method, *days))
+    latest = dict(cur.fetchall())
+    updated = []
+    for day in days:
+        previous = latest.get(day)
+        if previous is not None:
+            _, stale = _superseded(cur, [previous])
+            if not stale:
+                continue
+        row = (append_workload(cur, subject, entity, day) if domain == 'team'
+               else append_intelligence(cur, domain, entity, day))
+        updated.append(row[0])
+    if updated:
+        refresh_existing_changes(cur, updated)
+    return _freeze_changes(cur, domain, entity, through)
+
+
 def build_batch(connection, through, limit):
     """Materialize a bounded batch of missing or superseded candidate calculations."""
-    from datetime import timedelta
-    from sync_v3.change_history import record_changes
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import record_intelligence
 
@@ -222,11 +252,7 @@ def build_batch(connection, through, limit):
     selected = sorted(outstanding, key=priority)[:limit]
     for subject, entity, method in selected:
         if method in changes_for:
-            domain = changes_for[method]
-            source_method = METHODOLOGY if domain == 'team' else DOMAINS[domain][1]
-            for day in (through - timedelta(days=1), through):
-                build(subject, entity, source_method, day)
-            record_changes(connection, domain, entity, through)
+            _transaction(connection, _build_change_set, changes_for[method], subject, entity, through)
         else:
             build(subject, entity, method, through)
     return dict(before=initial, after=freeze_generation(connection, through), processed=selected)
