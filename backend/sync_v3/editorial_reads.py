@@ -39,6 +39,18 @@ def _optionality(cur, digest, team, reference):
     return layer
 
 
+def _concentration(logs, through):
+    rows, _ = concentration._window_logs(logs, reference_date=through)
+    relief = [line for line in rows if line['games_started'] == 0]
+    if any(line['pitches_thrown'] is None for line in relief):
+        return None, 'missing_relief_pitch_count'
+    if any(type(line['pitches_thrown']) is not int or line['pitches_thrown'] < 0 for line in relief):
+        return None, 'invalid_relief_pitch_count'
+    if any(not line['pitcher_name'] for line in relief):
+        return None, 'missing_official_reliever_identity'
+    return concentration.build_bullpen_concentration_context(rows, reference_date=through), 'complete_calendar'
+
+
 def _stability(cur, digest, team, through):
     ledger = appearance_ledger(cur, digest, 'team', team, through)
     start = (through - timedelta(days=2 * concentration.BULLPEN_CONCENTRATION_WINDOW_DAYS - 1)).isoformat()
@@ -103,7 +115,6 @@ def read_story_observations(connection, team, *, revision=None):
                        WHERE s.snapshot=%s AND c.identity=ANY(%s) GROUP BY r.id,c.identity ORDER BY c.identity,r.id""",
                     (snapshot, [str(pk) for pk in expected]))
         games, logs = set(), []
-        names_complete = True
         body_digests = {}
         for _, identity, lines, receipt, digests in cur.fetchall():
             pk = int(identity)
@@ -120,8 +131,6 @@ def read_story_observations(connection, team, *, revision=None):
                 side = box['teams'][line['side']] if box else {}
                 person = side.get('players', {}).get(f'ID{mlb}', {}).get('person') or {}
                 name = person.get('fullName') if person.get('id') == mlb else None
-                if not name and line['games_started'] == 0:
-                    names_complete = False
                 logs.append(dict(line, mlb_game_pk=pk, game_type='R', player_id=mlb, pitcher_name=name,
                                  innings_pitched_outs=line['outs_recorded']))
         if games != expected.keys():
@@ -129,12 +138,9 @@ def read_story_observations(connection, team, *, revision=None):
         club = clubs[team]
         layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
         coverage = {'rotation_context': 'complete_calendar'}
-        if names_complete:
-            layers['bullpen_concentration_context'] = concentration.build_bullpen_concentration_context(
-                logs, reference_date=through)
-            coverage['bullpen_concentration_context'] = 'complete_calendar'
-        else:
-            coverage['bullpen_concentration_context'] = 'missing_official_reliever_identity'
+        concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through)
+        if concentration_layer:
+            layers['bullpen_concentration_context'] = concentration_layer
         role_stability, coverage['role_stability_context'], result['role_stability_citation'] = _stability(
             cur, digest, team, through)
         if role_stability:

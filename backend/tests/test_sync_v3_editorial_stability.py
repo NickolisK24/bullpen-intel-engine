@@ -44,3 +44,18 @@ def test_frozen_workload_core_requires_two_supported_windows(monkeypatch, case, 
         assert (layer['current_workload_total_10d'], layer['previous_workload_total_10d']) == (15, 10)
     else:
         assert layer is None
+
+
+def test_concentration_requires_every_relief_pitch_count_in_its_own_window():
+    day = date(2024, 8, 7)
+    arm = dict(game_date='2024-08-07', games_started=0, game_type='R', mlb_game_pk=1, player_id=12,
+               pitcher_name='One', pitches_thrown=14, innings_pitched_outs=3)
+    other = dict(arm, player_id=13, pitcher_name='Two', pitches_thrown=None, game_date='2024-07-29')
+    assert editorial_reads._concentration([arm, other], day) == (None, 'missing_relief_pitch_count')
+    assert editorial_reads._concentration([arm, dict(other, pitches_thrown=-1)], day) == (None, 'invalid_relief_pitch_count')
+    assert editorial_reads._concentration([arm, dict(other, pitches_thrown=10, pitcher_name=None)], day) == (
+        None, 'missing_official_reliever_identity')
+    for excluded in [dict(other, game_date='2024-07-28', pitcher_name=None), dict(other, games_started=1),
+                    dict(other, pitches_thrown=0, innings_pitched_outs=0)]:
+        layer, coverage = editorial_reads._concentration([arm, excluded], day)
+        assert coverage == 'complete_calendar' and layer['bullpen_workload_total_10d'] == 14
