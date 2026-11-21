@@ -7,37 +7,38 @@ from psycopg2.extras import Json
 
 
 def enqueue(cur, identity, payload, now, *, budget='current', priority=100,
-            prerequisite=None, max_attempts=3):
+            prerequisite=None, max_attempts=3, product_date=None):
     cur.execute("""INSERT INTO candidate.jobs(identity,payload,priority,budget,prerequisite,
-                    available_at,max_attempts) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    available_at,max_attempts,product_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (identity) DO NOTHING RETURNING id""",
-                (identity, Json(payload), priority, budget, prerequisite, now, max_attempts))
+                (identity, Json(payload), priority, budget, prerequisite, now, max_attempts, product_date))
     created = cur.fetchone()
     if created:
         return created[0]
     cur.execute("""SELECT id FROM candidate.jobs WHERE identity=%s AND payload=%s
                    AND budget=%s AND priority=%s AND prerequisite IS NOT DISTINCT FROM %s
-                   AND max_attempts=%s""",
-                (identity, Json(payload), budget, priority, prerequisite, max_attempts))
+                   AND max_attempts=%s AND product_date IS NOT DISTINCT FROM %s""",
+                (identity, Json(payload), budget, priority, prerequisite, max_attempts, product_date))
     existing = cur.fetchone()
     if not existing:
         raise ValueError('Job identity reused for different work')
     return existing[0]
 
 
-def claim(cur, now, *, budget='current', lease=timedelta(minutes=5)):
+def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None):
     if not timedelta(0) < lease <= timedelta(hours=1):
         raise ValueError('Invalid job lease')
     # Bound the amount of recovery a single invocation can perform.
     for _ in range(16):
         cur.execute("""SELECT j.id,j.payload,j.token,j.attempts,j.max_attempts
                        FROM candidate.jobs j
-                       WHERE j.budget=%s AND ((j.state='pending' AND j.available_at<=%s)
+                       WHERE j.budget=%s AND (%s::date IS NULL OR j.product_date=%s)
+                       AND ((j.state='pending' AND j.available_at<=%s)
                        OR (j.state='running' AND j.lease_until<=%s)) AND
                        (j.prerequisite IS NULL OR EXISTS (SELECT 1 FROM candidate.jobs p
                          WHERE p.id=j.prerequisite AND p.state='done'))
                        ORDER BY j.priority,j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
-                    (budget, now, now))
+                    (budget, product_date, product_date, now, now))
         row = cur.fetchone()
         if not row:
             return None

@@ -11,7 +11,7 @@ from sync_v3 import canonical, evidence, queue, rosters
 from sync_v3.discovery import calendar_requests, game_requests, roster_requests
 
 
-def enqueue_requests(cur, requests, now, *, budget, cause=None):
+def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
     for request in requests:
         payload = {'endpoint': request.endpoint, 'params': request.params()}
         if cause is not None:
@@ -24,8 +24,8 @@ def enqueue_requests(cur, requests, now, *, budget, cause=None):
                 continue
         # Same request in the same policy slot deduplicates across restart.
         slot = int(now.timestamp()) // request.poll_seconds
-        identity = sha256(evidence.encode_json([budget, slot, request.poll_seconds, payload, cause])).hexdigest()
-        queue.enqueue(cur, identity, payload, now, budget=budget)
+        identity = sha256(evidence.encode_json([budget, str(day), slot, request.poll_seconds, payload, cause])).hexdigest()
+        queue.enqueue(cur, identity, payload, now, budget=budget, product_date=day)
 
 
 def plan_children(cur, observation_id, acquisition, budget, now):
@@ -34,13 +34,13 @@ def plan_children(cur, observation_id, acquisition, budget, now):
     if affected:
         day = date.fromisoformat(acquisition.request.params()['endDate'])
         enqueue_requests(cur, roster_requests(day, affected), now,
-                         budget=budget, cause=observation_id)
+                         budget=budget, day=day, cause=observation_id)
     if acquisition.request.endpoint == '/schedule':
         represented = acquisition.request.params()['startDate']
         requests = game_requests(date.fromisoformat(represented), acquisition.body,
                                  now=acquisition.retrieved_at, reconciled=canonical.recently_reconciled(
                                      cur, observation_id, acquisition.retrieved_at))
-        enqueue_requests(cur, requests, now, budget=budget)
+        enqueue_requests(cur, requests, now, budget=budget, day=date.fromisoformat(represented))
 
 
 def schedule_request(cur, day, now, schedule):
@@ -67,12 +67,12 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, budget='current', m
         schedule, transactions = calendar_requests(day)
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
-        enqueue_requests(cur, (schedule, transactions, *roster_requests(day, teams)), now, budget=budget)
+        enqueue_requests(cur, (schedule, transactions, *roster_requests(day, teams)), now, budget=budget, day=day)
 
     receipts = []
     for _ in range(max_jobs):
         with connection, connection.cursor() as cur:
-            claimed = queue.claim(cur, clock(), budget=budget)
+            claimed = queue.claim(cur, clock(), budget=budget, product_date=day)
         if not claimed:
             break
         receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=lambda c, oid, acquired:

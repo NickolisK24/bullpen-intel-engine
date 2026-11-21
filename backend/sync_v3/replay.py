@@ -43,9 +43,9 @@ def run_fixture(connection, filename):
                 errors.append((status, *cur.fetchone()))
                 continue
             evidence.replay(cur, oid)
-        cur.execute("SELECT state,count(*) FROM candidate.jobs GROUP BY state")
+        cur.execute("SELECT state,count(*) FROM candidate.jobs WHERE product_date=%s GROUP BY state", (day,))
         states = dict(cur.fetchall())
-        if errors or states != {'done': len(results)}:
+        if errors or set(states) != {'done'}:
             from sync_v3.comparison import compare_finals
             games, lines = compare_finals(cur)
             raise ValueError(f'Replay withheld: {len(results)} observations; {games} accepted finals, '

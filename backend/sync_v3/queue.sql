@@ -4,6 +4,7 @@ CREATE TABLE candidate.jobs (
     payload jsonb NOT NULL,
     priority integer NOT NULL CHECK (priority >= 0),
     budget text NOT NULL CHECK (budget IN ('current','historical')),
+    product_date date,
     prerequisite bigint REFERENCES candidate.jobs(id),
     state text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','running','done','dead')),
     available_at timestamptz NOT NULL,
@@ -15,6 +16,7 @@ CREATE TABLE candidate.jobs (
     CHECK ((state='running') = (lease_until IS NOT NULL))
 );
 CREATE INDEX jobs_ready ON candidate.jobs(budget,priority,available_at,id) WHERE state='pending';
+CREATE INDEX jobs_day ON candidate.jobs(product_date,budget,state);
 CREATE INDEX jobs_expired ON candidate.jobs(budget,lease_until,id) WHERE state='running';
 CREATE TABLE candidate.attempts (
     token uuid PRIMARY KEY,

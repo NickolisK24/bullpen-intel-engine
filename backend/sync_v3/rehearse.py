@@ -100,7 +100,9 @@ def run(bindir=None, fixture=None):
             if fixture:
                 from sync_v3.replay import install, run_fixture
                 install(owner)
-                count = run_fixture(worker, fixture)
+                count = 0
+                for filename in fixture:
+                    count += run_fixture(worker, filename)
                 from sync_v3.comparison import compare_finals
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
@@ -113,6 +115,6 @@ def run(bindir=None, fixture=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
-    parser.add_argument('--fixture', help='Path to an offline acquisition fixture')
+    parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
     args = parser.parse_args()
     run(args.pg_bin, args.fixture)
