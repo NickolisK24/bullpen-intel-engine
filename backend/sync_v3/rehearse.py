@@ -282,6 +282,14 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             if slate['generation'] != digest:
                                 raise RuntimeError('Game cards disagree with the selected generation')
                             print(json.dumps(dict(historical_slate=slate)))
+                            if slate['games']:
+                                game_pk = slate['games'][0]['game_pk']
+                                detail = read_game_cards(worker, revision=revision, game_pk=game_pk)
+                                comparison = detail['historical_comparison']
+                                if (comparison['generation'] != digest or comparison['game']['game_pk'] != game_pk
+                                        or comparison['current_serving_eligible'] or comparison['publication_authority'] is not None):
+                                    raise RuntimeError('Historical Matchup differs from its isolated selection')
+                                print(json.dumps(dict(historical_matchup=comparison)))
                             restored = select_generation(reviewer, None, expected_revision=revision, rollback=True)
                             print(json.dumps(dict(isolated_selection=digest, revision=revision,
                                                   restored_revision=restored, restored_generation=None)))

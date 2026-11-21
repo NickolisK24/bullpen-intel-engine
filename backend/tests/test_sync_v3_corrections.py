@@ -988,6 +988,17 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert historical['generation'] == first and historical['current_serving_eligible'] is False
             assert historical['data_through'] == str(day) and historical['reference_date'] == game['metadata']['reference_date']
             assert sum(historical['team_a'].values()) == sum(historical['team_b'].values()) == 1
+            comparison = matchup['historical_comparison']
+            assert set(comparison['domains']) == {'rest','team_state','availability','workload','rotation','performance','role_rest'}
+            assert comparison['domains']['availability'] == historical
+            assert comparison['generation'] == first and comparison['selection_revision'] == 1
+            assert comparison['status'] == 'partial' and comparison['publication_authority'] is None
+            assert comparison['current_serving_eligible'] is False
+            assert comparison['game']['game_pk'] == game['id']
+            assert comparison['game']['away']['team_id'] == comparison['teams']['team_a']['team_id'] == 111
+            assert comparison['game']['home']['team_id'] == comparison['teams']['team_b']['team_id'] == 110
+            assert comparison['game']['reference_date'] == comparison['availability_reference_date']
+            assert comparison['represented_date'] == str(day)
             rotation_read = matchup['games'][0]['rotation']
             assert rotation_read['status'] == 'partial' and rotation_read['limitations']
             assert rotation_read['team_a']['short_starts'] == 1 and rotation_read['team_a']['bullpen_innings'] == 5.0

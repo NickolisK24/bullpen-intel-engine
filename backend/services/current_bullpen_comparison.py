@@ -458,6 +458,12 @@ def build_current_bullpen_comparison(
             incomplete = side_a.keys() != side_b.keys()
         domains[domain] = _aligned_domain(domain, side_a, side_b, stamp_a=stamp_a,
                                           stamp_b=stamp_b, partial=incomplete)
+    result = comparison_fields(domains, identity_a, identity_b, package_date, reference_date)
+    return dict(capability=CAPABILITY, contract=CONTRACT, **result), None
+
+
+def comparison_fields(domains, identity_a, identity_b, package_date, reference_date):
+    """Project qualified domain results and limitations without granting publication authority."""
     unavailable = [name for name, domain in domains.items() if domain['status'] == STATUS_WITHHELD]
     partial = [name for name, domain in domains.items() if domain['status'] == STATUS_PARTIAL]
     limitations = [domains[name]['message'] for name in unavailable]
@@ -466,8 +472,6 @@ def build_current_bullpen_comparison(
             if limitation not in limitations:
                 limitations.append(limitation)
     return {
-        'capability': CAPABILITY,
-        'contract': CONTRACT,
         'status': STATUS_PARTIAL if unavailable or partial else STATUS_AVAILABLE,
         'reason_code': None,
         'represented_date': package_date,
@@ -478,4 +482,4 @@ def build_current_bullpen_comparison(
         'teams': {'team_a': identity_a, 'team_b': identity_b},
         'domains': domains,
         'limitations': limitations,
-    }, None
+    }

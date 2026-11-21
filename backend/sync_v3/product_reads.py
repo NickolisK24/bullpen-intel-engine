@@ -521,8 +521,13 @@ def _season_comparison(facts):
     values, versions = frozen_comparison_metrics(dict(metrics=rows, capabilities=capabilities))
     if not values:
         return None, ()
-    values['sample'] = dict(active_pitchers=len(facts['members']), relief_appearances=window['appearances'],
-                            start=window['start'], through=facts['through'])
+    members = len(facts['members'])
+    appearances = window['appearances']
+    sample = (f"{members} active {'pitcher' if members == 1 else 'pitchers'} · "
+              f"{appearances} relief {'appearance' if appearances == 1 else 'appearances'} · "
+              f"{window['start']} through {facts['through']}")
+    values['sample'] = dict(active_pitchers=members, relief_appearances=appearances,
+                            start=window['start'], through=facts['through'], value=sample)
     stamp = (DOMAINS['group_performance'][1], WINDOW_POLICY, window['start'], facts['through'], *versions)
     return values, stamp
 
@@ -577,6 +582,22 @@ def _league_changes(teams, citations, rotation_changes, generation, represented)
             result.append(change)
             per_team[team] = per_team.get(team, 0) + 1
     return result[:tonight.LEAGUE_CHANGES_TOTAL]
+
+
+def _historical_matchup(game, card, edition):
+    from services.current_bullpen_comparison import _team_identity, comparison_fields
+    from services.trusted_compare_authority import _scheduled_game_context
+
+    domains = {name: card[name] for name in ('team_state', 'rest', 'workload', 'rotation')}
+    domains.update(availability=card['historical_availability'], performance=card['performance'], role_rest=card['role_rest'])
+    teams = []
+    for side in (card['away'], card['home']):
+        team = dict(team_id=side['team_id'], team_name=side['name'], team_abbreviation=side['abbreviation'])
+        teams.append(_team_identity(team['team_id'], {'team': team}))
+    comparison = comparison_fields(domains, *teams, edition['data_through'], edition['availability_reference'])
+    return dict(comparison, scope='isolated_historical_core', current_serving_eligible=False,
+                generation=edition['generation'], selection_revision=edition['selection_revision'],
+                game=_scheduled_game_context(game, comparison, {}), publication_authority=None)
 
 
 def read_game_cards(connection, *, revision=None, game_pk=None):
@@ -775,6 +796,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         result['summary'] = tonight._summary(result['games'], sides, changes)
         if game_pk is not None:
             result['games'] = [game for game in result['games'] if game['game_pk'] == game_pk]
+            selected_game, = (row for row in games if row.game_pk == game_pk)
+            result['historical_comparison'] = _historical_matchup(selected_game, result['games'][0], result)
         if identity_status != 'mapped':
             result['limitations'].append(identity_status)
         return result

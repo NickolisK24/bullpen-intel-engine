@@ -106,6 +106,7 @@ def test_matchup_requires_a_shared_qualified_season_metric_and_matching_window()
     assert result['team_a']['k_bb_percent']['value'] == '25.0%'
     assert result['team_b']['active_bullpen_era']['value'] == '9.00'
     assert result['team_b']['sample']['relief_appearances'] == 36
+    assert result['team_b']['sample']['value'] == f'1 active pitcher · 36 relief appearances · 2024-01-01 through {THROUGH}'
     assert 'descriptive_hr9' not in result['team_a']
     assert _aligned_performance(full, side([]))['status'] == 'withheld'
     assert _aligned_performance(full, side([row]*36, through='2024-08-08'))['status'] == 'withheld'
