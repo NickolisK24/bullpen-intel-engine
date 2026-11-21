@@ -252,7 +252,18 @@ def test_board_roster_comparison_accepts_only_source_supported_display_values(mo
         with pytest.raises(ValueError):
             compare_board_rosters(None, corrupted)
     monkeypatch.setattr(depth, 'dated_roster_capture', lambda *args: None)
-    assert compare_board_rosters(None, board)['status'] == 'unverified'
+    with pytest.raises(ValueError, match='unique receipt'):
+        compare_board_rosters(None, board)
+    blank = dict(board, forty_man_status_labels={})
+    result = compare_board_rosters(None, blank)
+    assert result['missing_memberships'] == ['active', '40Man'] and result['receipts'] == {}
+
+    monkeypatch.setattr(depth, 'dated_roster_capture', lambda *args: capture(*args) if args[-1] == '40Man' else None)
+    result = compare_board_rosters(None, board)
+    assert result['status'] == 'unverified' and set(result['receipts']) == {'40Man'}
+    assert result['missing_memberships'] == ['active']
+    with pytest.raises(ValueError, match='wording'):
+        compare_board_rosters(None, dict(board, forty_man_status_labels={2: {'RM': 'Unconfirmed'}}))
 
     monkeypatch.setattr(depth, 'dated_roster_capture', lambda *args: capture(*args) if args[-1] == 'active' else None)
     with pytest.raises(ValueError, match='unique receipt'):

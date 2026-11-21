@@ -226,13 +226,14 @@ def compare_board_rosters(cur, board):
             raise ValueError('A withheld roster exposes membership facts')
         return dict(status='withheld', reason=evidence['reason'])
 
-    members, receipts = {}, {}
+    members, receipts, missing = {}, {}, []
     for kind in ('active', '40Man'):
         capture = dated_roster_capture(cur, board['generation'], evidence, kind)
         if capture is None:
             if kind == '40Man' and board['forty_man_status_labels']:
                 raise ValueError('Displayed roster status wording lacks a unique receipt')
-            return dict(status='unverified', reason='missing_or_ambiguous_roster_response', membership=kind)
+            missing.append(kind)
+            continue
         receipts[kind] = dict(sha256=sha256(encode_json(capture.body)).hexdigest(),
                               retrieved_at=capture.retrieved_at.isoformat())
         rows = {}
@@ -240,15 +241,21 @@ def compare_board_rosters(cur, board):
             if row['position']['code'] in ('1', 'Y') or _two_way_eligible(row):
                 rows.setdefault(row['person']['id'], []).append(row)
         members[kind] = rows
-    if (evidence['active_listed'] != len(members['active'])
-            or evidence['forty_man_listed'] != len(members['40Man'])):
-        raise ValueError('Board roster counts disagree with the dated MLB responses')
-    outside = members['40Man'].keys() - members['active'].keys()
-    if evidence['forty_man_listed_outside_active'] != sorted(outside):
+        count_field = 'active_listed' if kind == 'active' else 'forty_man_listed'
+        if evidence[count_field] != len(rows):
+            raise ValueError('Board roster counts disagree with the dated MLB responses')
+    outside = set(evidence['forty_man_listed_outside_active'])
+    if (sorted(outside) != evidence['forty_man_listed_outside_active']
+            or outside.intersection(members.get('active', {}))
+            or ('40Man' in members and not outside.issubset(members['40Man']))
+            or (not missing and outside != members['40Man'].keys() - members['active'].keys())):
         raise ValueError('Board forty-man membership comparison disagrees with the dated responses')
     names_withheld = 0
-    for group, ids, rows in [('active', members['active'].keys(), members['active']),
-                             ('forty_man_only', outside, members['40Man'])]:
+    for group, kind in [('active', 'active'), ('forty_man_only', '40Man')]:
+        if kind not in members:
+            continue
+        rows = members[kind]
+        ids = rows.keys() if kind == 'active' else outside
         listed = lists[group]
         if len(listed) != len(ids) or {item['mlb_id'] for item in listed} != ids:
             raise ValueError(f'{group} identities differ from the dated roster responses')
@@ -262,7 +269,7 @@ def compare_board_rosters(cur, board):
     labels = board['forty_man_status_labels']
     if set(labels) - outside or set(evidence['status_codes']) != outside:
         raise ValueError('Forty-man status belongs to the wrong membership group')
-    for player in outside:
+    for player in outside.intersection(members.get('40Man', {})):
         statuses = {}
         for row in members['40Man'][player]:
             raw = row.get('status') or {}
@@ -275,5 +282,8 @@ def compare_board_rosters(cur, board):
                     for desc in values if isinstance(desc, str) and desc.strip()}
         if labels.get(player, {}) != expected:
             raise ValueError('Displayed roster status wording disagrees with the source')
+    if missing:
+        return dict(status='unverified', reason='missing_or_ambiguous_roster_response',
+                    membership=missing[0], missing_memberships=missing, receipts=receipts)
     return dict(status='compared', receipts=receipts, active=len(members['active']),
                 forty_man_only=len(outside), names_withheld=names_withheld)
