@@ -10,6 +10,7 @@ from services import rotation_context as rotation_layer
 from services import role_stability_context as stability
 from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.editorial_league_baseline import league_concentration
+from sync_v3.discovery import pitcher_requests
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
@@ -223,6 +224,41 @@ def preview_trust(connection, digest):
     return _read_transaction(connection, _trust, None, digest)
 
 
+def _withheld_role_evidence(cur, digest, withheld):
+    """Explain roster-role refusals using only receipts pinned by the affected team snapshot."""
+    teams = [team for team, reason in withheld.items()
+             if reason in ('incomplete_roster_role_evidence', 'two_way_role_evidence_unresolved')]
+    if not teams:
+        return []
+    cur.execute("""SELECT h.mlb_id,h.id,h.semantic_digest,h.facts->>'reason',h.facts->'profile_status',
+                          h.facts->>'membership_date' FROM candidate.generation_inputs g
+                   JOIN candidate.workload_history h ON h.id=g.snapshot
+                   WHERE g.generation=%s AND h.subject='team' AND h.methodology=%s AND h.mlb_id=ANY(%s)
+                   ORDER BY h.mlb_id""", (digest, DOMAINS['readiness'][1], teams))
+    results = []
+    for team, snapshot, facts_digest, reason, profiles, membership in cur.fetchall():
+        if reason != withheld[team]:
+            continue
+        failures = {int(player): status for player, status in profiles.items() if status}
+        roster = f'/teams/{team}/roster'
+        requests = {(r.endpoint, r.parameters) for r in pitcher_requests(date.fromisoformat(membership), failures)}
+        requests.add((roster, (('date', membership), ('rosterType', 'active'))))
+        endpoints = sorted({endpoint for endpoint, _ in requests})
+        cur.execute("""SELECT f.endpoint,f.parameters,f.sha256,f.received_at,f.outcome FROM candidate.workload_history_sources hs
+                       JOIN candidate.fetches f ON f.id=hs.source_id WHERE hs.snapshot=%s AND f.endpoint=ANY(%s)
+                       ORDER BY f.endpoint,f.parameters,f.received_at,f.id""", (snapshot, endpoints))
+        receipts = []
+        for endpoint, params, sha, acquired, outcome in cur:
+            if (endpoint, tuple(sorted(params.items()))) not in requests:
+                continue
+            receipts.append(dict(endpoint=endpoint, parameters=params, sha256=sha, outcome=outcome,
+                                 acquired_at=acquired.isoformat() if sha else None))
+        results.append(dict(team_id=team, membership_date=membership, reason=reason, facts_digest=facts_digest,
+                            failed_profiles=[dict(mlb_player_id=player, reason=failures[player])
+                                             for player in sorted(failures)], receipts=receipts))
+    return results
+
+
 def _trust(cur, revision, preview):
     from sync_v3.generation import _inspect
 
@@ -258,6 +294,7 @@ def _trust(cur, revision, preview):
                 generation=digest, selection_revision=sequence,
                 represented=review['represented'], availability_reference=review['availability_reference'],
                 methods=methods, sources=sources,
+                withheld_role_evidence=_withheld_role_evidence(cur, digest, review['coverage']['withheld']),
                 coverage=review['coverage'], roster_comparison=review['roster_comparison'],
                 game_comparison=review['game_comparison'], comparison=review['core_candidate_review'],
                 changes=review['historical_changes'],

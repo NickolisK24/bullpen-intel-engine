@@ -1680,3 +1680,55 @@ def test_trust_reports_acquisition_only_for_retained_response_bodies():
             assert receipt['outcome'] == 'invalid'
             assert receipt['earliest_acquisition'] == receipt['latest_acquisition'] == later.isoformat()
             assert preview_trust(db, first) == failed
+
+
+def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path):
+    from contextlib import closing
+    from copy import deepcopy
+    from hashlib import sha256
+
+    from sync_v3.editorial_reads import preview_trust
+    from sync_v3.evidence import encode_json
+    from sync_v3.generation import freeze_generation
+    from sync_v3.intelligence_history import record_intelligence
+    from sync_v3.replay import run_fixture
+    from tests.sync_v3_league_fixture import league_fixtures
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day, fixtures = league_fixtures()
+    played = next(f for f in fixtures if f['baseball_date'] == str(day))
+    log = next(r for r in played['responses'] if r['endpoint'] == '/people/11101/stats'
+               and r['params']['stats'] == 'gameLog')
+    valid = log['body']
+    log['body'] = deepcopy(valid)
+    log['body']['stats'][0]['splits'][0]['stat']['gamesPitched'] = 0
+    refused_digest = sha256(encode_json(log['body'])).hexdigest()
+    path = tmp_path / 'roster-day.json'
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            for fixture in fixtures:
+                path.write_text(json.dumps(fixture))
+                run_fixture(db, path)
+            record_intelligence(db, 'readiness', 111, day)
+            before = freeze_generation(db, day)
+            refusal, = preview_trust(db, before)['withheld_role_evidence']
+            assert refusal['team_id'] == 111 and refusal['membership_date'] == str(day)
+            assert refusal['failed_profiles'] == [dict(mlb_player_id=11101, reason='invalid_single_game_stat')]
+            assert {r['endpoint'] for r in refusal['receipts']} == {'/teams/111/roster', '/people/11101/stats'}
+            log_receipt, = [r for r in refusal['receipts'] if r['parameters'].get('stats') == 'gameLog']
+            assert log_receipt['sha256'] == refused_digest
+            for receipt in played['responses']:
+                if receipt is not log:
+                    receipt['retrieved_at'] = played['observed_at']
+            log['body'] = valid
+            played['observed_at'] = f'{day + timedelta(days=3)}T12:00:00Z'
+            path.write_text(json.dumps(played))
+            run_fixture(db, path)
+            record_intelligence(db, 'readiness', 111, day)
+            after = freeze_generation(db, day)
+            assert before != after
+            assert preview_trust(db, after)['withheld_role_evidence'] == []
+            assert preview_trust(db, before)['withheld_role_evidence'] == [refusal]

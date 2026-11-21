@@ -566,3 +566,19 @@ The historical Pitcher Detail response exposes the game feed’s three coordinat
 In the disposable PostgreSQL 17.6 replay, the retained official boxscore and game feed qualified Erceg’s 22 pitches. Aggregating the Savant rows separately reproduced the chart for that outing: eight changeups (91.2 mph, 36.4%), seven four-seamers (98.8 mph, 31.8%), three sinkers (99.2 mph, 13.6%) and four sliders (86.2 mph, 18.2%). This covers one outing. The replay retained the August 7 transaction contradiction and Boston forty-man scope refusal.
 
 From `backend`, run `python -m pytest -q tests/test_sync_v3_pitch_measurements.py -k erceg` to repeat the pitch comparison offline. The fixture retains the joined pitch fields for this pitcher and game. It omits the rest of both responses.
+
+### Trace a club’s withheld roster-role evidence
+
+When selection refuses a candidate, the rehearsal’s existing `--build-generation --exercise-selection` output includes `historical_trust.withheld_role_evidence`. Each entry identifies the affected club, represented membership date, readiness facts digest, recorded pitcher-profile failure (if reached), and pinned source receipts. The acquisition time and payload SHA-256 identify the specific response used. A later corrected receipt belongs to a later generation.
+
+A disposable PostgreSQL 17.6 replay traced these three August 7, 2024 decisions:
+
+| Club | Official evidence | Effect on the candidate |
+| --- | --- | --- |
+| Cubs | Caleb Kilian (668873) was listed as a pitcher. His 2024 MLB pitching log had two entries, September 23 and 29, both after the represented date. | His season sample through August 7 could not establish his pitching role. |
+| Dodgers | The dated active roster listed Shohei Ohtani (660271) at position Y. | The two-way population guard withheld the club before classifying individual pitcher profiles. |
+| Mets | Edwin Díaz (621242) had a June 23 game-log entry for game 746862 with zero games pitched, pitches, batters faced and outs. The official boxscore also listed him with those zeroes. | The season-profile validator requires one credited game per included log row. It withheld the profile. An accepted rule for zero-game entries would need consistent handling in canonical finals, appearance counts, role populations and comparisons. |
+
+The three decisions cited seven distinct receipts. The June 23 boxscore was inspected separately as corroboration. It was outside the inputs to this focused candidate. The selector retained its authority to withhold the edition.
+
+[MLB June 23 boxscore](https://statsapi.mlb.com/api/v1/game/746862/boxscore) · [Dodgers August 7 active roster](https://statsapi.mlb.com/api/v1/teams/119/roster?date=2024-08-07&rosterType=active)
