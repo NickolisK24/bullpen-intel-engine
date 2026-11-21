@@ -82,6 +82,11 @@ try {
     await expect(reliefGame.locator('td').nth(1)).toHaveText('1')
     await expect(reliefGame.locator('td').nth(2)).toHaveText('5.0')
     await expect(reliefGame.locator('td').nth(3)).toHaveText('15')
+    const contributors = page.getByRole('list', { name: 'Leading seven-day pitch contributors' })
+    await expect(contributors.getByRole('listitem')).toHaveCount(1)
+    await expect(contributors).toContainText('Rehearsal Arm 11101')
+    await expect(contributors).toContainText('Active on 2026-07-29')
+    await expect(contributors).toContainText('15 pitches')
     const board = new URL(page.url()).pathname + new URL(page.url()).search
     await link('Rehearsal Arm 11101').click()
     await expect(heading('Rehearsal Arm 11101')).toBeVisible()

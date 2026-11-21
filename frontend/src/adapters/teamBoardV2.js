@@ -453,6 +453,30 @@ function readWorkloadContribution(item) {
   return { pitches: item.pitches, appearances: item.appearances, outs: item.outs }
 }
 
+export function readWorkloadConcentration(source) {
+  if (!source || !recentUsageRestStates.has(source.status) || !Array.isArray(source.contributors)
+    || !Array.isArray(source.top_3_contributors)) return null
+  const contributors = source.contributors.map(readWorkloadContributor)
+  const topThree = source.top_3_contributors.map(readWorkloadContributor)
+  if (contributors.some(item => !item) || topThree.some(item => !item)
+    || !Object.prototype.hasOwnProperty.call(source, 'top_3_share')
+    || !Object.prototype.hasOwnProperty.call(source, 'pitcher_count')
+    || (source.top_3_share !== null && !(typeof source.top_3_share === 'number' && source.top_3_share >= 0 && source.top_3_share <= 1))
+    || (source.pitcher_count !== null && !nonnegativeCount(source.pitcher_count))
+    || (source.status === 'complete' && (!nonnegativeCount(source.total_pitches) || !nonnegativeCount(source.pitcher_count)))) return null
+  return {
+    status: source.status,
+    reasonCodes: Array.isArray(source.reason_codes) ? [...source.reason_codes] : [],
+    totalPitches: source.total_pitches,
+    topThreeShare: source.top_3_share,
+    pitcherCount: source.pitcher_count,
+    contributors,
+    topThree,
+    activeCurrentContribution: source.active_current_contribution === null ? null : readWorkloadContribution(source.active_current_contribution),
+    offActiveContribution: source.off_active_contribution === null ? null : readWorkloadContribution(source.off_active_contribution),
+  }
+}
+
 export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
   if (!carrier || typeof carrier !== 'object' || Array.isArray(carrier)
     || carrier.contract !== TEAM_BOARD_FROZEN_WORKLOAD_CONTRACT
@@ -473,34 +497,9 @@ export function readTeamBoardFrozenWorkload(carrier, publicationIdentity) {
     return { days, label: `${days} Days`, start: window.start, through: window.through, ...metrics, trend }
   })
   if (windows.some(window => !window)) return null
-  const source = carrier.concentration_7_day
-  if (!source || !recentUsageRestStates.has(source.status) || !Array.isArray(source.contributors)
-    || !Array.isArray(source.top_3_contributors)) return null
-  const contributors = source.contributors.map(readWorkloadContributor)
-  const topThree = source.top_3_contributors.map(readWorkloadContributor)
-  if (contributors.some(item => !item) || topThree.some(item => !item)
-    || !Object.prototype.hasOwnProperty.call(source, 'top_3_share')
-    || !Object.prototype.hasOwnProperty.call(source, 'pitcher_count')
-    || (source.top_3_share !== null && !(typeof source.top_3_share === 'number' && source.top_3_share >= 0 && source.top_3_share <= 1))
-    || (source.pitcher_count !== null && !nonnegativeCount(source.pitcher_count))
-    || (source.status === 'complete' && (!nonnegativeCount(source.total_pitches) || !nonnegativeCount(source.pitcher_count)))) return null
-  return {
-    contract: carrier.contract,
-    dataThrough: carrier.data_through,
-    windows,
-    trendDate,
-    concentration: {
-      status: source.status,
-      reasonCodes: Array.isArray(source.reason_codes) ? [...source.reason_codes] : [],
-      totalPitches: source.total_pitches,
-      topThreeShare: source.top_3_share,
-      pitcherCount: source.pitcher_count,
-      contributors,
-      topThree,
-      activeCurrentContribution: source.active_current_contribution === null ? null : readWorkloadContribution(source.active_current_contribution),
-      offActiveContribution: source.off_active_contribution === null ? null : readWorkloadContribution(source.off_active_contribution),
-    },
-  }
+  const concentration = readWorkloadConcentration(carrier.concentration_7_day)
+  if (!concentration) return null
+  return { contract: carrier.contract, dataThrough: carrier.data_through, windows, trendDate, concentration }
 }
 
 export function readTeamBoardFrozenPerformance(read, publicationIdentity) {

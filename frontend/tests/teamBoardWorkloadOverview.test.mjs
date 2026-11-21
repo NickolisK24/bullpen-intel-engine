@@ -5,11 +5,11 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { frozenTeamWorkloadFixture } from './fixtures/teamBoardFrozenWorkload.mjs'
-import { readTeamBoardFrozenWorkload } from '../src/adapters/teamBoardV2.js'
+import { readTeamBoardFrozenWorkload, readWorkloadConcentration } from '../src/adapters/teamBoardV2.js'
 
 const server = await createServer({ root: process.cwd(), server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
 after(async () => server.close())
-const { default: TeamBoardWorkloadOverview } = await server.ssrLoadModule('/src/components/bullpen/board/TeamBoardWorkloadOverview.jsx')
+const { default: TeamBoardWorkloadOverview, PitchContributors } = await server.ssrLoadModule('/src/components/bullpen/board/TeamBoardWorkloadOverview.jsx')
 const identity = { represented_date: '2026-09-02', publication_authority_contract: 'trusted_dashboard_publication_v1' }
 const render = carrier => renderToStaticMarkup(React.createElement(TeamBoardWorkloadOverview, {
   read: { frozenTeamWorkload: readTeamBoardFrozenWorkload(carrier, identity) },
@@ -54,6 +54,21 @@ test('concentration and leading contributors use backend order, share, and activ
   assert.ok(html.includes('Recent off-active contributors:'))
   assert.ok(html.includes('70 pitches'))
   assert.ok(html.includes('18 pitches'))
+})
+
+test('historical contributors retain their membership on the represented date', () => {
+  const source = frozenTeamWorkloadFixture().concentration_7_day
+  const show = raw => renderToStaticMarkup(React.createElement(PitchContributors, {
+    concentration: readWorkloadConcentration(raw), represented: '2026-09-02',
+  }))
+  const html = show(source)
+  for (const fact of ['Active on 2026-09-02', 'Outside the dated active bullpen', '80% of 7-day pitches', 'Former Reliever']) {
+    assert.ok(html.includes(fact), fact)
+  }
+  assert.equal(html.includes('Current active'), false)
+  const invalid = show({ ...source, top_3_share: 1.5 })
+  assert.ok(invalid.includes('unavailable for this edition'))
+  assert.equal(invalid.includes('Former Reliever'), false)
 })
 
 test('an unavailable concentration does not invent a share, contributors, or trend', () => {

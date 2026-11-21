@@ -42,6 +42,45 @@ function Contribution({ label, value }) {
   )
 }
 
+export function PitchContributors({ concentration, represented }) {
+  const activeLabel = represented ? `Active on ${represented}` : 'Current active'
+  const otherLabel = represented ? 'Outside the dated active bullpen' : 'Off-active'
+  const unavailable = represented ? 'is unavailable for this edition' : 'is not published'
+  return (
+    <div className="mt-panel border-t border-line-subtle pt-panel">
+      <h3 className="type-overline text-brand-gold">Seven-day pitch contributors</h3>
+      {concentration?.status === 'complete' ? (
+        <>
+          {concentration.topThreeShare !== null && (
+            <p className="mt-meta font-board text-board-body font-semibold text-text-primary">
+              Top 3 arms account for {Math.round(concentration.topThreeShare * 100)}% of 7-day pitches.
+            </p>
+          )}
+          <p className="type-compact mt-meta text-text-secondary">
+            {concentration.pitcherCount} {concentration.pitcherCount === 1 ? 'pitcher contributed' : 'pitchers contributed'} relief workload in this window.
+          </p>
+          {concentration.topThree.length > 0 && (
+            <ol className="mt-row divide-y divide-line-subtle" aria-label="Leading seven-day pitch contributors">
+              {concentration.topThree.map(item => (
+                <li key={item.pitcherId} className="flex min-w-0 items-baseline justify-between gap-row py-row type-compact">
+                  <span className="min-w-0 text-text-primary">{item.name} <span className="text-text-tertiary">· {item.currentActive ? activeLabel : otherLabel}</span></span>
+                  <span className="shrink-0 font-semibold tabular-nums text-text-primary">{item.pitches} pitches</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className="mt-row space-y-1 border-t border-line-subtle pt-row">
+            <Contribution label={represented ? `Active bullpen on ${represented}` : 'Current active bullpen'} value={concentration.activeCurrentContribution} />
+            {concentration.offActiveContribution?.appearances > 0 && <Contribution label={represented ? 'Other contributors for this club' : 'Recent off-active contributors'} value={concentration.offActiveContribution} />}
+          </div>
+        </>
+      ) : (
+        <p className="type-compact mt-meta text-text-tertiary">Seven-day concentration {concentration?.status === 'partial' ? 'is incomplete' : unavailable}.</p>
+      )}
+    </div>
+  )
+}
+
 export default function TeamBoardWorkloadOverview({ read, loading = false, error = null, onRetry }) {
   if (loading) return <WorkloadOverviewSkeleton />
   const workload = read?.frozenTeamWorkload
@@ -91,37 +130,7 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
             </table>
           </div>
           <p className="type-compact mt-meta text-text-tertiary">Baseball-date windows through {workload.dataThrough}. {workload.trendDate ? `Changes compare each window with the same rolling window through ${workload.trendDate}.` : 'No comparable prior workload trend is published.'}</p>
-          <div className="mt-panel border-t border-line-subtle pt-panel">
-            <h3 className="type-overline text-brand-gold">Seven-day pitch contributors</h3>
-            {concentration?.status === 'complete' ? (
-              <>
-                {concentration.topThreeShare !== null && (
-                  <p className="mt-meta font-board text-board-body font-semibold text-text-primary">
-                    Top 3 arms account for {Math.round(concentration.topThreeShare * 100)}% of 7-day pitches.
-                  </p>
-                )}
-                <p className="type-compact mt-meta text-text-secondary">
-                  {concentration.pitcherCount} {concentration.pitcherCount === 1 ? 'pitcher contributed' : 'pitchers contributed'} relief workload in this window.
-                </p>
-                {concentration.topThree.length > 0 && (
-                  <ol className="mt-row divide-y divide-line-subtle" aria-label="Leading seven-day pitch contributors">
-                    {concentration.topThree.map(item => (
-                      <li key={item.pitcherId} className="flex min-w-0 items-baseline justify-between gap-row py-row type-compact">
-                        <span className="min-w-0 text-text-primary">{item.name} <span className="text-text-tertiary">· {item.currentActive ? 'Current active' : 'Off-active'}</span></span>
-                        <span className="shrink-0 font-semibold tabular-nums text-text-primary">{item.pitches} pitches</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-                <div className="mt-row space-y-1 border-t border-line-subtle pt-row">
-                  <Contribution label="Current active bullpen" value={concentration.activeCurrentContribution} />
-                  {concentration.offActiveContribution?.appearances > 0 && <Contribution label="Recent off-active contributors" value={concentration.offActiveContribution} />}
-                </div>
-              </>
-            ) : (
-              <p className="type-compact mt-meta text-text-tertiary">Seven-day concentration {concentration?.status === 'partial' ? 'is incomplete' : 'is not published'}.</p>
-            )}
-          </div>
+          <PitchContributors concentration={concentration} />
         </>
       )}
     </section>

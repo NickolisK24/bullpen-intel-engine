@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../../hooks/useFetch'
 import { getRehearsalTeamBoard } from '../../../utils/api'
 import { buildRehearsalPitcherHref } from '../../../utils/evidenceLinks'
+import { readWorkloadConcentration } from '../../../adapters/teamBoardV2'
+import { PitchContributors } from './TeamBoardWorkloadOverview'
 import HistoricalChanges from '../../history/HistoricalChanges'
 import { ErrorState, LoadingPane } from '../../UI'
 
@@ -106,6 +108,8 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
             {['appearances', 'pitches', 'outs'].map(key => <td key={key} className="p-2">{metric(window[key])}</td>)}
           </tr>)}</tbody>
       </table>
+      <PitchContributors concentration={readWorkloadConcentration(data.competitive_workload.concentration_7_day)}
+        represented={data.data_through} />
     </section>
     <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
