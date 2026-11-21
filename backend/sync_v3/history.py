@@ -94,14 +94,19 @@ def record_workload(connection, subject, mlb_id, through):
 def _append(cur, subject, mlb_id, through):
     cur.execute('SELECT pg_advisory_xact_lock(hashtext(%s),%s)', (subject, mlb_id))
     facts, sources = _sample(cur, subject, mlb_id, through)
+    return _store(cur, subject, mlb_id, through, METHODOLOGY, facts, sources)
+
+
+def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=()):
     cur.execute('''SELECT f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
                    FROM candidate.fetches f LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.id=ANY(%s)''', (sources,))
     # Observation IDs depend on load order. Stable request scopes and content digests do not.
     inputs = sorted({encode_json(row) for row in cur})
-    input_hash = sha256(b'\n'.join(inputs)).hexdigest()
-    content_hash = sha256(encode_json([subject, mlb_id, through.isoformat(), METHODOLOGY, facts])).hexdigest()
-    scope = (subject, mlb_id, through, METHODOLOGY)
+    request_descriptors = [encode_json(['request', endpoint, dict(params)]) for endpoint, params in sorted(requests)]
+    input_hash = sha256(b'\n'.join(inputs + request_descriptors)).hexdigest()
+    content_hash = sha256(encode_json([subject, mlb_id, through.isoformat(), methodology, facts])).hexdigest()
+    scope = (subject, mlb_id, through, methodology)
     cur.execute("""SELECT id,revision,semantic_digest,input_digest FROM candidate.workload_history
                    WHERE (subject,mlb_id,represented,methodology)=(%s,%s,%s,%s)
                    ORDER BY revision DESC LIMIT 1""", scope)
@@ -116,6 +121,8 @@ def _append(cur, subject, mlb_id, through):
     identifier = cur.fetchone()[0]
     cur.executemany('INSERT INTO candidate.workload_history_sources VALUES (%s,%s)',
                     [(identifier, source) for source in sources])
+    cur.executemany('INSERT INTO candidate.history_requests VALUES (%s,%s,%s)',
+                    [(identifier, endpoint, Json(dict(params))) for endpoint, params in requests])
     return identifier, revision, content_hash
 
 

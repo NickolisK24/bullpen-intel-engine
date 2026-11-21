@@ -9,6 +9,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 from services.schedule_absence import is_unplayed_terminal_schedule_row
 from services.schedule_context import LOOKAHEAD_DAYS, LOOKBACK_DAYS, build_team_schedule_context
 from services.schedule_ingestion import _parse_game
+from sync_v3.dependencies import consult
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import latest_qualified_source, replay
 
@@ -51,6 +52,7 @@ def missing_listings(cur, params, present, *, game_type=None):
             continue
         row = _parse_game(game)
         if not is_unplayed_terminal_schedule_row(row['status_state'], row['status_code']):
+            consult(cur, '/schedule', params, source)
             for side in game['teams'].values():
                 missing.setdefault(side['team']['id'], set()).add(source)
     return missing

@@ -7,6 +7,7 @@ from psycopg2.extras import Json
 from services.mlb_api import mlb_client
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import roster_entry_player_id
+from sync_v3.evidence import latest_source_status
 from sync_v3.canonical import Refused, accept
 from sync_v3.roster_scope import classify_roster_team
 
@@ -75,12 +76,7 @@ def observe(cur, source_id, capture):
 
 def roster_on(cur, team, kind, represented):
     """Return the accepted dated roster and its source, or withhold the population."""
-    cur.execute("""SELECT f.id,f.outcome,r.source_id FROM candidate.fetches f
-                   LEFT JOIN candidate.refusals r ON r.source_id=f.id
-                   WHERE f.endpoint=%s AND f.parameters=%s
-                   ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
-                (f'/teams/{team}/roster', Json({'date':represented.isoformat(), 'rosterType':kind})))
-    latest = cur.fetchone()
+    latest = latest_source_status(cur, f'/teams/{team}/roster', {'date': represented.isoformat(), 'rosterType': kind})
     if not latest or latest[1] != 'received' or latest[2] is not None:
         return None
     cur.execute("""SELECT r.facts FROM candidate.confirmations c JOIN candidate.revisions r

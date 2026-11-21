@@ -8,6 +8,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 from services.pitcher_role import ROLE_WINDOW_DAYS, classify_usage_role
 from services.sync import _extract_leverage_index
 from services.team_board_public_deployment_context import _recorded_li
+from sync_v3.dependencies import consult
 from sync_v3.discovery import pitcher_requests
 from sync_v3.evidence import latest_qualified_source, replay
 from utils.innings import parse_mlb_innings_to_outs
@@ -76,7 +77,9 @@ def _observed_role(rows, through):
 
 def _check_retained_finals(cur, player, rows):
     endpoints = [f"/game/{r['pk']}/boxscore" for r in rows]
-    cur.execute("""SELECT DISTINCT ON (f.endpoint) f.endpoint, f.outcome, r.facts
+    for endpoint in endpoints:
+        consult(cur, endpoint, {})
+    cur.execute("""SELECT DISTINCT ON (f.endpoint) f.endpoint, f.outcome, r.facts, f.id, c.context_id
                    FROM candidate.fetches f LEFT JOIN candidate.confirmations c
                      ON c.source_id=f.id AND c.domain='final'
                    LEFT JOIN candidate.revisions r ON r.id=c.revision_id
@@ -84,7 +87,8 @@ def _check_retained_finals(cur, player, rows):
                    ORDER BY f.endpoint, f.received_at DESC, f.id DESC""", (endpoints,))
     by_game = {r['pk']: r for r in rows}
     verified = []
-    for endpoint, outcome, lines in cur:
+    for endpoint, outcome, lines, source_id, context_id in cur:
+        consult(cur, endpoint, {}, source_id, context_id)
         pk = int(endpoint.split('/')[2])
         expected = by_game[pk]
         if outcome != 'received' or lines is None:

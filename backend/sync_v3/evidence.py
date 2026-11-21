@@ -6,6 +6,7 @@ import json
 
 from psycopg2.extras import Json
 
+from sync_v3.dependencies import consult
 from sync_v3.discovery import Request
 from sync_v3.queue import settle
 from services.mlb_api import MlbApiError
@@ -67,6 +68,7 @@ def replay(cur, observation_id):
     if row is None:
         raise ValueError('Replay requires a received observation')
     endpoint, params, acquired, encoded, stored_digest = row
+    consult(cur, endpoint, params, observation_id)
     if sha256(encoded).hexdigest() != stored_digest:
         raise ValueError('Payload digest mismatch')
     return inspect_response(Request(endpoint, tuple(sorted(params.items())), 0), json.loads(bytes(encoded)), acquired)
@@ -77,7 +79,9 @@ def latest_source_status(cur, endpoint, params):
                    LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.endpoint=%s AND f.parameters=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
                 (endpoint, Json(params)))
-    return cur.fetchone()
+    row = cur.fetchone()
+    consult(cur, endpoint, params, row[0] if row else None)
+    return row
 
 
 def latest_qualified_source(cur, endpoint, params):

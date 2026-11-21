@@ -115,9 +115,15 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
             if snapshot:
                 import json
                 from sync_v3.history import record_workload
-                subject, mlb_id = ('team', team) if team is not None else ('pitcher', pitcher)
-                result = record_workload(worker, subject, mlb_id, through)
-                if record_workload(worker, subject, mlb_id, through) != result:
+                from sync_v3.readiness_history import record_readiness
+                if readiness_team is not None:
+                    subject, mlb_id = 'readiness', readiness_team
+                    builder, scope = record_readiness, (mlb_id, through)
+                else:
+                    subject, mlb_id = ('team', team) if team is not None else ('pitcher', pitcher)
+                    builder, scope = record_workload, (subject, mlb_id, through)
+                result = builder(worker, *scope)
+                if builder(worker, *scope) != result:
                     raise RuntimeError('Repeated workload snapshot diverged')
                 print(json.dumps(dict(subject=subject, mlb_id=mlb_id, through=through.isoformat(),
                                       snapshot_id=result[0], revision=result[1], semantic_digest=result[2])))
@@ -223,8 +229,8 @@ if __name__ == '__main__':
     has_subject = args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team,
     ))
-    if args.snapshot and args.team is None and args.pitcher is None:
-        parser.error('--snapshot requires --team or --pitcher')
+    if args.snapshot and args.team is None and args.pitcher is None and args.readiness_team is None:
+        parser.error('--snapshot requires --team, --pitcher or --readiness-team')
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,

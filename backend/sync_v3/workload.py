@@ -3,8 +3,6 @@
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from psycopg2.extras import Json
-
 from services.game_finality import classify_status
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.game_shape import (
@@ -18,7 +16,8 @@ from services.public_team_relief_work import (
 )
 from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests
-from sync_v3.evidence import replay
+from sync_v3.dependencies import consult
+from sync_v3.evidence import latest_source_status, replay
 from sync_v3.rosters import dated_pitcher_sources, roster_on
 from sync_v3.schedule_context import missing_listings
 
@@ -65,6 +64,7 @@ def _game_workload(cur, game, day, schedule_source):
                    WHERE f.endpoint=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
                 (str(pk),schedule_source,f'/game/{pk}/boxscore'))
     final = cur.fetchone()
+    consult(cur, f'/game/{pk}/boxscore', {}, final[1] if final else None, final[2] if final else None)
     if not final or final[0] is None or final[3] != 'received' or final[4] != final[5]:
         return None, 'missing_compatible_final'
     return (final[0], (final[1], final[2])), None
@@ -72,12 +72,7 @@ def _game_workload(cur, game, day, schedule_source):
 
 def _day_by_scope(cur, day, scopes):
     """Load a final once and apply its coverage to each affected scope."""
-    cur.execute("""SELECT f.id,f.outcome,b.source_id FROM candidate.fetches f
-                   LEFT JOIN candidate.refusals b ON b.source_id=f.id
-                   WHERE f.endpoint='/schedule' AND f.parameters=%s
-                   ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
-                (Json(calendar_requests(day)[0].params()),))
-    row = cur.fetchone()
+    row = latest_source_status(cur, '/schedule', calendar_requests(day)[0].params())
     if row is None or row[1] != 'received' or row[2] is not None:
         return {scope: (None, 'missing_complete_schedule') for scope in scopes}
     schedule = replay(cur, row[0])

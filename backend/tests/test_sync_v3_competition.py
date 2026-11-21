@@ -119,3 +119,59 @@ def test_readiness_comparison_does_not_certify_a_withheld_or_misclassified_arm()
                                                 'inputs': {'freshness_state': 'fresh', 'pitches_yesterday': 100}}}
     with pytest.raises(ValueError, match='arm status for 7'):
         compare_readiness(report)
+
+
+def test_snapshot_recovers_missing_calendar_and_preserves_rejected_roster():
+    from contextlib import closing
+    from datetime import datetime, timedelta, timezone
+    import os
+    from sync_v3 import evidence, queue
+    from sync_v3.cycle import enqueue_requests, plan_children
+    from sync_v3.discovery import roster_requests
+    from sync_v3.readiness_history import record_readiness, rebuild_readiness
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    through = date(2024, 9, 29)
+    epoch = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            def ingest(req, body, offset):
+                at = epoch + timedelta(days=offset)
+                with db, db.cursor() as cur:
+                    enqueue_requests(cur, [req], at, budget='current', day=through)
+                    claimed = queue.claim(cur, at)
+                return evidence.execute(db, claimed, lambda *a, **kw: body, clock=lambda: at,
+                                        on_received=lambda cur, oid, acq: plan_children(cur, oid, acq, 'current', at, through))
+
+            original = record_readiness(db, 111, through)
+            calendar = season()
+            next_game = game(93, 111, 147, '2024-09-30')
+            calendar['dates'].append({'date': '2024-09-30', 'totalGames': 1, 'games': [next_game]})
+            calendar['totalGames'] += 1
+            source, status = ingest(competition_calendar_request(2024), calendar, 0)
+            assert status == 'received'
+            successor, = rebuild_readiness(db, source)
+            assert successor[1] == 2 and successor[2] != original[2]
+            req = next(r for r in roster_requests(through, [111]) if r.params()['rosterType'] == 'active')
+            refused, status = ingest(req, {}, 1)
+            assert status == 'invalid'
+            latest, = rebuild_readiness(db, refused)
+            # A missing roster and a malformed one withhold the same baseball claim.
+            # Their independently retained evidence differs.
+            assert latest[1] == 3 and latest[2] == successor[2]
+            assert record_readiness(db, 111, through) == latest
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT predecessor,facts->>'reason',facts->>'current_serving_eligible'
+                               FROM candidate.workload_history ORDER BY revision""")
+                rows = cur.fetchall()
+                assert rows[0][0] is None and rows[1][0] == original[0] and rows[2][0] == successor[0]
+                assert rows[1][1] == rows[2][1] == 'missing_dated_active_roster'
+                assert {row[2] for row in rows} == {'false'}
+                cur.execute('SELECT 1 FROM candidate.workload_history_sources WHERE snapshot=%s AND source_id=%s',
+                            (latest[0], refused))
+                assert cur.fetchone() == (1,)

@@ -19,3 +19,12 @@ CREATE TABLE candidate.workload_history_sources (
 );
 GRANT SELECT, INSERT ON candidate.workload_history, candidate.workload_history_sources TO sync_v3_worker;
 CREATE INDEX workload_history_by_date ON candidate.workload_history(methodology, represented);
+
+CREATE TABLE candidate.history_requests (
+    snapshot bigint NOT NULL REFERENCES candidate.workload_history(id),
+    endpoint text NOT NULL,
+    parameters jsonb NOT NULL,
+    PRIMARY KEY (snapshot, endpoint, parameters)
+);
+CREATE INDEX history_requests_by_source ON candidate.history_requests(endpoint, parameters, snapshot);
+GRANT SELECT, INSERT ON candidate.history_requests TO sync_v3_worker;
