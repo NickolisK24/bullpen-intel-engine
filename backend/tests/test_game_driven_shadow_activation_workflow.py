@@ -378,9 +378,15 @@ def test_no_foundation_3c_workflow_was_recreated():
 # The sole remaining scheduled workflow after the 2026 seasonal intraday repair
 # retirement. Separating a job must not add another scheduled lane outside this
 # workflow's concurrency group where it could overlap a production sync.
+#
+# WP-0.2 adds one scheduled workflow that is not a sync lane: the external
+# production health check. It reads only public API endpoints and holds no
+# database credential, so it cannot overlap or race a production sync.
 EXISTING_SCHEDULED_WORKFLOWS = (
     'baseballos-sync.yml',
+    'production-health.yml',
 )
+CREDENTIAL_FREE_SCHEDULED_WORKFLOWS = ('production-health.yml',)
 
 
 def test_no_scheduled_workflow_was_added():
@@ -391,6 +397,13 @@ def test_no_scheduled_workflow_was_added():
         if isinstance(triggers, dict) and 'schedule' in triggers:
             scheduled.append(path.name)
     assert tuple(scheduled) == EXISTING_SCHEDULED_WORKFLOWS
+
+
+def test_the_only_other_scheduled_workflow_holds_no_database_credential():
+    for name in CREDENTIAL_FREE_SCHEDULED_WORKFLOWS:
+        text = (REPO_ROOT / '.github/workflows' / name).read_text(encoding='utf-8')
+        assert 'DATABASE_URL' not in text
+        assert 'contents: write' not in text
 
 
 def test_the_observer_did_not_become_its_own_scheduled_workflow():
