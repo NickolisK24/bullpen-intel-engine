@@ -102,6 +102,18 @@ WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal ORDER BY 1,2 
 
 The visible PostgreSQL privilege catalog listed `postgres` and `service_role` with relation-level write grants on all 89 public tables. This describes potential access subject to effective role, RLS and triggers. It cannot establish which deployments hold a credential or whether an operator used it. `to_regclass('cron.job')` returned NULL. The repository's `frontend/vercel.json` contains delivery configuration and declares no cron. These observations narrow the scheduler inventory without establishing that an external caller is impossible.
 
+## Writer attribution follow-up
+
+On November 21 the operator reported that out-of-band writer use is unknown. A read-only check of the preceding 24 hours (November 20 02:45 to November 21 02:45 UTC) found 358 PostgreSQL log entries. The application label was empty on 334, Supavisor on 22 and PostgREST on two. Of 2,904 pooler log entries, 2,194 identified Supavisor and 710 had no application label. The 48 edge entries included zero POST, PUT, PATCH or DELETE requests to a path starting with `/rest/v1/`. These are counts of log entries. No statement text, client addresses or credential values were exported.
+
+The window includes a known daily publication. None of the 358 PostgreSQL log entries had an INSERT, UPDATE or DELETE command tag. This log stream cannot enumerate even the known publication writes; extending the same query cannot establish the absence of other writers. A point-in-time session inventory likewise showed infrastructure labels and could not attribute past writers. Retain this as an unresolved authority question.
+
+## Historical reuse evidence
+
+The historical [SP-00 census](https://github.com/NickolisK24/bullpen-intel-engine/blob/617ab650febc1b6a8567fba264150353b2f4b3c4/docs/sync-pipeline/SP-00_BULLPEN_DATA_CENSUS_AND_ACQUISITION_CONTRACT.md) inventories source grain, fields and potential coverage as of September 5. Its claims about current storage and roster support require reconciliation with the newer schema and primary roster input writer above.
+
+The [CR-04 decision](https://github.com/NickolisK24/bullpen-intel-engine/blob/617ab650febc1b6a8567fba264150353b2f4b3c4/docs/sync-pipeline/CR-04_INTEGRATION_DEPLOYMENT_ATOMIC_PUBLICATION_CUTOVER.md) records an actual withheld reader cutover. Historical atomic publication 1 lacked public Team Board v2, What Changed and pitcher-current artifacts. Preserve this exact refusal case in the replacement comparison set. The historical [full-chain test](https://github.com/NickolisK24/bullpen-intel-engine/blob/617ab650febc1b6a8567fba264150353b2f4b3c4/backend/tests/test_sync_pipeline_full_chain.py) supplies a fixture domain executor for read models. It exercises orchestration; product parity requires the real current builders.
+
 ## Operator and workflow index
 
 All versioned GitHub workflows at the baseline. Links include their input confirmations, exact commands, conditions, secrets by name, and allowed modes. CI uses disposable services. Distribution can write generated files. Other jobs derive authority from their entry point and inputs.
