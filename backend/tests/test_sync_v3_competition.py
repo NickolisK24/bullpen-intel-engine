@@ -232,3 +232,59 @@ def test_core_candidate_review_distinguishes_withholding_and_completed_compariso
     offseason = dict(coverage, readiness_status='all_clubs_season_complete', compared=[], missing_snapshot_count=30)
     assert review_core_candidate(offseason, roster, games)['status'] == 'season_complete_withholding'
     assert review_core_candidate(dict(offseason, stale_inputs=[1]), roster, games)['status'] == 'withheld'
+
+
+def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
+    from contextlib import closing
+    from pathlib import Path
+    import json
+    import os
+
+    from sync_v3.appearance_reads import postseason_appearances
+    from sync_v3.generation import freeze_generation
+    from sync_v3.intelligence_history import record_intelligence
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    bodies = {r['endpoint']: r['body'] for r in fixture['responses']}
+    final = bodies['/schedule']['dates'][0]['games'][0]
+    final.update(gameType='W', season=str(day.year), gamesInSeries=7)
+    for side, winner in [('home', True), ('away', False)]:
+        final['teams'][side].update(isWinner=winner, score=2 if winner else 1)
+    box = bodies['/game/12345/boxscore']
+    box['teams']['home']['players']['ID100']['stats']['pitching']['wins'] = 1
+    regular = season()['dates'][0]
+    regular['date'] = '2026-07-28'
+    for listing in regular['games']:
+        listing.update(officialDate=regular['date'], season=str(day.year))
+    calendar = dict(totalGames=16, dates=[regular, dict(date=str(day), totalGames=1, games=[final])])
+    path = tmp_path / 'playoff.json'
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            def freeze():
+                path.write_text(json.dumps(fixture))
+                run_fixture(db, path)
+                record_intelligence(db, 'readiness', 147, day)
+                return freeze_generation(db, day)
+
+            before = freeze()
+            fixture['competition'] = True
+            fixture['responses'].append(dict(endpoint='/schedule', params=competition_calendar_request(day.year).params(),
+                                              body=calendar))
+            after = freeze()
+            with db, db.cursor() as cur:
+                cur.execute('SET TRANSACTION READ ONLY')
+                assert postseason_appearances(cur, before, 'team', 147, day, 147)['appearances'] == []
+                club = postseason_appearances(cur, after, 'team', 147, day, 147)
+                assert club['status'] == 'verified_games_only'
+                reliever, = club['appearances']
+                assert (reliever['game_pk'], reliever['mlb_id']) == (12345, 102)
+                assert len(reliever['boxscore_digests'][0]) == 64
+                starter, = postseason_appearances(cur, after, 'pitcher', 100, day, 147)['appearances']
+                assert starter['game_pk'] == reliever['game_pk'] and starter['appearance_team_id'] == 147

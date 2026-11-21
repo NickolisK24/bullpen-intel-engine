@@ -7,7 +7,7 @@ from services.team_state_public_vocabulary import (
     INTERNAL_TO_PUBLIC_STATE, PUBLIC_STATE_LABELS, TEAM_STATE_READINESS_UNAVAILABLE,
     public_team_state, team_state_unavailable,
 )
-from sync_v3.appearance_reads import appearance_ledger
+from sync_v3.appearance_reads import appearance_ledger, postseason_appearances
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -870,7 +870,9 @@ def read_team_board(connection, team, *, revision=None):
                              read=arm['read'], reason=arm['reason'],
                              **_historical_arm_display(listing['data_through'])))
         from datetime import date
-        result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, date.fromisoformat(listing['data_through']))
+        through = date.fromisoformat(listing['data_through'])
+        result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
+        result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))
     return _read_transaction(connection, board)
@@ -900,6 +902,7 @@ def read_pitcher(connection, public_id, *, revision=None):
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
             return dict(result, status=kind, identity=player, sections={})
         depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
+        result['postseason_work'] = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, player['team_id'])
         result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         if (player.get('roster_observation') or {}).get('membership') == 'active':
