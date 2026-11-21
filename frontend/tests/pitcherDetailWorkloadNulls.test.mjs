@@ -288,3 +288,37 @@ test('a historical pitcher handoff must agree on edition, public ID and MLB iden
     assert.ok(!matchesPitcherEdition({ ...page, ...bad }, 8997, 3, generation))
   }
 })
+
+test('historical seven-day counts use the dated regular-season bullpen window', () => {
+  const data = { ...detailData(99), scope: 'isolated_historical_core', data_through: '2017-08-28' }
+  const window = { through: data.data_through, first: '2017-08-22', player_observed: true, gaps: {},
+    facts: { appearances: 2, pitches_thrown: 37 } }
+  data.sections = { workload: { value: { windows: { '7': window } } } }
+  const count = label => currentStateFactValue(renderData(data), label)
+  assert.match(renderData(data), /Seven-day totals cover regular-season bullpen work, including qualifying openers/)
+  assert.equal(count('Appearances / 7d'), '2')
+  assert.equal(count('Pitches / 7d'), '37')
+  window.facts = { appearances: 1, pitches_thrown: null }
+  assert.equal(count('Appearances / 7d'), '1')
+  assert.equal(count('Pitches / 7d'), '—')
+  window.facts = { appearances: 0, pitches_thrown: 0 }
+  assert.equal(count('Pitches / 7d'), '0')
+  for (const replacement of [{ ...window, gaps: { '2017-08-24': 'missing_compatible_final' } },
+    { ...window, through: '2017-08-27' }, { ...window, player_observed: false }, null]) {
+    data.sections.workload.value.windows['7'] = replacement
+    assert.equal(count('Appearances / 7d'), '—')
+    assert.equal(count('Pitches / 7d'), '—')
+  }
+})
+
+
+test('historical pitcher returns to the same club and edition', () => {
+  const generation = 'b'.repeat(64)
+  const data = { ...detailData(0), scope: 'isolated_historical_core', selection_revision: 2, generation,
+    identity: { team_id: 137 }, pitcher: { team_id: 137, full_name: 'Albert Suárez', team_name: 'San Francisco Giants' } }
+  const href = 'href="/bullpen?view=board&amp;team=137&amp;rehearsalRevision=2&amp;rehearsalGeneration=' + generation + '"'
+  assert.ok(renderData(data).includes(href))
+  for (const delta of [{ identity: { team_id: 111 } }, { identity: { team_id: null } }, { generation: null }]) {
+    assert.ok(!renderData({ ...data, ...delta }).includes('Open San Francisco Giants Team Board'))
+  }
+})

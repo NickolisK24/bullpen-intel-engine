@@ -78,6 +78,12 @@ try {
     const generation = new URL(page.url()).searchParams.get('rehearsalGeneration')
     assert.match(generation, /^[a-f0-9]{64}$/)
     const board = new URL(page.url()).pathname + new URL(page.url()).search
+    await link('Rehearsal Arm 11101').click()
+    await expect(heading('Rehearsal Arm 11101')).toBeVisible()
+    await expect(page.locator('dt').filter({ hasText: 'Appearances / 7d' }).locator('..').locator('dd')).toHaveText('1')
+    await link('Open Boston Red Sox Team Board').click()
+    await expect(heading('Boston Red Sox')).toBeVisible()
+    assert.equal(page.url(), origin + board)
     await link('Inspect editorial observations').click()
     await expect(heading('Historical story evidence · Boston Red Sox')).toBeVisible()
     await expect(page.getByRole('heading', { name: /concentration pressure/i })).toBeVisible()
@@ -118,7 +124,7 @@ try {
     await expect(page.getByText('The requested historical Team Board edition could not be verified.')).toBeVisible()
     await expect(heading('Boston Red Sox')).toHaveCount(0)
     assert.deepEqual(reads, [
-      prefix + '/league', prefix + '/teams/111/board', prefix + '/teams/111/stories',
+      prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/teams/111/board', prefix + '/teams/111/stories',
       prefix + '/teams/111/board', prefix + '/trust', prefix + '/tonight', prefix + '/matchups/10101',
       prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
       '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/teams/111/board',

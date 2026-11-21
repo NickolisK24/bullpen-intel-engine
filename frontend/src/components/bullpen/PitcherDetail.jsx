@@ -13,7 +13,7 @@ import { HistoricalPitcherChanges } from '../history/HistoricalChanges'
 import PitcherTrends from './PitcherTrends'
 import WorkloadPatterns from './WorkloadPatterns'
 import ObservedDeployment from './ObservedDeployment'
-import { buildTeamBoardHref, parseRehearsalRevision } from '../../utils/evidenceLinks'
+import { buildRehearsalTeamBoardHref, buildTeamBoardHref, parseRehearsalRevision } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
 export function matchesPitcherEdition(page, pitcherId, revision, generation) {
@@ -82,16 +82,22 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, current ? productCurrentDate : null)
   const hasPitcherEvidence = Boolean(cf || availability || pitcherLabels || mostRecentAppearance || recentWork || deploymentContext)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
-  const teamBoardHref = !historicalEdition && teamReference ? buildTeamBoardHref(teamReference) : null
+  const teamBoardHref = historicalEdition
+    ? buildRehearsalTeamBoardHref(data.identity?.team_id === pitcher?.team_id ? pitcher?.team_id : null,
+      data.selection_revision, data.generation)
+    : teamReference && buildTeamBoardHref(teamReference)
   const rosterUnavailable = rosterStatus?.is_authoritative && rosterStatus.is_inactive_context
     && pitcherLabels?.read?.key === 'unavailable'
+  const week = historicalEdition ? data.sections?.workload?.value?.windows?.['7'] : null
+  const datedWorkload = week?.player_observed === true && week.through === through &&
+    week.gaps && Object.keys(week.gaps).length === 0 ? week.facts : null
   const currentStateFacts = [
     { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
     { label: 'Current Read', value: current || rosterUnavailable ? pitcherLabels?.read?.label : 'Withheld' },
     { label: 'Last Used', value: mostRecentAppearanceLabel },
     { label: 'Days Rest', value: current && armContext.days_rest != null ? `${armContext.days_rest}d` : null },
-    { label: 'Appearances / 7d', value: cf?.appearances_last_7 },
-    { label: 'Pitches / 7d', value: cf?.pitches_last_7_days },
+    { label: 'Appearances / 7d', value: historicalEdition ? datedWorkload?.appearances : cf?.appearances_last_7 },
+    { label: 'Pitches / 7d', value: historicalEdition ? datedWorkload?.pitches_thrown : cf?.pitches_last_7_days },
   ]
 
   return (
@@ -158,6 +164,12 @@ export function PitcherDetailContent({ data, pitcherId }) {
                 </div>
               ))}
             </dl>
+
+            {historicalEdition && (
+              <p className="mt-2 font-mono text-xs text-chalk400">
+                Seven-day totals cover regular-season bullpen work, including qualifying openers.
+              </p>
+            )}
 
             {teamBoardHref && (
               <a
