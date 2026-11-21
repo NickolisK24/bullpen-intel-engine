@@ -983,6 +983,10 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert matchup['games'] == [next(row for row in slate['games'] if row['game_pk'] == game['id'])]
             assert matchup['generation'] == discovery['generation']
             assert matchup['games'][0]['away']['rest']['worked_yesterday_count'] == 1
+            rotation_read = matchup['games'][0]['rotation']
+            assert rotation_read['status'] == 'partial' and rotation_read['limitations']
+            assert rotation_read['team_a']['short_starts'] == 1 and rotation_read['team_a']['bullpen_innings'] == 5.0
+            assert rotation_read['team_b']['short_starts'] == 0 and rotation_read['team_b']['bullpen_innings'] == 3.0
             states = matchup['games'][0]['team_state']
             assert states['status'] == 'available'
             for key, club in [('team_a', 111), ('team_b', 110)]:

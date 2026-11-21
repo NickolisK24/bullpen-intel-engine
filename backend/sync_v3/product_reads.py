@@ -691,6 +691,13 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         workloads = {team: _matchup_workload(facts[team, METHODOLOGY], end) for team in clubs}
         league_by_club = {row['team_id']: row for row in league['teams']}
         game_dates = {row.game_pk: row.game_date_et.isoformat() for row in games}
+        from models.slate_game import SlateGame
+        from sync_v3.matchup_rotation import matchup_rotation
+        unsettled = {club for row in slate if row.normalized_state not in (SlateGame.STATE_UPCOMING, SlateGame.STATE_CANCELLED)
+                     for club in (row.away_team_id, row.home_team_id)}
+        rotation_day = date.fromisoformat(league['availability_reference'])
+        rotations = {club: matchup_rotation(facts[club, rotation], rotation_day, reference_day_unresolved=club in unsettled)
+                     for club in clubs}
         for card in result['games']:
             stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
                      DOMAINS['pitcher_rest'][1])
@@ -701,6 +708,11 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 'team_state', away_state if away_state['available'] else None, home_state if home_state['available'] else None,
                 stamp_a=(away_state['contract'], away_state['data_through']),
                 stamp_b=(home_state['contract'], home_state['data_through']))
+            rotation_a, rotation_b = rotations[away_row['team_id']], rotations[home_row['team_id']]
+            limitations = list(dict.fromkeys(limit for side in (rotation_a, rotation_b) if side for limit in side['limitations']))
+            rotation_stamp = (generation, rotation, game_dates[card['game_pk']])
+            card['rotation'] = _aligned_domain('rotation', rotation_a, rotation_b, stamp_a=rotation_stamp,
+                                               stamp_b=rotation_stamp, partial=bool(limitations), limitations=limitations)
             away_work = workloads[card['away']['team_id']]
             home_work = workloads[card['home']['team_id']]
             work_stamp = (generation, league['data_through'], METHODOLOGY)
