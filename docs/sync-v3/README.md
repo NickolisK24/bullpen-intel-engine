@@ -513,3 +513,17 @@ The selection-and-recovery rehearsal includes a correction to the previous day's
 The historical Team History page can load the preceding selection decisions. Its continuation sends the numeric club and predecessor revision to the read-only rehearsal handler at `GET /api/sync-v3/history/teams/<team>/revisions/<revision>`. The handler uses the supplied disposable database connection factory and returns 14 decisions per page by default. An unknown revision returns HTTP 404. Before displaying a continuation, the page checks the historical scope, club, requested revision and every predecessor in the returned page. A failed request can be retried while the already displayed decisions stay visible. The Flask adapter is constructed separately from the production application.
 
 To open an exact initial edition in a frontend pointed at the isolated rehearsal adapter, use `/history/team/BOS?rehearsalRevision=3` (substitute the club and an existing revision). The initial GET resolves the abbreviation against the MLB club directory. The page checks the returned club and revision before rendering. Earlier pages use that club's numeric ID. A Chromium rehearsal served both the initial Boston page and revision 1 from the same disposable PostgreSQL database. Duplicate revision parameters failed before any History request. Omitting the parameter uses the existing public season History route.
+
+The same disposable Flask adapter exposes the existing product readers under `GET /api/sync-v3/revisions/<revision>/`. Use the following suffixes to inspect one edition across surfaces.
+
+| Surface | Route suffix |
+| --- | --- |
+| League and Tonight | `league`, `tonight` |
+| Matchup | `matchups/<game_pk>` |
+| Team Board and What Changed | `teams/<mlb_team_id>/board`, `teams/<mlb_team_id>/changes` |
+| Pitcher Detail and History | `pitchers/<public_pitcher_id>`, `pitchers/<public_pitcher_id>/history` |
+| Search | `search?q=Boston` |
+| Stories and event evidence | `teams/<mlb_team_id>/stories`, `teams/<mlb_team_id>/events/<event_id>` |
+| Methodology and Trust | `trust` |
+
+Event IDs include their original slash-separated components. Event evidence remains an input to editorial review. A missing event returns HTTP 404 and cannot supply a share artifact. With the disposable PostgreSQL test environment active, run `python -m pytest -q 'tests/test_sync_v3_corrections.py::test_isolated_core_selection_and_recovery[complete]'` from `backend` to exercise the routes after correction and rollback.

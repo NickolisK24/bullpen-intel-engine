@@ -1324,6 +1324,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             if identity_mode == 'complete':
                 from sync_v3.history_delivery import historical_history_app
                 client = historical_history_app(connect, page_size=2).test_client()
+                assert_rollback_product_responses(client, first, departure, matchup['historical_comparison']['game'])
                 entry = client.get('/api/sync-v3/history/teams/BOS/revisions/3')
                 assert entry.status_code == 200 and entry.get_json() == page
                 assert page['team_abbreviation'] == 'BOS'
@@ -1377,6 +1378,44 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             with worker, worker.cursor() as cur:
                 cur.execute('SELECT count(*),max(revision) FROM candidate.core_selections')
                 assert cur.fetchone() == (5,5)
+
+
+def assert_rollback_product_responses(client, generation, departure, matchup_game):
+    """Read the restored fixture edition across products and check their shared identities."""
+    event_id = departure['event']['event_id']
+    prefix = '/api/sync-v3/revisions/3'
+    responses = {}
+    for resource in ('league', 'tonight', 'matchups/10101', 'teams/111/board', 'teams/111/changes',
+                     'teams/111/stories', 'teams/111/events/' + event_id, 'pitchers/8999',
+                     'pitchers/8999/history', 'search?q=Boston', 'trust'):
+        response = client.get(f'{prefix}/{resource}')
+        assert response.status_code == 200, resource
+        body = response.get_json()
+        assert body['current_serving_eligible'] is False
+        if resource.endswith('/history'):
+            assert body['rows'][0]['generation'] == generation and body['rows'][0]['selection_revision'] == 3
+        else:
+            assert body['generation'] == generation and body['selection_revision'] == 3
+        responses[resource] = body
+    assert len(responses['league']['teams']) == 30
+    slate_card, = [card for card in responses['tonight']['games'] if card['game_pk'] == 10101]
+    assert responses['matchups/10101']['games'] == [slate_card]
+    assert responses['matchups/10101']['historical_comparison']['game'] == matchup_game
+    team_results = responses['search?q=Boston']['search']['groups'][0]['results']
+    assert [team['id'] for team in team_results] == [111]
+    league_row, = [club for club in responses['league']['teams'] if club['team_id'] == 111]
+    assert responses['teams/111/board']['team'] == league_row
+    assert responses['teams/111/board']['what_changed'] == responses['teams/111/changes']
+    assert departure in responses['teams/111/changes']['events']
+    assert responses['teams/111/events/' + event_id]['evidence'] == departure
+    assert responses['pitchers/8999/history']['rows'][0]['events'] == responses['pitchers/8999']['represented_events']
+    assert responses['teams/111/stories']['qualification'] == 'game_lines_compared'
+    assert responses['trust']['trusted_snapshot_id'] is None
+    assert client.get(f'/api/sync-v3/revisions/2/teams/111/events/{event_id}').status_code == 404
+    assert client.get('/api/sync-v3/revisions/999/teams/111/stories').status_code == 404
+    assert client.get(prefix + '/teams/1/board').status_code == 404
+    assert client.get(prefix + '/search?q=BOS&q=KC').status_code == 400
+    assert client.post(prefix + '/league').status_code == 405
 
 
 def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):

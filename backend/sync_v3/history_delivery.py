@@ -5,6 +5,7 @@ from contextlib import closing
 from flask import Flask, abort
 
 from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS
+from sync_v3.product_delivery import product_routes
 from sync_v3.product_reads import read_team_history
 
 
@@ -28,4 +29,5 @@ def historical_history_app(connect, *, page_size=14):
             page = read_team_history(connection, team, through_revision=revision, limit=page_size)
         return page, 404 if page['status'] == 'unknown_revision' else 200
 
+    app.register_blueprint(product_routes(connect, page_size))
     return app
