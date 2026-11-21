@@ -115,8 +115,18 @@ def _append(cur, subject, mlb_id, through):
 
 def evidence_digest(receipts, requests):
     # Observation IDs depend on load order. Stable request scopes and content digests do not.
-    inputs = sorted({encode_json(row) for row in receipts})
-    descriptors = [encode_json(['request', endpoint, dict(params)]) for endpoint, params in sorted(requests)]
+    return encoded_evidence_digest((encode_json(row) for row in receipts),
+                                   ((scope, encoded_request(*scope)) for scope in requests))
+
+
+def encoded_request(endpoint, parameters):
+    return encode_json(['request', endpoint, dict(parameters)])
+
+
+def encoded_evidence_digest(receipts, requests):
+    # Requests sort by their structured scope; receipts sort by canonical bytes.
+    inputs = sorted(set(receipts))
+    descriptors = [encoded for _, encoded in sorted(requests)]
     return sha256(b'\n'.join(inputs + descriptors)).hexdigest()
 
 

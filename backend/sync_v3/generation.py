@@ -18,7 +18,7 @@ from sync_v3.comparison import compare_readiness
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
 from sync_v3.schedule_context import missing_listings
-from sync_v3.history import METHODOLOGY, _transaction, evidence_digest
+from sync_v3.history import METHODOLOGY, _transaction, encoded_evidence_digest, encoded_request
 from sync_v3.intelligence_history import DOMAINS
 
 
@@ -326,6 +326,32 @@ def _verify(cur, digest, compare_latest):
     return _inspect(cur, digest, compare_latest)
 
 
+def _pinned_members(cur, stream):
+    """Read facts and their evidence in bounded batches from the same transaction."""
+    while rows := stream.fetchmany(8):
+        snapshots = [row[0] for row in rows]
+        receipts = {sid: [] for sid in snapshots}
+        requests = {sid: [] for sid in snapshots}
+        cur.execute("""SELECT grouped.snapshots,f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
+                       FROM (SELECT source_id,array_agg(snapshot) AS snapshots FROM candidate.workload_history_sources
+                             WHERE snapshot=ANY(%s) GROUP BY source_id) grouped
+                       JOIN candidate.fetches f ON f.id=grouped.source_id
+                       LEFT JOIN candidate.refusals r ON r.source_id=f.id""", (snapshots,))
+        for linked, *receipt in cur:
+            encoded = encode_json(receipt)
+            for sid in linked:
+                receipts[sid].append(encoded)
+        cur.execute("""SELECT array_agg(snapshot),endpoint,parameters FROM candidate.history_requests
+                       WHERE snapshot=ANY(%s) GROUP BY endpoint,parameters""", (snapshots,))
+        for linked, endpoint, params in cur:
+            scope = (endpoint, tuple(sorted(params.items())))
+            descriptor = (scope, encoded_request(endpoint, params))
+            for sid in linked:
+                requests[sid].append(descriptor)
+        for row in rows:
+            yield row, encoded_evidence_digest(receipts[row[0]], requests[row[0]])
+
+
 def _inspect(cur, digest, compare_latest):
     cur.execute('SELECT represented,manifest FROM candidate.generations WHERE digest=%s', (digest,))
     stored = cur.fetchone()
@@ -344,18 +370,12 @@ def _inspect(cur, digest, compare_latest):
     team_inputs = {}
     # Pitch profiles and game facts can be large. Keep memory bounded during full verification.
     with cur.connection.cursor(name='verify_candidate_members') as stream:
-        stream.itersize = 8
         stream.execute("""SELECT h.id,h.subject,h.mlb_id,h.represented,h.methodology,h.revision,h.semantic_digest,h.input_digest,h.facts
                        FROM candidate.generation_inputs p JOIN candidate.workload_history h ON h.id=p.snapshot
                        WHERE p.generation=%s""", (digest,))
-        for sid, subject, entity, day, method, revision, semantic, inputs, facts in stream:
-            cur.execute("""SELECT f.endpoint,f.parameters,f.sha256,f.outcome,coalesce(r.reason,f.reason)
-                           FROM candidate.workload_history_sources hs JOIN candidate.fetches f ON f.id=hs.source_id
-                           LEFT JOIN candidate.refusals r ON r.source_id=f.id WHERE hs.snapshot=%s""", (sid,))
-            receipts = cur.fetchall()
-            cur.execute('SELECT endpoint,parameters FROM candidate.history_requests WHERE snapshot=%s', (sid,))
-            requests = [(endpoint, tuple(sorted(params.items()))) for endpoint, params in cur]
-            if evidence_digest(receipts, requests) != inputs:
+        for row, evidence in _pinned_members(cur, stream):
+            _, subject, entity, day, method, revision, semantic, inputs, facts = row
+            if evidence != inputs:
                 raise ValueError('Pinned snapshot sources disagree with the frozen input digest')
             actual = sha256(encode_json([subject, entity, day.isoformat(), method, facts])).hexdigest()
             if subject == 'team' and method in CLUB_INPUTS:

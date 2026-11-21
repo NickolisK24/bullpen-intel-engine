@@ -1200,6 +1200,21 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert 'concentration_pressure' in other_kinds and 'rotation_pressure' not in other_kinds
             trust = read_trust(worker, revision=1)
             assert trust['generation'] == board['generation'] and trust['comparison']['status'] == 'core_comparison_complete'
+            if identity_mode == 'complete':
+                from sync_v3.generation import _inspect
+                # Remove one pinned association in the disposable owner's transaction.
+                # Other snapshots still cite the same evidence and cannot supply its missing link.
+                for table, key in [('workload_history_sources', 'source_id'), ('history_requests', 'endpoint,parameters')]:
+                    with pytest.raises(ValueError, match='Pinned snapshot sources'), owner, owner.cursor() as cur:
+                        cur.execute(f'''WITH linked AS (
+                                SELECT e.ctid, count(*) OVER (PARTITION BY {key}) AS uses
+                                FROM candidate.{table} e JOIN candidate.generation_inputs g ON g.snapshot=e.snapshot
+                                WHERE g.generation=%s)
+                            DELETE FROM candidate.{table} WHERE ctid=(SELECT ctid FROM linked WHERE uses>1 LIMIT 1)''',
+                                    (board['generation'],))
+                        assert cur.rowcount == 1
+                        _inspect(cur, board['generation'], compare_latest=False)
+                assert read_trust(worker, revision=1) == trust
             assert sum(group['receipts'] for group in trust['sources']) > len(league['teams'])
             assert trust['current_serving_eligible'] is False and trust['trusted_snapshot_id'] is None
             pitcher = read_pitcher(worker, 9111)
