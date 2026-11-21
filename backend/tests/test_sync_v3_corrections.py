@@ -916,12 +916,13 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert row['orientation']['movement'] is None
             discovery = read_search(worker, 'Boston')
             assert discovery['generation'] == first
-            assert discovery['search']['status'] == ('available' if identity_mode == 'complete' else 'partial')
+            assert discovery['search']['status'] == ('partial' if identity_mode == 'absent' else 'available')
             teams, pitchers, matchups = discovery['search']['groups']
             assert teams['results'][0]['id'] == 111
-            if identity_mode == 'complete':
+            if identity_mode != 'absent':
                 arm = read_search(worker, 'Rehearsal Arm 11101')['search']['groups'][1]['results']
                 assert len(arm) == 1 and arm[0]['id'] == 9111 and arm[0]['metadata']['team_id'] == 111
+                assert arm[0]['metadata']['position'] == 'P' and arm[0]['metadata']['roster_status'] == 'ACTIVE'
             else:
                 assert pitchers['status'] == 'unavailable' and pitchers['results'] == []
             assert matchups['status'] == 'available' and len(matchups['results']) == 1
@@ -944,7 +945,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert matchup['generation'] == discovery['generation']
             assert matchup['games'][0]['away']['rest']['worked_yesterday_count'] == 1
             named = matchup['games'][0]['role_rest']
-            if identity_mode == 'complete':
+            if identity_mode != 'absent':
                 assert named['team_a']['save_work'][0]['pitcher_id'] == 9111
                 assert named['team_a']['save_work'][0]['days_since_last_appearance'] == 1
             else:
@@ -1001,14 +1002,21 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert trust['current_serving_eligible'] is False and trust['trusted_snapshot_id'] is None
             pitcher = read_pitcher(worker, 9111)
             assert pitcher['generation'] == board['generation']
-            if identity_mode == 'complete':
+            if identity_mode != 'absent':
                 assert board['active_bullpen'][0]['public_pitcher_id'] == 9111
                 assert pitcher['identity']['mlb_id'] == 11101 and pitcher['identity']['name'] == arm[0]['primary_label']
                 assert pitcher['pitch_hand'] == hand
                 assert pitcher['recent_work']['appearances'] == ledger['appearances']
                 assert set(pitcher['sections']) == {'pitcher_profile','pitcher_rest','workload'}
                 assert all(e in history['events'] for e in pitcher['represented_events'])
-                assert read_pitcher(worker, 11101)['status'] == 'outside_represented_bullpens'
+                missing = read_pitcher(worker, 11101)['status']
+                assert missing == ('outside_represented_bullpens' if identity_mode == 'complete' else 'public_id_mapping_incomplete')
+                if identity_mode == 'incomplete':
+                    unmapped = rows[-1]
+                    assert read_pitcher(worker, unmapped['id'])['status'] == missing
+                    for query in (f"Rehearsal Arm {unmapped['mlb_id']}", 'Rehearsal Arm'):
+                        group = read_search(worker, query)['search']['groups'][1]
+                        assert group['status'] == 'unavailable' and group['results'] == []
             else:
                 assert pitcher['status'] == discovery['pitcher_identity_status']
             refreshed = dict(fixtures[-1], observed_at=f'{day + timedelta(days=3)}T12:00:00Z')
@@ -1053,7 +1061,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
             timeline = read_pitcher_history(worker, 9111, through_revision=3, limit=2)
             assert [item['generation'] for item in timeline['rows']] == [first, second]
-            if identity_mode == 'complete':
+            if identity_mode != 'absent':
                 restored = timeline['rows'][0]
                 assert restored['identity'] == pitcher['identity'] and restored['events'] == pitcher['represented_events']
                 assert restored['arm']['read'] == board['active_bullpen'][0]['read']

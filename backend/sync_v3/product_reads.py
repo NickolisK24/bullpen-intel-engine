@@ -256,22 +256,22 @@ def _public_arms(cur, digest):
             name = entries.get(mlb, {}).get('name')
             if mlb in players or not isinstance(name, str) or not name.strip():
                 return {}, 'official_pitcher_identity_unresolved'
-            players[mlb] = dict(mlb_id=mlb, team_id=team, name=name, public_id=None)
+            position = {'1': 'P', 'Y': 'TWP'}.get(entries[mlb].get('position'))
+            players[mlb] = dict(mlb_id=mlb, team_id=team, name=name, position=position, public_id=None)
     if export is None:
         return players, 'public_id_mapping_unavailable'
     cur.execute('SELECT mlb_id,pitcher_id FROM candidate.public_pitcher_ids WHERE export=%s AND mlb_id=ANY(%s)',
                 (export, sorted(players)))
     mapping = dict(cur)
-    if players.keys() != mapping.keys():
-        return players, 'public_id_mapping_incomplete'
-    for mlb, player in players.items():
-        player['public_id'] = mapping[mlb]
-    return players, 'mapped'
+    for mlb, public_id in mapping.items():
+        players[mlb]['public_id'] = public_id
+    return players, 'mapped' if players.keys() == mapping.keys() else 'public_id_mapping_incomplete'
 
 
 def read_search(connection, query, *, revision=None, limit=5):
     from datetime import date
     from services.discovery_search import SearchOwners, matchup_results_from_rows, search_discovery
+    from services.roster_status import STATUS_ACTIVE
 
     if revision is not None and (type(revision) is not int or revision < 1):
         raise ValueError('Historical selector revision must be a positive integer')
@@ -287,18 +287,21 @@ def read_search(connection, query, *, revision=None, limit=5):
         players, mapping_status = _public_arms(cur, digest)
         def pitchers(text, count, day):
             from services.pitcher_search import _match_rank, _normalize_search_text
-            if mapping_status != 'mapped':
+            if mapping_status not in ('mapped', 'public_id_mapping_incomplete'):
                 raise ValueError(mapping_status)
             ranked = []
+            normalized = _normalize_search_text(text)
             for player in players.values():
                 name = player['name']
-                rank = _match_rank(name, _normalize_search_text(text))
+                rank = _match_rank(name, normalized)
                 if rank is None:
                     continue
                 team = directory[player['team_id']]
                 pid = player['public_id']
+                if pid is None:
+                    raise ValueError(mapping_status)
                 item = dict(entity_type='pitcher', id=pid, primary_label=name, secondary_label=team['team_name'],
-                            metadata=dict(player_id=pid, player_name=name, position='P', roster_status='active',
+                            metadata=dict(player_id=pid, player_name=name, position=player['position'], roster_status=STATUS_ACTIVE,
                                           team_id=player['team_id'], team_name=team['team_name']))
                 ranked.append((rank, _normalize_search_text(name), pid, item))
             return [row[-1] for row in sorted(ranked)[:count]]
@@ -500,9 +503,9 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 pressure = dict(pressure, status='partial' if limitations else 'complete',
                                 bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
             key_arms, public_usage, active, named = [], {}, [], []
-            for mlb in ids:
-                if mlb not in identities or identities[mlb]['public_id'] is None:
-                    continue
+            # A key-arm ranking needs a complete identity map for this club.
+            club_mapped = all(identities.get(mlb, {}).get('public_id') is not None for mlb in ids)
+            for mlb in (ids if club_mapped else []):
                 player = identities[mlb]
                 read = facts[team, reads]['arms'][str(mlb)]['read'] or {}
                 availability = read.get('availability') or {}
@@ -627,11 +630,9 @@ def read_pitcher(connection, public_id, *, revision=None):
         sequence, digest, through, reference = selected
         result.update(generation=digest, data_through=through.isoformat(), availability_reference=reference)
         players, status = _public_arms(cur, digest)
-        if status != 'mapped':
-            return dict(result, status=status)
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
-            return dict(result, status='outside_represented_bullpens')
+            return dict(result, status='outside_represented_bullpens' if status == 'mapped' else status)
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
@@ -689,11 +690,9 @@ def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
         if digest is None:
             return dict(status='no_selected_generation', events=[])
         players, status = _public_arms(cur, digest)
-        if status != 'mapped':
-            return dict(status=status, events=[])
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
-            return dict(status='outside_represented_bullpens', events=[])
+            return dict(status='outside_represented_bullpens' if status == 'mapped' else status, events=[])
         mlb, club = player['mlb_id'], player['team_id']
         readiness_method = DOMAINS['readiness'][1]
         role_method = DOMAINS['pitcher_profile'][1]
