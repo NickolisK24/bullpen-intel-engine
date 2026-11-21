@@ -736,3 +736,17 @@ The Board also attaches a supported deployment change to its named active pitche
 Restoring the season-performance checkpoint again and changing the batch size from 75 to 37 produced the same revision 3 generation. A private rollback restored revision 2's withheld Matchup performance at revision 4. Revision 3 could still serve the complete Boston and Toronto comparison. With snapshot 5843 as its sole identity export, that generation's whole-edition rehearsal checked 30 Boards, 15 Matchups, 114 Board/History event citations, 41 editorial observations and 18 verified pitcher routes. It withheld 214 pitcher routes and all 30 public static previews.
 
 In a separate restore, adding the two earlier corroborating identity archives to revision 3 produced generation `cdc1d33dbe5519b606b50859285d95fd2c6162170968fb0e024392a502957504`. All 30 Boards retained their baseball facts and all 114 event citations. The archives restored Albert Suárez's public route 51, bringing verified pitcher routes to 19 and withheld routes to 213. The Boston–Toronto season comparison retained its ten values.
+
+### Conflicts in the league-wide season comparison
+
+The August 28, 2017 rehearsal compared 1,959 official regular-season finals with the season logs of the dated bullpen members. A separate boxscore count found 7,558 relief appearances for their represented clubs. Of 150 potential club metrics, 143 matched the independent count and qualified in the candidate calculation. Seven were withheld.
+
+| Club | Independently checked disagreement | Effect |
+| --- | --- | --- |
+| Cubs | Wade Davis faced four batters according to his April 4 game log and three according to the boxscore. | Season K−BB% had 366 of 367 verified appearances. [Game 490136](https://statsapi.mlb.com/api/v1/game/490136/boxscore) |
+| Rockies | Greg Holland faced three batters according to his April 3 game log and two according to the boxscore. | Season K−BB% had 336 of 337 verified appearances. [Game 490101](https://statsapi.mlb.com/api/v1/game/490101/boxscore) |
+| Yankees | Aroldis Chapman's April 30 pitching log records zero games finished. The boxscore records one. | The contradictory season profile withheld the dated population and all five season metrics. [Game 490461](https://statsapi.mlb.com/api/v1/game/490461/boxscore) |
+
+The Trust preview of the rebuilt Yankees readiness record identifies game 490461, the field and the two values. Its pinned sources include the boxscore acquired November 21, 2026 at 15:51:27 UTC (SHA-256 `743205eab8937fb0627dcf0ce8011e7f900ec84489d6d0f7196cb6b4673688d1`) and the pitcher log acquired at 13:20:46 UTC (SHA-256 `452c25c53eaffa1936e50194bca2f27f92fee07e4f7c2dbea405b4040c7be3c7`). The earlier private selection remained readable.
+
+The supplementary collection harness mistakenly requested game 490124 against May 26 because MLB's postponed listing had abstract state Final. Candidate reconciliation refused that receipt. The May 27 schedule authorized a separate receipt with identical boxscore bytes. The pipeline's discovery classifier already recognizes the detailed Postponed status. [May 26 schedule](https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2017-05-26) · [May 27 schedule](https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2017-05-27)

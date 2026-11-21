@@ -124,12 +124,21 @@ def _check_retained_finals(cur, player, rows):
             raise BaselineWithheld('game_log_and_boxscore_player_conflict')
         line, = appearances
         counts = expected['counts']
-        if (line['team_id'] != expected['team'] or line['game_date'] != expected['day'].isoformat()
-                or line['games_started'] != counts['gamesStarted'] or line['outs_recorded'] != counts['outs']
-                or any(line[field] is not None and line[field] != counts[key]
-                       for field, key in [('hold', 'holds'), ('save', 'saves'), ('games_finished', 'gamesFinished'),
-                                          ('save_situation', 'saveOpportunities')])):
-            raise BaselineWithheld('game_log_and_boxscore_line_conflict')
+        expected_line = {
+            'team_id': expected['team'], 'game_date': expected['day'].isoformat(),
+            'games_started': counts['gamesStarted'], 'outs_recorded': counts['outs'],
+        }
+        for field, key in [('hold', 'holds'), ('save', 'saves'), ('games_finished', 'gamesFinished'),
+                           ('save_situation', 'saveOpportunities')]:
+            if line[field] is not None:
+                expected_line[field] = counts[key]
+        differences = {field: {'game_log': value, 'boxscore': line[field]}
+                       for field, value in expected_line.items() if value != line[field]}
+        if differences:
+            raise BaselineWithheld('game_log_and_boxscore_line_conflict', game_evidence={
+                'game_pk': pk, 'game_date': expected['day'].isoformat(), 'team_id': expected['team'],
+                'differences': differences,
+            })
         verified.append(pk)
     return sorted(verified)
 

@@ -119,6 +119,7 @@ def test_season_baseline_reconciles_each_club_then_excludes_starts_and_future_ga
 
 
 def test_pitcher_rehearsal_withholds_a_season_claim_that_conflicts_with_an_official_final(tmp_path):
+    from sync_v3.dependencies import capture_reads
     from sync_v3.discovery import pitcher_requests
     from sync_v3.season_deployment import pitcher_season_deployment
 
@@ -147,9 +148,15 @@ def test_pitcher_rehearsal_withholds_a_season_claim_that_conflicts_with_an_offic
         try:
             run_fixture(worker, filename)
             with worker, worker.cursor() as cur:
-                report = pitcher_season_deployment(cur, 102, day)
+                with capture_reads(cur) as reads:
+                    report = pitcher_season_deployment(cur, 102, day)
                 assert report['facts'] is None and report['reason'] == 'game_log_and_boxscore_line_conflict'
                 assert all(report['sources'].values())
+                conflict = report['game_evidence']
+                assert (conflict['game_pk'], conflict['team_id'], conflict['game_date']) == (12345, 147, day.isoformat())
+                assert conflict['differences']['outs_recorded'] == {'game_log': 6, 'boxscore': 9}
+                cur.execute('SELECT DISTINCT endpoint FROM candidate.fetches WHERE id=ANY(%s)', (list(reads.receipts),))
+                assert {'/game/12345/boxscore', '/schedule', '/people/102/stats'} <= {r[0] for r in cur.fetchall()}
         finally:
             worker.close()
 
