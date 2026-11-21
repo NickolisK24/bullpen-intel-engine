@@ -71,7 +71,7 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
-def run(bindir=None, fixture=None):
+def run(bindir=None, fixture=None, pitcher=None, through=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -107,6 +107,11 @@ def run(bindir=None, fixture=None):
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
                 print(f'{count} observations replayed; {games} finals and {appearances} pitching lines compared')
+            if pitcher is not None:
+                import json
+                from sync_v3.workload import pitcher_windows
+                with worker, worker.cursor() as cur:
+                    print(json.dumps(pitcher_windows(cur, pitcher, through), sort_keys=True))
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified')
         finally:
             worker.close()
@@ -116,5 +121,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
+    from datetime import date
+    parser.add_argument('--pitcher', type=int, help='Inspect historical relief workload for an MLB ID')
+    parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
-    run(args.pg_bin, args.fixture)
+    if (args.pitcher is None) != (args.through is None) or (args.pitcher is not None and not args.fixture):
+        parser.error('Supply --pitcher and --through together with at least one --fixture')
+    run(args.pg_bin, args.fixture, args.pitcher, args.through)
