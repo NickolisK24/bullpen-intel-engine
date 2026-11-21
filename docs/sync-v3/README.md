@@ -956,3 +956,17 @@ WHERE budget = 'historical' AND product_date = DATE '2017-08-28'
   AND payload->>'capture' ~ '^[0-9a-f]{64}$'
 GROUP BY 1 ORDER BY jobs DESC, capture_digest LIMIT 32;
 ```
+
+### Trace a capture to canonical baseball records
+
+Add `--trace-receipts` to the existing offline rehearsal to print each job's source receipts and their canonical effects, including when a capture is withheld. The output is grouped in pages of up to 32 receipts. The historical budget, baseball date, and exact capture digest bind every page.
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$PG_BIN" --fixture "$DAY_FIXTURE" --trace-receipts
+```
+
+A receipt can create the first revision of an identity, create a revision that supersedes its predecessor, or confirm an existing revision without changing the baseball record. The counts use stored confirmations and predecessor links. An accepted response can have an empty effects map. A refused response retains its reason and digest. In an open disposable rehearsal, `read_receipt_changes(connection, day, capture, receipt_id)` in `sync_v3.replay` returns the underlying identities, revision IDs, predecessors, and creating and context receipts. Use `next_after_revision_id` as `after_revision_id` to continue. A receipt belonging to a different date or capture returns `unknown_receipt`.
+
+The August 7, 2024 replay returned 173 distinct receipts across six pages. They created 17 schedule identities, 17 final records and 59 roster records. Both refused receipts had zero canonical effects. Repeating the same fixture retained the same receipt IDs and totals. The August 28, 2017 restored capture had 895 receipts, including one transaction response that created 38 identities. Its 32- and six-row detail pages accounted for all 38 and linked them to the original response. A controlled correction separately verified that a later revision retained its predecessor and an identical observation pointed back to the original creating receipt.
+
+On the August 2017 restore, reading all 28 receipt pages took a median 93.83 ms across five local passes. With the candidate confirmation index on source and revision, five passes took a median 85.62 ms and returned identical counts. After removing the index from the disposable comparison database the median was 102.76 ms. These timings cover the local trace reader.

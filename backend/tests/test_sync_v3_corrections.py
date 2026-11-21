@@ -2071,3 +2071,72 @@ def test_board_transaction_days_follow_selected_receipts_and_rollback(tmp_path):
             restored = select_generation(reviewer, editions[0], expected_revision=revision, rollback=True)
             assert read_team_board(worker, 111, revision=restored)['prior_transaction_days'] == []
             assert read_team_board(worker, 111, revision=revision)['prior_transaction_days'] == [earlier]
+
+
+def test_scoped_receipt_effects_distinguish_creation_confirmation_and_supersession(tmp_path):
+    from contextlib import closing
+    from hashlib import sha256
+    from sync_v3.evidence import encode_json
+    from sync_v3.replay import ReplayWithheld, read_receipt_changes, read_replay_receipts, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    data = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(data['baseball_date'])
+
+    def inspect(db, reader, *, withheld=False):
+        path = tmp_path / 'played.json'
+        path.write_text(json.dumps(data))
+        if withheld:
+            with pytest.raises(ReplayWithheld, match='Official final schedule'):
+                run_fixture(db, path)
+        else:
+            run_fixture(db, path)
+        capture = sha256(encode_json(data)).hexdigest()
+        result = read_replay_receipts(reader, day, capture)
+        assert result['next_after_receipt_id'] is None
+        if not withheld:
+            assert all(row['outcome'] == 'received' for row in result['receipts'])
+        return capture, result
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db, closing(connect()) as reader:
+            reader.set_session(readonly=True)
+            capture, first = inspect(db, reader)
+            def schedule(page):
+                return next(row for row in page['receipts'] if row['endpoint'] == '/schedule')
+            created = schedule(first)
+            assert created['canonical_effects']['schedule'] == dict(created=1, superseded=0, confirmed=0)
+            data['observed_at'] = '2026-07-30T00:45:00Z'
+            _, second = inspect(db, reader)
+            confirmed = schedule(second)
+            assert confirmed['canonical_effects']['schedule'] == dict(created=0, superseded=0, confirmed=1)
+            assert confirmed['sha256'] == created['sha256'] and confirmed['receipt_id'] != created['receipt_id']
+            data['observed_at'] = '2026-07-30T01:55:00Z'
+            entry = next(r for r in data['responses'] if r['endpoint'] == '/schedule')
+            entry['body']['dates'][0]['games'][0]['gameNumber'] = 2
+            _, third = inspect(db, reader)
+            data['observed_at'] = '2026-07-30T01:50:00Z'
+            entry['body']['dates'][0]['games'][0]['gameNumber'] = 1
+            _, stale = inspect(db, reader, withheld=True)
+            assert schedule(stale)['canonical_effects'] == {}
+            refused, = [r for r in stale['receipts'] if r['outcome'] == 'refused']
+            assert refused['canonical_effects'] == {} and refused['sha256']
+            assert schedule(third)['canonical_effects']['schedule'] == dict(created=0, superseded=1, confirmed=0)
+            def detail(page):
+                return read_receipt_changes(reader, day, page['capture'], schedule(page)['receipt_id'])
+            original, = detail(first)['changes']
+            confirmation, = detail(second)['changes']
+            correction, = detail(third)['changes']
+            assert original['effect'] == 'created' and original['predecessor_id'] is None
+            assert confirmation == dict(original, effect='confirmed')
+            assert correction['effect'] == 'superseded' and correction['predecessor_id'] == original['revision_id']
+            assert correction['identity'] == original['identity'] and correction['revision'] == original['revision'] + 1
+            assert correction['creating_receipt_id'] == schedule(third)['receipt_id']
+            hidden = read_receipt_changes(reader, day, first['capture'], schedule(third)['receipt_id'])
+            assert hidden['status'] == 'unknown_receipt' and hidden['changes'] == []
+            empty = read_receipt_changes(reader, day, stale['capture'], refused['receipt_id'])
+            assert empty['status'] == 'represented' and empty['changes'] == [] and empty['sha256'] == refused['sha256']
+            assert read_replay_receipts(reader, day, capture) == first
+            assert read_replay_receipts(reader, day - timedelta(days=1), capture)['receipts'] == []

@@ -304,7 +304,7 @@ def verify_board_history(connection, board):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=()):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=(), trace_receipts=False):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -340,10 +340,13 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     reference = from_observed_publication(*identity_proof, include_available_inputs=readiness_team is not None)
                 earlier = [from_observed_publication(*proof) for proof in earlier_identity_proofs]
                 install(owner, identity_export=reference, earlier_identity_exports=earlier)
+                def emit_receipts(page):
+                    print(json.dumps(dict(historical_capture_receipts=page)), flush=True)
+
                 count = 0
                 for filename in fixture:
                     try:
-                        count += run_fixture(worker, filename)
+                        count += run_fixture(worker, filename, on_receipt_page=emit_receipts if trace_receipts else None)
                     except ReplayWithheld as exc:
                         withheld.append(f'{filename}: {exc}')
                 from sync_v3.comparison import compare_finals
@@ -565,6 +568,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
+    parser.add_argument('--trace-receipts', action='store_true', help='Report each scoped receipt and its canonical effects')
     from datetime import date
     subject = parser.add_mutually_exclusive_group()
     subject.add_argument('--readiness-team', type=int, help='Inspect represented regular-season Team State and arm reads')
@@ -602,6 +606,8 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team, args.availability_as_of,
     ))
+    if args.trace_receipts and not args.fixture:
+        parser.error('--trace-receipts requires an offline source fixture')
     if (args.identity_fixture or args.identity_proof) and not args.fixture:
         parser.error('An identity reference requires an offline source fixture')
     if args.earlier_identity_proof and not args.identity_proof:
@@ -621,4 +627,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export, args.earlier_identity_proof)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export, args.earlier_identity_proof, trace_receipts=args.trace_receipts)

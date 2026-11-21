@@ -30,7 +30,7 @@ def install(owner, *, identity_export=None, earlier_identity_exports=()):
             public_identities.load_reference(cur, earlier)
 
 
-def run_fixture(connection, filename):
+def run_fixture(connection, filename, *, on_receipt_page=None):
     fixture = json.loads(Path(filename).read_text())
     day = date.fromisoformat(fixture['baseball_date'])
     at = datetime.fromisoformat(fixture['observed_at'])
@@ -75,6 +75,12 @@ def run_fixture(connection, filename):
             if status == 'received':
                 evidence.replay(cur, oid)
     work = read_replay_work(connection, day, capture, _issue_receipts=issues)
+    if on_receipt_page is not None:
+        after = 0
+        while after is not None:
+            page = read_replay_receipts(connection, day, capture, after_receipt_id=after)
+            on_receipt_page(page)
+            after = page['next_after_receipt_id']
     states = work['job_states']
     if issues or set(states) != {'done'}:
         from sync_v3.comparison import compare_finals
@@ -89,12 +95,7 @@ def run_fixture(connection, filename):
 
 def read_replay_work(connection, day, capture, *, after_job_id=0, _issue_receipts=()):
     """Inspect durable historical work for one capture in a consistent read-only transaction."""
-    if type(day) is not date or not isinstance(capture, str) or len(capture) != 64 or any(
-            char not in '0123456789abcdef' for char in capture):
-        raise ValueError('Expected an exact baseball date and SHA-256 capture identity')
-
-    if type(after_job_id) is not int or not 0 <= after_job_id < 2**63:
-        raise ValueError('Expected a nonnegative job ID')
+    _validate_replay_scope(day, capture, after_job_id, 'job')
 
     def read(cur):
         cur.execute('SET TRANSACTION READ ONLY')
@@ -131,6 +132,94 @@ def read_replay_work(connection, day, capture, *, after_job_id=0, _issue_receipt
         result['jobs'] = jobs[:32]
         if len(jobs) > 32:
             result['next_after_job_id'] = jobs[31]['job_id']
+        return result
+
+    return history._transaction(connection, read)
+
+
+def _validate_replay_scope(day, capture, cursor_id, kind):
+    if type(day) is not date or not isinstance(capture, str) or len(capture) != 64 or any(
+            char not in '0123456789abcdef' for char in capture):
+        raise ValueError('Expected an exact baseball date and SHA-256 capture identity')
+
+    if type(cursor_id) is not int or not 0 <= cursor_id < 2**63:
+        raise ValueError(f'Expected a nonnegative {kind} ID')
+
+
+def read_replay_receipts(connection, day, capture, *, after_receipt_id=0):
+    """Trace a page of historical job receipts to their accepted canonical effects."""
+    _validate_replay_scope(day, capture, after_receipt_id, 'receipt')
+
+    def read(cur):
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("""SELECT f.id,j.id,f.endpoint,f.parameters,f.received_at,f.sha256,
+                              CASE WHEN r.source_id IS NULL THEN f.outcome ELSE 'refused' END,
+                              coalesce(r.reason,f.reason)
+                       FROM candidate.jobs j JOIN candidate.attempts a ON a.job_id=j.id
+                       JOIN candidate.fetches f ON f.token=a.token
+                       LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                       WHERE j.budget='historical' AND j.product_date=%s AND j.payload->>'capture'=%s
+                         AND f.id>%s ORDER BY f.id LIMIT 33""", (day, capture, after_receipt_id))
+        page = cur.fetchall()
+        receipts = {receipt: dict(receipt_id=receipt, job_id=job, endpoint=endpoint, parameters=params,
+                                  observed_at=observed.isoformat(), sha256=digest, outcome=outcome,
+                                  reason=reason, canonical_effects={})
+                    for receipt, job, endpoint, params, observed, digest, outcome, reason in page[:32]}
+        if receipts:
+            cur.execute("""SELECT c.source_id,c.domain,
+                                  count(*) FILTER (WHERE r.source_id=c.source_id AND r.predecessor IS NULL),
+                                  count(*) FILTER (WHERE r.source_id=c.source_id AND r.predecessor IS NOT NULL),
+                                  count(*) FILTER (WHERE r.source_id<>c.source_id)
+                           FROM candidate.confirmations c JOIN candidate.revisions r ON r.id=c.revision_id
+                           WHERE c.source_id=ANY(%s::bigint[]) GROUP BY c.source_id,c.domain
+                           ORDER BY c.source_id,c.domain""", (list(receipts),))
+            for receipt, domain, created, superseded, confirmed in cur:
+                if receipts[receipt]['outcome'] != 'received':
+                    raise ValueError('Unaccepted source receipt has canonical effects')
+                receipts[receipt]['canonical_effects'][domain] = dict(
+                    created=created, superseded=superseded, confirmed=confirmed)
+        return dict(baseball_date=day.isoformat(), capture=capture, receipts=list(receipts.values()),
+                    next_after_receipt_id=page[31][0] if len(page) > 32 else None)
+
+    return history._transaction(connection, read)
+
+
+def read_receipt_changes(connection, day, capture, receipt_id, *, after_revision_id=0):
+    """Follow a scoped source receipt to canonical identities and predecessor revisions."""
+    _validate_replay_scope(day, capture, after_revision_id, 'revision')
+    if type(receipt_id) is not int or not 0 < receipt_id < 2**63:
+        raise ValueError('Expected a positive receipt ID')
+
+    def read(cur):
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("""SELECT f.sha256, CASE WHEN deny.source_id IS NULL THEN f.outcome ELSE 'refused' END,
+                              coalesce(deny.reason,f.reason)
+                       FROM candidate.fetches f LEFT JOIN candidate.refusals deny ON deny.source_id=f.id
+                       JOIN candidate.attempts a ON a.token=f.token
+                       JOIN candidate.jobs j ON j.id=a.job_id
+                       WHERE f.id=%s AND j.budget='historical' AND j.product_date=%s
+                         AND j.payload->>'capture'=%s""", (receipt_id, day, capture))
+        row = cur.fetchone()
+        result = dict(baseball_date=day.isoformat(), capture=capture, receipt_id=receipt_id,
+                      status='unknown_receipt', changes=[], next_after_revision_id=None)
+        if row is None:
+            return result
+        result.update(status='represented', sha256=row[0], outcome=row[1], reason=row[2])
+        cur.execute("""SELECT r.id,c.domain,c.identity,r.revision,r.predecessor,r.source_id,c.context_id,
+                              CASE WHEN r.source_id<>c.source_id THEN 'confirmed'
+                                   WHEN r.predecessor IS NULL THEN 'created' ELSE 'superseded' END
+                       FROM candidate.confirmations c JOIN candidate.revisions r ON r.id=c.revision_id
+                       WHERE c.source_id=%s AND r.id>%s ORDER BY r.id LIMIT 33""",
+                    (receipt_id, after_revision_id))
+        changes = cur.fetchall()
+        if changes and result['outcome'] != 'received':
+            raise ValueError('Unaccepted source receipt has canonical effects')
+        result['changes'] = [dict(revision_id=version, domain=domain, identity=identity, revision=revision,
+                                  predecessor_id=parent, creating_receipt_id=source,
+                                  context_receipt_id=context, effect=effect)
+                             for version, domain, identity, revision, parent, source, context, effect in changes[:32]]
+        if len(changes) > 32:
+            result['next_after_revision_id'] = changes[31][0]
         return result
 
     return history._transaction(connection, read)

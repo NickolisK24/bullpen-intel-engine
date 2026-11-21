@@ -19,6 +19,7 @@ CREATE TABLE candidate.confirmations (
     observed_at timestamptz NOT NULL,
     PRIMARY KEY(domain,identity,source_id)
 );
+CREATE INDEX confirmations_by_receipt_revision ON candidate.confirmations(source_id,revision_id);
 CREATE INDEX confirmations_by_subject ON candidate.confirmations(domain,identity,observed_at DESC,source_id DESC);
 GRANT SELECT,INSERT ON candidate.revisions,candidate.confirmations TO sync_v3_worker;
 
