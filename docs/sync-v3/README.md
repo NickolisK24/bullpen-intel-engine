@@ -263,3 +263,12 @@ The range of acquisition times was November 21, 2026, 06:21:10–07:39:50 UTC. S
 The Board and Pitcher views also read dated appearance lines from their exact workload snapshot. Each line identifies its MLB game, pitcher, game-side club, opponent, final revision and source body digest. The club ledger includes every official reliever for that club, including players who later left. The pitcher ledger follows the player across clubs and includes starts. Incomplete calendar dates remain explicit gaps. Missing counts remain unknown. A 30-day retrospective boxscore recount through August 7 matched all 79 Giants relief appearances and all 88 Nationals relief appearances by game, player, date, pitches and strikeouts. The Giants' July 27 doubleheader retained distinct games 745307 and 745310. Five additional complete calendar receipts covered dates neither club played.
 
 Board and Pitcher also share the pinned, dated MLB active-roster profile for throwing hand. It states when the person attribute was retrieved. An absent, incompatible or contradictory profile leaves the hand unknown.
+
+The isolated rehearsal can use pitcher IDs retained in an observed BaseballOS publication. Supply the original proof ZIP and the SHA-256 reported independently by GitHub. From backend, run:
+
+```sh
+python -m sync_v3.rehearse --fixture tests/fixtures/sync_v3/quiet.json \
+  --identity-proof /path/to/production-proof.zip 209f55a6904abf9602946e9b8f5ea5ce836ee398f662442fe199c7dbf169d449
+```
+
+GitHub Actions run [44794472956](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/44794472956), artifact 14657943570, supplied 440 unique pitcher identity pairs across 30 clubs for snapshot 5843 (sync run 98300). Its membership date was October 28, 2026, and its availability date was October 30. The importer verifies the archive, publication status, postcommit observation, club dates, original receipt digest and player identity uniqueness. It preserves the original inconclusive cross-version assertion. Identities outside the observed population still require a separate reference. The same run's delivery artifact 14659061276 independently matched the repository's generated digest manifests for 30 team pages and 10,174 share pages. This verifies retained legacy artifacts. Replacement delivery parity requires comparing candidate outputs against corresponding dated references.
