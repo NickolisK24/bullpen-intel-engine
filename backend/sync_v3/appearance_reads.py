@@ -78,7 +78,7 @@ def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs
         log = SimpleNamespace(**dict(line, game_date=date.fromisoformat(day), innings_pitched_outs=line['outs_recorded'],
                                      opponent=opponent.team_name, opponent_abbreviation=opponent.abbreviation))
         lines[key] = dict(_appearance_line(log), game_pk=key[0], mlb_id=key[1], game_number=game_number,
-                          appearance_team_id=line['team_id'], opponent_team_id=line['opponent_team_id'],
+                          appearance_team_id=line['team_id'], opponent_team_id=line['opponent_team_id'], home_away=line['side'],
                           role=line['appearance_role'], games_finished=line.get('games_finished'),
                           final_revision=revision, boxscore_digests=[sha])
     kept = [row for row in lines.values() if row['game_date'] not in gaps]
@@ -90,6 +90,41 @@ def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs
                 population='game_side_relief' if subject=='team' else 'all_pitching_appearances',
                 through=through.isoformat(), start=start.isoformat(), gaps=gaps, appearances=kept,
                 citation=dict(methodology=methodology, facts_digest=semantic, input_digest=inputs))
+
+
+def team_relief_games(team, regular, postseason):
+    """Summarize evidenced relief games on the Board's latest five verified appearance dates."""
+    from collections import defaultdict
+    from services.team_board_recent_relief_work import DISPLAY_GAME_DATES, relief_game_totals
+
+    if (regular['population'] != 'game_side_relief' or postseason['population'] != regular['population']
+            or regular['start'] != postseason['start'] or regular['through'] != postseason['through']):
+        raise ValueError('Club relief windows or populations disagree')
+    games = []
+    seen = set()
+    for ledger in (regular, postseason):
+        grouped = defaultdict(list)
+        for line in ledger['appearances']:
+            if line['appearance_team_id'] != team:
+                raise ValueError('Relief appearance belongs to another club')
+            grouped[line['game_pk']].append(line)
+        for pk, lines in grouped.items():
+            identities = {(r['game_date'], r['game_number'], r['opponent_team_id'], r['opponent_abbreviation'],
+                           r['home_away'], r['final_revision']) for r in lines}
+            if pk in seen or len(identities) != 1 or len({r['mlb_id'] for r in lines}) != len(lines):
+                raise ValueError('Conflicting game or pitcher in the selected relief evidence')
+            seen.add(pk)
+            day, number, opponent, abbreviation, side, revision = identities.pop()
+            games.append(dict(mlb_game_pk=pk, game_date=day, game_number=number, opponent_team_id=opponent,
+                              opponent_abbreviation=abbreviation, home_away=side, final_revision=revision, scope=ledger['scope'],
+                              boxscore_digests=sorted({sha for r in lines for sha in r['boxscore_digests']}),
+                              **relief_game_totals([r['innings_pitched_outs'] for r in lines],
+                                                   [r['pitches_thrown'] for r in lines])))
+    games.sort(key=lambda g: (-date.fromisoformat(g['game_date']).toordinal(), g['game_number'] is None,
+                              g['game_number'] or 0, g['mlb_game_pk']))
+    dates = sorted({g['game_date'] for g in games}, reverse=True)[:DISPLAY_GAME_DATES]
+    return dict(status='verified_games_only', through=regular['through'], regular_gaps=regular['gaps'],
+                postseason_gaps=postseason['gaps'], games=[g for g in games if g['game_date'] in dates])
 
 
 def pitcher_recent_work(regular, postseason):

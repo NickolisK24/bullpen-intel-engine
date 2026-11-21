@@ -7,7 +7,7 @@ from services.team_state_public_vocabulary import (
     INTERNAL_TO_PUBLIC_STATE, PUBLIC_STATE_LABELS, TEAM_STATE_READINESS_UNAVAILABLE,
     public_team_state, team_state_unavailable,
 )
-from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances
+from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances, team_relief_games
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -873,6 +873,7 @@ def read_team_board(connection, team, *, revision=None):
         through = date.fromisoformat(listing['data_through'])
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
+        result['recent_relief_games'] = team_relief_games(team, result['recent_relief'], result['postseason_relief'])
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))
     return _read_transaction(connection, board)

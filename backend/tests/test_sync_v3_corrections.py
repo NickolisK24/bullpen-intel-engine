@@ -1078,6 +1078,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert ledger['status'] == 'partial' and len(ledger['gaps']) == 16
             assert set(ledger['gaps'].values()) == {'missing_complete_schedule'}
             assert line['appearance_team_id'] == 111 and line['mlb_id'] == 11101
+            games = board['recent_relief_games']
+            assert games['status'] == 'verified_games_only' and games['regular_gaps'] == ledger['gaps']
+            game, = games['games']
+            assert (game['mlb_game_pk'], game['relief_appearances'], game['innings']) == (line['game_pk'], 1, '5.0')
+            assert game['pitches_total'] == line['pitches_thrown'] and game['boxscore_digests'] == line['boxscore_digests']
             assert line['blown_save'] is None and line['strikeouts'] == 2
             assert line['innings_pitched_outs'] == 15 and len(line['boxscore_digests'][0]) == 64
             event = history['events'][0]
@@ -1319,3 +1324,26 @@ def test_pitcher_chart_preserves_individual_outings_and_missing_counts():
                                 dict(postseason, appearances=[]))
     assert empty['workload_series'] == [] and 'No verified outings' in empty['absence_sentence']
     assert 'workload' not in empty
+
+
+def test_team_relief_games_keep_doubleheaders_missing_measures_and_club_ownership():
+    from sync_v3.appearance_reads import team_relief_games
+
+    regular = dict(start='2026-09-01', through='2026-09-30', population='game_side_relief',
+                   scope='official_regular_season', gaps={}, appearances=[])
+    postseason = dict(regular, scope='verified_postseason_finals', appearances=[])
+    for day in range(1, 7):
+        regular['appearances'].append(dict(game_pk=day, game_date=f'2026-09-{day:02}', game_number=1,
+            opponent_team_id=147, opponent_abbreviation='NYY', home_away='away', appearance_team_id=111,
+            final_revision=1, boxscore_digests=['box'],
+            mlb_id=123, innings_pitched_outs=2, pitches_thrown=10))
+    second = dict(regular['appearances'][-1], game_pk=7, game_number=2, pitches_thrown=None)
+    regular['appearances'].append(second)
+    games = team_relief_games(111, regular, postseason)['games']
+    assert [g['mlb_game_pk'] for g in games] == [6, 7, 5, 4, 3, 2]
+    assert games[1]['evidence_status'] == 'partial' and games[1]['pitches_total'] is None
+    assert games[1]['innings'] == '0.2' and games[1]['outs_total'] == 2
+    with pytest.raises(ValueError, match='another club'):
+        team_relief_games(147, regular, postseason)
+    with pytest.raises(ValueError, match='Conflicting game'):
+        team_relief_games(111, regular, dict(postseason, appearances=[second]))

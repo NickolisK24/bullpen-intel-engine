@@ -394,6 +394,21 @@ def _legacy_appearance(item):
     }
 
 
+def relief_game_totals(outs, pitches):
+    """Summarize one club's verified relief lines, preserving incomplete measures."""
+    if len(outs) != len(pitches):
+        raise ValueError('Outs and pitches must cover the same appearances')
+    outs_complete = all(value is not None for value in outs)
+    pitches_complete = all(value is not None for value in pitches)
+    return {
+        'evidence_status': 'complete' if outs_complete and pitches_complete else 'partial',
+        'relief_appearances': len(outs),
+        'outs_total': sum(outs) if outs_complete else None,
+        'innings': _innings(sum(outs)) if outs_complete else None,
+        'pitches_total': sum(pitches) if pitches_complete else None,
+    }
+
+
 def _game(team_id, game_pk, entries, final, active_pitcher_ids):
     appearances = [
         _appearance(team_id, log, pitcher, active_pitcher_ids)
@@ -401,8 +416,6 @@ def _game(team_id, game_pk, entries, final, active_pitcher_ids):
     ]
     outs = [item['outs']['value'] for item in appearances]
     pitches = [item['pitches']['value'] for item in appearances]
-    outs_complete = all(value is not None for value in outs)
-    pitches_complete = all(value is not None for value in pitches)
     first_log = entries[0][0]
     return {
         'mlb_game_pk': game_pk,
@@ -416,13 +429,7 @@ def _game(team_id, game_pk, entries, final, active_pitcher_ids):
             'game_status': 'final',
             'reason_codes': [],
         },
-        'evidence_status': (
-            'complete' if outs_complete and pitches_complete else 'partial'
-        ),
-        'relief_appearances': len(appearances),
-        'outs_total': sum(outs) if outs_complete else None,
-        'innings': _innings(sum(outs)) if outs_complete else None,
-        'pitches_total': sum(pitches) if pitches_complete else None,
+        **relief_game_totals(outs, pitches),
         'appearances': appearances,
     }
 

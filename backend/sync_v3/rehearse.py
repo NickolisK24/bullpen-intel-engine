@@ -285,6 +285,13 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             if listing['generation'] != digest or len(listing['teams']) != 30:
                                 raise RuntimeError('League listing disagrees with the selection')
                             print(json.dumps(dict(historical_league=listing)))
+                            if team is not None:
+                                from sync_v3.product_reads import read_team_board
+                                board = read_team_board(worker, team, revision=revision)
+                                if (board['generation'] != digest or board['team']['team_id'] != team
+                                        or board['current_serving_eligible']):
+                                    raise RuntimeError('Historical Team Board differs from its isolated selection')
+                                print(json.dumps(dict(historical_team_board=board)))
                             slate = read_game_cards(worker, revision=revision)
                             if slate['generation'] != digest:
                                 raise RuntimeError('Game cards disagree with the selected generation')
