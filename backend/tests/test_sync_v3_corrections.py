@@ -1064,7 +1064,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
-            hand = board['active_bullpen'][0]['pitch_hand']
+            displayed_arm = board['active_bullpen'][0]
+            assert displayed_arm['arm_context'] == dict(mode='historical', data_through=str(day), days_rest=None)
+            assert displayed_arm['display_read']['key'] == 'limited_read'
+            assert displayed_arm['read']['arm_read']['key'] == 'watch_arm'
+            hand = displayed_arm['pitch_hand']
             assert hand['value'] == 'L' and hand['basis'] == 'official_person_attribute_at_retrieval'
             assert hand['observed_at'].startswith(str(day + timedelta(days=1)))
             other_hand = read_team_board(worker, 110)['active_bullpen'][0]['pitch_hand']
@@ -1104,6 +1108,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             if identity_mode != 'absent':
                 assert board['active_bullpen'][0]['public_pitcher_id'] == 9111
                 assert pitcher['identity']['mlb_id'] == 11101 and pitcher['identity']['name'] == arm[0]['primary_label']
+                assert pitcher['arm_context'] == displayed_arm['arm_context']
+                assert pitcher['display_read'] == displayed_arm['display_read']
                 assert pitcher['pitch_hand'] == hand
                 assert pitcher['recent_work']['appearances'] == ledger['appearances']
                 assert set(pitcher['sections']) == {'pitcher_profile','pitcher_rest','workload'}

@@ -831,6 +831,16 @@ def _pitch_hand(depth, player):
     return dict(result, value=hand, observed_at=hydrated['retrieved_at'], reason=None)
 
 
+def _historical_arm_display(through):
+    """Scope a dated active roster member's display independently of its frozen assessment."""
+    from services.pitcher_public_labels import build_public_arm_read, public_arm_context
+
+    context = public_arm_context(freshness={'data_through': through, 'is_current': False},
+                                 product_day=None, club_active=False, roster={}, data_state=None,
+                                 latest_game_date=None)
+    return dict(arm_context=context, display_read=build_public_arm_read())
+
+
 def read_team_board(connection, team, *, revision=None):
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.history import METHODOLOGY
@@ -857,7 +867,8 @@ def read_team_board(connection, team, *, revision=None):
             identity = players.get(mlb, {})
             arms.append(dict(mlb_id=mlb, public_pitcher_id=identity.get('public_id'),
                              name=identity.get('name'), pitch_hand=_pitch_hand(blocks['depth'], mlb),
-                             read=arm['read'], reason=arm['reason']))
+                             read=arm['read'], reason=arm['reason'],
+                             **_historical_arm_display(listing['data_through'])))
         from datetime import date
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, date.fromisoformat(listing['data_through']))
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
@@ -889,6 +900,7 @@ def read_pitcher(connection, public_id, *, revision=None):
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
             return dict(result, status=kind, identity=player, sections={})
         depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
+        result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         if (player.get('roster_observation') or {}).get('membership') == 'active':
             return dict(result, status='dated_active_pitcher', identity=player, sections={},
