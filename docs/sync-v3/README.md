@@ -946,3 +946,13 @@ The August 7, 2024 all-club fixture (capture `094e5f88eb86e5df91d24ae46777001507
 Within an already open disposable rehearsal, `sync_v3.replay.read_replay_work(connection, baseball_date, capture_digest)` queries the same evidence in a read-only transaction. It can inspect a running job, its lease expiry and any dependent job before an HTTP receipt exists. An empty job-state map means the specified date and digest matched no historical jobs. A done count describes completed queue work. Publication and selection have their own receipts.
 
 For more than 32 unresolved jobs, pass the returned `next_after_job_id` as `after_job_id` to the next read with the same date and capture. A null cursor ends the list. The 121-job fault injection returned 32, 32, 32 and 25 distinct job IDs on a read-only connection. Counts apply to the entire capture at each read. If workers are active, subsequent reads can observe their progress.
+
+When a retained file's digest is unknown, inspect the original job scope in the disposable database. For example, the August 28, 2017 restore grouped 895 completed jobs under capture `2607dcafe7578f8c6307f04eff34dbb3e1d0447be52ae2a4306ed5d0ce593d01`. Looking up a different file for the same baseball date returned zero matching jobs. Seven local, read-only lookups of the retained capture took 0.48–0.73 ms. These measurements cover the queue summary in that restored database.
+
+```sql
+SELECT payload->>'capture' AS capture_digest, count(*) AS jobs
+FROM candidate.jobs
+WHERE budget = 'historical' AND product_date = DATE '2017-08-28'
+  AND payload->>'capture' ~ '^[0-9a-f]{64}$'
+GROUP BY 1 ORDER BY jobs DESC, capture_digest LIMIT 32;
+```
