@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
+import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
 import { getTeamStateHistory } from '../../utils/api'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
@@ -395,6 +396,7 @@ function HistoricalSelectionHistory({ payload }) {
           {row.generation ? <>
             <p>Data through <time>{row.represented}</time> · Availability reference <time>{row.availability_reference}</time></p>
             <p>{state.publicLabel || state.statusLabel || state.unavailableMessage}</p>
+            <HistoricalChanges row={row} team={payload.team} />
             {row.calendar_context.events.map(event => <GameContext key={event.kind + event.game_pks.join('-')} event={event} />)}
             {row.calendar_context.calendar_limitation && <p>Calendar evidence is incomplete.</p>}
             <details><summary>Team State evidence</summary>

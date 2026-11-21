@@ -668,3 +668,20 @@ test('isolated History shows dated decisions and game evidence across rollback',
   assert.ok(!html.includes('Open current'))
   assert.ok(!html.includes('Pitcher velocity and mix'))
 })
+
+test('historical changes display the selected club, date and comparison citation', async () => {
+  const { default: HistoricalChanges } = await server.ssrLoadModule('/src/components/history/HistoricalChanges.jsx')
+  const citation = { subject: 'team', mlb_id: 111, methodology: 'roster', revision: 3, input_digest: 'receipt', facts_digest: 'facts' }
+  const roster = { team: 111, represented: '2026-07-29', citation,
+    event: { event_id: 'removed', kind: 'active_roster_removed', player: 99, pitcher_name: 'Former Boston Reliever' } }
+  const event = { event_id: 'seven', kind: 'workload_7_day_changed', previous: { pitches: 0 }, current: { pitches: 15 } }
+  const wrong = { ...roster, event: { ...roster.event, event_id: 'other', pitcher_name: 'Wrong evidence' } }
+  const row = { represented: roster.represented, comparisons: [{ status: 'partial_burden_coverage', citation }],
+    events: [roster, { ...roster, event }, { ...wrong, team: 112 }, { ...wrong, represented: '2026-07-28' },
+      { ...wrong, citation: { ...citation, input_digest: 'foreign' } }] }
+  const html = renderToStaticMarkup(React.createElement(HistoricalChanges, { row, team: 111 }))
+  for (const text of ['Removed from the active roster', 'Former Boston Reliever', 'Seven-day bullpen workload',
+    'pitches 0 → 15', 'Some comparisons have incomplete coverage', 'receipt']) assert.ok(html.includes(text), text)
+  assert.ok(!html.includes('Wrong evidence'))
+  assert.ok(!html.includes('outs 0'))
+})
