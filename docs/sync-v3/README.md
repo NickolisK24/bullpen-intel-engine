@@ -339,3 +339,16 @@ On October 7, 2026, San Diego's retained forty-man response contained 23 distinc
 An active pitcher outside the edition's verified bullpen can appear in Search, Pitcher Detail and dated History. His club and active status come from the generation's dated MLB roster. Pitcher Detail can cite his official appearances, including starts. A bullpen read requires separate evidence. The October 7 San Diego replay reproduced all 11 active pitching identities in the captured MLB response (SHA-256 `00c90bb5e080e8bcf25ed0388222a491c8c44482f89aa09220fee2836dc812b8`). Six had a verified route in the snapshot 5843 identity export.
 
 The August 7, 2024 league replay compared the directory with the dated active responses for all 30 clubs. It reproduced 393 names, MLB IDs and club assignments. The archived public identity export supplied routes for 129 of those pitchers. No player appeared on multiple clubs' active pitching lists in that sample. This comparison covers roster identity only.
+
+### Historical Share delivery
+
+From `backend`, compare the static delivery tree with independently digest-pinned GitHub archives from run 44794472956:
+
+```sh
+python -m sync_v3.archived_share_pages "$PAGES_ZIP" \
+  2b56cf9d2ded8f44287df301935d5c469cde5c95f96dd326711dd90f24e6e681 \
+  "$DELIVERY_REPORT_ZIP" 8adf91796d085960aec9e8e69d6fd66ed4ef73347f84f8fab12e6e56dea7e918 \
+  ../frontend/public/share
+```
+
+Artifact 14657712979 contains the exported pages. Artifact 14659061276 records the page set and content digests. All 10,174 links and their HTML bytes matched, covering 9,358 Team State pages and 816 Since Yesterday pages with data through July 23–October 28, 2026. The separately delivered invalid-link fallback also matched. Snapshot 5843 identifies the export; each page retains its original historical identity. These archives preserve rendered output. Rebuilding an original page from its underlying frozen artifact still requires the original artifact record. Current candidate facts cannot establish its contents.
