@@ -80,7 +80,7 @@ def read_story_observations(connection, team, *, revision=None):
 
     def read(cur):
         selected = _selected(cur, revision)
-        result = dict(scope='isolated_historical_game_lines', generation=None, current_serving_eligible=False,
+        result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
                       observations=None, qualification='no_selected_generation')
         if not selected or selected[1] is None:
             return result
@@ -164,9 +164,16 @@ def read_event_evidence(connection, team, event_id, *, revision):
     if type(revision) is not int or revision < 1 or not isinstance(event_id, str) or not event_id:
         raise ValueError('An exact selector revision and event identity are required')
     history = read_team_events(connection, team, revision=revision)
-    event = next((item for item in history['events'] if item['event']['event_id'] == event_id), None)
+    matches = [item for item in history['events'] if item['event']['event_id'] == event_id]
+    event = matches[0] if len(matches) == 1 else None
+    status = history['status']
+    if status == 'represented':
+        if len(matches) > 1:
+            status = 'ambiguous_event'
+        elif event is None:
+            status = 'missing_event'
     return dict(scope='historical_editorial_evidence', generation=history['generation'], selection_revision=revision,
-                event_id=event_id, evidence=event, status='represented' if event else 'missing_event',
+                team=team, represented=history['represented'], event_id=event_id, evidence=event, status=status,
                 current_serving_eligible=False, trusted_snapshot_id=None)
 
 

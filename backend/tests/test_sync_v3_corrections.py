@@ -976,9 +976,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             boston = next(card for card in slate['games'] if card['game_pk'] == 10101)
             assert boston['away']['rotation']['status'] == 'partial'
             assert boston['away']['rotation']['bullpen_innings'] == '5.0'
-            for card in slate['games']:
-                lookup = read_search(worker, str(card['game_pk']), revision=1)['search']['groups'][2]['results']
-                assert [entry['id'] for entry in lookup] == [card['game_pk']]
+            from sync_v3.rehearse import verify_slate_matchups
+            assert [item['game']['game_pk'] for item in verify_slate_matchups(worker, slate)] == [
+                card['game_pk'] for card in slate['games']]
+            altered = dict(slate['games'][-1], home=slate['games'][-1]['away'])
+            with pytest.raises(RuntimeError, match='selected slate'):
+                list(verify_slate_matchups(worker, dict(slate, games=[altered])))
             matchup = read_game_cards(worker, game_pk=game['id'])
             assert matchup['games'] == [next(row for row in slate['games'] if row['game_pk'] == game['id'])]
             assert matchup['generation'] == discovery['generation']
@@ -1064,8 +1067,19 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
-            from sync_v3.rehearse import verify_board_history
+            from sync_v3.rehearse import verify_board_history, verify_editorial_evidence
             journey = verify_board_history(worker, board)
+            event = board['what_changed']['events'][0]
+            forged = dict(event, citation=dict(event['citation'], input_digest='0' * 64))
+            with pytest.raises(RuntimeError, match='History citation'):
+                verify_editorial_evidence(worker, board, [forged])
+            assert journey['editorial']['event_citations'] == len(board['what_changed']['events'])
+            assert journey['editorial']['story_qualification'] == 'game_lines_compared'
+            assert journey['editorial']['story_observations'] > 0
+            unknown = read_event_evidence(worker, 111, event['event']['event_id'], revision=100)
+            assert unknown['status'] == 'unknown_revision' and unknown['evidence'] is None
+            missing = read_event_evidence(worker, 111, 'unobserved', revision=1)
+            assert missing['status'] == 'missing_event' and missing['evidence'] is None
             if identity_mode == 'absent':
                 assert journey['verified_pitcher_routes'] == [] and journey['withheld_pitcher_mlb_ids'] == [11101]
             else:
@@ -1194,6 +1208,10 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 attempts = [pool.submit(attempt) for _ in range(2)]
                 assert [f.result(timeout=90) for f in attempts] == [2, 2]
+
+            with pytest.raises(RuntimeError, match='History citation'):
+                verify_editorial_evidence(worker, dict(board, selection_revision=2), [event])
+            assert verify_editorial_evidence(worker, board, [event])['event_citations'] == 1
 
             with pytest.raises(ValueError, match='predecessor'):
                 select_generation(reviewer, first, expected_revision=0, rollback=True)
@@ -1401,3 +1419,15 @@ def test_board_concentration_keeps_a_transferred_pitchers_appearance_with_his_ol
         unresolved = board_concentration(day, seven, order, {}, population)
         assert unresolved['unresolved_contributor_mlb_ids'] == [100, 200]
         assert unresolved['contributors'] == [] and unresolved['top_3_share'] is None
+
+
+def test_editorial_citation_withholds_ambiguous_events(monkeypatch):
+    from sync_v3 import editorial_reads
+
+    evidence = dict(event=dict(event_id='repeated'), citation=dict(input_digest='first'))
+    history = dict(status='represented', represented='2026-07-29', generation='edition',
+                   events=[evidence, dict(evidence, citation=dict(input_digest='second'))])
+    monkeypatch.setattr(editorial_reads, 'read_team_events', lambda *args, **kwargs: history)
+    receipt = editorial_reads.read_event_evidence(None, 111, 'repeated', revision=1)
+    assert receipt['status'] == 'ambiguous_event' and receipt['evidence'] is None
+    assert receipt['trusted_snapshot_id'] is None and receipt['current_serving_eligible'] is False

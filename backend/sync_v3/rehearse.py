@@ -74,6 +74,82 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
+def verify_editorial_evidence(connection, board, events):
+    from sync_v3.editorial_reads import read_event_evidence, read_story_observations
+
+    team, revision = board['team']['team_id'], board['selection_revision']
+    edition = board['generation'], revision, board['data_through']
+    for event in events:
+        event_id = event['event']['event_id']
+        receipt = read_event_evidence(connection, team, event_id, revision=revision)
+        if ((receipt['generation'], receipt['selection_revision'], receipt['represented']) != edition
+                or receipt['team'] != team or receipt['event_id'] != event_id or receipt['status'] != 'represented'
+                or receipt['evidence'] != event or receipt['trusted_snapshot_id'] is not None
+                or receipt['current_serving_eligible']):
+            raise RuntimeError(f'Editorial event {event_id} disagrees with its selected History citation')
+
+    stories = read_story_observations(connection, team, revision=revision)
+    rotation = board['sections']['rotation']
+    if ((stories['generation'], stories['selection_revision'], stories['represented']) != edition
+            or stories['team'] != team or stories['current_serving_eligible']
+            or any(stories['citation'][k] != rotation['citation'][k]
+                   for k in ('methodology', 'facts_digest', 'input_digest'))):
+        raise RuntimeError('Story rotation citation differs from the selected Board')
+    payload = stories['observations']
+    count = None
+    if stories['qualification'] == 'game_lines_compared':
+        games = {g['game_pk'] for day in rotation['value']['dates'].values() for g in day['games']}
+        if (not payload or payload['team_id'] != team or payload['data_through_date'] != edition[2]
+                or payload['reference_date'] != board['availability_reference']
+                or payload['observation_count'] != len(payload['observations'])
+                or sorted(games) != stories['source_games']
+                or {str(pk) for pk in games} != stories['boxscore_digests'].keys()
+                or not all(stories['boxscore_digests'].values())):
+            raise RuntimeError('Story source games or observation scope disagree with the selected Board')
+        for line in board['recent_relief']['appearances']:
+            pk = line['game_pk']
+            if pk in games and not set(line['boxscore_digests']).intersection(stories['boxscore_digests'][str(pk)]):
+                raise RuntimeError(f'Story and Board cite different boxscores for game {pk}')
+        count = payload['observation_count']
+    elif payload is not None:
+        raise RuntimeError('Unqualified historical Story exposed observations')
+    return dict(event_citations=len(events), story_qualification=stories['qualification'], story_observations=count)
+
+
+def verify_slate_matchups(connection, slate):
+    """Resolve every offered game by its official identity in Search and Matchup."""
+    from sync_v3.product_reads import read_game_cards, read_search
+
+    revision = slate['selection_revision']
+    edition = slate['generation'], revision
+    seen = set()
+    for card in slate['games']:
+        pk = card['game_pk']
+        if pk in seen:
+            raise RuntimeError(f'Duplicate game {pk} on the historical slate')
+        seen.add(pk)
+        search = read_search(connection, str(pk), revision=revision)
+        if (search['generation'], search['selection_revision']) != edition:
+            raise RuntimeError(f'Historical Search edition differs for game {pk}')
+        group = next(group for group in search['search']['groups'] if group['entity_type'] == 'matchup')
+        if group['status'] != 'available' or [row['id'] for row in group['results']] != [pk]:
+            raise RuntimeError(f'Historical Search cannot resolve slate game {pk}')
+        metadata = group['results'][0]['metadata']
+        detail = read_game_cards(connection, revision=revision, game_pk=pk)
+        comparison = detail['historical_comparison']
+        if (detail['games'] != [card] or (comparison['generation'], comparison['selection_revision']) != edition
+                or comparison['game']['game_pk'] != pk or comparison['represented_date'] != slate['data_through']
+                or comparison['availability_reference_date'] != slate['availability_reference']
+                or metadata['reference_date'] != comparison['game']['reference_date']
+                or comparison['current_serving_eligible'] or comparison['publication_authority'] is not None):
+            raise RuntimeError(f'Historical Matchup differs from the selected slate for game {pk}')
+        for side, label in [('away', 'team_a'), ('home', 'team_b')]:
+            team = card[side]['team_id']
+            if any(row['team_id'] != team for row in (comparison['game'][side], comparison['teams'][label], metadata[side])):
+                raise RuntimeError(f'Historical {side} club differs for game {pk}')
+        yield comparison
+
+
 def verify_board_history(connection, board):
     """Follow all offered pitcher identities from one selected Board to the corresponding history reads."""
     from sync_v3.product_reads import read_pitcher, read_pitcher_history, read_team_history
@@ -117,7 +193,8 @@ def verify_board_history(connection, board):
                 or (deployment['facts'] or {}).get('observed_role') != dated['role']):
             raise RuntimeError(f'Pitcher {public_id} evidence disagrees with the selected Board or History')
         verified.append(dict(mlb_id=mlb, public_pitcher_id=public_id))
-    return dict(generation=digest, selection_revision=revision, team_id=team, team_events=len(row['events']),
+    editorial = verify_editorial_evidence(connection, board, row['events'])
+    return dict(generation=digest, selection_revision=revision, team_id=team, team_events=len(row['events']), editorial=editorial,
                 verified_pitcher_routes=verified, withheld_pitcher_mlb_ids=withheld, current_serving_eligible=False)
 
 
@@ -346,13 +423,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             if slate['generation'] != digest:
                                 raise RuntimeError('Game cards disagree with the selected generation')
                             print(json.dumps(dict(historical_slate=slate)))
-                            if slate['games']:
-                                game_pk = slate['games'][0]['game_pk']
-                                detail = read_game_cards(worker, revision=revision, game_pk=game_pk)
-                                comparison = detail['historical_comparison']
-                                if (comparison['generation'] != digest or comparison['game']['game_pk'] != game_pk
-                                        or comparison['current_serving_eligible'] or comparison['publication_authority'] is not None):
-                                    raise RuntimeError('Historical Matchup differs from its isolated selection')
+                            for comparison in verify_slate_matchups(worker, slate):
                                 print(json.dumps(dict(historical_matchup=comparison)))
                             restored = select_generation(reviewer, None, expected_revision=revision, rollback=True)
                             print(json.dumps(dict(isolated_selection=digest, revision=revision,
