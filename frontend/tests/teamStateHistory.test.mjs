@@ -685,3 +685,17 @@ test('historical changes display the selected club, date and comparison citation
   assert.ok(!html.includes('Wrong evidence'))
   assert.ok(!html.includes('outs 0'))
 })
+
+test('Pitcher shows only his cited changes for the represented club and date', async () => {
+  const { HistoricalPitcherChanges } = await server.ssrLoadModule('/src/components/history/HistoricalChanges.jsx')
+  const day = '2026-07-29'
+  const event = { player: 1001, event_id: 'short-start', kind: 'new_short_start', game: 845 }
+  const item = { event, team: 111, represented: day, citation: { input_digest: 'correct-source', lineage: [{ represented: day }] } }
+  const edition = { identity: { mlb_id: 1001, team_id: 111 }, generation: 'first', current_serving_eligible: false,
+    data_through: day, represented_events: [item, { ...item, team: 118 }, { ...item, event: { ...event, player: 2002 } },
+      { ...item, citation: { input_digest: 'stale-source', lineage: [{ represented: '2026-07-28' }] } }] }
+  const html = renderToStaticMarkup(React.createElement(HistoricalPitcherChanges, { edition }))
+  assert.equal(html.split('Short start').length - 1, 1)
+  assert.ok(html.includes('correct-source') && html.includes('https://www.mlb.com/gameday/845'))
+  assert.ok(!html.includes('stale-source'))
+})

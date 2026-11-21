@@ -982,7 +982,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert observation['membership'] == 'active' and observation['represented'] == str(day)
                 assert len(observation['roster_digest']) == 64
                 dated = read_pitcher_history(worker, starter['id'], through_revision=1)['rows'][0]
-                assert dated['identity'] == detail['identity'] and dated['events'] == []
+                assert dated['identity'] == detail['identity'] and dated['events'] == detail['represented_events']
+                short_start, = dated['events']
+                assert short_start in read_team_events(worker, 111, revision=1)['events']
+                assert short_start['event']['kind'] == 'new_short_start' and short_start['event']['player'] == 11100
+                assert short_start['event']['facts'] == dict(starter_outs=12, bullpen_outs=15)
             else:
                 assert pitchers['status'] == 'unavailable' and pitchers['results'] == []
             assert matchups['status'] == 'available' and len(matchups['results']) == 1
@@ -1290,6 +1294,13 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert game_event['extra_innings'] is None
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
+            if identity_mode != 'absent':
+                starter_rows = read_pitcher_history(worker, 8997, through_revision=3, limit=3)['rows']
+                for row in starter_rows:
+                    detail = read_pitcher(worker, 8997, revision=row['selection_revision'])
+                    assert detail['generation'] == row['generation']
+                    assert detail['represented_events'] == row['events']
+                assert starter_rows[0]['events'] == starter_rows[2]['events'] == [short_start]
             timeline = read_pitcher_history(worker, 9111, through_revision=3, limit=2)
             assert [item['generation'] for item in timeline['rows']] == [first, second]
             if identity_mode != 'absent':
