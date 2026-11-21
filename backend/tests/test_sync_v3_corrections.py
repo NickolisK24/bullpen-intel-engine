@@ -76,6 +76,11 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
                                      teams=[111], clock=lambda:at+timedelta(days=offset))
                 assert all(status=='received' for _,status in statuses)
             with worker, worker.cursor() as cur:
+                from sync_v3.deployment import game_deployment
+                deployment = game_deployment(cur, 12345, day)
+                assert deployment['entry_reason'] == 'missing_complete_plays'
+                arm, = deployment['relief_appearances']
+                assert arm['mlb_player_id'] == 102 and arm['outs'] == 9 and arm['entry_inning'] is None
                 windows = pitcher_windows(cur, 102, day+timedelta(days=2))
                 assert windows[3]['facts'] == {'appearances':1,'multi_inning':1,'high_pitch_outings':0,
                     'batters_faced':4,'outs_recorded':9,'pitches_thrown':15}
@@ -305,3 +310,30 @@ def test_all_star_final_retains_lines_without_attributing_workload_to_an_mlb_clu
                 assert cur.fetchone() == (0,)
         finally:
             worker.close()
+
+
+def test_candidate_uses_qualified_entry_events_and_preserves_conflicting_evidence():
+    from sync_v3.deployment import qualified_entries
+
+    game = {'gamePk': 1, 'gameType': 'R', 'teams': {
+        'away': {'team': {'id': 111}, 'score': 1}, 'home': {'team': {'id': 147}, 'score': 2}}}
+    def play(index, pitcher, half, inning, home, away):
+        return {'about': {'atBatIndex': index, 'isComplete': True, 'inning': inning, 'halfInning': half},
+                'matchup': {'pitcher': {'id': pitcher}, 'batter': {'id': 900 + index}},
+                'result': {'homeScore': home, 'awayScore': away}}
+    plays = [play(0, 10, 'top', 1, 0, 1), play(1, 20, 'bottom', 1, 2, 1),
+             play(2, 11, 'top', 2, 2, 1)]
+    lines = [{'team_id': club, 'pitcher_mlb_id': pitcher, 'batters_faced': 1}
+             for club, pitcher in [(147, 10), (111, 20), (147, 11)]]
+    day = date(2024, 8, 7)
+    entries, reason = qualified_entries(game, day, lines, plays)
+    assert reason is None and entries[147, 11] == (2, 1)
+    assert qualified_entries(game, day, lines, plays[1:])[1] == 'incomplete_play_sequence'
+    assert qualified_entries(game, day, lines, plays[:-1])[1] == 'play_batter_counts_differ_from_official_lines'
+    plays[2]['playEvents'] = [{'isPitch': True}, {'details': {'eventType': 'pitching_substitution'}}]
+    assert qualified_entries(game, day, lines, plays)[1] == 'pitching_change_during_plate_appearance'
+    del plays[2]['playEvents']
+    plays[2]['result']['awayScore'] = 2
+    assert qualified_entries(game, day, lines, plays)[1] == 'final_score_mismatch'
+    plays[2]['result']['homeScore'] = 3
+    assert qualified_entries(game, day, lines, plays)[1] == 'inconsistent_play_order_or_score'

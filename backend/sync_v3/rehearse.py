@@ -71,7 +71,7 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
-def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False):
+def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -111,7 +111,12 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
                 print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
-            if league:
+            if game is not None:
+                import json
+                from sync_v3.deployment import game_deployment
+                with worker, worker.cursor() as cur:
+                    print(json.dumps(game_deployment(cur, game, through), sort_keys=True))
+            elif league:
                 import json
                 from sync_v3.comparison import compare_team_workload
                 from sync_v3.workload import load_club_calendars, team_workload
@@ -156,12 +161,13 @@ if __name__ == '__main__':
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
     from datetime import date
     subject = parser.add_mutually_exclusive_group()
+    subject.add_argument('--game', type=int, help='Inspect relief deployment for one official gamePk')
     subject.add_argument('--league', action='store_true', help='Verify club workload windows against official boxes for all 30 teams')
     subject.add_argument('--team', type=int, help='Inspect official relief workload for an MLB club ID')
     subject.add_argument('--pitcher', type=int, help='Inspect historical relief workload for an MLB ID')
     parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
-    has_subject = args.pitcher is not None or args.team is not None or args.league
+    has_subject = args.pitcher is not None or args.team is not None or args.league or args.game is not None
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
-        parser.error('Supply --pitcher, --team or --league with --through and at least one --fixture')
-    run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league)
+        parser.error('Supply --pitcher, --team, --game or --league with --through and at least one --fixture')
+    run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game)

@@ -55,6 +55,11 @@ def _entry_for(log, pitcher, events, marker):
         or team_id not in (marker.home_team_id, marker.away_team_id)
     ):
         return None, None
+    return entry_from_ordered_events(mlb_id, team_id, events)
+
+
+def entry_from_ordered_events(mlb_id, team_id, events):
+    """Find one supported entry using already qualified, ordered fielding events."""
     matching = [
         (index, event) for index, event in enumerate(events)
         if event.fielding_team_id == team_id and event.pitcher_mlb_id == mlb_id
