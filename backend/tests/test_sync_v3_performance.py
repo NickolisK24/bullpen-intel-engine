@@ -187,3 +187,26 @@ def test_tonight_requires_bullpen_membership_on_the_roster_moves_present_date(jo
     assert changes(day, {'453286': {}}) == []
     assert changes(date(2017, 8, 27 if joined else 28), {'599998': {}}) == []
     assert changes(day, {'599998': {}}, dict(event, previous=None)) == []
+
+
+def test_tonight_patterns_follow_source_identity_and_eligible_start_classes():
+    from sync_v3.product_reads import _slate_pitcher_patterns
+
+    base = dict(kind='back_to_back_started', event_id='b2b', player=42, previous=False, current=True)
+    events = [base, dict(base, kind='three_in_four_started', event_id='3in4'),
+              dict(base, kind='high_pitch_outing_started', event_id='pitches'),
+              dict(base, kind='four_in_six_started'), dict(base, kind='back_to_back_ended', current=False),
+              dict(base, previous=None), dict(base, player=41)]
+
+    class Rows(list):
+        def execute(self, query, params):
+            assert params == ('edition', '2017-08-28', 'edition', '2017-08-28')
+
+    rows = Rows([(120, 42, events, 'pattern-input', 'cohort-input')])
+    identities = {42: dict(team_id=120, name='Sammy Solís', public_id=None)}
+    result = _slate_pitcher_patterns(rows, 'edition', '2017-08-28', identities)
+    assert [r['change_id'] for r in result] == ['b2b', '3in4', 'pitches']
+    assert all(r['source_ref'] == 'edition/pattern-input/cohort-input' for r in result)
+    assert result[0]['headline'] == 'Sammy Solís now has back-to-back usage.'
+    assert _slate_pitcher_patterns(rows, 'edition', '2017-08-28', {}) == []
+    assert _slate_pitcher_patterns(rows, 'edition', '2017-08-28', {42: dict(team_id=141, name='Sammy Solís')}) == []

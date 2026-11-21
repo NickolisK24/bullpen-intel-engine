@@ -628,7 +628,51 @@ def _slate_roster_moves(cur, generation, through):
     return cur.fetchall()
 
 
-def _league_changes(teams, citations, rotation_changes, generation, represented, roster_moves=()):
+def _slate_pitcher_patterns(cur, generation, through, identities):
+    """Use named rest changes for pitchers in the same verified bullpen on consecutive dates."""
+    from services import tonight_read_model as tonight
+    from services.editorial_voice_contract_v1 import find_editorial_violations
+    from services.team_board_what_changed import PATTERNS
+
+    labels = {f'{key}_started': label for key, label in PATTERNS if f'{key}_started' in tonight.LEAGUE_CHANGE_PRIORITY}
+    cur.execute("""WITH populations AS (
+                     SELECT e.mlb_id AS team,e.semantic_digest AS population_receipt,
+                            prior.facts->'arms' AS old_arms,present.facts->'arms' AS new_arms
+                     FROM candidate.generation_inputs g JOIN candidate.workload_history e ON e.id=g.snapshot
+                     JOIN candidate.change_inputs a ON a.change_snapshot=e.id
+                     JOIN candidate.workload_history prior ON prior.id=a.input_snapshot AND prior.represented=e.represented-1
+                     JOIN candidate.change_inputs b ON b.change_snapshot=e.id
+                     JOIN candidate.workload_history present ON present.id=b.input_snapshot AND present.represented=e.represented
+                     WHERE g.generation=%s AND e.methodology='candidate_readiness_changes_v1' AND e.represented=%s
+                       AND e.facts->>'status' IN ('complete','partial_arm_coverage')
+                       AND prior.facts->>'workload_scope' IS NULL AND present.facts->>'workload_scope' IS NULL
+                   )
+                   SELECT p.team,h.mlb_id,h.facts->'events',h.semantic_digest,p.population_receipt
+                   FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
+                   JOIN populations p ON p.old_arms ? h.mlb_id::text AND p.new_arms ? h.mlb_id::text
+                   WHERE g.generation=%s AND h.represented=%s AND h.methodology='candidate_pitcher_rest_changes_v1'
+                     AND h.facts->>'status' IN ('complete','partial_rest_coverage')
+                     AND jsonb_array_length(h.facts->'events')>0""", (generation, through, generation, through))
+    changes = []
+    for team, player, events, receipt, population_receipt in cur:
+        identity = identities.get(player)
+        if not identity or identity['team_id'] != team:
+            continue
+        for event in events:
+            kind = event['kind']
+            if (kind not in labels or event['player'] != player
+                    or event['previous'] is not False or event['current'] is not True):
+                continue
+            headline = f"{identity['name']} now has {labels[kind]}."
+            if find_editorial_violations(headline, terms=tonight.LEAGUE_CHANGE_BANNED_TERMS):
+                continue
+            changes.append(dict(change_id=event['event_id'], team_id=team, change_class=kind, occurred_on=through,
+                                evidence_state='complete', headline=headline, detail=None, game_pks=[], state_change=None,
+                                source_ref=f'{generation}/{receipt}/{population_receipt}'))
+    return changes
+
+
+def _league_changes(teams, citations, rotation_changes, generation, represented, roster_moves=(), pitcher_patterns=()):
     """Project qualified changes from the same dated revisions used by Board and History."""
     from services import tonight_read_model as tonight
     changes = []
@@ -680,6 +724,7 @@ def _league_changes(teams, citations, rotation_changes, generation, represented,
                                 change_class=f'active_bullpen_{verb}', occurred_on=represented, evidence_state='complete',
                                 headline=headline, detail=None,
                                 source_ref=f'{generation}/{receipt}/{population_receipt}', game_pks=[], state_change=None))
+    changes.extend(dict(item, team_abbreviation=abbreviations[item['team_id']]) for item in pitcher_patterns)
     result = []
     per_team = {}
     for change in sorted(changes, key=tonight._league_change_order):
@@ -742,8 +787,11 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                        AND h.represented=%s ORDER BY h.mlb_id""", (generation, league['data_through']))
         rotation_changes = cur.fetchall()
         roster_moves = _slate_roster_moves(cur, generation, league['data_through'])
-        changes = _league_changes(league['teams'], league['citations'], rotation_changes, generation, league['data_through'], roster_moves)
-        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_qualified_roster_moves_and_short_starts',
+        identities, identity_status = _public_arms(cur, generation)
+        patterns = _slate_pitcher_patterns(cur, generation, league['data_through'], identities)
+        changes = _league_changes(league['teams'], league['citations'], rotation_changes, generation,
+                                  league['data_through'], roster_moves, patterns)
+        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_roster_moves_workload_patterns_and_short_starts',
                       featured_game_pks=[], lead=None, limitations=['additional_league_change_classes_unverified'])
         if game_pk is not None and all(row.game_pk != game_pk for row in games):
             return dict(result, status='game_outside_represented_slate')
@@ -767,7 +815,6 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                     usage[int(mlb)] = week['rest']['facts'] or {}
 
         from services.pitcher_public_labels import build_pitcher_labels
-        identities, identity_status = _public_arms(cur, generation)
         cur.execute("""SELECT h.mlb_id,h.facts#>'{deployment,facts,observed_role,role}'
                        FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
                        WHERE g.generation=%s AND h.subject='pitcher' AND h.mlb_id=ANY(%s) AND h.methodology=%s""",
