@@ -169,7 +169,11 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 import json
                 from sync_v3.competition_calendar import competition_status
                 with worker, worker.cursor() as cur:
-                    print(json.dumps(competition_status(cur, through), sort_keys=True))
+                    report = competition_status(cur, through)
+                    print(json.dumps(report, sort_keys=True))
+                    if identity_proof:
+                        from sync_v3.archived_comparisons import compare_archived_competition
+                        print(json.dumps(compare_archived_competition(report, reference), sort_keys=True))
             elif schedule_team is not None:
                 import json
                 from sync_v3.schedule_context import club_schedule_context
@@ -252,7 +256,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
                     print(json.dumps(dict(generation=digest, manifest=cur.fetchone()[0])))
                 if identity_proof:
-                    from sync_v3.product_reads import compare_archived_league, preview_league
+                    from sync_v3.archived_comparisons import compare_archived_league
+                    from sync_v3.product_reads import preview_league
                     print(json.dumps(compare_archived_league(preview_league(worker, digest), reference)))
                 if exercise_selection:
                     from sync_v3.selection import select_generation, SelectionWithheld

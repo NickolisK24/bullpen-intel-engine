@@ -17,7 +17,7 @@ def write_proof(path, defect=None):
     inputs = {}
     for team in MLB_TEAM_IDS:
         receipts[str(team)] = dict(team_id=team, represented_date=date, dashboard_snapshot_id=12,
-                                   season_context=dict(reference_date=availability),
+                                   season_context=dict(reference_date=availability, team_id=team, status='active'),
                                    value=dict(contract='team_state_public_v1', data_through=date, available=False, public_label=None))
         group = dict(team_id=team, membership_reference_date=date, availability_reference_date=availability,
                      member_pitcher_ids=[team], records=[dict(team_id=team, pitcher_id=team, mlb_id=team + 1000)])
@@ -73,7 +73,7 @@ def test_refuses_unverified_identity_evidence(tmp_path, defect):
 
 
 def test_archived_league_compares_only_matching_editions_and_all_clubs(tmp_path):
-    from sync_v3.product_reads import compare_archived_league
+    from sync_v3.archived_comparisons import compare_archived_league
     path = tmp_path / 'proof.zip'
     reference = from_observed_publication(path, write_proof(path))
     teams = [dict(team_id=team, team_state=dict(contract='team_state_public_v1', data_through='2026-10-28', available=False, public_label=None))
@@ -95,3 +95,22 @@ def test_archived_league_compares_only_matching_editions_and_all_clubs(tmp_path)
     assert mismatched['status'] == 'team_state_fields_differ'
     assert delta['public_label'] == {'archive': None}
     assert delta['available'] == {'candidate': 0, 'archive': False}
+
+
+def test_competition_compares_the_governed_scope_independently_of_the_edition(tmp_path):
+    from sync_v3.archived_comparisons import compare_archived_competition
+    path = tmp_path / 'proof.zip'
+    reference = from_observed_publication(path, write_proof(path))
+    clubs = {team: deepcopy(reference.team_receipts[str(team)]['season_context']) for team in MLB_TEAM_IDS}
+    report = dict(retrospective=True, reference_date='2026-10-30', clubs=clubs, decision_sources={1: 1},
+                  missing_decisions=[], calendar_source=1)
+    result = compare_archived_competition(report, reference)
+    assert result['status'] == 'competition_fields_match' and result['clubs_compared'] == 30
+    assert result['season_complete_projections_compared'] == 0 and not result['current_serving_eligible']
+    missing = compare_archived_competition(dict(report, missing_decisions=[2]), reference)
+    assert missing['status'] == 'incomplete_competition_evidence' and missing['clubs_compared'] == 0
+    other = compare_archived_competition(dict(report, reference_date='2026-10-29'), reference)
+    assert other['status'] == 'competition_dates_differ' and other['clubs_compared'] == 0
+    clubs[111]['basis'] = 'changed'
+    delta = compare_archived_competition(report, reference)
+    assert delta['differences']['111']['season_context']['basis'] == {'candidate': 'changed'}
