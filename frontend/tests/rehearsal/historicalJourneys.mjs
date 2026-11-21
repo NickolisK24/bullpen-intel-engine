@@ -147,6 +147,8 @@ try {
     await nav.getByRole('link', { name: 'Search', exact: true }).click()
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
     await page.getByRole('searchbox').fill('Former Boston')
+    await expect(page.getByText('Roster evidence for 2026-07-29. Matchups for 2026-07-30.', { exact: true })).toBeVisible()
+    await expect(heading('Pitchers')).toBeVisible()
     await link('Open Former Boston Reliever').click()
     await expect(heading('Former Boston Reliever')).toBeVisible()
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)

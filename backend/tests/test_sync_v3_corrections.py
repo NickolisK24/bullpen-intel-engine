@@ -967,6 +967,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert row['orientation']['movement'] is None
             discovery = read_search(worker, 'Boston')
             assert discovery['generation'] == first
+            assert discovery['data_through'] == str(day)
+            assert discovery['availability_reference'] == discovery['search']['represented_date'] == str(day + timedelta(days=1))
             assert discovery['search']['status'] == ('partial' if identity_mode == 'absent' else 'available')
             teams, pitchers, matchups = discovery['search']['groups']
             assert teams['results'][0]['id'] == 111

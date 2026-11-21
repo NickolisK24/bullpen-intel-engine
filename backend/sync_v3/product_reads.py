@@ -407,7 +407,7 @@ def read_search(connection, query, *, revision=None, limit=5):
             return dict(status=_empty_selection_status(selected, revision), generation=None,
                         selection_revision=selected[0] if selected else None,
                         current_serving_eligible=False, search=None)
-        sequence, digest, _, reference = selected
+        sequence, digest, through, reference = selected
         directory = {c.team_id: dict(team_id=c.team_id, team_abbreviation=c.abbreviation, team_name=c.team_name)
                      for c in MLB_CLUBS}
         mapping_status = 'not_evaluated'
@@ -450,6 +450,7 @@ def read_search(connection, query, *, revision=None, limit=5):
         owners = SearchOwners(teams=lambda: directory, pitchers=pitchers, matchups=matchups)
         payload = search_discovery(query, limit=limit, reference_date=date.fromisoformat(reference), owners=owners)
         return dict(status='represented', generation=digest, selection_revision=sequence, current_serving_eligible=False,
+                    data_through=through.isoformat(), availability_reference=reference,
                     pitcher_identity_status=mapping_status, pitcher_scope='represented_bullpens_departures_and_dated_forty_man', search=payload)
     return _read_transaction(connection, search)
 

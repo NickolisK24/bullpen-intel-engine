@@ -24,6 +24,8 @@ const GROUP_LABELS = Object.freeze({
   matchup: "Today's Matchups",
 })
 
+const HISTORICAL_GROUP_LABELS = { ...GROUP_LABELS, pitcher: 'Pitchers', matchup: 'Matchups on this date' }
+
 export function buildDiscoveryResultHref(result = {}) {
   if (result.entity_type === 'team') {
     return buildTeamBoardHref(result.metadata || result.id, { source: 'search' })
@@ -104,13 +106,13 @@ function ResultLink({ result, edition }) {
 }
 
 function SearchGroup({ group, edition }) {
-  const label = GROUP_LABELS[group.entity_type] || 'Results'
+  const label = (edition ? HISTORICAL_GROUP_LABELS : GROUP_LABELS)[group.entity_type] || 'Results'
   const headingId = `search-group-${group.entity_type}`
   return (
     <section aria-labelledby={headingId} className="min-w-0 border-t border-dirt pt-4 lg:border-t-0 lg:border-l lg:pl-5 first:lg:border-l-0 first:lg:pl-0">
       <div className="flex items-center justify-between gap-3">
         <h2 id={headingId} className="font-mono text-xs uppercase tracking-[0.18em] text-chalk300">
-          {edition && group.entity_type === 'matchup' ? 'Matchups on this date' : label}
+          {label}
         </h2>
         {group.status === 'available' && (
           <span className="font-mono text-[10px] text-chalk600">{group.results.length}</span>
@@ -145,6 +147,10 @@ export function SearchPageView({
   const hasSearch = normalizedQuery.length >= MIN_QUERY_LENGTH
   const groups = Array.isArray(payload?.groups) ? payload.groups : []
 
+  const historicalDescription = edition
+    ? `Roster evidence for ${edition.rosterDate}. Matchups for ${edition.slateDate}.`
+    : 'Search this historical edition.'
+
   const handleKeyDown = event => {
     if (event.key === 'Escape' && query) {
       event.preventDefault()
@@ -159,14 +165,14 @@ export function SearchPageView({
         <h1 className="mt-2 font-display text-3xl tracking-wide text-chalk100 sm:text-4xl">Search BaseballOS</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
           {historical
-            ? `Historical rehearsal${payload?.represented_date ? ` · ${payload.represented_date}` : ''}. Search team, reliever, and matchup evidence for this edition.`
+            ? historicalDescription
             : "Find a team, reliever, or today's scheduled matchup and open its canonical BaseballOS destination."}
         </p>
       </header>
 
       <div className="mt-6">
         <label htmlFor="global-discovery-search" className="block font-mono text-xs uppercase tracking-widest text-chalk400">
-          Team, reliever, or matchup
+          {historical ? 'Team, pitcher, or matchup' : 'Team, reliever, or matchup'}
         </label>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
@@ -217,7 +223,7 @@ export function SearchPageView({
           </div>
         ) : payload?.result_count === 0 && payload?.status !== 'partial' ? (
           <p className="rounded-sm border border-dirt bg-field/30 px-4 py-5 text-sm text-chalk400">
-            {historical ? "No teams, relievers, or represented matchups match" : "No teams, relievers, or today's matchups match"} “{normalizedQuery}”.
+            {historical ? "No teams, pitchers, or represented matchups match" : "No teams, relievers, or today's matchups match"} “{normalizedQuery}”.
           </p>
         ) : (
           <div className="grid min-w-0 gap-5 lg:grid-cols-3" aria-label="Search results">
@@ -249,10 +255,15 @@ function SearchEdition({ revision, generation, publicSearch }) {
     if (response?.status !== 'represented' || response.selection_revision !== revision
       || (generation !== null && response.generation !== generation)
       || response.current_serving_eligible !== false || typeof response.generation !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}$/.test(response.data_through)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(response.availability_reference)
+      || response.availability_reference !== response.search?.represented_date
       || !/^[a-f0-9]{64}$/.test(response.generation) || response.search?.query !== params.q) {
       throw new Error('The historical search edition could not be verified.')
     }
-    return { payload: response.search, edition: { revision, generation: response.generation } }
+    return { payload: response.search, edition: {
+      revision, generation: response.generation, rosterDate: response.data_through, slateDate: response.availability_reference,
+    } }
   }, [revision, generation, publicSearch])
   const [query, setQuery] = useState('')
   const [result, setResult] = useState(null)
