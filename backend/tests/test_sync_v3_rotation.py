@@ -50,7 +50,7 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
     import pytest
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
-    from sync_v3.schedule_context import club_schedule_context
+    from sync_v3.schedule_context import club_schedule_context, retrospective_availability_date
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
     if not pg:
@@ -73,8 +73,15 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                     with db, db.cursor() as cur:
                         gap = club_schedule_context(cur, 111, ref)
                         assert gap['context'] is None and len(gap['gaps']) == 1
+                        incomplete = retrospective_availability_date(cur, ref, ref + timedelta(days=11))
+                        assert incomplete['availability_reference'] is None
+                        assert incomplete['gaps'] == {str(ref + timedelta(days=14)): 'missing_complete_schedule'}
             with db, db.cursor() as cur:
                 context = club_schedule_context(cur, 111, ref)['context']
+                before = ref - timedelta(days=3)
+                assert retrospective_availability_date(cur, before, ref)['availability_reference'] == str(ref)
+                played_gap = retrospective_availability_date(cur, before, ref + timedelta(days=1))
+                assert played_gap['availability_reference'] == str(ref) and played_gap['dates'][str(ref)]['listed_games'] == 1
                 assert context['games_today_count'] == 1
                 assert context['next_off_day'] == (ref + timedelta(days=1)).isoformat()
             changed = json.loads(quiet.replace('2026-11-21', str(ref)))
@@ -85,6 +92,8 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                 report = club_schedule_context(cur, 111, ref)
                 assert report['context'] is None
                 assert report['gaps'] == {ref.isoformat(): 'previous_listing_requires_absence_proof'}
+                removed = retrospective_availability_date(cur, before, ref)
+                assert removed['availability_reference'] is None and removed['gaps'] == report['gaps']
         finally:
             db.close()
 
@@ -185,3 +194,24 @@ def test_game_events_keep_doubleheader_appearances_distinct_and_withhold_ambiguo
             freeze(cur, end, [], 'missing_complete_schedule')
             assert game_changes(cur, team, end)['status'] == 'missing_complete_schedule'
             assert game_changes(cur, team, end, revisions=(1, 1)) == first
+
+
+def test_moved_postponement_cannot_alone_confirm_the_gap(monkeypatch):
+    from types import SimpleNamespace
+    from sync_v3 import schedule_context as calendar
+
+    first = date(2026, 7, 29)
+    as_of = first + timedelta(days=2)
+    moved = dict(gamePk=1, officialDate=str(as_of), teams={'home': {'team': {'id': 111}},
+                 'away': {'team': {'id': 147}}}, status={'detailedState': 'Postponed', 'statusCode': 'DR'})
+    games = {str(first + timedelta(days=1)): [moved]}
+    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params['startDate'])
+    monkeypatch.setattr(calendar, 'missing_listings', lambda *a: {})
+    monkeypatch.setattr(calendar, 'replay', lambda cur, day: SimpleNamespace(
+        body={'dates': [{'games': games.get(day, [])}]}, retrieved_at=as_of))
+    uncertain = calendar.retrospective_availability_date(None, first, as_of)
+    assert uncertain['availability_reference'] is None
+    assert uncertain['gaps'] == {str(first + timedelta(days=1)): 'postponed_listing_date_unresolved'}
+    games[str(as_of)] = [dict(moved, gamePk=2, status={'detailedState': 'Final', 'statusCode': 'F'})]
+    confirmed = calendar.retrospective_availability_date(None, first, as_of)
+    assert confirmed['availability_reference'] == str(as_of) and confirmed['gaps'] == {}

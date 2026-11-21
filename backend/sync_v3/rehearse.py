@@ -75,7 +75,7 @@ def isolated_cluster(bindir=None):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -174,6 +174,13 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     if identity_proof:
                         from sync_v3.archived_comparisons import compare_archived_competition
                         print(json.dumps(compare_archived_competition(report, reference), sort_keys=True))
+            elif availability_as_of is not None:
+                import json
+                from sync_v3.schedule_context import retrospective_availability_date
+                with worker, worker.cursor() as cur:
+                    cur.execute('SET TRANSACTION READ ONLY')
+                    report = retrospective_availability_date(cur, through, availability_as_of)
+                    print(json.dumps(report, sort_keys=True))
             elif schedule_team is not None:
                 import json
                 from sync_v3.schedule_context import club_schedule_context
@@ -308,6 +315,8 @@ if __name__ == '__main__':
     subject = parser.add_mutually_exclusive_group()
     subject.add_argument('--readiness-team', type=int, help='Inspect represented regular-season Team State and arm reads')
     subject.add_argument('--competition', action='store_true', help='Classify all clubs on the retrospective reference date')
+    subject.add_argument('--availability-as-of', type=date.fromisoformat,
+                         help='Replay the availability reference date from retained daily schedules')
     subject.add_argument('--schedule-team', type=int, help='Inspect the retrospective club calendar around a date')
     subject.add_argument('--performance-team', type=int, help='Inspect retrospective active bullpen performance')
     subject.add_argument('--deployment-team', type=int, help='Compare two weeks of observed club deployment')
@@ -333,7 +342,7 @@ if __name__ == '__main__':
     parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
-        args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team,
+        args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team, args.availability_as_of,
     ))
     if (args.identity_fixture or args.identity_proof) and not args.fixture:
         parser.error('An identity reference requires an offline source fixture')
@@ -350,4 +359,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of)

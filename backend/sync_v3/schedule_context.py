@@ -58,6 +58,55 @@ def missing_listings(cur, params, present, *, game_types=None):
     return missing
 
 
+def retrospective_availability_date(cur, through, as_of):
+    """Replay the production date resolver using only complete retained league schedules."""
+    from services.availability_reference_date import (
+        SCHEDULE_CONFIRMATION_LOOKAHEAD_DAYS, schedule_aware_availability_reference_date,
+    )
+
+    base = through + timedelta(days=1)
+    rows, gaps, dates = [], {}, {}
+    moved_postponements = []
+    if as_of > base:
+        horizon = as_of + timedelta(days=SCHEDULE_CONFIRMATION_LOOKAHEAD_DAYS)
+        for offset in range((horizon - through).days):
+            day = base + timedelta(days=offset)
+            key = day.isoformat()
+            request = calendar_requests(day)[0]
+            source = latest_qualified_source(cur, request.endpoint, request.params())
+            if source is None:
+                gaps[key] = 'missing_complete_schedule'
+                continue
+            receipt = replay(cur, source)
+            games = [g for entry in receipt.body['dates'] for g in entry['games']]
+            dates[key] = dict(source=source, acquired_at=receipt.retrieved_at.isoformat(),
+                              listed_games=len(games))
+            if missing_listings(cur, request.params(), {game['gamePk'] for game in games}):
+                gaps[key] = 'previous_listing_requires_absence_proof'
+                continue
+            for game in games:
+                row = _parse_game(game)
+                if row and row['game_date'] != day and row['status_state'] == 'postponed':
+                    # One gamePk can also be listed on its makeup date. The
+                    # archived feeds do not establish which row the publisher kept.
+                    moved_postponements.append((day, row['game_date']))
+                    continue
+                if not row or row['game_date'] != day:
+                    gaps[key] = 'listing_date_unresolved'
+                    break
+                rows.append(SimpleNamespace(game_date=day, status_state=row['status_state']))
+    resolved = None if gaps else schedule_aware_availability_reference_date(through, as_of, rows)
+    if resolved and moved_postponements:
+        possible = [SimpleNamespace(game_date=d, status_state='postponed')
+                    for pair in moved_postponements for d in pair if through < d <= horizon]
+        if schedule_aware_availability_reference_date(through, as_of, rows + possible) != resolved:
+            gaps.update({day.isoformat(): 'postponed_listing_date_unresolved' for day, _ in moved_postponements})
+            resolved = None
+    return dict(scope='retrospective_availability_date', data_through=through.isoformat(),
+                as_of=as_of.isoformat(), availability_reference=resolved.isoformat() if resolved else None,
+                dates=dates, gaps=gaps, current_serving_eligible=False)
+
+
 def club_schedule_context(cur, team, reference):
     if team not in MLB_TEAM_IDS:
         raise ValueError('Expected an MLB club identity')
