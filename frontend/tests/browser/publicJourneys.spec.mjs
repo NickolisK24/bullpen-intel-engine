@@ -341,6 +341,20 @@ test('Team Board renders its core answer before deferred details', async ({ page
   await expect(page.getByTestId('team-board-recent-usage')).toContainText('25+ pitch outing')
 })
 
+test('Team Board withholds another club’s core and never requests its details', async ({ page }) => {
+  await installApiFixtures(page)
+  const deferred = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.endsWith('/board-v2/details')) deferred.push(request.url())
+  })
+  await page.route('**/api/bullpen/teams/111/board-v2/core', route =>
+    route.fulfill({ json: teamBoardFixtureFor(147).core }))
+  await page.goto('/bullpen?team=BOS')
+  await expect(page.getByTestId('team-board-answer-block')).toContainText('Team Board answer unavailable')
+  await expect(page.getByText('NYY Fixture Reliever')).toHaveCount(0)
+  expect(deferred).toEqual([])
+})
+
 test('Team Board detail failure preserves the core answer', async ({ page }) => {
   await installApiFixtures(page, { detailsFailure: true })
   await page.goto('/bullpen?team=BOS')
