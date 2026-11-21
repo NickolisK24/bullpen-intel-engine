@@ -11,6 +11,7 @@ from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
+from sync_v3.team_history_reads import read_calendar_context
 
 
 def _read_transaction(connection, reader, *args):
@@ -676,7 +677,9 @@ def read_team_history(connection, team, *, through_revision, limit=14):
 
     def team_changes(cur, selected):
         changes = _event_slice(cur, team, selected[0], selected)
-        return {key: changes[key] for key in ('events', 'comparisons', 'status')}
+        row = {key: changes[key] for key in ('events', 'comparisons', 'status')}
+        row['calendar_context'] = read_calendar_context(cur, selected[1], team, selected[2]) if selected[1] else None
+        return row
     return dict(_decision_page(connection, through_revision, limit, team_changes), team=team)
 
 

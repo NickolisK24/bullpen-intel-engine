@@ -1057,6 +1057,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert [r['action'] for r in page['rows']] == ['rollback', 'select']
             assert [r['generation'] for r in page['rows']] == [first, second]
             assert page['rows'][0]['events'] == history['events'] and page['next_revision'] == 1
+            context = page['rows'][0]['calendar_context']
+            assert context == page['rows'][1]['calendar_context']
+            game_event, = context['events']
+            assert game_event['workload'] == dict(starter_outs=12, bullpen_outs=15, short_start=True)
+            assert game_event['week'] == dict(final_games=1, verified_games=1, bullpen_outs=15)
+            assert game_event['extra_innings'] is None
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
             timeline = read_pitcher_history(worker, 9111, through_revision=3, limit=2)
