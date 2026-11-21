@@ -856,6 +856,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     for original in played['responses']:
         if original['endpoint'] != '/teams/111/roster' or 'hydrate' in original['params']:
             continue
+        if original['params']['rosterType'] == '40Man':
+            reserve = deepcopy(original['body']['roster'][0])
+            reserve['person'] = dict(id=701235, fullName='Reserve Pitcher')
+            retained = deepcopy(reserve)
+            retained['person'] = dict(id=701234, fullName='Former Boston Reliever')
+            original['body']['roster'].extend([reserve, retained])
         receipt = deepcopy(original)
         receipt['params']['date'] = str(prior_day)
         if receipt['params']['rosterType'] == 'active':
@@ -882,7 +888,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 cur.execute('CREATE TABLE public.pitchers(id integer PRIMARY KEY,mlb_id integer UNIQUE NOT NULL)')
                 cur.executemany('INSERT INTO public.pitchers VALUES (%s,%s)',
                                 [(team + 9000, team * 100 + 1) for team in MLB_TEAM_IDS])
-                cur.execute('INSERT INTO public.pitchers VALUES (8999,701234)')
+                cur.execute('INSERT INTO public.pitchers VALUES (8999,701234),(8998,701235)')
             with owner, owner.cursor() as cur:
                 cur.execute('SET TRANSACTION READ ONLY')
                 cur.execute('SELECT id,mlb_id FROM public.pitchers ORDER BY id')
@@ -993,9 +999,22 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 origin = traded['identity']['historical_departure']
                 assert origin['team'] == 111 and origin in traded['represented_events'] and origin in history['events']
                 assert origin in read_pitcher_history(worker, 9110, through_revision=1)['rows'][0]['events']
+                reserve, = read_search(worker, 'Reserve Pitcher')['search']['groups'][1]['results']
+                assert reserve['id'] == 8998 and reserve['metadata']['roster_status'] == 'UNKNOWN'
+                assert reserve['metadata']['team_id'] is None
+                reserve_page = read_pitcher(worker, reserve['id'])
+                assert reserve_page['status'] == 'dated_roster_identity' and reserve_page['sections'] == {}
+                observation = reserve_page['identity']['roster_observation']
+                assert (observation['team_id'], observation['membership'], observation['represented']) == (111, '40Man', str(day))
+                assert reserve['metadata']['roster_observation'] == observation
+                assert len(observation['roster_digest']) == 64
+                historical = read_pitcher_history(worker, 8998, through_revision=1)['rows'][0]
+                assert historical['identity'] == reserve_page['identity'] and historical['events'] == []
                 departed_page = read_pitcher(worker, old['id'])
                 assert departed_page['status'] == 'historical_roster_departure' and departed_page['sections'] == {}
                 assert departed_page['identity']['historical_departure'] == removal
+                assert departed_page['identity']['roster_observation']['membership'] == '40Man'
+                assert departed_page['identity']['team_id'] is None
                 assert read_pitcher_history(worker, old['id'], through_revision=1)['rows'][0]['events'] == [removal]
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
