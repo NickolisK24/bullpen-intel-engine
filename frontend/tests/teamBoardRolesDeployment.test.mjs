@@ -5,7 +5,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { frozenPublicDeploymentFixture, governedRoleMovementFixture } from './fixtures/teamBoardFrozenDeployment.mjs'
-import { readTeamBoardFrozenDeployment } from '../src/adapters/teamBoardV2.js'
+import { historicalRoleMovements, readTeamBoardFrozenDeployment } from '../src/adapters/teamBoardV2.js'
 
 const server = await createServer({
   root: process.cwd(),
@@ -333,4 +333,22 @@ test('movement inherits the deployment carrier frozen identity', () => {
   const carrier = withMovement(governedRoleMovementFixture())
   assert.equal(readTeamBoardFrozenDeployment(carrier, { ...publicationIdentity, team_id: 112 }), null)
   assert.equal(readTeamBoardFrozenDeployment(carrier, { ...publicationIdentity, represented_date: '2026-09-03' }), null)
+})
+
+
+test('historical deployment binds both windows to a dated club and official MLB pitcher identity', () => {
+  const fixture = governedRoleMovementFixture()
+  const [profile] = fixture.profiles
+  const item = { ...profile, mlb_player_id: 607473, recent: profile.recent_window, prior: profile.prior_window }
+  const roles = { contract: fixture.contract, through: fixture.data_through, mlb_team_id: 121,
+    complete_game_coverage: true, profiles: [item] }
+  const read = input => historicalRoleMovements(input, 121, fixture.data_through)
+  const movement = read(roles).get(607473)
+  assert.equal(movement.publicLabel, profile.public_label)
+  assert.equal(movement.priorWindow.appearances, profile.prior_window.appearances)
+  assert.equal(read(roles).has(profile.pitcher_id), false)
+  for (const overrides of [{ mlb_team_id: 133 }, { through: '2026-09-03' }, { complete_game_coverage: false },
+    { profiles: [item, item] }, { profiles: [{ ...item, recent: { ...item.recent, through_date: '2026-01-01' } }] }]) {
+    assert.equal(read({ ...roles, ...overrides }), null)
+  }
 })

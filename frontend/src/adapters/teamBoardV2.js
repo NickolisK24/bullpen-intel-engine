@@ -342,11 +342,10 @@ function readRoleMovementWindow(window) {
   }
 }
 
-function readRoleMovementProfile(item, dataThrough) {
-  const recent = readRoleMovementWindow(item?.recent_window)
-  const prior = readRoleMovementWindow(item?.prior_window)
-  if (!nonnegativeCount(item?.pitcher_id)
-    || item.contract !== ROLE_MOVEMENT_CONTRACT || item.method_version !== ROLE_MOVEMENT_CONTRACT
+function readMovementEvidence(item, recentSource, priorSource, dataThrough) {
+  const recent = readRoleMovementWindow(recentSource)
+  const prior = readRoleMovementWindow(priorSource)
+  if (item.contract !== ROLE_MOVEMENT_CONTRACT || item.method_version !== ROLE_MOVEMENT_CONTRACT
     || !recent || !prior || recent.throughDate !== dataThrough || prior.throughDate >= recent.startDate) return null
   if (item.status === 'unavailable') {
     if (item.movement !== null || item.public_label !== null || typeof item.reason_code !== 'string') return null
@@ -358,13 +357,31 @@ function readRoleMovementProfile(item, dataThrough) {
       || typeof item.public_label !== 'string' || !item.public_label.trim()) return null
   } else return null
   return {
-    pitcherId: item.pitcher_id,
     status: item.status,
     movement: item.movement,
     publicLabel: item.public_label,
     recentWindow: recent,
     priorWindow: prior,
   }
+}
+
+function readRoleMovementProfile(item, dataThrough) {
+  if (!nonnegativeCount(item?.pitcher_id)) return null
+  const facts = readMovementEvidence(item, item.recent_window, item.prior_window, dataThrough)
+  return facts ? { pitcherId: item.pitcher_id, ...facts } : null
+}
+
+export function historicalRoleMovements(roles, team, through) {
+  if (roles?.contract !== ROLE_MOVEMENT_CONTRACT || roles.mlb_team_id !== team || roles.through !== through
+    || roles.complete_game_coverage !== true || !Array.isArray(roles.profiles)) return null
+  const byMlbId = new Map()
+  for (const item of roles.profiles) {
+    if (!Number.isSafeInteger(item?.mlb_player_id) || item.mlb_player_id <= 0 || byMlbId.has(item.mlb_player_id)) return null
+    const facts = readMovementEvidence(item, item.recent, item.prior, through)
+    if (!facts) return null
+    byMlbId.set(item.mlb_player_id, facts)
+  }
+  return byMlbId
 }
 
 // Old immutable publications carry no governed movement and read as null.

@@ -213,6 +213,9 @@ def verify_board_history(connection, board):
                 or identity['name'] != arm['name'] or identity != dated['identity']
                 or timeline['public_pitcher_id'] != public_id or detail['public_pitcher_id'] != public_id):
             raise RuntimeError(f'Pitcher {public_id} identity disagrees with the selected Board')
+        workload = detail['sections']['workload']
+        if arm['weekly_workload'] != dict(value=workload['value']['windows']['7'], citation=workload['citation']):
+            raise RuntimeError(f'Pitcher {public_id} weekly workload disagrees with the selected Board')
         deployment = detail['sections']['pitcher_profile']['value']['deployment']
         if (detail['represented_events'] != dated['events'] or dated['arm']['read'] != arm['read']
                 or detail['arm_context'] != arm['arm_context'] or detail['display_read'] != arm['display_read']

@@ -64,6 +64,15 @@ export function productCurrentDateFromFreshness(freshness) {
   return current?.iso || null
 }
 
+export function historicalPitcherWorkload(window, through) {
+  const first = baseballDay(window?.first)
+  const end = baseballDay(through)
+  if (!first || !end || window.through !== through || end.time - first.time !== 6 * DAY_MS
+    || window.player_observed !== true || !window.gaps || typeof window.gaps !== 'object'
+    || Array.isArray(window.gaps) || Object.keys(window.gaps).length) return null
+  return window.facts ?? null
+}
+
 export function normalizeAppearance(input) {
   if (!input || typeof input !== 'object') return null
   const gameDate = (

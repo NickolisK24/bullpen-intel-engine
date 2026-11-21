@@ -882,15 +882,24 @@ def read_team_board(connection, team, *, revision=None):
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, generation, 'team', team, methods)
         directory, status = _pitcher_directory(cur, generation)
+        roster_arms = blocks['readiness']['value']['arms']
+        cur.execute("""SELECT h.mlb_id,h.facts->'windows'->'7',h.revision,h.semantic_digest,h.input_digest
+                       FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
+                       WHERE g.generation=%s AND h.subject='pitcher' AND h.methodology=%s AND h.mlb_id=ANY(%s)""",
+                    (generation, METHODOLOGY, [int(player) for player in roster_arms]))
+        weeks = {}
+        for player, window, snapshot_revision, semantic, inputs in cur:
+            citation = dict(methodology=METHODOLOGY, revision=snapshot_revision, facts_digest=semantic, input_digest=inputs)
+            weeks[player] = dict(value=window, citation=citation)
         arms = []
-        for key, arm in sorted(blocks['readiness']['value']['arms'].items(), key=lambda item: int(item[0])):
+        for key, arm in sorted(roster_arms.items(), key=lambda item: int(item[0])):
             mlb = int(key)
             identity = directory.get(mlb, {})
             if identity.get('team_id') != team:
                 identity = {}
             arms.append(dict(mlb_id=mlb, public_pitcher_id=identity.get('public_id'),
                              name=identity.get('name'), pitch_hand=_pitch_hand(blocks['depth'], mlb),
-                             read=arm['read'], reason=arm['reason'],
+                             weekly_workload=weeks.get(mlb), read=arm['read'], reason=arm['reason'],
                              **_historical_arm_display(listing['data_through'])))
         from datetime import date
         through = date.fromisoformat(listing['data_through'])

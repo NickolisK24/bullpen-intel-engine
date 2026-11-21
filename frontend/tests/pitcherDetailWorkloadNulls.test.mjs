@@ -304,7 +304,8 @@ test('historical seven-day counts use the dated regular-season bullpen window', 
   window.facts = { appearances: 0, pitches_thrown: 0 }
   assert.equal(count('Pitches / 7d'), '0')
   for (const replacement of [{ ...window, gaps: { '2017-08-24': 'missing_compatible_final' } },
-    { ...window, through: '2017-08-27' }, { ...window, player_observed: false }, null]) {
+    { ...window, through: '2017-08-27' }, { ...window, first: '2017-08-15' },
+    { ...window, gaps: [] }, { ...window, player_observed: false }, null]) {
     data.sections.workload.value.windows['7'] = replacement
     assert.equal(count('Appearances / 7d'), '—')
     assert.equal(count('Pitches / 7d'), '—')

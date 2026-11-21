@@ -2,6 +2,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getAvailabilityExplanation, getHistoricalPitcher, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import {
+  historicalPitcherWorkload,
   normalizeAppearance,
   productCurrentDateFromFreshness,
   workloadAppearanceDetailLabel,
@@ -105,8 +106,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const rosterUnavailable = rosterStatus?.is_authoritative && rosterStatus.is_inactive_context
     && pitcherLabels?.read?.key === 'unavailable'
   const week = historicalEdition ? data.sections?.workload?.value?.windows?.['7'] : null
-  const datedWorkload = week?.player_observed === true && week.through === through &&
-    week.gaps && Object.keys(week.gaps).length === 0 ? week.facts : null
+  const datedWorkload = historicalPitcherWorkload(week, through)
   const currentStateFacts = [
     { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
     { label: 'Current Read', value: current || rosterUnavailable ? pitcherLabels?.read?.label : 'Withheld' },

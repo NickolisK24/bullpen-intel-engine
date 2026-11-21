@@ -2,7 +2,9 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../../hooks/useFetch'
 import { getRehearsalTeamBoard } from '../../../utils/api'
 import { buildRehearsalPitcherHref } from '../../../utils/evidenceLinks'
-import { readWorkloadConcentration } from '../../../adapters/teamBoardV2'
+import { historicalPitcherWorkload } from '../../../utils/appearanceLanguage'
+import { historicalRoleMovements, readWorkloadConcentration } from '../../../adapters/teamBoardV2'
+import { RoleMovementNote } from './TeamBoardRolesDeployment'
 import { PitchContributors } from './TeamBoardWorkloadOverview'
 import HistoricalChanges from '../../history/HistoricalChanges'
 import { ErrorState, LoadingPane } from '../../UI'
@@ -130,6 +132,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
   if (board.error || !board.data) return <ErrorState message={board.error || 'Historical board unavailable.'} onRetry={board.refetch} />
   const data = board.data
   const state = data.team.team_state
+  const movements = historicalRoleMovements(data.sections?.roles?.value, team, data.data_through)
   return <main className="mx-auto max-w-5xl space-y-6 p-6">
     <header>
       <p>Historical Team Board · Revision {revision}</p>
@@ -140,10 +143,18 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
       <p>{state.available ? state.public_label : state.unavailable_message || 'Unavailable'}</p>
     </section>
     <section><h2>Active bullpen through {data.data_through}</h2>
+      {data.active_bullpen.length > 0 && <p>Seven-day regular-season bullpen workload across clubs.</p>}
       {data.active_bullpen.length ? <ul>{data.active_bullpen.map(arm => {
         const href = buildRehearsalPitcherHref(arm.public_pitcher_id, revision, generation)
         const label = arm.name || `MLB pitcher ${arm.mlb_id}`
-        return <li key={arm.mlb_id}>{href ? <Link className="underline" to={href}>{label}</Link> : label}</li>
+        const week = historicalPitcherWorkload(arm.weekly_workload?.value, data.data_through)
+        return <li key={arm.mlb_id}>
+          {href ? <Link className="underline" to={href}>{label}</Link> : label}
+          {week ? <p>{week.appearances ?? 'Unknown'} {week.appearances === 1 ? 'appearance' : 'appearances'} · {' '}
+            {week.pitches_thrown == null ? 'Pitch count unavailable' : `${week.pitches_thrown} pitches`}</p>
+            : <p>Seven-day workload unavailable.</p>}
+          <RoleMovementNote movement={movements?.get(arm.mlb_id)} />
+        </li>
       })}</ul> : <p>No represented active bullpen members.</p>}
     </section>
     <section><h2>Club relief workload</h2>

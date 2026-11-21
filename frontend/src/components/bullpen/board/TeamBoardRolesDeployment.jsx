@@ -58,7 +58,7 @@ function appearanceCount(count) {
 }
 
 // Renders only a backend-authored sentence; stable or withheld movement is quiet.
-function RoleMovementNote({ movement }) {
+export function RoleMovementNote({ movement }) {
   if (!movement?.publicLabel) return null
   const { recentWindow: recent, priorWindow: prior } = movement
   return (
