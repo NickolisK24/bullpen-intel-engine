@@ -58,12 +58,17 @@ def board_workload_windows(cur, digest, team, through, regular, postseason):
     if pins and all(row[3:] == ('received', None) for row in pins) and len({row[1] for row in pins}) == 1:
         source, season_digest, decisions = pins[0][:3]
         verified = set(decisions or [])
-        for pk, (day, _, game) in calendar_games(calendar.params(), replay(cur, source).body).items():
-            if not start <= day <= through:
-                continue
-            identity = _club_game(game, team)
-            if identity:
-                expected[day][pk] = identity
+        body = replay(cur, source).body
+        calendar_games(calendar.params(), body)
+        # Compare daily listings. The season's final-game index collapses a
+        # postponement and its later makeup into one entry for the same gamePk.
+        for slate in body['dates']:
+            day = date.fromisoformat(slate['date'])
+            if start <= day <= through:
+                for game in slate['games']:
+                    identity = _club_game(game, team)
+                    if identity:
+                        expected[day][game['gamePk']] = identity
 
     cur.execute("""SELECT f.parameters,f.sha256,r.facts FROM candidate.generation_inputs g
                    JOIN candidate.workload_history h ON h.id=g.snapshot

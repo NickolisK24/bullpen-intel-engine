@@ -265,13 +265,17 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
     regular['date'] = '2026-07-26'
     for listing in regular['games']:
         listing.update(officialDate=regular['date'], season=str(day.year))
-    calendar = dict(totalGames=16, dates=[regular, dict(date=str(day), totalGames=1, games=[final])])
+    postponed = dict(final, status={'abstractGameState': 'Final', 'detailedState': 'Postponed', 'statusCode': 'DR'})
+    original_day = day - timedelta(days=1)
+    calendar = dict(totalGames=17, dates=[regular, dict(date=str(original_day), totalGames=1, games=[postponed]),
+                                          dict(date=str(day), totalGames=1, games=[final])])
     path = tmp_path / 'playoff.json'
     with isolated_cluster(pg) as (owner, connect):
         install(owner)
         with closing(connect()) as db:
             for offset in (2, 1):
-                path.write_text(json.dumps(_fixture(day - timedelta(days=offset), [])))
+                listing_day = day - timedelta(days=offset)
+                path.write_text(json.dumps(_fixture(listing_day, [postponed] if listing_day == original_day else [])))
                 run_fixture(db, path)
             def freeze():
                 path.write_text(json.dumps(fixture))

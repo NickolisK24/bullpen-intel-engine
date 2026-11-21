@@ -679,3 +679,9 @@ Owen Murphy's qualified MLB game logs through October 28, 2026 recorded zero rel
 The Board displays the game, opponent, relief appearances, baseball innings and pitches for its five most recent verified appearance dates. Each date links to the specific MLB game. Doubleheaders retain both games, and missing pitches or innings remain unavailable. An empty window or a gap is identified on the Board.
 
 On the August 28, 2017 edition, Chromium compared all 30 Boards with a separate count from MLB's dated schedules and boxscores. The 152 club-game rows covered 477 relief appearances and 8,255 pitches. Washington and the Mets each had six rows across five dates, including both games of their August 27 doubleheader. Opening the 30 Boards used 30 local revision-bound requests.
+
+### Postponement and makeup coverage
+
+The workload reader validates the full season schedule, then compares its listing for each date with that date's retained slate. The final-game index still identifies a makeup by its official completion. MLB game 491893 appeared on August 16, 2017 as postponed and on August 17 as final. Comparing only the final-game index lost the first listing and withheld both clubs' 14-day totals.
+
+Through August 28, Cleveland's 41 relief appearances, 121 outs and 632 pitches and Minnesota's 40 appearances, 126 outs and 635 pitches agreed with an independent boxscore count. The other 28 clubs' 14-day fields already agreed. The PostgreSQL regression also requires a verified playoff final before counting a rescheduled postseason game. [August 16 schedule](https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2017-08-16) · [Makeup boxscore](https://statsapi.mlb.com/api/v1/game/491893/boxscore)
