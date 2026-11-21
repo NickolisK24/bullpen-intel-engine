@@ -1,25 +1,18 @@
 """Describe official relief deployment in one date-bound candidate game."""
 
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import timedelta
 from types import SimpleNamespace
 
-from psycopg2.extras import Json
-
 from services.play_by_play_foundation import _normalize_events
-from services.role_movement import GAME_TYPES
-from services.team_board_public_deployment_context import entry_from_ordered_events
+from services import role_movement
+from services.game_finality import classify_status
+from services.mlb_club_directory import MLB_TEAM_IDS
+from services.sync import _extract_leverage_index
+from services.team_board_public_deployment_context import _recorded_li, entry_from_ordered_events, movement_window_evidence
 from sync_v3.discovery import calendar_requests
-from sync_v3.evidence import replay
+from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.workload import _game_workload
-
-
-def _latest(cur, endpoint, params):
-    cur.execute("""SELECT f.id, f.outcome, r.source_id FROM candidate.fetches f
-                   LEFT JOIN candidate.refusals r ON r.source_id=f.id
-                   WHERE f.endpoint=%s AND f.parameters=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
-                (endpoint, Json(params)))
-    row = cur.fetchone()
-    return row[0] if row and row[1] == 'received' and row[2] is None else None
 
 
 def qualified_entries(game, day, lines, plays):
@@ -79,26 +72,35 @@ def game_deployment(cur, game_pk, day):
               'relief_appearances': None, 'reason': None}
     sources = result['sources']
     schedule = calendar_requests(day)[0]
-    sources['schedule'] = _latest(cur, schedule.endpoint, schedule.params())
+    sources['schedule'] = latest_qualified_source(cur, schedule.endpoint, schedule.params())
     if sources['schedule'] is None:
         result['reason'] = 'missing_complete_schedule'
         return result
     slate = replay(cur, sources['schedule']).body
     game = next((g for entry in slate['dates'] for g in entry['games'] if g['gamePk'] == game_pk), None)
-    if game is None or game['gameType'] not in GAME_TYPES:
+    if game is None or game['gameType'] not in role_movement.GAME_TYPES:
         result['reason'] = 'missing_competitive_game'
         return result
+    return _from_schedule(cur, game, day, sources['schedule'])
+
+
+def _from_schedule(cur, game, day, schedule_source):
+    game_pk = game['gamePk']
+    sources = {'schedule': schedule_source}
+    result = {'game_pk': game_pk, 'game_type': game['gameType'], 'baseball_date': day.isoformat(),
+              'sources': sources, 'relief_appearances': None, 'reason': None}
     final, reason = _game_workload(cur, game, day, sources['schedule'])
     if final is None:
         result['reason'] = reason or 'game_without_final_work'
         return result
     lines, (sources['boxscore'], sources['final_schedule']) = final
-    sources['play_by_play'] = _latest(cur, f'/game/{game_pk}/playByPlay', {})
+    sources['play_by_play'] = latest_qualified_source(cur, f'/game/{game_pk}/playByPlay', {})
+    box = replay(cur, sources['boxscore'])
     entries = None
     reason = 'missing_complete_plays'
     if sources['play_by_play'] is not None:
         receipt = replay(cur, sources['play_by_play'])
-        if receipt.retrieved_at < replay(cur, sources['boxscore']).retrieved_at:
+        if receipt.retrieved_at < box.retrieved_at:
             reason = 'plays_predate_final_boxscore'
         else:
             entries, reason = qualified_entries(game, day, lines, receipt.body['allPlays'])
@@ -108,11 +110,60 @@ def game_deployment(cur, game_pk, day):
         if row['games_started'] == 0:
             key = row['team_id'], row['pitcher_mlb_id']
             inning, margin = entries[key] if entries else (None, None)
+            stats = box.body['teams'][row['side']]['players'][f'ID{key[1]}']['stats']['pitching']
             result['relief_appearances'].append({
                 'mlb_team_id': key[0], 'mlb_player_id': key[1], 'entry_inning': inning,
                 'entry_score_margin': margin,
                 'entry_reason': reason or ('single_entry_unresolved' if inning is None else None),
+                'leverage_index': _recorded_li(_extract_leverage_index(stats)),
                 'save': row['save'], 'hold': row['hold'],
                 'games_finished': row['games_finished'], 'outs': row['outs_recorded'],
             })
     return result
+
+
+def club_role_movement(cur, team, through):
+    """Compare two covered weeks of official relief for the game-side club."""
+    if team not in MLB_TEAM_IDS:
+        raise ValueError('Expected an MLB club identity')
+    recent_start, _, prior_start, prior_end = role_movement.window_bounds(through)
+    observations = defaultdict(list)
+    sources, gaps = {}, {}
+    for offset in range((through - prior_start).days + 1):
+        day = prior_start + timedelta(days=offset)
+        represented = day.isoformat()
+        schedule = calendar_requests(day)[0]
+        source = latest_qualified_source(cur, schedule.endpoint, schedule.params())
+        if source is None:
+            gaps[represented] = ['missing_complete_schedule']
+            continue
+        sources[represented] = {'schedule': source, 'games': {}}
+        for entry in replay(cur, source).body['dates']:
+            for game in entry['games']:
+                if game['gameType'] not in role_movement.GAME_TYPES:
+                    continue
+                if all(game['teams'][side]['team']['id'] != team for side in ('home', 'away')):
+                    continue
+                if classify_status(game['status']).state in ('postponed', 'cancelled'):
+                    continue
+                result = _from_schedule(cur, game, day, source)
+                sources[represented]['games'][game['gamePk']] = {
+                    **result['sources'], 'final_reason': result['reason'], 'entry_reason': result.get('entry_reason'),
+                }
+                if result['reason']:
+                    gaps.setdefault(represented, []).append(result['reason'])
+                    continue
+                for arm in result['relief_appearances']:
+                    if arm['mlb_team_id'] == team:
+                        observations[arm['mlb_player_id']].append((
+                            day, game['gameType'], arm['entry_inning'], arm['leverage_index']))
+    profiles = []
+    if not gaps:
+        for player, rows in sorted(observations.items()):
+            recent = movement_window_evidence([row[1:] for row in rows if row[0] >= recent_start],
+                                              recent_start, through)
+            prior = movement_window_evidence([row[1:] for row in rows if row[0] <= prior_end], prior_start, prior_end)
+            profiles.append({'mlb_player_id': player, 'recent': recent, 'prior': prior,
+                             **role_movement.classify_observed_role_movement(recent=recent, prior=prior)})
+    return {'contract': role_movement.CONTRACT, 'mlb_team_id': team, 'through': through.isoformat(),
+            'complete_game_coverage': not gaps, 'gaps': gaps, 'sources': sources, 'profiles': profiles}

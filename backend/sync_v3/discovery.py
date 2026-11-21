@@ -29,6 +29,20 @@ def calendar_requests(day):
     )
 
 
+def pitcher_requests(day, players):
+    players = set(players)
+    if any(type(player) is not int or player <= 0 for player in players):
+        raise ValueError('Pitcher discovery requires positive MLB player identities')
+    requests = []
+    for player in sorted(players):
+        endpoint = f'/people/{player}/stats'
+        scope = {'group': 'pitching', 'sportIds': 1, 'gameType': 'R', 'season': day.year}
+        requests.append(_request(endpoint, 21600, stats='gameLog', limit=1000, **scope))
+        requests.append(_request(endpoint, 21600, stats='byDateRange', startDate=f'{day.year}-01-01',
+                                 endDate=day.isoformat(), **scope))
+    return tuple(requests)
+
+
 def roster_requests(day, teams):
     teams = set(teams)
     if not teams.issubset(MLB_TEAM_IDS):

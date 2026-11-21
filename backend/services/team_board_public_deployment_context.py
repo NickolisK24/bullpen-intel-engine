@@ -94,16 +94,24 @@ def _movement_window(appearances, start, end, *, markers, events_by_game):
         (log, pitcher) for log, pitcher in appearances
         if start <= log.game_date <= end
     ]
-    entry_known = late = leverage_known = high = 0
+    observations = []
     for log, pitcher in scoped:
         inning, _ = _entry_for(
             log, pitcher, events_by_game.get(log.mlb_game_pk, []),
             markers.get(log.mlb_game_pk),
         )
+        observations.append((log.game_type, inning, getattr(log, 'leverage_index', None)))
+    return movement_window_evidence(observations, start, end)
+
+
+def movement_window_evidence(observations, start, end):
+    """Count governed signals from (game type, supported entry inning, recorded LI)."""
+    entry_known = late = leverage_known = high = 0
+    for _, inning, leverage in observations:
         if inning is not None:
             entry_known += 1
             late += int(inning >= role_movement.LATE_ENTRY_INNING_MIN)
-        li = _recorded_li(getattr(log, 'leverage_index', None))
+        li = _recorded_li(leverage)
         if li is not None:
             leverage_known += 1
             high += int(li >= HIGH_LEVERAGE_MIN)
@@ -111,8 +119,8 @@ def _movement_window(appearances, start, end, *, markers, events_by_game):
         'start_date': start.isoformat(),
         'through_date': end.isoformat(),
         'window_days': role_movement.WINDOW_DAYS,
-        'appearances': len(scoped),
-        'season_phase': role_movement.season_phase(log.game_type for log, _ in scoped),
+        'appearances': len(observations),
+        'season_phase': role_movement.season_phase(kind for kind, _, _ in observations),
         'eighth_or_later_appearances': late,
         'known_entry_appearances': entry_known,
         'high_leverage_appearances': high,

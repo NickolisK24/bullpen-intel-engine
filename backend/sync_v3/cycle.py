@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters
-from sync_v3.discovery import calendar_requests, game_requests, roster_requests
+from sync_v3.discovery import calendar_requests, game_requests, pitcher_requests, roster_requests
 
 
 def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
@@ -58,7 +58,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc)):
     if type(max_jobs) is not int or not 1 <= max_jobs <= 256:
         raise ValueError('Cycle limit must be between one and 256 jobs')
@@ -67,7 +67,8 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, budget='current', m
         schedule, transactions = calendar_requests(day)
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
-        enqueue_requests(cur, (schedule, transactions, *roster_requests(day, teams)), now, budget=budget, day=day)
+        requests = (schedule, transactions, *roster_requests(day, teams), *pitcher_requests(day, pitchers))
+        enqueue_requests(cur, requests, now, budget=budget, day=day)
 
     receipts = []
     for _ in range(max_jobs):

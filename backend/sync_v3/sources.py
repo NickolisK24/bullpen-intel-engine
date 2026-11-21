@@ -31,6 +31,14 @@ def inspect_response(request, body, acquired_at):
         if params.get('endDate') != day.isoformat() or params.get('sportId') != 1:
             raise ValueError('Unsupported schedule scope')
         game_requests(day, body, now=acquired_at)
+    elif re.fullmatch(r'/people/[1-9][0-9]*/stats', endpoint):
+        groups = body.get('stats')
+        if (not isinstance(groups, list) or params.get('stats') not in ('byDateRange', 'gameLog')
+                or params.get('gameType') != 'R' or params.get('group') != 'pitching' or params.get('sportIds') != 1
+                or any(not isinstance(g, dict) or (g.get('type') or {}).get('displayName') != params['stats']
+                       or (g.get('group') or {}).get('displayName') != 'pitching'
+                       or not isinstance(g.get('splits'), list) for g in groups)):
+            raise ValueError('Unexpected official pitcher stats scope')
     elif endpoint == '/transactions':
         if not isinstance(body.get('transactions'), list):
             raise ValueError('Missing transaction collection')
@@ -61,6 +69,6 @@ def inspect_response(request, body, acquired_at):
 
 
 def transport_endpoint(request):
-    if not re.fullmatch(r'/(schedule|transactions|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
+    if not re.fullmatch(r'/(schedule|transactions|people/[1-9][0-9]*/stats|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
         raise ValueError('Unsupported acquisition endpoint')
     return request.endpoint.replace('/api/v1.1/', '/../v1.1/', 1)
