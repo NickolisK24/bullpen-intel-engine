@@ -1768,3 +1768,34 @@ def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path, fai
             assert before != after
             assert preview_trust(db, after)['withheld_role_evidence'] == []
             assert preview_trust(db, before)['withheld_role_evidence'] == [refusal]
+
+
+def test_historical_pitcher_deployment_keeps_the_qualified_sample_with_partial_boxscores():
+    from sync_v3.pitcher_deployment_read import historical_relief_profile
+
+    through = date(2017, 8, 28)
+    sample = dict(games=[100, 200], relief_appearances=2, saves=0, holds=1, games_finished=1)
+    deployment = dict(mlb_player_id=7, through=str(through), reason=None, facts=dict(recent_14=sample))
+    line = dict(game_pk=100, mlb_id=7, game_date='2017-08-20', role='relief', innings_pitched_outs=4)
+    ledger = dict(through=str(through), gaps={'2017-08-28': 'missing_final'}, appearances=[line])
+    panel = historical_relief_profile(deployment, ledger, 7, through)
+    assert panel['population'] == 'all_clubs_regular_season_relief' and panel['window_days'] == 14
+    assert panel['profile'] == dict(saves=0, holds=1, games_finished=1, appearances_with_games_finished=2,
+                                    appearances_with_outs=1, multi_inning_appearances=1, most_recent_multi_inning_date=None)
+    assert panel['limitations']
+    assert historical_relief_profile(deployment, dict(ledger, gaps={}), 7, through)['status'] == 'withheld'
+    ledger['gaps'] = {}
+    ledger['appearances'].append(dict(line, game_pk=200, game_date='2017-08-28', innings_pitched_outs=2))
+    complete = historical_relief_profile(deployment, ledger, 7, through)
+    assert complete['profile']['most_recent_multi_inning_date'] == '2017-08-20' and not complete['limitations']
+    assert historical_relief_profile(deployment, ledger, 8, through) is None
+    assert historical_relief_profile(dict(deployment, reason='log_and_dated_totals_disagree'), ledger, 7, through) is None
+    with pytest.raises(ValueError, match='player or window'):
+        historical_relief_profile(deployment, dict(ledger, appearances=[dict(line, game_date='2017-08-14')]), 7, through)
+    with pytest.raises(ValueError, match='Repeated appearance'):
+        historical_relief_profile(deployment, dict(ledger, appearances=[line, line]), 7, through)
+    no_relief = dict(deployment, facts=dict(recent_14=dict(sample, games=[], relief_appearances=0, holds=0, games_finished=0)))
+    conflict = historical_relief_profile(no_relief, ledger, 7, through)
+    assert conflict['status'] == 'withheld' and conflict['reason'] == 'game_log_and_boxscore_relief_population_disagree'
+    quiet = historical_relief_profile(no_relief, dict(ledger, appearances=[dict(line, role='start')]), 7, through)
+    assert quiet['status'] == 'complete' and quiet['profile'] is None

@@ -58,6 +58,49 @@ def _entry_and_leverage(cur, snapshot, outing, player):
     return inning, margin, leverage
 
 
+def historical_relief_profile(deployment, regular, player, through):
+    """Present the frozen all-club regular-season sample on the Pitcher deployment panel."""
+    from services.public_team_relief_work import DEPLOYMENT_PROFILE_MULTI_INNING_MIN_OUTS
+
+    if (deployment['reason'] or deployment['mlb_player_id'] != player
+            or deployment['through'] != through.isoformat() or regular['through'] != deployment['through']):
+        return None
+    sample = deployment['facts']['recent_14']
+    games = set(sample['games'])
+    total = sample['relief_appearances']
+    if len(games) != total or len(sample['games']) != total:
+        raise ValueError('Historical deployment game identities disagree with the appearance count')
+    start = (through - timedelta(days=13)).isoformat()
+    context = dict(status='complete', data_through=deployment['through'], window_days=14,
+                   population='all_clubs_regular_season_relief', profile=None, limitations=[])
+    lines = []
+    for row in regular['appearances']:
+        in_sample = row['game_pk'] in games
+        in_window = start <= row['game_date'] <= deployment['through']
+        if row['mlb_id'] != player or (in_sample and not in_window):
+            raise ValueError('Historical deployment appearance disagrees with the frozen player or window')
+        if in_window and (row['role'] == 'relief') != in_sample:
+            return dict(context, status='withheld', reason='game_log_and_boxscore_relief_population_disagree')
+        if in_sample:
+            lines.append(row)
+    if len({row['game_pk'] for row in lines}) != len(lines):
+        raise ValueError('Repeated appearance in the historical relief ledger')
+    window_has_gaps = any(start <= day <= deployment['through'] for day in regular['gaps'])
+    if len(lines) < total and not window_has_gaps:
+        return dict(context, status='withheld', reason='game_log_and_boxscore_relief_population_disagree')
+    if total:
+        known = [row for row in lines if row['innings_pitched_outs'] is not None]
+        multi = [row for row in known if row['innings_pitched_outs'] >= DEPLOYMENT_PROFILE_MULTI_INNING_MIN_OUTS]
+        last_multi = max((row['game_date'] for row in multi), default=None) if len(known) == total else None
+        context['profile'] = dict(saves=sample['saves'], holds=sample['holds'], games_finished=sample['games_finished'],
+                                  appearances_with_games_finished=total, appearances_with_outs=len(known),
+                                  multi_inning_appearances=len(multi),
+                                  most_recent_multi_inning_date=last_multi)
+        if len(known) < total:
+            context['limitations'].append('Multi-inning coverage is limited to retained boxscores with recorded outs.')
+    return context
+
+
 def historical_pitcher_deployment(cur, digest, player, through):
     pitcher_method = DOMAINS['pitcher_profile'][1]
     role_method = DOMAINS['roles'][1]

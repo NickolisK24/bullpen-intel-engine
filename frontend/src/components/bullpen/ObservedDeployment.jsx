@@ -91,6 +91,10 @@ export default function ObservedDeployment({ context }) {
         )}
       </div>
 
+      {context?.population === 'all_clubs_regular_season_relief' && (
+        <p className="mt-2 font-mono text-xs text-chalk400">Regular-season relief appearances across all clubs.</p>
+      )}
+
       {view.state === 'available' ? (
         <>
           <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 xl:grid-cols-3">

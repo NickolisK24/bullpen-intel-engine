@@ -75,6 +75,14 @@ test('renders exact observed deployment facts with canonical denominators', () =
   assert.ok(html.includes('dateTime="2026-08-19"'))
 })
 
+test('the historical deployment panel identifies an all-club regular-season sample', () => {
+  const scope = 'Regular-season relief appearances across all clubs.'
+  const context = { ...deploymentContext(), population: 'all_clubs_regular_season_relief' }
+  assert.ok(renderDeployment(context).includes(scope))
+  assert.ok(renderDeployment({ ...context, profile: null }).includes(scope))
+  assert.ok(!renderDeployment().includes(scope))
+})
+
 test('canonical zero remains zero when its evidence denominator is present', () => {
   const html = renderDeployment(deploymentContext({
     saves: 0,

@@ -665,3 +665,11 @@ In the August 28, 2017 private edition, Chromium checked all 19 mapped pitchers 
 Suárez threw 15 pitches on August 22 and 17 on August 25. His historical pitcher route returned to San Francisco’s revision 2 Board with the same generation digest. [August 22 boxscore](https://statsapi.mlb.com/api/v1/game/491972/boxscore) · [August 25 boxscore](https://statsapi.mlb.com/api/v1/game/492019/boxscore)
 
 The same 19 Pitcher pages also showed the last regular-season bullpen outing and elapsed calendar days as of August 29. A second comparison used all 193 official finals from August 15–28. Suárez’s last outing was August 25 (17 pitches), four calendar days before the availability reference date. For two pitchers, the verified date was August 17 and the seven-day last-outing pitch check supplied no pitch count. The header showed the dated result and withheld the count. A missing rest fact or a mismatch in pitcher, workload date or reference date withholds the historical timing.
+
+### Observed deployment on a historical Pitcher page
+
+The 14-day panel covers regular-season relief appearances across all clubs the pitcher represented. The selected profile supplies saves, holds and games finished from official game logs reconciled with dated totals. A retained final with recorded outs supplies the multi-inning count for that appearance. The panel gives its denominator and withholds the last multi-inning date when any qualifying outing lacks outs. A withheld season profile leaves deployment unavailable.
+
+In Chromium, all 19 mapped routes in revision 2 of the August 28, 2017 edition matched an independent count from the 193 official August 15–28 boxscores. Together the pitchers made 99 relief appearances, recorded 19 saves and 18 holds, finished 44 games and worked at least four outs 27 times. Albert Suárez appeared four times, finished one game, and recorded three multi-inning outings. The same historical edition and identity limits apply.
+
+Owen Murphy's qualified MLB game logs through October 28, 2026 recorded zero relief appearances in the final 14 days. The resulting quiet panel agreed with the saved snapshot 5843 Pitcher response on profile, status, workload date and window length. The saved response used his club's official relief appearances. Agreement on Murphy's empty window leaves cross-club and postseason parity unverified.

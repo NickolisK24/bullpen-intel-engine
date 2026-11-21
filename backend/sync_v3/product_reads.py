@@ -982,7 +982,7 @@ def read_pitcher(connection, public_id, *, revision=None):
         result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         result['pitcher']['throws'] = result['pitch_hand']['value']
-        from sync_v3.pitcher_deployment_read import historical_pitcher_deployment
+        from sync_v3.pitcher_deployment_read import historical_pitcher_deployment, historical_relief_profile
         result['historical_deployment'] = historical_pitcher_deployment(cur, digest, player, through)
         if (player.get('roster_observation') or {}).get('membership') == 'active':
             return dict(result, status='dated_active_pitcher', identity=player, sections={})
@@ -993,6 +993,12 @@ def read_pitcher(connection, public_id, *, revision=None):
         history = blocks['pitcher_profile']['value']['pitch_history']
         if history['mlb_player_id'] != player['mlb_id'] or history['through'] != through.isoformat():
             raise ValueError('Pitch history disagrees with the selected pitcher or workload date')
+        deployment_context = historical_relief_profile(
+            blocks['pitcher_profile']['value']['deployment'], regular, player['mlb_id'], through)
+        if deployment_context is not None:
+            result['deployment_context'] = dict(deployment_context, pitcher_id=public_id, generation=digest,
+                                               profile_citation=blocks['pitcher_profile']['citation'],
+                                               appearance_citation=regular['citation'])
         performance = blocks['pitcher_profile']['value']['performance']
         result['performance'] = performance['windows'] if performance['reason'] is None else None
         result['season_pitch_characteristics'] = (
