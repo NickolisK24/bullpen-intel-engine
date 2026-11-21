@@ -198,6 +198,26 @@ test('historical group performance scopes qualified values and preserves a withh
   assert.ok(!show({ ...performance, through: '2017-08-27' }).includes('HR allowed'))
 })
 
+test('historical rotation separates recorded starts, nonrotation games, and missing coverage', async () => {
+  const { HistoricalRotation } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
+  const team = 111, through = '2017-08-28'
+  const pressure = { games_analyzed: 4, games_in_window: 7, short_start_count: 0, starter_outs: 72,
+    bullpen_outs_required: 34, opener_bulk_games: 1, bullpen_games: 1, games_excluded: 1 }
+  const rotation = { team, through, windows: { 7: { gaps: {}, pressure }, 14: { gaps: { '2017-08-18': 'missing_schedule' }, pressure } } }
+  const show = value => render(React.createElement(HistoricalRotation, { rotation: value, team, through }))
+  const html = show(rotation)
+  assert.match(html, /4 rotation starts in 7 club games/)
+  assert.match(html, /Short starts<\/dt><dd>0</)
+  assert.ok(html.includes('Opener and bulk-follower games · 1') && html.includes('Bullpen games · 1'))
+  assert.ok(html.includes('Games with incomplete pitching evidence · 1'))
+  assert.equal((html.match(/Rotation evidence unavailable/g) || []).length, 1)
+  const idle = show({ ...rotation, windows: { 7: { gaps: {}, pressure: { games_in_window: 0, games_analyzed: 0 } } } })
+  assert.ok(idle.includes('0 rotation starts in 0 club games.'))
+  assert.equal(idle.includes('Relief outs after rotation starts'), false)
+  assert.equal((show({ ...rotation, team: 141 }).match(/Rotation evidence unavailable/g) || []).length, 2)
+  assert.equal((show({ ...rotation, through: '2017-08-29' }).match(/Rotation evidence unavailable/g) || []).length, 2)
+})
+
 test('historical relief games preserve doubleheaders, incomplete measures and missing dates', async () => {
   const { HistoricalReliefGames } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
   const through = '2024-07-27'

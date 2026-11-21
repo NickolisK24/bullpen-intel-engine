@@ -48,6 +48,35 @@ export function HistoricalGroupPerformance({ performance, team, through }) {
   </section>
 }
 
+export function HistoricalRotation({ rotation, team, through }) {
+  const windows = rotation?.team === team && rotation.through === through ? rotation.windows : null
+  return <section aria-labelledby="historical-rotation">
+    <h2 id="historical-rotation">Rotation workload</h2>
+    <p>Regular-season games through {through}. Opener and bullpen games are counted separately.</p>
+    {[7, 14].map(days => {
+      const window = windows?.[days]
+      const pressure = window?.gaps && Object.keys(window.gaps).length === 0 ? window.pressure : null
+      const covered = Number.isSafeInteger(pressure?.games_in_window) && Number.isSafeInteger(pressure?.games_analyzed)
+        && pressure.games_analyzed >= 0 && pressure.games_in_window >= pressure.games_analyzed
+      return <div key={days} className="mt-3">
+        <h3>Last {days} days</h3>
+        {!covered ? <p>Rotation evidence unavailable for this window.</p> : <>
+          <p>{pressure.games_analyzed} rotation {pressure.games_analyzed === 1 ? 'start' : 'starts'} in{' '}
+            {pressure.games_in_window} club {pressure.games_in_window === 1 ? 'game' : 'games'}.</p>
+          {pressure.games_analyzed > 0 && <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {[['Short starts', pressure.short_start_count], ['Starter outs', pressure.starter_outs],
+              ['Relief outs after rotation starts', pressure.bullpen_outs_required]].map(([label, value]) =>
+              <div key={label}><dt>{label}</dt><dd>{value ?? 'Unavailable'}</dd></div>)}
+          </dl>}
+          {pressure.opener_bulk_games > 0 && <p>Opener and bulk-follower games · {pressure.opener_bulk_games}</p>}
+          {pressure.bullpen_games > 0 && <p>Bullpen games · {pressure.bullpen_games}</p>}
+          {pressure.games_excluded > 0 && <p>Games with incomplete pitching evidence · {pressure.games_excluded}</p>}
+        </>}
+      </div>
+    })}
+  </section>
+}
+
 export function HistoricalReliefGames({ ledger, through }) {
   const games = ledger?.status === 'verified_games_only' && ledger.through === through && Array.isArray(ledger.games)
     ? ledger.games : null
@@ -112,6 +141,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         represented={data.data_through} />
     </section>
     <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
+    <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />
     <p><Link className="underline" to={`/stories?team=${team}&rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect editorial observations</Link></p>
