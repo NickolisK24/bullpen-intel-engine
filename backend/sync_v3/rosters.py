@@ -94,3 +94,20 @@ def membership_on(cur, team, kind, represented, player):
     if roster is None:
         return None
     return any(member['id'] == player for member in roster[0]['members'])
+
+
+def dated_pitcher_sources(cur, player, represented):
+    """Positive identity proof for an arm with no qualifying relief appearance."""
+    endpoints = [f'/teams/{team}/roster' for team in sorted(MLB_TEAM_IDS)]
+    cur.execute("""SELECT latest.id FROM unnest(%s::text[]) AS club(endpoint)
+                   CROSS JOIN LATERAL (
+                       SELECT f.id, f.outcome FROM candidate.fetches f
+                       WHERE f.endpoint=club.endpoint AND f.parameters=%s
+                       ORDER BY f.received_at DESC, f.id DESC LIMIT 1
+                   ) latest
+                   JOIN candidate.confirmations c ON c.source_id=latest.id AND c.domain='roster'
+                   JOIN candidate.revisions r ON r.id=c.revision_id
+                   WHERE latest.outcome='received' AND r.facts->'members' @> %s
+                   ORDER BY latest.id""", (endpoints, Json({'date': represented.isoformat(), 'rosterType': 'active'}),
+                                           Json([{'id': player, 'position': '1'}])))
+    return [row[0] for row in cur]

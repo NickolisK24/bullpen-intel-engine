@@ -60,6 +60,10 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
     day = date.fromisoformat(fixture['baseball_date'])
     at = datetime(2026,8,1,tzinfo=timezone.utc)
     sources = {(r['endpoint'],r['params'].get('rosterType')):r['body'] for r in fixture['responses']}
+    sources['/teams/111/roster', 'active']['roster'] = [
+        {'person': {'id': 98765}, 'position': {'code': '1'}},
+        {'person': {'id': 98766}, 'position': {'code': '6'}},
+    ]
     with isolated_cluster(pg) as (owner, connect):
         install(owner)
         worker = connect()
@@ -84,6 +88,11 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
                     compare_team_workload(cur, calendar, team)
                 assert len(windows[3]['sources']) == 4
                 assert windows[5]['facts'] is None and len(windows[5]['gaps'])==2
+                rookie = pitcher_windows(cur, 98765, through)
+                assert rookie[3]['facts']['appearances'] == rookie[3]['facts']['pitches_thrown'] == 0
+                assert len(rookie[3]['identity_sources']) == 1
+                assert rookie[5]['facts'] is None
+                assert pitcher_windows(cur, 98766, through)[3]['facts'] is None
                 assert pitcher_windows(cur, 999999, day+timedelta(days=2))[3]['facts'] is None
         finally:
             worker.close()
@@ -159,7 +168,7 @@ def test_team_workload_uses_game_side_and_dated_active_authority():
 
 
 def test_missing_official_innings_cannot_establish_a_zero_out_relief_line():
-    from sync_v3.workload import regular_day
+    from sync_v3.workload import regular_day, load_club_calendars
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
     if not pg:
@@ -187,6 +196,10 @@ def test_missing_official_innings_cannot_establish_a_zero_out_relief_line():
                     else:
                         assert any(status == 'refused' for _, status in receipts)
                         assert observed is None and reason == 'missing_compatible_final'
+                        clubs = load_club_calendars(cur, day)
+                        assert len(clubs) == 30
+                        assert {club for club, calendar in clubs.items() if calendar[day][1]} == {111, 147}
+                        assert clubs[119][day][0]['official_lines'] == []
                         cur.execute("SELECT count(*) FROM candidate.revisions WHERE domain='final'")
                         assert cur.fetchone() == (1,)
         finally:
@@ -217,3 +230,66 @@ def test_outing_pitch_comparison_preserves_sample_and_withholds_ambiguous_baseli
     assert outing_pitch_comparison(calendar, 9, through)['reason'] == 'pitch_count_unknown'
     calendar.pop(through-timedelta(days=29))
     assert outing_pitch_comparison(calendar, 9, through)['facts'] is None
+
+
+def test_representative_teams_are_scoped_to_the_official_all_star_matchup():
+    from sync_v3.canonical import Refused, game_identity
+
+    game = {'gamePk': 747298, 'officialDate': '2024-07-16', 'gameType': 'A', 'status': {},
+            'teams': {'away': {'team': {'id': 160}}, 'home': {'team': {'id': 159}}}}
+    assert game_identity(game)['gameType'] == 'A'
+    for kind in ('R', 'W', 'I', 'E'):
+        with pytest.raises(Refused, match='game sides'):
+            game_identity(dict(game, gameType=kind))
+    game['teams']['home']['team']['id'] = 111
+    with pytest.raises(Refused, match='game sides'):
+        game_identity(game)
+    game['teams']['away']['team']['id'] = 147
+    with pytest.raises(Refused, match='game type'):
+        game_identity(dict(game, gameType='unrecognized'))
+
+
+@pytest.mark.parametrize('represented,linkage', [
+    ('2024-06-26', {'resumeDate': '2024-08-26T18:05:00Z', 'resumeGameDate': '2024-08-26'}),
+    ('2024-08-26', {'resumedFrom': '2024-06-26T23:10:00Z', 'resumedFromDate': '2024-06-26'}),
+    ('2024-06-26', {'resumeDate': '2024-06-27T01:00:00Z'}),
+])
+def test_a_combined_resumed_boxscore_cannot_date_individual_workload(represented, linkage):
+    from sync_v3.workload import _game_workload
+
+    game = {'officialDate': '2024-06-26', 'status': {'statusCode': 'F', 'detailedState': 'Final'}, **linkage}
+    assert _game_workload(None, game, date.fromisoformat(represented), 1) == (
+        None, 'resumed_game_workload_dates_unresolved')
+
+
+def test_all_star_final_retains_lines_without_attributing_workload_to_an_mlb_club():
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    at = datetime.fromisoformat(fixture['observed_at'])
+    sources = {(r['endpoint'], tuple(sorted(r['params'].items()))): r['body'] for r in fixture['responses']}
+    game = fixture['responses'][0]['body']['dates'][0]['games'][0]
+    game['gameType'] = 'A'
+    box = sources['/game/12345/boxscore', ()]
+    for side, representative in [('away', 160), ('home', 159)]:
+        game['teams'][side]['team']['id'] = representative
+        box['teams'][side]['team']['id'] = representative
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        worker = connect()
+        try:
+            receipts = run_cycle(worker, day, lambda ep, params: sources[ep, tuple(sorted(params.items()))],
+                                 teams=[111], clock=lambda: at)
+            assert all(status == 'received' for _, status in receipts)
+            with worker, worker.cursor() as cur:
+                assert compare_finals(cur) == (1, 3)
+                observed, reason = regular_day(cur, day)
+                assert reason is None and observed['official_lines'] == []
+                cur.execute("SELECT count(*) FROM candidate.impacts WHERE entity_type='team'")
+                assert cur.fetchone() == (0,)
+        finally:
+            worker.close()

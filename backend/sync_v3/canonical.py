@@ -11,6 +11,11 @@ from services.sync import _extract_pitching_lines_from_boxscore, _pitcher_order_
 from utils.innings import parse_mlb_innings_to_outs
 
 
+# Official Stats API /api/v1/gameTypes and the MLB All-Star team directory.
+MLB_GAME_TYPES = frozenset({'S', 'R', 'F', 'D', 'L', 'W', 'C', 'P', 'A', 'I', 'E'})
+ALL_STAR_TEAMS = frozenset({159, 160})
+
+
 class Refused(ValueError):
     pass
 
@@ -45,7 +50,13 @@ def accept(cur, domain, identity, facts, source_id, observed_at, *, context_id=N
 
 def game_identity(game):
     sides = [game.get('teams', {}).get(side, {}).get('team', {}).get('id') for side in ('home','away')]
-    if len(set(sides)) != 2 or any(type(team) is not int or team not in MLB_TEAM_IDS for team in sides):
+    kind = game.get('gameType')
+    if not isinstance(kind, str) or kind not in MLB_GAME_TYPES:
+        raise Refused('Unrecognized official game type')
+    if any(type(team) is not int for team in sides) or sides[0] == sides[1]:
+        raise Refused('Missing or contradictory official game sides')
+    is_all_star_matchup = kind == 'A' and set(sides) == ALL_STAR_TEAMS
+    if not is_all_star_matchup and any(team not in MLB_TEAM_IDS for team in sides):
         raise Refused('Missing or contradictory official game sides')
     if type(game.get('gamePk')) is not int or game['gamePk'] <= 0:
         raise Refused('Missing official game identity')
@@ -53,13 +64,13 @@ def game_identity(game):
         date.fromisoformat(game.get('officialDate', ''))
     except (ValueError, TypeError) as exc:
         raise Refused('Missing official baseball date') from exc
-    if not game.get('gameType'):
-        raise Refused('Missing official game type')
     return {'gamePk': game['gamePk'], 'officialDate': game['officialDate'],
             'gameType': game['gameType'], 'teams': {side: {'team': {'id': team}} for side, team
                 in zip(('home','away'),sides)}, 'status': game['status'],
             'gameNumber': game.get('gameNumber'), 'doubleHeader': game.get('doubleHeader'),
             'gameDate': game.get('gameDate'), 'resumeDate': game.get('resumeDate'),
+            'resumeGameDate': game.get('resumeGameDate'), 'resumedFrom': game.get('resumedFrom'),
+            'resumedFromDate': game.get('resumedFromDate'),
             'scores': {side: game['teams'][side].get('score') for side in ('home', 'away')}}
 
 
@@ -110,7 +121,8 @@ def reconcile_final(cur, pk, body, source_id, observed_at):
         for line in (before.get(player), after.get(player)):
             if line:
                 impacts.add(('pitcher',player,line['game_date']))
-                impacts.add(('team',line['team_id'],line['game_date']))
+                if line['team_id'] in MLB_TEAM_IDS:
+                    impacts.add(('team',line['team_id'],line['game_date']))
     cur.executemany('''INSERT INTO candidate.impacts VALUES (%s,%s,%s,%s)
                        ON CONFLICT DO NOTHING''', [(version,*scope) for scope in sorted(impacts)])
     return version

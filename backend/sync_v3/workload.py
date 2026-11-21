@@ -19,7 +19,7 @@ from services.public_team_relief_work import (
 from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import replay
-from sync_v3.rosters import roster_on
+from sync_v3.rosters import dated_pitcher_sources, roster_on
 
 
 WINDOWS = (3, 5, 7, 14, 30)
@@ -38,8 +38,39 @@ def workload_lines(final_lines):
                 yield dict(line, workload_class=classification)
 
 
-def regular_day(cur, day, *, team=None):
-    """Require the complete official slate and each relevant regular-season final."""
+def _game_workload(cur, game, day, schedule_source):
+    status = classify_status(game['status'])
+    if status.state in ('postponed', 'cancelled'):
+        return None, None
+    # MLB can list the same final on its original date and its resumption date.
+    # Its one boxscore combines both sessions. A UTC timestamp alone cannot
+    # establish the baseball date of an individual appearance.
+    for timestamp, baseball_date in (('resumeDate', 'resumeGameDate'), ('resumedFrom', 'resumedFromDate')):
+        represented = game.get(baseball_date)
+        if (game.get(timestamp) or represented) and represented != day.isoformat():
+            return None, 'resumed_game_workload_dates_unresolved'
+    if not status.final_status or game['officialDate'] != day.isoformat():
+        return None, 'regular_game_unresolved'
+    pk = game['gamePk']
+    cur.execute("""SELECT r.facts,f.id,c.context_id,f.outcome,old.revision_id,s.revision_id
+                   FROM candidate.fetches f
+                   LEFT JOIN candidate.confirmations c ON c.source_id=f.id
+                       AND c.domain='final' AND c.identity=%s
+                   LEFT JOIN candidate.revisions r ON r.id=c.revision_id
+                   LEFT JOIN candidate.confirmations old ON old.source_id=c.context_id
+                       AND old.domain='schedule' AND old.identity=c.identity
+                   LEFT JOIN candidate.confirmations s ON s.source_id=%s AND
+                       s.domain='schedule' AND s.identity=c.identity
+                   WHERE f.endpoint=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
+                (str(pk),schedule_source,f'/game/{pk}/boxscore'))
+    final = cur.fetchone()
+    if not final or final[0] is None or final[3] != 'received' or final[4] != final[5]:
+        return None, 'missing_compatible_final'
+    return (final[0], (final[1], final[2])), None
+
+
+def _day_by_scope(cur, day, scopes):
+    """Load a final once and apply its coverage to each affected scope."""
     cur.execute("""SELECT f.id,f.outcome,b.source_id FROM candidate.fetches f
                    LEFT JOIN candidate.refusals b ON b.source_id=f.id
                    WHERE f.endpoint='/schedule' AND f.parameters=%s
@@ -47,58 +78,72 @@ def regular_day(cur, day, *, team=None):
                 (Json(calendar_requests(day)[0].params()),))
     row = cur.fetchone()
     if row is None or row[1] != 'received' or row[2] is not None:
-        return None, 'missing_complete_schedule'
-    result = replay(cur, row[0])
-    lines, official_lines, sources = [], [], [row[0]]
-    for entry in result.body['dates']:
+        return {scope: (None, 'missing_complete_schedule') for scope in scopes}
+    schedule = replay(cur, row[0])
+    results = {scope: ({'lines': [], 'official_lines': [], 'sources': {row[0]}}, None)
+               for scope in scopes}
+    for entry in schedule.body['dates']:
         for game in entry['games']:
             if game['gameType'] != 'R':
                 continue
-            if team is not None and all(game['teams'][side]['team']['id'] != team for side in ('home', 'away')):
+            sides = {game['teams'][side]['team']['id'] for side in ('home', 'away')}
+            affected = [scope for scope in scopes if (scope is None or scope in sides)
+                        and results[scope][1] is None]
+            if not affected:
                 continue
-            status = classify_status(game['status'])
-            if status.state in ('postponed','cancelled'):
-                continue
-            if not status.final_status or game['officialDate'] != day.isoformat():
-                return None, 'regular_game_unresolved'
-            pk = game['gamePk']
-            cur.execute("""SELECT r.facts,f.id,c.context_id,f.outcome,old.revision_id,s.revision_id
-                           FROM candidate.fetches f
-                           LEFT JOIN candidate.confirmations c ON c.source_id=f.id
-                               AND c.domain='final' AND c.identity=%s
-                           LEFT JOIN candidate.revisions r ON r.id=c.revision_id
-                           LEFT JOIN candidate.confirmations old ON old.source_id=c.context_id
-                               AND old.domain='schedule' AND old.identity=c.identity
-                           LEFT JOIN candidate.confirmations s ON s.source_id=%s AND
-                               s.domain='schedule' AND s.identity=c.identity
-                           WHERE f.endpoint=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
-                        (str(pk),row[0],f'/game/{pk}/boxscore'))
-            final = cur.fetchone()
-            if not final or final[0] is None or final[3] != 'received' or final[4] != final[5]:
-                return None, 'missing_compatible_final'
-            sources.extend((final[1], final[2]))
-            official_lines.extend(final[0])
-            lines.extend(workload_lines(final[0]))
-    return {'lines': lines, 'official_lines': official_lines, 'sources': sorted(set(sources))}, None
+            final, reason = _game_workload(cur, game, day, row[0])
+            if reason:
+                for scope in affected:
+                    results[scope] = None, reason
+            elif final:
+                official, sources = final
+                workload = list(workload_lines(official))
+                for scope in affected:
+                    observed = results[scope][0]
+                    observed['lines'].extend(workload)
+                    observed['official_lines'].extend(official)
+                    observed['sources'].update(sources)
+    for observed, _ in results.values():
+        if observed is not None:
+            observed['sources'] = sorted(observed['sources'])
+    return results
+
+
+def regular_day(cur, day, *, team=None):
+    """Require the complete official slate and each relevant regular-season final."""
+    return _day_by_scope(cur, day, (team,))[team]
+
+
+def _load_calendars(cur, through, scopes):
+    calendars = {scope: {} for scope in scopes}
+    for offset in range(max(WINDOWS)):
+        day = through - timedelta(days=offset)
+        for scope, result in _day_by_scope(cur, day, scopes).items():
+            calendars[scope][day] = result
+    return calendars
 
 
 def load_calendar(cur, through, *, team=None):
-    return {through-timedelta(days=i):regular_day(cur, through-timedelta(days=i), team=team)
-            for i in range(max(WINDOWS))}
+    return _load_calendars(cur, through, (team,))[team]
+
+
+def load_club_calendars(cur, through):
+    return _load_calendars(cur, through, sorted(MLB_TEAM_IDS))
 
 
 def pitcher_windows(cur, player, through):
-    return windows_from_calendar(load_calendar(cur, through), player, through)
+    return windows_from_calendar(load_calendar(cur, through), player, through,
+                                 identity_sources=dated_pitcher_sources(cur, player, through))
 
 
-def windows_from_calendar(slices, player, through):
+def windows_from_calendar(slices, player, through, *, identity_sources=()):
     """All arms can reuse the same qualified calendar without another database read."""
     days = [through-timedelta(days=i) for i in range(max(WINDOWS))]
     selected_by_day = {
         day:[line for line in observed['lines'] if line['pitcher_mlb_id'] == player]
         for day,(observed,_) in slices.items() if observed
     }
-    known_player = any(selected_by_day.values())
+    known_player = bool(identity_sources) or any(selected_by_day.values())
     result = {}
     for size in WINDOWS:
         span = days[:size]
@@ -118,13 +163,13 @@ def windows_from_calendar(slices, player, through):
             facts['high_pitch_outings'] = None if facts['pitches_thrown'] is None else sum(
                 row['pitches_thrown'] >= RECENT_USAGE_REST_HIGH_PITCH_MIN_PITCHES for row in selected)
         result[size] = {'player_observed':known_player,'first':span[-1].isoformat(),
-                        'through':through.isoformat(),'gaps':gaps,
+                        'through':through.isoformat(),'gaps':gaps, 'identity_sources': list(identity_sources),
                         'sources':sorted({s for day in span if not slices[day][1]
                                          for s in slices[day][0]['sources']}), 'facts':facts}
     return result
 
 
-def rest_from_calendar(slices, player, through):
+def rest_from_calendar(slices, player, through, *, identity_sources=()):
     """The Team Board's governed facts entering the next baseball date."""
     coverage, rows, classes, sources = {}, [], {}, set()
     for day, (observed, reason) in slices.items():
@@ -145,8 +190,9 @@ def rest_from_calendar(slices, player, through):
                     classes[(player, row.mlb_game_pk)] = line['workload_class']
     reference = through + timedelta(days=1)
     result = {'mlb_player_id': player, 'through': through.isoformat(),
-              'reference': reference.isoformat(), 'sources': sorted(sources), 'facts': None}
-    if not rows:
+              'reference': reference.isoformat(), 'sources': sorted(sources),
+              'identity_sources': list(identity_sources), 'facts': None}
+    if not rows and not identity_sources:
         return result
 
     # The Board helper's normal input is a seven-day ledger. Check a longer
@@ -162,7 +208,7 @@ def rest_from_calendar(slices, player, through):
         'three_in_four', 'four_in_six', 'recent_multi_inning', 'high_pitch_outing',
         'last_bullpen_appearance',
     )}
-    if not recent:
+    if rows and not recent:
         last = max(row.game_date for row in rows)
         span = [last + timedelta(days=i) for i in range((through-last).days+1)]
         if (all(coverage.get(d.isoformat(), {}).get('complete_enough_to_publish') for d in span)
