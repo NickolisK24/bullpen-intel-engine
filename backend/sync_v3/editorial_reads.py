@@ -12,7 +12,7 @@ from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
-from sync_v3.product_reads import _public_arms, _read_transaction, _selected, read_team_events
+from sync_v3.product_reads import _empty_selection_status, _public_arms, _read_transaction, _selected, read_team_events
 
 
 def _optionality(cur, digest, team, reference):
@@ -81,11 +81,11 @@ def read_story_observations(connection, team, *, revision=None):
     def read(cur):
         selected = _selected(cur, revision)
         result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
-                      observations=None, qualification='no_selected_generation')
+                      observations=None, selection_revision=selected[0] if selected else None)
         if not selected or selected[1] is None:
-            return result
-        sequence, digest, through, reference = selected
-        result.update(generation=digest, selection_revision=sequence, represented=through.isoformat())
+            return dict(result, qualification=_empty_selection_status(selected, revision))
+        _, digest, through, reference = selected
+        result.update(generation=digest, represented=through.isoformat())
         cur.execute("""SELECT h.id,h.facts,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
                        AND h.mlb_id=%s AND h.methodology=%s""", (digest, team, DOMAINS['rotation'][1]))
@@ -172,7 +172,7 @@ def read_event_evidence(connection, team, event_id, *, revision):
             status = 'ambiguous_event'
         elif event is None:
             status = 'missing_event'
-    return dict(scope='historical_editorial_evidence', generation=history['generation'], selection_revision=revision,
+    return dict(scope='historical_editorial_evidence', generation=history['generation'], selection_revision=history['selection_revision'],
                 team=team, represented=history['represented'], event_id=event_id, evidence=event, status=status,
                 current_serving_eligible=False, trusted_snapshot_id=None)
 
@@ -197,7 +197,7 @@ def _trust(cur, revision, preview):
     if preview is None:
         selected = _selected(cur, revision)
         if not selected or selected[1] is None:
-            status = 'unknown_revision' if revision is not None and not selected else 'no_selected_generation'
+            status = _empty_selection_status(selected, revision)
             return dict(status=status, generation=None, selection_revision=selected[0] if selected else None,
                         trusted_snapshot_id=None, current_serving_eligible=False)
         sequence, digest = selected[:2]

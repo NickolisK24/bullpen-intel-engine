@@ -42,6 +42,12 @@ def _selected(cur, revision):
     return cur.fetchone()
 
 
+def _empty_selection_status(selected, requested_revision):
+    if selected is None and requested_revision is not None:
+        return 'unknown_revision'
+    return 'no_selected_generation'
+
+
 def _movement(change, current, snapshot):
     if change.get('status') not in ('complete', 'partial_arm_coverage'):
         return None
@@ -82,7 +88,7 @@ def _league(cur, revision, preview):
     if preview is None:
         selected = _selected(cur, revision)
         if not selected or selected[1] is None:
-            status = 'unknown_revision' if revision is not None and not selected else 'no_selected_generation'
+            status = _empty_selection_status(selected, revision)
             return dict(result, status=status, selection_revision=selected[0] if selected else None)
         sequence, generation, through, reference = selected
     else:
@@ -170,7 +176,7 @@ def _event_slice(cur, team, revision, selection):
                   selection_revision=selection[0] if selection else None, generation=None,
                   represented=None, events=[], comparisons=[])
     if not selection or selection[1] is None:
-        status = 'unknown_revision' if revision is not None and not selection else 'no_selected_generation'
+        status = _empty_selection_status(selection, revision)
         return dict(result, status=status)
     _, generation, through, _ = selection
     result.update(represented=through.isoformat(), generation=generation)
@@ -393,7 +399,8 @@ def read_search(connection, query, *, revision=None, limit=5):
     def search(cur):
         selected = _selected(cur, revision)
         if not selected or not selected[1]:
-            return dict(status='no_selected_generation', generation=None, selection_revision=revision,
+            return dict(status=_empty_selection_status(selected, revision), generation=None,
+                        selection_revision=selected[0] if selected else None,
                         current_serving_eligible=False, search=None)
         sequence, digest, _, reference = selected
         directory = {c.team_id: dict(team_id=c.team_id, team_abbreviation=c.abbreviation, team_name=c.team_name)
@@ -916,7 +923,7 @@ def read_pitcher(connection, public_id, *, revision=None):
         result = dict(scope='isolated_historical_core', current_serving_eligible=False, public_pitcher_id=public_id,
                       selection_revision=selected[0] if selected else None, generation=None)
         if not selected or not selected[1]:
-            return dict(result,status='no_selected_generation')
+            return dict(result, status=_empty_selection_status(selected, revision))
         sequence, digest, through, reference = selected
         result.update(generation=digest, data_through=through.isoformat(), availability_reference=reference)
         players, status = _pitcher_directory(cur, digest)

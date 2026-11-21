@@ -1105,6 +1105,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert journey['editorial']['story_observations'] > 0
             unknown = read_event_evidence(worker, 111, event['event']['event_id'], revision=100)
             assert unknown['status'] == 'unknown_revision' and unknown['evidence'] is None
+            assert unknown['selection_revision'] is None
             missing = read_event_evidence(worker, 111, 'unobserved', revision=1)
             assert missing['status'] == 'missing_event' and missing['evidence'] is None
             if identity_mode == 'absent':
@@ -1306,8 +1307,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
 
 def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
     from contextlib import closing
+    from sync_v3.editorial_reads import read_story_observations
     from sync_v3.generation import build_batch
-    from sync_v3.product_reads import read_game_cards, read_league, read_search
+    from sync_v3.product_reads import read_game_cards, read_league, read_pitcher, read_pitcher_history, read_search
     from sync_v3.replay import run_fixture
     from sync_v3.selection import select_generation
     from tests.sync_v3_league_fixture import league_fixtures
@@ -1319,6 +1321,18 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
     with isolated_cluster(pg) as (owner, connect):
         install(owner)
         with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
+            def assert_empty_reads(requested, expected, decision):
+                search = read_search(worker, 'Boston', revision=requested)
+                pitcher = read_pitcher(worker, 9111, revision=requested)
+                stories = read_story_observations(worker, 111, revision=requested)
+                assert search['status'] == pitcher['status'] == stories['qualification'] == expected
+                for result in (search, pitcher, stories):
+                    assert result['selection_revision'] == decision
+                    assert result['generation'] is None and result['current_serving_eligible'] is False
+                assert search['search'] is None and stories['observations'] is None
+
+            assert_empty_reads(None, 'no_selected_generation', None)
+            assert_empty_reads(1, 'unknown_revision', None)
             path = tmp_path / 'day.json'
             for fixture in fixtures:
                 path.write_text(json.dumps(fixture))
@@ -1337,6 +1351,15 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
             assert read_game_cards(worker, game_pk=10101)['status'] == 'game_outside_represented_slate'
             group = read_search(worker, 'Boston', revision=revision)['search']['groups'][2]
             assert group['results'] == [] and group['status'] != 'unavailable'
+            recovered = select_generation(reviewer, None, expected_revision=revision, rollback=True)
+            assert_empty_reads(None, 'no_selected_generation', recovered)
+            assert_empty_reads(recovered, 'no_selected_generation', recovered)
+            assert_empty_reads(recovered + 1, 'unknown_revision', None)
+            page = read_pitcher_history(worker, 9111, through_revision=recovered, limit=1)
+            assert page['rows'][0]['selection_revision'] == recovered and page['next_revision'] == revision
+            assert page['rows'][0]['status'] == 'no_selected_generation'
+            assert read_pitcher_history(worker, 9111, through_revision=recovered + 1)['status'] == 'unknown_revision'
+            assert read_game_cards(worker, revision=revision) == slate
 
 
 def test_updated_identity_export_cannot_reassign_a_public_route_or_rewrite_an_older_generation():
@@ -1452,7 +1475,7 @@ def test_editorial_citation_withholds_ambiguous_events(monkeypatch):
     from sync_v3 import editorial_reads
 
     evidence = dict(event=dict(event_id='repeated'), citation=dict(input_digest='first'))
-    history = dict(status='represented', represented='2026-07-29', generation='edition',
+    history = dict(status='represented', represented='2026-07-29', generation='edition', selection_revision=1,
                    events=[evidence, dict(evidence, citation=dict(input_digest='second'))])
     monkeypatch.setattr(editorial_reads, 'read_team_events', lambda *args, **kwargs: history)
     receipt = editorial_reads.read_event_evidence(None, 111, 'repeated', revision=1)
