@@ -112,13 +112,24 @@ def test_matchup_requires_a_shared_qualified_season_metric_and_matching_window()
 
 
 def test_league_change_retains_the_board_event_identity_and_frozen_revision():
-    from sync_v3.product_reads import _league_state_changes
+    from sync_v3.product_reads import _league_changes
     row = dict(team_id=118, team_abbreviation='KC', team_state=dict(public_label='Stretched'),
                orientation=dict(movement=dict(previous_label='Vulnerable', since='2024-08-06', event_id='stored-state-event')))
     citations = {118: {'changes': {'facts_digest':'change-digest'}}}
-    change, = _league_state_changes([row], citations, 'frozen-generation', '2024-08-07')
+    change, = _league_changes([row], citations, [], 'frozen-generation', '2024-08-07')
     assert change['change_id'] == 'stored-state-event'
     assert change['source_ref'] == 'frozen-generation/change-digest'
     assert change['state_change'] == {'from':'Vulnerable', 'to':'Stretched'}
     row['orientation']['movement'] = None
-    assert _league_state_changes([row], citations, 'frozen-generation', '2024-08-07') == []
+    assert _league_changes([row], citations, [], 'frozen-generation', '2024-08-07') == []
+
+    facts = {'starter_outs': 11, 'bullpen_outs': 16}
+    event = dict(event_id='pinned-short-start', kind='new_short_start', game=712345, facts=facts)
+    rotation = [(118, dict(status='partial_rotation_evidence', events=[event]), 'rotation-digest')]
+    assert _league_changes([row], citations, rotation, 'generation', '2024-08-07') == []
+    rotation[0][1]['status'] = 'complete'
+    change, = _league_changes([row], citations, rotation, 'generation', '2024-08-07')
+    assert change['change_id'] == event['event_id'] and change['game_pks'] == [712345]
+    assert change['headline'] == 'KC recorded a 3.2-inning start.'
+    assert change['detail'] == 'The bullpen recorded 5.1 innings.'
+    assert change['source_ref'] == 'generation/rotation-digest'

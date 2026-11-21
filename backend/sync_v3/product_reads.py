@@ -351,8 +351,8 @@ def _aligned_performance(away, home):
     return _aligned_domain('performance', a, b, stamp_a=stamp_a, stamp_b=stamp_b, partial=a.keys() != b.keys())
 
 
-def _league_state_changes(teams, citations, generation, represented):
-    """Cite only transitions that survived League's exact readiness comparison."""
+def _league_changes(teams, citations, rotation_changes, generation, represented):
+    """Project qualified changes from the same dated revisions used by Board and History."""
     from services import tonight_read_model as tonight
     changes = []
     for row in teams:
@@ -367,7 +367,31 @@ def _league_state_changes(teams, citations, generation, represented):
                             change_class='team_state_changed', occurred_on=represented, evidence_state='complete',
                             headline=f"{row['team_abbreviation']} moved from {previous} to {current}.", detail=None,
                             source_ref=f'{generation}/{receipt}', game_pks=[], state_change={'from':previous, 'to':current}))
-    return sorted(changes, key=tonight._league_change_order)[:tonight.LEAGUE_CHANGES_TOTAL]
+    from services.rotation_support_pressure import _baseball_innings
+    abbreviations = {row['team_id']: row['team_abbreviation'] for row in teams}
+    for team, comparison, receipt in rotation_changes:
+        if comparison['status'] != 'complete':
+            continue
+        for event in comparison['events']:
+            if event['kind'] != 'new_short_start':
+                continue
+            abbreviation = abbreviations[team]
+            facts = event['facts']
+            starter = _baseball_innings(facts['starter_outs'])
+            bullpen = _baseball_innings(facts['bullpen_outs'])
+            changes.append(dict(change_id=event['event_id'], team_id=team, team_abbreviation=abbreviation,
+                                change_class=event['kind'], occurred_on=represented, evidence_state='complete',
+                                headline=f'{abbreviation} recorded a {starter}-inning start.',
+                                detail=f'The bullpen recorded {bullpen} innings.',
+                                source_ref=f'{generation}/{receipt}', game_pks=[event['game']], state_change=None))
+    result = []
+    per_team = {}
+    for change in sorted(changes, key=tonight._league_change_order):
+        team = change['team_id']
+        if per_team.get(team, 0) < tonight.LEAGUE_CHANGES_PER_TEAM:
+            result.append(change)
+            per_team[team] = per_team.get(team, 0) + 1
+    return result[:tonight.LEAGUE_CHANGES_TOTAL]
 
 
 def read_game_cards(connection, *, revision=None, game_pk=None):
@@ -398,8 +422,12 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         ids = {club.team_id for club in MLB_CLUBS}
         games = [row for row in slate if not tonight.is_cancelled_slate_row(row)
                  and row.home_team_id in ids and row.away_team_id in ids]
-        changes = _league_state_changes(league['teams'], league['citations'], generation, league['data_through'])
-        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_transitions',
+        cur.execute("""SELECT h.mlb_id,h.facts,h.semantic_digest FROM candidate.generation_inputs g
+                       JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s
+                       AND h.methodology='candidate_rotation_changes_v1' AND h.subject='team'
+                       AND h.represented=%s ORDER BY h.mlb_id""", (generation, league['data_through']))
+        changes = _league_changes(league['teams'], league['citations'], cur.fetchall(), generation, league['data_through'])
+        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_and_short_starts',
                       featured_game_pks=[], lead=None, limitations=['additional_league_change_classes_unverified'])
         if game_pk is not None and all(row.game_pk != game_pk for row in games):
             return dict(result, status='game_outside_represented_slate')

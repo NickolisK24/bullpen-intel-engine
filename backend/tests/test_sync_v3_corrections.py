@@ -955,6 +955,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert history['pitcher_pattern_population_status'] == 'missing_comparable_bullpen'
             assert any(e['event']['kind'] == 'relief_appearance' for e in history['events'])
             assert all(e['team'] == 111 and len(e['citation']['lineage']) == 2 for e in history['events'])
+            boston_change, = (item for item in slate['league_changes']
+                              if item['team_id'] == 111 and item['change_class'] == 'new_short_start')
+            board_event, = (item for item in history['events'] if item['event']['event_id'] == boston_change['change_id'])
+            assert boston_change['source_ref'] == first + '/' + board_event['citation']['facts_digest']
+            assert boston_change['game_pks'] == [board_event['event']['game']]
+            assert boston_change['change_id'] in boston['away']['change_refs']
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
