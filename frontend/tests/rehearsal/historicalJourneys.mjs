@@ -114,6 +114,9 @@ try {
     await expect(page.locator('dt').filter({ hasText: 'Appearances / 7d' }).locator('..').locator('dd')).toHaveText('1')
     await expect(page.locator('dt').filter({ hasText: 'Days since bullpen outing' }).locator('..').locator('dd'))
       .toHaveText('1 as of 2026-07-30')
+    await page.getByRole('button', { name: 'View pitcher editions' }).click()
+    await expect(link('Revision 3 · 2026-07-29')).toBeVisible()
+    await expect(page.getByText('· BOS · Rollback', { exact: false }).first()).toBeVisible()
     await link('Open Boston Red Sox Team Board').click()
     await expect(heading('Boston Red Sox')).toBeVisible()
     assert.equal(page.url(), origin + board)
@@ -161,7 +164,7 @@ try {
     await expect(page.getByText('The requested historical Team Board edition could not be verified.')).toBeVisible()
     await expect(heading('Boston Red Sox')).toHaveCount(0)
     assert.deepEqual(reads, [
-      prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/teams/111/board', prefix + '/teams/111/stories',
+      prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/pitchers/9111/history', prefix + '/teams/111/board', prefix + '/teams/111/stories',
       prefix + '/teams/111/board', prefix + '/trust', prefix + '/tonight', prefix + '/matchups/10101',
       '/api/sync-v3/revisions/2/tonight', prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
       '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/teams/111/board',

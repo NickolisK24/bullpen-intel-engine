@@ -10,6 +10,7 @@ import {
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
 import { PitcherPerformance, PitcherPublicationHistory } from './PitcherPerformanceHistory'
+import HistoricalPitcherHistory from '../history/HistoricalPitcherHistory'
 import { HistoricalPitcherChanges } from '../history/HistoricalChanges'
 import HistoricalPitchHand from './HistoricalPitchHand'
 import PitcherTrends from './PitcherTrends'
@@ -248,7 +249,10 @@ export function PitcherDetailContent({ data, pitcherId }) {
           No recent workload read is available yet.
         </div>
       )}
-      {historicalEdition && <HistoricalPitcherChanges edition={data} />}
+      {historicalEdition && <>
+        <HistoricalPitcherChanges edition={data} />
+        <HistoricalPitcherHistory key={data.generation + '/' + data.selection_revision + '/' + pitcherId} edition={data} />
+      </>}
       <PitcherPerformance performance={data?.performance} />
       {!historicalEdition && pitcherId && <PitcherPublicationHistory
         key={`${pitcherId}-${freshness?.data_through}`} pitcherId={pitcherId} latest={freshness?.data_through}

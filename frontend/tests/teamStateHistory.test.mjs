@@ -720,3 +720,32 @@ test('earlier decisions must continue the exact historical club and predecessor 
     assert.ok(!matchesHistoryCursor({ ...page, ...invalid }, 111, 3))
   }
 })
+
+test('pitcher decision history binds route, MLB identity, selector chain and dated evidence', async () => {
+  const { matchesPitcherDecisions, PitcherDecisionRows } = await server.ssrLoadModule('/src/components/history/HistoricalPitcherHistory.jsx')
+  const gen = 'a'.repeat(64)
+  const edition = { public_pitcher_id: 508, pitcher: { mlb_id: 518886 }, selection_revision: 2, generation: gen }
+  const represented = '2017-08-28'
+  const reference = '2017-08-29'
+  const citation = { facts_digest: gen, input_digest: 'b'.repeat(64) }
+  const row = { selection_revision: 2, predecessor: 1, action: 'select', generation: gen, represented, status: 'represented',
+    identity: { public_id: 508, mlb_id: 518886 }, team_abbreviation: 'BOS', availability_reference: reference,
+    citations: { candidate_regular_readiness_v1: citation, candidate_pitcher_profile_v1: citation },
+    arm: { read: { availability: { inputs: { reference_date: reference } }, arm_read: { kind: 'read', label: 'Limited Rest' } } },
+    role: { through: represented, role: { role: 'Late-Inning / High-Leverage Pattern' } } }
+  const page = { scope: 'isolated_historical_pitcher_history', public_pitcher_id: 508, current_serving_eligible: false,
+    status: 'historical_decisions', rows: [row], next_revision: 1 }
+  assert.ok(matchesPitcherDecisions(page, edition, 2))
+  for (const patch of [{ scope: 'production' }, { next_revision: 2 }, { public_pitcher_id: 2 },
+    { rows: [{ ...row, generation: 'b'.repeat(64) }] }, { rows: [{ ...row, identity: { public_id: 508, mlb_id: 1 } }] }]) {
+    assert.equal(matchesPitcherDecisions({ ...page, ...patch }, edition, 2), false)
+  }
+  const html = input => renderToStaticMarkup(React.createElement(MemoryRouter, null,
+    React.createElement(PitcherDecisionRows, { pitcherId: 508, rows: [input] })))
+  assert.match(html(row), /Arm read for 2017-08-29 · Limited Rest/)
+  assert.match(html(row), /Late-Inning \/ High-Leverage Pattern/)
+  assert.match(html(row), new RegExp('rehearsalGeneration=' + gen))
+  assert.doesNotMatch(html({ ...row, citations: {} }), /Limited Rest|High-Leverage Pattern/)
+  assert.doesNotMatch(html({ ...row, availability_reference: represented }), /Limited Rest/)
+  assert.doesNotMatch(html({ ...row, role: { ...row.role, through: reference } }), /High-Leverage Pattern/)
+})

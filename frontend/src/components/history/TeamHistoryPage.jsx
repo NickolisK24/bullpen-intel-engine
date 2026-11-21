@@ -5,7 +5,7 @@ import { useFetch } from '../../hooks/useFetch'
 import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
 import { getHistoricalTeamDecisions, getTeamStateHistory } from '../../utils/api'
-import { buildTeamBoardHref, parseRehearsalRevision } from '../../utils/evidenceLinks'
+import { buildTeamBoardHref, matchesDecisionPage, parseRehearsalRevision } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
 import { formatFreshnessDate } from '../UI/Freshness'
 import { EmptyState, ErrorState, LoadingPane } from '../UI'
@@ -387,14 +387,8 @@ function GapRow({ date }) {
 
 export function matchesHistoryCursor(page, team, revision) {
   const matchesClub = typeof team === 'string' ? page?.team_abbreviation === team : page?.team === team
-  if (!matchesClub || !Number.isSafeInteger(page?.team) || page.team <= 0
-      || page.scope !== 'isolated_historical_team_history' || page.current_serving_eligible !== false
-      || page.status !== 'historical_decisions' || !Array.isArray(page.rows)
-      || !page.rows.length || page.rows.length > 30) return false
-  return page.rows.every((row, index) => {
-    const expected = revision - index
-    return expected > 0 && row?.selection_revision === expected && row.predecessor === (expected === 1 ? null : expected - 1)
-  }) && page.next_revision === page.rows.at(-1).predecessor
+  return matchesClub && Number.isSafeInteger(page?.team) && page.team > 0
+    && page.scope === 'isolated_historical_team_history' && matchesDecisionPage(page, revision)
 }
 
 function EarlierDecisions({ team, revision }) {

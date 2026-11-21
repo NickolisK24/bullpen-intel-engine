@@ -576,6 +576,9 @@ export const getTeamStateHistory = (teamAbbreviation, season = 2026, options = {
 export const getHistoricalPitcher = (pitcherId, revision, options = {}) => (
   request(`/sync-v3/revisions/${revision}/pitchers/${pitcherId}`, { timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options })
 )
+export const getHistoricalPitcherDecisions = (pitcherId, revision, options = {}) => (
+  request(`/sync-v3/revisions/${revision}/pitchers/${pitcherId}/history`, { timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options })
+)
 export const getHistoricalTeamDecisions = (team, revision, options = {}) => (
   request(`/sync-v3/history/teams/${team}/revisions/${revision}`, {
     timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options,

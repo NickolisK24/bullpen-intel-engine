@@ -237,3 +237,12 @@ export function buildCanonicalBullpenHref(state = {}) {
   }
   return buildTeamBoardHref(state.team, { ...options, pitcher: state.pitcherId })
 }
+
+export function matchesDecisionPage(page, revision) {
+  if (page?.current_serving_eligible !== false || page.status !== 'historical_decisions'
+      || !Array.isArray(page.rows) || !page.rows.length || page.rows.length > 30) return false
+  return page.rows.every((row, index) => {
+    const expected = revision - index
+    return expected > 0 && row?.selection_revision === expected && row.predecessor === (expected === 1 ? null : expected - 1)
+  }) && page.next_revision === page.rows.at(-1).predecessor
+}

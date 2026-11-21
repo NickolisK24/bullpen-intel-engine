@@ -1292,8 +1292,11 @@ def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
                        WHERE g.generation=%s AND h.subject='pitcher' AND h.mlb_id=%s AND h.methodology=%s""",
                     (digest, mlb, role_method))
         role, role_facts, role_inputs = cur.fetchone()
-        return dict(status='represented', identity=player, availability_reference=reference, arm=arm, role=role,
+        abbreviation = next(team.abbreviation for team in MLB_CLUBS if team.team_id == club)
+        return dict(status='represented', identity=player, team_abbreviation=abbreviation,
+                    availability_reference=reference, arm=arm, role=role,
                     events=events, citations={
                         readiness_method: dict(facts_digest=facts, input_digest=inputs),
                         role_method: dict(facts_digest=role_facts, input_digest=role_inputs)})
-    return dict(_decision_page(connection, through_revision, limit, arm_history), public_pitcher_id=public_id)
+    return dict(_decision_page(connection, through_revision, limit, arm_history), public_pitcher_id=public_id,
+                scope='isolated_historical_pitcher_history')
