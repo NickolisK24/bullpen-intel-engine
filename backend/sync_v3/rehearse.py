@@ -335,7 +335,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     report = represented_readiness(cur, readiness_team, through)
                     report['comparison'] = compare_readiness(report)
                     print(json.dumps(report, sort_keys=True))
-                    if identity_proof and report['reason'] == 'regular_season_workload_scope_required':
+                    if identity_proof and report.get('workload_scope') == 'competitive_postseason_window':
                         from sync_v3.postseason_arm_comparison import compare_postseason_arms
                         print(json.dumps(compare_postseason_arms(cur, readiness_team, through, reference), sort_keys=True))
             elif competition:

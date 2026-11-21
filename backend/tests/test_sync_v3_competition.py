@@ -403,3 +403,33 @@ def test_historical_wild_card_decision_requires_a_verified_game_and_prior_offici
     assert outcome(game_day, {526475: 147}, verified) == 'active'
     assert outcome(next_day, {526475: 147}, verified) == 'season_complete'
     assert outcome(next_day, {526475: 142}, verified) == 'active'
+
+
+def test_mixed_postseason_window_binds_off_days_and_both_stages(monkeypatch):
+    from sync_v3 import competitive_workload as workload
+
+    through = date(2026, 10, 3)
+    games = [game(91, 111, 147, '2026-09-27'), game(92, 111, 147, '2026-10-02', 'F')]
+    slates = {g['officialDate']: [{'date': g['officialDate'], 'games': [g]}] for g in games}
+    calendar = {'dates': [r for rows in slates.values() for r in rows]}
+    missing = set()
+    monkeypatch.setattr(workload, 'latest_qualified_source',
+                        lambda cur, endpoint, params: None if params['startDate'] in missing else params['startDate'])
+    monkeypatch.setattr(workload, 'replay', lambda cur, receipt: SimpleNamespace(
+        body=calendar if receipt == 'season' else {'dates': slates.get(receipt, [])}))
+    monkeypatch.setattr(workload, '_game_workload', lambda cur, g, day, receipt:
+                        (([{'game_pk': g['gamePk']}], [receipt]), None))
+    season_data = dict(calendar_source='season', decision_sources={92: [12, 13]})
+    full = workload.competitive_window(None, through, season_data)
+    assert full['rounds'] == {'R', 'F'}
+    assert {r['game_pk']: r['round'] for r in full['lines']} == {91: 'R', 92: 'F'}
+    assert len(full['sources']['dates']) == 14 and full['sources']['decisions'] == {92: [12, 13]}
+    assert workload.competitive_window(None, through, dict(season_data, decision_sources={})) == {
+        'reason': 'verified_postseason_final_required', 'game_pk': 92}
+    missing.add('2026-10-01')
+    assert workload.competitive_window(None, through, season_data) == {
+        'reason': 'missing_dated_schedule', 'gap_date': '2026-10-01'}
+    missing.clear()
+    slates.pop('2026-09-27')
+    assert workload.competitive_window(None, through, season_data) == {
+        'reason': 'competitive_calendars_disagree', 'gap_date': '2026-09-27'}

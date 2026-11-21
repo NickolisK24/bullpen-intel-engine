@@ -1,4 +1,4 @@
-"""Represented regular-season readiness. All outputs are isolated research candidates."""
+"""Represented competitive readiness. All outputs are isolated research candidates."""
 
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -9,7 +9,9 @@ from services.fatigue import calculate_fatigue
 from services.pitcher_public_labels import build_public_arm_read
 from services.team_readiness_coverage import assess_team_coverage
 from services.team_state_public_vocabulary import is_publishable_state, public_state_for
-from services.workload_appearance import is_workload_appearance_log
+from sync_v3.competitive_workload import _represented_arm, competitive_window, round_game_logs, round_workload
+from sync_v3.rosters import roster_on
+from sync_v3.membership_usage import represented_membership
 from sync_v3.competition_calendar import competition_status
 from sync_v3.group_performance import active_group_population
 from sync_v3.workload import regular_day
@@ -18,36 +20,6 @@ from team_operations.bullpen_readiness import (
     _normalize_pitcher_record, _team_state_partition,
 )
 from team_operations.contracts import TeamOperationsFreshnessMetadata, TeamOperationsTrustMetadata
-
-
-def _represented_arm(player, splits, official, reference):
-    start = reference - timedelta(days=ACTIVE_WINDOW_DAYS)
-    expected = {split['game']['gamePk']: split for split in splits
-                if start <= date.fromisoformat(split['date']) < reference}
-    rows = {row['game_pk']: row for row in official if row['pitcher_mlb_id'] == player}
-    if rows.keys() != expected.keys():
-        return None, 'game_log_and_final_population_conflict'
-    logs = []
-    for pk, row in rows.items():
-        split = expected[pk]
-        stats = split['stat']
-        pitches = row['pitches_thrown']
-        if (row['team_id'] != split['team']['id'] or row['game_date'] != split['date']
-                or row['outs_recorded'] != stats['outs'] or pitches is None
-                or pitches != stats.get('numberOfPitches')):
-            return None, 'missing_or_conflicting_workload'
-        log = SimpleNamespace(game_date=date.fromisoformat(row['game_date']), pitches_thrown=pitches,
-                              innings_pitched_outs=row['outs_recorded'])
-        if is_workload_appearance_log(log):
-            logs.append(log)
-    logs.sort(key=lambda log: log.game_date, reverse=True)
-    if not logs:
-        return None, 'no_recent_verified_workload'
-    score = calculate_fatigue(SimpleNamespace(id=player), logs, reference_date=reference)
-    availability = classify_availability(score, [log for log in logs if log.game_date >= reference - timedelta(days=4)],
-                                         reference_date=reference, latest_game_date=logs[0].game_date)
-    return {'availability': availability, 'arm_read': build_public_arm_read(availability),
-            'last_workload': logs[0].game_date.isoformat(), 'games_compared': sorted(expected)}, None
 
 
 def verified_quiet_arm(player, latest, reference):
@@ -78,35 +50,60 @@ def represented_readiness(cur, team, through):
     if club['status'] != 'active':
         result['reason'] = club['basis']
         return result
-    if club['last_final_game_type'] != 'R' or league['postseason_started']:
-        result['reason'] = 'regular_season_workload_scope_required'
-        return result
-    population, splits = active_group_population(cur, team, membership)
-    result.update(roster_source=population['roster_source'], profiles=population['profiles'])
+    postseason = club['last_final_game_type'] != 'R' or league['postseason_started']
     result['availability_method'] = AVAILABILITY_METHOD_VERSION
-    for key in ('population_method', 'eligibility_games', 'eligibility_gaps'):
-        if key in population:
-            result[key] = population[key]
-    if population['reason']:
-        result['reason'] = population['reason']
-        return result
-    lines, sources = [], set()
-    for offset in range(ACTIVE_WINDOW_DAYS):
-        day = through - timedelta(days=offset)
-        sample, gap = regular_day(cur, day)
-        if gap or (day == through and not sample['lines']):
-            result.update(reason=gap or 'slate_has_no_verified_relief_workload', gap_date=day.isoformat())
+    if postseason:
+        result['workload_scope'] = 'competitive_postseason_window'
+        roster = roster_on(cur, team, 'active', membership)
+        if not roster:
+            return dict(result, reason='missing_dated_active_roster')
+        window = competitive_window(cur, through, league)
+        if window['reason']:
+            return dict(result, **window)
+        evidence = represented_membership(cur, team, membership, roster)
+        if evidence['status'] != 'represented':
+            return dict(result, reason=evidence.get('reason') or 'incomplete_eligibility_sample',
+                        eligibility_gaps=evidence['withheld'])
+        members = evidence['candidate']
+        result.update(roster_source=roster[1], population_method=evidence['basis'],
+                      eligibility_games={p: s['games'] for p, s in evidence['samples'].items()},
+                      workload_rounds=sorted(window['rounds']))
+        latest = {p: evidence['samples'][p]['latest_workload'] for p in members}
+    else:
+        population, splits = active_group_population(cur, team, membership)
+        result.update(roster_source=population['roster_source'], profiles=population['profiles'])
+        for key in ('population_method', 'eligibility_games', 'eligibility_gaps'):
+            if key in population:
+                result[key] = population[key]
+        if population['reason']:
+            result['reason'] = population['reason']
             return result
-        sources.update(sample['sources'])
-        lines.extend(sample['official_lines'])
-    result['workload_sources'] = sorted(sources)
+        members = [member['player'] for member in population['members']]
+        latest = population['latest_membership_work']
+        lines, sources = [], set()
+        for offset in range(ACTIVE_WINDOW_DAYS):
+            day = through - timedelta(days=offset)
+            sample, gap = regular_day(cur, day)
+            if gap or (day == through and not sample['lines']):
+                result.update(reason=gap or 'slate_has_no_verified_relief_workload', gap_date=day.isoformat())
+                return result
+            sources.update(sample['sources'])
+            lines.extend(sample['official_lines'])
+        result['workload_sources'] = sorted(sources)
     records = []
-    for member in population['members']:
-        player = member['player']
-        arm, reason = _represented_arm(player, splits[player], lines, reference)
+    for player in members:
+        if postseason:
+            splits, _ = round_game_logs(cur, player, through, window['rounds'])
+            if splits is None:
+                return dict(result, arms={}, reason='missing_round_game_log')
+            arm, reason = round_workload(player, splits, window['lines'], reference)
+            if reason not in (None, 'no_recent_verified_workload'):
+                return dict(result, arms={}, reason=reason)
+        else:
+            arm, reason = _represented_arm(player, splits[player], lines, reference)
         current = arm is not None
         if reason == 'no_recent_verified_workload':
-            arm = verified_quiet_arm(player, population['latest_membership_work'][player], reference)
+            arm = verified_quiet_arm(player, latest[player], reference)
             if arm is not None:
                 reason = None
         result['arms'][player] = {'read': arm, 'reason': reason}
