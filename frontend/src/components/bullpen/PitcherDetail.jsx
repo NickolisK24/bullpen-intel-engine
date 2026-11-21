@@ -27,7 +27,8 @@ export function matchesPitcherEdition(page, pitcherId, revision, generation) {
 }
 
 function historicalBullpenTiming(data) {
-  const rest = data.sections?.pitcher_rest?.value?.rest
+  const competitive = data.competitive_weekly_workload?.value?.rest
+  const rest = competitive ?? data.sections?.pitcher_rest?.value?.rest
   if (!rest || !data.data_through || !data.availability_reference ||
       rest.through !== data.data_through || rest.reference !== data.availability_reference ||
       !Number.isSafeInteger(rest.mlb_player_id) || rest.mlb_player_id !== data.pitcher?.mlb_id) return null
@@ -114,7 +115,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const currentStateFacts = [
     { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
     { label: 'Current Read', value: current || rosterUnavailable ? pitcherLabels?.read?.label : 'Withheld' },
-    { label: historicalEdition ? 'Last regular-season bullpen outing' : 'Last Used', value: mostRecentAppearanceLabel },
+    { label: historicalEdition ? (data.competitive_weekly_workload?.value?.rest ? 'Last competitive bullpen outing' : 'Last regular-season bullpen outing') : 'Last Used', value: mostRecentAppearanceLabel },
     historicalEdition
       ? { label: 'Days since bullpen outing', value: historicalTiming && `${historicalTiming.days} as of ${data.availability_reference}` }
       : { label: 'Days Rest', value: current && armContext.days_rest != null ? `${armContext.days_rest}d` : null },

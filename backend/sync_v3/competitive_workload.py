@@ -13,7 +13,7 @@ from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.season_deployment import BaselineWithheld, _count, _counts
-from sync_v3.workload import _game_workload, windows_from_calendar, workload_lines
+from sync_v3.workload import _game_workload, rest_from_calendar, windows_from_calendar, workload_lines
 
 
 def _represented_arm(player, splits, official, reference):
@@ -141,4 +141,6 @@ def competitive_pitcher_weeks(window, members, through, roster_source):
     for player in members:
         week = windows_from_calendar(calendar, player, through, identity_sources=[roster_source], sizes=(7,))[7]
         result[player] = {k: v for k, v in week.items() if k not in ('sources', 'identity_sources')}
+        rest = rest_from_calendar(calendar, player, through, identity_sources=[roster_source])
+        result[player]['rest'] = {k: v for k, v in rest.items() if k not in ('sources', 'identity_sources')}
     return result

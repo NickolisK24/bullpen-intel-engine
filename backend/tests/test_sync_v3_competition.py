@@ -455,5 +455,10 @@ def test_playoff_pitcher_week_qualifies_each_game_side_and_keeps_quiet_arms():
     assert weeks[22]['through'] == str(through) and weeks[22]['first'] == '2026-10-13'
     assert weeks[22]['facts']['appearances'] == 2 and weeks[22]['facts']['pitches_thrown'] == 33
     assert weeks[99]['player_observed'] and weeks[99]['facts']['appearances'] == 0
+    rest = weeks[22]['rest']
+    assert (rest['mlb_player_id'], rest['reference']) == (22, '2026-10-20')
+    assert rest['facts']['days_since_last_appearance']['value'] == 1
+    assert rest['facts']['last_bullpen_appearance']['value'] == 16
+    assert weeks[99]['rest']['facts']['days_since_last_appearance']['value'] is None
     uncertain = [dict(lines[0], games_started=None), *lines[1:]]
     assert competitive_pitcher_weeks(dict(sources=dict(dates=dates), lines=uncertain), [22], through, 123)[22]['facts'] is None

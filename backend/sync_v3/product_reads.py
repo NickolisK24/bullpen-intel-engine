@@ -674,6 +674,11 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='pitcher'
                        AND h.mlb_id=ANY(%s) AND h.methodology=%s""", (generation, sorted(arms), DOMAINS['pitcher_rest'][1]))
         usage = {player: values or {} for player, values in cur}
+        for team in clubs:
+            for mlb, week in facts[team, reads].get('competitive_pitcher_weeks', {}).items():
+                if 'rest' in week:
+                    usage[int(mlb)] = week['rest']['facts'] or {}
+
         from services.pitcher_public_labels import build_pitcher_labels
         identities, identity_status = _public_arms(cur, generation)
         cur.execute("""SELECT h.mlb_id,h.facts#>'{deployment,facts,observed_role,role}'
