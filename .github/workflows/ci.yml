@@ -179,6 +179,22 @@ jobs:
           test -x "$bindir/pg_ctl"
           echo "SYNC_V3_TEST_PG_BIN=$bindir" >> "$GITHUB_ENV"
 
+      - name: Set up Node for the historical product journeys
+        if: matrix.shard == 4
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Enable the PostgreSQL-backed historical browser rehearsals
+        if: matrix.shard == 4
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          echo "SYNC_V3_TEST_BROWSER=1" >> "$GITHUB_ENV"
+
       - name: Resolve the files this shard owns
         run: |
           set -euo pipefail

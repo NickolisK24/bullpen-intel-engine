@@ -558,7 +558,7 @@ APP_ENV=test AUTO_SYNC=false SYNC_V3_TEST_BROWSER=1 SYNC_V3_TEST_PG_BIN="$(pg_co
   tests/test_sync_v3_corrections.py::test_selected_off_day_has_no_games_and_preserves_the_league
 ```
 
-The test creates a private PostgreSQL cluster and synthetic 30-club edition, corrects it, then rolls it back. Chromium reads the Flask rehearsal adapter over loopback and verifies the historical destinations against those records. A mismatched generation must withhold the Board. The off-day case opens the League listing from a selected empty slate and checks all 30 club destinations. The browser build lives in a temporary directory. To use an installed Chromium executable, set `SYNC_V3_TEST_CHROMIUM` to its absolute path.
+Backend CI shard 4 enables these browser assertions when it runs the two existing tests. The test creates a private PostgreSQL cluster and synthetic 30-club edition, corrects it, then rolls it back. Chromium reads the Flask rehearsal adapter over loopback and verifies the historical destinations against those records. A mismatched generation must withhold the Board. The off-day case opens the League listing from a selected empty slate and checks all 30 club destinations. The browser build lives in a temporary directory. To use an installed Chromium executable, set `SYNC_V3_TEST_CHROMIUM` to its absolute path.
 
 ### Historical pitch coordinate provenance
 
