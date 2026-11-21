@@ -35,6 +35,42 @@ def preview_league(connection, digest):
     return _read_transaction(connection, _league, None, digest)
 
 
+def compare_archived_league(listing, reference):
+    """Compare one candidate's League Team State blocks with observed publication receipts."""
+    from sync_v3.evidence import encode_json
+    from sync_v3.public_identities import ObservedIdentityExport
+    if not isinstance(reference, ObservedIdentityExport) or listing['status'] not in ('represented', 'candidate_preview'):
+        raise ValueError('Comparison requires an observed publication and a dated candidate League')
+    archive_dates = dict(data_through=reference.provenance['data_through'], membership=reference.membership_reference,
+                         availability=reference.availability_reference)
+    candidate_dates = dict(data_through=listing['data_through'], membership=listing['data_through'],
+                           availability=listing['availability_reference'])
+    report = dict(scope='historical_league_team_state', generation=listing['generation'], candidate_status=listing['status'],
+                  archive=reference.provenance, archive_dates=archive_dates, candidate_dates=candidate_dates,
+                  clubs_compared=0, differences={}, current_serving_eligible=False)
+    if archive_dates != candidate_dates:
+        return dict(report, status='edition_dates_differ')
+    teams = {str(item['team_id']): item['team_state'] for item in listing['teams']}
+    if len(teams) != len(listing['teams']) or teams.keys() != reference.team_receipts.keys():
+        return dict(report, status='club_population_differs')
+    for team, state in teams.items():
+        receipt = reference.team_receipts[team]
+        observed = receipt['value']
+        if (not isinstance(observed, dict) or observed.get('contract') != 'team_state_public_v1'
+                or (receipt.get('season_context') or {}).get('reference_date') != archive_dates['availability']
+                or observed.get('data_through') != archive_dates['data_through']):
+            raise ValueError('Observed club receipt disagrees with the publication dates')
+        delta = {}
+        for key in sorted(state.keys() | observed.keys()):
+            if key not in state or key not in observed or encode_json(state[key]) != encode_json(observed[key]):
+                delta[key] = {source: block[key] for source, block in [('candidate', state), ('archive', observed)]
+                              if key in block}
+        if delta:
+            report['differences'][team] = delta
+    return dict(report, clubs_compared=len(teams),
+                status='team_state_fields_differ' if report['differences'] else 'team_state_fields_match')
+
+
 def _selected(cur, revision):
     cur.execute("""SELECT s.revision,s.generation,g.represented,g.manifest->>'availability_reference'
                    FROM candidate.core_selections s LEFT JOIN candidate.generations g ON g.digest=s.generation

@@ -15,6 +15,9 @@ class ObservedIdentityExport:
     observed_at: str
     rows: list
     provenance: dict
+    membership_reference: str
+    availability_reference: str
+    team_receipts: dict
 
 
 def from_observed_publication(path, expected_sha256):
@@ -76,7 +79,8 @@ def from_observed_publication(path, expected_sha256):
     return ObservedIdentityExport(at.isoformat(), [dict(id=pid, mlb_id=mlb) for mlb, pid in sorted(pairs.items())],
                                   dict(archive_sha256=expected_sha256, receipt_digest=digest,
                                        snapshot_id=pub['dashboard_snapshot_id'], sync_run_id=pub['sync_run_id'],
-                                       data_through=pub['data_through'], inconclusive_assertions=proof['inconclusive_assertions']))
+                                       data_through=pub['data_through'], inconclusive_assertions=proof['inconclusive_assertions']),
+                                  pub['expected_membership_reference_date'], pub['expected_availability_reference_date'], receipts)
 
 
 def load_reference(cur, reference):

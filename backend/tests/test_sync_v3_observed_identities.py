@@ -16,7 +16,9 @@ def write_proof(path, defect=None):
     receipts = {}
     inputs = {}
     for team in MLB_TEAM_IDS:
-        receipts[str(team)] = dict(team_id=team, represented_date=date, dashboard_snapshot_id=12)
+        receipts[str(team)] = dict(team_id=team, represented_date=date, dashboard_snapshot_id=12,
+                                   season_context=dict(reference_date=availability),
+                                   value=dict(contract='team_state_public_v1', data_through=date, available=False, public_label=None))
         group = dict(team_id=team, membership_reference_date=date, availability_reference_date=availability,
                      member_pitcher_ids=[team], records=[dict(team_id=team, pitcher_id=team, mlb_id=team + 1000)])
         inputs[str(team)] = dict(arm_reads=group)
@@ -68,3 +70,28 @@ def test_refuses_unverified_identity_evidence(tmp_path, defect):
     digest = write_proof(path, defect)
     with pytest.raises(ValueError):
         from_observed_publication(path, '0' * 64 if defect == 'digest' else digest)
+
+
+def test_archived_league_compares_only_matching_editions_and_all_clubs(tmp_path):
+    from sync_v3.product_reads import compare_archived_league
+    path = tmp_path / 'proof.zip'
+    reference = from_observed_publication(path, write_proof(path))
+    teams = [dict(team_id=team, team_state=dict(contract='team_state_public_v1', data_through='2026-10-28', available=False, public_label=None))
+             for team in MLB_TEAM_IDS]
+    listing = dict(status='candidate_preview', generation='candidate', data_through='2026-10-28',
+                   availability_reference='2026-10-30', teams=teams)
+    aligned = compare_archived_league(listing, reference)
+    assert aligned['status'] == 'team_state_fields_match' and aligned['clubs_compared'] == 30
+    assert aligned['current_serving_eligible'] is False and aligned['archive']['inconclusive_assertions']
+    different_day = compare_archived_league(dict(listing, availability_reference='2026-10-29'), reference)
+    assert different_day['status'] == 'edition_dates_differ' and different_day['clubs_compared'] == 0
+    duplicate = dict(listing, teams=teams[:-1] + teams[:1])
+    assert compare_archived_league(duplicate, reference)['status'] == 'club_population_differs'
+    # An absent field differs from an explicitly unavailable value.
+    del teams[0]['team_state']['public_label']
+    teams[0]['team_state']['available'] = 0
+    mismatched = compare_archived_league(listing, reference)
+    delta = mismatched['differences'][str(teams[0]['team_id'])]
+    assert mismatched['status'] == 'team_state_fields_differ'
+    assert delta['public_label'] == {'archive': None}
+    assert delta['available'] == {'candidate': 0, 'archive': False}

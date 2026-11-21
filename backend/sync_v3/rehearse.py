@@ -251,6 +251,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 with worker, worker.cursor() as cur:
                     cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
                     print(json.dumps(dict(generation=digest, manifest=cur.fetchone()[0])))
+                if identity_proof:
+                    from sync_v3.product_reads import compare_archived_league, preview_league
+                    print(json.dumps(compare_archived_league(preview_league(worker, digest), reference)))
                 if exercise_selection:
                     from sync_v3.selection import select_generation, SelectionWithheld
                     with closing(connect(reviewer=True)) as reviewer:
