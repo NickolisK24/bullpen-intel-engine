@@ -30,16 +30,26 @@ def compare_archived_league(listing, reference):
     teams = {str(item['team_id']): item['team_state'] for item in listing['teams']}
     if len(teams) != len(listing['teams']) or teams.keys() != reference.team_receipts.keys():
         return dict(report, status='club_population_differs')
+    missing_context = []
     for team, state in teams.items():
         receipt = reference.team_receipts[team]
         observed = receipt['value']
         if (not isinstance(observed, dict) or observed.get('contract') != 'team_state_public_v1'
-                or (receipt.get('season_context') or {}).get('reference_date') != archive_dates['availability']
                 or observed.get('data_through') != archive_dates['data_through']):
             raise ValueError('Observed club receipt disagrees with the publication dates')
+        context = receipt.get('season_context')
+        if context is None:
+            missing_context.append(int(team))
+            continue
+        if (not isinstance(context, dict) or context.get('reference_date') != archive_dates['availability']
+                or context.get('team_id') != int(team)):
+            raise ValueError('Observed club context disagrees with the publication')
         delta = _field_differences(state, observed)
         if delta:
             report['differences'][team] = delta
+    if missing_context:
+        return dict(report, status='archived_competition_context_missing', clubs_missing_context=sorted(missing_context),
+                    clubs_compared=len(teams) - len(missing_context))
     return dict(report, clubs_compared=len(teams),
                 status='team_state_fields_differ' if report['differences'] else 'team_state_fields_match')
 

@@ -310,6 +310,30 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
                 starter, = postseason_appearances(cur, after, 'pitcher', 100, day, 147)['appearances']
                 assert starter['game_pk'] == reliever['game_pk'] and starter['appearance_team_id'] == 147
 
+            # A later season receipt lists a second final the dated slate and
+            # boxes cannot confirm. The first game's verified lines still count.
+            from copy import deepcopy
+            revised = deepcopy(calendar)
+            revised['dates'][-1]['games'].append(dict(final, gamePk=12346))
+            revised['dates'][-1]['totalGames'] += 1
+            revised['totalGames'] += 1
+            fixture['responses'][-1]['body'] = revised
+            from datetime import datetime
+            fixture['observed_at'] = (datetime.fromisoformat(fixture['observed_at']) + timedelta(hours=1)).isoformat()
+            partial = freeze()
+            record_intelligence(db, 'readiness', 139, day)
+            other = freeze_generation(db, day)
+            with db, db.cursor() as cur:
+                cur.execute('SET TRANSACTION READ ONLY')
+                incomplete = postseason_appearances(cur, partial, 'team', 147, day, 147)
+                assert incomplete['status'] == 'partial'
+                assert incomplete['gaps'] == {str(day): 'missing_verified_postseason_decision'}
+                assert incomplete['appearances'] == club['appearances']
+                assert not postseason_appearances(cur, after, 'team', 147, day, 147)['gaps']
+                assert not postseason_appearances(cur, other, 'team', 139, day, 139)['gaps']
+                assert not postseason_appearances(cur, other, 'pitcher', 100, day, 139, club_only=True)['gaps']
+                assert postseason_appearances(cur, other, 'pitcher', 100, day, 139)['gaps'] == incomplete['gaps']
+
 
 def test_board_window_coverage_requires_matching_schedules_and_verified_playoff_finals():
     from sync_v3.team_board_windows import _coverage_reason

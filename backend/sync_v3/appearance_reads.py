@@ -25,19 +25,43 @@ def appearance_ledger(cur, digest, subject, entity, through, *, appearance_team=
 
 def postseason_appearances(cur, digest, subject, entity, through, readiness_team, *, club_only=False):
     """Read positive appearance evidence only from this edition's verified postseason finals."""
+    from psycopg2.extras import Json
     from services.club_competition_status import POSTSEASON_GAME_TYPES
+    from sync_v3.competition_calendar import calendar_games
+    from sync_v3.discovery import competition_calendar_request
+    from sync_v3.evidence import replay
     from sync_v3.intelligence_history import DOMAINS
 
     if subject not in ('team', 'pitcher') or (subject == 'team' and entity != readiness_team):
         raise ValueError('Expected a pitcher or the represented readiness team')
     methodology = DOMAINS['readiness'][1]
-    cur.execute("""SELECT h.id,h.facts->'verified_decisions',h.semantic_digest,h.input_digest
+    cur.execute("""SELECT h.id,h.facts->'verified_decisions',h.semantic_digest,h.input_digest,h.facts->'missing_decisions'
                    FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
                    WHERE g.generation=%s AND h.methodology=%s AND h.subject='team' AND h.mlb_id=%s
                      AND h.represented=%s""", (digest, methodology, readiness_team, through))
-    snapshot, games, semantic, inputs = cur.fetchone()
-    return _ledger(cur, snapshot, subject, entity, through, {}, semantic, inputs, methodology,
-                   game_types=sorted(POSTSEASON_GAME_TYPES), verified_games=games or [], appearance_team=readiness_team if club_only else None)
+    snapshot, games, semantic, inputs, missing = cur.fetchone()
+    ledger = _ledger(cur, snapshot, subject, entity, through, {}, semantic, inputs, methodology,
+                     game_types=sorted(POSTSEASON_GAME_TYPES), verified_games=games or [],
+                     appearance_team=readiness_team if club_only else None)
+    if missing:
+        # Missing decisions are league-wide. Attribute only the games that fall
+        # in this ledger's window and appearance-club scope.
+        request = competition_calendar_request(through.year)
+        cur.execute("""SELECT min(f.id) FROM candidate.workload_history_sources hs
+                       JOIN candidate.fetches f ON f.id=hs.source_id
+                       WHERE hs.snapshot=%s AND f.endpoint=%s AND f.parameters=%s AND f.outcome='received'
+                       GROUP BY f.sha256""", (snapshot, request.endpoint, Json(request.params())))
+        sources = cur.fetchall()
+        if len(sources) != 1:
+            raise ValueError('Missing or ambiguous pinned calendar for unresolved postseason games')
+        calendar = calendar_games(request.params(), replay(cur, sources[0][0]).body)
+        for pk in missing:
+            day, row, _ = calendar[pk]
+            applies = subject == 'pitcher' and not club_only or readiness_team in (row['home_team_id'], row['away_team_id'])
+            if applies and ledger['start'] <= day.isoformat() <= ledger['through']:
+                ledger['status'] = 'partial'
+                ledger['gaps'].setdefault(day.isoformat(), 'missing_verified_postseason_decision')
+    return ledger
 
 
 def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs, methodology,

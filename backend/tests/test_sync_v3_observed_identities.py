@@ -97,6 +97,25 @@ def test_archived_league_compares_only_matching_editions_and_all_clubs(tmp_path)
     assert delta['available'] == {'candidate': 0, 'archive': False}
 
 
+def test_league_reports_old_receipts_without_treating_them_as_parity(tmp_path):
+    from sync_v3.archived_comparisons import compare_archived_league
+    path = tmp_path / 'proof.zip'
+    reference = from_observed_publication(path, write_proof(path))
+    teams = [dict(team_id=int(team), team_state=deepcopy(receipt['value']))
+             for team, receipt in reference.team_receipts.items()]
+    listing = dict(status='candidate_preview', generation='candidate', data_through='2026-10-28',
+                   availability_reference='2026-10-30', teams=teams)
+    del reference.team_receipts['111']['season_context']
+    reference.team_receipts['119']['value']['available'] = True
+    partial = compare_archived_league(listing, reference)
+    assert partial['status'] == 'archived_competition_context_missing'
+    assert partial['clubs_compared'] == 29 and partial['clubs_missing_context'] == [111]
+    assert set(partial['differences']) == {'119'}
+    reference.team_receipts['119']['season_context']['team_id'] = 111
+    with pytest.raises(ValueError, match='club context'):
+        compare_archived_league(listing, reference)
+
+
 def test_competition_compares_the_governed_scope_independently_of_the_edition(tmp_path):
     from sync_v3.archived_comparisons import compare_archived_competition
     path = tmp_path / 'proof.zip'
