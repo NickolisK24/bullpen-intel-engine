@@ -71,7 +71,8 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
-def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None, deployment_team=None):
+def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
+        deployment_team=None, performance_team=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -111,7 +112,12 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
                 print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
-            if deployment_team is not None:
+            if performance_team is not None:
+                import json
+                from sync_v3.group_performance import active_group_performance
+                with worker, worker.cursor() as cur:
+                    print(json.dumps(active_group_performance(cur, performance_team, through), sort_keys=True))
+            elif deployment_team is not None:
                 import json
                 from sync_v3.deployment import club_role_movement
                 with worker, worker.cursor() as cur:
@@ -171,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
     from datetime import date
     subject = parser.add_mutually_exclusive_group()
+    subject.add_argument('--performance-team', type=int, help='Inspect retrospective active bullpen performance')
     subject.add_argument('--deployment-team', type=int, help='Compare two weeks of observed club deployment')
     subject.add_argument('--game', type=int, help='Inspect relief deployment for one official gamePk')
     subject.add_argument('--league', action='store_true', help='Verify club workload windows against official boxes for all 30 teams')
@@ -179,8 +186,9 @@ if __name__ == '__main__':
     parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
     has_subject = args.league or any(value is not None for value in (
-        args.pitcher, args.team, args.game, args.deployment_team,
+        args.pitcher, args.team, args.game, args.deployment_team, args.performance_team,
     ))
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
-    run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game, args.deployment_team)
+    run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
+        args.deployment_team, args.performance_team)

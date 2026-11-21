@@ -83,3 +83,26 @@ The pitcher rehearsal also reports individual season and recent 30-day performan
 Across the 30 days through August 7, 2024, Erceg had 10 outings with a 4.15 ERA, 0.81 WHIP, 0.00 HR/9, 20.59 K-BB% and one of seven inherited runners scoring. Jansen had seven outings with a 6.48 ERA, 1.68 WHIP, 2.16 HR/9, 23.68 K-BB% and zero of one inherited runner scoring. Independent sums from the official game logs matched all four rates for each pitcher. The same fixtures covered only 10 of 42 and seven of 38 season outings, respectively, and withheld all five season measures.
 
 For a fully covered season-to-date example, capture March 20, 2024 with team 119 and pitcher 623465. In Seoul game 745444, Evan Phillips retired three batters with one strikeout. Both the season and recent samples yielded 33.33 K-BB% over three batters faced and zero earned runs, walks, hits and home runs over three outs. A separate transaction-source conflict withheld the overall replay. [MLB boxscore](https://statsapi.mlb.com/api/v1/game/745444/boxscore)
+
+### Active bullpen performance
+
+Use `--performance-team TEAM_ID --through YYYY-MM-DD` with the dated active roster, both scoped MLB stats responses for each roster pitcher, and dated regular-season game fixtures. The candidate uses the existing role-authority classifier with the regular-season log window. Unresolved pitching positions, ambiguous two-way evidence, or missing player profiles withhold the group. The role sample includes prior-club work. The performance sample counts only relief appearances credited to the represented club, and checks each expected pitcher/game identity against the confirmed finals. Each window reports its covered and expected sample. ERA and WHIP use the governed minimum of 108 outs and K-BB% uses 100 batters faced. HR/9 is an additional retrospective measurement.
+
+For the August 7, 2024 Kansas City fixture, capture the represented date with team 118 and repeat `--pitcher` for each of the 12 dated roster pitchers. Replay those profiles together with the daily fixtures, using the existing rehearsal command from the backend directory.
+
+```sh
+python -m sync_v3.capture_day 2024-08-07 /tmp/kc-aug7-with-profiles.json --team 118 \
+  --pitcher 519293 --pitcher 547179 --pitcher 607625 --pitcher 608379 --pitcher 608717 --pitcher 663460 \
+  --pitcher 663704 --pitcher 663903 --pitcher 666142 --pitcher 668674 --pitcher 669674 --pitcher 672582
+python -m sync_v3.rehearse --pg-bin /path/to/postgres/bin \
+  --fixture /tmp/kc-aug7-with-profiles.json --performance-team 118 --through 2024-08-07
+```
+
+A single-day fixture exposes the season obligations and the missing-final reasons. Add dated fixtures with repeated `--fixture` arguments to close the coverage. For Kansas City, seven of the 12 arms met the role rule. The 30-day replay covered 56 of 213 season appearances. Adding official schedules and club boxscores for 84 earlier appearance dates covered all 213. An independent recount from the boxscores reproduced the five existing measures in both windows.
+
+| Through August 7 | Relief outings | Outs | BF | ERA | WHIP | K-BB% | HR | Inherited scored |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Recent 30 days | 56 | 179 | 240 | 3.62 | 1.12 | 15.0% | 7 | 7 of 25 |
+| Season | 213 | 631 | 888 | 3.94 | 1.28 | 12.2% | 21 | 28 of 108 |
+
+These historical results describe the represented roster. Production promotion still requires independent parity and publication certification. The August 7 transaction refusal remains visible in the replay status.
