@@ -1110,6 +1110,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert boston_change['game_pks'] == [board_event['event']['game']]
             assert boston_change['change_id'] in boston['away']['change_refs']
             removal, = (item for item in history['events'] if item['event']['kind'] == 'active_roster_removed' and item['event']['player'] == 701234)
+            # The earlier active roster identifies this pitcher but lacks his bullpen eligibility.
+            assert removal['event']['event_id'] not in {item['change_id'] for item in slate['league_changes']}
             if identity_mode != 'absent':
                 old, = read_search(worker, 'Former Boston')['search']['groups'][1]['results']
                 assert old['metadata']['historical_departure'] == removal
