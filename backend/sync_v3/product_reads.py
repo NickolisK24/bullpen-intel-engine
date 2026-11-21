@@ -1033,7 +1033,7 @@ def read_team_history(connection, team, *, through_revision, limit=14):
         return row
     club = next(club for club in MLB_CLUBS if club.team_id == team)
     return dict(_decision_page(connection, through_revision, limit, team_changes), team=team,
-                scope='isolated_historical_team_history', team_name=club.team_name)
+                scope='isolated_historical_team_history', team_name=club.team_name, team_abbreviation=club.abbreviation)
 
 
 def read_pitcher_history(connection, public_id, *, through_revision, limit=14):

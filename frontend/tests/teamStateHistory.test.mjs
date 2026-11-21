@@ -707,6 +707,10 @@ test('earlier decisions must continue the exact historical club and predecessor 
     status: 'historical_decisions', team: 111, rows: [
       { selection_revision: 3, predecessor: 2 }, { selection_revision: 2, predecessor: 1 }], next_revision: 1 }
   assert.ok(matchesHistoryCursor(page, 111, 3))
+  const entry = { ...page, team_abbreviation: 'BOS' }
+  assert.ok(matchesHistoryCursor(entry, 'BOS', 3))
+  assert.ok(!matchesHistoryCursor(entry, 'KC', 3))
+  assert.ok(!matchesHistoryCursor({ ...entry, team: null }, 'BOS', 3))
   assert.ok(!matchesHistoryCursor(page, 118, 3))
   assert.ok(!matchesHistoryCursor(page, 111, 4))
   for (const invalid of [{ next_revision: 3 }, { scope: 'team_state_history' }, { current_serving_eligible: true },

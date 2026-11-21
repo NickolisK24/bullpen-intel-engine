@@ -1323,7 +1323,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             if identity_mode == 'complete':
                 from sync_v3.history_delivery import historical_history_app
-                client = historical_history_app(connect).test_client()
+                client = historical_history_app(connect, page_size=2).test_client()
+                entry = client.get('/api/sync-v3/history/teams/BOS/revisions/3')
+                assert entry.status_code == 200 and entry.get_json() == page
+                assert page['team_abbreviation'] == 'BOS'
+                assert client.get('/api/sync-v3/history/teams/XYZ/revisions/3').status_code == 404
                 route = '/api/sync-v3/history/teams/111/revisions/'
                 response = client.get(route + str(page['next_revision']))
                 assert response.status_code == 200 and response.get_json() == older

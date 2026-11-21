@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
@@ -385,8 +385,10 @@ function GapRow({ date }) {
 }
 
 export function matchesHistoryCursor(page, team, revision) {
-  if (page?.scope !== 'isolated_historical_team_history' || page.current_serving_eligible !== false
-      || page.status !== 'historical_decisions' || page.team !== team || !Array.isArray(page.rows)
+  const matchesClub = typeof team === 'string' ? page?.team_abbreviation === team : page?.team === team
+  if (!matchesClub || !Number.isSafeInteger(page?.team) || page.team <= 0
+      || page.scope !== 'isolated_historical_team_history' || page.current_serving_eligible !== false
+      || page.status !== 'historical_decisions' || !Array.isArray(page.rows)
       || !page.rows.length || page.rows.length > 30) return false
   return page.rows.every((row, index) => {
     const expected = revision - index
@@ -536,12 +538,27 @@ export function TeamHistoryPageView({ payload, loading = false, error = null, on
 export default function TeamHistoryPage() {
   const { abbr } = useParams()
   const teamAbbreviation = safeTeamAbbreviation(abbr)
-  const history = useFetch(
-    options => (teamAbbreviation
-      ? getTeamStateHistory(teamAbbreviation, 2026, options)
-      : Promise.reject(new Error('This History destination does not contain a valid team abbreviation.'))),
-    [teamAbbreviation],
-  )
+  const [search] = useSearchParams()
+  const revisionParam = search.get('rehearsalRevision')
+  const repeated = search.getAll('rehearsalRevision').length > 1
+  return <HistoryDestination key={JSON.stringify([teamAbbreviation, revisionParam, repeated])}
+    teamAbbreviation={teamAbbreviation} revisionParam={revisionParam} repeated={repeated} />
+}
+
+function HistoryDestination({ teamAbbreviation, revisionParam, repeated }) {
+  const history = useFetch(async options => {
+    if (!teamAbbreviation) throw new Error('This History destination does not contain a valid team abbreviation.')
+    if (revisionParam === null) return getTeamStateHistory(teamAbbreviation, 2026, options)
+    const revision = Number(revisionParam)
+    if (repeated || !/^[1-9]\d*$/.test(revisionParam) || !Number.isSafeInteger(revision)) {
+      throw new Error('Invalid historical rehearsal revision.')
+    }
+    const page = await getHistoricalTeamDecisions(teamAbbreviation, revision, options)
+    if (!matchesHistoryCursor(page, teamAbbreviation, revision)) {
+      throw new Error('The requested historical edition could not be verified.')
+    }
+    return page
+  }, [teamAbbreviation, revisionParam, repeated])
   return (
     <TeamHistoryPageView
       payload={history.data}
