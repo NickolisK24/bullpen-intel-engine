@@ -429,6 +429,33 @@ def read_search(connection, query, *, revision=None, limit=5):
     return _read_transaction(connection, search)
 
 
+def _historical_availability(facts, identities, through, game_day):
+    """Count a complete dated bullpen independently of public links and current serving eligibility."""
+    from datetime import timedelta
+    from services.availability import ACTIVE_WINDOW_DAYS
+    from services.availability_reference_date import parse_reference_date
+    from services.current_bullpen_comparison import availability_counts
+
+    club = facts['team']
+    if (facts['mode'] != 'retrospective_candidate' or facts['current_serving_eligible'] is not False
+            or facts['reason'] or not facts['team_state'] or facts['competition']['status'] != 'active'
+            or facts['competition']['team_id'] != club
+            or facts['membership_date'] != through.isoformat() or facts['reference_date'] != game_day.isoformat()
+            or facts['competition']['reference_date'] != game_day.isoformat() or not facts['arms']):
+        return None
+    cards = []
+    for key, arm in facts['arms'].items():
+        player = int(key)
+        read = arm['read'] or {}
+        availability = read.get('availability') or {}
+        latest = parse_reference_date(read.get('last_workload'))
+        if (identities.get(player, {}).get('team_id') != club or arm['reason'] or availability.get('data_state') != 'fresh'
+                or not read.get('games_compared') or latest is None or not game_day - timedelta(days=ACTIVE_WINDOW_DAYS) <= latest <= through):
+            return None
+        cards.append(dict(pitcher_id=player, availability_status=availability.get('availability_status')))
+    return availability_counts(cards)
+
+
 def _matchup_rest(away, home, game_day):
     """Compare the same D-055 counts that League shows for the game's baseball date."""
     from services.current_bullpen_comparison import REASON_REST_DATE_MISMATCH, _aligned_domain, _withheld_domain
@@ -710,6 +737,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         rotation_day = date.fromisoformat(league['availability_reference'])
         rotations = {club: matchup_rotation(facts[club, rotation], rotation_day, reference_day_unresolved=club in unsettled,
                                              pinned_lines=nonrotation_lines[club]) for club in clubs}
+        historical_counts = {club: _historical_availability(facts[club, reads], identities, end, rotation_day)
+                             for club in clubs}
         for card in result['games']:
             stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
                      DOMAINS['pitcher_rest'][1])
@@ -720,6 +749,12 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 'team_state', away_state if away_state['available'] else None, home_state if home_state['available'] else None,
                 stamp_a=(away_state['contract'], away_state['data_through']),
                 stamp_b=(home_state['contract'], home_state['data_through']))
+            availability_stamp = (generation, reads, league['data_through'], game_dates[card['game_pk']])
+            comparison = _aligned_domain('availability', historical_counts[away_row['team_id']],
+                                         historical_counts[home_row['team_id']],
+                                         stamp_a=availability_stamp, stamp_b=availability_stamp)
+            card['historical_availability'] = dict(comparison, current_serving_eligible=False, generation=generation,
+                                                   data_through=league['data_through'], reference_date=game_dates[card['game_pk']])
             rotation_a, rotation_b = rotations[away_row['team_id']], rotations[home_row['team_id']]
             limitations = list(dict.fromkeys(limit for side in (rotation_a, rotation_b) if side for limit in side['limitations']))
             rotation_stamp = (generation, rotation, game_dates[card['game_pk']])

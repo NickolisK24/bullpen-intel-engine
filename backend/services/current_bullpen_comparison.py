@@ -310,13 +310,25 @@ def _availability(team_package, *, package_date, reference_date, freshness, day,
                 card, freshness=freshness, product_day=day, club_active=True,
             )['mode'] != 'current' for card in cards)):
         return None, ()
+    counts = availability_counts(cards)
+    if counts is None:
+        return None, ()
+    return counts, (
+        authority.TEAM_BOARD_PACKAGE_CONTRACT,
+        package_date,
+        reference_date,
+    )
+
+
+def availability_counts(cards):
+    """Fold a complete population of governed card statuses into the four Matchup counts."""
     groups = group_cards(cards)
     counts = {group.get('status'): group.get('count') for group in groups}
     required = ('Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable')
     if any(type(counts.get(key)) is not int or counts[key] < 0 for key in required):
-        return None, ()
+        return None
     if sum(counts[key] for key in required) != len(cards):
-        return None, ()
+        return None
     # "Unavailable" is the existing public fold of internal Avoid and strict
     # Unavailable.  It is authored here once; the browser never reconstructs it.
     return {
@@ -324,11 +336,7 @@ def _availability(team_package, *, package_date, reference_date, freshness, day,
         'on_watch': counts['Monitor'],
         'limited': counts['Limited'],
         'unavailable': counts['Avoid'] + counts['Unavailable'],
-    }, (
-        authority.TEAM_BOARD_PACKAGE_CONTRACT,
-        package_date,
-        reference_date,
-    )
+    }
 
 
 def build_current_bullpen_comparison(
