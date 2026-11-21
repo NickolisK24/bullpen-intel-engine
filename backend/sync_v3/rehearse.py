@@ -294,9 +294,12 @@ def verify_board_history(connection, board):
     page = compare_team_page(render_team_story_html(preview), club)
     if page['withheld_reason'] != 'no_trusted_publication':
         raise RuntimeError('Candidate Team Board did not withhold its public preview')
+    from sync_v3.comparison import compare_board_rosters
+    from sync_v3.product_reads import _read_transaction
+    rosters = _read_transaction(connection, compare_board_rosters, board)
     editorial = verify_editorial_evidence(connection, board, row['events'])
     return dict(generation=digest, selection_revision=revision, team_id=team, team_events=len(row['events']), editorial=editorial,
-                static_team_preview=page,
+                static_team_preview=page, roster_source_comparison=rosters,
                 verified_pitcher_routes=verified, withheld_pitcher_mlb_ids=withheld, current_serving_eligible=False)
 
 

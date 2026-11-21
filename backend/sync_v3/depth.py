@@ -165,14 +165,13 @@ def named_roster_lists(depth, evidence, directory):
     return lists
 
 
-def forty_man_status_labels(cur, generation, evidence):
-    """Read MLB's own status wording from the forty-man response pinned by this edition."""
-    expected = evidence['status_codes']
-    if not expected:
-        return {}
+def dated_roster_capture(cur, generation, evidence, kind):
+    """Resolve one confirmed source body cited by the frozen club depth snapshot."""
+    if kind not in ('active', '40Man'):
+        raise ValueError('Expected an MLB membership roster')
     team, day = evidence['team'], evidence['represented']
     endpoint = f'/teams/{team}/roster'
-    params = {'date': day, 'rosterType': '40Man'}
+    params = {'date': day, 'rosterType': kind}
     cur.execute("""SELECT min(f.id) FROM candidate.generation_inputs g
                    JOIN candidate.workload_history h ON h.id=g.snapshot
                    JOIN candidate.workload_history_sources hs ON hs.snapshot=h.id
@@ -182,13 +181,24 @@ def forty_man_status_labels(cur, generation, evidence):
                      AND h.methodology=%s AND f.endpoint=%s AND f.parameters=%s AND c.identity=%s
                    GROUP BY f.sha256""",
                 (generation, team, day, evidence['citation']['methodology'], endpoint,
-                 Json(params), f'{team}/40Man/{day}'))
+                 Json(params), f'{team}/{kind}/{day}'))
     receipts = cur.fetchall()
     if len(receipts) != 1:
-        return {}
+        return None
     capture = replay(cur, receipts[0][0])
     if capture.request.endpoint != endpoint or capture.request.params() != params:
-        raise ValueError('Forty-man roster receipt belongs to another club or date')
+        raise ValueError('Roster receipt belongs to another club, membership type or date')
+    return capture
+
+
+def forty_man_status_labels(cur, generation, evidence):
+    """Read MLB's own status wording from the forty-man response pinned by this edition."""
+    expected = evidence['status_codes']
+    if not expected:
+        return {}
+    capture = dated_roster_capture(cur, generation, evidence, '40Man')
+    if capture is None:
+        return {}
     statuses = defaultdict(lambda: defaultdict(set))
     for member in capture.body['roster']:
         player = roster_entry_player_id(member)

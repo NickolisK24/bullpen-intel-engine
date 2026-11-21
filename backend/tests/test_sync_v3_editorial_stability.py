@@ -207,3 +207,62 @@ def test_forty_man_status_wording_uses_only_the_pinned_club_date_and_recorded_co
         cursor.fetchall.return_value = receipts
         assert depth.forty_man_status_labels(cursor, 'edition', evidence) == {}
     assert depth.forty_man_status_labels(cursor, 'edition', dict(evidence, status_codes=None)) == {}
+
+
+def test_board_roster_comparison_accepts_only_source_supported_display_values(monkeypatch):
+    from copy import deepcopy
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from sync_v3 import depth
+    from sync_v3.comparison import compare_board_rosters
+
+    def player(mlb, code, description):
+        return dict(person=dict(id=mlb, fullName=f'Player {mlb}'), position=dict(code='1'),
+                    status=dict(code=code, description=description))
+
+    bodies = {'active': [player(1, 'A', 'Active')], '40Man': [player(1, 'A', 'Active'),
+              player(2, 'D10', 'Injured 10-Day'), player(2, 'RM', 'One'), player(2, 'RM', 'Two')]}
+    def capture(cur, generation, evidence, kind):
+        assert generation == 'edition'
+        return SimpleNamespace(body=dict(roster=bodies[kind]), retrieved_at=datetime(2026, 11, 1, tzinfo=timezone.utc))
+
+    monkeypatch.setattr(depth, 'dated_roster_capture', capture)
+    evidence = dict(team=111, represented='2017-08-28', active_listed=1, forty_man_listed=2,
+                    forty_man_listed_outside_active=[2], status_codes={2: ['D10', 'RM']})
+    listings = dict(active=[dict(mlb_id=1, name=None)], forty_man_only=[dict(mlb_id=2, name='Player 2')])
+    board = dict(team=dict(team_id=111), generation='edition', data_through='2017-08-28',
+                 roster_depth_evidence=evidence, roster_listings=listings, forty_man_status_labels={2: {'D10': 'Injured 10-Day'}})
+    result = compare_board_rosters(None, board)
+    assert (result['active'], result['forty_man_only'], result['names_withheld']) == (1, 1, 1)
+    assert result['receipts']['active']['sha256'] != result['receipts']['40Man']['sha256']
+    for path, key, value in [
+        (['roster_listings'], 'active', listings['active'] * 2),
+        (['roster_listings', 'forty_man_only', 0], 'name', 'Wrong player'),
+        (['roster_depth_evidence'], 'forty_man_listed_outside_active', [2, 2]),
+        (['roster_depth_evidence'], 'status_codes', {2: ['D10']}),
+        (['roster_depth_evidence'], 'status_codes', {2: ['D10', 'D10', 'RM']}),
+        (['forty_man_status_labels', 2], 'RM', 'One'),
+        (['roster_depth_evidence'], 'forty_man_listed', 1),
+    ]:
+        corrupted = deepcopy(board)
+        target = corrupted
+        for part in path:
+            target = target[part]
+        target[key] = value
+        with pytest.raises(ValueError):
+            compare_board_rosters(None, corrupted)
+    monkeypatch.setattr(depth, 'dated_roster_capture', lambda *args: None)
+    assert compare_board_rosters(None, board)['status'] == 'unverified'
+
+    monkeypatch.setattr(depth, 'dated_roster_capture', lambda *args: capture(*args) if args[-1] == 'active' else None)
+    with pytest.raises(ValueError, match='unique receipt'):
+        compare_board_rosters(None, board)
+    assert compare_board_rosters(None, dict(board, forty_man_status_labels={}))['status'] == 'unverified'
+
+    withheld = dict(board, roster_listings=None, forty_man_status_labels={},
+                    roster_depth_evidence=dict(evidence, active_listed=None, forty_man_listed=None,
+                         forty_man_listed_outside_active=None, status_codes=None, reason='missing_dated_roster'))
+    assert compare_board_rosters(None, withheld) == dict(status='withheld', reason='missing_dated_roster')
+    withheld['roster_depth_evidence']['forty_man_listed'] = 0
+    with pytest.raises(ValueError, match='exposes membership'):
+        compare_board_rosters(None, withheld)

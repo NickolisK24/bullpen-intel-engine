@@ -207,3 +207,73 @@ def compare_readiness(candidate):
             raise ValueError('Represented Team State disagrees with independently reproduced rule')
     return {'arm_statuses_compared': len(candidate['arms']) - counts['unknown'],
             'withheld_arms': counts['unknown'], 'team_states_compared': int(candidate['team_state'] is not None)}
+
+
+def compare_board_rosters(cur, board):
+    """Compare the displayed pitching lists with the two retained membership responses."""
+    from hashlib import sha256
+    from services.roster_status_sync import _two_way_eligible
+    from sync_v3.depth import dated_roster_capture
+    from sync_v3.evidence import encode_json
+
+    evidence = board['roster_depth_evidence']
+    if evidence['team'] != board['team']['team_id'] or evidence['represented'] != board['data_through']:
+        raise ValueError('Roster comparison belongs to a different club or date')
+    lists = board['roster_listings']
+    if lists is None:
+        membership_fields = ('active_listed', 'forty_man_listed', 'forty_man_listed_outside_active', 'status_codes')
+        if any(evidence[key] is not None for key in membership_fields) or board['forty_man_status_labels']:
+            raise ValueError('A withheld roster exposes membership facts')
+        return dict(status='withheld', reason=evidence['reason'])
+
+    members, receipts = {}, {}
+    for kind in ('active', '40Man'):
+        capture = dated_roster_capture(cur, board['generation'], evidence, kind)
+        if capture is None:
+            if kind == '40Man' and board['forty_man_status_labels']:
+                raise ValueError('Displayed roster status wording lacks a unique receipt')
+            return dict(status='unverified', reason='missing_or_ambiguous_roster_response', membership=kind)
+        receipts[kind] = dict(sha256=sha256(encode_json(capture.body)).hexdigest(),
+                              retrieved_at=capture.retrieved_at.isoformat())
+        rows = {}
+        for row in capture.body['roster']:
+            if row['position']['code'] in ('1', 'Y') or _two_way_eligible(row):
+                rows.setdefault(row['person']['id'], []).append(row)
+        members[kind] = rows
+    if (evidence['active_listed'] != len(members['active'])
+            or evidence['forty_man_listed'] != len(members['40Man'])):
+        raise ValueError('Board roster counts disagree with the dated MLB responses')
+    outside = members['40Man'].keys() - members['active'].keys()
+    if evidence['forty_man_listed_outside_active'] != sorted(outside):
+        raise ValueError('Board forty-man membership comparison disagrees with the dated responses')
+    names_withheld = 0
+    for group, ids, rows in [('active', members['active'].keys(), members['active']),
+                             ('forty_man_only', outside, members['40Man'])]:
+        listed = lists[group]
+        if len(listed) != len(ids) or {item['mlb_id'] for item in listed} != ids:
+            raise ValueError(f'{group} identities differ from the dated roster responses')
+        for player in listed:
+            names = {row['person'].get('fullName') for row in rows[player['mlb_id']]}
+            if player['name'] is None:
+                names_withheld += 1
+            elif names != {player['name']}:
+                raise ValueError('Displayed pitcher name disagrees with the roster response')
+
+    labels = board['forty_man_status_labels']
+    if set(labels) - outside or set(evidence['status_codes']) != outside:
+        raise ValueError('Forty-man status belongs to the wrong membership group')
+    for player in outside:
+        statuses = {}
+        for row in members['40Man'][player]:
+            raw = row.get('status') or {}
+            if raw.get('code'):
+                description = raw.get('description')
+                statuses.setdefault(raw['code'], set()).add(description if isinstance(description, str) else None)
+        if evidence['status_codes'][player] != sorted(statuses):
+            raise ValueError('Displayed roster status codes disagree with the source')
+        expected = {code: desc for code, values in statuses.items() if len(values) == 1
+                    for desc in values if isinstance(desc, str) and desc.strip()}
+        if labels.get(player, {}) != expected:
+            raise ValueError('Displayed roster status wording disagrees with the source')
+    return dict(status='compared', receipts=receipts, active=len(members['active']),
+                forty_man_only=len(outside), names_withheld=names_withheld)
