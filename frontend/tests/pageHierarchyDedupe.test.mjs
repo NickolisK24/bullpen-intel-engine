@@ -222,3 +222,23 @@ test('the home route renders the Tonight page, never a legacy report (TN-11)', (
   assert.equal(html.includes("Today&#x27;s Story"), false)
   assert.equal(html.includes('Loading today&#x27;s lead story...'), false)
 })
+
+test('historical Trust requires a selected rehearsal inventory and ordered source acquisition times', async () => {
+  const { verifiedHistoricalInventory } = await server.ssrLoadModule('/src/components/trust/HistoricalTrust.jsx')
+  const generation = 'b'.repeat(64)
+  const source = { outcome: 'received', receipts: 3, refusal_reason: null,
+    earliest_acquisition: '2026-11-21T09:00:00+00:00', latest_acquisition: '2026-11-21T10:00:00+00:00' }
+  const page = { status: 'verified_historical_inventory', selection_revision: 3, generation,
+    trusted_snapshot_id: null, current_serving_eligible: false, represented: '2024-08-07', availability_reference: '2024-08-08',
+    comparison: { status: 'core_comparison_complete', reason_codes: [] }, sources: [source],
+    methods: [{ subject: 'game', methodology: 'game_evidence', scopes: 3 }] }
+  const valid = patch => verifiedHistoricalInventory({ ...page, ...patch }, 3, generation)
+  assert.equal(valid({}), true)
+  const noBody = { outcome: 'failed', refusal_reason: 'timeout', receipts: 1, earliest_acquisition: null, latest_acquisition: null }
+  assert.equal(valid({ sources: [source, noBody] }), true)
+  for (const patch of [{ generation: 'a'.repeat(64) }, { trusted_snapshot_id: 10 }, { current_serving_eligible: true },
+    { status: 'candidate_preview' }, { selection_revision: 4 }, { methods: [] }, { sources: [] },
+    { sources: [{ ...source, earliest_acquisition: '2026-12-01T10:00:00Z' }] }, { sources: [{ ...noBody, outcome: 'received' }] }]) {
+    assert.equal(valid(patch), false)
+  }
+})

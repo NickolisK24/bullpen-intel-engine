@@ -58,5 +58,6 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
       </table>
     </section>
     <HistoricalChanges row={data.what_changed} team={team} />
+    <Link className="underline" to={`/trust?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect evidence for this edition</Link>
   </main>
 }

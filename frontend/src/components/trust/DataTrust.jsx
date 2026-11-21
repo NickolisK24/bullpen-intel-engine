@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
@@ -10,6 +10,8 @@ import { SyncStatusContent } from '../dashboard/SyncStatus'
 import { freshnessDataThrough } from '../dashboard/syncStatusView'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
+import { readRehearsalEdition } from '../../utils/evidenceLinks'
+import HistoricalTrust from './HistoricalTrust'
 import AvailabilityBacktestCard from './AvailabilityBacktestCard'
 
 // Data & Trust answers, in order: is the public bullpen picture current, what
@@ -33,6 +35,16 @@ const INSPECT_LINKS = [
 ]
 
 export default function DataTrust() {
+  const [params] = useSearchParams()
+  try {
+    const edition = readRehearsalEdition(params)
+    return edition ? <HistoricalTrust key={JSON.stringify(edition)} {...edition} /> : <PublicDataTrust />
+  } catch (error) {
+    return <ErrorState message={error.message} />
+  }
+}
+
+function PublicDataTrust() {
   const backtest = useFetch(getAvailabilityBacktest)
   const dashboard = useFetch(getTrustProjection)
   const sync = useFetch(getSyncStatus)

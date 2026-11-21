@@ -535,3 +535,5 @@ Open `/search?rehearsalRevision=3` against the same adapter to search the select
 Open `/dashboard?rehearsalRevision=3` against the adapter to inspect League for a selected revision. The page displays both dates and accounts for 30 distinct clubs, including withheld reads. Every Board link carries the returned generation and revision. An optional `rehearsalGeneration` binds the initial League request to a specific digest.
 
 Open `/tonight?rehearsalRevision=3` against the adapter for the represented slate. Game cards, featured games, and changes carry that edition into Matchup and Team Board. A selected empty slate remains distinguishable from missing schedule evidence.
+
+The historical Board links to `/trust?rehearsalRevision=<revision>&rehearsalGeneration=<digest>`. This reads the selected generation’s verified source inventory, acquisition spans, and calculation methods. The represented dates and acquisition times refer to different events. The underlying rehearsal has no trusted production snapshot ID.
