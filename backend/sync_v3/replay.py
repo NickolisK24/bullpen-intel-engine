@@ -69,21 +69,68 @@ def run_fixture(connection, filename):
         results.extend(batch)
         if len(batch) < 256:
             break
-    errors = []
+    issues = [oid for oid, status in results if status != 'received']
     with connection, connection.cursor() as cur:
         for oid, status in results:
-            if status != 'received':
-                cur.execute('''SELECT f.endpoint,f.parameters,coalesce(r.reason,f.reason),f.sha256
-                               FROM candidate.fetches f LEFT JOIN candidate.refusals r ON r.source_id=f.id
-                               WHERE f.id=%s''', (oid,))
-                errors.append((status, *cur.fetchone()))
-                continue
-            evidence.replay(cur, oid)
-        cur.execute("SELECT state,count(*) FROM candidate.jobs WHERE product_date=%s AND payload->>'capture'=%s GROUP BY state", (day,capture))
-        states = dict(cur.fetchall())
-        if errors or set(states) != {'done'}:
-            from sync_v3.comparison import compare_finals
+            if status == 'received':
+                evidence.replay(cur, oid)
+    work = read_replay_work(connection, day, capture, _issue_receipts=issues)
+    states = work['job_states']
+    if issues or set(states) != {'done'}:
+        from sync_v3.comparison import compare_finals
+        with connection, connection.cursor() as cur:
             games, lines = compare_finals(cur)
-            raise ReplayWithheld(f'Replay withheld: {len(results)} observations; {games} accepted finals, '
-                             f'{lines} verified lines; job states={states}; unresolved={errors}')
+        raise ReplayWithheld(f'Replay withheld for {day} capture {capture}: {len(results)} new observations; '
+                             f'{games} accepted finals and {lines} verified lines across this database; '
+                             f'job states={states}; unresolved jobs with last recorded receipt (first 32)='
+                             f'{json.dumps(work["jobs"], sort_keys=True)}')
     return len(results)
+
+
+def read_replay_work(connection, day, capture, *, after_job_id=0, _issue_receipts=()):
+    """Inspect durable historical work for one capture in a consistent read-only transaction."""
+    if type(day) is not date or not isinstance(capture, str) or len(capture) != 64 or any(
+            char not in '0123456789abcdef' for char in capture):
+        raise ValueError('Expected an exact baseball date and SHA-256 capture identity')
+
+    if type(after_job_id) is not int or not 0 <= after_job_id < 2**63:
+        raise ValueError('Expected a nonnegative job ID')
+
+    def read(cur):
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("""SELECT state,count(*) FROM candidate.jobs WHERE budget='historical'
+                       AND product_date=%s AND payload->>'capture'=%s GROUP BY state""", (day, capture))
+        states = dict(cur.fetchall())
+        result = dict(baseball_date=day.isoformat(), capture=capture, job_states=states, jobs=[], next_after_job_id=None)
+        if not states or (set(states) == {'done'} and not _issue_receipts):
+            return result
+        cur.execute("""WITH unresolved AS (
+                           SELECT id,state,payload,attempts,max_attempts,available_at,lease_until,prerequisite
+                           FROM candidate.jobs
+                           WHERE budget='historical' AND product_date=%s AND payload->>'capture'=%s AND id>%s
+                             AND (state<>'done' OR id IN (
+                                 SELECT a.job_id FROM candidate.fetches f JOIN candidate.attempts a USING(token)
+                                 WHERE f.id=ANY(%s::bigint[])
+                             ))
+                           ORDER BY id LIMIT 33
+                       )
+                       SELECT DISTINCT ON (j.id) j.id AS job_id,j.state,j.attempts,j.max_attempts,
+                              CASE WHEN j.state='pending' THEN to_jsonb(j.available_at) END AS available_at,
+                              to_jsonb(j.lease_until) AS lease_until,j.prerequisite,p.state AS prerequisite_state,
+                              j.payload->>'endpoint' AS endpoint,j.payload->'params' AS parameters,
+                              f.id AS receipt_id,
+                              CASE WHEN r.source_id IS NOT NULL THEN 'refused' ELSE f.outcome END AS outcome,
+                              coalesce(r.reason,f.reason) AS reason,f.sha256
+                       FROM unresolved j LEFT JOIN candidate.jobs p ON p.id=j.prerequisite
+                       LEFT JOIN candidate.attempts a ON a.job_id=j.id
+                       LEFT JOIN candidate.fetches f ON f.token=a.token
+                       LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                       ORDER BY j.id,f.id DESC NULLS LAST""", (day, capture, after_job_id, list(_issue_receipts)))
+        fields = [field.name for field in cur.description]
+        jobs = [dict(zip(fields, row)) for row in cur]
+        result['jobs'] = jobs[:32]
+        if len(jobs) > 32:
+            result['next_after_job_id'] = jobs[31]['job_id']
+        return result
+
+    return history._transaction(connection, read)

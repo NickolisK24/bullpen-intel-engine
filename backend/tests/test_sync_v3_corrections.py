@@ -765,9 +765,38 @@ def test_older_same_day_schedule_can_confirm_only_an_identical_unrevised_listing
             schedule = next(r for r in data['responses'] if r['endpoint'] == '/schedule')
             schedule['body']['dates'][0]['games'][0]['teams']['home']['score'] = 9
             copy.write_text(json.dumps(data))
-            with pytest.raises(ReplayWithheld, match='Official final schedule'):
+            with pytest.raises(ReplayWithheld, match='Official final schedule') as first:
                 run_fixture(db, copy)
             with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.attempts')
+                attempts, = cur.fetchone()
+            with pytest.raises(ReplayWithheld, match='Official final schedule') as retry:
+                run_fixture(db, copy)
+            def failures(exc):
+                return json.loads(str(exc.value).split('receipt (first 32)=')[1])
+            stored, = failures(first)
+            assert failures(retry) == [stored]
+            assert stored['endpoint'] == '/game/12345/boxscore' and stored['outcome'] == 'refused'
+            assert stored['receipt_id'] > 0 and len(stored['sha256']) == 64
+            assert stored['state'] == 'pending' and stored['attempts'] == 1 and stored['max_attempts'] == 3
+            assert datetime.fromisoformat(stored['available_at']) > datetime.fromisoformat(data['observed_at'])
+            assert stored['lease_until'] is None and stored['prerequisite'] is None
+            assert '0 new observations' in str(retry.value)
+            from hashlib import sha256
+            from sync_v3.evidence import encode_json
+            from sync_v3.replay import read_replay_work
+            day = date.fromisoformat(data['baseball_date'])
+            digest = sha256(encode_json(data)).hexdigest()
+            with closing(connect()) as reader:
+                reader.set_session(readonly=True)
+                work = read_replay_work(reader, day, digest)
+                assert work['jobs'] == [stored] and work['job_states']['pending'] == 1
+                assert read_replay_work(reader, day - timedelta(days=1), digest)['job_states'] == {}
+                assert read_replay_work(reader, day, '0' * 64)['jobs'] == []
+
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.attempts')
+                assert cur.fetchone() == (attempts,)
                 cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='schedule'")
                 assert cur.fetchone() == (2,)
                 assert compare_finals(cur) == (1, 3)

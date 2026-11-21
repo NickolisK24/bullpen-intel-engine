@@ -930,3 +930,19 @@ The existing `--exercise-selection` rehearsal now includes `roster_source_compar
 The comparison passed across all 30 clubs in both the August 28, 2017 and October 19, 2026 selected editions. The October edition had 617 active-list pitching entries and 144 forty-man-only pitching entries, with every displayed name supported. These counts describe the MLB lists for that date. In-season availability for October 20 still requires the separate competition and workload evidence.
 
 If one roster receipt is missing, the comparison records every missing membership type and the digest and timestamp of any surviving receipt. It still checks facts that the surviving response can establish. On the October 19, 2026 edition, hiding the active receipt from the comparator for each of the 30 clubs returned 30 unverified comparisons. Removing displayed wording supported by the surviving forty-man response failed in all 30 cases. The fault injection ran only in the isolated reader.
+
+### Diagnosing a withheld offline replay
+
+A withheld fixture reports its baseball date, capture digest, new observation count, durable job states, and up to 32 outstanding jobs with their last recorded receipt. Each detail identifies the job, prerequisite state, attempt count, retry or lease time, request, source digest and refusal reason where available. An unreceived response has no payload digest. The line verification totals cover the disposable database, which can contain several captures. Replay uses the fixture clock, so reading the same failure again can legitimately find zero new observations.
+
+From `backend`, supply the same retained file twice to exercise that behavior in one disposable database.
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$PG_BIN" --fixture "$DAY_FIXTURE" --fixture "$DAY_FIXTURE"
+```
+
+The August 7, 2024 all-club fixture (capture `094e5f88eb86e5df91d24ae46777001507849b826b76f3cc2397669d672d944b`) exited withheld. The first pass recorded 173 observations and verified 165 pitching lines in 17 finals. Both passes reported the same two pending jobs, a same-instant transaction contradiction and a Boston forty-man roster scope conflict. The second pass retained both receipt IDs, digests and reasons with zero additional attempts. In a separate fault injection, removing the roster responses produced 121 pending jobs. Both passes reported that full count and the same first 32 job details.
+
+Within an already open disposable rehearsal, `sync_v3.replay.read_replay_work(connection, baseball_date, capture_digest)` queries the same evidence in a read-only transaction. It can inspect a running job, its lease expiry and any dependent job before an HTTP receipt exists. An empty job-state map means the specified date and digest matched no historical jobs. A done count describes completed queue work. Publication and selection have their own receipts.
+
+For more than 32 unresolved jobs, pass the returned `next_after_job_id` as `after_job_id` to the next read with the same date and capture. A null cursor ends the list. The 121-job fault injection returned 32, 32, 32 and 25 distinct job IDs on a read-only connection. Counts apply to the entire capture at each read. If workers are active, subsequent reads can observe their progress.
