@@ -86,6 +86,14 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
                 team['facts']['windows']['window_3']['pitches']['value'] += 1
                 with pytest.raises(ValueError, match='Official club workload differs'):
                     compare_team_workload(cur, calendar, team)
+                # A candidate omission could otherwise make both totals agree at zero.
+                incomplete_calendar = dict(calendar)
+                day_facts = calendar[day][0]
+                incomplete_calendar[day] = dict(day_facts, sources=[], official_lines=[]), None
+                false_zero = team_workload(cur, incomplete_calendar, 147, through)
+                with pytest.raises(ValueError, match='Official slate and cited boxscores differ'):
+                    compare_team_workload(cur, incomplete_calendar, false_zero)
+                assert team['facts']['windows']['window_3']['batters_faced']['value'] == 4
                 assert len(windows[3]['sources']) == 4
                 assert windows[5]['facts'] is None and len(windows[5]['gaps'])==2
                 rookie = pitcher_windows(cur, 98765, through)
@@ -154,6 +162,10 @@ def test_team_workload_uses_game_side_and_dated_active_authority():
     roster = ({'members': [{'id': 2, 'name': 'Known member'}]}, 37)
     result = team_from_calendar(calendar, 111, end, roster)
     assert result['roster_source'] == 37
+    five = result['facts']['windows']['window_5']
+    assert five['appearances']['value'] == 2 and five['pitches']['value'] == 30
+    assert five['batters_faced']['value'] is None
+    assert five['batters_faced']['reason_codes'] == ['bullpen_batters_faced_unknown']
     concentration = result['facts']['concentration_7_day']
     assert concentration['total_pitches'] == 30
     assert concentration['on_dated_active_roster_contribution']['pitches'] == 20

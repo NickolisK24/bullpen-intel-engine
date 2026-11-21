@@ -1086,10 +1086,11 @@ def _workload_windows_from_rows(
     }
 
 
-def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids):
+def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
+                            window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS, include_batters_faced=False):
     """One frozen factual team projection; no roster membership filter."""
     windows = {}
-    for days in WORKLOAD_OVERVIEW_WINDOW_DAYS:
+    for days in window_days:
         start = anchor - timedelta(days=days - 1)
         scoped = [(log, pitcher) for log, pitcher in rows if start <= log.game_date <= anchor]
         relief = [(log, pitcher) for log, pitcher in scoped if _start_relief_state(log) == RELIEF]
@@ -1121,6 +1122,12 @@ def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids):
             'start': start.isoformat(), 'through': anchor.isoformat(),
             'appearances': appearances, 'pitches': pitches, 'outs': outs,
         }
+
+        if include_batters_faced:
+            windows[f'window_{days}']['batters_faced'] = (
+                _sum_fact([log for log, _ in relief], 'batters_faced', 'bullpen_batters_faced_unknown')
+                if state == RECENT_USAGE_REST_COMPLETE else _fact(None, state, reasons)
+            )
 
     seven = windows['window_7']
     if seven['pitches']['status'] != RECENT_USAGE_REST_COMPLETE:

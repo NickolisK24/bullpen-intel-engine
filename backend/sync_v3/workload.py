@@ -254,10 +254,12 @@ def team_from_calendar(calendar, team, through, roster):
             player = line['pitcher_mlb_id']
             pitcher = SimpleNamespace(id=player, full_name=active.get(player, {}).get('name'))
             log = SimpleNamespace(game_date=day, games_started=line['games_started'],
+                                  batters_faced=line.get('batters_faced'),
                                   pitches_thrown=line['pitches_thrown'],
                                   innings_pitched_outs=line['outs_recorded'])
             rows.append((log, pitcher))
-    facts = _team_workload_overview(rows, through, coverage, active.keys())
+    facts = _team_workload_overview(rows, through, coverage, active.keys(),
+                                    window_days=WINDOWS, include_batters_faced=True)
     facts['contract'] = 'candidate_club_relief_workload_v1'
     concentration = facts['concentration_7_day']
     # A dated MLB active roster includes starters and position players. The

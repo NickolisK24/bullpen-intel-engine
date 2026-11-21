@@ -1,9 +1,14 @@
 """Compare canonical official lines to the retained boxscore by game, side and player."""
 
 from collections import Counter
-from datetime import date
+from datetime import timedelta
 
+from psycopg2.extras import Json
+
+from services.game_finality import classify_status
+from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import replay
+from sync_v3.workload import WINDOWS
 from utils.innings import parse_mlb_innings_to_outs
 
 
@@ -41,6 +46,29 @@ def compare_finals(cur):
     return len(versions), appearances
 
 
+def _scheduled_club_games(cur, team, day):
+    cur.execute("""SELECT f.id, f.outcome, b.reason FROM candidate.fetches f
+                   LEFT JOIN candidate.refusals b ON b.source_id = f.id
+                   WHERE f.endpoint = '/schedule' AND f.parameters = %s
+                   ORDER BY f.received_at DESC, f.id DESC LIMIT 1""",
+                (Json(calendar_requests(day)[0].params()),))
+    row = cur.fetchone()
+    if row is None or row[1] != 'received' or row[2] is not None:
+        raise ValueError(f'Club {team} claims coverage without an accepted schedule on {day}')
+    expected = set()
+    for entry in replay(cur, row[0]).body['dates']:
+        for game in entry['games']:
+            if game['gameType'] != 'R' or all(game['teams'][s]['team']['id'] != team for s in ('home', 'away')):
+                continue
+            status = classify_status(game['status'])
+            if status.state in ('cancelled', 'postponed'):
+                continue
+            if not status.final_status or game['officialDate'] != day.isoformat():
+                raise ValueError(f'Club {team} claims a covered day with an unresolved game on {day}')
+            expected.add(game['gamePk'])
+    return expected
+
+
 def compare_team_workload(cur, calendar, candidate):
     """Recount each complete club window from retained boxscore player lists."""
     team = candidate['mlb_team_id']
@@ -49,6 +77,7 @@ def compare_team_workload(cur, calendar, candidate):
         if observed is None:
             continue
         lines = []
+        games = set()
         for source in observed['sources']:
             receipt = replay(cur, source)
             if not receipt.request.endpoint.endswith('/boxscore'):
@@ -56,6 +85,10 @@ def compare_team_workload(cur, calendar, candidate):
             for side in receipt.body['teams'].values():
                 if side['team']['id'] != team:
                     continue
+                game_pk = int(receipt.request.endpoint.split('/')[2])
+                if game_pk in games:
+                    raise ValueError(f'Duplicate official game {game_pk} for club {team} on {day}')
+                games.add(game_pk)
                 for index, player in enumerate(side['pitchers']):
                     stats = side['players'][f'ID{player}']['stats']['pitching']
                     starts = stats.get('gamesStarted')
@@ -65,27 +98,41 @@ def compare_team_workload(cur, calendar, candidate):
                     innings = stats['inningsPitched']
                     if innings is None or not str(innings).strip():
                         raise ValueError('Missing official relief innings in workload comparison')
-                    lines.append((player, stats.get('numberOfPitches'), parse_mlb_innings_to_outs(innings)))
+                    lines.append((player, stats.get('numberOfPitches'), parse_mlb_innings_to_outs(innings),
+                                  stats.get('battersFaced')))
+        if games != _scheduled_club_games(cur, team, day):
+            raise ValueError(f'Official slate and cited boxscores differ for club {team} on {day}')
         by_day[day] = lines
 
     compared = []
-    for key, window in candidate['facts']['windows'].items():
-        first, last = date.fromisoformat(window['start']), date.fromisoformat(window['through'])
+    windows = candidate['facts']['windows']
+    if set(windows) != {f'window_{size}' for size in WINDOWS}:
+        raise ValueError(f'Incomplete workload window contract for club {team}')
+    last = max(calendar)
+    for size in WINDOWS:
+        key = f'window_{size}'
+        window = windows[key]
+        first = last - timedelta(days=size - 1)
+        if window['start'] != first.isoformat() or window['through'] != last.isoformat():
+            raise ValueError(f'Incorrect workload boundaries for club {team} {key}')
         days = [day for day in by_day if first <= day <= last]
-        fields = ('appearances', 'pitches', 'outs')
+        fields = ('appearances', 'pitches', 'outs', 'batters_faced')
         values = [window[field]['value'] for field in fields]
         if len(days) != (last - first).days + 1:
             if any(value is not None for value in values):
                 raise ValueError(f'Club {team} {key} claims a total across a coverage gap')
             continue
         lines = [line for day in days for line in by_day[day]]
-        pitches = None if any(count is None for _, count, _ in lines) else sum(count for _, count, _ in lines)
-        if values != [len(lines), pitches, sum(outs for _, _, outs in lines)]:
+        pitch_counts = [pitches for _, pitches, _, _ in lines]
+        batter_counts = [batters for _, _, _, batters in lines]
+        pitches = None if None in pitch_counts else sum(pitch_counts)
+        batters = None if None in batter_counts else sum(batter_counts)
+        if values != [len(lines), pitches, sum(outs for _, _, outs, _ in lines), batters]:
             raise ValueError(f'Official club workload differs for {team} {key}')
         compared.append(key)
         if key == 'window_7' and pitches is not None:
             totals = Counter()
-            for player, count, _ in lines:
+            for player, count, _, _ in lines:
                 totals[player] += count
             expected = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
             concentration = candidate['facts']['concentration_7_day']
