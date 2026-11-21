@@ -1,0 +1,80 @@
+{
+  "baseball_date": "2026-11-21",
+  "observed_at": "2026-11-21T10:00:00Z",
+  "team_ids": [
+    111
+  ],
+  "responses": [
+    {
+      "endpoint": "/schedule",
+      "params": {
+        "endDate": "2026-11-21",
+        "sportId": 1,
+        "startDate": "2026-11-21"
+      },
+      "body": {
+        "totalGames": 0,
+        "dates": []
+      }
+    },
+    {
+      "endpoint": "/transactions",
+      "params": {
+        "endDate": "2026-11-21",
+        "sportId": 1,
+        "startDate": "2026-11-21"
+      },
+      "body": {
+        "transactions": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-11-21",
+        "rosterType": "active"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "active",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-11-21",
+        "rosterType": "40Man"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "40Man",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-11-21",
+        "rosterType": "fullRoster"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "fullRoster",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-11-21",
+        "rosterType": "nonRosterInvitees"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "nonRosterInvitees",
+        "roster": []
+      }
+    }
+  ]
+}

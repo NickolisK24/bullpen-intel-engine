@@ -71,7 +71,7 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
-def run(bindir=None):
+def run(bindir=None, fixture=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -97,6 +97,11 @@ def run(bindir=None):
                 cur.execute('SELECT generation FROM public.legacy_pointer')
                 if cur.fetchall() != [(1,)]:
                     raise RuntimeError('Legacy selector changed')
+            if fixture:
+                from sync_v3.replay import install, run_fixture
+                install(owner)
+                count = run_fixture(worker, fixture)
+                print(f'{count} acquired observations replayed from local evidence')
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified')
         finally:
             worker.close()
@@ -105,4 +110,6 @@ def run(bindir=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
-    run(parser.parse_args().pg_bin)
+    parser.add_argument('--fixture', help='Path to an offline acquisition fixture')
+    args = parser.parse_args()
+    run(args.pg_bin, args.fixture)

@@ -41,6 +41,6 @@ def test_retry_capture_and_offline_replay():
                 assert cur.fetchone() == (2,)
             with pytest.raises(psycopg2.errors.InsufficientPrivilege):
                 with worker, worker.cursor() as cur:
-                    cur.execute("UPDATE candidate.payloads SET body='{}'")
+                    cur.execute("UPDATE candidate.payloads SET encoded_json=''")
         finally:
             worker.close()

@@ -1,6 +1,6 @@
 CREATE TABLE candidate.payloads (
     sha256 text PRIMARY KEY CHECK (length(sha256)=64),
-    body jsonb NOT NULL
+    encoded_json bytea NOT NULL
 );
 CREATE TABLE candidate.fetches (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
