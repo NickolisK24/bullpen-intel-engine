@@ -9,6 +9,10 @@ from sync_v3.cycle import run_cycle
 from sync_v3.sources import RetainedResponse
 
 
+class ReplayWithheld(ValueError):
+    """All receipts persisted, but some candidate work remains unqualified."""
+
+
 def install(owner):
     with owner, owner.cursor() as cur:
         for module in (queue, evidence, canonical):
@@ -48,6 +52,6 @@ def run_fixture(connection, filename):
         if errors or set(states) != {'done'}:
             from sync_v3.comparison import compare_finals
             games, lines = compare_finals(cur)
-            raise ValueError(f'Replay withheld: {len(results)} observations; {games} accepted finals, '
+            raise ReplayWithheld(f'Replay withheld: {len(results)} observations; {games} accepted finals, '
                              f'{lines} verified lines; job states={states}; unresolved={errors}')
     return len(results)

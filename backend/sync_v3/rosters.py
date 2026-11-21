@@ -73,7 +73,8 @@ def observe(cur, source_id, capture):
     return teams
 
 
-def membership_on(cur, team, kind, represented, player):
+def roster_on(cur, team, kind, represented):
+    """Return the accepted dated roster and its source, or withhold the population."""
     cur.execute("""SELECT f.id,f.outcome,r.source_id FROM candidate.fetches f
                    LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.endpoint=%s AND f.parameters=%s
@@ -85,4 +86,11 @@ def membership_on(cur, team, kind, represented, player):
     cur.execute("""SELECT r.facts FROM candidate.confirmations c JOIN candidate.revisions r
                    ON r.id=c.revision_id WHERE c.domain='roster' AND c.source_id=%s""", (latest[0],))
     row = cur.fetchone()
-    return any(member['id'] == player for member in row[0]['members']) if row else None
+    return (row[0], latest[0]) if row else None
+
+
+def membership_on(cur, team, kind, represented, player):
+    roster = roster_on(cur, team, kind, represented)
+    if roster is None:
+        return None
+    return any(member['id'] == player for member in roster[0]['members'])

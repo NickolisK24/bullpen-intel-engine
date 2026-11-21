@@ -79,3 +79,72 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
                 assert pitcher_windows(cur, 999999, day+timedelta(days=2))[3]['facts'] is None
         finally:
             worker.close()
+
+
+def test_candidate_counts_a_supported_opener_without_changing_his_official_start():
+    from sync_v3.workload import workload_lines
+
+    common = {'game_pk': 21, 'game_date': '2024-08-05', 'pitches_thrown': 18}
+    def line(team, player, started, outs):
+        return dict(common, team_id=team, pitcher_mlb_id=player, games_started=started,
+                    is_reliever=not started, outs_recorded=outs)
+    lines = list(workload_lines([line(111, 1, 1, 3), line(111, 2, 0, 18),
+                                 line(147, 3, 1, 21), line(147, 4, 0, 6)]))
+    assert [(row['pitcher_mlb_id'], row['workload_class']) for row in lines] == [
+        (1, 'opener'), (2, 'relief'), (4, 'relief')]
+    assert lines[0]['games_started'] == 1
+
+
+def test_rest_patterns_use_distinct_dates_and_require_coverage():
+    from sync_v3.workload import rest_from_calendar
+
+    through = date(2024, 8, 5)
+    def calendar(offsets):
+        days = {through-timedelta(days=i): ({'lines': [], 'sources': [i]}, None) for i in range(30)}
+        for game_pk, offset in enumerate(offsets, start=1):
+            day = through-timedelta(days=offset)
+            days[day][0]['lines'].append({'pitcher_mlb_id': 1, 'game_pk': game_pk,
+                'game_date': day.isoformat(), 'outs_recorded': 2, 'pitches_thrown': 9,
+                'workload_class': 'relief'})
+        return days
+    days = calendar([0,0,2,4])
+    facts = rest_from_calendar(days, 1, through)['facts']
+    assert facts['three_in_four']['value'] is False and facts['four_in_six']['value'] is False
+    assert facts['last_bullpen_appearance']['value'] is None
+    assert facts['days_since_last_appearance']['value'] == 1
+    days = calendar([0,1,2,4])
+    facts = rest_from_calendar(days, 1, through)['facts']
+    assert all(facts[key]['value'] for key in ('back_to_back','three_straight','three_in_four','four_in_six'))
+    days[through-timedelta(days=3)] = (None,'missing_complete_schedule')
+    assert rest_from_calendar(days, 1, through)['facts']['three_in_four']['value'] is None
+    days = calendar([12])
+    assert rest_from_calendar(days, 1, through)['facts']['days_since_last_appearance']['value'] == 13
+    days[through-timedelta(days=9)] = (None,'missing_complete_schedule')
+    assert rest_from_calendar(days, 1, through)['facts']['days_since_last_appearance']['value'] is None
+
+
+def test_team_workload_uses_game_side_and_dated_active_authority():
+    from sync_v3.workload import team_from_calendar
+
+    end = date(2024, 8, 5)
+    calendar = {end-timedelta(days=i): ({'official_lines': [], 'sources': [i]}, None)
+                for i in range(30)}
+    def line(player, team, started, pitches):
+        return {'pitcher_mlb_id': player, 'games_started': started,
+                'team_id': team, 'outs_recorded': 3, 'pitches_thrown': pitches}
+    calendar[end][0]['official_lines'] = [
+        line(1, 111, 1, 15), line(2, 111, 0, 20), line(3, 111, 0, 10), line(3, 147, 0, 40)]
+    roster = ({'members': [{'id': 2, 'name': 'Known member'}]}, 37)
+    result = team_from_calendar(calendar, 111, end, roster)
+    assert result['roster_source'] == 37
+    concentration = result['facts']['concentration_7_day']
+    assert concentration['total_pitches'] == 30
+    assert concentration['on_dated_active_roster_contribution']['pitches'] == 20
+    assert concentration['off_dated_active_roster_contribution']['pitches'] == 10
+    missing = team_from_calendar(calendar, 111, end, None)['facts']['concentration_7_day']
+    assert missing['total_pitches'] == 30 and missing['off_dated_active_roster_contribution'] is None
+    assert all(row['on_dated_active_roster'] is None for row in missing['top_3_contributors'])
+    calendar[end-timedelta(days=5)] = (None, 'missing_complete_schedule')
+    incomplete = team_from_calendar(calendar, 111, end, roster)['facts']
+    assert incomplete['windows']['window_3']['pitches']['value'] == 30
+    assert incomplete['concentration_7_day']['total_pitches'] is None

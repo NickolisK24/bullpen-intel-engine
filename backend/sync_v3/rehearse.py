@@ -71,7 +71,7 @@ def isolated_cluster(bindir=None):
                            check=True, env=env, stdout=subprocess.DEVNULL)
 
 
-def run(bindir=None, fixture=None, pitcher=None, through=None):
+def run(bindir=None, fixture=None, pitcher=None, through=None, team=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -97,22 +97,33 @@ def run(bindir=None, fixture=None, pitcher=None, through=None):
                 cur.execute('SELECT generation FROM public.legacy_pointer')
                 if cur.fetchall() != [(1,)]:
                     raise RuntimeError('Legacy selector changed')
+            withheld = []
             if fixture:
-                from sync_v3.replay import install, run_fixture
+                from sync_v3.replay import ReplayWithheld, install, run_fixture
                 install(owner)
                 count = 0
                 for filename in fixture:
-                    count += run_fixture(worker, filename)
+                    try:
+                        count += run_fixture(worker, filename)
+                    except ReplayWithheld as exc:
+                        withheld.append(f'{filename}: {exc}')
                 from sync_v3.comparison import compare_finals
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
-                print(f'{count} observations replayed; {games} finals and {appearances} pitching lines compared')
-            if pitcher is not None:
+                print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
+            if pitcher is not None or team is not None:
                 import json
-                from sync_v3.workload import pitcher_windows
+                from sync_v3.workload import load_calendar, rest_from_calendar, team_workload, windows_from_calendar
                 with worker, worker.cursor() as cur:
-                    print(json.dumps(pitcher_windows(cur, pitcher, through), sort_keys=True))
+                    calendar = load_calendar(cur, through, team=team)
+                    result = team_workload(cur, calendar, team, through) if team is not None else {
+                        'windows': windows_from_calendar(calendar, pitcher, through),
+                        'rest': rest_from_calendar(calendar, pitcher, through),
+                    }
+                    print(json.dumps(result, sort_keys=True))
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified')
+            if withheld:
+                raise ReplayWithheld('\n'.join(withheld))
         finally:
             worker.close()
 
@@ -122,9 +133,12 @@ if __name__ == '__main__':
     parser.add_argument('--pg-bin')
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
     from datetime import date
-    parser.add_argument('--pitcher', type=int, help='Inspect historical relief workload for an MLB ID')
+    subject = parser.add_mutually_exclusive_group()
+    subject.add_argument('--team', type=int, help='Inspect official relief workload for an MLB club ID')
+    subject.add_argument('--pitcher', type=int, help='Inspect historical relief workload for an MLB ID')
     parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
-    if (args.pitcher is None) != (args.through is None) or (args.pitcher is not None and not args.fixture):
-        parser.error('Supply --pitcher and --through together with at least one --fixture')
-    run(args.pg_bin, args.fixture, args.pitcher, args.through)
+    has_subject = args.pitcher is not None or args.team is not None
+    if has_subject != bool(args.through) or (has_subject and not args.fixture):
+        parser.error('Supply --pitcher or --team with --through and at least one --fixture')
+    run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team)
