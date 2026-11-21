@@ -1,7 +1,7 @@
 """Acquire parsed MLB responses before normalization, preserving request scope."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 import re
 
 from services.mlb_api import MLBApiClient
@@ -11,7 +11,7 @@ from sync_v3.discovery import Request, game_requests
 @dataclass(frozen=True)
 class Acquisition:
     request: Request
-    retrieved_at: object
+    retrieved_at: datetime
     body: dict
     status: str
 
@@ -53,9 +53,8 @@ def inspect_response(request, body, acquired_at):
     return Acquisition(request, acquired_at, body, 'received')
 
 
-def acquire(request, fetch, clock):
-    endpoint = request.endpoint
-    if endpoint.startswith('/api/v1.1/'):
-        endpoint = endpoint.replace('/api/v1.1/', '/../v1.1/', 1)
-    body = fetch(endpoint, params=request.params())
-    return inspect_response(request, body, clock())
+
+def transport_endpoint(request):
+    if not re.fullmatch(r'/(schedule|transactions|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
+        raise ValueError('Unsupported acquisition endpoint')
+    return request.endpoint.replace('/api/v1.1/', '/../v1.1/', 1)
