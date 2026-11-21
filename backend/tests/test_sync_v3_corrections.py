@@ -1083,6 +1083,15 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert windows['window_3']['outs']['value'] == 15
             assert windows['window_30']['pitches']['value'] is None
             assert 'missing_complete_schedule' in windows['window_30']['pitches']['reason_codes']
+            concentration = board['competitive_workload']['concentration_7_day']
+            if identity_mode != 'absent':
+                assert concentration['top_contributor']['pitcher_id'] == 9111
+                assert concentration['top_contributor']['name'] == 'Rehearsal Arm 11101'
+                assert concentration['active_current_contribution']['outs'] == 15
+                assert concentration['top_3_share'] == 1
+            else:
+                assert concentration['reason_codes'] == ['contributor_identity_unresolved']
+                assert concentration['top_contributor'] is None
             games = board['recent_relief_games']
             assert games['status'] == 'verified_games_only' and games['regular_gaps'] == ledger['gaps']
             game, = games['games']
@@ -1352,3 +1361,22 @@ def test_team_relief_games_keep_doubleheaders_missing_measures_and_club_ownershi
         team_relief_games(147, regular, postseason)
     with pytest.raises(ValueError, match='Conflicting game'):
         team_relief_games(111, regular, dict(postseason, appearances=[second]))
+
+
+def test_board_concentration_keeps_a_transferred_pitchers_appearance_with_his_old_club():
+    from sync_v3.team_board_windows import board_concentration
+
+    day = date(2026, 7, 29)
+    seven = dict(start='2026-07-23', through=str(day), pitches=dict(status='complete', value=40))
+    population = dict(team=111, through=str(day), members=[dict(player=100)], reason=None)
+    names = {100: dict(public_id=9, name='Active pitcher', team_id=111),
+             200: dict(public_id=7, name='Transferred pitcher', team_id=147)}
+    lines = [dict(mlb_id=player, appearance_team_id=111, game_date=str(day), pitches_thrown=20,
+                  innings_pitched_outs=outs) for player, outs in [(200, None), (100, 3)]]
+    result = board_concentration(day, seven, lines, names, population)
+    assert [p['pitcher_id'] for p in result['contributors']] == [7, 9]
+    assert result['off_active_contribution'] == dict(pitches=20, appearances=1, outs=None)
+    assert result['active_current_contribution'] == dict(pitches=20, appearances=1, outs=3)
+    disputed = board_concentration(day, seven, lines, names, dict(population, members=[dict(player=200)]))
+    assert disputed['reason_codes'] == ['bullpen_membership_unconfirmed']
+    assert disputed['active_current_contribution'] is None

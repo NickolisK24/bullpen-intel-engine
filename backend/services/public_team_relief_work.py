@@ -1131,12 +1131,8 @@ def team_relief_windows(logs, anchor, coverage, *, window_days=WORKLOAD_OVERVIEW
     return windows
 
 
-def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
-                            window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS, include_batters_faced=False):
-    """One frozen factual team projection; no roster membership filter."""
-    windows = team_relief_windows([log for log, _ in rows], anchor, coverage, window_days=window_days,
-                                  include_batters_faced=include_batters_faced)
-    seven = windows['window_7']
+def team_relief_concentration(rows, anchor, seven, active_pitcher_ids):
+    """Summarize contributors to a covered seven-day club relief window."""
     if seven['pitches']['status'] != RECENT_USAGE_REST_COMPLETE:
         concentration = {
             'status': seven['pitches']['status'],
@@ -1196,6 +1192,15 @@ def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
             'active_current_contribution': active_contribution,
             'off_active_contribution': off_active_contribution,
         }
+    return concentration
+
+
+def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
+                            window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS, include_batters_faced=False):
+    """One frozen factual team projection; no roster membership filter."""
+    windows = team_relief_windows([log for log, _ in rows], anchor, coverage, window_days=window_days,
+                                  include_batters_faced=include_batters_faced)
+    concentration = team_relief_concentration(rows, anchor, windows['window_7'], active_pitcher_ids)
     return {
         'contract': WORKLOAD_OVERVIEW_CONTRACT,
         'data_through': anchor.isoformat(),

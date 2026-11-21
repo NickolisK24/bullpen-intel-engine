@@ -310,9 +310,9 @@ def _roster_identities(cur, digest, kind, excluded):
     return players, conflicts
 
 
-def _pitcher_directory(cur, digest):
+def _pitcher_directory(cur, digest, *, bullpen=None):
     """Resolve this edition’s bullpen, dated roster memberships and named departures."""
-    players, status = _public_arms(cur, digest)
+    players, status = _public_arms(cur, digest) if bullpen is None else bullpen
     if status == 'official_pitcher_identity_unresolved':
         return players, status
     cur.execute("""SELECT h.mlb_id,h.represented,h.semantic_digest,h.input_digest,h.revision,h.facts->'lineage',e.event,p.pitcher_id
@@ -873,9 +873,18 @@ def read_team_board(connection, team, *, revision=None):
         through = date.fromisoformat(listing['data_through'])
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
-        from sync_v3.team_board_windows import board_workload_windows
+        from sync_v3.team_board_windows import board_concentration, board_workload_windows
         result['competitive_workload'] = board_workload_windows(
             cur, generation, team, through, result['recent_relief'], result['postseason_relief'])
+        workload = result['competitive_workload']
+        seven = workload['windows']['window_7']
+        lines = result['recent_relief']['appearances'] + result['postseason_relief']['appearances']
+        directory = {}
+        if seven['pitches']['status'] == 'complete' and seven['appearances']['value']:
+            directory, _ = _pitcher_directory(cur, generation, bullpen=(players, status))
+        workload['concentration_7_day'] = board_concentration(
+            through, seven, lines, directory, blocks['group_performance']['value'])
+        workload['membership_citation'] = blocks['group_performance']['citation']
         result['recent_relief_games'] = team_relief_games(team, result['recent_relief'], result['postseason_relief'])
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))
