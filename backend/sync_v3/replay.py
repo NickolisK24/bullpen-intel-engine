@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sync_v3 import canonical, evidence, queue
 from sync_v3.cycle import run_cycle
+from sync_v3.sources import RetainedResponse
 
 
 def install(owner):
@@ -25,7 +26,7 @@ def run_fixture(connection, filename):
         key = (item['endpoint'], tuple(sorted(item['params'].items())))
         if key in responses:
             raise ValueError('Duplicate response at fixture instant')
-        responses[key] = item['body']
+        responses[key] = RetainedResponse(item['body'], datetime.fromisoformat(item.get('retrieved_at', fixture['observed_at'])))
 
     def lookup(endpoint, params):
         return responses[(endpoint, tuple(sorted(params.items())))]

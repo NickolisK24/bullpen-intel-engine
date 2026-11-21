@@ -1,5 +1,7 @@
 """Append accepted facts and their exact source lineage in the candidate database."""
 
+from datetime import date
+
 from psycopg2.extras import Json
 
 from services.game_finality import classify_game_finality
@@ -45,7 +47,6 @@ def game_identity(game):
     sides = [game.get('teams', {}).get(side, {}).get('team', {}).get('id') for side in ('home','away')]
     if len(set(sides)) != 2 or any(type(team) is not int or team not in MLB_TEAM_IDS for team in sides):
         raise Refused('Missing or contradictory official game sides')
-    from datetime import date
     if type(game.get('gamePk')) is not int or game['gamePk'] <= 0:
         raise Refused('Missing official game identity')
     try:
@@ -85,7 +86,27 @@ def reconcile_final(cur, pk, body, source_id, observed_at):
         total = body['teams'][side].get('teamStats', {}).get('pitching', {}).get('inningsPitched')
         if total is None or parse_mlb_innings_to_outs(total) != sum(a['outs_recorded'] for a in lines):
             raise Refused('Official team pitching outs do not reconcile')
-    return accept(cur, 'final', pk, appearances, source_id, observed_at, context_id=schedule_source)
+    version = accept(cur, 'final', pk, appearances, source_id, observed_at, context_id=schedule_source)
+    if version is None:
+        return None
+    cur.execute('''SELECT r.source_id,p.facts FROM candidate.revisions r
+                   LEFT JOIN candidate.revisions p ON p.id=r.predecessor WHERE r.id=%s''', (version,))
+    originating_source, prior = cur.fetchone()
+    if originating_source != source_id:
+        return version
+    before = {line['pitcher_mlb_id']:line for line in prior or ()}
+    after = {line['pitcher_mlb_id']:line for line in appearances}
+    impacts = set()
+    for player in before.keys() | after.keys():
+        if before.get(player) == after.get(player):
+            continue
+        for line in (before.get(player), after.get(player)):
+            if line:
+                impacts.add(('pitcher',player,line['game_date']))
+                impacts.add(('team',line['team_id'],line['game_date']))
+    cur.executemany('''INSERT INTO candidate.impacts VALUES (%s,%s,%s,%s)
+                       ON CONFLICT DO NOTHING''', [(version,*scope) for scope in sorted(impacts)])
+    return version
 
 
 def observe(cur, source_id, capture):

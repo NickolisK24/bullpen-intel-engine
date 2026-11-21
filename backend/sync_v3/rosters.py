@@ -2,10 +2,13 @@
 
 from datetime import date
 
+from psycopg2.extras import Json
+
 from services.mlb_api import mlb_client
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import roster_entry_player_id
 from sync_v3.canonical import Refused, accept
+from sync_v3.roster_scope import classify_roster_team
 
 
 def roster_facts(capture):
@@ -17,16 +20,29 @@ def roster_facts(capture):
     if kind not in ('active', '40Man'):
         return None
     represented = date.fromisoformat(params['date']).isoformat()
-    members = {}
-    for entry in capture.body['roster']:
+    records = capture.body['roster']
+    authority = classify_roster_team(team, records=records)
+    if not authority['mlb_membership_authority']:
+        raise Refused('Historical SP-05 roster authority scope conflict')
+    grouped = {}
+    for entry in records:
         if not isinstance(entry, dict) or not isinstance(entry.get('person'), dict):
             raise Refused('Roster participant is missing an official identity')
         person = roster_entry_player_id(entry)
-        if not person or person <= 0 or person in members:
-            raise Refused('Missing or duplicate roster participant')
-        members[person] = {'id': person, 'name': entry['person'].get('fullName'),
-                           'position': (entry.get('position') or {}).get('code'),
-                           'status': (entry.get('status') or {}).get('code')}
+        if not person or person <= 0:
+            raise Refused('Missing roster participant')
+        grouped.setdefault(person, []).append(entry)
+    members = {}
+    for person, entries in grouped.items():
+        names = {e['person'].get('fullName') for e in entries}
+        positions = {(e.get('position') or {}).get('code') for e in entries}
+        statuses = {(e.get('status') or {}).get('code') for e in entries}
+        # A dated list establishes inclusion. Distinct status codes on rows for
+        # the same person cannot establish one status; preserve the alternatives.
+        members[person] = {'id':person, 'name':names.pop() if len(names)==1 else None,
+                           'position':positions.pop() if len(positions)==1 else None,
+                           'status':next(iter(statuses)) if len(statuses)==1 else None,
+                           'source_statuses':sorted(code for code in statuses if code)}
     return {'team': team, 'type': kind, 'represented': represented,
             'members': [members[person] for person in sorted(members)]}
 
@@ -58,8 +74,15 @@ def observe(cur, source_id, capture):
 
 
 def membership_on(cur, team, kind, represented, player):
-    identity = f'{team}/{kind}/{represented.isoformat()}'
-    cur.execute("""SELECT facts FROM candidate.revisions WHERE domain='roster' AND identity=%s
-                   ORDER BY revision DESC LIMIT 1""", (identity,))
+    cur.execute("""SELECT f.id,f.outcome,r.source_id FROM candidate.fetches f
+                   LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                   WHERE f.endpoint=%s AND f.parameters=%s
+                   ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
+                (f'/teams/{team}/roster', Json({'date':represented.isoformat(), 'rosterType':kind})))
+    latest = cur.fetchone()
+    if not latest or latest[1] != 'received' or latest[2] is not None:
+        return None
+    cur.execute("""SELECT r.facts FROM candidate.confirmations c JOIN candidate.revisions r
+                   ON r.id=c.revision_id WHERE c.domain='roster' AND c.source_id=%s""", (latest[0],))
     row = cur.fetchone()
     return any(member['id'] == player for member in row[0]['members']) if row else None

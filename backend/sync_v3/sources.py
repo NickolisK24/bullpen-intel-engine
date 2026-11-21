@@ -9,6 +9,12 @@ from sync_v3.discovery import Request, game_requests
 
 
 @dataclass(frozen=True)
+class RetainedResponse:
+    body: dict
+    retrieved_at: datetime
+
+
+@dataclass(frozen=True)
 class Acquisition:
     request: Request
     retrieved_at: datetime

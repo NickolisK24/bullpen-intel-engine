@@ -101,7 +101,10 @@ def run(bindir=None, fixture=None):
                 from sync_v3.replay import install, run_fixture
                 install(owner)
                 count = run_fixture(worker, fixture)
-                print(f'{count} acquired observations replayed from local evidence')
+                from sync_v3.comparison import compare_finals
+                with worker, worker.cursor() as cur:
+                    games, appearances = compare_finals(cur)
+                print(f'{count} observations replayed; {games} finals and {appearances} pitching lines compared')
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified')
         finally:
             worker.close()

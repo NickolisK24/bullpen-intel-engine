@@ -9,7 +9,7 @@ from psycopg2.extras import Json
 from sync_v3.discovery import Request
 from sync_v3.queue import settle
 from services.mlb_api import MlbApiError
-from sync_v3.sources import inspect_response, transport_endpoint
+from sync_v3.sources import inspect_response, transport_endpoint, RetainedResponse
 
 
 def encode_json(body):
@@ -28,6 +28,8 @@ def execute(connection, claimed, fetch, clock=lambda: datetime.now(timezone.utc)
     else:
         outcome, reason = 'received', None
     received_at = clock()
+    if isinstance(body, RetainedResponse):
+        received_at, body = body.retrieved_at, body.body
     if outcome == 'received':
         try:
             acquisition = inspect_response(request, body, received_at)

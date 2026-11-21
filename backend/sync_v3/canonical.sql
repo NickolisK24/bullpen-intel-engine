@@ -21,3 +21,13 @@ CREATE TABLE candidate.confirmations (
 );
 CREATE INDEX confirmations_by_subject ON candidate.confirmations(domain,identity,observed_at DESC,source_id DESC);
 GRANT SELECT,INSERT ON candidate.revisions,candidate.confirmations TO sync_v3_worker;
+
+CREATE TABLE candidate.impacts (
+    revision_id bigint NOT NULL REFERENCES candidate.revisions(id),
+    entity_type text NOT NULL,
+    entity_id bigint NOT NULL,
+    represented date NOT NULL,
+    PRIMARY KEY (revision_id,entity_type,entity_id,represented)
+);
+CREATE INDEX impacts_by_entity_date ON candidate.impacts(entity_type,entity_id,represented);
+GRANT SELECT,INSERT ON candidate.impacts TO sync_v3_worker;

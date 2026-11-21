@@ -20,5 +20,9 @@ def test_old_club_evidence_is_scoped_by_represented_day_and_membership_class():
     assert roster_facts(view(111, [person], '40Man'))['members'][0]['id'] == 670103
     with pytest.raises(Refused, match='Affiliate'):
         roster_facts(view(999, [person]))
-    with pytest.raises(Refused, match='duplicate'):
-        roster_facts(view(111, [person,person]))
+    conflicted = roster_facts(view(111, [dict(person,status={'code':'A'}),dict(person,status={'code':'D60'})]))
+    assert len(conflicted['members']) == 1
+    assert conflicted['members'][0]['status'] is None
+    assert conflicted['members'][0]['source_statuses'] == ['A','D60']
+    with pytest.raises(Refused, match='scope conflict'):
+        roster_facts(view(111, [dict(person,parentTeamId=6052)]))
