@@ -187,3 +187,18 @@ The depth snapshot rehearsal also compares dated MLB active lists. It qualifies 
 The event archive covers six inputs. Readiness, depth, rotation, roles and pitcher_rest use their corresponding snapshot domains. Team burden uses `--snapshot --team`. The rehearsal freezes the event set for each ending date, including a missing-prior result. Each revision links its immutable inputs through `candidate.change_inputs`, retains their source receipts, and identifies the exact represented dates. Rebuilding a source snapshot automatically updates existing event sets ending that day and the next day in the same transaction. The predecessor stays readable. The SQL objects are in the isolated candidate schema.
 
 Two PostgreSQL 17.6 replays of the Kansas City August 6–7, 2024 evidence produced identical facts and input digests for all six event sets. They contained 13 events, including the two official relief appearances in game 746272, the start of Lucas Erceg's recent multi-inning pattern, and both rolling burden changes. Seven-day relief pitches rose from 291 to 297 while fourteen-day pitches fell from 599 to 557. Deployment coverage was partial. The archive recorded that limitation and emitted zero deployment changes. Tests cover supported movement with comparable signals, an appearance in each half of a doubleheader, uncertain rotation shape and a roster correction that supersedes the following day's event set. Trusted publication identity and product delivery remain separate gates.
+
+### Candidate generation rehearsal
+
+From `backend`, build the represented inventory in a disposable PostgreSQL cluster. Supply one `--fixture` per captured MLB date or acquisition. For a small repeatable example:
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$(pg_config --bindir)" \
+  --fixture tests/fixtures/sync_v3/played.json --through 2026-07-29 --build-generation
+```
+
+The builder enumerates all 30 clubs, dated active pitching populations when available, and competitive finals from the represented MLB slate. It records the following slate separately. Each batch commits individual calculations and resumes from missing or superseded inputs. The manifest identifies unknown populations, withheld readiness, missing scopes, stale source dependencies and comparisons still referencing a superseded revision. A completed batch can contain withheld facts. Source refusals remain visible in the command's exit status.
+
+The generation digest binds exact revisions, facts digests, input digests, calendar observations and their retrieval times. PostgreSQL seals the membership when the creation transaction ends. Reverification streams the pinned snapshot facts, recomputes their hashes, checks the club inventory and verifies the retained calendar payloads. This candidate inventory has no trusted publication pointer.
+
+Two opposite-order PostgreSQL 17.6 replays built 425 August 7, 2024 snapshots with digest `6665cb542eca6e91573887f7f7f9c129d3b81b1f56dd293971256c25baa0e34c`. The batch queue settled, and independent verification recounted 425 pinned snapshots. In that capture set only Kansas City had supported readiness. The other 29 clubs were withheld for missing dated active-roster evidence. An October 30 World Series replay accounted for all 30 clubs as season complete for October 31. Product contract certification, production parity and promotion remain separate gates.

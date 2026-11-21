@@ -195,3 +195,38 @@ def test_historical_roster_events_require_both_full_club_lists(tmp_path):
                 revised = roster_changes(cur, team, end)
                 assert revised['status'] == 'missing_complete_club_list' and revised['events'] == []
                 assert roster_changes(cur, team, end, revisions=(1, 1)) == first
+
+
+def test_generation_detects_new_roster_receipt_before_snapshot_rebuild(tmp_path):
+    from contextlib import closing
+    import json
+    import os
+    from pathlib import Path
+
+    from sync_v3.generation import freeze_generation
+    from sync_v3.intelligence_history import record_intelligence
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    path = tmp_path / 'club.json'
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            record_intelligence(db, 'depth', 111, day)
+            first = freeze_generation(db, day)
+            path.write_text(json.dumps(fixture))
+            run_fixture(db, path)
+            second = freeze_generation(db, day)
+            record_intelligence(db, 'depth', 111, day)
+            third = freeze_generation(db, day)
+            with db, db.cursor() as cur:
+                for generation, stale in [(first, []), (second, [['team', 111, 'candidate_roster_depth_v1']]),
+                                          (third, [])]:
+                    cur.execute("SELECT manifest->'stale_inputs' FROM candidate.generations WHERE digest=%s",
+                                (generation,))
+                    assert cur.fetchone()[0] == stale

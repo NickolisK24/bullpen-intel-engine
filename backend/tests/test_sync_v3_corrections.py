@@ -625,3 +625,84 @@ def test_pitcher_patterns_end_only_with_complete_negative_evidence():
             store(cur, end, False, 'partial')
             changed = pattern_changes(cur, 102, end)
             assert changed['status'] == 'partial_rest_coverage' and changed['events'] == []
+
+
+def test_generation_keeps_all_clubs_and_pins_immutable_event_inputs():
+    from contextlib import closing
+    from sync_v3.change_history import record_changes
+    from sync_v3.generation import freeze_generation, verify_generation
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    end = date(2024, 8, 7)
+
+    def store(cur, day, reason):
+        facts = dict(team=118, competition=dict(team_id=118, reference_date=str(day+timedelta(days=1)),
+                                                status='undetermined', basis=reason),
+                     mode='retrospective_candidate', current_serving_eligible=False,
+                     membership_date=str(day), reference_date=str(day+timedelta(days=1)),
+                     team_state=None, reason=reason, arms={},
+                     comparison={'team_states_compared': 0, 'arm_statuses_compared': 0, 'withheld_arms': 0})
+        _store(cur, 'team', 118, day, DOMAINS['readiness'][1], facts, [])
+
+    def load(cur, digest):
+        cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
+        return cur.fetchone()[0]
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            blank = freeze_generation(db, end)
+            with db, db.cursor() as cur:
+                empty = load(cur, blank)
+                assert len({club['team'] for club in empty['clubs']}) == 30
+                assert empty['members'] == [] and empty['missing'] and not empty['current_serving_eligible']
+                for day in (end-timedelta(days=1), end):
+                    store(cur, day, 'missing_official_decision')
+            record_changes(db, 'readiness', 118, end)
+            first = freeze_generation(db, end)
+            assert first != blank and freeze_generation(db, end) == first
+            with db, db.cursor() as cur:
+                assert load(cur, first)['stale_comparisons'] == []
+                # Simulate a corrected input whose derived event set has not yet been rebuilt.
+                store(cur, end-timedelta(days=1), 'postseason_participation_unresolved')
+            second = freeze_generation(db, end)
+            with db, db.cursor() as cur:
+                assert load(cur, second)['stale_comparisons'] == [['team', 118, 'candidate_readiness_changes_v1']]
+                assert load(cur, first)['stale_comparisons'] == [] and load(cur, blank) == empty
+            assert verify_generation(db, first)['snapshots'] == 2
+            assert verify_generation(db, blank)['snapshots'] == 0
+            import psycopg2
+            with pytest.raises(psycopg2.errors.RaiseException, match='membership is sealed'), db, db.cursor() as cur:
+                cur.execute('INSERT INTO candidate.generation_inputs SELECT %s,min(id) FROM candidate.workload_history',
+                            (blank,))
+            assert verify_generation(db, blank)['snapshots'] == 0
+
+
+
+def test_generation_batches_resume_on_another_connection_without_repeating_completed_scopes():
+    from contextlib import closing
+    from sync_v3.generation import build_batch
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2024, 8, 7)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            with pytest.raises(ValueError):
+                build_batch(db, day, 0)
+            first = build_batch(db, day, 2)
+        with closing(connect()) as db:
+            second = build_batch(db, day, 1)
+            assert second['before'] == first['after']
+            assert len(first['processed']) == 2 and len(second['processed']) == 1
+            assert set(first['processed']).isdisjoint(second['processed'])
+            with db, db.cursor() as cur:
+                cur.execute("SELECT manifest FROM candidate.generations WHERE digest=%s", (second['after'],))
+                manifest = cur.fetchone()[0]
+                assert len(manifest['members']) == 3 and not manifest['current_serving_eligible']

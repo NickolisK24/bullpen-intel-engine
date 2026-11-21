@@ -72,7 +72,7 @@ def isolated_cluster(bindir=None):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -223,6 +223,26 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                         result['rotation'] = club_rotation(calendar, team, through)
                         result['boxscore_windows_compared'] = compare_team_workload(cur, calendar, result)
                     print(json.dumps(result, sort_keys=True))
+            if generation or generation_batch or build_generation:
+                import json
+                from sync_v3.generation import build_batch, freeze_generation, verify_generation
+                if generation_batch or build_generation:
+                    seen = set()
+                    while True:
+                        batch = build_batch(worker, through, generation_batch or 75)
+                        print(json.dumps(batch), flush=True)
+                        digest = batch['after']
+                        if not build_generation or not batch['processed']:
+                            break
+                        if digest in seen or digest == batch['before']:
+                            raise RuntimeError('Candidate generation cannot resolve its outstanding inputs')
+                        seen.add(digest)
+                else:
+                    digest = freeze_generation(worker, through)
+                print(json.dumps(verify_generation(worker, digest)))
+                with worker, worker.cursor() as cur:
+                    cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
+                    print(json.dumps(dict(generation=digest, manifest=cur.fetchone()[0])))
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified', flush=True)
             if withheld:
                 raise ReplayWithheld('\n'.join(withheld))
@@ -248,10 +268,15 @@ if __name__ == '__main__':
     from sync_v3.intelligence_history import DOMAINS
     parser.add_argument('--snapshot-domain', choices=sorted(DOMAINS), help='Freeze an intelligence domain for its MLB subject')
     parser.add_argument('--snapshot', action='store_true', help='Freeze and repeat the represented team or pitcher workload')
+    parser.add_argument('--generation', action='store_true', help='Inventory the frozen candidate scopes after the rehearsal')
+    parser.add_argument('--build-generation', action='store_true',
+                        help='Rehearse outstanding generation scopes in bounded batches until the inventory settles')
+    parser.add_argument('--generation-batch', type=int, choices=range(1, 101), metavar='N',
+                        help='Build up to N outstanding candidate scopes before freezing a generation')
     parser.add_argument('--since', type=date.fromisoformat, help='First represented snapshot date, inclusive')
     parser.add_argument('--through', type=date.fromisoformat)
     args = parser.parse_args()
-    has_subject = args.league or args.competition or any(value is not None for value in (
+    has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team,
     ))
     if args.since and (not (args.snapshot or args.snapshot_domain) or not args.through or args.since > args.through):
@@ -260,7 +285,9 @@ if __name__ == '__main__':
         parser.error(f'--snapshot-domain {args.snapshot_domain} requires --{DOMAINS[args.snapshot_domain][0]}')
     if args.snapshot and not args.snapshot_domain and args.team is None and args.pitcher is None and args.readiness_team is None:
         parser.error('--snapshot requires --team, --pitcher or --readiness-team')
+    if (args.generation or args.generation_batch) and not (args.snapshot or args.snapshot_domain or args.build_generation):
+        parser.error('Generation inventory requires a snapshot calculation or --build-generation')
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation)
