@@ -10,7 +10,7 @@ from sync_v3.dependencies import capture_reads
 from sync_v3.deployment import club_role_movement, game_deployment, pitcher_measurement_history
 from sync_v3.depth import club_depth
 from sync_v3.group_performance import active_group_performance
-from sync_v3.history import _store, _snapshot_transaction
+from sync_v3.history import _store, _snapshot_transaction, _transaction
 from sync_v3.readiness import represented_readiness
 from sync_v3.rosters import dated_pitcher_sources
 from sync_v3.rotation import club_rotation
@@ -137,20 +137,45 @@ def record_intelligence(connection, domain, identity, through):
     return _snapshot_transaction(connection, _append, domain, identity, through)
 
 
-def _affected(cur, receipt, domains):
+def _intelligence_dependencies(cur, receipt, domains, *, after_snapshot_id=None):
     cur.execute('SELECT endpoint,parameters FROM candidate.fetches WHERE id=%s', (receipt,))
     request = cur.fetchone()
     if not request:
         raise ValueError('Unknown receipt')
     by_method = {DOMAINS[domain][1]: domain for domain in domains}
-    cur.execute("""SELECT h.methodology,h.mlb_id,h.represented FROM candidate.history_requests d
+    cur.execute("""SELECT h.methodology,h.mlb_id,h.represented,h.id,h.revision FROM candidate.history_requests d
                    JOIN candidate.workload_history h ON h.id=d.snapshot
-                   WHERE d.endpoint=%s AND d.parameters=%s AND h.methodology=ANY(%s) AND NOT EXISTS (
+                   WHERE d.endpoint=%s AND d.parameters=%s AND h.methodology=ANY(%s) AND h.id>%s AND NOT EXISTS (
                        SELECT 1 FROM candidate.workload_history newer WHERE
                        (newer.subject,newer.mlb_id,newer.represented,newer.methodology)=
                        (h.subject,h.mlb_id,h.represented,h.methodology) AND newer.revision>h.revision)
-                   ORDER BY h.subject,h.mlb_id,h.represented,h.methodology""", (request[0], Json(request[1]), list(by_method)))
-    return [_append(cur, by_method[method], identity, through) for method, identity, through in cur.fetchall()]
+                   ORDER BY CASE WHEN %s THEN h.id END,h.subject,h.mlb_id,h.represented,h.methodology LIMIT %s""",
+                (request[0], Json(request[1]), list(by_method), after_snapshot_id or 0,
+                 after_snapshot_id is not None, 33 if after_snapshot_id is not None else None))
+    return [(by_method[method], identity, through, snapshot, revision)
+            for method, identity, through, snapshot, revision in cur]
+
+
+def preview_intelligence_rebuild(connection, receipt, *, domains=tuple(DOMAINS), after_snapshot_id=0):
+    """Page over the latest frozen scopes that the intelligence rebuild would examine."""
+    if type(after_snapshot_id) is not int or not 0 <= after_snapshot_id < 2**63:
+        raise ValueError('Expected a nonnegative snapshot ID')
+
+    def read(cur):
+        cur.execute('SET TRANSACTION READ ONLY')
+        page = _intelligence_dependencies(cur, receipt, domains, after_snapshot_id=after_snapshot_id)
+        scopes = [dict(domain=domain, subject=DOMAINS[domain][0], mlb_id=identity, represented=through.isoformat(),
+                       snapshot_id=snapshot, revision=revision)
+                  for domain, identity, through, snapshot, revision in page[:32]]
+        return dict(receipt_id=receipt, scopes=scopes,
+                    next_after_snapshot_id=scopes[-1]['snapshot_id'] if len(page) > 32 else None)
+
+    return _transaction(connection, read)
+
+
+def _affected(cur, receipt, domains):
+    return [_append(cur, domain, identity, through)
+            for domain, identity, through, _, _ in _intelligence_dependencies(cur, receipt, domains)]
 
 
 def rebuild_intelligence(connection, receipt, *, domains=tuple(DOMAINS)):

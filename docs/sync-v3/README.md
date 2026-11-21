@@ -987,3 +987,9 @@ WHERE s.revision = 4 AND f.id = 979
   AND h.id > 0
 ORDER BY h.id LIMIT 32;
 ```
+
+### Preview an intelligence rebuild
+
+Inside the disposable rehearsal, `sync_v3.intelligence_history.preview_intelligence_rebuild(connection, receipt_id, domains=...)` opens a read-only transaction. It uses the same request-dependency query as `rebuild_intelligence`. Each row identifies the latest stored snapshot for an affected domain, entity and represented date. The preview returns up to 32 scopes. Pass `next_after_snapshot_id` as `after_snapshot_id` to continue with the same receipt and domains. Rebuilding uses the existing calculation and snapshot writer. An identical calculation can reuse its previous revision.
+
+On the August 28, 2017 restore, receipt 979 matched 416 latest intelligence scopes across seven domains, delivered in 13 pages. Restricting the preview to `domains=['game_deployment']` returned exactly game 492054, snapshot 92, revision 1. Running that scoped rebuild twice in the disposable database returned the same snapshot and revision both times. All four historical selection entries retained their exact generation identities. The separate selected-edition citation query above asks which frozen snapshots used a specific receipt. The rebuild preview asks which latest calculations depend on that endpoint and parameters.

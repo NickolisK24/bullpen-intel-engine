@@ -182,7 +182,7 @@ def test_intelligence_versions_bind_each_domain_to_its_own_inputs():
     import json
     import os
     from pathlib import Path
-    from sync_v3.intelligence_history import DOMAINS, rebuild_intelligence, record_intelligence
+    from sync_v3.intelligence_history import DOMAINS, preview_intelligence_rebuild, rebuild_intelligence, record_intelligence
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
 
@@ -203,9 +203,23 @@ def test_intelligence_versions_bind_each_domain_to_its_own_inputs():
             with db, db.cursor() as cur:
                 cur.execute("SELECT id FROM candidate.fetches WHERE endpoint='/schedule'")
                 slate = cur.fetchone()[0]
+            with closing(connect()) as reader:
+                reader.set_session(readonly=True)
+                first_page = preview_intelligence_rebuild(reader, slate)
+                assert first_page['next_after_snapshot_id'] is None
+                preview = first_page['scopes']
+                assert {row['domain']: row['snapshot_id'] for row in preview} == {
+                    domain: initial[domain][0] for domain in ('roles','schedule','game_deployment','rotation','pitcher_rest')}
+                assert all(row['represented'] == day.isoformat() and row['revision'] == 1 for row in preview)
+                subset = preview_intelligence_rebuild(reader, slate, domains=['rotation'])
+                assert subset['scopes'] == [row for row in preview if row['domain'] == 'rotation']
+                with pytest.raises(ValueError, match='Unknown receipt'):
+                    preview_intelligence_rebuild(reader, 2**62)
             changes = rebuild_intelligence(db, slate)
             assert len(changes) == 5
             assert all(revision == 2 for _, revision, _ in changes)
+            subsequent = preview_intelligence_rebuild(db, slate)
+            assert {row['snapshot_id'] for row in subsequent['scopes']} == {row[0] for row in changes}
             assert rebuild_intelligence(db, slate) == changes
             with db, db.cursor() as cur:
                 cur.execute("SELECT methodology,predecessor FROM candidate.workload_history WHERE revision=2")
