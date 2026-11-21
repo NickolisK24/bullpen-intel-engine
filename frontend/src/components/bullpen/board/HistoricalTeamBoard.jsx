@@ -52,7 +52,7 @@ export function HistoricalGroupPerformance({ performance, team, through }) {
   </section>
 }
 
-export function HistoricalRosterListings({ roster, listings, team, through }) {
+export function HistoricalRosterListings({ roster, listings, statusLabels, team, through }) {
   const covered = roster?.team === team && roster.represented === through
     && Number.isSafeInteger(roster.active_listed) && Number.isSafeInteger(roster.forty_man_listed)
     && roster.active_listed >= 0 && roster.forty_man_listed >= 0
@@ -76,7 +76,17 @@ export function HistoricalRosterListings({ roster, listings, team, through }) {
     {listsCovered && <details><summary>Pitchers listed for {through}</summary>
       {[[active, 'Active roster'], [outside, '40-man roster only']].map(([rows, title]) => <div key={title}>
         <h3>{title}</h3>
-        {rows.length ? <ul>{rows.map(row => <li key={row.mlb_id}>{row.name || `MLB player ${row.mlb_id}`}</li>)}</ul> : <p>None listed.</p>}
+        {rows.length ? <ul>{rows.map(row => {
+          const codes = rows === outside && roster.status_codes?.[row.mlb_id]
+          const statuses = Array.isArray(codes) ? codes.filter(code => typeof code === 'string' && code.length)
+            .map(code => {
+              const label = statusLabels?.[row.mlb_id]?.[code]
+              return typeof label === 'string' && label.trim() ? `${label} (${code})` : code
+            }) : []
+          return <li key={row.mlb_id}><span>{row.name || `MLB player ${row.mlb_id}`}</span>
+            {statuses.length > 0 && <small> · MLB roster status · {statuses.join(' / ')}</small>}
+          </li>
+        })}</ul> : <p>None listed.</p>}
       </div>)}
     </details>}
   </section>
@@ -198,7 +208,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
         </Link>
       </div>)}
     </details>}
-    <HistoricalRosterListings roster={data.roster_depth_evidence} listings={data.roster_listings} team={team} through={data.data_through} />
+    <HistoricalRosterListings roster={data.roster_depth_evidence} listings={data.roster_listings} statusLabels={data.forty_man_status_labels} team={team} through={data.data_through} />
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />

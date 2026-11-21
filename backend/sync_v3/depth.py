@@ -3,6 +3,8 @@
 from collections import defaultdict
 from datetime import date
 
+from psycopg2.extras import Json
+
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import roster_entry_player_id
 from services.roster_status_sync import _two_way_eligible
@@ -161,3 +163,47 @@ def named_roster_lists(depth, evidence, directory):
             rows.append(dict(mlb_id=mlb, name=person.get('name') if matches else None))
         lists[kind] = rows
     return lists
+
+
+def forty_man_status_labels(cur, generation, evidence):
+    """Read MLB's own status wording from the forty-man response pinned by this edition."""
+    expected = evidence['status_codes']
+    if not expected:
+        return {}
+    team, day = evidence['team'], evidence['represented']
+    endpoint = f'/teams/{team}/roster'
+    params = {'date': day, 'rosterType': '40Man'}
+    cur.execute("""SELECT min(f.id) FROM candidate.generation_inputs g
+                   JOIN candidate.workload_history h ON h.id=g.snapshot
+                   JOIN candidate.workload_history_sources hs ON hs.snapshot=h.id
+                   JOIN candidate.fetches f ON f.id=hs.source_id
+                   JOIN candidate.confirmations c ON c.source_id=f.id AND c.domain='roster'
+                   WHERE g.generation=%s AND h.subject='team' AND h.mlb_id=%s AND h.represented=%s
+                     AND h.methodology=%s AND f.endpoint=%s AND f.parameters=%s AND c.identity=%s
+                   GROUP BY f.sha256""",
+                (generation, team, day, evidence['citation']['methodology'], endpoint,
+                 Json(params), f'{team}/40Man/{day}'))
+    receipts = cur.fetchall()
+    if len(receipts) != 1:
+        return {}
+    capture = replay(cur, receipts[0][0])
+    if capture.request.endpoint != endpoint or capture.request.params() != params:
+        raise ValueError('Forty-man roster receipt belongs to another club or date')
+    statuses = defaultdict(lambda: defaultdict(set))
+    for member in capture.body['roster']:
+        player = roster_entry_player_id(member)
+        raw = member.get('status') or {}
+        if player in expected and raw.get('code'):
+            description = raw.get('description')
+            statuses[player][raw['code']].add(description if isinstance(description, str) else None)
+    labels = {}
+    for player, codes in expected.items():
+        if set(codes) != statuses[player].keys():
+            continue
+        labels[player] = {}
+        for code, descriptions in statuses[player].items():
+            if len(descriptions) == 1:
+                label = next(iter(descriptions))
+                if isinstance(label, str) and label.strip():
+                    labels[player][code] = label
+    return labels

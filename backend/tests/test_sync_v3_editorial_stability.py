@@ -175,3 +175,35 @@ def test_historical_selection_matches_canonical_copy_only_for_cited_inputs():
                              (rows, {'rotation_context': {'context_available': False}})):
         assert editorial_reads._qualified_story(context, evidence, layers)[0] == dict(
             status='withheld', reason='incomplete_editorial_evidence')
+
+
+def test_forty_man_status_wording_uses_only_the_pinned_club_date_and_recorded_codes(monkeypatch):
+    from types import SimpleNamespace
+    from sync_v3 import depth
+    from sync_v3.discovery import Request
+
+    day = '2017-08-28'
+    request = Request('/teams/111/roster', (('date', day), ('rosterType', '40Man')), 0)
+    members = [dict(person={'id': 12}, status=dict(code='D10', description='Injured 10-Day')),
+               dict(person={'id': 12}, status=dict(code='RM', description='One wording')),
+               dict(person={'id': 12}, status=dict(code='RM', description='Different wording'))]
+    capture = SimpleNamespace(request=request, body={'roster': members})
+
+    def replay(cur, source):
+        assert source == 37
+        return capture
+
+    monkeypatch.setattr(depth, 'replay', replay)
+    from unittest.mock import Mock
+    cursor = Mock()
+    cursor.fetchall.return_value = [(37,)]
+    evidence = dict(status_codes={12: ['D10', 'RM']}, represented=day, team=111, citation={'methodology': 'candidate_roster_depth_v1'})
+    assert depth.forty_man_status_labels(cursor, 'edition', evidence) == {12: {'D10': 'Injured 10-Day'}}
+    for patch in [dict(team=110), dict(represented='2017-08-29')]:
+        with pytest.raises(ValueError):
+            depth.forty_man_status_labels(cursor, 'edition', dict(evidence, **patch))
+    assert depth.forty_man_status_labels(cursor, 'edition', dict(evidence, status_codes={12: ['D10']})) == {}
+    for receipts in ([], [(37,), (38,)]):
+        cursor.fetchall.return_value = receipts
+        assert depth.forty_man_status_labels(cursor, 'edition', evidence) == {}
+    assert depth.forty_man_status_labels(cursor, 'edition', dict(evidence, status_codes=None)) == {}
