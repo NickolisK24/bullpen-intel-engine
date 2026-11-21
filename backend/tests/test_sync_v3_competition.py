@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -240,7 +240,10 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
     import json
     import os
 
-    from sync_v3.appearance_reads import postseason_appearances
+    from sync_v3.appearance_reads import appearance_ledger, postseason_appearances
+    from sync_v3.history import record_workload
+    from sync_v3.team_board_windows import board_workload_windows
+    from tests.sync_v3_league_fixture import _fixture
     from sync_v3.generation import freeze_generation
     from sync_v3.intelligence_history import record_intelligence
     from sync_v3.rehearse import isolated_cluster
@@ -259,7 +262,7 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
     box = bodies['/game/12345/boxscore']
     box['teams']['home']['players']['ID100']['stats']['pitching']['wins'] = 1
     regular = season()['dates'][0]
-    regular['date'] = '2026-07-28'
+    regular['date'] = '2026-07-26'
     for listing in regular['games']:
         listing.update(officialDate=regular['date'], season=str(day.year))
     calendar = dict(totalGames=16, dates=[regular, dict(date=str(day), totalGames=1, games=[final])])
@@ -267,9 +270,13 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
     with isolated_cluster(pg) as (owner, connect):
         install(owner)
         with closing(connect()) as db:
+            for offset in (2, 1):
+                path.write_text(json.dumps(_fixture(day - timedelta(days=offset), [])))
+                run_fixture(db, path)
             def freeze():
                 path.write_text(json.dumps(fixture))
                 run_fixture(db, path)
+                record_workload(db, 'team', 147, day)
                 record_intelligence(db, 'readiness', 147, day)
                 return freeze_generation(db, day)
 
@@ -286,5 +293,37 @@ def test_postseason_ledger_requires_a_frozen_verified_decision(tmp_path):
                 reliever, = club['appearances']
                 assert (reliever['game_pk'], reliever['mlb_id']) == (12345, 102)
                 assert len(reliever['boxscore_digests'][0]) == 64
+                for generation, count in ((before, None), (after, 1)):
+                    workload = appearance_ledger(cur, generation, 'team', 147, day)
+                    playoff = postseason_appearances(cur, generation, 'team', 147, day, 147)
+                    window = board_workload_windows(cur, generation, 147, day, workload, playoff)['windows']['window_3']
+                    assert window['appearances']['value'] == count
+                    if count is None:
+                        assert 'missing_competition_calendar' in window['appearances']['reason_codes']
+                    else:
+                        assert window['pitches']['value'] == reliever['pitches_thrown']
+                        assert window['outs']['value'] == reliever['innings_pitched_outs']
                 starter, = postseason_appearances(cur, after, 'pitcher', 100, day, 147)['appearances']
                 assert starter['game_pk'] == reliever['game_pk'] and starter['appearance_team_id'] == 147
+
+
+def test_board_window_coverage_requires_matching_schedules_and_verified_playoff_finals():
+    from sync_v3.team_board_windows import _coverage_reason
+
+    day = date(2026, 9, 30)
+    game = (147, 111, 'F', day.isoformat(), 'final')
+    final = {849848: game}
+
+    def reason(daily, season, *, receipts=('daily',), verified=(), year=2026):
+        return _coverage_reason(day, year, 'season', receipts, daily, season, set(verified))
+
+    assert reason({}, {}) is None
+    assert reason({}, {}, receipts=()) == 'club_calendars_unconfirmed'
+    assert reason(final, {}, verified=final) == 'club_calendars_unconfirmed'
+    assert reason({}, final) == 'club_calendars_unconfirmed'
+    assert reason(final, final, receipts=('a', 'b'), verified=final) == 'club_calendars_unconfirmed'
+    assert reason(final, final) == 'club_game_unresolved'
+    assert reason(final, final, verified=final) is None
+    assert reason({}, {}, year=2027) == 'missing_competition_calendar'
+    resumed = {849848: (*game[:3], '2026-09-29', 'final')}
+    assert reason(resumed, resumed, verified=final) == 'club_game_unresolved'

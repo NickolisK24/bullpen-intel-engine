@@ -873,6 +873,9 @@ def read_team_board(connection, team, *, revision=None):
         through = date.fromisoformat(listing['data_through'])
         result['postseason_relief'] = postseason_appearances(cur, generation, 'team', team, through, team)
         result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, through)
+        from sync_v3.team_board_windows import board_workload_windows
+        result['competitive_workload'] = board_workload_windows(
+            cur, generation, team, through, result['recent_relief'], result['postseason_relief'])
         result['recent_relief_games'] = team_relief_games(team, result['recent_relief'], result['postseason_relief'])
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))

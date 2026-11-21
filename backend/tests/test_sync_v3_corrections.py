@@ -1078,6 +1078,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert ledger['status'] == 'partial' and len(ledger['gaps']) == 16
             assert set(ledger['gaps'].values()) == {'missing_complete_schedule'}
             assert line['appearance_team_id'] == 111 and line['mlb_id'] == 11101
+            windows = board['competitive_workload']['windows']
+            assert windows['window_3']['appearances']['value'] == 1
+            assert windows['window_3']['outs']['value'] == 15
+            assert windows['window_30']['pitches']['value'] is None
+            assert 'missing_complete_schedule' in windows['window_30']['pitches']['reason_codes']
             games = board['recent_relief_games']
             assert games['status'] == 'verified_games_only' and games['regular_gaps'] == ledger['gaps']
             game, = games['games']

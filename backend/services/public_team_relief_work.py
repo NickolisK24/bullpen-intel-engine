@@ -1086,16 +1086,16 @@ def _workload_windows_from_rows(
     }
 
 
-def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
-                            window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS, include_batters_faced=False):
-    """One frozen factual team projection; no roster membership filter."""
+def team_relief_windows(logs, anchor, coverage, *, window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS,
+                        include_batters_faced=False):
+    """Count game-side relief appearances only when the dated coverage supports the window."""
     windows = {}
     for days in window_days:
         start = anchor - timedelta(days=days - 1)
-        scoped = [(log, pitcher) for log, pitcher in rows if start <= log.game_date <= anchor]
-        relief = [(log, pitcher) for log, pitcher in scoped if _start_relief_state(log) == RELIEF]
+        scoped = [log for log in logs if start <= log.game_date <= anchor]
+        relief = [log for log in scoped if _start_relief_state(log) == RELIEF]
         state, reasons = _classified_window_state(
-            [log for log, _ in scoped], coverage, start, anchor,
+            scoped, coverage, start, anchor,
         )
         if any(
             (coverage.get((start + timedelta(days=offset)).isoformat()) or {})
@@ -1107,11 +1107,11 @@ def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
         if state == RECENT_USAGE_REST_COMPLETE:
             appearances = _fact(len(relief), state, [])
             pitches = _sum_fact(
-                [log for log, _ in relief], 'pitches_thrown',
+                relief, 'pitches_thrown',
                 RECENT_USAGE_REST_REASON_PITCHES_UNKNOWN,
             )
             outs = _sum_fact(
-                [log for log, _ in relief], 'innings_pitched_outs',
+                relief, 'innings_pitched_outs',
                 RECENT_USAGE_REST_REASON_OUTS_UNKNOWN,
             )
         else:
@@ -1125,10 +1125,17 @@ def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
 
         if include_batters_faced:
             windows[f'window_{days}']['batters_faced'] = (
-                _sum_fact([log for log, _ in relief], 'batters_faced', 'bullpen_batters_faced_unknown')
+                _sum_fact(relief, 'batters_faced', 'bullpen_batters_faced_unknown')
                 if state == RECENT_USAGE_REST_COMPLETE else _fact(None, state, reasons)
             )
+    return windows
 
+
+def _team_workload_overview(rows, anchor, coverage, active_pitcher_ids, *,
+                            window_days=WORKLOAD_OVERVIEW_WINDOW_DAYS, include_batters_faced=False):
+    """One frozen factual team projection; no roster membership filter."""
+    windows = team_relief_windows([log for log, _ in rows], anchor, coverage, window_days=window_days,
+                                  include_batters_faced=include_batters_faced)
     seven = windows['window_7']
     if seven['pitches']['status'] != RECENT_USAGE_REST_COMPLETE:
         concentration = {
