@@ -106,3 +106,13 @@ A single-day fixture exposes the season obligations and the missing-final reason
 | Season | 213 | 631 | 888 | 3.94 | 1.28 | 12.2% | 21 | 28 of 108 |
 
 These historical results describe the represented roster. Production promotion still requires independent parity and publication certification. The August 7 transaction refusal remains visible in the replay status.
+
+### Rotation burden
+
+The `--team` rehearsal includes a 14-day ledger of confirmed regular-season games and seven- and fourteen-day rotation pressure. Each team-game cites its date's schedule and final evidence, identifies the credited starter, and reports pitches, outs and batters faced for the starter and relief group. A missing pitch count withholds the affected pitch total. A missing slate or unresolved club final withholds pressure for the affected window. The existing rotation classifier counts opener/bulk games separately, and discloses exclusions such as abbreviated games.
+
+For July 25–August 7, 2024, a PostgreSQL 17.6 replay covered 184 regular-season games. Independent boxscore counts matched the starter identity and all six workload totals for both sides of every game. The governed rotation classifier counted 254 normal starts, 101 short starts and 13 opener/bulk games. Kansas City's seven-day window contained seven rotation starts, 128 starter outs and 66 relief outs with zero short starts. Its fourteen-day window contained 13 rotation starts, 241 starter outs, 115 relief outs and one short start. Game 746602 had abstract status Final on August 6 but detailed status Postponed. Its August 7 final counted once.
+
+Use `--schedule-team TEAM_ID --through YYYY-MM-DD` to inspect the official calendar around a represented date. The rehearsal uses the existing ten-day lookback, fourteen-day lookahead and schedule-context rules. It retains each date's schedule receipt, game identities, series positions and venue IDs. Venue changes describe scheduled locations. Retrospective observations cannot establish the calendar a reader would have seen before first pitch.
+
+The schedule context requires all 25 dated responses. Missing days, unresolved resumptions and unexplained disappearing games withhold the aggregate. A postponed listing can carry the makeup game's official date. The ledger preserves both that date and the date of the postponed listing. For July 24, 2024 Kansas City had one listed game, five played games over the preceding five days and a next off-day of July 25. In the August 7 replay the fourteen later dates were absent, so the forward-looking context was withheld.
