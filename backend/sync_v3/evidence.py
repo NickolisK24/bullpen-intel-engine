@@ -45,7 +45,14 @@ def execute(connection, claimed, fetch, clock=lambda: datetime.now(timezone.utc)
                      fingerprint, outcome, reason))
         observation_id = cur.fetchone()[0]
         if outcome == 'received' and on_received:
-            on_received(cur, observation_id, acquisition)
+            cur.execute('SAVEPOINT derive_from_observation')
+            try:
+                on_received(cur, observation_id, acquisition)
+            except ValueError as exc:
+                cur.execute('ROLLBACK TO SAVEPOINT derive_from_observation')
+                cur.execute('INSERT INTO candidate.refusals VALUES (%s,%s)', (observation_id, str(exc)))
+                outcome = 'refused'
+            cur.execute('RELEASE SAVEPOINT derive_from_observation')
         settle(cur, job_id, token, clock(), error=outcome != 'received')
     return observation_id, outcome
 

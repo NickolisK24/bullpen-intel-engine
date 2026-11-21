@@ -1,0 +1,246 @@
+{
+  "baseball_date": "2026-07-29",
+  "observed_at": "2026-07-30T01:00:00Z",
+  "team_ids": [
+    111
+  ],
+  "responses": [
+    {
+      "endpoint": "/schedule",
+      "params": {
+        "endDate": "2026-07-29",
+        "sportId": 1,
+        "startDate": "2026-07-29"
+      },
+      "body": {
+        "totalGames": 1,
+        "dates": [
+          {
+            "date": "2026-07-29",
+            "totalGames": 1,
+            "games": [
+              {
+                "gamePk": 12345,
+                "gameType": "R",
+                "officialDate": "2026-07-29",
+                "status": {
+                  "statusCode": "F",
+                  "detailedState": "Final",
+                  "abstractGameState": "Final"
+                },
+                "teams": {
+                  "home": {
+                    "team": {
+                      "id": 147,
+                      "name": "Home Club"
+                    }
+                  },
+                  "away": {
+                    "team": {
+                      "id": 111,
+                      "name": "Away Club"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "endpoint": "/transactions",
+      "params": {
+        "endDate": "2026-07-29",
+        "sportId": 1,
+        "startDate": "2026-07-29"
+      },
+      "body": {
+        "transactions": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-07-29",
+        "rosterType": "active"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "active",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-07-29",
+        "rosterType": "40Man"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "40Man",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-07-29",
+        "rosterType": "fullRoster"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "fullRoster",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/teams/111/roster",
+      "params": {
+        "date": "2026-07-29",
+        "rosterType": "nonRosterInvitees"
+      },
+      "body": {
+        "teamId": 111,
+        "rosterType": "nonRosterInvitees",
+        "roster": []
+      }
+    },
+    {
+      "endpoint": "/game/12345/boxscore",
+      "params": {},
+      "body": {
+        "teams": {
+          "home": {
+            "team": {
+              "id": 147,
+              "name": "Home Club",
+              "abbreviation": "HOM"
+            },
+            "pitchers": [
+              100,
+              102
+            ],
+            "players": {
+              "ID100": {
+                "person": {
+                  "id": 100,
+                  "fullName": "Arm 100"
+                },
+                "position": {
+                  "abbreviation": "P",
+                  "code": "1",
+                  "name": "Pitcher"
+                },
+                "stats": {
+                  "pitching": {
+                    "inningsPitched": "6.0",
+                    "gamesStarted": 1,
+                    "earnedRuns": 0,
+                    "runs": 0,
+                    "hits": 1,
+                    "baseOnBalls": 0,
+                    "strikeOuts": 2,
+                    "homeRuns": 0,
+                    "strikes": 10,
+                    "numberOfPitches": 15,
+                    "battersFaced": 4
+                  }
+                }
+              },
+              "ID102": {
+                "person": {
+                  "id": 102,
+                  "fullName": "Arm 102"
+                },
+                "position": {
+                  "abbreviation": "P",
+                  "code": "1",
+                  "name": "Pitcher"
+                },
+                "stats": {
+                  "pitching": {
+                    "inningsPitched": "3.0",
+                    "gamesStarted": 0,
+                    "earnedRuns": 0,
+                    "runs": 0,
+                    "hits": 1,
+                    "baseOnBalls": 0,
+                    "strikeOuts": 2,
+                    "homeRuns": 0,
+                    "strikes": 10,
+                    "numberOfPitches": 15,
+                    "battersFaced": 4
+                  }
+                }
+              }
+            },
+            "teamStats": {
+              "pitching": {
+                "inningsPitched": "9.0"
+              }
+            }
+          },
+          "away": {
+            "team": {
+              "id": 111,
+              "name": "Away Club",
+              "abbreviation": "AWY"
+            },
+            "pitchers": [
+              103
+            ],
+            "players": {
+              "ID103": {
+                "person": {
+                  "id": 103,
+                  "fullName": "Arm 103"
+                },
+                "position": {
+                  "abbreviation": "P",
+                  "code": "1",
+                  "name": "Pitcher"
+                },
+                "stats": {
+                  "pitching": {
+                    "inningsPitched": "8.0",
+                    "gamesStarted": 1,
+                    "earnedRuns": 0,
+                    "runs": 0,
+                    "hits": 1,
+                    "baseOnBalls": 0,
+                    "strikeOuts": 2,
+                    "homeRuns": 0,
+                    "strikes": 10,
+                    "numberOfPitches": 15,
+                    "battersFaced": 4
+                  }
+                }
+              }
+            },
+            "teamStats": {
+              "pitching": {
+                "inningsPitched": "8.0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "endpoint": "/game/12345/playByPlay",
+      "params": {},
+      "body": {
+        "allPlays": []
+      }
+    },
+    {
+      "endpoint": "/game/12345/linescore",
+      "params": {},
+      "body": {
+        "innings": []
+      }
+    }
+  ]
+}

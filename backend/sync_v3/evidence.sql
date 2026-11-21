@@ -15,3 +15,9 @@ CREATE TABLE candidate.fetches (
 );
 CREATE INDEX fetches_by_subject ON candidate.fetches(endpoint,parameters,received_at DESC,id DESC);
 GRANT SELECT, INSERT ON candidate.payloads, candidate.fetches TO sync_v3_worker;
+
+CREATE TABLE candidate.refusals (
+    source_id bigint PRIMARY KEY REFERENCES candidate.fetches(id),
+    reason text NOT NULL
+);
+GRANT SELECT,INSERT ON candidate.refusals TO sync_v3_worker;

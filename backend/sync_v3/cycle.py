@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3 import evidence, queue
+from sync_v3 import canonical, evidence, queue
 from sync_v3.discovery import calendar_requests, game_requests, roster_requests
 
 
@@ -32,10 +32,12 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, budget='current', m
         if not claimed:
             break
         def plan_children(cur, observation_id, acquisition):
+            canonical.observe(cur, observation_id, acquisition)
             if acquisition.request.endpoint == '/schedule':
                 represented = acquisition.request.params()['startDate']
                 requests = game_requests(date.fromisoformat(represented), acquisition.body,
-                                         now=acquisition.retrieved_at)
+                                         now=acquisition.retrieved_at, reconciled=canonical.recently_reconciled(
+                                             cur, observation_id, acquisition.retrieved_at))
                 enqueue_requests(cur, requests, acquisition.retrieved_at, budget=budget)
         receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=plan_children))
     return receipts
