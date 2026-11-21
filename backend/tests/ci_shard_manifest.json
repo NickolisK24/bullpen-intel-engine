@@ -1896,6 +1896,42 @@
         {
           "path": "tests/test_sync_v3_queue.py",
           "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_archived_share_pages.py",
+          "measured_seconds": 2.005
+        },
+        {
+          "path": "tests/test_sync_v3_observed_identities.py",
+          "measured_seconds": 1.313
+        },
+        {
+          "path": "tests/test_sync_v3_matchup_rotation.py",
+          "measured_seconds": 0.294
+        },
+        {
+          "path": "tests/test_sync_v3_departed_pitchers.py",
+          "measured_seconds": 0.03
+        },
+        {
+          "path": "tests/test_sync_v3_team_preview_comparison.py",
+          "measured_seconds": 0.008
+        },
+        {
+          "path": "tests/test_sync_v3_editorial_stability.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_sync_v3_matchup_availability.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_sync_v3_matchup_workload.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sync_v3_team_history_context.py",
+          "measured_seconds": 0.0
         }
       ]
     }
