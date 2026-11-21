@@ -41,3 +41,19 @@ def test_invalid_values_only_withhold_the_affected_measurement():
     assert ff['pitches'] == 2 and ff['mix_percent'] == 100
     assert ff['mean_mph'] is None and ff['measured_speeds'] == 1
     assert ff['measurements']['spin_rate'] == {'mean': None, 'measured': 1}
+
+
+def test_chart_uses_only_qualified_months_and_preserves_unknown_velocity():
+    from datetime import date
+    from services.pitcher_trends import monthly_pitch_characteristics
+
+    outing = outing_sample([pitch('CH', None), pitch('FF', 93)], 2)
+    complete = dict(month='2026-09', **monthly_pitch_sample([outing]))
+    partial = dict(month='2026-07', **monthly_pitch_sample([outing, outing_sample([], 1)]))
+    result = monthly_pitch_characteristics(date(2026, 10, 28), [partial, complete])
+    july, september = result['months']
+    assert july == dict(month='2026-07', outings=2, verified_outings=1, types=[])
+    assert september['types'] == [
+        dict(type='CH', pitches=1, mean_mph=None, mix_percent=50.0),
+        dict(type='FF', pitches=1, mean_mph=93.0, mix_percent=50.0),
+    ]

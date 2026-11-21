@@ -1112,6 +1112,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert pitcher['display_read'] == displayed_arm['display_read']
                 assert pitcher['pitch_hand'] == hand
                 assert pitcher['recent_work']['appearances'] == ledger['appearances']
+                chart = pitcher['season_pitch_characteristics']
+                assert chart['through'] == str(day) and chart['months'][0]['outings'] == 1
+                assert chart['months'][0]['verified_outings'] == 0 and chart['months'][0]['types'] == []
                 assert set(pitcher['sections']) == {'pitcher_profile','pitcher_rest','workload'}
                 assert all(e in history['events'] for e in pitcher['represented_events'])
                 missing = read_pitcher(worker, 11101)['status']

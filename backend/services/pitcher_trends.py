@@ -82,8 +82,20 @@ def season_pitch_characteristics(pitcher, through, *, appearance_team_id=None):
         types = sample.pop('types')
         values = summarized_pitch_types(types) if sample['verified_outings'] == sample['outings'] else []
         result.append({'month': month, **sample, 'types': values})
+    return monthly_pitch_characteristics(through, result)
+
+
+def monthly_pitch_characteristics(through, months):
+    """Public chart fields from already qualified monthly relief samples."""
+    rows = []
+    for month in months:
+        types = []
+        if month['outings'] == month['verified_outings']:
+            types = [{k: row[k] for k in ('type', 'pitches', 'mean_mph', 'mix_percent')} for row in month['types']]
+        rows.append(dict(month=month['month'], outings=month['outings'],
+                         verified_outings=month['verified_outings'], types=types))
     return {'method_version': 'monthly_recorded_relief_pitches_v1', 'source': SOURCE,
-            'through': through.isoformat(), 'months': result}
+            'through': through.isoformat(), 'months': rows}
 
 
 def published_pitcher_deployment(snapshot, pitcher):

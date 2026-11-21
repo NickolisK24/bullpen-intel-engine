@@ -911,6 +911,13 @@ def read_pitcher(connection, public_id, *, revision=None):
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
+        from services.pitcher_trends import monthly_pitch_characteristics
+        history = blocks['pitcher_profile']['value']['pitch_history']
+        if history['mlb_player_id'] != player['mlb_id'] or history['through'] != through.isoformat():
+            raise ValueError('Pitch history disagrees with the selected pitcher or workload date')
+        result['season_pitch_characteristics'] = (
+            monthly_pitch_characteristics(through, history['months']) if history['reason'] is None else None
+        )
         changes = _events(cur, player['team_id'], sequence)
         events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
         if player.get('historical_departure'):
