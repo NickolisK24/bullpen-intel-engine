@@ -1337,6 +1337,17 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             path.write_text(json.dumps(corrected_prior))
             run_fixture(worker, path)
             record_intelligence(worker, 'depth', 111, prior_day)
+            revised = deepcopy(played)
+            revised['observed_at'] = f'{day + timedelta(days=3)}T12:00:00Z'
+            for receipt in revised['responses']:
+                if receipt['endpoint'] == '/transactions':
+                    receipt['body']['transactions'].append(dict(
+                        id=79, date=str(day), effectiveDate=str(day), typeCode='CU',
+                        person=dict(id=11100), toTeam=dict(id=111)))
+                else:
+                    receipt.setdefault('retrieved_at', played['observed_at'])
+            path.write_text(json.dumps(revised))
+            run_fixture(worker, path)
             second = settle(worker)
             assert first != second
             with pytest.raises(SelectionWithheld, match='superseded_generation'):
@@ -1396,6 +1407,25 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert event_id not in page['rows'][1]['pitcher_routes']
             corrected_board = read_team_board(worker, 111, revision=2)
             assert departure not in corrected_board['what_changed']['events']
+            for revision in (1, 3):
+                slate = read_game_cards(worker, revision=revision)
+                assert 'comparable_transaction_edition_unavailable' in slate['limitations']
+                assert all(item['change_class'] != 'verified_transaction' for item in slate['league_changes'])
+            corrected_slate = read_game_cards(worker, revision=2)
+            delta = [change for change in corrected_slate['league_changes'] if change['change_class'] == 'verified_transaction']
+            if identity_mode == 'absent':
+                assert delta == []
+            else:
+                added, = delta
+                tx, = [e for e in corrected_board['official_transactions']['events'] if e['transaction_id'] == '79']
+                assert added['headline'] == tx['description']
+                assert first in added['source_ref'] and second in added['source_ref']
+                assert added['source_ref'].endswith('#transaction:79')
+                from sync_v3.rehearse import verify_slate_matchups
+                boston_game = next(card for card in corrected_slate['games']
+                                   if 111 in (card['home']['team_id'], card['away']['team_id']))
+                comparison, = verify_slate_matchups(worker, dict(corrected_slate, games=[boston_game]))
+                assert comparison['game']['game_pk'] == boston_game['game_pk']
             with pytest.raises(RuntimeError, match='History citation'):
                 verify_editorial_evidence(worker, corrected_board, [departure])
             for revision, generation, expected in ((1, first, departure), (2, second, None), (3, first, departure)):

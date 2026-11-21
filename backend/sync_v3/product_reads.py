@@ -9,7 +9,7 @@ from services.team_state_public_vocabulary import (
 )
 from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, postseason_appearances, team_relief_games
 from sync_v3.depth import roster_depth_evidence
-from sync_v3.transaction_reads import team_transactions
+from sync_v3.transaction_reads import slate_transaction_changes, team_transactions
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -674,7 +674,7 @@ def _slate_pitcher_patterns(cur, generation, through, identities):
     return changes
 
 
-def _league_changes(teams, citations, rotation_changes, generation, represented, roster_moves=(), pitcher_patterns=()):
+def _league_changes(teams, citations, rotation_changes, generation, represented, roster_moves=(), pitcher_patterns=(), transactions=()):
     """Project qualified changes from the same dated revisions used by Board and History."""
     from services import tonight_read_model as tonight
     changes = []
@@ -710,6 +710,7 @@ def _league_changes(teams, citations, rotation_changes, generation, represented,
     from datetime import date, timedelta
     from services.editorial_voice_contract_v1 import find_editorial_violations
     current_day = date.fromisoformat(represented)
+    roster_players = set()
     for team, events, receipt, population_receipt, day, arms in roster_moves:
         for event in events:
             joined = event['kind'] == 'active_roster_added'
@@ -722,10 +723,12 @@ def _league_changes(teams, citations, rotation_changes, generation, represented,
             headline = f"{event['pitcher_name']} {verb} the active bullpen."
             if find_editorial_violations(headline, terms=tonight.LEAGUE_CHANGE_BANNED_TERMS):
                 continue
+            roster_players.add((team, event['player']))
             changes.append(dict(change_id=event['event_id'], team_id=team, team_abbreviation=abbreviations[team],
                                 change_class=f'active_bullpen_{verb}', occurred_on=represented, evidence_state='complete',
                                 headline=headline, detail=None,
                                 source_ref=f'{generation}/{receipt}/{population_receipt}', game_pks=[], state_change=None))
+    changes.extend(item for team, player, item in transactions if (team, player) not in roster_players)
     changes.extend(dict(item, team_abbreviation=abbreviations[item['team_id']]) for item in pitcher_patterns)
     result = []
     per_team = {}
@@ -791,10 +794,14 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         roster_moves = _slate_roster_moves(cur, generation, league['data_through'])
         identities, identity_status = _public_arms(cur, generation)
         patterns = _slate_pitcher_patterns(cur, generation, league['data_through'], identities)
+        transactions, transaction_gap = slate_transaction_changes(
+            cur, generation, date.fromisoformat(league['data_through']),
+            {row['team_id']: row['team_abbreviation'] for row in league['teams']})
         changes = _league_changes(league['teams'], league['citations'], rotation_changes, generation,
-                                  league['data_through'], roster_moves, patterns)
-        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_roster_moves_workload_patterns_and_short_starts',
-                      featured_game_pks=[], lead=None, limitations=['additional_league_change_classes_unverified'])
+                                  league['data_through'], roster_moves, patterns, transactions)
+        result.update(quiet_day=not games, league_changes=changes, change_scope='comparable_team_state_roster_moves_transactions_workload_patterns_and_short_starts',
+                      transaction_change_scope='new_since_predecessor_in_retained_league_responses',
+                      featured_game_pks=[], lead=None, limitations=[transaction_gap] if transaction_gap else [])
         if game_pk is not None and all(row.game_pk != game_pk for row in games):
             return dict(result, status='game_outside_represented_slate')
         if not games:

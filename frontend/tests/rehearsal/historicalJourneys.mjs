@@ -120,6 +120,8 @@ try {
     await expect(heading('Historical Bullpen Comparison')).toBeVisible()
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
 
+    await visit('/tonight?rehearsalRevision=2')
+    await expect(page.getByTestId('tonight-changes')).toContainText('Rehearsal Arm 11100 was recalled.')
     await visit('/search?rehearsalRevision=3')
     await page.getByRole('searchbox').fill('Former Boston')
     await link('Open Former Boston Reliever').click()
@@ -149,7 +151,7 @@ try {
     assert.deepEqual(reads, [
       prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/teams/111/board', prefix + '/teams/111/stories',
       prefix + '/teams/111/board', prefix + '/trust', prefix + '/tonight', prefix + '/matchups/10101',
-      prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
+      '/api/sync-v3/revisions/2/tonight', prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
       '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/teams/111/board',
     ])
   }

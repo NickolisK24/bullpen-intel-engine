@@ -41,27 +41,28 @@ def _qualified_event(facts, revision, member, through, source):
     return event
 
 
-def team_transactions(cur, generation, team, through):
+def _receipt_rows(cur, generation, through):
     from sync_v3.generation import _confirmed_transactions
-    from sync_v3.product_reads import _roster_identities
 
     cur.execute("""SELECT g.manifest->'transaction_source',f.id FROM candidate.generations g
                    LEFT JOIN LATERAL (SELECT f.id FROM candidate.generation_sources s
                      JOIN candidate.fetches f ON f.id=s.source AND f.endpoint='/transactions'
                      WHERE s.generation=g.digest) f ON true WHERE g.digest=%s""", (generation,))
     source, source_id = cur.fetchone()
-    result = dict(team=team, represented=through.isoformat(), source=source, events=[], withheld=None,
-                  coverage='retained_league_response')
     if not source or not source_id or source.get('reported_records') is None:
-        return dict(result, status='unavailable')
+        return source, None
     transactions = _confirmed_transactions(cur, source_id)
     if (source['parameters'] != dict(sportId=1, startDate=through.isoformat(), endDate=through.isoformat())
             or len(transactions) != source.get('confirmed_transactions')
             or len(transactions) != source['reported_records']
             or sha256(encode_json(transactions)).hexdigest() != source.get('revisions_digest')):
-        return dict(result, status='unavailable')
-    affected = [(revision, facts) for _, revision, facts in transactions
-                if team in (facts.get('from_team_id'), facts.get('to_team_id'))]
+        return source, None
+    return source, transactions
+
+
+def _transaction_members(cur, generation, affected):
+    from sync_v3.product_reads import _roster_identities
+
     members = {}
     if affected:
         players = sorted({facts['player_mlb_id'] for _, facts in affected if type(facts['player_mlb_id']) is int})
@@ -75,6 +76,18 @@ def team_transactions(cur, generation, team, through):
                 forty_conflicts.add(mlb)
         for mlb in forty_conflicts:
             members.pop(mlb, None)
+    return members
+
+
+def team_transactions(cur, generation, team, through):
+    source, transactions = _receipt_rows(cur, generation, through)
+    result = dict(team=team, represented=through.isoformat(), source=source, events=[], withheld=None,
+                  coverage='retained_league_response')
+    if transactions is None:
+        return dict(result, status='unavailable')
+    affected = [(revision, facts) for _, revision, facts in transactions
+                if team in (facts.get('from_team_id'), facts.get('to_team_id'))]
+    members = _transaction_members(cur, generation, affected)
     withheld = 0
     for revision, facts in affected:
         event = _qualified_event(facts, revision, members.get(facts['player_mlb_id']), through, source)
@@ -83,3 +96,54 @@ def team_transactions(cur, generation, team, through):
         else:
             withheld += 1
     return dict(result, status='partial' if withheld else 'available', withheld=withheld)
+
+
+def slate_transaction_changes(cur, generation, through, abbreviations):
+    """Compare with the predecessor at first selection, including when this edition is restored."""
+    cur.execute("""SELECT g.digest,g.represented FROM (
+                       SELECT predecessor FROM candidate.core_selections
+                       WHERE generation=%s AND action='select' ORDER BY revision LIMIT 1
+                   ) original JOIN candidate.core_selections prior ON prior.revision=original.predecessor
+                   JOIN candidate.generations g ON g.digest=prior.generation""", (generation,))
+    previous = cur.fetchone()
+    if not previous or (through - previous[1]).days not in (0, 1):
+        return [], 'comparable_transaction_edition_unavailable'
+    return _compare_transactions(cur, generation, through, previous, abbreviations)
+
+
+def _compare_transactions(cur, generation, through, previous, abbreviations):
+    from services.tonight_read_model import _league_change
+
+    _, prior = _receipt_rows(cur, *previous)
+    source, current = _receipt_rows(cur, generation, through)
+    if prior is None or current is None:
+        return [], 'comparable_transaction_receipt_unavailable'
+    known = {identity for identity, _, _ in prior}
+    candidates = [(revision, facts) for identity, revision, facts in current if identity not in known
+                  and facts.get('transaction_date') == through.isoformat()]
+    members = _transaction_members(cur, generation, candidates)
+    carrier = dict(contract='candidate_official_transaction', current_snapshot_id=generation,
+                   previous_snapshot_id=previous[0])
+    changes = []
+    for revision, facts in candidates:
+        event = _qualified_event(facts, revision, members.get(facts['player_mlb_id']), through, source)
+        if not event or (facts.get('effective_date') and not event['effective_date']):
+            continue
+        same_day = event['effective_date'] == event['transaction_date']
+        headline, detail = event['description'], None
+        if not same_day:
+            effective = f"effective {event['effective_date']}" if event['effective_date'] else 'effective date unavailable'
+            headline = f"MLB reported a transaction for {event['pitcher']['name']}."
+            detail = f"{event['label']} ({effective})."
+        for team in {event['from_team_id'], event['to_team_id']}.intersection(abbreviations):
+            item = _league_change(team, abbreviations[team], carrier, dict(
+                event_type='verified_transaction', team_id=team, evidence_status='complete',
+                summary=' '.join(filter(None, (headline, detail))), event_date=event['transaction_date'],
+                subject_id=event['pitcher']['pitcher_id'], facts=dict(transaction_id=event['transaction_id'])))
+            if item:
+                # Initials in a verified pitcher name can also contain a period followed by a space.
+                item.update(headline=headline, detail=detail)
+                item['source_ref'] = (f"{generation}/{previous[0]}/{source['digest']}/{event['roster_digest']}"
+                                      f"#transaction:{event['transaction_id']}")
+                changes.append((team, facts['player_mlb_id'] if same_day else None, item))
+    return changes, None

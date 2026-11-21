@@ -177,9 +177,9 @@ def test_tonight_requires_bullpen_membership_on_the_roster_moves_present_date(jo
                  current=joined, previous=not joined, player=599998, pitcher_name='Leonel Campos')
     day = date(2017, 8, 28 if joined else 27)
 
-    def changes(observed, population, move=event):
+    def changes(observed, population, move=event, transactions=()):
         evidence = [(141, [move], 'roster-proof', 'bullpen-proof', observed, population)]
-        return _league_changes([club], {}, [], 'edition', '2017-08-28', evidence)
+        return _league_changes([club], {}, [], 'edition', '2017-08-28', evidence, transactions=transactions)
 
     item, = changes(day, {'599998': {}})
     assert item['change_class'] == ('active_bullpen_joined' if joined else 'active_bullpen_left')
@@ -187,6 +187,11 @@ def test_tonight_requires_bullpen_membership_on_the_roster_moves_present_date(jo
     assert changes(day, {'453286': {}}) == []
     assert changes(date(2017, 8, 27 if joined else 28), {'599998': {}}) == []
     assert changes(day, {'599998': {}}, dict(event, previous=None)) == []
+    transaction = dict(change_id='official-transaction', change_class='verified_transaction',
+                       team_id=141, team_abbreviation='TOR', occurred_on='2017-08-28')
+    compared = [(141, 599998, transaction)]
+    assert changes(day, {'599998': {}}, transactions=compared) == [item]
+    assert changes(day, {}, transactions=compared) == [transaction]
 
 
 def test_tonight_patterns_follow_source_identity_and_eligible_start_classes():
@@ -235,3 +240,48 @@ def test_transaction_qualification_preserves_dates_and_requires_independent_pitc
     for change in (dict(to_team_id=118), dict(transaction_type_code='UNKNOWN'),
                    dict(transaction_date='2017-08-26'), dict(participant_position_code='6')):
         assert _qualified_event(dict(facts, **change), 2, pitcher, day, source) is None
+
+
+def test_slate_transaction_comparison_requires_a_close_selected_predecessor_and_two_usable_receipts(monkeypatch):
+    from datetime import date
+    from unittest.mock import Mock
+    from sync_v3 import transaction_reads as tx
+
+    day = date(2017, 8, 28)
+    cursor = Mock()
+    for predecessor in (None, ('old', date(2017, 8, 26)), ('future', date(2017, 8, 29))):
+        cursor.fetchone.return_value = predecessor
+        assert tx.slate_transaction_changes(cursor, 'current', day, {}) == ([], 'comparable_transaction_edition_unavailable')
+    cursor.fetchone.return_value = ('old', date(2017, 8, 27))
+    for withheld in ('old', 'current'):
+        monkeypatch.setattr(tx, '_receipt_rows', lambda cur, generation, date: ({}, None if generation == withheld else []))
+        assert tx.slate_transaction_changes(cursor, 'current', day, {}) == ([], 'comparable_transaction_receipt_unavailable')
+
+    def rows(cur, generation, through):
+        prior = [('1', 1, {})]
+        updated = [('1', 2, dict(transaction_date=str(day), effective_date=str(day))),
+                   ('2', 1, dict(transaction_date='2017-08-26', effective_date='2017-08-29'))]
+        return {}, prior if generation == 'old' else updated
+
+    monkeypatch.setattr(tx, '_receipt_rows', rows)
+    assert tx.slate_transaction_changes(cursor, 'current', day, {}) == ([], None)
+
+
+@pytest.mark.parametrize('effective', ['2017-08-29', None])
+def test_new_transaction_with_distinct_or_missing_effective_date_is_identified_as_a_report(monkeypatch, effective):
+    from sync_v3 import transaction_reads as tx
+
+    day = date(2017, 8, 28)
+    facts = dict(transaction_id=12, player_mlb_id=100, transaction_type_code='CU',
+                 transaction_date=str(day), effective_date=effective, from_team_id=422, to_team_id=141)
+    member = dict(mlb_id=100, public_id=14, position='P', name='A.J. Fixture', team_id=141,
+                  roster_observation=dict(membership='active', team_id=141, represented=str(day), roster_digest='roster'))
+    source = dict(digest='official', acquired_at='2026-11-21T00:00:00Z')
+    monkeypatch.setattr(tx, '_receipt_rows', lambda cur, gen, day: (source, [] if gen == 'old' else [('12', 1, facts)]))
+    monkeypatch.setattr(tx, '_transaction_members', lambda *_: {100: member})
+    changes, gap = tx._compare_transactions(None, 'current', day, ('old', day), {141: 'TOR'})
+    (club, comparable_roster_player, event), = changes
+    assert gap is None and club == 141 and comparable_roster_player is None
+    assert event['headline'] == 'MLB reported a transaction for A.J. Fixture.'
+    assert event['detail'] == ('Recalled (effective 2017-08-29).' if effective else 'Recalled (effective date unavailable).')
+    assert event['occurred_on'] == str(day) and event['source_ref'] == 'current/old/official/roster#transaction:12'

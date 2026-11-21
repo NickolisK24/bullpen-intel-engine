@@ -157,7 +157,8 @@ def verify_slate_matchups(connection, slate):
         metadata = group['results'][0]['metadata']
         detail = read_game_cards(connection, revision=revision, game_pk=pk)
         comparison = detail['historical_comparison']
-        if (detail['games'] != [card] or (comparison['generation'], comparison['selection_revision']) != edition
+        if (detail['games'] != [card] or detail['league_changes'] != slate['league_changes']
+                or (comparison['generation'], comparison['selection_revision']) != edition
                 or comparison['game']['game_pk'] != pk or comparison['represented_date'] != slate['data_through']
                 or comparison['availability_reference_date'] != slate['availability_reference']
                 or metadata['reference_date'] != comparison['game']['reference_date']
@@ -168,8 +169,23 @@ def verify_slate_matchups(connection, slate):
             team = card[side]['team_id']
             if any(row['team_id'] != team for row in (comparison['game'][side], comparison['teams'][label], metadata[side])):
                 raise RuntimeError(f'Historical {side} club differs for game {pk}')
+            club_changes = [change for change in slate['league_changes'] if change['team_id'] == team]
+            if card[side]['change_refs'] != [change['change_id'] for change in club_changes]:
+                raise RuntimeError(f'Historical Matchup cites different changes for club {team}')
             if team not in board_performance:
                 board = read_team_board(connection, team, revision=revision)
+                for change in club_changes:
+                    if change['change_class'] != 'verified_transaction':
+                        continue
+                    chronology = board['official_transactions']
+                    if not any(change['source_ref'].endswith(f"/{chronology['source']['digest']}/{event['roster_digest']}"
+                                                             f"#transaction:{event['transaction_id']}")
+                               and event['transaction_date'] == slate['data_through']
+                               and (change['headline'] == event['description'] if event['effective_date'] == event['transaction_date']
+                                    else event['pitcher']['name'] in change['headline'] and event['label'] in (change['detail'] or '')
+                                    and (event['effective_date'] or 'effective date unavailable') in change['detail'])
+                               for event in chronology['events']):
+                        raise RuntimeError(f'Historical Tonight transaction differs from the Team Board for club {team}')
                 group = board['active_group_performance']
                 snapshot = board['sections']['group_performance']
                 if ((board['generation'], board['selection_revision']) != edition or group['team'] != team
