@@ -1,3 +1,4 @@
+import { BoardAnswer } from '../../ResearchAnswer'
 import { readPublicTeamState } from '../../../adapters/publicTeamState'
 import { RESTED_AVAILABILITY_DISTINCTION } from '../../../utils/bullpenConcepts'
 import { formatFreshnessDate, isSampleFreshness } from '../../UI/Freshness'
@@ -325,6 +326,7 @@ export default function TeamBoardAnswerBlock({
               />
             )}
 
+            <BoardAnswer view={view} read={read} />
             {evidenceDisclosure && (
               <div className="mt-section border-t border-line-subtle pt-panel">
                 {evidenceDisclosure}

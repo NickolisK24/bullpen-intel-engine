@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import (
@@ -295,6 +295,16 @@ def process_final_play_by_play_foundation(
         result['corrected'] = False
         return result
 
+    first_pitch = _first_pitch_at(all_plays, resolved_game_date)
+    if observation['status'] == OBSERVATION_IDENTICAL and marker.first_pitch_at != first_pitch:
+        # The pitch fingerprint predates timestamp capture. Identical baseball
+        # facts do not authorize a clock correction without a newer sequence.
+        prior_sequence = marker.accepted_pitch_observation_sequence
+        if observation_sequence is not None and prior_sequence is not None and observation_sequence < prior_sequence:
+            first_pitch = marker.first_pitch_at
+        elif observation_sequence is None or observation_sequence == prior_sequence:
+            first_pitch = None
+
     corrected = bool(
         marker is not None
         and marker.event_fingerprint
@@ -346,6 +356,7 @@ def process_final_play_by_play_foundation(
         accepted_pitch_observation_sequence=observation['accepted_sequence'],
         accepted_pitch_source_authority=source_authority,
     )
+    marker.first_pitch_at = first_pitch
     if failure_entity_type:
         _record_failure(
             failure_entity_type,
@@ -366,6 +377,28 @@ def process_final_play_by_play_foundation(
     result['observation_order_status'] = observation['status']
     result['observation_rejected'] = False
     return result
+
+
+def _first_pitch_at(plays, game_date):
+    opening = [play for play in plays if (play.get('about') or {}).get('atBatIndex') == 0]
+    if len(opening) != 1:
+        return None
+    about = opening[0]['about']
+    if about.get('inning') != 1 or about.get('halfInning') != 'top':
+        return None
+    first = [event for event in (opening[0].get('playEvents') or [])
+             if isinstance(event, dict) and event.get('isPitch') is True and event.get('pitchNumber') == 1]
+    if len(first) != 1 or not first[0].get('pitchData'):
+        return None
+    try:
+        timestamp = datetime.fromisoformat(first[0]['startTime'].replace('Z', '+00:00'))
+        if not timestamp.tzinfo or game_date is None:
+            return None
+        utc = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+        official_day = game_date.date() if isinstance(game_date, datetime) else game_date
+        return utc if abs((utc.date() - official_day).days) <= 1 else None
+    except (KeyError, AttributeError, ValueError, OverflowError):
+        return None
 
 
 def _classify_pitch_observation(

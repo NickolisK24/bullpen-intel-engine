@@ -499,3 +499,14 @@ test('research journeys label observed home-to-matchup transitions and partial h
   assert.ok(html.includes('Coverage begins when each route is instrumented.'))
   assert.ok(html.includes('>7</span>'))
 })
+
+test('research report identifies respondents, total visits and unknown timing', () => {
+  const report = reportFixture({ research_outcomes: {
+    board: { views: 8, responses: 3, correct: 2, correct_within_ten_seconds: 1, median_correct_seconds: 12 },
+    search: { views: 7, responses: 2, answered: 1 },
+    matchup: { before: 3, at_or_after: 2, unknown: 5 }, tonight_to_matchup: { before: 1, at_or_after: 0, unknown: 2 },
+  } })
+  const html = render(React.createElement(TrafficReport, { report }))
+  for (const text of ['1 of 3 respondents', '8 instrumented Board visits', '1 yes · 1 no',
+    '3 before · 2 at or after · 5 unknown', 'Directly from Tonight: 1 before']) assert.ok(html.includes(text), text)
+})

@@ -300,7 +300,7 @@ def test_burgos_history(fenced_database_url):
             seed(conn)
             assert (
                 conn.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one()
-                == "de608f29a341"
+                == "e241f709cd36"
             )
             assert conn.exec_driver_sql(
                 "SELECT relrowsecurity FROM pg_class WHERE oid='repair_requests'::regclass"

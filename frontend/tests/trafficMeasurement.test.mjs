@@ -346,9 +346,36 @@ test('direct and subsequent research visits send bounded route templates in one 
     assert.equal(payloads[index].surface, surface)
     assert.equal(payloads[index].session_id, payloads[0].session_id)
   }
-  assert.doesNotMatch(JSON.stringify(payloads), /private-search|private-fragment|824424|BOS|season/)
+  assert.doesNotMatch(JSON.stringify(payloads), /private-search|private-fragment|\/matchup\/824424|BOS|season/)
+  assert.equal(payloads[2].matchup_game_pk, 824424)
   for (const path of ['/today', '/matchup/0', '/matchup/game', '/matchup/123/extra',
     '/history/team/', '/history/team/a@b', '/history/team/BOS/secret']) {
     assert.equal(canonicalPage(path), null, path)
   }
+})
+
+test('Board check keeps the original clock across evidence links and waits for the visit write', async () => {
+  const records = []
+  let acknowledge
+  const input = { hostname: 'baseballos.app', pathname: '/bullpen', search: '?team=BOS',
+    locationKey: 'board', storage: storage(), cryptoObject: cryptoSequence(),
+    fetchImpl: (url, init) => {
+      records.push({ url, body: JSON.parse(init.body) })
+      if (records.length === 1) return new Promise(resolve => { acknowledge = resolve })
+      return Promise.resolve({ ok: true })
+    } }
+  observeTrafficRoute(input)
+  const visit = traffic.currentResearchVisit()
+  assert.equal(visit.startedAt, 0)
+  observeTrafficRoute({ ...input, locationKey: 'ledger', hash: '#team-relief-work' })
+  assert.equal(traffic.currentResearchVisit(), visit)
+  assert.equal(records[1].body.research_version, undefined)
+  assert.equal(traffic.submitResearchAnswer(visit, 'incorrect'), true)
+  assert.equal(traffic.submitResearchAnswer(visit, 'correct'), false)
+  assert.equal(records.length, 2)
+  acknowledge({ ok: true })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(records[2].url, '/api/traffic/page-view')
+  assert.equal(records[2].body.research_answer.view_id, records[0].body.view_id)
+  assert.equal(records[2].body.research_answer.outcome, 'incorrect')
 })
