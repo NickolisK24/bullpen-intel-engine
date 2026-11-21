@@ -1,10 +1,14 @@
 """Evidence for editorial review from a selected historical candidate."""
-from datetime import date
+from datetime import date, timedelta
+from hashlib import sha256
+import json
 
 from services.mlb_club_directory import MLB_CLUBS
 from services.bullpen_optionality_context import build_bullpen_optionality_context, last_workload_label_for_date
 from services import bullpen_concentration_context as concentration
 from services import rotation_context as rotation_layer
+from services import role_stability_context as stability
+from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
@@ -33,6 +37,38 @@ def _optionality(cur, digest, team, reference):
     for option in layer['clean_workload_options']:
         option['last_workload'] = last_workload_label_for_date(latest[option['player_id']], ref)
     return layer
+
+
+def _stability(cur, digest, team, through):
+    ledger = appearance_ledger(cur, digest, 'team', team, through)
+    start = (through - timedelta(days=2 * concentration.BULLPEN_CONCENTRATION_WINDOW_DAYS - 1)).isoformat()
+    citation = dict(ledger['citation'], start=start, through=through.isoformat())
+    if any(day >= start for day in ledger['gaps']):
+        return None, 'incomplete_comparison_calendar', citation
+    lines = [line for line in ledger['appearances'] if line['game_date'] >= start]
+    if any(len(line['boxscore_digests']) != 1 or line['pitches_thrown'] is None for line in lines):
+        return None, 'incomplete_workload_or_ambiguous_boxscore', citation
+    digests = sorted({line['boxscore_digests'][0] for line in lines})
+    cur.execute('SELECT sha256,encoded_json FROM candidate.payloads WHERE sha256=ANY(%s)', (digests,))
+    players_by_digest = {}
+    for digest_value, encoded in cur:
+        if sha256(encoded).hexdigest() != digest_value:
+            raise ValueError('Role stability boxscore digest mismatch')
+        body = json.loads(bytes(encoded))
+        side, = (side for side in body['teams'].values() if side['team']['id'] == team)
+        players_by_digest[digest_value] = side['players']
+    logs = []
+    for line in lines:
+        players = players_by_digest[line['boxscore_digests'][0]]
+        mlb = line['mlb_id']
+        person = players.get(f'ID{mlb}', {}).get('person') or {}
+        if person.get('id') != mlb or not person.get('fullName'):
+            return None, 'missing_official_reliever_identity', citation
+        logs.append(dict(line, games_started=0, game_type='R', player_id=mlb, pitcher_name=person['fullName']))
+    layer = stability.build_role_stability_context(logs, reference_date=through)
+    if not layer['context_available']:
+        return None, 'insufficient_comparable_workload', citation
+    return layer, 'complete_comparison_windows', citation
 
 
 def read_story_observations(connection, team, *, revision=None):
@@ -99,9 +135,14 @@ def read_story_observations(connection, team, *, revision=None):
             coverage['bullpen_concentration_context'] = 'complete_calendar'
         else:
             coverage['bullpen_concentration_context'] = 'missing_official_reliever_identity'
-        # Both legacy builders normally receive currently assigned players. The pinned final
+        role_stability, coverage['role_stability_context'], result['role_stability_citation'] = _stability(
+            cur, digest, team, through)
+        if role_stability:
+            layers['role_stability_context'] = role_stability
+        # These legacy builders normally receive currently assigned players. The pinned final
         # proves the club at appearance, including for a player who subsequently transferred.
-        legacy_scope = {rotation_layer.CURRENT_ASSIGNMENT_LIMITATION, concentration.CURRENT_ASSIGNMENT_LIMITATION}
+        legacy_scope = {rotation_layer.CURRENT_ASSIGNMENT_LIMITATION, concentration.CURRENT_ASSIGNMENT_LIMITATION,
+                        stability.CURRENT_ASSIGNMENT_LIMITATION}
         for layer in layers.values():
             layer['limitations'] = [text for text in layer.get('limitations', []) if text not in legacy_scope]
             layer['limitations'].append('The official final pitching line establishes the club at appearance.')
