@@ -151,6 +151,10 @@ def verify_slate_matchups(connection, slate):
         search = read_search(connection, str(pk), revision=revision)
         if (search['generation'], search['selection_revision']) != edition:
             raise RuntimeError(f'Historical Search edition differs for game {pk}')
+        if (search['data_through'] != slate['data_through']
+                or search['availability_reference'] != slate['availability_reference']
+                or search['search']['represented_date'] != slate['availability_reference']):
+            raise RuntimeError(f'Historical Search dates differ from the selected slate for game {pk}')
         group = next(group for group in search['search']['groups'] if group['entity_type'] == 'matchup')
         if group['status'] != 'available' or [row['id'] for row in group['results']] != [pk]:
             raise RuntimeError(f'Historical Search cannot resolve slate game {pk}')

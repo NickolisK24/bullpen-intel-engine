@@ -1025,6 +1025,13 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 # Reject a display value that cannot be reproduced from the selected Team Board.
                 from unittest.mock import patch
 
+                def conflicting_search(*args, **kwargs):
+                    return dict(read_search(*args, **kwargs), data_through=slate['availability_reference'])
+
+                with patch('sync_v3.product_reads.read_search', conflicting_search):
+                    with pytest.raises(RuntimeError, match='Search dates differ from the selected slate'):
+                        next(verify_slate_matchups(worker, slate))
+
                 def conflicting_matchup(*args, **kwargs):
                     detail = read_game_cards(*args, **kwargs)
                     detail['historical_comparison']['domains']['performance'] = dict(
