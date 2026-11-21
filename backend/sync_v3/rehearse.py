@@ -140,6 +140,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     with worker, worker.cursor() as cur:
                         cur.execute('SELECT input_digest FROM candidate.workload_history WHERE id=%s', (result[0],))
                         input_digest, = cur.fetchone()
+                        if subject == 'readiness':
+                            from sync_v3.change_history import readiness_changes
+                            print(json.dumps(readiness_changes(cur, mlb_id, day)))
                     print(json.dumps(dict(subject=subject, mlb_id=mlb_id, through=day.isoformat(),
                                           snapshot_id=result[0], revision=result[1], semantic_digest=result[2],
                                           input_digest=input_digest)))

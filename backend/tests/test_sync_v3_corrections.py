@@ -530,3 +530,39 @@ def test_late_postponed_listing_cannot_overrule_another_dates_final(tmp_path):
                     cur.execute("""SELECT f.parameters->>'startDate' FROM candidate.revisions r
                                    JOIN candidate.fetches f ON f.id=r.context_id WHERE r.domain='final'""")
                     assert cur.fetchall() == [(final_day.isoformat(),)]
+
+
+def test_candidate_changes_reproduce_prior_revision_and_withhold_unknown_reads():
+    from contextlib import closing
+    from sync_v3.change_history import readiness_changes
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    end = date(2024, 8, 7)
+
+    def freeze(cur, day, key):
+        arm = {'arm_read': {'key': key}} if key else None
+        facts = dict(team=118, membership_date=day.isoformat(), reference_date=(day + timedelta(days=1)).isoformat(),
+                     arms={'102': {'read': arm}}, team_state={'public_code': 'stretched'},
+                     comparison={'team_states_compared': 1})
+        return _store(cur, 'team', 118, day, DOMAINS['readiness'][1], facts, [])
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db, db, db.cursor() as cur:
+            freeze(cur, end, 'watch_arm')
+            assert readiness_changes(cur, 118, end)['status'] == 'missing_snapshot'
+            freeze(cur, end - timedelta(days=1), 'clean_option')
+            first = readiness_changes(cur, 118, end)
+            assert first['status'] == 'complete'
+            assert [e['kind'] for e in first['events']] == ['arm_read_changed', 'clean_option_count_changed']
+            assert first['events'][0]['player'] == 102
+            freeze(cur, end, None)
+            revised = readiness_changes(cur, 118, end)
+            assert revised['status'] == 'partial_arm_coverage' and revised['events'] == []
+            assert revised['lineage'][1]['revision'] == 2
+            assert readiness_changes(cur, 118, end, revisions=(1, 1)) == first
+            assert readiness_changes(cur, 118, end, revisions=(3, 1))['status'] == 'missing_snapshot'
