@@ -12,6 +12,7 @@ from services.sync import _extract_leverage_index
 from services.team_board_public_deployment_context import _recorded_li, entry_from_ordered_events, movement_window_evidence
 from sync_v3.performance import final_performance_counts, performance_line, performance_windows
 from sync_v3.discovery import calendar_requests
+from sync_v3.handoff import game_handoffs
 from sync_v3.pitch_measurements import game_pitch_samples, monthly_pitch_sample
 from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.workload import _game_workload
@@ -108,7 +109,9 @@ def _from_schedule(cur, game, day, schedule_source, *, include_pitch_samples=Fal
             entries, reason = qualified_entries(game, day, lines, receipt.body['allPlays'])
     if include_pitch_samples:
         samples, tracking_reason = {}, reason
+        result['handoffs'] = None
         if reason is None:
+            result['handoffs'] = game_handoffs(game, lines, receipt.body['allPlays'])
             samples, tracking_reason = game_pitch_samples(game, day, lines, receipt.body['allPlays'])
     result['entry_reason'] = reason
     result['relief_appearances'] = []

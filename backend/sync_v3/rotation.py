@@ -32,7 +32,7 @@ def club_rotation(calendar, team, through):
             relief = [r for r in lines if r['games_started'] == 0]
             starter = starts[0] if len(starts) == 1 else None
             daily['games'].append({
-                'game_pk': pk, 'rotation': record, 'shape_reason': shape_reason,
+                'game_pk': pk, 'series': observed.get('series', {}).get(pk), 'rotation': record, 'shape_reason': shape_reason,
                 'credited_starter': starter['pitcher_mlb_id'] if starter else None,
                 'starter_outs': starter['outs_recorded'] if starter else None,
                 'starter_pitches': starter['pitches_thrown'] if starter else None,
@@ -59,4 +59,43 @@ def club_rotation(calendar, team, through):
             'starter_outs', 'short_start_count', 'bullpen_outs_required', 'opener_bulk_games',
             'bulk_follower_outs', 'bullpen_games', 'bullpen_game_outs', 'game_shape_distribution',
         )}
-    return {'team': team, 'through': through.isoformat(), 'dates': dates, 'windows': windows}
+    return {'team': team, 'through': through.isoformat(), 'dates': dates, 'windows': windows,
+            'series_burden': _series_burden(dates)}
+
+
+def _series_burden(dates):
+    complete, pending, seen = [], [], set()
+    for day, daily in sorted(dates.items()):
+        games = daily['games']
+        seen.update(g['game_pk'] for g in games)
+        if daily['reason']:
+            pending = []
+            continue
+        if len(games) > 1:
+            order = [(g['series'] or {}).get('game_number') for g in games]
+            if any(type(n) is not int or n <= 0 for n in order) or len(set(order)) != len(order):
+                pending = []
+                continue
+            games = sorted(games, key=lambda g: g['series']['game_number'])
+        for game in games:
+            meta = game['series'] or {}
+            number, length = meta.get('number'), meta.get('length')
+            if type(number) is not int or type(length) is not int or not 1 <= number <= length:
+                pending = []
+                continue
+            key = meta['home'], meta['away'], length
+            if number == 1:
+                pending = []
+            elif not pending or pending[0][0] != key or len(pending) + 1 != number:
+                pending = []
+                continue
+            pending.append((key, day, game))
+            if number == length:
+                series_games = [item[2] for item in pending]
+                complete.append({'home': key[0], 'away': key[1], 'start': pending[0][1], 'end': day,
+                                 'games': [g['game_pk'] for g in series_games],
+                                 **{f: _recorded_total(series_games, f) for f in (
+                                     'starter_outs', 'relief_outs', 'relief_pitches', 'relief_batters_faced')}})
+                pending = []
+    qualified = {pk for series in complete for pk in series['games']}
+    return {'complete_series': complete, 'games_without_complete_series': sorted(seen - qualified)}

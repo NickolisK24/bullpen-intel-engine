@@ -8,7 +8,8 @@ from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters
-from sync_v3.discovery import calendar_requests, game_requests, pitcher_requests, roster_requests
+from sync_v3.discovery import (affiliate_directory_request, calendar_requests, depth_directory, depth_roster_requests,
+                               game_requests, pitcher_requests, roster_requests)
 
 
 def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
@@ -28,13 +29,16 @@ def enqueue_requests(cur, requests, now, *, budget, day, cause=None):
         queue.enqueue(cur, identity, payload, now, budget=budget, product_date=day)
 
 
-def plan_children(cur, observation_id, acquisition, budget, now):
+def plan_children(cur, observation_id, acquisition, budget, now, day):
     canonical.observe(cur, observation_id, acquisition)
     affected = rosters.observe(cur, observation_id, acquisition)
     if affected:
         day = date.fromisoformat(acquisition.request.params()['endDate'])
         enqueue_requests(cur, roster_requests(day, affected), now,
                          budget=budget, day=day, cause=observation_id)
+    if acquisition.request.endpoint == '/teams/affiliates':
+        directory = depth_directory(acquisition.request, acquisition.body)
+        enqueue_requests(cur, depth_roster_requests(day, directory), now, budget=budget, day=day)
     if acquisition.request.endpoint == '/schedule':
         represented = acquisition.request.params()['startDate']
         requests = game_requests(date.fromisoformat(represented), acquisition.body,
@@ -58,7 +62,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc)):
     if type(max_jobs) is not int or not 1 <= max_jobs <= 256:
         raise ValueError('Cycle limit must be between one and 256 jobs')
@@ -67,7 +71,9 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), budget
         schedule, transactions = calendar_requests(day)
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
-        requests = (schedule, transactions, *roster_requests(day, teams), *pitcher_requests(day, pitchers))
+        depth_teams = sorted(set(depth_teams))
+        requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers))
+        requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)
         enqueue_requests(cur, requests, now, budget=budget, day=day)
 
     receipts = []
@@ -77,5 +83,5 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), budget
         if not claimed:
             break
         receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=lambda c, oid, acquired:
-                                         plan_children(c, oid, acquired, budget, clock())))
+                                         plan_children(c, oid, acquired, budget, clock(), day)))
     return receipts

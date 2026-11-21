@@ -51,6 +51,39 @@ def roster_requests(day, teams):
                  for team in sorted(teams) for kind in ('active', '40Man', 'fullRoster', 'nonRosterInvitees'))
 
 
+def affiliate_directory_request(day, club):
+    if club not in MLB_TEAM_IDS:
+        raise ValueError('An MLB parent club is required')
+    return _request('/teams/affiliates', 86400, teamIds=club, season=day.year)
+
+
+def depth_directory(request, body):
+    scope = request.params()
+    club = scope['teamIds']
+    rows = body.get('teams')
+    if club not in MLB_TEAM_IDS or not isinstance(rows, list):
+        raise ValueError('Missing official affiliate directory')
+    result = {}
+    for row in rows:
+        team = row.get('id')
+        sport = (row.get('sport') or {}).get('id')
+        if (type(team) is not int or team <= 0 or team in result or type(sport) is not int
+                or row.get('season') != scope['season']
+                or (team == club and sport != 1)
+                or (team != club and (team in MLB_TEAM_IDS or row.get('parentOrgId') != club or sport == 1))):
+            raise ValueError('Affiliate directory identity or season conflict')
+        result[team] = {'team': team, 'name': row.get('name'), 'sport': sport}
+    if club not in result:
+        raise ValueError('Directory does not identify its MLB parent')
+    return result
+
+
+def depth_roster_requests(day, directory):
+    # Affiliated minor-league levels, plus the parent club for person attributes.
+    return tuple(_request(f'/teams/{team}/roster', 21600, date=day.isoformat(), rosterType='active', hydrate='person')
+                 for team, row in sorted(directory.items()) if row['sport'] in (1, 11, 12, 13, 14, 15, 16))
+
+
 def game_requests(day: date, schedule, *, now: datetime, reconciled=(), corrected=()):
     """Reconcile finals once per evidence revision; live/scheduled games stay adaptive."""
     dates = schedule.get('dates')

@@ -49,7 +49,7 @@ def roster_facts(capture):
 
 def observe(cur, source_id, capture):
     req = capture.request
-    if req.endpoint.endswith('/roster'):
+    if req.endpoint.endswith('/roster') and 'hydrate' not in req.params():
         facts = roster_facts(capture)
         if facts:
             identity = f"{facts['team']}/{facts['type']}/{facts['represented']}"

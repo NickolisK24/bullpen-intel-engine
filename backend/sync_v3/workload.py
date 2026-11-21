@@ -80,7 +80,7 @@ def _day_by_scope(cur, day, scopes):
     if row is None or row[1] != 'received' or row[2] is not None:
         return {scope: (None, 'missing_complete_schedule') for scope in scopes}
     schedule = replay(cur, row[0])
-    results = {scope: ({'lines': [], 'official_lines': [], 'sources': {row[0]}}, None)
+    results = {scope: ({'lines': [], 'official_lines': [], 'series': {}, 'sources': {row[0]}}, None)
                for scope in scopes}
     for entry in schedule.body['dates']:
         for game in entry['games']:
@@ -103,6 +103,11 @@ def _day_by_scope(cur, day, scopes):
                     observed['lines'].extend(workload)
                     observed['official_lines'].extend(official)
                     observed['sources'].update(sources)
+                    observed['series'][game['gamePk']] = {
+                        'number': game.get('seriesGameNumber'), 'length': game.get('gamesInSeries'),
+                        'game_number': game.get('gameNumber'), 'home': game['teams']['home']['team']['id'],
+                        'away': game['teams']['away']['team']['id'],
+                    }
     for observed, _ in results.values():
         if observed is not None:
             observed['sources'] = sorted(observed['sources'])

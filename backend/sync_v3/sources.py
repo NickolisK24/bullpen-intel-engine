@@ -5,7 +5,7 @@ from datetime import date, datetime
 import re
 
 from services.mlb_api import MLBApiClient
-from sync_v3.discovery import Request, game_requests
+from sync_v3.discovery import Request, depth_directory, game_requests
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,8 @@ def inspect_response(request, body, acquired_at):
                        or (g.get('group') or {}).get('displayName') != 'pitching'
                        or not isinstance(g.get('splits'), list) for g in groups)):
             raise ValueError('Unexpected official pitcher stats scope')
+    elif endpoint == '/teams/affiliates':
+        depth_directory(request, body)
     elif endpoint == '/transactions':
         if not isinstance(body.get('transactions'), list):
             raise ValueError('Missing transaction collection')
@@ -69,6 +71,6 @@ def inspect_response(request, body, acquired_at):
 
 
 def transport_endpoint(request):
-    if not re.fullmatch(r'/(schedule|transactions|people/[1-9][0-9]*/stats|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
+    if not re.fullmatch(r'/(schedule|transactions|teams/affiliates|people/[1-9][0-9]*/stats|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
         raise ValueError('Unsupported acquisition endpoint')
     return request.endpoint.replace('/api/v1.1/', '/../v1.1/', 1)

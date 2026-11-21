@@ -105,3 +105,41 @@ def test_postponed_listing_uses_represented_day_without_counting_makeup_twice():
     assert report['games_today_count'] == 1 and report['games_played_last_3_days'] == 0
     game['resumedFromDate'] = prior.isoformat()
     assert _club_rows([game], 114, END)[1] == 'game_date_or_resumption_unresolved'
+
+
+def test_handoff_separates_last_starter_score_and_first_relief_score():
+    from sync_v3.handoff import game_handoffs
+
+    def play(i, pitcher, half, inning, home, away, outs, hand='R', bat='L'):
+        return {'about': {'atBatIndex': i, 'inning': inning, 'halfInning': half, 'isComplete': True},
+                'matchup': {'pitcher': {'id': pitcher}, 'pitchHand': {'code': hand}, 'batSide': {'code': bat}},
+                'result': {'homeScore': home, 'awayScore': away}, 'count': {'outs': outs}}
+    game = {'teams': {'home': {'team': {'id': 118}}, 'away': {'team': {'id': 111}}}}
+    lines = [line(10, 1, 1, 3), line(10, 2, 0, 3), line(10, 3, 1, 3, club=111)]
+    plays = [play(0, 1, 'top', 1, 0, 0, 3), play(1, 3, 'bottom', 1, 2, 0, 3),
+             play(2, 2, 'top', 2, 2, 0, 1, 'L', 'S')]
+    result = game_handoffs(game, lines, plays)
+    assert result[118]['last_starter_pa']['runs_for'] == 0
+    assert result[118]['last_starter_pa']['outs_after'] == 3
+    assert result[118]['first_relief_pa']['runs_for_before'] == 2
+    assert result[118]['first_relief_pa']['entry_bases'] is None
+    assert result[118]['matchup_sides_by_pitcher'][2] == {'L/?': 1}
+    assert result[111]['first_relief_pa'] is None
+    plays[0]['count']['outs'] = 1
+    assert game_handoffs(game, lines, plays)[118]['last_starter_pa']['outs_after'] is None
+
+
+def test_series_burden_requires_matching_clubs_unbroken_sequence_and_dated_coverage():
+    from sync_v3.rotation import _series_burden
+    def game(pk, n, opp=111, order=1):
+        return {'game_pk': pk, 'series': {'number': n, 'length': 3, 'home': 118, 'away': opp, 'game_number': order},
+                'starter_outs': 15, 'relief_outs': 12, 'relief_pitches': None, 'relief_batters_faced': 16}
+    days = {'2024-08-07': {'reason': None, 'games': [game(3, 3, order=2), game(2, 2)]},
+            '2024-08-06': {'reason': None, 'games': [game(1, 1)]}}
+    result = _series_burden(days)
+    series, = result['complete_series']
+    assert series['games'] == [1, 2, 3] and series['relief_outs'] == 36 and series['relief_pitches'] is None
+    days['2024-08-06']['reason'] = 'missing_compatible_final'
+    assert _series_burden(days)['complete_series'] == []
+    days['2024-08-06'] = {'reason': None, 'games': [game(1, 1, 147)]}
+    assert _series_burden(days)['games_without_complete_series'] == [1, 2, 3]

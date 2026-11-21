@@ -36,7 +36,7 @@ def run_fixture(connection, filename):
         return responses[(endpoint, tuple(sorted(params.items())))]
 
     results = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()), clock=lambda: at,
-                        max_jobs=256, budget='historical')
+                        depth_teams=fixture.get('depth_teams', ()), max_jobs=256, budget='historical')
     errors = []
     with connection, connection.cursor() as cur:
         for oid, status in results:

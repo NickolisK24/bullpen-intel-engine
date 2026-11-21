@@ -68,3 +68,76 @@ def test_rejected_new_source_withholds_prior_membership_and_keeps_other_days():
                 assert cur.fetchone() == (1,)
         finally:
             worker.close()
+
+
+def test_depth_directory_and_profile_cannot_grant_mlb_membership():
+    from sync_v3.depth import _pitchers
+    from sync_v3.discovery import affiliate_directory_request, depth_directory, depth_roster_requests
+    from sync_v3.rosters import observe
+
+    day = date(2024, 8, 5)
+    req = affiliate_directory_request(day, 118)
+    parent = {'id': 118, 'season': 2024, 'sport': {'id': 1}}
+    farm = {'id': 541, 'season': 2024, 'sport': {'id': 11}, 'parentOrgId': 118}
+    directory = depth_directory(req, {'teams': [parent, farm, dict(farm, id=3301, sport={'id': 21})]})
+    requests = depth_roster_requests(day, directory)
+    assert [r.endpoint for r in requests] == ['/teams/118/roster', '/teams/541/roster']
+    for bad in [dict(farm, parentOrgId=111), dict(farm, season=2025), dict(farm, id=111)]:
+        with pytest.raises(ValueError):
+            depth_directory(req, {'teams': [parent, bad]})
+    body = {'teamId': 541, 'rosterType': 'active', 'roster': [{
+        'person': {'id': 12, 'pitchHand': {'code': 'R'}}, 'parentTeamId': 118,
+        'position': {'code': '1'}, 'status': {'code': 'A'}}]}
+    captured = inspect_response(requests[1], body, datetime.now(timezone.utc))
+    assert observe(None, 1, captured) == set()
+    observed, reason = _pitchers(body, 541, 118, 'active')
+    assert not reason and observed[12]['profile_pitch_hand'] == 'R'
+    entry = body['roster'][0]
+    body['roster'].append(dict(entry, person={'id': 12, 'pitchHand': {'code': 'L'}}))
+    assert _pitchers(body, 541, 118, 'active')[0][12]['profile_pitch_hand'] is None
+    body['roster'].append(dict(entry, parentTeamId=111))
+    assert _pitchers(body, 541, 118, 'active') == (None, 'parent_club_conflict')
+
+
+def test_dated_affiliates_replay_independently_of_mlb_membership(tmp_path):
+    import json
+    import os
+    from pathlib import Path
+
+    from sync_v3.depth import club_depth
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install, run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    fixture['depth_teams'] = [111]
+    affiliates = [{'id': 111, 'season': day.year, 'sport': {'id': 1}},
+                  *[{'id': t, 'season': day.year, 'sport': {'id': 11}, 'parentOrgId': 111} for t in (414, 428)]]
+    fixture['responses'].append({'endpoint': '/teams/affiliates', 'params': {'teamIds': 111, 'season': day.year},
+                                 'body': {'teams': affiliates}})
+    pitcher = {'person': {'id': 123, 'pitchHand': {'code': 'L'}}, 'position': {'code': '1'}, 'parentTeamId': 111}
+    for team in (111, 414, 428):
+        fixture['responses'].append({'endpoint': f'/teams/{team}/roster',
+                                     'params': {'date': str(day), 'rosterType': 'active', 'hydrate': 'person'},
+                                     'body': {'teamId': team, 'rosterType': 'active',
+                                              'roster': [] if team == 111 else [pitcher]}})
+    path = tmp_path / 'affiliate.json'
+    path.write_text(json.dumps(fixture))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        worker = connect()
+        try:
+            run_fixture(worker, path)
+            with worker, worker.cursor() as cur:
+                report = club_depth(cur, 111, day)
+                assert report['assignment_conflicts'] == {123: [414, 428]}
+                assert report['affiliate_assignments'] == {}
+                assert report['views']['active']['pitchers'] == {}
+                assert report['affiliate_views'][414]['pitchers'][123]['profile_pitch_hand'] == 'L'
+                cur.execute("SELECT identity FROM candidate.revisions WHERE domain='roster' ORDER BY identity")
+                assert [key for key, in cur] == [f'111/40Man/{day}', f'111/active/{day}']
+        finally:
+            worker.close()

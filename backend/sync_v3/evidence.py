@@ -72,10 +72,14 @@ def replay(cur, observation_id):
     return inspect_response(Request(endpoint, tuple(sorted(params.items())), 0), json.loads(bytes(encoded)), acquired)
 
 
-def latest_qualified_source(cur, endpoint, params):
-    cur.execute("""SELECT f.id, f.outcome, r.source_id FROM candidate.fetches f
+def latest_source_status(cur, endpoint, params):
+    cur.execute("""SELECT f.id, f.outcome, coalesce(r.reason, f.reason) FROM candidate.fetches f
                    LEFT JOIN candidate.refusals r ON r.source_id=f.id
                    WHERE f.endpoint=%s AND f.parameters=%s ORDER BY f.received_at DESC,f.id DESC LIMIT 1""",
                 (endpoint, Json(params)))
-    row = cur.fetchone()
+    return cur.fetchone()
+
+
+def latest_qualified_source(cur, endpoint, params):
+    row = latest_source_status(cur, endpoint, params)
     return row[0] if row and row[1] == 'received' and row[2] is None else None

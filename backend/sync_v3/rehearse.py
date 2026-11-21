@@ -168,6 +168,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     if team is not None:
                         from sync_v3.comparison import compare_team_workload
                         from sync_v3.rotation import club_rotation
+                        from sync_v3.depth import club_depth
+                        result['depth'] = club_depth(cur, team, through)
                         result['rotation'] = club_rotation(calendar, team, through)
                         result['boxscore_windows_compared'] = compare_team_workload(cur, calendar, result)
                     print(json.dumps(result, sort_keys=True))
