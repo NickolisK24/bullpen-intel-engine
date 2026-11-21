@@ -8,19 +8,22 @@ from services.public_recent_work import LOOKBACK_DAYS, RECENT_LINES_MAX, _appear
 from sync_v3.history import METHODOLOGY
 
 
-def appearance_ledger(cur, digest, subject, entity, through):
+def appearance_ledger(cur, digest, subject, entity, through, *, appearance_team=None):
     """Return confirmed regular-season appearances and the dates the snapshot could not settle."""
     if subject not in ('team', 'pitcher'):
         raise ValueError('Expected a club or pitcher ledger')
+    if appearance_team is not None and subject != 'pitcher':
+        raise ValueError('Only a pitcher ledger can use an appearance club')
+    source_subject, source_entity = (subject, entity) if appearance_team is None else ('team', appearance_team)
     cur.execute("""SELECT h.id,h.facts->'coverage_gaps',h.semantic_digest,h.input_digest
                    FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
                    WHERE g.generation=%s AND h.methodology=%s AND h.subject=%s AND h.mlb_id=%s""",
-                (digest, METHODOLOGY, subject, entity))
+                (digest, METHODOLOGY, source_subject, source_entity))
     snapshot, gap_dates, semantic, inputs = cur.fetchone()
-    return _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs, METHODOLOGY)
+    return _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs, METHODOLOGY, appearance_team=appearance_team)
 
 
-def postseason_appearances(cur, digest, subject, entity, through, readiness_team):
+def postseason_appearances(cur, digest, subject, entity, through, readiness_team, *, club_only=False):
     """Read positive appearance evidence only from this edition's verified postseason finals."""
     from services.club_competition_status import POSTSEASON_GAME_TYPES
     from sync_v3.intelligence_history import DOMAINS
@@ -34,11 +37,11 @@ def postseason_appearances(cur, digest, subject, entity, through, readiness_team
                      AND h.represented=%s""", (digest, methodology, readiness_team, through))
     snapshot, games, semantic, inputs = cur.fetchone()
     return _ledger(cur, snapshot, subject, entity, through, {}, semantic, inputs, methodology,
-                   game_types=sorted(POSTSEASON_GAME_TYPES), verified_games=games or [])
+                   game_types=sorted(POSTSEASON_GAME_TYPES), verified_games=games or [], appearance_team=readiness_team if club_only else None)
 
 
 def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs, methodology,
-            game_types=('R',), verified_games=None):
+            game_types=('R',), verified_games=None, appearance_team=None):
     start = through - timedelta(days=LOOKBACK_DAYS - 1)
     games = None if verified_games is None else [str(pk) for pk in verified_games]
     identity_field = 'team_id' if subject == 'team' else 'pitcher_mlb_id'
@@ -62,7 +65,7 @@ def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs
     clubs = {club.team_id: club for club in MLB_CLUBS}
     lines, gaps = {}, dict(gap_dates)
     for pk, revision, day, game_number, line, sha in cur:
-        if day in gaps:
+        if day in gaps or (appearance_team is not None and line['team_id'] != appearance_team):
             continue
         key = (int(pk), line['pitcher_mlb_id'])
         if line['game_pk'] != key[0] or line['game_date'] != day:

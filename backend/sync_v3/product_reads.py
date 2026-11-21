@@ -934,7 +934,18 @@ def read_pitcher(connection, public_id, *, revision=None):
                                  position=player['position'], team_id=player['team_id'])
         if player['team_id'] is None:
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
-            return dict(result, status=kind, identity=player, sections={})
+            departure = player.get('historical_departure')
+            club = departure['team'] if departure else player['roster_observation']['team_id']
+            regular = appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through, appearance_team=club)
+            postseason = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, club, club_only=True)
+            work = pitcher_recent_work(regular, postseason)
+            name = next(c.team_name for c in MLB_CLUBS if c.team_id == club)
+            work.update(appearance_team_id=club, population='pitcher_appearances_for_cited_club',
+                        postseason_citation=postseason['citation'])
+            work['workload_series_note'] += f' Only outings for the {name} are included.'
+            if not work['workload_series']:
+                work['absence_sentence'] = f'No verified outings for the {name} in the available records for this window.'
+            return dict(result, status=kind, identity=player, sections={}, recent_work=work)
         club = next(c for c in MLB_CLUBS if c.team_id == player['team_id'])
         result['pitcher'].update(team_name=club.team_name, team_abbreviation=club.abbreviation)
         depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']

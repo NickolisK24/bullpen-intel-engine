@@ -1078,6 +1078,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert reserve['metadata']['team_id'] is None
                 reserve_page = read_pitcher(worker, reserve['id'])
                 assert reserve_page['status'] == 'dated_roster_identity' and reserve_page['sections'] == {}
+                assert reserve_page['recent_work']['appearance_team_id'] == 111
+                assert reserve_page['recent_work']['workload_series'] == []
+                assert 'for the Boston Red Sox' in reserve_page['recent_work']['absence_sentence']
                 observation = reserve_page['identity']['roster_observation']
                 assert (observation['team_id'], observation['membership'], observation['represented']) == (111, '40Man', str(day))
                 assert reserve['metadata']['roster_observation'] == observation
@@ -1088,6 +1091,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert departed_page['status'] == 'historical_roster_departure' and departed_page['sections'] == {}
                 assert departed_page['identity']['historical_departure'] == removal
                 assert departed_page['identity']['roster_observation']['membership'] == '40Man'
+                assert departed_page['recent_work']['appearance_team_id'] == removal['team']
+                assert departed_page['recent_work']['through'] == str(day)
                 assert departed_page['identity']['team_id'] is None
                 assert departed_page['identity']['position'] == old['metadata']['position']
                 assert read_pitcher_history(worker, old['id'], through_revision=1)['rows'][0]['events'] == [removal]
@@ -1327,8 +1332,14 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
     if not pg:
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
     day, fixtures = league_fixtures(idle_next_day=True)
+    played = next(f for f in fixtures if f['baseball_date'] == str(day))
+    reserve_roster = next(r for r in played['responses'] if r['endpoint'] == '/teams/111/roster'
+                          and r['params']['rosterType'] == '40Man')
+    reserve_roster['body']['roster'].append(dict(person=dict(id=11100, fullName='Former Boston Starter'),
+                                                position=dict(code='1'), status=dict(code='RM'), parentTeamId=111))
     with isolated_cluster(pg) as (owner, connect):
-        install(owner)
+        install(owner, identity_export=dict(source='BaseballOS.pitchers', observed_at=played['observed_at'],
+                                           rows=[dict(mlb_id=11100, id=8777)]))
         with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
             def assert_empty_reads(requested, expected, decision):
                 search = read_search(worker, 'Boston', revision=requested)
@@ -1360,6 +1371,12 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
             assert read_game_cards(worker, game_pk=10101)['status'] == 'game_outside_represented_slate'
             group = read_search(worker, 'Boston', revision=revision)['search']['groups'][2]
             assert group['results'] == [] and group['status'] != 'unavailable'
+            reserve = read_pitcher(worker, 8777, revision=revision)
+            assert reserve['status'] == 'dated_roster_identity' and reserve['pitcher']['team_id'] is None
+            outing, = reserve['recent_work']['recent_appearances']
+            assert (outing['mlb_id'], outing['appearance_team_id'], outing['role']) == (11100, 111, 'start')
+            assert reserve['recent_work']['population'] == 'pitcher_appearances_for_cited_club'
+            assert 'Boston Red Sox' in reserve['recent_work']['workload_series_note']
             recovered = select_generation(reviewer, None, expected_revision=revision, rollback=True)
             assert_empty_reads(None, 'no_selected_generation', recovered)
             assert_empty_reads(recovered, 'no_selected_generation', recovered)
