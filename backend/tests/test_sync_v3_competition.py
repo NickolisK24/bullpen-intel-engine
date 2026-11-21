@@ -108,3 +108,14 @@ def test_missing_or_refused_latest_calendar_withholds_all_clubs(monkeypatch):
     assert result['calendar_source'] is None and result['decision_sources'] == {}
     assert len(result['clubs']) == 30
     assert {club['status'] for club in result['clubs'].values()} == {'undetermined'}
+
+
+def test_readiness_comparison_does_not_certify_a_withheld_or_misclassified_arm():
+    from sync_v3.comparison import compare_readiness
+
+    report = {'team_state': None, 'arms': {7: {'read': None}}}
+    assert compare_readiness(report) == {'arm_statuses_compared': 0, 'team_states_compared': 0, 'withheld_arms': 1}
+    report['arms'][7]['read'] = {'availability': {'data_state': 'fresh', 'availability_status': 'Available',
+                                                'inputs': {'freshness_state': 'fresh', 'pitches_yesterday': 100}}}
+    with pytest.raises(ValueError, match='arm status for 7'):
+        compare_readiness(report)

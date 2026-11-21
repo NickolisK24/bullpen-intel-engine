@@ -114,9 +114,12 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
             if readiness_team is not None:
                 import json
+                from sync_v3.comparison import compare_readiness
                 from sync_v3.readiness import represented_readiness
                 with worker, worker.cursor() as cur:
-                    print(json.dumps(represented_readiness(cur, readiness_team, through), sort_keys=True))
+                    report = represented_readiness(cur, readiness_team, through)
+                    report['comparison'] = compare_readiness(report)
+                    print(json.dumps(report, sort_keys=True))
             elif competition:
                 import json
                 from sync_v3.competition_calendar import competition_status

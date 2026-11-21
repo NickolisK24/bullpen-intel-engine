@@ -141,3 +141,31 @@ def compare_team_workload(cur, calendar, candidate):
             if actual != expected or concentration['top_3_share'] != share:
                 raise ValueError(f'Official seven-day workload concentration differs for {team}')
     return compared
+
+
+def compare_readiness(candidate):
+    """Independently reproduce represented arm decisions and the status-only team partition."""
+    from services.production_accuracy_reconciliation import _reproduce_arm_status
+    from services.publication_truth_certification import contract_a_state
+
+    counts = Counter()
+    for player, arm in candidate['arms'].items():
+        if arm['read'] is None:
+            counts['unknown'] += 1
+            continue
+        availability = arm['read']['availability']
+        status = _reproduce_arm_status(availability['inputs'])
+        if availability['data_state'] != 'fresh' or status != availability['availability_status']:
+            raise ValueError(f'Unverified represented arm status for {player}')
+        counts[status] += 1
+    partition = {'active_pitcher_count': len(candidate['arms']), 'clean_count': counts['Available'],
+                 'moderate_count': counts['Monitor'] + counts['Limited'],
+                 'severe_count': counts['Avoid'] + counts['Unavailable'], 'unknown_count': counts['unknown']}
+    if candidate.get('partition') is not None and partition != candidate['partition']:
+        raise ValueError('Represented bullpen partition disagrees with arm decisions')
+    if candidate['team_state'] is not None:
+        code, rule = contract_a_state(partition['clean_count'], partition['severe_count'], partition['active_pitcher_count'])
+        if not rule or (code, rule['decisive_rule']) != (candidate['team_state']['public_code'], candidate['rule']):
+            raise ValueError('Represented Team State disagrees with independently reproduced rule')
+    return {'arm_statuses_compared': len(candidate['arms']) - counts['unknown'],
+            'withheld_arms': counts['unknown'], 'team_states_compared': int(candidate['team_state'] is not None)}
