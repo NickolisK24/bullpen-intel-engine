@@ -106,7 +106,7 @@ def _ledger(cur, snapshot, subject, entity, through, gap_dates, semantic, inputs
                                      opponent=opponent.team_name, opponent_abbreviation=opponent.abbreviation))
         lines[key] = dict(_appearance_line(log), game_pk=key[0], mlb_id=key[1], game_number=game_number,
                           appearance_team_id=line['team_id'], opponent_team_id=line['opponent_team_id'], home_away=line['side'],
-                          role=line['appearance_role'], games_finished=line.get('games_finished'),
+                          role=line['appearance_role'], games_finished=line.get('games_finished'), save=line.get('save'),
                           final_revision=revision, boxscore_digests=[sha])
     kept = [row for row in lines.values() if row['game_date'] not in gaps]
     kept.sort(key=lambda row: (-date.fromisoformat(row['game_date']).toordinal(), row['game_number'] is None,

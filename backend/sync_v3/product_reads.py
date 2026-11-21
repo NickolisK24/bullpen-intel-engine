@@ -526,6 +526,32 @@ def _seven_day_side(overview, contributor_count):
                 innings=_baseball_innings(counts['outs']) if counts['outs'] is not None else None)
 
 
+def _competitive_saves(overview, appearances):
+    """Return only individually confirmed relief saves during the public deployment window."""
+    from collections import Counter
+    from datetime import date, timedelta
+    from services.public_team_relief_work import DEPLOYMENT_PROFILE_WINDOW_DAYS
+
+    through = date.fromisoformat(overview['data_through'])
+    start = str(through - timedelta(days=DEPLOYMENT_PROFILE_WINDOW_DAYS - 1))
+    window = overview['windows'][f'window_{DEPLOYMENT_PROFILE_WINDOW_DAYS}']
+    sample = [row for row in appearances if start <= row['game_date'] <= str(through)]
+    if (window['start'] != start or window['through'] != str(through)
+            or window['appearances']['status'] != 'complete' or window['appearances']['value'] != len(sample)):
+        return {}
+    identities = {(row.get('game_pk'), row.get('mlb_id')) for row in sample}
+    if len(identities) != len(sample) or any(type(i) is not int or i <= 0 for pair in identities for i in pair):
+        return {}
+    saves, unknown = Counter(), set()
+    for row in sample:
+        credited = row.get('save')
+        if type(credited) not in (bool, int) or credited not in (0, 1):
+            unknown.add(row['mlb_id'])
+        else:
+            saves[row['mlb_id']] += int(credited)
+    return {player: count for player, count in saves.items() if player not in unknown}
+
+
 def _performance_window(facts, window_name):
     """Repeat only the qualified, represented active bullpen's official facts for one dated window."""
     from services import performance_metrics as rules
@@ -753,6 +779,19 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
             key_arms, public_usage, active, named = [], {}, [], []
             # A key-arm ranking needs a complete identity map for this club.
             club_mapped = all(identities.get(mlb, {}).get('public_id') is not None for mlb in ids)
+            observed_saves = None
+            if facts[team, reads].get('workload_scope') == 'competitive_postseason_window':
+                from sync_v3.team_board_windows import board_workload_windows
+                regular = appearance_ledger(cur, generation, 'team', team, end)
+                playoff = postseason_appearances(cur, generation, 'team', team, end, team)
+                overview = board_workload_windows(cur, generation, team, end, regular, playoff)
+                observed_saves = _competitive_saves(overview, regular['appearances'] + playoff['appearances'])
+                workloads[team] = _seven_day_side(overview, overview['contributing_relievers_7d'])
+                workload_methods[team] = 'official_competitive_club_relief'
+            else:
+                overview = facts[team, METHODOLOGY]['windows']['workload']
+                workloads[team] = _matchup_workload(facts[team, METHODOLOGY], end)
+                workload_methods[team] = METHODOLOGY
             for mlb in (ids if club_mapped else []):
                 player = identities[mlb]
                 read = facts[team, reads]['arms'][str(mlb)]['read'] or {}
@@ -763,6 +802,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 active.append(dict(pitcher_id=pid, roster_state='active',
                                    days_since_last_appearance=usage.get(mlb, {}).get('days_since_last_appearance')))
                 saves = len(save_games[team, mlb]) if team not in ambiguous and (team, mlb) in save_games else None
+                if observed_saves is not None:
+                    saves = observed_saves.get(mlb)
                 named.append(dict(pitcher_id=pid, pitcher_name=player['name'], public_role_read=role,
                                   observed_profile=dict(saves=saves)))
                 key_arms.append(dict(pitcher_id=player['public_id'], name=player['name'], public_role_read=role,
@@ -770,17 +811,6 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                                    back_to_back=inputs.get('back_to_back'))))
                 public_usage[player['public_id']] = usage.get(mlb)
             role_rests[team] = named_role_rest(active, named)
-            if facts[team, reads].get('workload_scope') == 'competitive_postseason_window':
-                from sync_v3.team_board_windows import board_workload_windows
-                regular = appearance_ledger(cur, generation, 'team', team, end)
-                playoff = postseason_appearances(cur, generation, 'team', team, end, team)
-                overview = board_workload_windows(cur, generation, team, end, regular, playoff)
-                workloads[team] = _seven_day_side(overview, overview['contributing_relievers_7d'])
-                workload_methods[team] = 'official_competitive_club_relief'
-            else:
-                overview = facts[team, METHODOLOGY]['windows']['workload']
-                workloads[team] = _matchup_workload(facts[team, METHODOLOGY], end)
-                workload_methods[team] = METHODOLOGY
             sides[team] = dict(team_id=team, abbreviation=row['team_abbreviation'], name=row['team_name'],
                                available=state['available'], reason_code=state['reason_code'],
                                team_state={k: state[k] for k in ('public_state','public_label','available','reason_code')},

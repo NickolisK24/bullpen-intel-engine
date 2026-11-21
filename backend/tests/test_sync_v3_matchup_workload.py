@@ -64,3 +64,20 @@ def test_competitive_matchup_projects_the_board_counts_and_withholds_an_unobserv
     for field in ('appearances', 'pitches', 'outs'):
         week[field] = dict(status='unavailable', value=None, reason_codes=['missing_game'])
     assert _seven_day_side(overview, None) is None
+
+
+def test_competitive_save_work_uses_qualified_club_relief_and_exact_fourteen_day_window():
+    from sync_v3.product_reads import _competitive_saves
+
+    week = dict(through='2026-10-18', start='2026-10-05', appearances=dict(status='complete', value=4))
+    view = dict(data_through=week['through'], windows=dict(window_14=week))
+    lines = [dict(mlb_id=1, game_date='2026-10-04', save=1), dict(mlb_id=1, game_date='2026-10-05', save=1),
+             dict(mlb_id=2, game_date='2026-10-12', save=1), dict(mlb_id=2, game_date='2026-10-18', save=None),
+             dict(mlb_id=3, game_date='2026-10-18', save=0)]
+    for pk, line in enumerate(lines, start=1):
+        line['game_pk'] = pk
+    assert _competitive_saves(view, lines) == {1: 1, 3: 0}
+    assert _competitive_saves(view, [*lines[:-1], lines[-2]]) == {}
+    assert _competitive_saves(view, lines[2:]) == {}
+    week['appearances']['status'] = 'partial'
+    assert _competitive_saves(view, lines) == {}
