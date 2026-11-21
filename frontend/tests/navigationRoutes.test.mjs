@@ -196,7 +196,7 @@ test('standalone Pitcher shell owns one request and never mounts Team Board depe
     assert.equal(page.includes(forbidden), false, forbidden)
   }
   assert.ok(page.includes('Pitcher unavailable'))
-  assert.ok(page.includes('<PitcherDetail pitcherId={pitcherId} />'))
+  assert.ok(page.includes('pitcherId={pitcherId} revisionParam={revisionParam} repeated={repeated}'))
   assert.ok(route.includes('<Navigate to={destination} replace />'))
 })
 

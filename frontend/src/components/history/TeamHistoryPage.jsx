@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch'
 import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
 import { getHistoricalTeamDecisions, getTeamStateHistory } from '../../utils/api'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { buildTeamBoardHref, parseRehearsalRevision } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
 import { formatFreshnessDate } from '../UI/Freshness'
 import { EmptyState, ErrorState, LoadingPane } from '../UI'
@@ -548,11 +548,8 @@ export default function TeamHistoryPage() {
 function HistoryDestination({ teamAbbreviation, revisionParam, repeated }) {
   const history = useFetch(async options => {
     if (!teamAbbreviation) throw new Error('This History destination does not contain a valid team abbreviation.')
-    if (revisionParam === null) return getTeamStateHistory(teamAbbreviation, 2026, options)
-    const revision = Number(revisionParam)
-    if (repeated || !/^[1-9]\d*$/.test(revisionParam) || !Number.isSafeInteger(revision)) {
-      throw new Error('Invalid historical rehearsal revision.')
-    }
+    const revision = parseRehearsalRevision(revisionParam, repeated)
+    if (revision === null) return getTeamStateHistory(teamAbbreviation, 2026, options)
     const page = await getHistoricalTeamDecisions(teamAbbreviation, revision, options)
     if (!matchesHistoryCursor(page, teamAbbreviation, revision)) {
       throw new Error('The requested historical edition could not be verified.')

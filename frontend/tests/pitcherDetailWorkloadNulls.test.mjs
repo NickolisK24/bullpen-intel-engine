@@ -16,7 +16,7 @@ after(async () => {
   await server.close()
 })
 
-const { PitcherDetailContent } = await server.ssrLoadModule(
+const { PitcherDetailContent, matchesPitcherEdition } = await server.ssrLoadModule(
   '/src/components/bullpen/PitcherDetail.jsx',
 )
 
@@ -274,4 +274,17 @@ test('isolated pitcher editions identify the player and keep research within the
   assert.equal(currentStateFactValue(html, 'Current Read'), 'Withheld')
   assert.ok(!html.includes('Open Test Team Team Board'))
   assert.ok(!html.includes('Published role and arm reads'))
+})
+
+
+test('a historical pitcher handoff must agree on edition, public ID and MLB identity', () => {
+  const generation = 'a'.repeat(64)
+  const page = { scope: 'isolated_historical_core', current_serving_eligible: false, generation,
+    selection_revision: 3, public_pitcher_id: 8997, pitcher: { id: 8997, mlb_id: 11100 },
+    identity: { public_id: 8997, mlb_id: 11100 } }
+  assert.ok(matchesPitcherEdition(page, 8997, 3, generation))
+  for (const bad of [{ generation: 'b'.repeat(64) }, { selection_revision: 2 }, { public_pitcher_id: 11100 },
+    { current_serving_eligible: true }, { identity: { public_id: 8997, mlb_id: 11101 } }]) {
+    assert.ok(!matchesPitcherEdition({ ...page, ...bad }, 8997, 3, generation))
+  }
 })

@@ -1,5 +1,5 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
+import { getAvailabilityExplanation, getHistoricalPitcher, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import {
   normalizeAppearance,
@@ -13,13 +13,32 @@ import { HistoricalPitcherChanges } from '../history/HistoricalChanges'
 import PitcherTrends from './PitcherTrends'
 import WorkloadPatterns from './WorkloadPatterns'
 import ObservedDeployment from './ObservedDeployment'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { buildTeamBoardHref, parseRehearsalRevision } from '../../utils/evidenceLinks'
 import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 
-export default function PitcherDetail({ pitcherId }) {
+export function matchesPitcherEdition(page, pitcherId, revision, generation) {
+  return page?.scope === 'isolated_historical_core' && page.current_serving_eligible === false
+    && page.selection_revision === revision && /^[a-f0-9]{64}$/.test(page.generation)
+    && (generation === null || page.generation === generation) && page.public_pitcher_id === pitcherId
+    && page.pitcher?.id === pitcherId && page.identity?.public_id === pitcherId
+    && Number.isSafeInteger(page.pitcher.mlb_id) && page.pitcher.mlb_id > 0 && page.pitcher.mlb_id === page.identity.mlb_id
+}
+
+export default function PitcherDetail({ pitcherId, revisionParam = null, repeated = false, generation = null }) {
   const { data, loading, error, refetch } = useFetch(
-    options => getPitcherFatigue(pitcherId, options),
-    [pitcherId],
+    async options => {
+      const revision = parseRehearsalRevision(revisionParam, repeated)
+      if (generation !== null && (!revision || !/^[a-f0-9]{64}$/.test(generation))) {
+        throw new Error('Invalid historical rehearsal generation.')
+      }
+      if (revision === null) return getPitcherFatigue(pitcherId, options)
+      const page = await getHistoricalPitcher(pitcherId, revision, options)
+      if (!matchesPitcherEdition(page, pitcherId, revision, generation)) {
+        throw new Error('The requested historical pitcher edition could not be verified.')
+      }
+      return page
+    },
+    [pitcherId, revisionParam, repeated, generation],
   )
 
   if (loading) return (

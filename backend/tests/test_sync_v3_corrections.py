@@ -1303,6 +1303,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert game_event['extra_innings'] is None
             departure, = [item for item in history['events'] if item['event'].get('player') == 701234]
             event_id = departure['event']['event_id']
+            if identity_mode == 'absent':
+                assert restored_state['pitcher_routes'] == {}
+            else:
+                assert restored_state['pitcher_routes'][event_id] == 8999
+            assert event_id not in page['rows'][1]['pitcher_routes']
             corrected_board = read_team_board(worker, 111, revision=2)
             assert departure not in corrected_board['what_changed']['events']
             with pytest.raises(RuntimeError, match='History citation'):

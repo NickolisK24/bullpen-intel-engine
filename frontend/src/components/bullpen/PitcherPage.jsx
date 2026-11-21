@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { ErrorState } from '../UI'
 import { buildAllPitchersHref, normalizePitcherId } from '../../utils/evidenceLinks'
 import PitcherDetail from './PitcherDetail'
@@ -6,6 +6,10 @@ import PitcherDetail from './PitcherDetail'
 export default function PitcherPage() {
   const { id } = useParams()
   const pitcherId = normalizePitcherId(id)
+  const [search] = useSearchParams()
+  const revisionParam = search.get('rehearsalRevision')
+  const generation = search.get('rehearsalGeneration')
+  const repeated = search.getAll('rehearsalRevision').length > 1 || search.getAll('rehearsalGeneration').length > 1
 
   if (pitcherId == null) {
     return (
@@ -28,7 +32,8 @@ export default function PitcherPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <PitcherDetail pitcherId={pitcherId} />
+      <PitcherDetail key={JSON.stringify([pitcherId, revisionParam, generation, repeated])}
+        pitcherId={pitcherId} revisionParam={revisionParam} repeated={repeated} generation={generation} />
     </div>
   )
 }

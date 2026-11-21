@@ -93,6 +93,15 @@ export function resolveTeamId(teamList, requested) {
   return Number.isSafeInteger(teamId) && teamId > 0 ? teamId : null
 }
 
+export function parseRehearsalRevision(param, repeated) {
+  if (param === null) return null
+  const revision = Number(param)
+  if (repeated || !/^[1-9]\d*$/.test(param) || !Number.isSafeInteger(revision)) {
+    throw new Error('Invalid historical rehearsal revision.')
+  }
+  return revision
+}
+
 export function normalizePitcherId(pitcherId) {
   return positiveInteger(pitcherId)
 }

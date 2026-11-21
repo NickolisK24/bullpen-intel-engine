@@ -913,12 +913,17 @@ def read_team_board(connection, team, *, revision=None):
     return _read_transaction(connection, board)
 
 
+def _pitcher_event_club(player):
+    if player['team_id'] is not None:
+        return player['team_id']
+    departure = player.get('historical_departure')
+    return departure['team'] if departure else player['roster_observation']['team_id']
+
+
 def _pitcher_events(cur, player, selected):
     """Keep the selected club's player events and any separately cited former-club departure."""
     departure = player.get('historical_departure')
-    club = player['team_id']
-    if club is None:
-        club = departure['team'] if departure else player['roster_observation']['team_id']
+    club = _pitcher_event_club(player)
     changes = _event_slice(cur, club, selected[0], selected)
     events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
     if departure and departure['team'] != club:
@@ -951,8 +956,7 @@ def read_pitcher(connection, public_id, *, revision=None):
                                  position=player['position'], team_id=player['team_id'])
         if player['team_id'] is None:
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
-            departure = player.get('historical_departure')
-            club = departure['team'] if departure else player['roster_observation']['team_id']
+            club = _pitcher_event_club(player)
             regular = appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through, appearance_team=club)
             postseason = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, club, club_only=True)
             work = pitcher_recent_work(regular, postseason)
@@ -1020,11 +1024,25 @@ def read_team_history(connection, team, *, through_revision, limit=14):
     if type(team) is not int or team not in MLB_TEAM_IDS:
         raise ValueError('Expected an MLB team identity')
 
+    directory_by_generation = {}
+
     def team_changes(cur, selected):
         changes = _event_slice(cur, team, selected[0], selected)
         row = {key: changes[key] for key in ('events', 'comparisons', 'status')}
         row['calendar_context'] = read_calendar_context(cur, selected[1], team, selected[2]) if selected[1] else None
-        row.update(team_state=None, readiness_citation=None, availability_reference=selected[3])
+        row.update(team_state=None, readiness_citation=None, availability_reference=selected[3], pitcher_routes={})
+        if any(item['event'].get('player') for item in row['events']):
+            digest = selected[1]
+            if digest not in directory_by_generation:
+                directory_by_generation[digest], _ = _pitcher_directory(cur, digest)
+            for item in row['events']:
+                player = directory_by_generation[digest].get(item['event'].get('player'))
+                if not player or player['public_id'] is None:
+                    continue
+                departure = player.get('historical_departure')
+                club = _pitcher_event_club(player)
+                if club == team or item == departure:
+                    row['pitcher_routes'][item['event']['event_id']] = player['public_id']
         if selected[1]:
             method = DOMAINS['readiness'][1]
             ready = _blocks(cur, selected[1], 'team', team, {method: 'readiness'})['readiness']

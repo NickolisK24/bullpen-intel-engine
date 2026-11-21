@@ -677,12 +677,14 @@ test('historical changes display the selected club, date and comparison citation
     event: { event_id: 'removed', kind: 'active_roster_removed', player: 99, pitcher_name: 'Former Boston Reliever' } }
   const event = { event_id: 'seven', kind: 'workload_7_day_changed', previous: { pitches: 0 }, current: { pitches: 15 } }
   const wrong = { ...roster, event: { ...roster.event, event_id: 'other', pitcher_name: 'Wrong evidence' } }
-  const row = { represented: roster.represented, comparisons: [{ status: 'partial_burden_coverage', citation }],
+  const row = { represented: roster.represented, selection_revision: 3, generation: 'a'.repeat(64), pitcher_routes: { removed: 8999 }, comparisons: [{ status: 'partial_burden_coverage', citation }],
     events: [roster, { ...roster, event }, { ...wrong, team: 112 }, { ...wrong, represented: '2026-07-28' },
       { ...wrong, citation: { ...citation, input_digest: 'foreign' } }] }
   const html = renderToStaticMarkup(React.createElement(HistoricalChanges, { row, team: 111 }))
   for (const text of ['Removed from the active roster', 'Former Boston Reliever', 'Seven-day bullpen workload',
     'pitches 0 → 15', 'Some comparisons have incomplete coverage', 'receipt']) assert.ok(html.includes(text), text)
+  assert.ok(html.includes('/pitcher/8999?rehearsalRevision=3'))
+  assert.equal(html.split('Pitcher Detail for this revision').length - 1, 1)
   assert.ok(!html.includes('Wrong evidence'))
   assert.ok(!html.includes('outs 0'))
 })
