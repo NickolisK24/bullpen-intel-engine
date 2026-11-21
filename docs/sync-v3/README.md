@@ -290,3 +290,38 @@ A separate four-day replay preserved 207 acquisition observations. The October 2
 For a competition-only comparison, pass the same proof ZIP and SHA to the rehearsal with `--competition --through 2026-10-30` and the retained season calendar, playoff-day schedule and final-game fixtures. In this mode the date is the competition reference date. Each playoff decision must reconcile across the season calendar, daily slate and official boxscore. Missing evidence withholds the comparison. For a season-complete club the rehearsal also projects the public withholding block using the archive's workload coverage date. This tests the withholding contract independently of generation date selection.
 
 The October 30 competition replay used 64 retrospective MLB responses acquired November 21, 2026 between 08:17:13 and 08:17:29 UTC. It reconciled all 40 postseason decisions. All 30 club contexts and all 30 Season Complete public blocks matched snapshot 5843, including the clubs' final recorded dates and withholding reasons. Running the comparator with only the October 28 day fixture returned `incomplete_competition_evidence` with zero clubs compared. The independent edition-date discrepancy still applies to a full League comparison.
+
+The normal capture and rehearsal entry points reproduced that result with 24 complete daily fixtures. The second collection retained 553 responses (November 21, 2026, 08:19:54–08:21:19 UTC). The isolated cycle accepted all 553, compared 406 pitching lines across 40 finals, and reported `competition_fields_match` for 30 clubs with zero differences. These fixtures cover the playoff dates and the comparison date. Their transaction requests and resulting roster requests went through the normal acquisition path.
+
+To repeat from `backend`, supply the original proof ZIP via `PROOF_ZIP`, an installed PostgreSQL 17 bin directory via `PG_BIN`, and a new scratch directory via `CAPTURE_DIR`. This example obtains public MLB evidence and replays it into a disposable local database. Later source revisions can change the result.
+
+```bash
+python - <<'PY'
+import json
+import os
+from datetime import date
+from pathlib import Path
+from sync_v3.capture_day import capture
+from sync_v3.competition_calendar import calendar_games, POSTSEASON_GAME_TYPES
+from sync_v3.discovery import competition_calendar_request
+
+target = Path(os.environ['CAPTURE_DIR'])
+target.mkdir(exist_ok=False)
+reference = date(2026, 10, 30)
+edition = target / f'{reference}.json'
+capture(reference, edition, teams=[], competition=True)
+request = competition_calendar_request(reference.year)
+source, = [r for r in json.loads(edition.read_text())['responses']
+           if r['endpoint'] == request.endpoint and r['params'] == request.params()]
+games = calendar_games(request.params(), source['body'])
+days = {d for d, row, _ in games.values()
+        if d < reference and row['game_type'] in POSTSEASON_GAME_TYPES and row['status_state'] == 'final'}
+for d in sorted(days):
+    capture(d, target / f'{d}.json', teams=[])
+PY
+fixtures=()
+for day in "$CAPTURE_DIR"/*.json; do fixtures+=(--fixture "$day"); done
+python -m sync_v3.rehearse --pg-bin "$PG_BIN" "${fixtures[@]}" \
+  --competition --through 2026-10-30 --identity-proof "$PROOF_ZIP" \
+  209f55a6904abf9602946e9b8f5ea5ce836ee398f662442fe199c7dbf169d449
+```
