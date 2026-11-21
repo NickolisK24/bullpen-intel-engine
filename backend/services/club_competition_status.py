@@ -175,7 +175,12 @@ def _competitive_rows(rows, season):
     return selected
 
 
-def _series_outcomes(club_id, club_post_rows, winner_by_game, reference_date):
+def historical_single_game_wild_card(year, game_type):
+    """MLB used one Wild Card game per league in these postseason formats."""
+    return game_type == 'F' and (2012 <= year <= 2019 or year == 2021)
+
+
+def _series_outcomes(club_id, club_post_rows, winner_by_game, reference_date, historical_wild_cards=frozenset()):
     """Per postseason series: (round, club_clinched, opponent_clinched).
 
     A series is identified by its round (game type) and opponent. It is decided
@@ -195,7 +200,9 @@ def _series_outcomes(club_id, club_post_rows, winner_by_game, reference_date):
             _int_or_none(_value(row, 'games_in_series')) for row in rows
         } - {None}
         length = max(lengths) if lengths else None
-        if length not in SERIES_LENGTHS:
+        single_game = (length == 1 and len(rows) == 1 and historical_single_game_wild_card(reference_date.year, game_type)
+                       and _value(rows[0], 'game_pk') in historical_wild_cards)
+        if length not in SERIES_LENGTHS and not single_game:
             outcomes.append((POSTSEASON_ROUND_ORDER[game_type], False, False))
             continue
         clinch = length // 2 + 1
@@ -237,6 +244,7 @@ def classify_club_competition_status(
     *,
     schedule_rows: Iterable[Any],
     winner_by_game: Mapping[int, int],
+    historical_wild_cards: frozenset[int] = frozenset(),
 ) -> ClubCompetitionStatus:
     """Classify one club from stored schedule rows and official decisions.
 
@@ -283,7 +291,7 @@ def classify_club_competition_status(
 
     if club_post_rows:
         outcomes = _series_outcomes(
-            team_id, club_post_rows, winner_by_game, reference_date,
+            team_id, club_post_rows, winner_by_game, reference_date, historical_wild_cards,
         )
         if any(opponent_clinched for _round, _won, opponent_clinched in outcomes):
             return result(STATUS_SEASON_COMPLETE, BASIS_ELIMINATED)

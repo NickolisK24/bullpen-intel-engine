@@ -2,7 +2,9 @@
 
 from datetime import date
 
-from services.club_competition_status import COMPETITIVE_GAME_TYPES, POSTSEASON_GAME_TYPES, SERIES_LENGTHS
+from services.club_competition_status import (
+    COMPETITIVE_GAME_TYPES, POSTSEASON_GAME_TYPES, SERIES_LENGTHS, historical_single_game_wild_card,
+)
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.schedule_ingestion import _parse_game
 from sync_v3.discovery import competition_calendar_request
@@ -20,6 +22,7 @@ def calendar_games(params, body):
     clubs = set()
     series_lengths = {}
     world_series_teams = set()
+    single_game_clubs = {}
     for entry in sorted(body['dates'], key=lambda entry: entry['date']):
         day = date.fromisoformat(entry['date'])
         slate = entry['games']
@@ -34,10 +37,19 @@ def calendar_games(params, body):
                 raise ValueError('Missing official game status')
             pk, kind = row['game_pk'], row['game_type']
             home, away = row['home_team_id'], row['away_team_id']
+            historical_wild_card = historical_single_game_wild_card(year, kind)
+            if historical_wild_card:
+                if type(game.get('gamesInSeries')) is not int or game['gamesInSeries'] != 1:
+                    raise ValueError('Conflicting historical Wild Card format')
+                for club in (home, away):
+                    if single_game_clubs.setdefault(club, pk) != pk:
+                        raise ValueError('Conflicting historical Wild Card games')
+                if len(single_game_clubs) > 4:
+                    raise ValueError('Conflicting historical Wild Card participants')
             if (type(game.get('gamePk')) is not int or pk <= 0 or pk in daily or kind not in COMPETITIVE_GAME_TYPES
                     or home not in MLB_TEAM_IDS or away not in MLB_TEAM_IDS or home == away
                     or str(game.get('season')) != str(year) or row['game_date'].year != year
-                    or (kind in POSTSEASON_GAME_TYPES and row['games_in_series'] not in SERIES_LENGTHS)):
+                    or (kind in POSTSEASON_GAME_TYPES and not historical_wild_card and row['games_in_series'] not in SERIES_LENGTHS)):
                 raise ValueError('Invalid competitive game identity or series')
             if kind in POSTSEASON_GAME_TYPES:
                 series = kind, tuple(sorted((home, away)))
@@ -144,9 +156,12 @@ def competition_status(cur, reference):
                     missing[pk] = (home, away, row['game_type'])
         for team, opponent in ((home, away), (away, home)):
             rows.append(dict(row, game_date=day, team_id=team, opponent_team_id=opponent))
+    historical_wild_cards = frozenset(pk for pk, (_, row, _) in games.items()
+                                      if row['game_type'] == 'F' and row['games_in_series'] == 1)
     clubs = {}
     for team in sorted(MLB_TEAM_IDS):
-        status = classify_club_competition_status(team, reference, schedule_rows=rows, winner_by_game=decisions)
+        status = classify_club_competition_status(team, reference, schedule_rows=rows, winner_by_game=decisions,
+                                                  historical_wild_cards=historical_wild_cards)
         if status.basis == BASIS_NOT_IN_POSTSEASON and team in future_postseason:
             status = ClubCompetitionStatus(team, STATUS_UNDETERMINED, 'postseason_participation_unresolved', reference)
         if status.status == STATUS_ACTIVE and any(

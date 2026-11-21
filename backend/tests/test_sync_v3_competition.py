@@ -327,3 +327,51 @@ def test_board_window_coverage_requires_matching_schedules_and_verified_playoff_
     assert reason({}, {}, year=2027) == 'missing_competition_calendar'
     resumed = {849848: (*game[:3], '2026-09-29', 'final')}
     assert reason(resumed, resumed, verified=final) == 'club_game_unresolved'
+
+
+@pytest.mark.parametrize(('year', 'round_type', 'admitted'), [
+    (2011, 'F', False), (2012, 'F', True), (2017, 'F', True), (2019, 'F', True),
+    (2020, 'F', False), (2021, 'F', True), (2022, 'F', False), (2017, 'W', False),
+])
+def test_historical_single_game_format_is_scoped_by_season_and_round(year, round_type, admitted):
+    fixture = season()
+    for slate in fixture['dates']:
+        slate['date'] = slate['date'].replace('2024', str(year))
+        for item in slate['games']:
+            item.update(season=str(year), officialDate=slate['date'])
+    wild_card = fixture['dates'][1]['games'][0]
+    wild_card.update(gameType=round_type, gamesInSeries=1)
+    params = competition_calendar_request(year).params()
+    if not admitted:
+        with pytest.raises(ValueError):
+            competition.calendar_games(params, fixture)
+        return
+    assert competition.calendar_games(params, fixture)[100][1]['games_in_series'] == 1
+    fixture['dates'][2]['games'][0].update(gameType='F', gamesInSeries=1)
+    with pytest.raises(ValueError, match='Conflicting historical Wild Card games'):
+        competition.calendar_games(params, fixture)
+    for index, clubs in [(2, (109, 115)), (3, (142, 111))]:
+        other = fixture['dates'][index]['games'][0]
+        other.update(gameType='F', gamesInSeries=1)
+        for side, team in zip(('home', 'away'), clubs):
+            other['teams'][side]['team']['id'] = team
+    with pytest.raises(ValueError, match='Conflicting historical Wild Card participants'):
+        competition.calendar_games(params, fixture)
+
+
+def test_historical_wild_card_decision_requires_a_verified_game_and_prior_official_winner():
+    from services.club_competition_status import classify_club_competition_status
+
+    game_day = date(2017, 10, 3)
+    row = dict(game_type='F', game_pk=526475, games_in_series=1, status_state='final',
+               game_date=game_day, team_id=142, opponent_team_id=147)
+    def outcome(reference, winners, verified=frozenset()):
+        return classify_club_competition_status(142, reference, schedule_rows=[row], winner_by_game=winners,
+                                                historical_wild_cards=verified).status
+    next_day = game_day + timedelta(days=1)
+    verified = frozenset([526475])
+    assert outcome(next_day, {526475: 147}) == 'undetermined'
+    assert outcome(next_day, {}, verified) == 'undetermined'
+    assert outcome(game_day, {526475: 147}, verified) == 'active'
+    assert outcome(next_day, {526475: 147}, verified) == 'season_complete'
+    assert outcome(next_day, {526475: 142}, verified) == 'active'
