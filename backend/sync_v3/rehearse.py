@@ -129,7 +129,9 @@ def verify_editorial_evidence(connection, board, events):
 
 def verify_slate_matchups(connection, slate):
     """Resolve every offered game by its official identity in Search and Matchup."""
-    from sync_v3.product_reads import read_game_cards, read_search, read_team_board
+    from sync_v3.product_reads import (
+        _aligned_performance, _performance_window, read_game_cards, read_search, read_team_board,
+    )
 
     revision = slate['selection_revision']
     edition = slate['generation'], revision
@@ -160,17 +162,21 @@ def verify_slate_matchups(connection, slate):
             team = card[side]['team_id']
             if any(row['team_id'] != team for row in (comparison['game'][side], comparison['teams'][label], metadata[side])):
                 raise RuntimeError(f'Historical {side} club differs for game {pk}')
-            if performance['status'] in ('available', 'partial'):
-                if team not in board_performance:
-                    board = read_team_board(connection, team, revision=revision)
-                    group = board['active_group_performance']
-                    if ((board['generation'], board['selection_revision']) != edition or group['team'] != team
-                            or group['through'] != slate['data_through']
-                            or group['citation'] != board['sections']['group_performance']['citation']):
-                        raise RuntimeError(f'Historical Board performance edition differs for club {team}')
-                    board_performance[team] = group['windows']['season']
-                if performance[label] != board_performance[team]:
-                    raise RuntimeError(f'Historical Matchup performance differs from the Team Board for club {team}')
+            if team not in board_performance:
+                board = read_team_board(connection, team, revision=revision)
+                group = board['active_group_performance']
+                snapshot = board['sections']['group_performance']
+                if ((board['generation'], board['selection_revision']) != edition or group['team'] != team
+                        or group['through'] != slate['data_through'] or group['citation'] != snapshot['citation']):
+                    raise RuntimeError(f'Historical Board performance edition differs for club {team}')
+                values, stamp = _performance_window(snapshot['value'], 'season')
+                if group['windows']['season'] != values:
+                    raise RuntimeError(f'Historical Board performance differs from its cited snapshot for club {team}')
+                board_performance[team] = values, stamp
+        expected = _aligned_performance(board_performance[card['away']['team_id']],
+                                        board_performance[card['home']['team_id']])
+        if performance != expected or card['performance'] != expected:
+            raise RuntimeError(f'Historical Matchup performance differs from the Team Board for game {pk}')
         yield comparison
 
 

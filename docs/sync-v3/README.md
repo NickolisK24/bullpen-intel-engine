@@ -755,6 +755,8 @@ The supplementary collection harness mistakenly requested game 490124 against Ma
 
 After processing 796 outstanding calculations, the full-season build reported zero remaining. The core reviewer withheld generation `9ba58de18def7e7973e1586dcb139bbd5318c67d7da83fdfa41602d1cd93fc09` for unresolved Yankees readiness. Restoring the reviewed database independently reproduced all 143 qualified values from frozen snapshots covering 7,352 cohort appearances on 29 clubs. The selector still returned revision 4 and had no revision 5. All 15 revision 4 Matchups passed their Board comparisons. Chromium followed League, Boston Board, Trust, Tonight and Matchup using five local revision 4 GETs.
 
+The selected-slate verifier also checks withheld Matchups against the same frozen performance windows used by their two Boards. In revision 4, the Boston–Toronto game qualified all ten values and the other 14 games had no qualified paired comparison. Injecting the same false withholding into both the Boston–Toronto Tonight card and Matchup failed verification against the Boards.
+
 ### Official pitcher profile observation dates
 
 Historical Board and Pitcher pages identify the date MLB's person profile was observed alongside a supported throwing hand. The date comes from the pinned hydrated active-roster response. A conflicted, uncited or missing hand stays undisplayed. The roster's represented baseball date is retained independently.
