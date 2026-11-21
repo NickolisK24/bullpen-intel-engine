@@ -82,7 +82,7 @@ def _stability(cur, digest, team, through):
     return layer, 'complete_comparison_windows', citation
 
 
-def _story_selection(context, observations, layers):
+def _qualified_story(context, observations, layers):
     """Identify the governed writer selection and fingerprint its copy for offline comparison."""
     from services.story_feed import QUALITY_PUBLISHED, canonical_story_from_service_payload
     from services.story_intelligence_service_v1 import build_team_story
@@ -91,16 +91,16 @@ def _story_selection(context, observations, layers):
     story = build_team_story(team, as_of_date=reference, team_context=context)
     item = canonical_story_from_service_payload(story, team_id=team, date=reference)
     if not item['story_available']:
-        return dict(status='withheld', reason=item['suppression_reason'])
+        return dict(status='withheld', reason=item['suppression_reason']), story
     selected = story['selected_observation']
     if (item['quality_status'] != QUALITY_PUBLISHED or not item['headline'] or not item['narrative']
             or selected not in observations or not selected['source_layers']
             or any(layer not in layers or layers[layer].get('context_available') is False
                    for layer in selected['source_layers'])):
-        return dict(status='withheld', reason='incomplete_editorial_evidence')
+        return dict(status='withheld', reason='incomplete_editorial_evidence'), None
     copy = dict(headline=item['headline'], narrative=item['narrative'])
     return dict(status='selected', observation_type=selected['type'], source_layers=selected['source_layers'],
-                copy_sha256=sha256(encode_json(copy)).hexdigest())
+                copy_sha256=sha256(encode_json(copy)).hexdigest()), story
 
 
 def read_story_observations(connection, team, *, revision=None):
@@ -110,85 +110,87 @@ def read_story_observations(connection, team, *, revision=None):
     if revision is not None and (type(revision) is not int or revision < 1):
         raise ValueError('Historical selector revision must be a positive integer')
 
-    def read(cur):
-        selected = _selected(cur, revision)
-        result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
-                      observations=None, story_selection=None, selection_revision=selected[0] if selected else None)
-        if not selected or selected[1] is None:
-            return dict(result, qualification=_empty_selection_status(selected, revision))
-        _, digest, through, reference = selected
-        result.update(generation=digest, represented=through.isoformat(), availability_reference=reference)
-        blocks = _blocks(cur, digest, 'team', team, {DOMAINS[k][1]: k for k in ('depth', 'readiness')})
-        roster = roster_depth_evidence(blocks['depth'], team, through)
-        result['readiness_citation'] = blocks['readiness']['citation']
-        result.update(roster_depth_evidence=roster, coverage={'injury_context': roster['reason']})
-        cur.execute("""SELECT h.id,h.facts,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
-                       JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
-                       AND h.mlb_id=%s AND h.methodology=%s""", (digest, team, DOMAINS['rotation'][1]))
-        snapshot, rotation, semantic, inputs = cur.fetchone()
-        result['citation'] = dict(methodology=DOMAINS['rotation'][1], facts_digest=semantic, input_digest=inputs)
-        dates = rotation['dates']
-        if len(dates) != 14 or any(day['reason'] for day in dates.values()):
-            return dict(result, qualification='incomplete_rotation_calendar')
-        expected = {game['game_pk']: day for day, data in dates.items() for game in data['games']}
-        cur.execute("""SELECT r.id,c.identity,r.facts,min(c.source_id),array_agg(DISTINCT f.sha256 ORDER BY f.sha256)
-                       FROM candidate.workload_history_sources s
-                       JOIN candidate.confirmations c ON c.source_id=s.source_id AND c.domain='final'
-                       JOIN candidate.revisions r ON r.id=c.revision_id
-                       JOIN candidate.fetches f ON f.id=c.source_id
-                       WHERE s.snapshot=%s AND c.identity=ANY(%s) GROUP BY r.id,c.identity ORDER BY c.identity,r.id""",
-                    (snapshot, [str(pk) for pk in expected]))
-        games, logs = set(), []
-        body_digests = {}
-        for _, identity, lines, receipt, digests in cur.fetchall():
-            pk = int(identity)
-            if pk in games:
-                return dict(result, qualification='conflicting_pinned_game_versions')
-            games.add(pk)
-            club_lines = [line for line in lines if line['team_id'] == team]
-            if not club_lines or any(line['game_date'] != expected[pk] for line in club_lines):
-                return dict(result, qualification='unverified_club_game')
-            body_digests[identity] = digests
-            box = replay(cur, receipt).body if len(digests) == 1 else None
-            for line in club_lines:
-                mlb = line['pitcher_mlb_id']
-                side = box['teams'][line['side']] if box else {}
-                person = side.get('players', {}).get(f'ID{mlb}', {}).get('person') or {}
-                name = person.get('fullName') if person.get('id') == mlb else None
-                logs.append(dict(line, mlb_game_pk=pk, game_type='R', player_id=mlb, pitcher_name=name,
-                                 innings_pitched_outs=line['outs_recorded']))
-        if games != expected.keys():
-            return dict(result, qualification='missing_pinned_final')
-        club = clubs[team]
-        layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
-        coverage = dict(result['coverage'], rotation_context='complete_calendar')
-        baseline, coverage['league_concentration'], result['league_concentration_citation'] = league_concentration(cur, digest, through)
-        concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through, baseline)
-        if concentration_layer:
-            layers['bullpen_concentration_context'] = concentration_layer
-        role_stability, coverage['role_stability_context'], result['role_stability_citation'] = _stability(
-            cur, digest, team, through)
-        if role_stability:
-            layers['role_stability_context'] = role_stability
-        # These legacy builders normally receive currently assigned players. The pinned final
-        # proves the club at appearance, including for a player who subsequently transferred.
-        legacy_scope = {rotation_layer.CURRENT_ASSIGNMENT_LIMITATION, concentration.CURRENT_ASSIGNMENT_LIMITATION,
-                        stability.CURRENT_ASSIGNMENT_LIMITATION}
-        for layer in layers.values():
-            layer['limitations'] = [text for text in layer.get('limitations', []) if text not in legacy_scope]
-            layer['limitations'].append('The official final pitching line establishes the club at appearance.')
-        optionality = _optionality(cur, digest, team, reference, blocks['readiness']['value'])
-        if optionality:
-            layers['bullpen_optionality_context'] = optionality
-        coverage['bullpen_optionality_context'] = 'complete_dated_arm_reads' if optionality else 'incomplete_arm_reads'
-        context = dict(
-            team_id=team, team_name=club.team_name, team_abbreviation=club.abbreviation,
-            reference_date=reference, data_through_date=through.isoformat(), **layers)
-        payload = build_team_story_observation_payload(context)
-        return dict(result, qualification='game_lines_compared', coverage=coverage, source_games=sorted(games),
-                    boxscore_digests=body_digests,
-                    observations=payload, story_selection=_story_selection(context, payload['observations'], layers))
-    return _read_transaction(connection, read)
+    return _read_transaction(connection, lambda cur: _club_story(cur, team, _selected(cur, revision), revision)[0])
+
+
+def _club_story(cur, team, selected, revision):
+    result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
+                  observations=None, story_selection=None, selection_revision=selected[0] if selected else None)
+    if not selected or selected[1] is None:
+        return dict(result, qualification=_empty_selection_status(selected, revision)), None
+    _, digest, through, reference = selected
+    result.update(generation=digest, represented=through.isoformat(), availability_reference=reference)
+    blocks = _blocks(cur, digest, 'team', team, {DOMAINS[k][1]: k for k in ('depth', 'readiness')})
+    roster = roster_depth_evidence(blocks['depth'], team, through)
+    result['readiness_citation'] = blocks['readiness']['citation']
+    result.update(roster_depth_evidence=roster, coverage={'injury_context': roster['reason']})
+    cur.execute("""SELECT h.id,h.facts,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
+                   JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
+                   AND h.mlb_id=%s AND h.methodology=%s""", (digest, team, DOMAINS['rotation'][1]))
+    snapshot, rotation, semantic, inputs = cur.fetchone()
+    result['citation'] = dict(methodology=DOMAINS['rotation'][1], facts_digest=semantic, input_digest=inputs)
+    dates = rotation['dates']
+    if len(dates) != 14 or any(day['reason'] for day in dates.values()):
+        return dict(result, qualification='incomplete_rotation_calendar'), None
+    expected = {game['game_pk']: day for day, data in dates.items() for game in data['games']}
+    cur.execute("""SELECT r.id,c.identity,r.facts,min(c.source_id),array_agg(DISTINCT f.sha256 ORDER BY f.sha256)
+                   FROM candidate.workload_history_sources s
+                   JOIN candidate.confirmations c ON c.source_id=s.source_id AND c.domain='final'
+                   JOIN candidate.revisions r ON r.id=c.revision_id
+                   JOIN candidate.fetches f ON f.id=c.source_id
+                   WHERE s.snapshot=%s AND c.identity=ANY(%s) GROUP BY r.id,c.identity ORDER BY c.identity,r.id""",
+                (snapshot, [str(pk) for pk in expected]))
+    games, logs = set(), []
+    body_digests = {}
+    for _, identity, lines, receipt, digests in cur.fetchall():
+        pk = int(identity)
+        if pk in games:
+            return dict(result, qualification='conflicting_pinned_game_versions'), None
+        games.add(pk)
+        club_lines = [line for line in lines if line['team_id'] == team]
+        if not club_lines or any(line['game_date'] != expected[pk] for line in club_lines):
+            return dict(result, qualification='unverified_club_game'), None
+        body_digests[identity] = digests
+        box = replay(cur, receipt).body if len(digests) == 1 else None
+        for line in club_lines:
+            mlb = line['pitcher_mlb_id']
+            side = box['teams'][line['side']] if box else {}
+            person = side.get('players', {}).get(f'ID{mlb}', {}).get('person') or {}
+            name = person.get('fullName') if person.get('id') == mlb else None
+            logs.append(dict(line, mlb_game_pk=pk, game_type='R', player_id=mlb, pitcher_name=name,
+                             innings_pitched_outs=line['outs_recorded']))
+    if games != expected.keys():
+        return dict(result, qualification='missing_pinned_final'), None
+    club = next(club for club in MLB_CLUBS if club.team_id == team)
+    layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
+    coverage = dict(result['coverage'], rotation_context='complete_calendar')
+    baseline, coverage['league_concentration'], result['league_concentration_citation'] = league_concentration(cur, digest, through)
+    concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through, baseline)
+    if concentration_layer:
+        layers['bullpen_concentration_context'] = concentration_layer
+    role_stability, coverage['role_stability_context'], result['role_stability_citation'] = _stability(
+        cur, digest, team, through)
+    if role_stability:
+        layers['role_stability_context'] = role_stability
+    # These legacy builders normally receive currently assigned players. The pinned final
+    # proves the club at appearance, including for a player who subsequently transferred.
+    legacy_scope = {rotation_layer.CURRENT_ASSIGNMENT_LIMITATION, concentration.CURRENT_ASSIGNMENT_LIMITATION,
+                    stability.CURRENT_ASSIGNMENT_LIMITATION}
+    for layer in layers.values():
+        layer['limitations'] = [text for text in layer.get('limitations', []) if text not in legacy_scope]
+        layer['limitations'].append('The official final pitching line establishes the club at appearance.')
+    optionality = _optionality(cur, digest, team, reference, blocks['readiness']['value'])
+    if optionality:
+        layers['bullpen_optionality_context'] = optionality
+    coverage['bullpen_optionality_context'] = 'complete_dated_arm_reads' if optionality else 'incomplete_arm_reads'
+    context = dict(
+        team_id=team, team_name=club.team_name, team_abbreviation=club.abbreviation,
+        reference_date=reference, data_through_date=through.isoformat(), **layers)
+    payload = build_team_story_observation_payload(context)
+    selection, story = _qualified_story(context, payload['observations'], layers)
+    return dict(result, qualification='game_lines_compared', coverage=coverage, source_games=sorted(games),
+                boxscore_digests=body_digests,
+                observations=payload, story_selection=selection), story
 
 
 def read_event_evidence(connection, team, event_id, *, revision):

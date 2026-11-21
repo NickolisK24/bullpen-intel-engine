@@ -6,6 +6,7 @@ from flask import Blueprint, abort, request
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3.editorial_reads import read_event_evidence, read_story_observations, read_trust
+from sync_v3.story_feed_review import read_story_feed_review
 from sync_v3.product_reads import (
     read_game_cards, read_league, read_pitcher, read_pitcher_history, read_search, read_team_board, read_team_events,
 )
@@ -49,6 +50,10 @@ def product_routes(connect, page_size):
     @routes.get('/teams/<int:team>/changes')
     def changes(revision, team):
         return deliver(read_team_events, team, revision=revision)
+
+    @routes.get('/stories')
+    def story_feed(revision):
+        return deliver(read_story_feed_review, revision=revision)
 
     @routes.get('/teams/<int:team>/stories')
     def stories(revision, team):

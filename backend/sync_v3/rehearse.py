@@ -522,6 +522,16 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             if listing['generation'] != digest or len(listing['teams']) != 30:
                                 raise RuntimeError('League listing disagrees with the selection')
                             print(json.dumps(dict(historical_league=listing)))
+                            from sync_v3.story_feed_review import read_story_feed_review
+                            from sync_v3.intelligence_history import DOMAINS
+                            feed = read_story_feed_review(worker, revision=revision)
+                            sources = {team_id: dict(values['readiness'], methodology=DOMAINS['readiness'][1])
+                                       for team_id, values in listing['citations'].items()}
+                            if (feed['generation'] != digest or feed['availability_reference'] != listing['availability_reference']
+                                    or feed['data_through'] != listing['data_through'] or feed['current_serving_eligible']
+                                    or feed['readiness_citations'] != sources):
+                                raise RuntimeError('Historical Stories and League cite different readiness evidence')
+                            print(json.dumps(dict(historical_story_feed_review=feed)))
                             from sync_v3.product_reads import read_team_board
                             clubs = [team] if team is not None else [row['team_id'] for row in listing['teams']]
                             for club in clubs:

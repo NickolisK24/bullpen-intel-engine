@@ -154,7 +154,9 @@ from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
 from services.story_four_beat_interpreter_v1 import public_beat_for_observation
-from services.story_feed import build_canonical_story_feed
+from services.story_feed import (
+    build_canonical_story_feed, canonical_story_team_descriptors as _canonical_story_team_descriptors,
+)
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -2557,29 +2559,6 @@ def _max_data_through(results):
         if result.get('data_through_date')
     ]
     return max(dates) if dates else None
-
-
-def _canonical_story_team_descriptors(landscape):
-    """Ordered team descriptors for the canonical story feed.
-
-    Built from the landscape buckets (constrained, then monitoring, then
-    available), de-duplicated in that priority order.
-    """
-    descriptors = []
-    seen = set()
-
-    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
-        for entry in (landscape or {}).get(key) or []:
-            team_id = entry.get('team_id')
-            if team_id is None or team_id in seen:
-                continue
-            seen.add(team_id)
-            descriptors.append({
-                'team_id': team_id,
-                'team_name': entry.get('team_name'),
-                'team_abbreviation': entry.get('team_abbreviation'),
-            })
-    return descriptors
 
 
 def _canonical_league_signal(landscape, availability_records):

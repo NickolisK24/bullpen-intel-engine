@@ -153,7 +153,7 @@ def test_historical_editorial_selection_preserves_governed_suppression_without_l
     monkeypatch.setattr(writer, 'build_team_bullpen_context', unexpected)
     context = dict(team_id=111, team_name='Boston Red Sox', team_abbreviation='BOS',
                    reference_date='2024-08-08', data_through_date='2024-08-07')
-    assert editorial_reads._story_selection(context, [], {}) == dict(status='withheld', reason=writer.NEUTRAL_NO_OBSERVATIONS)
+    assert editorial_reads._qualified_story(context, [], {})[0] == dict(status='withheld', reason=writer.NEUTRAL_NO_OBSERVATIONS)
 
 
 def test_historical_selection_matches_canonical_copy_only_for_cited_inputs():
@@ -169,9 +169,9 @@ def test_historical_selection_matches_canonical_copy_only_for_cited_inputs():
     service = build_team_story(111, as_of_date=context['reference_date'], team_context=context)
     original = canonical_story_from_service_payload(service, team_id=111, date=context['reference_date'])
     expected = sha256(encode_json({field: original[field] for field in ('headline', 'narrative')})).hexdigest()
-    assert editorial_reads._story_selection(context, rows, {'rotation_context': rotation}) == dict(
+    assert editorial_reads._qualified_story(context, rows, {'rotation_context': rotation})[0] == dict(
         status='selected', observation_type='rotation_pressure', source_layers=['rotation_context'], copy_sha256=expected)
     for evidence, layers in (([], {'rotation_context': rotation}), (rows, {}),
                              (rows, {'rotation_context': {'context_available': False}})):
-        assert editorial_reads._story_selection(context, evidence, layers) == dict(
+        assert editorial_reads._qualified_story(context, evidence, layers)[0] == dict(
             status='withheld', reason='incomplete_editorial_evidence')

@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { readRehearsalEdition } from '../../utils/evidenceLinks'
 import HistoricalStoryEvidence from './HistoricalStoryEvidence'
+import HistoricalStoryFeed from './HistoricalStoryFeed'
 import { getStoriesProjection } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import {
@@ -43,6 +44,7 @@ export default function Stories() {
   try {
     const edition = readRehearsalEdition(params)
     if (!edition) return <PublicStories />
+    if (!params.has('team')) return <HistoricalStoryFeed key={JSON.stringify(edition)} {...edition} />
     const raw = params.get('team')
     const team = Number(raw)
     if (params.getAll('team').length !== 1 || !/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(team)) {

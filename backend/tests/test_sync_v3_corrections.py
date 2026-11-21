@@ -1542,7 +1542,7 @@ def assert_rollback_product_responses(client, generation, departure, matchup_gam
     prefix = '/api/sync-v3/revisions/3'
     responses = {}
     for resource in ('league', 'tonight', 'matchups/10101', 'teams/111/board', 'teams/111/changes',
-                     'teams/111/stories', 'teams/111/events/' + event_id, 'pitchers/8999',
+                     'stories', 'teams/111/stories', 'teams/111/events/' + event_id, 'pitchers/8999',
                      'pitchers/8999/history', 'search?q=Boston', 'trust'):
         response = client.get(f'{prefix}/{resource}')
         assert response.status_code == 200, resource
@@ -1566,6 +1566,13 @@ def assert_rollback_product_responses(client, generation, departure, matchup_gam
     assert responses['teams/111/events/' + event_id]['evidence'] == departure
     assert responses['pitchers/8999/history']['rows'][0]['events'] == responses['pitchers/8999']['represented_events']
     assert responses['teams/111/stories']['qualification'] == 'game_lines_compared'
+    feed = responses['stories']
+    assert feed['status'] == 'reviewed' and feed['clubs']
+    assert feed['readiness_citations'] == {
+        team: dict(values['readiness'], methodology='candidate_regular_readiness_v1')
+        for team, values in responses['league']['citations'].items()}
+    assert all(item['club_copy_sha256'] and item['feed_copy_sha256'] for item in feed['items'])
+    assert client.get('/api/sync-v3/revisions/999/stories').status_code == 404
     assert responses['trust']['trusted_snapshot_id'] is None
     assert client.get(f'/api/sync-v3/revisions/2/teams/111/events/{event_id}').status_code == 404
     assert client.get('/api/sync-v3/revisions/999/teams/111/stories').status_code == 404

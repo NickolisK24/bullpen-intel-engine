@@ -178,7 +178,7 @@ test('historical shell destinations retain the selector without carrying club or
   const sidebar = renderAt(React.createElement(Sidebar), location)
   const footer = renderAt(React.createElement(Footer), location)
   const localLinks = html => [...html.matchAll(/href="(\/[^"]*)"/g)].map(match => match[1])
-  assert.deepEqual(localLinks(sidebar), ['/', '/', '/dashboard', '/search', '/trust'].map(path => path + '?' + selector))
+  assert.deepEqual(localLinks(sidebar), ['/', '/', '/dashboard', '/search', '/stories', '/trust'].map(path => path + '?' + selector))
   assert.deepEqual(localLinks(footer), ['/trust?' + selector])
   const invalid = renderAt(React.createElement(Sidebar), '/search?rehearsalRevision=4&rehearsalRevision=5')
   assert.ok(localLinks(invalid).every(href => href.endsWith('?rehearsalRevision=4&amp;rehearsalRevision=5')))

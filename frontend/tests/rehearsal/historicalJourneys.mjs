@@ -171,7 +171,12 @@ try {
     await expect(heading('Former Boston Reliever')).toBeVisible()
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
 
+    await nav.getByRole('link', { name: 'Stories', exact: true }).click()
+    await expect(heading('Historical Stories')).toBeVisible()
+    assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
     const wrong = generation.startsWith('f') ? '0'.repeat(64) : 'f'.repeat(64)
+    await visit('/stories?rehearsalRevision=3&rehearsalGeneration=' + wrong)
+    await expect(page.getByRole('alert')).toContainText('The historical Stories edition could not be verified.')
     await visit('/search?rehearsalGeneration=' + generation)
     await expect(page.getByRole('alert')).toHaveText('Invalid historical rehearsal edition.')
     await expect(page.getByRole('searchbox')).toHaveCount(0)
@@ -190,7 +195,7 @@ try {
       prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/pitchers/9111/history', prefix + '/teams/111/board', prefix + '/teams/111/stories',
       prefix + '/teams/111/board', prefix + '/trust', prefix + '/tonight', prefix + '/matchups/10101',
       '/api/sync-v3/revisions/2/tonight', prefix + '/teams/111/board', prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
-      prefix + '/teams/111/board', '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/search',
+      prefix + '/teams/111/board', '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/stories', prefix + '/stories', prefix + '/search',
       '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/teams/111/board',
     ])
   }

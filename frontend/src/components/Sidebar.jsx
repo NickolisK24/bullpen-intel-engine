@@ -26,8 +26,8 @@ export default function Sidebar() {
   const [open, setOpen] = useState(false)
   const location = useLocation()
   const edition = rehearsalSearch(location.search)
-  // Club Boards and Stories are reached through League; individual Matchups through Tonight.
-  const primary = edition ? PRIMARY_NAV.filter(item => ['tonight', 'league-board', 'search'].includes(item.key)) : PRIMARY_NAV
+  // Club Boards are reached through League; individual Matchups through Tonight.
+  const primary = edition ? PRIMARY_NAV.filter(item => ['tonight', 'league-board', 'search', 'stories'].includes(item.key)) : PRIMARY_NAV
   const supporting = edition ? SUPPORTING_NAV.filter(item => item.key === 'data-trust') : SUPPORTING_NAV
 
   // Close the mobile menu whenever the route changes so browser back/forward,

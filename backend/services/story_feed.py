@@ -706,6 +706,29 @@ def build_story_continuity(today_item, prior_item=None) -> dict:
     }
 
 
+def canonical_story_team_descriptors(landscape):
+    """Ordered team descriptors for the canonical story feed.
+
+    Built from the landscape buckets (constrained, then monitoring, then
+    available), de-duplicated in that priority order.
+    """
+    descriptors = []
+    seen = set()
+
+    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
+        for entry in (landscape or {}).get(key) or []:
+            team_id = entry.get('team_id')
+            if team_id is None or team_id in seen:
+                continue
+            seen.add(team_id)
+            descriptors.append({
+                'team_id': team_id,
+                'team_name': entry.get('team_name'),
+                'team_abbreviation': entry.get('team_abbreviation'),
+            })
+    return descriptors
+
+
 def build_canonical_story_feed(
     teams,
     *,

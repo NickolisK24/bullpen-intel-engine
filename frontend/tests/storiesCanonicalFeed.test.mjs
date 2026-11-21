@@ -497,3 +497,20 @@ test('historical observation evidence binds the club, represented dates, and off
     assert.equal(valid(patch), false)
   }
 })
+
+test('historical league feed requires a matching club selection and a complete league review', async () => {
+  const { matchesStoryReview } = await server.ssrLoadModule('/src/components/stories/HistoricalStoryFeed.jsx')
+  const generation = 'd'.repeat(64), hash = 'e'.repeat(64)
+  const selection = { status: 'selected', observation_type: 'rotation_pressure', source_layers: ['rotation_context'], copy_sha256: hash }
+  const item = { team_id: 111, observation_type: selection.observation_type, source_layers: selection.source_layers,
+    club_copy_sha256: hash, feed_copy_sha256: 'f'.repeat(64) }
+  const page = { scope: 'historical_story_feed_review', season_complete_clubs: [], status: 'reviewed', selection_revision: 1, generation,
+    data_through: '2017-08-28', availability_reference: '2017-08-29', current_serving_eligible: false,
+    clubs: [{ team_id: 111, team_name: 'Boston Red Sox', selection }], items: [item] }
+  const valid = overrides => matchesStoryReview({ ...page, ...overrides }, 1, generation)
+  assert.ok(valid({}))
+  for (const patch of [{ generation: hash }, { current_serving_eligible: true }, { season_complete_clubs: [111] }, { items: [item, item] },
+    { items: [{ ...item, team_id: 110 }] }, { items: [{ ...item, source_layers: [] }] },
+    { status: 'incomplete_league_availability', unresolved_clubs: [111] }]) assert.equal(valid(patch), false)
+  assert.ok(valid({ status: 'incomplete_league_availability', clubs: [], items: [], unresolved_clubs: [111] }))
+})

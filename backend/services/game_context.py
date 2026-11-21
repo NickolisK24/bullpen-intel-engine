@@ -267,24 +267,8 @@ def _landscape_notes(games):
     return notes
 
 
-def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
-    """
-    League-wide bullpen landscape: which bullpens are most constrained, most
-    available, and carrying the most monitoring, plus a stored games anchor.
-
-    Sorting is descriptive and deterministic (by count, then percentage, then
-    team name) — it surfaces *situations*, not a ranking or recommendation, and
-    never uses best / worst / advantage language. ``records`` may be supplied by
-    the caller to avoid re-classifying; otherwise they are computed here.
-    """
-    ref = reference_date or _default_reference_date()
-    if records is None:
-        records = classify_latest_fatigue_rows(
-            latest_fatigue_rows(),
-            reference_date=ref,
-            mode=CURRENT_AVAILABILITY_MODE,
-        )
-
+def landscape_team_groups(records, *, top_n=3):
+    """Choose the public landscape groups from an explicitly supplied set of classified arms."""
     buckets = _team_buckets(records)
     entries = [
         entry for entry in (_landscape_entry(bucket) for bucket in buckets.values())
@@ -323,6 +307,33 @@ def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
         if entry['monitor'] > 0
     ][:top_n]
 
+    return {
+        'teams_evaluated': len(entries),
+        'constrained_bullpens': constrained_bullpens,
+        'available_bullpens': available_bullpens,
+        'monitoring_concentration': monitoring_concentration,
+    }
+
+
+def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
+    """
+    League-wide bullpen landscape: which bullpens are most constrained, most
+    available, and carrying the most monitoring, plus a stored games anchor.
+
+    Sorting is descriptive and deterministic (by count, then percentage, then
+    team name) — it surfaces *situations*, not a ranking or recommendation, and
+    never uses best / worst / advantage language. ``records`` may be supplied by
+    the caller to avoid re-classifying; otherwise they are computed here.
+    """
+    ref = reference_date or _default_reference_date()
+    if records is None:
+        records = classify_latest_fatigue_rows(
+            latest_fatigue_rows(),
+            reference_date=ref,
+            mode=CURRENT_AVAILABILITY_MODE,
+        )
+
+    groups = landscape_team_groups(records, top_n=top_n)
     games = _games_block(ref)
 
     return {
@@ -330,11 +341,8 @@ def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
         'ranking_applied': False,
         'selection_made': False,
         'reference_date': ref.isoformat(),
-        'teams_evaluated': len(entries),
+        **groups,
         'games': games,
-        'constrained_bullpens': constrained_bullpens,
-        'available_bullpens': available_bullpens,
-        'monitoring_concentration': monitoring_concentration,
         'freshness': freshness or {},
         'notes': _landscape_notes(games),
     }
