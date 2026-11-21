@@ -391,6 +391,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     from sync_v3.product_reads import preview_league
                     print(json.dumps(compare_archived_league(preview_league(worker, digest), reference)))
                 if exercise_selection:
+                    from sync_v3.editorial_reads import preview_trust, read_trust
                     from sync_v3.selection import select_generation, SelectionWithheld
                     with closing(connect(reviewer=True)) as reviewer:
                         try:
@@ -401,10 +402,12 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                                 if cur.fetchone() != (0,):
                                     raise RuntimeError('A withheld selection changed the rehearsal ledger')
                             print(json.dumps(dict(isolated_selection=exc.review, ledger_entries=0)))
+                            print(json.dumps(dict(historical_trust=preview_trust(worker, digest))))
                         else:
                             if select_generation(reviewer, digest, expected_revision=0) != revision:
                                 raise RuntimeError('Retry changed the committed selection')
                             from sync_v3.product_reads import read_league, read_game_cards
+                            print(json.dumps(dict(historical_trust=read_trust(worker, revision=revision))))
                             listing = read_league(worker, revision=revision)
                             if listing['generation'] != digest or len(listing['teams']) != 30:
                                 raise RuntimeError('League listing disagrees with the selection')

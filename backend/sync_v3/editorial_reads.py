@@ -179,33 +179,54 @@ def read_event_evidence(connection, team, event_id, *, revision):
 
 def read_trust(connection, *, revision=None):
     """Verify the methods and acquisition span supporting one selected historical generation."""
-    from sync_v3.generation import _inspect
     if revision is not None and (type(revision) is not int or revision < 1):
         raise ValueError('Historical selector revision must be a positive integer')
+    return _read_transaction(connection, _trust, revision, None)
 
-    def read(cur):
+
+def preview_trust(connection, digest):
+    """Explain a frozen candidate, including editions that never passed selection."""
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ValueError('Expected a candidate digest')
+    return _read_transaction(connection, _trust, None, digest)
+
+
+def _trust(cur, revision, preview):
+    from sync_v3.generation import _inspect
+
+    if preview is None:
         selected = _selected(cur, revision)
         if not selected or selected[1] is None:
-            return dict(status='no_selected_generation', generation=None, current_serving_eligible=False)
-        sequence, digest, through, reference = selected
-        review = _inspect(cur, digest, compare_latest=False)
-        cur.execute("""SELECT h.subject,h.methodology,count(*) FROM candidate.generation_inputs g
-                       JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s
-                       GROUP BY h.subject,h.methodology ORDER BY h.subject,h.methodology""", (digest,))
-        methods = [dict(subject=kind, methodology=method, scopes=n) for kind, method, n in cur]
-        cur.execute("""WITH receipts AS (
-                           SELECT hs.source_id FROM candidate.generation_inputs g
-                           JOIN candidate.workload_history_sources hs ON hs.snapshot=g.snapshot WHERE g.generation=%s
-                           UNION SELECT source FROM candidate.generation_sources WHERE generation=%s)
-                       SELECT f.outcome,coalesce(r.reason,f.reason),count(*),min(f.received_at),max(f.received_at)
-                       FROM receipts s JOIN candidate.fetches f ON f.id=s.source_id
-                       LEFT JOIN candidate.refusals r ON r.source_id=f.id
-                       GROUP BY f.outcome,coalesce(r.reason,f.reason) ORDER BY 1,2""", (digest, digest))
-        sources = [dict(outcome=outcome, refusal_reason=reason, receipts=n,
-                        earliest_acquisition=first.isoformat(), latest_acquisition=last.isoformat())
-                   for outcome, reason, n, first, last in cur]
-        return dict(status='verified_historical_inventory', generation=digest, selection_revision=sequence,
-                    represented=through.isoformat(), availability_reference=reference, methods=methods, sources=sources,
-                    comparison=review['core_candidate_review'], changes=review['historical_changes'],
-                    current_serving_eligible=False, trusted_snapshot_id=None)
-    return _read_transaction(connection, read)
+            status = 'unknown_revision' if revision is not None and not selected else 'no_selected_generation'
+            return dict(status=status, generation=None, selection_revision=selected[0] if selected else None,
+                        trusted_snapshot_id=None, current_serving_eligible=False)
+        sequence, digest = selected[:2]
+    else:
+        sequence, digest = None, preview
+    review = _inspect(cur, digest, compare_latest=False)
+    cur.execute("""SELECT h.subject,h.methodology,count(*) FROM candidate.generation_inputs g
+                   JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s
+                   GROUP BY h.subject,h.methodology ORDER BY h.subject,h.methodology""", (digest,))
+    methods = [dict(subject=kind, methodology=method, scopes=n) for kind, method, n in cur]
+    cur.execute("""WITH receipts AS (
+                       SELECT hs.source_id FROM candidate.generation_inputs g
+                       JOIN candidate.workload_history_sources hs ON hs.snapshot=g.snapshot WHERE g.generation=%s
+                       UNION SELECT source FROM candidate.generation_sources WHERE generation=%s)
+                   SELECT f.outcome,coalesce(r.reason,f.reason),count(*),
+                          min(f.received_at) FILTER (WHERE f.sha256 IS NOT NULL),
+                          max(f.received_at) FILTER (WHERE f.sha256 IS NOT NULL)
+                   FROM receipts s JOIN candidate.fetches f ON f.id=s.source_id
+                   LEFT JOIN candidate.refusals r ON r.source_id=f.id
+                   GROUP BY f.outcome,coalesce(r.reason,f.reason) ORDER BY 1,2""", (digest, digest))
+    sources = [dict(outcome=outcome, refusal_reason=reason, receipts=n,
+                    earliest_acquisition=first.isoformat() if first else None,
+                    latest_acquisition=last.isoformat() if last else None)
+               for outcome, reason, n, first, last in cur]
+    return dict(status='candidate_preview' if preview else 'verified_historical_inventory',
+                generation=digest, selection_revision=sequence,
+                represented=review['represented'], availability_reference=review['availability_reference'],
+                methods=methods, sources=sources,
+                coverage=review['coverage'], roster_comparison=review['roster_comparison'],
+                game_comparison=review['game_comparison'], comparison=review['core_candidate_review'],
+                changes=review['historical_changes'],
+                current_serving_eligible=False, trusted_snapshot_id=None)

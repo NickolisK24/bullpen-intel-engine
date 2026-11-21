@@ -403,7 +403,8 @@ def _inspect(cur, digest, compare_latest):
     coverage = review_coverage(manifest)
     rosters = compare_membership(cur, digest, through.isoformat())
     games = compare_games(cur, digest, manifest)
-    report = dict(digest=digest, coverage=coverage, roster_comparison=rosters, game_comparison=games,
+    report = dict(digest=digest, represented=through.isoformat(), availability_reference=manifest['availability_reference'],
+                coverage=coverage, roster_comparison=rosters, game_comparison=games,
                 historical_changes=verify_change_lineage(cur, digest, through),
                 core_candidate_review=review_core_candidate(coverage, rosters, games),
                 clubs=len(manifest['clubs']), snapshots=len(manifest['members']),

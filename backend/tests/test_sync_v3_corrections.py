@@ -841,7 +841,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     from sync_v3.selection import SelectionWithheld, select_generation
     from sync_v3.product_reads import read_league, preview_league, read_team_events, read_search, read_game_cards
     from sync_v3.product_reads import read_team_board, read_pitcher, read_team_history, read_pitcher_history
-    from sync_v3.editorial_reads import read_event_evidence, read_story_observations, read_trust
+    from sync_v3.editorial_reads import preview_trust, read_event_evidence, read_story_observations, read_trust
     from tests.sync_v3_league_fixture import league_fixtures
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
@@ -912,6 +912,15 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert not any(row['team_state']['available'] for row in preview['teams'])
             assert {row['team_state']['reason_code'] for row in preview['teams']} == {'missing_readiness'}
             assert preview['selection_revision'] is None and preview['current_serving_eligible'] is False
+            empty = preview_trust(worker, blank)
+            assert empty['status'] == 'candidate_preview' and empty['selection_revision'] is None
+            assert empty['coverage']['withheld'] == {row['team_id']: 'missing_readiness' for row in preview['teams']}
+            assert empty['comparison'] == preview['core_candidate_review']
+            assert empty['methods'] == empty['sources'] == []
+            assert read_trust(worker)['status'] == 'no_selected_generation'
+            assert read_trust(worker, revision=1)['status'] == 'unknown_revision'
+            with pytest.raises(ValueError, match='Unknown candidate generation'):
+                preview_trust(worker, '0' * 64)
             with pytest.raises(SelectionWithheld):
                 select_generation(reviewer, blank, expected_revision=0)
             with pytest.raises(PermissionError):
@@ -1431,3 +1440,34 @@ def test_editorial_citation_withholds_ambiguous_events(monkeypatch):
     receipt = editorial_reads.read_event_evidence(None, 111, 'repeated', revision=1)
     assert receipt['status'] == 'ambiguous_event' and receipt['evidence'] is None
     assert receipt['trusted_snapshot_id'] is None and receipt['current_serving_eligible'] is False
+
+
+def test_trust_reports_acquisition_only_for_retained_response_bodies():
+    from contextlib import closing
+    from sync_v3.editorial_reads import preview_trust
+    from sync_v3.generation import freeze_generation
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    day = date(2024, 10, 30)
+    stamp = datetime(2026, 11, 21, tzinfo=timezone.utc)
+
+    def missing(endpoint, params):
+        raise TimeoutError()
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_cycle(db, day, missing, teams=[], clock=lambda: stamp)
+            first = freeze_generation(db, day)
+            failed = preview_trust(db, first)
+            assert failed['sources'] == [dict(outcome='failed', refusal_reason='TimeoutError', receipts=1,
+                                              earliest_acquisition=None, latest_acquisition=None)]
+            later = stamp + timedelta(days=1)
+            run_cycle(db, day, lambda *a, **kw: {}, teams=[], clock=lambda: later)
+            invalid = preview_trust(db, freeze_generation(db, day))
+            receipt, = invalid['sources']
+            assert receipt['outcome'] == 'invalid'
+            assert receipt['earliest_acquisition'] == receipt['latest_acquisition'] == later.isoformat()
+            assert preview_trust(db, first) == failed
