@@ -129,14 +129,18 @@ def verify_editorial_evidence(connection, board, events):
 
 def verify_slate_matchups(connection, slate):
     """Resolve every offered game by its official identity in Search and Matchup."""
+    from datetime import date
+    from services.current_bullpen_comparison import _aligned_domain
+    from services.tonight_read_model import _workload_7d
+    from sync_v3.history import METHODOLOGY
     from sync_v3.product_reads import (
-        _aligned_performance, _performance_window, read_game_cards, read_search, read_team_board,
+        _aligned_performance, _matchup_workload, _performance_window, _seven_day_side, read_game_cards, read_search, read_team_board,
     )
 
     revision = slate['selection_revision']
     edition = slate['generation'], revision
     seen = set()
-    board_performance = {}
+    board_performance, board_workloads = {}, {}
     for card in slate['games']:
         pk = card['game_pk']
         if pk in seen:
@@ -173,6 +177,24 @@ def verify_slate_matchups(connection, slate):
                 if group['windows']['season'] != values:
                     raise RuntimeError(f'Historical Board performance differs from its cited snapshot for club {team}')
                 board_performance[team] = values, stamp
+                if board['sections']['readiness']['value'].get('workload_scope') == 'competitive_postseason_window':
+                    overview = board['competitive_workload']
+                    work = _seven_day_side(overview, overview['contributing_relievers_7d'])
+                    method = 'official_competitive_club_relief'
+                else:
+                    source = board['sections']['workload']['value']
+                    overview = source['windows']['workload']
+                    work = _matchup_workload(source, date.fromisoformat(slate['data_through']))
+                    method = METHODOLOGY
+                board_workloads[team] = _workload_7d(overview), work, method
+            if card[side]['workload_7d'] != board_workloads[team][0]:
+                raise RuntimeError(f'Historical Tonight workload differs from the Team Board for club {team}')
+        _, away, away_method = board_workloads[card['away']['team_id']]
+        _, home, home_method = board_workloads[card['home']['team_id']]
+        expected_work = _aligned_domain('workload', away, home, stamp_a=(*edition, away_method), stamp_b=(*edition, home_method),
+                                        partial=any(None in side.values() for side in (away, home) if side))
+        if comparison['domains']['workload'] != expected_work or card['workload'] != expected_work:
+            raise RuntimeError(f'Historical Matchup workload differs from the Team Board for game {pk}')
         expected = _aligned_performance(board_performance[card['away']['team_id']],
                                         board_performance[card['home']['team_id']])
         if performance != expected or card['performance'] != expected:
@@ -220,7 +242,12 @@ def verify_board_history(connection, board):
                 or timeline['public_pitcher_id'] != public_id or detail['public_pitcher_id'] != public_id):
             raise RuntimeError(f'Pitcher {public_id} identity disagrees with the selected Board')
         workload = detail['sections']['workload']
-        if arm['weekly_workload'] != dict(value=workload['value']['windows']['7'], citation=workload['citation']):
+        readiness = board['sections']['readiness']
+        weeks = readiness['value'].get('competitive_pitcher_weeks') or {}
+        competitive = (dict(value=weeks[str(mlb)], citation=readiness['citation'], scope='competitive_bullpen_workload')
+                       if str(mlb) in weeks else None)
+        expected_week = competitive or dict(value=workload['value']['windows']['7'], citation=workload['citation'])
+        if detail.get('competitive_weekly_workload') != competitive or arm['weekly_workload'] != expected_week:
             raise RuntimeError(f'Pitcher {public_id} weekly workload disagrees with the selected Board')
         deployment = detail['sections']['pitcher_profile']['value']['deployment']
         if (detail['represented_events'] != dated['events'] or dated['arm']['read'] != arm['read']

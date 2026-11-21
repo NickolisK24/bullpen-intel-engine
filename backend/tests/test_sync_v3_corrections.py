@@ -1040,6 +1040,17 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 with patch('sync_v3.product_reads.read_game_cards', withheld_matchup):
                     with pytest.raises(RuntimeError, match='Matchup performance differs from the Team Board'):
                         list(verify_slate_matchups(worker, dict(slate, games=[bad_card])))
+                bad_work = dict(boston, workload=dict(boston['workload'], team_a={'pitches': 0}))
+
+                def conflicting_workload(*args, **kwargs):
+                    detail = read_game_cards(*args, **kwargs)
+                    detail['games'] = [bad_work]
+                    detail['historical_comparison']['domains']['workload'] = bad_work['workload']
+                    return detail
+
+                with patch('sync_v3.product_reads.read_game_cards', conflicting_workload):
+                    with pytest.raises(RuntimeError, match='Matchup workload differs from the Team Board'):
+                        list(verify_slate_matchups(worker, dict(slate, games=[bad_work])))
             altered = dict(slate['games'][-1], home=slate['games'][-1]['away'])
             with pytest.raises(RuntimeError, match='selected slate'):
                 list(verify_slate_matchups(worker, dict(slate, games=[altered])))
