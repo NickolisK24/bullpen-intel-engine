@@ -7,6 +7,7 @@ from services.team_state_public_vocabulary import (
     INTERNAL_TO_PUBLIC_STATE, PUBLIC_STATE_LABELS, TEAM_STATE_READINESS_UNAVAILABLE,
     public_team_state, team_state_unavailable,
 )
+from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
@@ -529,6 +530,24 @@ def _blocks(cur, generation, subject, entity, methods):
                                  facts_digest=semantic, input_digest=inputs)) for method, revision, semantic, inputs, facts in cur}
 
 
+def _pitch_hand(depth, player):
+    """Report the official person attribute at acquisition when the dated MLB rosters agree."""
+    facts = depth['value']
+    active = facts['views']['active']
+    hydrated = facts.get('active_profiles') or {}
+    result = dict(value=None, basis=facts['profile_hand_basis'], observed_at=None, citation=depth['citation'])
+    if active.get('reason') or hydrated.get('reason') or not hydrated.get('retrieved_at'):
+        return dict(result, reason=hydrated.get('reason') or active.get('reason') or 'missing_hydrated_profile')
+    member = (active.get('pitchers') or {}).get(str(player))
+    profile = (hydrated.get('pitchers') or {}).get(str(player))
+    if member is None or profile is None:
+        return dict(result, reason='missing_dated_pitcher_profile')
+    hand = profile.get('profile_pitch_hand')
+    if hand not in ('R', 'L', 'S') or member.get('profile_pitch_hand') not in (None, hand):
+        return dict(result, reason='missing_or_conflicting_official_pitch_hand')
+    return dict(result, value=hand, observed_at=hydrated['retrieved_at'], reason=None)
+
+
 def read_team_board(connection, team, *, revision=None):
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.history import METHODOLOGY
@@ -554,7 +573,10 @@ def read_team_board(connection, team, *, revision=None):
             mlb = int(key)
             identity = players.get(mlb, {})
             arms.append(dict(mlb_id=mlb, public_pitcher_id=identity.get('public_id'),
-                             name=identity.get('name'), read=arm['read'], reason=arm['reason']))
+                             name=identity.get('name'), pitch_hand=_pitch_hand(blocks['depth'], mlb),
+                             read=arm['read'], reason=arm['reason']))
+        from datetime import date
+        result['recent_relief'] = appearance_ledger(cur, generation, 'team', team, date.fromisoformat(listing['data_through']))
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))
     return _read_transaction(connection, board)
@@ -585,9 +607,12 @@ def read_pitcher(connection, public_id, *, revision=None):
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
+        depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
+        result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         changes = _events(cur, player['team_id'], sequence)
         events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
-        return dict(result, status='represented', identity=player, sections=blocks, represented_events=events)
+        return dict(result, status='represented', identity=player, sections=blocks, represented_events=events,
+                    recent_work=appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through))
     return _read_transaction(connection, pitcher)
 
 

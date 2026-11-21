@@ -82,6 +82,13 @@ def league_fixtures(*, idle_next_day=False):
         games.append(game)
         for suffix, body in [('boxscore', dict(teams=sides)), ('playByPlay', dict(allPlays=[])), ('linescore', dict(innings=[]))]:
             responses.append(dict(endpoint=f'/game/{pk}/{suffix}', params={}, body=body))
+    responses.append(dict(endpoint='/teams/affiliates', params=dict(teamIds=111, season=day.year),
+                          body=dict(teams=[dict(id=111, season=day.year, sport=dict(id=1))])))
+    profile = deepcopy(next(r for r in responses if r['endpoint']=='/teams/111/roster'
+                            and r['params']['rosterType']=='active'))
+    profile['params']['hydrate'] = 'person'
+    profile['body']['roster'][0]['person']['pitchHand'] = {'code':'L'}
+    responses.append(profile)
     following = day + timedelta(days=1)
     scheduled = following + timedelta(days=int(idle_next_day))
     upcoming = deepcopy(games)
@@ -96,4 +103,4 @@ def league_fixtures(*, idle_next_day=False):
     feeds = [dict(endpoint=f"/../v1.1/game/{game['gamePk']}/feed/live", params={},
                   body=dict(gamePk=game['gamePk'], liveData={})) for game in upcoming]
     next_slate = dict(_fixture(following, [] if idle_next_day else upcoming, responses=[] if idle_next_day else feeds), observed_at=f'{following}T16:00:00Z')
-    return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players), next_slate]
+    return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players, depth_teams=[111]), next_slate]
