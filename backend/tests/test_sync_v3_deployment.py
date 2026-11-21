@@ -285,3 +285,46 @@ def test_incomplete_or_contradictory_zero_credit_fails_closed(overrides):
                  outs=0, inningsPitched='0.0')
     with pytest.raises(ValueError, match='invalid_single_game_stat'):
         uncredited_pitching_line(dict(stats, **overrides))
+
+
+def test_profile_rechecks_the_schedule_that_authorized_an_overlapping_final():
+    from contextlib import closing
+    from datetime import datetime
+    from sync_v3 import canonical, evidence, queue
+    from sync_v3.dependencies import capture_reads
+    from sync_v3.season_deployment import BaselineWithheld, _check_retained_finals
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL rehearsal')
+    path = Path(__file__).parent / 'fixtures/sync_v3/played.json'
+    fixture = json.loads(path.read_text())
+    schedule = next(r for r in fixture['responses'] if r['endpoint'] == '/schedule')
+    day = date.fromisoformat(fixture['baseball_date'])
+    at = datetime.fromisoformat(fixture['observed_at'])
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            run_fixture(worker, path)
+            row = dict(pk=12345, day=day, team=147, counts=dict(gamesStarted=0, outs=9, saves=0,
+                                                                 holds=0, gamesFinished=0, saveOpportunities=0))
+            for i in (1, 2, 3):
+                when = at + timedelta(hours=i)
+                if i == 2:
+                    schedule['body']['dates'][0]['games'][0]['teams']['home']['score'] = 99
+                elif i == 3:
+                    schedule['body'] = {'dates': [], 'totalGames': 0}
+                payload = dict(endpoint='/schedule', params=schedule['params'])
+                with worker, worker.cursor() as cur:
+                    queue.enqueue(cur, f'schedule-reobservation-{i}', payload, when)
+                    claimed = queue.claim(cur, when)
+                source, status = evidence.execute(worker, claimed, lambda *a, **kw: schedule['body'],
+                    clock=lambda: when, on_received=lambda cur, oid, ob: canonical.observe(cur, oid, ob, day))
+                assert status == 'received'
+                with worker, worker.cursor() as cur, capture_reads(cur) as reads:
+                    if i == 1:
+                        assert _check_retained_finals(cur, 102, [row]) == [12345]
+                    else:
+                        with pytest.raises(BaselineWithheld, match='overlapping_boxscore_schedule_unconfirmed'):
+                            _check_retained_finals(cur, 102, [row])
+                    assert source in reads.receipts

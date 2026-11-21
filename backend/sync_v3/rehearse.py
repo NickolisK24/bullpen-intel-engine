@@ -129,11 +129,12 @@ def verify_editorial_evidence(connection, board, events):
 
 def verify_slate_matchups(connection, slate):
     """Resolve every offered game by its official identity in Search and Matchup."""
-    from sync_v3.product_reads import read_game_cards, read_search
+    from sync_v3.product_reads import read_game_cards, read_search, read_team_board
 
     revision = slate['selection_revision']
     edition = slate['generation'], revision
     seen = set()
+    board_performance = {}
     for card in slate['games']:
         pk = card['game_pk']
         if pk in seen:
@@ -154,10 +155,22 @@ def verify_slate_matchups(connection, slate):
                 or metadata['reference_date'] != comparison['game']['reference_date']
                 or comparison['current_serving_eligible'] or comparison['publication_authority'] is not None):
             raise RuntimeError(f'Historical Matchup differs from the selected slate for game {pk}')
+        performance = comparison['domains']['performance']
         for side, label in [('away', 'team_a'), ('home', 'team_b')]:
             team = card[side]['team_id']
             if any(row['team_id'] != team for row in (comparison['game'][side], comparison['teams'][label], metadata[side])):
                 raise RuntimeError(f'Historical {side} club differs for game {pk}')
+            if performance['status'] in ('available', 'partial'):
+                if team not in board_performance:
+                    board = read_team_board(connection, team, revision=revision)
+                    group = board['active_group_performance']
+                    if ((board['generation'], board['selection_revision']) != edition or group['team'] != team
+                            or group['through'] != slate['data_through']
+                            or group['citation'] != board['sections']['group_performance']['citation']):
+                        raise RuntimeError(f'Historical Board performance edition differs for club {team}')
+                    board_performance[team] = group['windows']['season']
+                if performance[label] != board_performance[team]:
+                    raise RuntimeError(f'Historical Matchup performance differs from the Team Board for club {team}')
         yield comparison
 
 

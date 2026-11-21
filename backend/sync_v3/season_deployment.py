@@ -83,20 +83,42 @@ def _check_retained_finals(cur, player, rows):
     endpoints = [f"/game/{r['pk']}/boxscore" for r in rows]
     for endpoint in endpoints:
         consult(cur, endpoint, {})
-    cur.execute("""SELECT DISTINCT ON (f.endpoint) f.endpoint, f.outcome, r.facts, f.id, c.context_id
-                   FROM candidate.fetches f LEFT JOIN candidate.confirmations c
-                     ON c.source_id=f.id AND c.domain='final'
+    # A retained final cites the schedule seen at acquisition. Reconfirm the game on
+    # the latest receipt for that same daily schedule before using the pitching line.
+    cur.execute("""WITH boxes AS (
+                       SELECT DISTINCT ON (endpoint) endpoint,id,outcome FROM candidate.fetches
+                       WHERE endpoint=ANY(%s) ORDER BY endpoint,received_at DESC,id DESC
+                   )
+                   SELECT b.endpoint,b.outcome,r.facts,b.id,c.context_id,prior.parameters,
+                          latest.id,latest.outcome,confirmed.revision_id
+                   FROM boxes b LEFT JOIN candidate.confirmations c ON c.source_id=b.id AND c.domain='final'
                    LEFT JOIN candidate.revisions r ON r.id=c.revision_id
-                   WHERE f.endpoint=ANY(%s)
-                   ORDER BY f.endpoint, f.received_at DESC, f.id DESC""", (endpoints,))
+                   LEFT JOIN candidate.fetches prior ON prior.id=c.context_id AND prior.endpoint='/schedule'
+                   LEFT JOIN LATERAL (
+                       SELECT f.id,f.outcome FROM candidate.fetches f
+                       WHERE f.endpoint='/schedule' AND f.parameters=prior.parameters
+                       ORDER BY f.received_at DESC,f.id DESC LIMIT 1
+                   ) latest ON true
+                   LEFT JOIN candidate.confirmations original ON original.source_id=c.context_id
+                       AND original.domain='schedule'
+                       AND original.identity IN (c.identity,c.identity || '/' || (prior.parameters->>'startDate'))
+                   LEFT JOIN candidate.confirmations confirmed ON confirmed.source_id=latest.id
+                       AND confirmed.revision_id=original.revision_id
+                   ORDER BY b.endpoint""", (endpoints,))
+    finals = cur.fetchall()
+    for endpoint, _, _, source, context, params, latest, _, _ in finals:
+        consult(cur, endpoint, {}, source, context)
+        if params is not None:
+            consult(cur, '/schedule', params, latest)
     by_game = {r['pk']: r for r in rows}
     verified = []
-    for endpoint, outcome, lines, source_id, context_id in cur:
-        consult(cur, endpoint, {}, source_id, context_id)
+    for endpoint, outcome, lines, _, _, _, _, schedule_outcome, revision in finals:
         pk = int(endpoint.split('/')[2])
         expected = by_game[pk]
         if outcome != 'received' or lines is None:
             raise BaselineWithheld('overlapping_boxscore_unconfirmed')
+        if schedule_outcome != 'received' or revision is None:
+            raise BaselineWithheld('overlapping_boxscore_schedule_unconfirmed')
         appearances = [r for r in lines if r['pitcher_mlb_id'] == player]
         if len(appearances) != 1:
             raise BaselineWithheld('game_log_and_boxscore_player_conflict')

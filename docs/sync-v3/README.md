@@ -707,3 +707,20 @@ In the August 28, 2017 private edition, a separate count from 193 official MLB b
 The Board and Stories use the same club, date, depth citation and governed comparison of the active and 40-man pitcher lists. The Board shows the two list sizes and the number of pitchers listed only in the 40-man response. Conflicting parent or active-roster evidence withholds the comparison. These counts describe official list membership. Bullpen role and availability require separate evidence.
 
 For August 28, 2017, all 30 Boards in Chromium matched a comparison of the 60 retrospective MLB roster responses, including every MLB ID in the 40-man-only set. Those responses contained 371 active pitcher listings and 699 40-man pitcher listings, with 328 listed outside the active list. Boston had eight active listings, 26 on the 40-man list and 18 listed only on the latter.
+
+### Reobserved finality and season performance across products
+
+A pitcher profile checks each retained official final against its game log. It pins the schedule that authorized that boxscore and the latest receipt for the same dated schedule. The latest receipt must confirm the same canonical revision of the game. A changed score or a removed game withholds the overlapping final. The original boxscore and schedule remain traceable.
+
+The July 16, 2017 replay received the same MLB schedule digest at 15:09:31 and 15:09:55 UTC on November 21, 2026. Game 490398's boxscore referenced the first receipt. Before the repair, rebuilding its pitcher profile repeatedly omitted the second receipt and the selection gate continued to mark the calculation stale. The isolated regression reproduces the omitted receipt and separately rejects a changed score and a missing listing. [Game 490398 boxscore](https://statsapi.mlb.com/api/v1/game/490398/boxscore)
+
+The August 28, 2017 rehearsal added 304 dated public MLB requests covering the earlier season samples needed by Boston and Toronto. From a saved PostgreSQL 17.6 checkpoint the corrected builder processed batches of 75, 75 and 28 outstanding calculations, then reported zero. All 30 clubs passed the core comparison. The reviewer selected private revision 3, generation `6aacf3baaf84c1e7e8554f5fe68d802de43f1ab2a51c25f272a773796d128ff3`. Both teams' revision 2 reads still reproduced their prior output.
+
+| Dated active group | Relief appearances for the club | ERA | WHIP | K−BB% | HR allowed | Inherited runners scored |
+|---|---:|---:|---:|---:|---:|---:|
+| Boston, 3 pitchers | 108 | 2.35 | 0.93 | 26.8% | 10 | 12 of 43 |
+| Toronto, 10 pitchers | 331 | 3.63 | 1.17 | 17.6% | 36 | 42 of 191 |
+
+Independent sums from the official game lines matched all ten season values on the two Team Boards and in the August 29 Matchup. The rehearsal compares each available or partial Matchup performance side with that club's exact season window, including its declared sample, at the same selection revision. An injected disagreement fails verification. [August 29 game](https://www.mlb.com/gameday/492064)
+
+The selected-slate verifier followed all 15 games through Search and Matchup. Chromium rendered the two Boards and game 492064 with three local, revision-bound GETs and reproduced all ten values.
