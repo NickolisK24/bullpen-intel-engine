@@ -7,7 +7,7 @@ from pathlib import Path
 
 from psycopg2.extras import Json
 
-from sync_v3 import canonical, evidence, history, queue, selection
+from sync_v3 import canonical, evidence, history, public_identities, queue, selection
 from sync_v3.cycle import run_cycle
 from sync_v3.sources import RetainedResponse
 
@@ -16,10 +16,12 @@ class ReplayWithheld(ValueError):
     """All receipts persisted, but some candidate work remains unqualified."""
 
 
-def install(owner):
+def install(owner, *, identity_export=None):
     with owner, owner.cursor() as cur:
-        for module in (queue, evidence, canonical, history, selection):
+        for module in (queue, evidence, canonical, history, public_identities, selection):
             cur.execute(Path(module.__file__).with_suffix('.sql').read_text())
+        if identity_export is not None:
+            public_identities.load_reference(cur, identity_export)
 
 
 def run_fixture(connection, filename):

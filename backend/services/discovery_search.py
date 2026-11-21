@@ -148,6 +148,11 @@ def _matchup_results(query, directory, reference_date, limit):
         .order_by(SlateGame.game_time_utc.asc(), SlateGame.game_pk.asc())
         .all()
     )
+    return matchup_results_from_rows(query, directory, reference_date, limit, rows)
+
+
+def matchup_results_from_rows(query, directory, reference_date, limit, rows):
+    """Project a date-scoped slate through the existing Search contract."""
     matches = []
     for game in rows:
         away = (directory or {}).get(game.away_team_id) or {}

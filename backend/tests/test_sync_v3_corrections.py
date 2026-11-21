@@ -829,7 +829,8 @@ def test_generation_event_build_reuses_qualified_inputs_and_revisits_new_receipt
             assert builds == [day]
 
 
-def test_isolated_core_selection_and_recovery(tmp_path):
+@pytest.mark.parametrize('identity_mode', ['absent', 'incomplete', 'complete'])
+def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     from concurrent.futures import ThreadPoolExecutor
     from contextlib import closing
     from threading import Barrier
@@ -838,6 +839,9 @@ def test_isolated_core_selection_and_recovery(tmp_path):
     from sync_v3.generation import build_batch, freeze_generation
     from sync_v3.replay import run_fixture
     from sync_v3.selection import SelectionWithheld, select_generation
+    from sync_v3.product_reads import read_league, preview_league, read_team_events, read_search, read_game_cards
+    from sync_v3.product_reads import read_team_board, read_pitcher, read_team_history
+    from sync_v3.editorial_reads import read_event_evidence, read_story_observations, read_trust
     from tests.sync_v3_league_fixture import league_fixtures
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
@@ -852,9 +856,37 @@ def test_isolated_core_selection_and_recovery(tmp_path):
         pytest.fail('Synthetic league did not settle')
 
     with isolated_cluster(pg) as (owner, connect):
-        install(owner)
+        source = None
+        if identity_mode != 'absent':
+            from services.mlb_club_directory import MLB_TEAM_IDS
+            from sync_v3.public_identities import load_reference
+            with owner, owner.cursor() as cur:
+                cur.execute('CREATE TABLE public.pitchers(id integer PRIMARY KEY,mlb_id integer UNIQUE NOT NULL)')
+                cur.executemany('INSERT INTO public.pitchers VALUES (%s,%s)',
+                                [(team + 9000, team * 100 + 1) for team in MLB_TEAM_IDS])
+            with owner, owner.cursor() as cur:
+                cur.execute('SET TRANSACTION READ ONLY')
+                cur.execute('SELECT id,mlb_id FROM public.pitchers ORDER BY id')
+                rows = [dict(id=pid, mlb_id=mlb) for pid, mlb in cur]
+            source = dict(source='BaseballOS.pitchers', observed_at='2026-08-01T00:00:00+00:00',
+                          rows=rows if identity_mode == 'complete' else rows[:-1])
+        install(owner, identity_export=source)
+        if source:
+            with pytest.raises(ValueError, match='Ambiguous'), owner, owner.cursor() as cur:
+                load_reference(cur, dict(source, rows=source['rows'][:1] * 2))
+
         with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
+            assert read_league(worker)['status'] == 'no_selected_generation'
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), worker, worker.cursor() as cur:
+                cur.execute('DELETE FROM candidate.public_pitcher_ids')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reviewer, reviewer.cursor() as cur:
+                cur.execute('DELETE FROM candidate.public_identity_export')
             blank = freeze_generation(worker, day)
+            preview = preview_league(worker, blank)
+            assert len(preview['teams']) == 30 and preview['status'] == 'candidate_preview'
+            assert not any(row['team_state']['available'] for row in preview['teams'])
+            assert {row['team_state']['reason_code'] for row in preview['teams']} == {'missing_readiness'}
+            assert preview['selection_revision'] is None and preview['current_serving_eligible'] is False
             with pytest.raises(SelectionWithheld):
                 select_generation(reviewer, blank, expected_revision=0)
             with pytest.raises(PermissionError):
@@ -875,6 +907,68 @@ def test_isolated_core_selection_and_recovery(tmp_path):
             first = settle(worker)
             assert select_generation(reviewer, first, expected_revision=0) == 1
 
+            league = read_league(worker)
+            assert league['generation'] == first and league['selection_revision'] == 1
+            assert len(league['teams']) == len(league['citations']) == 30
+            for row in league['teams']:
+                assert row['team_state']['available'] and row['team_state']['data_through'] == str(day)
+                assert row['orientation']['rest'] == dict(rested_arm_count=0, worked_yesterday_count=1, back_to_back_count=0)
+                assert row['orientation']['movement'] is None
+            discovery = read_search(worker, 'Boston')
+            assert discovery['generation'] == first
+            assert discovery['search']['status'] == ('available' if identity_mode == 'complete' else 'partial')
+            teams, pitchers, matchups = discovery['search']['groups']
+            assert teams['results'][0]['id'] == 111
+            if identity_mode == 'complete':
+                arm = read_search(worker, 'Rehearsal Arm 11101')['search']['groups'][1]['results']
+                assert len(arm) == 1 and arm[0]['id'] == 9111 and arm[0]['metadata']['team_id'] == 111
+            else:
+                assert pitchers['status'] == 'unavailable' and pitchers['results'] == []
+            assert matchups['status'] == 'available' and len(matchups['results']) == 1
+            game = matchups['results'][0]
+            assert game['id'] == 10101 and game['metadata']['home']['team_id'] == 110
+            assert game['metadata']['away']['team_id'] == 111
+            assert game['metadata']['reference_date'] == str(day + timedelta(days=1))
+            slate = read_game_cards(worker)
+            assert slate['quiet_day'] is False and len(slate['games']) == 15
+            for card in slate['games']:
+                lookup = read_search(worker, str(card['game_pk']), revision=1)['search']['groups'][2]['results']
+                assert [entry['id'] for entry in lookup] == [card['game_pk']]
+            matchup = read_game_cards(worker, game_pk=game['id'])
+            assert matchup['games'] == [next(row for row in slate['games'] if row['game_pk'] == game['id'])]
+            assert matchup['generation'] == discovery['generation']
+            assert matchup['games'][0]['away']['rest']['worked_yesterday_count'] == 1
+            assert read_game_cards(worker, game_pk=9999)['status'] == 'game_outside_represented_slate'
+            history = read_team_events(worker, 111)
+            assert history['generation'] == league['generation'] and history['represented'] == str(day)
+            assert history['pitcher_pattern_population_status'] == 'missing_comparable_bullpen'
+            assert any(e['event']['kind'] == 'relief_appearance' for e in history['events'])
+            assert all(e['team'] == 111 and len(e['citation']['lineage']) == 2 for e in history['events'])
+            board = read_team_board(worker, 111)
+            assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
+            assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
+            event = history['events'][0]
+            share_input = read_event_evidence(worker, 111, event['event']['event_id'], revision=1)
+            assert share_input['evidence'] == event and share_input['trusted_snapshot_id'] is None
+            stories = read_story_observations(worker, 111)
+            assert stories['qualification'] == 'rotation_compared' and len(stories['source_games']) == 1
+            assert stories['observations']['observation_count'] == 1
+            assert stories['observations']['strongest_observation']['type'] == 'rotation_pressure'
+            assert read_story_observations(worker, 110)['observations']['observation_count'] == 0
+            trust = read_trust(worker, revision=1)
+            assert trust['generation'] == board['generation'] and trust['comparison']['status'] == 'core_comparison_complete'
+            assert sum(group['receipts'] for group in trust['sources']) > len(league['teams'])
+            assert trust['current_serving_eligible'] is False and trust['trusted_snapshot_id'] is None
+            pitcher = read_pitcher(worker, 9111)
+            assert pitcher['generation'] == board['generation']
+            if identity_mode == 'complete':
+                assert board['active_bullpen'][0]['public_pitcher_id'] == 9111
+                assert pitcher['identity']['mlb_id'] == 11101 and pitcher['identity']['name'] == arm[0]['primary_label']
+                assert set(pitcher['sections']) == {'pitcher_profile','pitcher_rest','workload'}
+                assert all(e in history['events'] for e in pitcher['represented_events'])
+                assert read_pitcher(worker, 11101)['status'] == 'outside_represented_bullpens'
+            else:
+                assert pitcher['status'] == discovery['pitcher_identity_status']
             refreshed = dict(fixtures[-1], observed_at=f'{day + timedelta(days=3)}T12:00:00Z')
             path.write_text(json.dumps(refreshed))
             run_fixture(worker, path)
@@ -906,6 +1000,17 @@ def test_isolated_core_selection_and_recovery(tmp_path):
                 cur.execute('SELECT 1/0')
             assert select_generation(reviewer, first, expected_revision=2, rollback=True) == 3
             assert select_generation(reviewer, first, expected_revision=2, rollback=True) == 3
+            recovered = read_league(worker)
+            assert dict(recovered, selection_revision=1) == league
+            assert dict(read_team_events(worker, 111), selection_revision=1) == history
+            page = read_team_history(worker, 111, through_revision=3, limit=2)
+            assert [r['action'] for r in page['rows']] == ['rollback', 'select']
+            assert [r['generation'] for r in page['rows']] == [first, second]
+            assert page['rows'][0]['events'] == history['events'] and page['next_revision'] == 1
+            older = read_team_history(worker, 111, through_revision=page['next_revision'])
+            assert older['rows'][0]['events'] == history['events'] and older['next_revision'] is None
+            assert read_league(worker, revision=2)['generation'] == second
+            assert read_league(worker, revision=20)['status'] == 'unknown_revision'
             with worker, worker.cursor() as cur:
                 cur.execute('SELECT revision,predecessor,action,generation FROM candidate.core_selections ORDER BY revision')
                 assert cur.fetchall() == [(1,None,'select',first), (2,1,'select',second), (3,2,'rollback',first)]

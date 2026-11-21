@@ -33,6 +33,8 @@ def _club(day, team, game, template):
     for index, original in enumerate(template['pitchers']):
         player = 100 * team + index
         line = deepcopy(template['players'][f'ID{original}'])
+        if team == 111:
+            line['stats']['pitching']['inningsPitched'] = '4.0' if index == 0 else '5.0'
         line['person'] = dict(id=player, fullName=f'Rehearsal Arm {player}')
         staff['players'][f'ID{player}'] = line
         staff['pitchers'].append(player)
@@ -44,7 +46,9 @@ def _club(day, team, game, template):
         members = [] if kind == 'nonRosterInvitees' else [
             dict(person=arm['person'], position=arm['position'], status=dict(code='A'), parentTeamId=team)]
         responses.append(_response(request, dict(teamId=team, rosterType=kind, roster=members)))
-    stats = dict(arm['stats']['pitching'], outs=9, gamesPitched=1, saves=0, holds=0, saveOpportunities=0, gamesFinished=1)
+    from utils.innings import parse_mlb_innings_to_outs
+    outs = parse_mlb_innings_to_outs(arm['stats']['pitching']['inningsPitched'])
+    stats = dict(arm['stats']['pitching'], outs=outs, gamesPitched=1, saves=0, holds=0, saveOpportunities=0, gamesFinished=1)
     split = dict(player=dict(id=reliever), team=dict(id=team), sport=dict(id=1), stat=stats, season=str(day.year),
                  gameType='R', date=str(day), game=dict(gamePk=game))
     for request in pitcher_requests(day, [reliever]):
@@ -74,13 +78,15 @@ def league_fixtures():
         games.append(game)
         for suffix, body in [('boxscore', dict(teams=sides)), ('playByPlay', dict(allPlays=[])), ('linescore', dict(innings=[]))]:
             responses.append(dict(endpoint=f'/game/{pk}/{suffix}', params={}, body=body))
-    following = day + timedelta(days=2)
+    following = day + timedelta(days=1)
     upcoming = deepcopy(games)
     for game in upcoming:
-        game.update(gamePk=game['gamePk'] + 100, officialDate=str(following),
+        game.update(gamePk=game['gamePk'] + 100, officialDate=str(following), gameDate=f'{following}T22:00:00Z',
                     status=dict(statusCode='S', abstractGameState='Preview', detailedState='Scheduled'))
     season = dict(totalGames=30, dates=_slate(day, games)['dates'] + _slate(following, upcoming)['dates'])
     responses.append(_response(competition_calendar_request(day.year), season))
     quiet = [_fixture(day - timedelta(days=n), []) for n in reversed(range(1, ACTIVE_WINDOW_DAYS))]
-    return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players),
-                 _fixture(day + timedelta(days=1), [])]
+    feeds = [dict(endpoint=f"/../v1.1/game/{game['gamePk']}/feed/live", params={},
+                  body=dict(gamePk=game['gamePk'], liveData={})) for game in upcoming]
+    next_slate = dict(_fixture(following, upcoming, responses=feeds), observed_at=f'{following}T16:00:00Z')
+    return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players), next_slate]

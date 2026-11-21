@@ -159,6 +159,10 @@ def _assemble(cur, through):
                     stale_inputs=stale_inputs, stale_comparisons=stale_comparisons, contract='candidate_generation_inventory_v1', represented=through.isoformat(),
                     availability_reference=reference.isoformat(), clubs=clubs, members=members, missing=missing,
                     current_serving_eligible=False)
+    cur.execute('SELECT digest FROM candidate.public_identity_export')
+    identity_export = cur.fetchone()
+    if identity_export:
+        manifest['public_identity_export'] = identity_export[0]
     return manifest, parents, schedule_sources
 
 
@@ -393,6 +397,9 @@ def _inspect(cur, digest, compare_latest):
         games = [g for entry in json.loads(bytes(receipts[0][2]))['dates'] for g in entry['games']]
         if slate['games'] != _competitive_games(games):
             raise ValueError('Declared games disagree with pinned calendar')
+    if 'public_identity_export' in manifest:
+        from sync_v3.public_identities import verify_reference
+        verify_reference(cur, manifest['public_identity_export'])
     coverage = review_coverage(manifest)
     rosters = compare_membership(cur, digest, through.isoformat())
     games = compare_games(cur, digest, manifest)

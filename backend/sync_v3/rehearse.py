@@ -75,7 +75,7 @@ def isolated_cluster(bindir=None):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -104,7 +104,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
             withheld = []
             if fixture:
                 from sync_v3.replay import ReplayWithheld, install, run_fixture
-                install(owner)
+                import json
+                reference = json.loads(Path(identity_fixture).read_text()) if identity_fixture else None
+                install(owner, identity_export=reference)
                 count = 0
                 for filename in fixture:
                     try:
@@ -260,6 +262,15 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                         else:
                             if select_generation(reviewer, digest, expected_revision=0) != revision:
                                 raise RuntimeError('Retry changed the committed selection')
+                            from sync_v3.product_reads import read_league, read_game_cards
+                            listing = read_league(worker, revision=revision)
+                            if listing['generation'] != digest or len(listing['teams']) != 30:
+                                raise RuntimeError('League listing disagrees with the selection')
+                            print(json.dumps(dict(historical_league=listing)))
+                            slate = read_game_cards(worker, revision=revision)
+                            if slate['generation'] != digest:
+                                raise RuntimeError('Game cards disagree with the selected generation')
+                            print(json.dumps(dict(historical_slate=slate)))
                             restored = select_generation(reviewer, None, expected_revision=revision, rollback=True)
                             print(json.dumps(dict(isolated_selection=digest, revision=revision,
                                                   restored_revision=restored, restored_generation=None)))
@@ -291,6 +302,7 @@ if __name__ == '__main__':
     parser.add_argument('--generation', action='store_true', help='Inventory the frozen candidate scopes after the rehearsal')
     parser.add_argument('--build-generation', action='store_true',
                         help='Rehearse outstanding generation scopes in bounded batches until the inventory settles')
+    parser.add_argument('--identity-fixture', help='Optional sanitized local export of BaseballOS pitcher identity columns')
     parser.add_argument('--exercise-selection', action='store_true',
                         help='Exercise the isolated core selector and restore its initial state')
     parser.add_argument('--generation-batch', type=int, choices=range(1, 101), metavar='N',
@@ -301,6 +313,8 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team,
     ))
+    if args.identity_fixture and not args.fixture:
+        parser.error('--identity-fixture requires an offline source fixture')
     if args.exercise_selection and not args.build_generation:
         parser.error('--exercise-selection requires --build-generation')
     if args.since and (not (args.snapshot or args.snapshot_domain) or not args.through or args.since > args.through):
@@ -314,4 +328,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture)
