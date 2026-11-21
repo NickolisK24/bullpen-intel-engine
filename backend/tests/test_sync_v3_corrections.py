@@ -1967,3 +1967,54 @@ def test_frozen_transaction_receipt_distinguishes_missing_empty_and_refused():
             assert 'revisions_digest' not in refused
             assert empty['digest'] != refused['digest']
             assert freeze_generation(db, day) == revisions[-1]
+
+
+def test_board_transaction_days_follow_selected_receipts_and_rollback(tmp_path):
+    from contextlib import closing
+    from sync_v3.generation import build_batch
+    from sync_v3.product_reads import read_team_board
+    from sync_v3.replay import run_fixture
+    from sync_v3.selection import select_generation
+    from tests.sync_v3_league_fixture import consecutive_played_fixtures
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day, fixtures = consecutive_played_fixtures()
+    following = day + timedelta(days=1)
+    played = next(f for f in fixtures if f['baseball_date'] == str(day))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner, identity_export=dict(source='BaseballOS.pitchers', observed_at=played['observed_at'],
+                                           rows=[dict(mlb_id=11101, id=9111)]))
+        with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
+            path = tmp_path / 'transactions.json'
+            for fixture in fixtures:
+                path.write_text(json.dumps(fixture))
+                run_fixture(worker, path)
+            editions = []
+            for represented in (day, following):
+                for _ in range(15):
+                    batch = build_batch(worker, represented, 75)
+                    if not batch['processed']:
+                        break
+                else:
+                    pytest.fail('Played edition did not settle')
+                revision = select_generation(reviewer, batch['after'], expected_revision=len(editions))
+                editions.append(batch['after'])
+            board = read_team_board(worker, 111, revision=revision)
+            assert board['official_transactions']['source']['reported_records'] == 0
+            from sync_v3.rehearse import verify_board_history
+            verify_board_history(worker, board)
+            earlier, = board['prior_transaction_days']
+            assert earlier['selection_revision'] == 1
+            with pytest.raises(RuntimeError, match='transaction receipt disagrees'):
+                verify_board_history(worker, dict(board, prior_transaction_days=[dict(earlier, events=[])]))
+            assert earlier['represented'] == str(day) and earlier['generation'] == editions[0]
+            event, = earlier['events']
+            assert event['transaction_id'] == '77' and event['pitcher']['pitcher_id'] == 9111
+            if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
+                from sync_v3.history_delivery import historical_history_app
+                run_historical_browser_journeys(historical_history_app(connect), 'transaction-window')
+            restored = select_generation(reviewer, editions[0], expected_revision=revision, rollback=True)
+            assert read_team_board(worker, 111, revision=restored)['prior_transaction_days'] == []
+            assert read_team_board(worker, 111, revision=revision)['prior_transaction_days'] == [earlier]

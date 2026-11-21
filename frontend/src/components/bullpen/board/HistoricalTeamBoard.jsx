@@ -173,6 +173,16 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
     </section>
     <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
     <HistoricalTransactions transactions={data.official_transactions} team={team} through={data.data_through} />
+    {data.prior_transaction_days?.length > 0 && <details>
+      <summary>Earlier transaction evidence · {data.prior_transaction_days.at(-1).represented}
+        {data.prior_transaction_days.length > 1 && ` – ${data.prior_transaction_days[0].represented}`}</summary>
+      {data.prior_transaction_days.map(day => <div key={day.generation}>
+        <HistoricalTransactions transactions={day} team={team} through={day.represented} />
+        <Link className="underline" to={`/trust?rehearsalRevision=${day.selection_revision}&rehearsalGeneration=${day.generation}`}>
+          Inspect the {day.represented} edition
+        </Link>
+      </div>)}
+    </details>}
     <HistoricalRosterListings roster={data.roster_depth_evidence} team={team} through={data.data_through} />
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />

@@ -285,3 +285,26 @@ def test_new_transaction_with_distinct_or_missing_effective_date_is_identified_a
     assert event['headline'] == 'MLB reported a transaction for A.J. Fixture.'
     assert event['detail'] == ('Recalled (effective 2017-08-29).' if effective else 'Recalled (effective date unavailable).')
     assert event['occurred_on'] == str(day) and event['source_ref'] == 'current/old/official/roster#transaction:12'
+
+
+def test_prior_transaction_days_stop_at_receipt_or_calendar_gaps_and_the_governed_lookback(monkeypatch):
+    from datetime import date, timedelta
+    from unittest.mock import Mock
+    from sync_v3 import transaction_reads as tx
+
+    through = date(2026, 10, 19)
+    earlier = through - timedelta(days=1)
+    cur = Mock()
+    project = Mock(return_value=dict(status='unavailable'))
+    monkeypatch.setattr(tx, 'team_transactions', project)
+    for previous in (None, (None, None), ('gap', earlier - timedelta(days=1)), ('future', through + timedelta(days=1))):
+        cur.fetchone.return_value = previous
+        assert tx.prior_transaction_days(cur, 'edition', 111, through) == []
+    project.assert_not_called()
+    cur.fetchone.return_value = ('yesterday', earlier, 8)
+    assert tx.prior_transaction_days(cur, 'edition', 111, through) == []
+    project.assert_called_once_with(cur, 'yesterday', 111, earlier)
+    project.return_value = dict(status='partial')
+    cur.fetchone.side_effect = [(str(n), through - timedelta(days=n), 9 - n) for n in range(1, 9)]
+    days = tx.prior_transaction_days(cur, 'edition', 111, through)
+    assert [day['generation'] for day in days] == list(map(str, range(1, 8)))

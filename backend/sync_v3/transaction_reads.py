@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.public_recent_transactions import project_qualified_public_transaction
-from services.transaction_ingestion import _values_from_transaction
+from services.transaction_ingestion import TRANSACTION_SYNC_WINDOW_DAYS, _values_from_transaction
 from services.transaction_participant_qualification import ROLE_NON_PITCHER, classify_position
 from sync_v3.evidence import encode_json
 
@@ -96,6 +96,29 @@ def team_transactions(cur, generation, team, through):
         else:
             withheld += 1
     return dict(result, status='partial' if withheld else 'available', withheld=withheld)
+
+
+def prior_transaction_days(cur, generation, team, through):
+    """Return the contiguous covered suffix before the Board's own represented day."""
+    days = []
+    for _ in range(TRANSACTION_SYNC_WINDOW_DAYS):
+        # Anchor at first selection so restoring an old edition cannot import newer receipts.
+        # Ignore intervening selections for the same baseball date. A cleared selector is a gap.
+        cur.execute("""SELECT g.digest,g.represented,s.revision FROM candidate.core_selections s
+                       LEFT JOIN candidate.generations g ON g.digest=s.generation
+                       WHERE s.revision < (SELECT min(revision) FROM candidate.core_selections
+                           WHERE generation=%s AND action='select')
+                         AND g.represented IS DISTINCT FROM %s
+                       ORDER BY s.revision DESC LIMIT 1""", (generation, through))
+        previous = cur.fetchone()
+        if not previous or previous[1] is None or (through - previous[1]).days != 1:
+            break
+        generation, through, revision = previous
+        day = team_transactions(cur, generation, team, through)
+        if day['status'] == 'unavailable':
+            break
+        days.append(dict(day, generation=generation, selection_revision=revision))
+    return days
 
 
 def slate_transaction_changes(cur, generation, through, abbreviations):

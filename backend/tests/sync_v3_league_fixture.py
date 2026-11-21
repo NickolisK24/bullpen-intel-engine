@@ -115,3 +115,54 @@ def league_fixtures(*, idle_next_day=False, boston_starter=False):
                   body=dict(gamePk=game['gamePk'], liveData={})) for game in upcoming]
     next_slate = dict(_fixture(following, [] if idle_next_day else upcoming, responses=[] if idle_next_day else feeds), observed_at=f'{following}T16:00:00Z')
     return day, [*quiet, _fixture(day, games, teams, responses, competition=True, pitcher_ids=players, depth_teams=[111], active_roster_profiles=True), next_slate]
+
+
+def consecutive_played_fixtures():
+    """Two played slates with independent daily receipts and a reported Boston recall."""
+    day, fixtures = league_fixtures(idle_next_day=True)
+    following = day + timedelta(days=1)
+    played, rematch = fixtures[-2:]
+    transaction = next(r for r in played['responses'] if r['endpoint'] == '/transactions')
+    transaction['body']['transactions'] = [dict(id=77, date=str(day), typeCode='CU',
+                                                person=dict(id=11101), fromTeam=dict(id=422), toTeam=dict(id=111))]
+    # Play a second slate using the same clubs, with a distinct game identity for each rematch.
+    schedule = next(r for r in played['responses'] if r['endpoint'] == '/schedule' and 'startDate' in r['params'])
+    rematches = deepcopy(schedule['body']['dates'][0]['games'])
+    for game in rematches:
+        game.update(gamePk=game['gamePk'] + 500, officialDate=str(following))
+    next(r for r in rematch['responses'] if r['endpoint'] == '/schedule')['body'] = _slate(following, rematches)
+    calendar = next(r['body'] for r in played['responses'] if r['params'].get('gameTypes'))
+    calendar['dates'].insert(1, _slate(following, rematches)['dates'][0])
+    calendar['totalGames'] += len(rematches)
+    for receipt in played['responses']:
+        endpoint = receipt['endpoint']
+        retained = deepcopy(receipt)
+        if endpoint.endswith('/roster'):
+            retained['params']['date'] = str(following)
+        elif endpoint.startswith('/game/'):
+            parts = endpoint.split('/')
+            parts[2] = str(int(parts[2]) + 500)
+            retained['endpoint'] = '/'.join(parts)
+        elif endpoint.startswith('/people/'):
+            if 'endDate' in retained['params']:
+                retained['params']['endDate'] = str(following)
+            splits = retained['body']['stats'][0]['splits']
+            if retained['params']['stats'] == 'gameLog':
+                splits.append(dict(deepcopy(splits[0]), date=str(following),
+                                   game=dict(gamePk=splits[0]['game']['gamePk'] + 500)))
+            else:
+                stats = splits[0]['stat']
+                for field, value in stats.items():
+                    if type(value) is int:
+                        stats[field] = value * 2
+                stats['inningsPitched'] = f"{stats['outs'] // 3}.{stats['outs'] % 3}"
+        else:
+            continue
+        rematch['responses'].append(retained)
+    rematch.update(team_ids=played['team_ids'], pitcher_ids=played['pitcher_ids'], active_roster_profiles=True)
+    next_day = following + timedelta(days=1)
+    scheduled = next(row['games'] for row in calendar['dates'] if row['date'] == str(next_day))
+    fixtures.append(_fixture(next_day, scheduled, responses=[
+        dict(endpoint=f"/../v1.1/game/{game['gamePk']}/feed/live", params={},
+             body=dict(gamePk=game['gamePk'], liveData={})) for game in scheduled]))
+    return day, fixtures

@@ -238,6 +238,13 @@ def verify_board_history(connection, board):
             or any(changes[key] != row[key] for key in ('generation', 'selection_revision', 'represented',
                                                         'status', 'events', 'comparisons'))):
         raise RuntimeError('Selected Team Board and History disagree')
+    for prior in board['prior_transaction_days']:
+        page = read_team_history(connection, team, through_revision=prior['selection_revision'], limit=1)
+        earlier, = page['rows']
+        if (page['current_serving_eligible'] or earlier['generation'] != prior['generation']
+                or dict(earlier['official_transactions'], generation=earlier['generation'],
+                        selection_revision=earlier['selection_revision']) != prior):
+            raise RuntimeError('Earlier Team Board transaction receipt disagrees with History')
     verified, withheld = [], []
     for arm in board['active_bullpen']:
         mlb, public_id = arm['mlb_id'], arm['public_pitcher_id']

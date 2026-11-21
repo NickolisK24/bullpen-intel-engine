@@ -13,10 +13,10 @@ export default function HistoricalTransactions({ transactions, team, through }) 
         <li key={event.transaction_key}>{event.description} Reported {event.transaction_date}.
           {event.effective_date && ` Effective ${event.effective_date}.`}</li>)}</ul>
         : <p>No qualified pitcher transaction for this club in the retained MLB response for {through}.</p>}
-      {transactions.events.length > 0 && <details><summary>Transaction evidence</summary>
+      <details><summary>Transaction evidence for {through}</summary>
         <p>MLB transaction response acquired {transactions.source.acquired_at}.</p>
         <p className="break-all">Response digest {transactions.source.digest}</p>
-      </details>}
+      </details>
       {transactions.status === 'partial' && <p>Some club records lack verified pitcher or roster evidence.</p>}
     </>}
   </section>

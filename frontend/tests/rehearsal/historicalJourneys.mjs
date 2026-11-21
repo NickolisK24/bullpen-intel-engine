@@ -60,6 +60,17 @@ try {
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
     assert.deepEqual(reads, ['league', 'teams/111/board', 'trust', 'tonight', 'matchups/' + game]
       .map(suffix => prefix + '/' + suffix))
+  } else if (process.argv[3] === 'transaction-window') {
+    await visit('/dashboard?rehearsalRevision=2')
+    await link('Open the Team Board for Boston Red Sox').click()
+    await expect(page.getByText(/No qualified pitcher transaction.*2026-07-30/)).toBeVisible()
+    await page.getByText(/Earlier transaction evidence/).click()
+    await expect(page.getByText(/Rehearsal Arm 11101 was recalled. Reported 2026-07-29/)).toBeVisible()
+    await link('Inspect the 2026-07-29 edition').click()
+    await expect(heading('Historical evidence · Revision 1')).toBeVisible()
+    await expect(page.getByText('The retained MLB response contained 1 record. BaseballOS confirmed 1.')).toBeVisible()
+    assert.deepEqual(reads, ['/api/sync-v3/revisions/2/league', '/api/sync-v3/revisions/2/teams/111/board',
+      '/api/sync-v3/revisions/1/trust'])
   } else if (process.argv[3] === 'off-day') {
     await visit('/tonight?rehearsalRevision=1')
     await expect(page.getByText('No games on the represented slate.')).toBeVisible()
