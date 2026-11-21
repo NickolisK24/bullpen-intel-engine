@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3.intelligence_history import DOMAINS
+from sync_v3.pitching_credit import uncredited_pitching_line
 
 
 def _club_membership(team, day, reads, receipts):
@@ -80,6 +81,11 @@ def _official_relief(game, facts, body):
             return 'conflicting_game_sides'
         for player in staff['pitchers']:
             line = staff['players'][f'ID{player}']['stats']['pitching']
+            try:
+                if uncredited_pitching_line(line):
+                    continue
+            except ValueError:
+                return 'unverified_relief_appearance'
             if line.get('gamesStarted') == 0:
                 innings = line.get('inningsPitched')
                 if innings is None or not str(innings).strip():

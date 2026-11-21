@@ -204,3 +204,84 @@ def test_generation_game_comparison_recounts_official_side_and_outs():
     assert _official_relief(game, facts, box) == 'official_relief_lines_disagree'
     box['teams']['home']['players']['ID102']['stats']['pitching']['gamesPitched'] = 0
     assert _official_relief(game, facts, box) == 'unverified_relief_appearance'
+
+
+def test_uncredited_listing_requires_agreeing_final_and_preserves_credited_zero_out_appearance(tmp_path):
+    from contextlib import closing
+    from copy import deepcopy
+    from sync_v3.cohort import _official_relief
+    from sync_v3.comparison import compare_finals
+    from sync_v3.deployment import game_deployment
+    from sync_v3.discovery import pitcher_requests
+    from sync_v3.season_deployment import BaselineWithheld, pitcher_season_deployment, season_deployment_facts
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    box = next(r['body'] for r in fixture['responses'] if r['endpoint'].endswith('/boxscore'))
+    side = box['teams']['home']
+    zero = dict(gamesPitched=0, gamesPlayed=0, gamesStarted=0, numberOfPitches=0, battersFaced=0, outs=0,
+                inningsPitched='0.0', saves=0, holds=0, saveOpportunities=0, gamesFinished=0)
+    listing = deepcopy(side['players']['ID102'])
+    listing['person'] = dict(id=104, fullName='Listed pitcher')
+    listing['stats']['pitching'] = dict(zero)
+    side['players']['ID104'] = listing
+    side['pitchers'].append(104)
+    fixture['pitcher_ids'] = [104]
+    credited = dict(zero, gamesPitched=1, gamesPlayed=1, numberOfPitches=3, battersFaced=1)
+    for req in pitcher_requests(day, [104]):
+        kind = req.params()['stats']
+        split = dict(sport=dict(id=1), team=dict(id=147), player=dict(id=104), season=str(day.year), gameType='R')
+        rows = [dict(split, stat=credited)]
+        if kind == 'gameLog':
+            rows = [dict(split, stat=credited, date=str(day - timedelta(days=1)), game=dict(gamePk=12344)),
+                    dict(split, stat=zero, date=str(day), game=dict(gamePk=12345))]
+        fixture['responses'].append(dict(endpoint=req.endpoint, params=req.params(), body=dict(stats=[
+            dict(type=dict(displayName=kind), group=dict(displayName='pitching'), splits=rows)])))
+    bodies = {r['params']['stats']: r['body'] for r in fixture['responses'] if r['endpoint'] == '/people/104/stats'}
+    with pytest.raises(BaselineWithheld, match='uncredited_game_requires_official_final'):
+        season_deployment_facts(104, day, bodies['gameLog'], bodies['byDateRange'])
+    path = tmp_path / 'listed.json'
+    path.write_text(json.dumps(fixture))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_fixture(db, path)
+            with db, db.cursor() as cur:
+                assert compare_finals(cur) == (1, 3)
+                game = dict(game_pk=12345, home=147, away=111)
+                deployment = game_deployment(cur, 12345, day)
+                assert _official_relief(game, deployment, box) == 'matched'
+                facts = pitcher_season_deployment(cur, 104, day)['facts']
+                assert facts['uncredited_games'] == [12345]
+                assert facts['season']['games'] == [12344] and facts['season']['outs'] == 0
+                official = regular_day(cur, day, team=147)[0]['official_lines']
+                assert all(line['pitcher_mlb_id'] != 104 for line in official)
+            # Only the final changes. A credited, zero-out line must now be retained
+            # and disagrees with the old log's zero-credit entry.
+            for receipt in fixture['responses']:
+                if not receipt['endpoint'].endswith('/boxscore'):
+                    receipt['retrieved_at'] = fixture['observed_at']
+            fixture['observed_at'] = f'{day + timedelta(days=2)}T12:00:00Z'
+            listing['stats']['pitching'] = credited
+            path.write_text(json.dumps(fixture))
+            run_fixture(db, path)
+            with db, db.cursor() as cur:
+                assert compare_finals(cur) == (1, 4)
+                report = pitcher_season_deployment(cur, 104, day)
+                assert report['reason'] == 'uncredited_game_and_boxscore_disagree' and report['facts'] is None
+
+
+@pytest.mark.parametrize('overrides', [
+    {'outs': None}, {'numberOfPitches': 1}, {'hits': 1}, {'gamesStarted': True}, {'inningsPitched': '0.1'},
+])
+def test_incomplete_or_contradictory_zero_credit_fails_closed(overrides):
+    from sync_v3.pitching_credit import uncredited_pitching_line
+
+    stats = dict(gamesPitched=0, gamesPlayed=0, gamesStarted=0, numberOfPitches=0, battersFaced=0,
+                 outs=0, inningsPitched='0.0')
+    with pytest.raises(ValueError, match='invalid_single_game_stat'):
+        uncredited_pitching_line(dict(stats, **overrides))

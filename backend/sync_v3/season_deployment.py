@@ -9,7 +9,9 @@ from services.pitcher_role import ROLE_WINDOW_DAYS, classify_usage_role
 from services.sync import _extract_leverage_index
 from services.team_board_public_deployment_context import _recorded_li
 from sync_v3.dependencies import consult
-from sync_v3.discovery import pitcher_requests
+from sync_v3.discovery import calendar_requests, pitcher_requests
+from sync_v3.pitching_credit import uncredited_pitching_line
+from sync_v3.workload import _game_workload
 from sync_v3.evidence import latest_qualified_source, replay
 from utils.innings import parse_mlb_innings_to_outs
 
@@ -108,10 +110,34 @@ def _check_retained_finals(cur, player, rows):
     return sorted(verified)
 
 
+def _confirm_uncredited(cur, player, team, pk, day):
+    if cur is None:
+        raise BaselineWithheld('uncredited_game_requires_official_final')
+    schedule = calendar_requests(day)[0]
+    receipt = latest_qualified_source(cur, schedule.endpoint, schedule.params())
+    if receipt is None:
+        raise BaselineWithheld('uncredited_game_requires_official_final')
+    games = [game for entry in replay(cur, receipt).body['dates'] for game in entry['games']
+             if game['gamePk'] == pk and game.get('gameType') == 'R']
+    if len(games) != 1:
+        raise BaselineWithheld('uncredited_game_requires_official_final')
+    final, _ = _game_workload(cur, games[0], day, receipt)
+    if final is None:
+        raise BaselineWithheld('uncredited_game_requires_official_final')
+    lines, (box_receipt, _) = final
+    box = replay(cur, box_receipt).body
+    sides = [side for side in box['teams'].values() if player in side['pitchers']]
+    if (len(sides) != 1 or sides[0]['team']['id'] != team
+            or not uncredited_pitching_line(sides[0]['players'][f'ID{player}']['stats']['pitching'])
+            or any(line['pitcher_mlb_id'] == player for line in lines)):
+        raise BaselineWithheld('uncredited_game_and_boxscore_disagree')
+
+
 def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
     """Check complete per-club totals before separating starts and relief."""
     by_club = defaultdict(list)
     seen = set()
+    uncredited = []
     for item in _splits(log, 'gameLog'):
         if (item.get('sport', {}).get('id') != 1 or item.get('player', {}).get('id') != player
                 or item.get('gameType') != 'R'
@@ -128,6 +154,14 @@ def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
             raise BaselineWithheld('game_log_club_or_game_conflict')
         seen.add(pk)
         counts = _counts(item['stat'])
+        try:
+            no_appearance = uncredited_pitching_line(item['stat'])
+        except ValueError as exc:
+            raise BaselineWithheld(str(exc)) from exc
+        if no_appearance:
+            _confirm_uncredited(cur, player, team, pk, day)
+            uncredited.append(pk)
+            continue
         if counts['gamesPitched'] != 1 or any(counts[k] > 1 for k in ('gamesStarted', 'saves', 'holds', 'saveOpportunities', 'gamesFinished')):
             raise BaselineWithheld('invalid_single_game_stat')
         by_club[team].append({'pk': pk, 'day': day, 'team': team, 'counts': counts,
@@ -156,7 +190,8 @@ def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
         raise BaselineWithheld('log_and_dated_totals_disagree')
     recent_start = through - timedelta(days=13)
     checked = _check_retained_finals(cur, player, all_rows) if cur is not None else []
-    return {'overlapping_finals_checked': checked, 'season': _relief_sample(all_rows),
+    return {**({'uncredited_games': sorted(uncredited)} if uncredited else {}),
+            'overlapping_finals_checked': checked, 'season': _relief_sample(all_rows),
             'recent_14': _relief_sample([r for r in all_rows if r['day'] >= recent_start]),
             'by_club': {team: _relief_sample(rows) for team, rows in sorted(by_club.items())},
             'observed_role': _observed_role(all_rows, through)}

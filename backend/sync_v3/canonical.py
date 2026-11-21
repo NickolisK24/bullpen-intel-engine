@@ -9,6 +9,7 @@ from services.game_appearance_extraction import extract_game_appearances
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.sync import _extract_pitching_lines_from_boxscore, _pitcher_order_by_side
 from sync_v3.discovery import calendar_requests
+from sync_v3.pitching_credit import uncredited_pitching_line
 from utils.innings import parse_mlb_innings_to_outs
 
 
@@ -116,6 +117,9 @@ def reconcile_final(cur, pk, body, source_id, observed_at, day):
             raise Refused('Official innings pitched missing for team')
         if parse_mlb_innings_to_outs(total) != sum(a['outs_recorded'] for a in lines):
             raise Refused('Official team pitching outs do not reconcile')
+    uncredited = {int(line['person_id'] or line['player_id']) for line in pitching_lines
+                  if uncredited_pitching_line(line['stats'])}
+    appearances = [line for line in appearances if line['pitcher_mlb_id'] not in uncredited]
     version = accept(cur, 'final', pk, appearances, source_id, observed_at, context_id=schedule_source)
     if version is None:
         return None

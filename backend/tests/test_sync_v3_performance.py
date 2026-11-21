@@ -61,11 +61,13 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     member = {'id': 12, 'status': 'A', 'position': '1', 'name': 'Test Arm'}
     facts = {'members': [member]}
     monkeypatch.setattr(group, 'roster_on', lambda *args: (facts, 1))
-    monkeypatch.setattr(group, 'pitcher_season_deployment', lambda *args: {'sources': {'gameLog': 2}, 'reason': None})
+    profile = {'sources': {'gameLog': 2}, 'reason': None, 'facts': {'uncredited_games': [4]}}
+    monkeypatch.setattr(group, 'pitcher_season_deployment', lambda *args: profile)
     splits = [{'game': {'gamePk': pk}, 'date': day.isoformat(), 'team': {'id': team},
                'stat': {**STATS, 'gamesStarted': 0, 'saves': 0, 'holds': 0, 'saveOpportunities': 0, 'outs': 3}}
               for pk, team, day in [(1, 111, THROUGH - timedelta(days=1)), (2, 118, THROUGH),
                                     (3, 118, THROUGH + timedelta(days=1))]]
+    splits.append(dict(game={'gamePk': 4}, date=THROUGH.isoformat(), team={'id': 118}, stat={'gamesPitched': 0}))
     sources = {1: {'roster': [{'position': {'code': '1'}}]}, 2: {'stats': [{'splits': splits}]}}
     monkeypatch.setattr(group, 'replay', lambda cur, source: SimpleNamespace(body=sources[source]))
     official = {'team_id': 118, 'game_pk': 2, 'pitcher_mlb_id': 12, 'games_started': 0,

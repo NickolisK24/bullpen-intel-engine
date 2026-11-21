@@ -9,6 +9,7 @@ from services.game_finality import classify_status
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import replay
 from sync_v3.workload import WINDOWS
+from sync_v3.pitching_credit import uncredited_pitching_line
 from utils.innings import parse_mlb_innings_to_outs
 
 
@@ -31,8 +32,10 @@ def compare_finals(cur):
         records = {(item['side'], item['pitcher_mlb_id']):item for item in facts}
         for side, team in capture.body['teams'].items():
             for player in team['pitchers']:
-                record = records.pop((side, player))
                 stats = team['players'][f'ID{player}']['stats']['pitching']
+                if uncredited_pitching_line(stats):
+                    continue
+                record = records.pop((side, player))
                 if record['team_id'] != team['team']['id'] or record['game_pk'] != int(game):
                     raise ValueError(f'Identity mismatch for game {game}, pitcher {player}')
                 expected = {field:stats.get(src) for field, src in SOURCE_FIELDS.items()}
@@ -91,6 +94,8 @@ def compare_team_workload(cur, calendar, candidate):
                 games.add(game_pk)
                 for index, player in enumerate(side['pitchers']):
                     stats = side['players'][f'ID{player}']['stats']['pitching']
+                    if uncredited_pitching_line(stats):
+                        continue
                     starts = stats.get('gamesStarted')
                     credited_start = index == 0 if starts in (None, '') else int(starts) == 1
                     if credited_start:

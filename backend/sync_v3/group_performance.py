@@ -104,7 +104,9 @@ def active_group_population(cur, team, through):
         if profile['reason']:
             result['reason'] = 'incomplete_roster_role_evidence'
             return result, {}
-        splits[player] = replay(cur, profile['sources']['gameLog']).body['stats'][0]['splits']
+        uncredited = set(profile['facts'].get('uncredited_games', []))
+        splits[player] = [split for split in replay(cur, profile['sources']['gameLog']).body['stats'][0]['splits']
+                          if date.fromisoformat(split['date']) <= through and split['game']['gamePk'] not in uncredited]
         logs[player] = _role_logs(splits[player], start, through)
         arms.append(SimpleNamespace(id=player, mlb_id=player, position='P', active=True, full_name=member['name'],
                                     roster_status='active', roster_status_source='mlb_stats_api:roster_sync:active'))
