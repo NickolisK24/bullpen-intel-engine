@@ -383,8 +383,9 @@ async function request(path, options = {}) {
     const cached = publicResponseCache.get(cacheKey)
     if (cached !== null) return cached
   }
-  if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
-    return subscribeToRequest(inFlightGetRequests.get(dedupeKey), callerSignal)
+  const pending = dedupeKey && inFlightGetRequests.get(dedupeKey)
+  if (pending && !pending.controller?.signal.aborted) {
+    return subscribeToRequest(pending, callerSignal)
   }
 
   const controller = typeof AbortController === 'undefined' ? null : new AbortController()
@@ -428,7 +429,7 @@ async function request(path, options = {}) {
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
       entry.settled = true
-      if (dedupeKey) {
+      if (dedupeKey && inFlightGetRequests.get(dedupeKey) === entry) {
         inFlightGetRequests.delete(dedupeKey)
       }
     }

@@ -898,15 +898,20 @@ def read_pitcher(connection, public_id, *, revision=None):
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
             return dict(result, status='outside_represented_bullpens' if status == 'mapped' else status)
+        result['pitcher'] = dict(id=public_id, mlb_id=player['mlb_id'], full_name=player['name'],
+                                 position=player['position'], team_id=player['team_id'])
         if player['team_id'] is None:
             kind = 'historical_roster_departure' if 'historical_departure' in player else 'dated_roster_identity'
             return dict(result, status=kind, identity=player, sections={})
+        club = next(c for c in MLB_CLUBS if c.team_id == player['team_id'])
+        result['pitcher'].update(team_name=club.team_name, team_abbreviation=club.abbreviation)
         depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
         result['postseason_work'] = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, player['team_id'])
         regular = appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through)
         result['recent_work'] = pitcher_recent_work(regular, result['postseason_work'])
         result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
+        result['pitcher']['throws'] = result['pitch_hand']['value']
         from sync_v3.pitcher_deployment_read import historical_pitcher_deployment
         result['historical_deployment'] = historical_pitcher_deployment(cur, digest, player, through)
         if (player.get('roster_observation') or {}).get('membership') == 'active':
@@ -918,6 +923,8 @@ def read_pitcher(connection, public_id, *, revision=None):
         history = blocks['pitcher_profile']['value']['pitch_history']
         if history['mlb_player_id'] != player['mlb_id'] or history['through'] != through.isoformat():
             raise ValueError('Pitch history disagrees with the selected pitcher or workload date')
+        performance = blocks['pitcher_profile']['value']['performance']
+        result['performance'] = performance['windows'] if performance['reason'] is None else None
         result['season_pitch_characteristics'] = (
             monthly_pitch_characteristics(through, history['months']) if history['reason'] is None else None
         )

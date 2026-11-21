@@ -259,3 +259,19 @@ test('archived editions remain searchable when the current publication date is m
   const html = renderData({ ...detailData(0), freshness: {} })
   assert.ok(html.includes('Select a week to view archived editions.'))
 })
+
+test('isolated pitcher editions identify the player and keep research within the selected edition', () => {
+  const data = detailData(0)
+  delete data.freshness
+  const html = renderData({
+    ...data, scope: 'isolated_historical_core', current_serving_eligible: false,
+    arm_context: { mode: 'historical', days_rest: null },
+    data_through: '2026-08-15',
+  })
+  for (const text of ['Test Pitcher', 'Test Team', 'Historical edition · 2026-08-15',
+    '30-day workload', 'Season velocity and pitch mix', 'Inning and leverage usage',
+    'Observed deployment movement']) assert.ok(html.includes(text), text)
+  assert.equal(currentStateFactValue(html, 'Current Read'), 'Withheld')
+  assert.ok(!html.includes('Open Test Team Team Board'))
+  assert.ok(!html.includes('Published role and arm reads'))
+})

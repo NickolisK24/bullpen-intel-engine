@@ -52,7 +52,9 @@ export function PitcherDetailContent({ data, pitcherId }) {
     recent_work_status: recentWorkStatus,
     deployment_context: deploymentContext,
   } = data || {}
-  const current = armContext?.mode === 'current'
+  const historicalEdition = data?.scope === 'isolated_historical_core'
+  const through = historicalEdition ? data.data_through : freshness?.data_through
+  const current = !historicalEdition && armContext?.mode === 'current'
   const workloadSignal = current ? representedWorkload : null
   const productCurrentDate = productCurrentDateFromFreshness(freshness)
   const workloadAppearance = normalizeAppearance(lastWorkloadAppearance)
@@ -60,7 +62,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, current ? productCurrentDate : null)
   const hasPitcherEvidence = Boolean(cf || availability || pitcherLabels || mostRecentAppearance || recentWork || deploymentContext)
   const teamReference = pitcher?.team_abbreviation || pitcher?.team_name
-  const teamBoardHref = teamReference ? buildTeamBoardHref(teamReference) : null
+  const teamBoardHref = !historicalEdition && teamReference ? buildTeamBoardHref(teamReference) : null
   const rosterUnavailable = rosterStatus?.is_authoritative && rosterStatus.is_inactive_context
     && pitcherLabels?.read?.key === 'unavailable'
   const currentStateFacts = [
@@ -77,8 +79,8 @@ export function PitcherDetailContent({ data, pitcherId }) {
       {/* Header */}
       <div className="card-header gap-3 bg-field/25">
         <div className="min-w-0">
-          <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
-          <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</h1>
+          <div className="text-chalk400 font-mono text-xs mb-1">{historicalEdition && through ? [pitcher?.team_name, `Historical edition · ${through}`].filter(Boolean).join(' · ') : pitcher?.team_name}</div>
+          <h1 className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name || (historicalEdition ? 'Pitcher identity unavailable' : null)}</h1>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
             {['L', 'R', 'S', 'B'].includes(pitcher?.throws) && <><span>·</span><span>Throws {pitcher.throws}</span></>}
@@ -103,9 +105,9 @@ export function PitcherDetailContent({ data, pitcherId }) {
                   {rosterStatus?.label || 'Roster status unavailable'}
                 </div>
               </div>
-              {freshness?.data_through && (
+              {through && (
                 <div className="font-mono text-[11px] text-chalk500">
-                  {DATA_THROUGH_LABEL} <span className="text-chalk300">{freshness.data_through}</span>
+                  {DATA_THROUGH_LABEL} <span className="text-chalk300">{through}</span>
                 </div>
               )}
             </div>
@@ -157,14 +159,14 @@ export function PitcherDetailContent({ data, pitcherId }) {
             )}
 
             <RecentWorkPanel
-              pitcherId={pitcherId}
+              pitcherId={historicalEdition ? null : pitcherId}
               payload={recentWork}
               inningsLastSevenDays={cf?.innings_last_7_days}
               error={recentWorkStatus?.status === 'unavailable' ? 'recent_work_unavailable' : null}
             />
           </div>
 
-          <PitcherTrends work={recentWork} pitches={data?.season_pitch_characteristics} deployment={data?.published_deployment ?? (data?.scope === 'isolated_historical_core' ? data.historical_deployment : null)} />
+          <PitcherTrends work={recentWork} pitches={data?.season_pitch_characteristics} deployment={data?.published_deployment ?? (historicalEdition ? data.historical_deployment : null)} />
 
           <div className="mt-7 grid min-w-0 gap-5 border-t border-dirt/70 pt-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-6 lg:pt-6">
             <WorkloadPatterns workloadSignal={workloadSignal} />
@@ -179,7 +181,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
         </div>
       )}
       <PitcherPerformance performance={data?.performance} />
-      {pitcherId && <PitcherPublicationHistory
+      {!historicalEdition && pitcherId && <PitcherPublicationHistory
         key={`${pitcherId}-${freshness?.data_through}`} pitcherId={pitcherId} latest={freshness?.data_through}
       />}
     </article>

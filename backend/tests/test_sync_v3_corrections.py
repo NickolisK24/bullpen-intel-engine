@@ -1110,6 +1110,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert pitcher['identity']['mlb_id'] == 11101 and pitcher['identity']['name'] == arm[0]['primary_label']
                 assert pitcher['arm_context'] == displayed_arm['arm_context']
                 assert pitcher['display_read'] == displayed_arm['display_read']
+                assert pitcher['pitcher'] == dict(id=9111, mlb_id=11101, full_name=arm[0]['primary_label'],
+                                                 position='P', team_id=111, team_name='Boston Red Sox',
+                                                 team_abbreviation='BOS', throws='L')
+                assert pitcher['performance'] == pitcher['sections']['pitcher_profile']['value']['performance']['windows']
+                assert pitcher['performance']['recent']['outings'] == 1
                 assert pitcher['pitch_hand'] == hand
                 work = pitcher['recent_work']
                 assert work['appearances'] == ledger['appearances']

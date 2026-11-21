@@ -80,6 +80,26 @@ test('simultaneous consumers dedupe while one canceled consumer does not cancel 
   assert.equal(calls, 1)
 })
 
+test('a remounted pitcher read replaces a canceled request and keeps the replacement shared', async () => {
+  const requests = []
+  globalThis.fetch = (_url, { signal }) => new Promise((resolve, reject) => {
+    requests.push(resolve)
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+  })
+  const controller = new AbortController()
+  const canceled = assert.rejects(api.getPitcherFatigue(9111, { signal: controller.signal }),
+    { name: 'AbortError' })
+  controller.abort()
+  const replacement = api.getPitcherFatigue(9111)
+  replacement.catch(() => {})
+  await canceled
+  assert.equal(requests.length, 2)
+  const shared = api.getPitcherFatigue(9111)
+  assert.equal(requests.length, 2)
+  requests[1](jsonResponse(payload(4)))
+  assert.strictEqual(await replacement, await shared)
+})
+
 test('timeout aborts the underlying read and reports a scoped timeout', async () => {
   globalThis.fetch = (_url, options) => new Promise((_resolve, reject) => {
     options.signal.addEventListener('abort', () => {
