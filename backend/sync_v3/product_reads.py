@@ -518,12 +518,12 @@ def _matchup_workload(snapshot, through):
                 innings=_baseball_innings(counts['outs']) if counts['outs'] is not None else None)
 
 
-def _season_comparison(facts):
-    """Repeat only the qualified, represented active bullpen's official season facts."""
+def _performance_window(facts, window_name):
+    """Repeat only the qualified, represented active bullpen's official facts for one dated window."""
     from services import performance_metrics as rules
     from services.public_team_performance import WINDOW_POLICY, frozen_comparison_metrics
 
-    window = (facts.get('windows') or {}).get('season')
+    window = (facts.get('windows') or {}).get(window_name)
     if facts.get('reason') or not window or not window['appearances']:
         return None, ()
     metrics = window['metrics']
@@ -541,8 +541,6 @@ def _season_comparison(facts):
         if metric['reason'] is None and metric['value'] is not None and metric['covered'] == window['appearances']:
             capabilities[key] = dict(status='qualified', value=metric['value'])
     values, versions = frozen_comparison_metrics(dict(metrics=rows, capabilities=capabilities))
-    if not values:
-        return None, ()
     members = len(facts['members'])
     appearances = window['appearances']
     sample = (f"{members} active {'pitcher' if members == 1 else 'pitchers'} · "
@@ -769,7 +767,7 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                rotation=tonight._rotation(pressure), key_arms=tonight._key_arms(key_arms, public_usage), change_refs=[])
         result['games'] = sorted((tonight._game_card(row, sides[row.away_team_id], sides[row.home_team_id])
                                   for row in games), key=tonight._game_order)
-        performances = {team: _season_comparison(facts[team, DOMAINS['group_performance'][1]]) for team in clubs}
+        performances = {team: _performance_window(facts[team, DOMAINS['group_performance'][1]], 'season') for team in clubs}
         workloads = {team: _matchup_workload(facts[team, METHODOLOGY], end) for team in clubs}
         league_by_club = {row['team_id']: row for row in league['teams']}
         game_dates = {row.game_pk: row.game_date_et.isoformat() for row in games}
@@ -906,6 +904,11 @@ def read_team_board(connection, team, *, revision=None):
         workload['concentration_7_day'] = board_concentration(
             through, seven, lines, directory, blocks['group_performance']['value'])
         workload['membership_citation'] = blocks['group_performance']['citation']
+        performance = blocks['group_performance']
+        result['active_group_performance'] = dict(
+            team=team, through=through.isoformat(), citation=performance['citation'],
+            windows={name: _performance_window(performance['value'], name)[0] for name in ('season', 'recent_30')},
+        )
         result['recent_relief_games'] = team_relief_games(team, result['recent_relief'], result['postseason_relief'])
         return dict(result, team=row, active_bullpen=arms, pitcher_identity_status=status, sections=blocks,
                     what_changed=_events(cur, team, listing['selection_revision']))

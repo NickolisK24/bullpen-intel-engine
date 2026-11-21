@@ -93,13 +93,13 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
 
 def test_matchup_requires_a_shared_qualified_season_metric_and_matching_window():
     from sync_v3.group_performance import _aggregate
-    from sync_v3.product_reads import _season_comparison, _aligned_performance
+    from sync_v3.product_reads import _performance_window, _aligned_performance
     row = dict(innings_pitched_outs=3, earned_runs=1, hits_allowed=1, walks=0, strikeouts=1, batters_faced=4,
                home_runs_allowed=0, inherited_runners=1, inherited_runners_scored=0)
 
     def side(rows, through=str(THROUGH)):
-        return _season_comparison(dict(members=[{'player': 7}], through=through, windows={
-            'season': dict(start='2024-01-01', **_aggregate(rows))}))
+        return _performance_window(dict(members=[{'player': 7}], through=through, windows={
+            'season': dict(start='2024-01-01', **_aggregate(rows))}), 'season')
 
     full = side([row] * 36)
     incomplete = side([row] * 35 + [dict(row, batters_faced=None)])
@@ -112,6 +112,23 @@ def test_matchup_requires_a_shared_qualified_season_metric_and_matching_window()
     assert 'descriptive_hr9' not in result['team_a']
     assert _aligned_performance(full, side([]))['status'] == 'withheld'
     assert _aligned_performance(full, side([row]*36, through='2024-08-08'))['status'] == 'withheld'
+
+
+def test_historical_board_keeps_each_performance_window_and_its_declared_sample():
+    from sync_v3.group_performance import _aggregate
+    from sync_v3.product_reads import _performance_window
+
+    row = dict(innings_pitched_outs=3, earned_runs=1, hits_allowed=1, walks=0, strikeouts=1,
+               batters_faced=4, home_runs_allowed=0, inherited_runners=1, inherited_runners_scored=0)
+    facts = dict(members=[{'player': 7}], through=str(THROUGH), windows={
+        'season': dict(start='2024-01-01', **_aggregate([row] * 36 + [{}])),
+        'recent_30': dict(start='2024-07-09', **_aggregate([row] * 36))})
+    season, _ = _performance_window(facts, 'season')
+    recent, _ = _performance_window(facts, 'recent_30')
+    assert set(season) == {'sample'} and season['sample']['relief_appearances'] == 37
+    assert recent['sample']['start'] == '2024-07-09' and recent['sample']['relief_appearances'] == 36
+    assert recent['k_bb_percent']['value'] == '25.0%' and recent['home_runs_allowed']['value'] == '0'
+    assert _performance_window(dict(facts, reason='two_way_role_evidence_unresolved'), 'recent_30') == (None, ())
 
 
 def test_league_change_retains_the_board_event_identity_and_frozen_revision():

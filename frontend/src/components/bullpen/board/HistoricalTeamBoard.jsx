@@ -25,6 +25,27 @@ function metric(fact) {
   return fact?.status === 'complete' && Number.isSafeInteger(fact.value) && fact.value >= 0 ? fact.value : 'Unavailable'
 }
 
+export function HistoricalGroupPerformance({ performance, team, through }) {
+  const windows = performance?.team === team && performance.through === through ? performance.windows : null
+  return <section aria-labelledby="historical-group-performance">
+    <h2 id="historical-group-performance">Performance of the dated active bullpen</h2>
+    <p>Regular-season relief appearances for this club.</p>
+    {[['recent_30', 'Last 30 days'], ['season', 'Season through ' + through]].map(([key, label]) => {
+      const facts = windows?.[key]
+      const sample = facts?.sample?.through === through ? facts.sample : null
+      const metrics = sample ? Object.entries(facts).filter(([metric, field]) =>
+        metric !== 'sample' && field?.label && field.value != null) : []
+      return <div key={key} className="mt-3">
+        <h3>{label}</h3>
+        {sample?.value && <p>{sample.value}</p>}
+        {metrics.length ? <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {metrics.map(([metric, field]) => <div key={metric}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}
+        </dl> : <p>No qualified performance metrics for this window.</p>}
+      </div>
+    })}
+  </section>
+}
+
 export function HistoricalReliefGames({ ledger, through }) {
   const games = ledger?.status === 'verified_games_only' && ledger.through === through && Array.isArray(ledger.games)
     ? ledger.games : null
@@ -86,6 +107,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
           </tr>)}</tbody>
       </table>
     </section>
+    <HistoricalGroupPerformance performance={data.active_group_performance} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />
     <p><Link className="underline" to={`/stories?team=${team}&rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect editorial observations</Link></p>

@@ -182,6 +182,22 @@ test('historical Board rejects a different club, edition, or represented date', 
   }
 })
 
+test('historical group performance scopes qualified values and preserves a withheld window sample', async () => {
+  const { HistoricalGroupPerformance } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
+  const team = 111, through = '2017-08-28'
+  const performance = { team, through, windows: {
+    recent_30: { sample: { through, value: '5 active pitchers · 36 relief appearances' },
+      home_runs_allowed: { label: 'HR allowed', value: '0' } },
+    season: { sample: { through, value: '5 active pitchers · 108 relief appearances' } },
+  } }
+  const show = context => render(React.createElement(HistoricalGroupPerformance, { team, through, performance: context }))
+  const html = show(performance)
+  assert.ok(html.includes('HR allowed') && html.includes('>0<') && html.includes('108 relief appearances'))
+  assert.equal((html.match(/No qualified performance metrics/g) || []).length, 1)
+  assert.ok(!show({ ...performance, team: 114 }).includes('HR allowed'))
+  assert.ok(!show({ ...performance, through: '2017-08-27' }).includes('HR allowed'))
+})
+
 test('historical relief games preserve doubleheaders, incomplete measures and missing dates', async () => {
   const { HistoricalReliefGames } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
   const through = '2024-07-27'
