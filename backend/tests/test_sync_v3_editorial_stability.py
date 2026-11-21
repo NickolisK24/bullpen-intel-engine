@@ -133,3 +133,36 @@ def test_story_roster_evidence_keeps_status_codes_separate_from_bullpen_role():
     refused = roster_depth_evidence(depth, 118, day)
     assert (refused['active_listed'], refused['forty_man_listed']) == (None, None)
     assert refused['forty_man_listed_outside_active'] is None and refused['reason'] == 'parent_club_conflict'
+
+
+def test_historical_editorial_selection_preserves_governed_suppression_without_loading_live_context(monkeypatch):
+    from services import story_intelligence_service_v1 as writer
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('The historical writer requested live club context')
+
+    monkeypatch.setattr(writer, 'build_team_bullpen_context', unexpected)
+    context = dict(team_id=111, team_name='Boston Red Sox', team_abbreviation='BOS',
+                   reference_date='2024-08-08', data_through_date='2024-08-07')
+    assert editorial_reads._story_selection(context, [], {}) == dict(status='withheld', reason=writer.NEUTRAL_NO_OBSERVATIONS)
+
+
+def test_historical_selection_matches_canonical_copy_only_for_cited_inputs():
+    from services.story_feed import canonical_story_from_service_payload
+    from services.story_intelligence_service_v1 import build_team_story
+
+    rotation = dict(context_available=True, rotation_avg_ip_7d=3.2, rotation_avg_ip_14d=5.8,
+                    rotation_ip_trend=-2.6, early_bullpen_entry_rate=80, bullpen_coverage_ip_7d=5.8,
+                    rotation_games_analyzed_7d=6, rotation_games_analyzed_14d=12, rotation_early_bullpen_entry_games_14d=9)
+    context = dict(team_id=111, team_name='Boston Red Sox', team_abbreviation='BOS', reference_date='2024-08-08',
+                   data_through_date='2024-08-07', rotation_context=rotation)
+    rows = editorial_reads.build_team_story_observation_payload(context)['observations']
+    service = build_team_story(111, as_of_date=context['reference_date'], team_context=context)
+    original = canonical_story_from_service_payload(service, team_id=111, date=context['reference_date'])
+    expected = sha256(encode_json({field: original[field] for field in ('headline', 'narrative')})).hexdigest()
+    assert editorial_reads._story_selection(context, rows, {'rotation_context': rotation}) == dict(
+        status='selected', observation_type='rotation_pressure', source_layers=['rotation_context'], copy_sha256=expected)
+    for evidence, layers in (([], {'rotation_context': rotation}), (rows, {}),
+                             (rows, {'rotation_context': {'context_available': False}})):
+        assert editorial_reads._story_selection(context, evidence, layers) == dict(
+            status='withheld', reason='incomplete_editorial_evidence')

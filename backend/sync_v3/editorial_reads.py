@@ -12,17 +12,13 @@ from sync_v3.appearance_reads import appearance_ledger
 from sync_v3.editorial_league_baseline import league_concentration
 from sync_v3.depth import roster_depth_evidence
 from sync_v3.discovery import calendar_requests, pitcher_requests
-from sync_v3.evidence import replay
+from sync_v3.evidence import encode_json, replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
 from sync_v3.product_reads import _blocks, _empty_selection_status, _public_arms, _read_transaction, _selected, read_team_events
 
 
-def _optionality(cur, digest, team, reference):
-    cur.execute("""SELECT h.facts FROM candidate.generation_inputs g JOIN candidate.workload_history h
-                   ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team' AND h.mlb_id=%s
-                   AND h.methodology=%s""", (digest, team, DOMAINS['readiness'][1]))
-    facts, = cur.fetchone()
+def _optionality(cur, digest, team, reference, facts):
     if facts['reason'] or facts['reference_date'] != reference or not facts['arms']:
         return None
     identities, _ = _public_arms(cur, digest)
@@ -86,6 +82,27 @@ def _stability(cur, digest, team, through):
     return layer, 'complete_comparison_windows', citation
 
 
+def _story_selection(context, observations, layers):
+    """Identify the governed writer selection and fingerprint its copy for offline comparison."""
+    from services.story_feed import QUALITY_PUBLISHED, canonical_story_from_service_payload
+    from services.story_intelligence_service_v1 import build_team_story
+
+    team, reference = context['team_id'], context['reference_date']
+    story = build_team_story(team, as_of_date=reference, team_context=context)
+    item = canonical_story_from_service_payload(story, team_id=team, date=reference)
+    if not item['story_available']:
+        return dict(status='withheld', reason=item['suppression_reason'])
+    selected = story['selected_observation']
+    if (item['quality_status'] != QUALITY_PUBLISHED or not item['headline'] or not item['narrative']
+            or selected not in observations or not selected['source_layers']
+            or any(layer not in layers or layers[layer].get('context_available') is False
+                   for layer in selected['source_layers'])):
+        return dict(status='withheld', reason='incomplete_editorial_evidence')
+    copy = dict(headline=item['headline'], narrative=item['narrative'])
+    return dict(status='selected', observation_type=selected['type'], source_layers=selected['source_layers'],
+                copy_sha256=sha256(encode_json(copy)).hexdigest())
+
+
 def read_story_observations(connection, team, *, revision=None):
     clubs = {club.team_id: club for club in MLB_CLUBS}
     if type(team) is not int or team not in clubs:
@@ -96,13 +113,14 @@ def read_story_observations(connection, team, *, revision=None):
     def read(cur):
         selected = _selected(cur, revision)
         result = dict(scope='isolated_historical_game_lines', team=team, generation=None, current_serving_eligible=False,
-                      observations=None, selection_revision=selected[0] if selected else None)
+                      observations=None, story_selection=None, selection_revision=selected[0] if selected else None)
         if not selected or selected[1] is None:
             return dict(result, qualification=_empty_selection_status(selected, revision))
         _, digest, through, reference = selected
         result.update(generation=digest, represented=through.isoformat(), availability_reference=reference)
-        depth = _blocks(cur, digest, 'team', team, {DOMAINS['depth'][1]: 'depth'})['depth']
-        roster = roster_depth_evidence(depth, team, through)
+        blocks = _blocks(cur, digest, 'team', team, {DOMAINS[k][1]: k for k in ('depth', 'readiness')})
+        roster = roster_depth_evidence(blocks['depth'], team, through)
+        result['readiness_citation'] = blocks['readiness']['citation']
         result.update(roster_depth_evidence=roster, coverage={'injury_context': roster['reason']})
         cur.execute("""SELECT h.id,h.facts,h.semantic_digest,h.input_digest FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
@@ -159,16 +177,17 @@ def read_story_observations(connection, team, *, revision=None):
         for layer in layers.values():
             layer['limitations'] = [text for text in layer.get('limitations', []) if text not in legacy_scope]
             layer['limitations'].append('The official final pitching line establishes the club at appearance.')
-        optionality = _optionality(cur, digest, team, reference)
+        optionality = _optionality(cur, digest, team, reference, blocks['readiness']['value'])
         if optionality:
             layers['bullpen_optionality_context'] = optionality
         coverage['bullpen_optionality_context'] = 'complete_dated_arm_reads' if optionality else 'incomplete_arm_reads'
-        payload = build_team_story_observation_payload(dict(
+        context = dict(
             team_id=team, team_name=club.team_name, team_abbreviation=club.abbreviation,
-            reference_date=reference, data_through_date=through.isoformat(), **layers))
+            reference_date=reference, data_through_date=through.isoformat(), **layers)
+        payload = build_team_story_observation_payload(context)
         return dict(result, qualification='game_lines_compared', coverage=coverage, source_games=sorted(games),
                     boxscore_digests=body_digests,
-                    observations=payload)
+                    observations=payload, story_selection=_story_selection(context, payload['observations'], layers))
     return _read_transaction(connection, read)
 
 

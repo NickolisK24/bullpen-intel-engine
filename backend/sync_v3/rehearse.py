@@ -95,6 +95,8 @@ def verify_editorial_evidence(connection, board, events):
             or any(stories['citation'][k] != rotation['citation'][k]
                    for k in ('methodology', 'facts_digest', 'input_digest'))):
         raise RuntimeError('Story rotation citation differs from the selected Board')
+    if stories['readiness_citation'] != board['sections']['readiness']['citation']:
+        raise RuntimeError('Story availability citation differs from the selected Board')
     roster = stories['roster_depth_evidence']
     if (roster['team'] != team or roster['represented'] != edition[2]
             or roster['citation'] != board['sections']['depth']['citation']):

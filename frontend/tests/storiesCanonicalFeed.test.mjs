@@ -484,6 +484,12 @@ test('historical observation evidence binds the club, represented dates, and off
   const valid = patch => verifyStoryEvidence({ ...page, ...patch }, team, revision, generation)
   assert.equal(valid({}), true)
   assert.equal(valid({ qualification: 'missing_pinned_final', observations: null }), true)
+  const selection = { status: 'selected', observation_type: 'rotation_pressure', source_layers: ['rotation_context'],
+    copy_sha256: receipt }
+  assert.equal(valid({ story_selection: selection }), true)
+  assert.equal(valid({ story_selection: { ...selection, source_layers: ['injury_context'] } }), false)
+  assert.equal(valid({ story_selection: { ...selection, status: 'withheld' } }), false)
+  assert.equal(valid({ qualification: 'missing_pinned_final', observations: null, story_selection: selection }), false)
   for (const patch of [{ qualification: 'missing_pinned_final' }, { coverage: {} }, { team: 112 }, { generation: receipt },
     { selection_revision: 1 }, { current_serving_eligible: true }, { availability_reference: page.represented },
     { represented: '2024-08-06' }, { source_games: [13] }, { boxscore_digests: { 12: ['invalid'] } },
