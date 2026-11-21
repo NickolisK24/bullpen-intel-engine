@@ -4,7 +4,7 @@ from datetime import date, datetime
 import json
 from pathlib import Path
 
-from sync_v3 import canonical, evidence, queue
+from sync_v3 import canonical, evidence, history, queue
 from sync_v3.cycle import run_cycle
 from sync_v3.sources import RetainedResponse
 
@@ -15,7 +15,7 @@ class ReplayWithheld(ValueError):
 
 def install(owner):
     with owner, owner.cursor() as cur:
-        for module in (queue, evidence, canonical):
+        for module in (queue, evidence, canonical, history):
             cur.execute(Path(module.__file__).with_suffix('.sql').read_text())
 
 

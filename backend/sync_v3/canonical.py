@@ -112,20 +112,32 @@ def reconcile_final(cur, pk, body, source_id, observed_at):
     originating_source, prior = cur.fetchone()
     if originating_source != source_id:
         return version
+    impacts = final_impacts(prior or (), appearances)
+    cur.executemany('''INSERT INTO candidate.impacts VALUES (%s,%s,%s,%s)
+                       ON CONFLICT DO NOTHING''', [(version,*scope) for scope in sorted(impacts)])
+    return version
+
+
+def final_impacts(prior, appearances):
+    # A reliever's corrected line can change the credited starter's opener classification.
+    from sync_v3.workload import workload_lines
+
     before = {line['pitcher_mlb_id']:line for line in prior or ()}
     after = {line['pitcher_mlb_id']:line for line in appearances}
     impacts = set()
+    before_class, after_class = [
+        {line['pitcher_mlb_id']: line['workload_class'] for line in workload_lines(lines)}
+        for lines in (prior, appearances)
+    ]
     for player in before.keys() | after.keys():
-        if before.get(player) == after.get(player):
+        if before.get(player) == after.get(player) and before_class.get(player) == after_class.get(player):
             continue
         for line in (before.get(player), after.get(player)):
             if line:
                 impacts.add(('pitcher',player,line['game_date']))
                 if line['team_id'] in MLB_TEAM_IDS:
                     impacts.add(('team',line['team_id'],line['game_date']))
-    cur.executemany('''INSERT INTO candidate.impacts VALUES (%s,%s,%s,%s)
-                       ON CONFLICT DO NOTHING''', [(version,*scope) for scope in sorted(impacts)])
-    return version
+    return impacts
 
 
 def observe(cur, source_id, capture):

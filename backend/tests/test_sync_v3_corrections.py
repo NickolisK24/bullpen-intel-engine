@@ -310,3 +310,82 @@ def test_all_star_final_retains_lines_without_attributing_workload_to_an_mlb_clu
                 assert cur.fetchone() == (0,)
         finally:
             worker.close()
+
+
+def test_rolling_snapshots_keep_predecessors_and_scope_a_final_correction(monkeypatch):
+    from contextlib import closing
+    from sync_v3.history import affected_workload, rebuild_for_final, record_workload
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    fixtures = Path(__file__).parent / 'fixtures/sync_v3'
+    fixture = json.loads((fixtures / 'played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    sources = {(r['endpoint'], r['params'].get('rosterType')): r['body'] for r in fixture['responses']}
+    def fetch(endpoint, params):
+        if endpoint == '/schedule' and params['startDate'] != day.isoformat():
+            return {'totalGames': 0, 'dates': []}
+        return sources[endpoint, params.get('rosterType')]
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            end = day + timedelta(days=2)
+            missing = record_workload(db, 'pitcher', 98765, end)
+            for offset in range(3):
+                run_cycle(db, day + timedelta(days=offset), fetch, teams=[111], clock=lambda: at + timedelta(days=offset))
+            with db, db.cursor() as cur:
+                cur.execute("SELECT id FROM candidate.revisions WHERE domain='final' AND revision=1")
+                initial_final = cur.fetchone()[0]
+            recovered, = rebuild_for_final(db, initial_final)
+            assert recovered[1] == 2 and recovered[2] != missing[2]
+            first = record_workload(db, 'pitcher', 102, end)
+            assert record_workload(db, 'pitcher', 102, end) == first
+            team = record_workload(db, 'team', 147, end)
+            record_workload(db, 'team', 111, end)
+            record_workload(db, 'pitcher', 102, day + timedelta(days=30))
+            source = sources['/game/12345/boxscore', None]
+            source['teams']['home']['players']['ID102']['stats']['pitching']['numberOfPitches'] = 24
+            run_cycle(db, day, fetch, teams=[111], clock=lambda: at + timedelta(days=4))
+            with db, db.cursor() as cur:
+                cur.execute("SELECT id FROM candidate.revisions WHERE domain='final' AND revision=2")
+                revision = cur.fetchone()[0]
+                affected = affected_workload(cur, revision)
+            assert affected == [('pitcher', 102, end), ('team', 147, end)]
+            from sync_v3 import history
+            append = history._append
+            def fail_second(cur, subject, mlb_id, through):
+                if subject == 'team':
+                    raise RuntimeError('injected after pitcher rebuild')
+                return append(cur, subject, mlb_id, through)
+            with monkeypatch.context() as patch:
+                patch.setattr(history, '_append', fail_second)
+                with pytest.raises(RuntimeError, match='injected'):
+                    rebuild_for_final(db, revision)
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.workload_history WHERE revision=2 AND mlb_id IN (102,147)')
+                assert cur.fetchone() == (0,)
+            rebuilt = rebuild_for_final(db, revision)
+            assert rebuild_for_final(db, revision) == rebuilt
+            assert rebuilt[0][1] == rebuilt[1][1] == 2
+            assert rebuilt[0][2] != first[2] and rebuilt[1][2] != team[2]
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT predecessor,facts->'windows'->'3'->'facts'->'pitches_thrown'
+                               FROM candidate.workload_history WHERE id=ANY(%s) ORDER BY revision""",
+                            ([first[0], rebuilt[0][0]],))
+                assert cur.fetchall() == [(None, 15), (first[0], 24)]
+                cur.execute('SELECT count(*) FROM candidate.workload_history_sources WHERE snapshot=%s', (first[0],))
+                assert cur.fetchone()[0] > 0
+
+
+def test_changed_bulk_follower_also_invalidates_the_unchanged_opener():
+    from services.game_shape import BULK_FOLLOWER_MIN_OUTS
+    from sync_v3.canonical import final_impacts
+
+    day = '2024-08-05'
+    common = {'game_date': day, 'team_id': 111, 'pitches_thrown': 15}
+    start = dict(common, pitcher_mlb_id=1, games_started=1, is_reliever=False, outs_recorded=3)
+    follower = dict(common, pitcher_mlb_id=2, games_started=0, is_reliever=True, outs_recorded=BULK_FOLLOWER_MIN_OUTS)
+    assert final_impacts([start, follower], [start, dict(follower, outs_recorded=BULK_FOLLOWER_MIN_OUTS-1)]) == {
+        ('pitcher', 1, day), ('pitcher', 2, day), ('team', 111, day)}
