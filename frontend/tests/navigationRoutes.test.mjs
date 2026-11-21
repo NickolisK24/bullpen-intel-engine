@@ -164,6 +164,24 @@ test('historical Matchup binds comparison, game, teams, and dates to the selecte
   }
 })
 
+test('historical Board rejects a different club, edition, or represented date', async () => {
+  const { verifyHistoricalBoard } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
+  const team = 111, revision = 3, generation = 'a'.repeat(64), through = '2024-08-07'
+  const scope = { scope: 'isolated_historical_core', status: 'represented', current_serving_eligible: false,
+    selection_revision: revision, generation }
+  const row = { team_id: team, team_name: 'Boston Red Sox', team_state: { data_through: through } }
+  const changes = { ...scope, team, represented: through }
+  const board = { ...scope, team: row, what_changed: changes, active_bullpen: [],
+    competitive_workload: { data_through: through }, data_through: through, availability_reference: '2024-08-08' }
+  const read = item => verifyHistoricalBoard(item, team, revision, generation)
+  assert.equal(read(board), board)
+  for (const overrides of [{ generation: 'f'.repeat(64) }, { selection_revision: 1 }, { current_serving_eligible: true },
+    { team: { ...row, team_id: 110 } }, { data_through: '2024-08-06' }, { what_changed: { ...changes, team: 110 } },
+    { what_changed: { ...changes, selection_revision: 2 } }]) {
+    assert.throws(() => read({ ...board, ...overrides }), /could not be verified/)
+  }
+})
+
 test('standalone Matchup owns one eager request with no Team Board fan-out', () => {
   const page = readFileSync(new URL('../src/components/bullpen/MatchupPage.jsx', import.meta.url), 'utf8')
   const api = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
