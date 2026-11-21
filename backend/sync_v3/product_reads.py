@@ -557,7 +557,9 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
     from datetime import date
     from services import tonight_read_model as tonight
     from services.current_bullpen_comparison import _aligned_domain, named_role_rest
-    from services.rotation_support_pressure import _baseball_innings, _split_limitation_reasons
+    from services.rotation_support_pressure import (
+        KIND_BULLPEN_GAME, KIND_OPENER_BULK, _baseball_innings, _split_limitation_reasons,
+    )
     from sync_v3.history import METHODOLOGY
 
     if revision is not None and (type(revision) is not int or revision < 1):
@@ -622,6 +624,11 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                        WHERE g.generation=%s AND h.methodology=%s AND h.mlb_id=ANY(%s)""",
                     (generation, rotation, sorted(clubs)))
         save_games = {}
+        nonrotation_lines = {club: {} for club in clubs}
+        nonrotation_keys = {
+            (club, game['game_pk']) for club in clubs for daily in facts[club, rotation]['dates'].values()
+            for game in daily['games'] if (game['rotation'] or {}).get('kind') in (KIND_OPENER_BULK, KIND_BULLPEN_GAME)
+        }
         versions, ambiguous = set(), set()
         represented_games = {
             (club, game['game_pk']): day for club in clubs
@@ -629,9 +636,14 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
             for game in daily['games']
         }
         for club, pk, _, lines in cur:
-            represented = represented_games.get((club, int(pk)))
+            pk = int(pk)
+            represented = represented_games.get((club, pk))
             if represented is None:
                 continue
+            if (club, pk) in nonrotation_keys:
+                nonrotation_lines[club][pk] = (
+                    None if (club, pk) in versions else [line for line in lines if line['team_id'] == club]
+                )
             if (club, pk) in versions:
                 ambiguous.add(club)
             versions.add((club, pk))
@@ -696,8 +708,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         unsettled = {club for row in slate if row.normalized_state not in (SlateGame.STATE_UPCOMING, SlateGame.STATE_CANCELLED)
                      for club in (row.away_team_id, row.home_team_id)}
         rotation_day = date.fromisoformat(league['availability_reference'])
-        rotations = {club: matchup_rotation(facts[club, rotation], rotation_day, reference_day_unresolved=club in unsettled)
-                     for club in clubs}
+        rotations = {club: matchup_rotation(facts[club, rotation], rotation_day, reference_day_unresolved=club in unsettled,
+                                             pinned_lines=nonrotation_lines[club]) for club in clubs}
         for card in result['games']:
             stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
                      DOMAINS['pitcher_rest'][1])
