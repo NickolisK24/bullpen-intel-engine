@@ -149,7 +149,7 @@ def test_historical_roster_events_require_both_full_club_lists(tmp_path):
     from contextlib import closing
     from pathlib import Path
 
-    from sync_v3.change_history import roster_changes
+    from sync_v3.change_history import record_changes, roster_changes
     from sync_v3.intelligence_history import record_intelligence
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
@@ -183,6 +183,13 @@ def test_historical_roster_events_require_both_full_club_lists(tmp_path):
                 assert first['status'] == 'complete'
                 assert [(e['kind'], e['player']) for e in first['events']] == [
                     ('active_roster_removed', 102), ('active_roster_added', 103)]
+            frozen = record_changes(db, 'depth', team, end)
+            archive(db, date(2026, 11, 21), [(101, '1'), (104, '3')], '12')
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT predecessor,facts->'events' FROM candidate.workload_history
+                               WHERE methodology='candidate_depth_changes_v1' ORDER BY revision DESC LIMIT 1""")
+                pred, events = cur.fetchone()
+                assert pred == frozen[0] and [event['player'] for event in events] == [103]
             archive(db, end, [], '12')
             with db, db.cursor() as cur:
                 revised = roster_changes(cur, team, end)

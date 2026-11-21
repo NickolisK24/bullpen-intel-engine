@@ -152,3 +152,41 @@ def test_pitcher_rehearsal_withholds_a_season_claim_that_conflicts_with_an_offic
                 assert all(report['sources'].values())
         finally:
             worker.close()
+
+
+def test_deployment_change_requires_same_qualified_signal_on_adjacent_dates():
+    from contextlib import closing
+    from services import role_movement
+    from services.team_board_public_deployment_context import movement_window_evidence
+    from sync_v3.change_history import deployment_changes
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated rehearsal')
+    end = date(2024, 8, 7)
+
+    def store(cur, day, late, leverage):
+        a, b, c, d = role_movement.window_bounds(day)
+        recent = movement_window_evidence([('R', 8 if late else 6, leverage)] * 3, a, b)
+        prior = movement_window_evidence([('R', 6, leverage)] * 3, c, d)
+        profile = dict(mlb_player_id=102, recent=recent, prior=prior,
+                       **role_movement.classify_observed_role_movement(recent=recent, prior=prior))
+        report = dict(contract=role_movement.CONTRACT, mlb_team_id=118, through=str(day),
+                      complete_game_coverage=True, profiles=[profile])
+        _store(cur, 'team', 118, day, DOMAINS['roles'][1], report, [])
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db, db, db.cursor() as cur:
+            store(cur, end - timedelta(days=1), False, None)
+            store(cur, end, True, None)
+            first = deployment_changes(cur, 118, end)
+            assert first['status'] == 'complete'
+            event, = first['events']
+            assert (event['player'], event['previous'], event['current']) == (102, 'stable', 'later_or_higher_leverage')
+            store(cur, end, True, 1.6)
+            revised = deployment_changes(cur, 118, end)
+            assert revised['events'] == [] and revised['status'] == 'partial_deployment_coverage'
+            assert deployment_changes(cur, 118, end, revisions=(1, 1)) == first

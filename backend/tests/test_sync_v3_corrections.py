@@ -566,3 +566,62 @@ def test_candidate_changes_reproduce_prior_revision_and_withhold_unknown_reads()
             assert revised['lineage'][1]['revision'] == 2
             assert readiness_changes(cur, 118, end, revisions=(1, 1)) == first
             assert readiness_changes(cur, 118, end, revisions=(3, 1))['status'] == 'missing_snapshot'
+
+
+def test_candidate_event_set_retains_exact_inputs_after_correction():
+    from contextlib import closing
+    from sync_v3.change_history import record_changes
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    end = date(2024, 8, 7)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            empty = record_changes(db, 'readiness', 118, end)
+            for day in (end - timedelta(days=1), end):
+                with db, db.cursor() as cur:
+                    facts = dict(team=118, membership_date=str(day), reference_date=str(day + timedelta(days=1)),
+                                 arms={}, team_state=None, comparison={'team_states_compared': 0})
+                    _store(cur, 'team', 118, day, DOMAINS['readiness'][1], facts, [])
+            second = record_changes(db, 'readiness', 118, end)
+            assert second[1] == 2 and record_changes(db, 'readiness', 118, end) == second
+            with db, db.cursor() as cur:
+                cur.execute("""SELECT h.predecessor,h.facts->>'status', count(i.input_snapshot)
+                               FROM candidate.workload_history h LEFT JOIN candidate.change_inputs i
+                               ON i.change_snapshot=h.id WHERE h.id=ANY(%s)
+                               GROUP BY h.id ORDER BY h.revision""", ([empty[0], second[0]],))
+                assert cur.fetchall() == [(None, 'missing_snapshot', 0), (empty[0], 'incomparable_readiness', 2)]
+
+
+def test_pitcher_patterns_end_only_with_complete_negative_evidence():
+    from contextlib import closing
+    from services.team_board_what_changed import PATTERNS
+    from sync_v3.change_history import pattern_changes
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    end = date(2024, 8, 7)
+
+    def store(cur, day, value, status):
+        facts = {key: {'value': False, 'status': 'complete'} for key, _ in PATTERNS}
+        facts['back_to_back'] = {'value': value, 'status': status}
+        report = {'rest': dict(mlb_player_id=102, through=str(day), reference=str(day+timedelta(days=1)), facts=facts)}
+        _store(cur, 'pitcher', 102, day, DOMAINS['pitcher_rest'][1], report, [])
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db, db, db.cursor() as cur:
+            store(cur, end - timedelta(days=1), True, 'complete')
+            store(cur, end, False, 'complete')
+            first = pattern_changes(cur, 102, end)
+            assert [event['kind'] for event in first['events']] == ['back_to_back_ended']
+            store(cur, end, False, 'partial')
+            changed = pattern_changes(cur, 102, end)
+            assert changed['status'] == 'partial_rest_coverage' and changed['events'] == []

@@ -143,3 +143,45 @@ def test_series_burden_requires_matching_clubs_unbroken_sequence_and_dated_cover
     assert _series_burden(days)['complete_series'] == []
     days['2024-08-06'] = {'reason': None, 'games': [game(1, 1, 147)]}
     assert _series_burden(days)['games_without_complete_series'] == [1, 2, 3]
+
+
+def test_game_events_keep_doubleheader_appearances_distinct_and_withhold_ambiguous_starts():
+    import os
+    from contextlib import closing
+    from datetime import date, timedelta
+    import pytest
+    from sync_v3.change_history import game_changes
+    from sync_v3.history import _store
+    from sync_v3.intelligence_history import DOMAINS
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    team, end = 118, date(2024, 8, 7)
+    prior = end - timedelta(days=1)
+
+    def freeze(cur, day, games, reason=None):
+        facts = {'team': team, 'through': day.isoformat(), 'dates': {day.isoformat(): {
+            'reason': reason, 'games': games}}}
+        return _store(cur, 'team', team, day, DOMAINS['rotation'][1], facts, [])
+
+    game = dict(game_pk=123, relief_pitchers=[102], credited_starter=101, shape_reason=None,
+                rotation=dict(short_start=True, starter_outs=12, bullpen_outs_required=15))
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db, db, db.cursor() as cur:
+            freeze(cur, prior, [])
+            freeze(cur, end, [game, dict(game, game_pk=124, rotation=None, shape_reason='incomplete_outs')])
+            first = game_changes(cur, team, end)
+            assert first['status'] == 'partial_rotation_evidence'
+            assert [(e['kind'], e['game'], e['player']) for e in first['events']] == [
+                ('relief_appearance', 123, 102), ('new_short_start', 123, 101), ('relief_appearance', 124, 102)]
+            assert len({e['event_id'] for e in first['events']}) == 3
+            freeze(cur, prior, [game])
+            revised = game_changes(cur, team, end)
+            assert [e['game'] for e in revised['events']] == [124]
+            freeze(cur, end, [], 'missing_complete_schedule')
+            assert game_changes(cur, team, end)['status'] == 'missing_complete_schedule'
+            assert game_changes(cur, team, end, revisions=(1, 1)) == first

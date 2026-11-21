@@ -87,8 +87,22 @@ def _transaction(connection, operation, *args):
                 raise
 
 
+def _snapshot_transaction(connection, operation, *args):
+    # Rebuild change sets after every input in the batch is frozen. An intermediate
+    # pair must never become a committed revision during a two-day correction.
+    from sync_v3.change_history import refresh_existing_changes
+
+    def freeze(cur):
+        result = operation(cur, *args)
+        snapshots = result if isinstance(result, list) else [result]
+        refresh_existing_changes(cur, [row[0] for row in snapshots])
+        return result
+
+    return _transaction(connection, freeze)
+
+
 def record_workload(connection, subject, mlb_id, through):
-    return _transaction(connection, _append, subject, mlb_id, through)
+    return _snapshot_transaction(connection, _append, subject, mlb_id, through)
 
 
 def _append(cur, subject, mlb_id, through):
@@ -155,7 +169,7 @@ def _rebuild(cur, revision):
 
 def rebuild_for_final(connection, revision):
     """Refresh only previously frozen scopes touched by this final, in one transaction."""
-    return _transaction(connection, _rebuild, revision)
+    return _snapshot_transaction(connection, _rebuild, revision)
 
 
 def _rebuild_receipt(cur, receipt):
@@ -212,4 +226,4 @@ def _rebuild_receipt(cur, receipt):
 
 def rebuild_for_observation(connection, receipt):
     """Refresh the windows relying on a retained schedule, roster or boxscore observation."""
-    return _transaction(connection, _rebuild_receipt, receipt)
+    return _snapshot_transaction(connection, _rebuild_receipt, receipt)

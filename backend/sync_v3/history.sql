@@ -28,3 +28,11 @@ CREATE TABLE candidate.history_requests (
 );
 CREATE INDEX history_requests_by_source ON candidate.history_requests(endpoint, parameters, snapshot);
 GRANT SELECT, INSERT ON candidate.history_requests TO sync_v3_worker;
+
+CREATE TABLE candidate.change_inputs (
+    change_snapshot bigint NOT NULL REFERENCES candidate.workload_history(id),
+    input_snapshot bigint NOT NULL REFERENCES candidate.workload_history(id),
+    PRIMARY KEY (change_snapshot, input_snapshot),
+    CHECK (change_snapshot <> input_snapshot)
+);
+GRANT SELECT, INSERT ON candidate.change_inputs TO sync_v3_worker;

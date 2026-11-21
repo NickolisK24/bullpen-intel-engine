@@ -10,7 +10,7 @@ from sync_v3.dependencies import capture_reads
 from sync_v3.deployment import club_role_movement, game_deployment, pitcher_measurement_history
 from sync_v3.depth import club_depth
 from sync_v3.group_performance import active_group_performance
-from sync_v3.history import _store, _transaction
+from sync_v3.history import _store, _snapshot_transaction
 from sync_v3.readiness import represented_readiness
 from sync_v3.rosters import dated_pitcher_sources
 from sync_v3.rotation import club_rotation
@@ -131,7 +131,7 @@ def _append(cur, domain, identity, through):
 
 
 def record_intelligence(connection, domain, identity, through):
-    return _transaction(connection, _append, domain, identity, through)
+    return _snapshot_transaction(connection, _append, domain, identity, through)
 
 
 def _affected(cur, receipt, domains):
@@ -151,4 +151,4 @@ def _affected(cur, receipt, domains):
 
 
 def rebuild_intelligence(connection, receipt, *, domains=tuple(DOMAINS)):
-    return _transaction(connection, _affected, receipt, domains)
+    return _snapshot_transaction(connection, _affected, receipt, domains)
