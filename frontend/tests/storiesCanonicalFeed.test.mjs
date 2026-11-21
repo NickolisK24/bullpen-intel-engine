@@ -470,3 +470,24 @@ test('quiet day: Stories renders the league context cleanly', () => {
   }))
   assert.equal(htmlIncludes(html, LEAGUE_HTML_MATCH), true)
 })
+
+test('historical observation evidence binds the club, represented dates, and official game receipts', async () => {
+  const { verifyStoryEvidence } = await server.ssrLoadModule('/src/components/stories/HistoricalStoryEvidence.jsx')
+  const team = 111, revision = 3, generation = 'a'.repeat(64), receipt = 'b'.repeat(64)
+  const observations = { capability: 'story_observation_engine_v1', source: 'backend', team_id: team,
+    team_name: 'Boston Red Sox', data_through_date: '2024-08-07', reference_date: '2024-08-08', observation_count: 1,
+    observations: [{ type: 'rotation_pressure', team: 'Boston Red Sox', team_id: team, source_layers: ['rotation_context'] }] }
+  const page = { scope: 'isolated_historical_game_lines', selection_revision: revision, team, generation,
+    represented: observations.data_through_date, availability_reference: observations.reference_date,
+    qualification: 'game_lines_compared', observations, current_serving_eligible: false, coverage: { rotation_context: 'complete_calendar' },
+    citation: { input_digest: receipt, facts_digest: receipt }, source_games: [12], boxscore_digests: { 12: [receipt] } }
+  const valid = patch => verifyStoryEvidence({ ...page, ...patch }, team, revision, generation)
+  assert.equal(valid({}), true)
+  assert.equal(valid({ qualification: 'missing_pinned_final', observations: null }), true)
+  for (const patch of [{ qualification: 'missing_pinned_final' }, { coverage: {} }, { team: 112 }, { generation: receipt },
+    { selection_revision: 1 }, { current_serving_eligible: true }, { availability_reference: page.represented },
+    { represented: '2024-08-06' }, { source_games: [13] }, { boxscore_digests: { 12: ['invalid'] } },
+    { observations: { ...observations, observations: [{ ...observations.observations[0], team_id: 112 }] } }]) {
+    assert.equal(valid(patch), false)
+  }
+})

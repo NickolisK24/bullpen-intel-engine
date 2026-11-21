@@ -537,3 +537,5 @@ Open `/dashboard?rehearsalRevision=3` against the adapter to inspect League for 
 Open `/tonight?rehearsalRevision=3` against the adapter for the represented slate. Game cards, featured games, and changes carry that edition into Matchup and Team Board. A selected empty slate remains distinguishable from missing schedule evidence.
 
 The historical Board links to `/trust?rehearsalRevision=<revision>&rehearsalGeneration=<digest>`. This reads the selected generation’s verified source inventory, acquisition spans, and calculation methods. The represented dates and acquisition times refer to different events. The underlying rehearsal has no trusted production snapshot ID.
+
+The historical Board’s editorial observations link opens `/stories?team=<MLB team ID>&rehearsalRevision=<revision>&rehearsalGeneration=<digest>`. The evidence view preserves the observation engine’s inputs, rotation citation and official boxscore digests for that club and edition. Incomplete game evidence displays the qualification reason. Publication of a story and creation of a share artifact require separate authority.

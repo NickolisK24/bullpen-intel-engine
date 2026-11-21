@@ -1,7 +1,9 @@
 import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
+import { readRehearsalEdition } from '../../utils/evidenceLinks'
+import HistoricalStoryEvidence from './HistoricalStoryEvidence'
 import { getStoriesProjection } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import {
@@ -37,6 +39,22 @@ import {
 // BaseballOS Stories — the browseable bullpen intelligence feed. This page
 // renders the canonical backend story feed (dashboard.stories) as the product feed.
 export default function Stories() {
+  const [params] = useSearchParams()
+  try {
+    const edition = readRehearsalEdition(params)
+    if (!edition) return <PublicStories />
+    const raw = params.get('team')
+    const team = Number(raw)
+    if (params.getAll('team').length !== 1 || !/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(team)) {
+      throw new Error('Invalid historical Stories club.')
+    }
+    return <HistoricalStoryEvidence key={JSON.stringify([team, edition])} team={team} {...edition} />
+  } catch (error) {
+    return <ErrorState message={error.message} />
+  }
+}
+
+function PublicStories() {
   const stories = useFetch(getStoriesProjection)
 
   return (

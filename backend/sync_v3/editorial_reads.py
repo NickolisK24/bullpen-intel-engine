@@ -119,7 +119,7 @@ def read_story_observations(connection, team, *, revision=None):
         if not selected or selected[1] is None:
             return dict(result, qualification=_empty_selection_status(selected, revision))
         _, digest, through, reference = selected
-        result.update(generation=digest, represented=through.isoformat())
+        result.update(generation=digest, represented=through.isoformat(), availability_reference=reference)
         depth = _blocks(cur, digest, 'team', team, {DOMAINS['depth'][1]: 'depth'})['depth']
         roster = _roster_depth_evidence(depth, team, through)
         result.update(roster_depth_evidence=roster, coverage={'injury_context': roster['reason']})
