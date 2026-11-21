@@ -1101,6 +1101,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
             from sync_v3.rehearse import verify_board_history, verify_editorial_evidence
             journey = verify_board_history(worker, board)
+            with pytest.raises(RuntimeError, match='Selected Team Board and History disagree'):
+                verify_board_history(worker, dict(board, team=dict(board['team'], team_state=None)))
             event = board['what_changed']['events'][0]
             forged = dict(event, citation=dict(event['citation'], input_digest='0' * 64))
             with pytest.raises(RuntimeError, match='History citation'):
@@ -1275,7 +1277,12 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert [r['action'] for r in page['rows']] == ['rollback', 'select']
             assert [r['generation'] for r in page['rows']] == [first, second]
             assert page['rows'][0]['events'] == history['events'] and page['next_revision'] == 1
-            context = page['rows'][0]['calendar_context']
+            assert page['scope'] == 'isolated_historical_team_history' and page['team_name'] == 'Boston Red Sox'
+            restored_state = page['rows'][0]
+            assert restored_state['team_state'] == board['team']['team_state']
+            assert restored_state['availability_reference'] == board['availability_reference']
+            assert restored_state['readiness_citation']['facts_digest'] == league['citations'][111]['readiness']['facts_digest']
+            context = restored_state['calendar_context']
             assert context == page['rows'][1]['calendar_context']
             game_event, = context['events']
             assert game_event['workload'] == dict(starter_outs=12, bullpen_outs=15, short_start=True)

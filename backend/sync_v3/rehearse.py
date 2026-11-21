@@ -173,6 +173,8 @@ def verify_board_history(connection, board):
     if (board['current_serving_eligible'] or history['current_serving_eligible'] or history['team'] != team
             or changes['current_serving_eligible'] or changes['team'] != team or row['selection_revision'] != revision
             or row['generation'] != digest or row['represented'] != board['data_through']
+            or row['team_state'] != board['team']['team_state']
+            or row['availability_reference'] != board['availability_reference']
             or any(changes[key] != row[key] for key in ('generation', 'selection_revision', 'represented',
                                                         'status', 'events', 'comparisons'))):
         raise RuntimeError('Selected Team Board and History disagree')

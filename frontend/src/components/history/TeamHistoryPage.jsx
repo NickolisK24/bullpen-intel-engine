@@ -383,9 +383,38 @@ function GapRow({ date }) {
   )
 }
 
+function HistoricalSelectionHistory({ payload }) {
+  return (
+    <section className="mx-auto max-w-5xl space-y-5 px-4 py-6">
+      <h1 className="font-board text-2xl font-semibold">{payload.team_name} historical rehearsal</h1>
+      {payload.status === 'unknown_revision' && <p>Requested History revision unavailable.</p>}
+      {payload.rows.map(row => {
+        const state = readPublicTeamState(row.team_state)
+        return <article key={row.selection_revision} className="border-t border-line-subtle py-3">
+          <h2 className="font-board text-xl">Revision {row.selection_revision} · {row.action === 'rollback' ? 'Rollback' : 'Selection'}</h2>
+          {row.generation ? <>
+            <p>Data through <time>{row.represented}</time> · Availability reference <time>{row.availability_reference}</time></p>
+            <p>{state.publicLabel || state.statusLabel || state.unavailableMessage}</p>
+            {row.calendar_context.events.map(event => <GameContext key={event.kind + event.game_pks.join('-')} event={event} />)}
+            {row.calendar_context.calendar_limitation && <p>Calendar evidence is incomplete.</p>}
+            <details><summary>Team State evidence</summary>
+              <p className="break-all">Generation {row.generation}</p>
+              <p className="break-all">Readiness source digest {row.readiness_citation.input_digest}</p>
+            </details>
+          </> : <p>No historical generation selected.</p>}
+        </article>
+      })}
+      {payload.next_revision != null && <p>Earlier decisions continue at revision {payload.next_revision}.</p>}
+    </section>
+  )
+}
+
 export function TeamHistoryPageView({ payload, loading = false, error = null, onRetry = null }) {
   if (loading) return <LoadingPane message="Loading Team State history…" />
   if (error) return <ErrorState message={error} onRetry={onRetry} />
+  if (payload?.scope === 'isolated_historical_team_history' && payload.current_serving_eligible === false) {
+    return <HistoricalSelectionHistory payload={payload} />
+  }
   if (!payload?.team) return <ErrorState message="This team history destination is unavailable." onRetry={onRetry} />
 
   const teamName = payload.team.team_name || payload.team.team_abbreviation || 'Team'

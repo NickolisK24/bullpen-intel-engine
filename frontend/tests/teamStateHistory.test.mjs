@@ -652,3 +652,19 @@ test('pitch trends compare the same pitch across adjacent covered months only', 
   for (const text of ['+2 mph', '-5 pp', 'Speed unknown']) assert.ok(html.includes(text))
   assert.ok(!html.includes('+20 pp'))
 })
+
+test('isolated History shows dated decisions and game evidence across rollback', () => {
+  const candidate = { scope: 'isolated_historical_team_history', current_serving_eligible: false,
+    team: 111, team_name: 'Boston Red Sox', status: 'historical_decisions', next_revision: null,
+    rows: [{ selection_revision: 2, action: 'rollback', generation: null },
+      { selection_revision: 1, action: 'select', generation: 'candidate-generation', represented: '2026-07-03',
+        availability_reference: '2026-07-04', readiness_citation: { input_digest: 'fixture-source' },
+        team_state: { available: true, public_state: 'fresh', public_label: 'Fresh' },
+        calendar_context: { calendar_limitation: null, events: [{ date: '2026-07-03', kind: 'game', game_pks: [801],
+          week: { verified_games: 2, final_games: null, bullpen_outs: null } }] } }] }
+  const html = render({ payload: candidate })
+  for (const text of ['historical rehearsal', 'No historical generation selected', 'Fresh', 'fixture-source',
+    '2 verified games · total unavailable', 'https://www.mlb.com/gameday/801']) assert.ok(html.includes(text), text)
+  assert.ok(!html.includes('Open current'))
+  assert.ok(!html.includes('Pitcher velocity and mix'))
+})

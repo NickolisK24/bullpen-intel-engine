@@ -16,7 +16,9 @@ export function GameContext({ event }) {
       {work && <p>{work.short_start && 'Short start · '}Starter {innings(work.starter_outs)} IP · Bullpen {innings(work.bullpen_outs)} IP</p>}
       {event.week && <p>Seven days through {event.date} · {event.week.bullpen_outs == null
         ? 'Bullpen innings unavailable' : `${innings(event.week.bullpen_outs)} bullpen IP`}
-        {' · '}{event.week.verified_games}/{event.week.final_games} retained final games verified</p>}
+        {' · '}{event.week.final_games == null
+          ? `${event.week.verified_games} verified games · total unavailable`
+          : `${event.week.verified_games}/${event.week.final_games} retained final games verified`}</p>}
       <div className="flex flex-wrap gap-3">
         {event.game_pks.map(pk => <a key={pk} className="underline" href={`https://www.mlb.com/gameday/${pk}`}>MLB game {pk}</a>)}
       </div>

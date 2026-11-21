@@ -81,6 +81,15 @@ def _orientation(facts, change, digest):
                 movement=_movement(change, facts['team_state']['public_code'], digest))
 
 
+def _dated_team_state(facts, through, reference):
+    if facts.get('membership_date') != through.isoformat() or facts.get('reference_date') != reference:
+        raise ValueError('Team State dates disagree with the selected generation')
+    state = facts['team_state']
+    status_for = {code: internal for internal, code in INTERNAL_TO_PUBLIC_STATE.items()}
+    return public_team_state(dict(season_context=facts['competition'], freshness=dict(data_through=through.isoformat()),
+                                  status_code=status_for[state['public_code']] if state else None))
+
+
 def _league(cur, revision, preview):
     result = dict(scope='isolated_historical_core', current_serving_eligible=False, selection_revision=None,
                   generation=None, data_through=None, availability_reference=None, teams=[], citations={})
@@ -116,7 +125,6 @@ def _league(cur, revision, preview):
     rows = {}
     for team, method, facts, semantic, inputs, version in cur:
         rows[team, method] = facts, dict(revision=version, facts_digest=semantic, input_digest=inputs)
-    status_for = {code: internal for internal, code in INTERNAL_TO_PUBLIC_STATE.items()}
     for club in sorted(MLB_CLUBS, key=lambda c: (c.team_name.casefold(), c.team_id)):
         facts, source = rows.get((club.team_id, readiness), ({}, None))
         change, change_source = rows.get((club.team_id, changes), ({}, None))
@@ -124,12 +132,7 @@ def _league(cur, revision, preview):
             block = team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE, data_through=through.isoformat(),
                                            reason_code=blocked[club.team_id])
         else:
-            if facts.get('membership_date') != through.isoformat() or facts.get('reference_date') != reference:
-                raise ValueError('League dates disagree with the selected generation')
-            state = facts['team_state']
-            block = public_team_state(dict(season_context=facts['competition'],
-                                           freshness=dict(data_through=through.isoformat()),
-                                           status_code=status_for[state['public_code']] if state else None))
+            block = _dated_team_state(facts, through, reference)
         identity = dict(team_id=club.team_id, team_abbreviation=club.abbreviation, team_name=club.team_name)
         row = build_league_team_state_row(identity, block)
         row['orientation'] = _orientation(facts, change, source['facts_digest']) if block['available'] else None
@@ -1011,8 +1014,16 @@ def read_team_history(connection, team, *, through_revision, limit=14):
         changes = _event_slice(cur, team, selected[0], selected)
         row = {key: changes[key] for key in ('events', 'comparisons', 'status')}
         row['calendar_context'] = read_calendar_context(cur, selected[1], team, selected[2]) if selected[1] else None
+        row.update(team_state=None, readiness_citation=None, availability_reference=selected[3])
+        if selected[1]:
+            method = DOMAINS['readiness'][1]
+            ready = _blocks(cur, selected[1], 'team', team, {method: 'readiness'})['readiness']
+            row.update(team_state=_dated_team_state(ready['value'], selected[2], selected[3]),
+                       readiness_citation=ready['citation'])
         return row
-    return dict(_decision_page(connection, through_revision, limit, team_changes), team=team)
+    club = next(club for club in MLB_CLUBS if club.team_id == team)
+    return dict(_decision_page(connection, through_revision, limit, team_changes), team=team,
+                scope='isolated_historical_team_history', team_name=club.team_name)
 
 
 def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
