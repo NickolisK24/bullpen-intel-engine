@@ -77,6 +77,11 @@ try {
     await expect(heading('Boston Red Sox')).toBeVisible()
     const generation = new URL(page.url()).searchParams.get('rehearsalGeneration')
     assert.match(generation, /^[a-f0-9]{64}$/)
+    const reliefGame = page.getByRole('region', { name: 'Recent relief games' }).locator('tbody tr')
+    await expect(reliefGame).toHaveCount(1)
+    await expect(reliefGame.locator('td').nth(1)).toHaveText('1')
+    await expect(reliefGame.locator('td').nth(2)).toHaveText('5.0')
+    await expect(reliefGame.locator('td').nth(3)).toHaveText('15')
     const board = new URL(page.url()).pathname + new URL(page.url()).search
     await link('Rehearsal Arm 11101').click()
     await expect(heading('Rehearsal Arm 11101')).toBeVisible()

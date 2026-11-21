@@ -25,6 +25,35 @@ function metric(fact) {
   return fact?.status === 'complete' && Number.isSafeInteger(fact.value) && fact.value >= 0 ? fact.value : 'Unavailable'
 }
 
+export function HistoricalReliefGames({ ledger, through }) {
+  const games = ledger?.status === 'verified_games_only' && ledger.through === through && Array.isArray(ledger.games)
+    ? ledger.games : null
+  const hasGaps = games && [ledger.regular_gaps, ledger.postseason_gaps].some(gaps => Object.keys(gaps || {}).length > 0)
+  return <section aria-labelledby="historical-relief-games">
+    <h2 id="historical-relief-games">Recent relief games</h2>
+    {games?.length ? (
+      <table>
+        <caption className="sr-only">Verified club relief appearances on the latest five represented appearance dates</caption>
+        <thead><tr>{['Date', 'Opponent', 'Appearances', 'IP', 'Pitches'].map(label =>
+          <th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
+        <tbody>{games.map(game => <tr key={game.mlb_game_pk}>
+          <th scope="row"><a className="underline" href={`https://www.mlb.com/gameday/${game.mlb_game_pk}`}
+            aria-label={`MLB game ${game.mlb_game_pk} on ${game.game_date}`}>{game.game_date}</a>
+            {games.some(other => other !== game && other.game_date === game.game_date)
+              && (game.game_number ? ` · Game ${game.game_number}` : ` · MLB ${game.mlb_game_pk}`)}
+          </th>
+          <td className="p-2">{game.home_away === 'away' ? 'at' : 'vs.'} {game.opponent_abbreviation}
+            {game.scope === 'verified_postseason_finals' && ' · Postseason'}</td>
+          <td className="p-2">{game.relief_appearances ?? 'Unavailable'}</td>
+          <td className="p-2">{game.innings ?? 'Unavailable'}</td>
+          <td className="p-2">{game.pitches_total ?? 'Unavailable'}</td>
+        </tr>)}</tbody>
+      </table>
+    ) : <p>{games ? 'No verified relief games in the retained window.' : 'Relief game evidence unavailable.'}</p>}
+    {hasGaps && <p>Some dates have incomplete evidence.</p>}
+  </section>
+}
+
 export default function HistoricalTeamBoard({ team, revision, generation }) {
   const board = useFetch(async options => verifyHistoricalBoard(
     await getRehearsalTeamBoard(team, revision, options), team, revision, generation,
@@ -57,6 +86,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
           </tr>)}</tbody>
       </table>
     </section>
+    <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />
     <p><Link className="underline" to={`/stories?team=${team}&rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect editorial observations</Link></p>
     <Link className="underline" to={`/trust?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect evidence for this edition</Link>

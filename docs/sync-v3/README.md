@@ -673,3 +673,9 @@ The 14-day panel covers regular-season relief appearances across all clubs the p
 In Chromium, all 19 mapped routes in revision 2 of the August 28, 2017 edition matched an independent count from the 193 official August 15–28 boxscores. Together the pitchers made 99 relief appearances, recorded 19 saves and 18 holds, finished 44 games and worked at least four outs 27 times. Albert Suárez appeared four times, finished one game, and recorded three multi-inning outings. The same historical edition and identity limits apply.
 
 Owen Murphy's qualified MLB game logs through October 28, 2026 recorded zero relief appearances in the final 14 days. The resulting quiet panel agreed with the saved snapshot 5843 Pitcher response on profile, status, workload date and window length. The saved response used his club's official relief appearances. Agreement on Murphy's empty window leaves cross-club and postseason parity unverified.
+
+### Verified games on a historical Team Board
+
+The Board displays the game, opponent, relief appearances, baseball innings and pitches for its five most recent verified appearance dates. Each date links to the specific MLB game. Doubleheaders retain both games, and missing pitches or innings remain unavailable. An empty window or a gap is identified on the Board.
+
+On the August 28, 2017 edition, Chromium compared all 30 Boards with a separate count from MLB's dated schedules and boxscores. The 152 club-game rows covered 477 relief appearances and 8,255 pitches. Washington and the Mets each had six rows across five dates, including both games of their August 27 doubleheader. Opening the 30 Boards used 30 local revision-bound requests.

@@ -182,6 +182,24 @@ test('historical Board rejects a different club, edition, or represented date', 
   }
 })
 
+test('historical relief games preserve doubleheaders, incomplete measures and missing dates', async () => {
+  const { HistoricalReliefGames } = await server.ssrLoadModule('/src/components/bullpen/board/HistoricalTeamBoard.jsx')
+  const through = '2024-07-27'
+  const line = { game_date: through, opponent_abbreviation: 'COL', home_away: 'home', relief_appearances: 2,
+    innings: '1.2', pitches_total: 0, scope: 'official_regular_season' }
+  const ledger = { status: 'verified_games_only', through, regular_gaps: { '2024-07-24': 'missing_final' },
+    postseason_gaps: {}, games: [{ ...line, mlb_game_pk: 745307, game_number: 1 },
+      { ...line, mlb_game_pk: 745310, game_number: 2, innings: null, pitches_total: null }] }
+  const show = value => render(React.createElement(HistoricalReliefGames, { ledger: value, through }))
+  const html = show(ledger)
+  for (const fact of ['Game 1', 'Game 2', 'gameday/745307', 'gameday/745310', '1.2', '>0<', 'Some dates have incomplete evidence.']) {
+    assert.ok(html.includes(fact), fact)
+  }
+  assert.equal((html.match(/Unavailable/g) || []).length, 2)
+  assert.ok(show({ ...ledger, games: [] }).includes('No verified relief games in the retained window.'))
+  assert.ok(show({ ...ledger, through: '2024-07-28' }).includes('Relief game evidence unavailable.'))
+})
+
 test('standalone Matchup owns one eager request with no Team Board fan-out', () => {
   const page = readFileSync(new URL('../src/components/bullpen/MatchupPage.jsx', import.meta.url), 'utf8')
   const api = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
