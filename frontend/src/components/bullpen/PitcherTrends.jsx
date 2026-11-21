@@ -61,10 +61,10 @@ export default function PitcherTrends({ work, deployment, pitches }) {
       <Chart title="Season velocity and pitch mix" rows={pitchRows}
         caption={pitches && `Mean release speed (mph) and pitch share in recorded regular-season relief outings through ${pitches.through}. Source: MLB final play-by-play.`}
         empty="No verified season pitch measurements available." />
-      <Chart title="Inning and leverage usage" caption={deployment && `14 days through ${deployment.through}. Known entry innings: ${entries?.known_appearances ?? 0} of ${entries?.appearances ?? 0}. Known leverage: ${leverage?.known_appearances ?? 0} of ${leverage?.appearances ?? 0}.`}
-        rows={distribution} empty="Published inning and leverage evidence unavailable." />
+      <Chart title="Inning and leverage usage" caption={context && `14 days through ${deployment.through}. Known entry innings: ${entries?.known_appearances ?? 0} of ${entries?.appearances ?? 0}. Known leverage: ${leverage?.known_appearances ?? 0} of ${leverage?.appearances ?? 0}.`}
+        rows={distribution} empty={deployment?.current_serving_eligible === false ? 'Historical inning and leverage evidence unavailable.' : 'Published inning and leverage evidence unavailable.'} />
       <Chart title="Observed deployment movement" caption={movement?.public_label}
-        rows={movementRows} empty="Two comparable published seven-day windows are unavailable." />
+        rows={movementRows} empty={deployment?.current_serving_eligible === false ? 'Two comparable historical seven-day windows are unavailable.' : 'Two comparable published seven-day windows are unavailable.'} />
     </section>
   )
 }

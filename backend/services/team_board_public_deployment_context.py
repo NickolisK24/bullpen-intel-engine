@@ -172,6 +172,39 @@ def _role_movement_carrier(population, anchor, *, markers, events_by_game):
     }
 
 
+def deployment_context_fields(pitcher_id, total, innings, margins, leverage):
+    """Describe qualified entry, score and leverage observations for one relief sample."""
+    inning_counts = Counter(innings)
+    entry = {
+        **_domain(total, innings, reason='entry_event_missing_or_incomplete'),
+        'by_inning': [
+            {'inning': inning, 'appearances': count}
+            for inning, count in sorted(inning_counts.items())
+        ],
+        'eighth_or_later_appearances': sum(value for inning, value in inning_counts.items() if inning >= 8),
+        'extra_inning_appearances': sum(value for inning, value in inning_counts.items() if inning >= 10),
+    }
+    score = {
+        **_domain(total, margins, reason='entry_score_missing_or_incomplete'),
+        'leading': sum(value > 0 for value in margins),
+        'tied': sum(value == 0 for value in margins),
+        'trailing': sum(value < 0 for value in margins),
+    }
+    li_context = {
+        **_domain(total, leverage, reason='recorded_leverage_index_missing'),
+        'basis': 'recorded_game_log_leverage_index_only',
+        'high': sum(value >= HIGH_LEVERAGE_MIN for value in leverage),
+        'middle': sum(LOW_LEVERAGE_MAX < value < HIGH_LEVERAGE_MIN for value in leverage),
+        'low': sum(value <= LOW_LEVERAGE_MAX for value in leverage),
+    }
+    return {
+        'pitcher_id': pitcher_id,
+        'entry_inning': entry,
+        'score_context': score,
+        'leverage': li_context,
+    }
+
+
 def build_public_deployment_context(
     team_id, rows, anchor, *, markers, events_by_game, pitcher_ids=(),
 ):
@@ -215,36 +248,7 @@ def build_public_deployment_context(
             li = _recorded_li(getattr(log, 'leverage_index', None))
             if li is not None:
                 leverage.append(li)
-        total = len(appearances)
-        inning_counts = Counter(innings)
-        entry = {
-            **_domain(total, innings, reason='entry_event_missing_or_incomplete'),
-            'by_inning': [
-                {'inning': inning, 'appearances': count}
-                for inning, count in sorted(inning_counts.items())
-            ],
-            'eighth_or_later_appearances': sum(value for inning, value in inning_counts.items() if inning >= 8),
-            'extra_inning_appearances': sum(value for inning, value in inning_counts.items() if inning >= 10),
-        }
-        score = {
-            **_domain(total, margins, reason='entry_score_missing_or_incomplete'),
-            'leading': sum(value > 0 for value in margins),
-            'tied': sum(value == 0 for value in margins),
-            'trailing': sum(value < 0 for value in margins),
-        }
-        li_context = {
-            **_domain(total, leverage, reason='recorded_leverage_index_missing'),
-            'basis': 'recorded_game_log_leverage_index_only',
-            'high': sum(value >= HIGH_LEVERAGE_MIN for value in leverage),
-            'middle': sum(LOW_LEVERAGE_MAX < value < HIGH_LEVERAGE_MIN for value in leverage),
-            'low': sum(value <= LOW_LEVERAGE_MAX for value in leverage),
-        }
-        profiles.append({
-            'pitcher_id': pitcher_id,
-            'entry_inning': entry,
-            'score_context': score,
-            'leverage': li_context,
-        })
+        profiles.append(deployment_context_fields(pitcher_id, len(appearances), innings, margins, leverage))
     return {
         'contract': CONTRACT,
         'method_version': METHOD_VERSION,

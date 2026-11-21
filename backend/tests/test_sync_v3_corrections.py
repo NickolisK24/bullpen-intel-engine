@@ -1117,6 +1117,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert work['workload_series'] == [dict(date=str(day), game_pk=pk, pitches=15,
                                                         opponent=line['opponent_abbreviation'])]
                 assert 'incomplete evidence' in work['workload_series_note'] and 'absence_sentence' not in work
+                deployment = pitcher['historical_deployment']
+                assert deployment['generation'] == pitcher['generation'] and deployment['current_serving_eligible'] is False
+                assert deployment['context']['pitcher_id'] == 9111 and deployment['through'] == str(day)
+                assert deployment['context']['entry_inning']['appearances'] == 1
+                assert deployment['context']['entry_inning']['known_appearances'] == 0 and deployment['movement'] is None
                 chart = pitcher['season_pitch_characteristics']
                 assert chart['through'] == str(day) and chart['months'][0]['outings'] == 1
                 assert chart['months'][0]['verified_outings'] == 0 and chart['months'][0]['types'] == []

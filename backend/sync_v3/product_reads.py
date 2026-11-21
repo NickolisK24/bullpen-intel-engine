@@ -907,6 +907,8 @@ def read_pitcher(connection, public_id, *, revision=None):
         result['recent_work'] = pitcher_recent_work(regular, result['postseason_work'])
         result.update(_historical_arm_display(through.isoformat()))
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
+        from sync_v3.pitcher_deployment_read import historical_pitcher_deployment
+        result['historical_deployment'] = historical_pitcher_deployment(cur, digest, player, through)
         if (player.get('roster_observation') or {}).get('membership') == 'active':
             return dict(result, status='dated_active_pitcher', identity=player, sections={})
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}

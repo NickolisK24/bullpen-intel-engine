@@ -164,7 +164,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
             />
           </div>
 
-          <PitcherTrends work={recentWork} pitches={data?.season_pitch_characteristics} deployment={data?.published_deployment} />
+          <PitcherTrends work={recentWork} pitches={data?.season_pitch_characteristics} deployment={data?.published_deployment ?? (data?.scope === 'isolated_historical_core' ? data.historical_deployment : null)} />
 
           <div className="mt-7 grid min-w-0 gap-5 border-t border-dirt/70 pt-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:gap-6 lg:pt-6">
             <WorkloadPatterns workloadSignal={workloadSignal} />
