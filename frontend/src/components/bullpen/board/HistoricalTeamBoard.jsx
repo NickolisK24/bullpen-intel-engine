@@ -3,7 +3,7 @@ import HistoricalPitchHand from '../HistoricalPitchHand'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../../hooks/useFetch'
 import { getRehearsalTeamBoard } from '../../../utils/api'
-import { buildRehearsalPitcherHref } from '../../../utils/evidenceLinks'
+import { buildRehearsalPitcherHref, buildTeamHistoryHref } from '../../../utils/evidenceLinks'
 import { historicalPitcherWorkload } from '../../../utils/appearanceLanguage'
 import { historicalRoleMovements, readWorkloadConcentration } from '../../../adapters/teamBoardV2'
 import { RoleMovementNote } from './TeamBoardRolesDeployment'
@@ -134,6 +134,7 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
   if (board.error || !board.data) return <ErrorState message={board.error || 'Historical board unavailable.'} onRetry={board.refetch} />
   const data = board.data
   const state = data.team.team_state
+  const history = buildTeamHistoryHref(data.team.team_abbreviation)
   const movements = historicalRoleMovements(data.sections?.roles?.value, team, data.data_through)
   return <main className="mx-auto max-w-5xl space-y-6 p-6">
     <header>
@@ -187,6 +188,9 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
     <HistoricalRotation rotation={data.sections?.rotation?.value} team={team} through={data.data_through} />
     <HistoricalReliefGames ledger={data.recent_relief_games} through={data.data_through} />
     <HistoricalChanges row={data.what_changed} team={team} />
+    {history && <Link className="underline" to={`${history}?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>
+      Open {data.team.team_name} History
+    </Link>}
     <p><Link className="underline" to={`/stories?team=${team}&rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect editorial observations</Link></p>
     <Link className="underline" to={`/trust?rehearsalRevision=${revision}&rehearsalGeneration=${generation}`}>Inspect evidence for this edition</Link>
   </main>

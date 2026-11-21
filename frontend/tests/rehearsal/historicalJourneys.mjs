@@ -141,7 +141,11 @@ try {
 
     await visit('/tonight?rehearsalRevision=2')
     await expect(page.getByTestId('tonight-changes')).toContainText('Rehearsal Arm 11100 was recalled.')
-    await visit('/search?rehearsalRevision=3')
+    await visit(board)
+    await expect(heading('Boston Red Sox')).toBeVisible()
+    const nav = page.getByRole('navigation', { name: 'Primary', exact: true })
+    await nav.getByRole('link', { name: 'Search', exact: true }).click()
+    assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
     await page.getByRole('searchbox').fill('Former Boston')
     await link('Open Former Boston Reliever').click()
     await expect(heading('Former Boston Reliever')).toBeVisible()
@@ -153,7 +157,9 @@ try {
     await expect(heading('Former Boston Reliever')).toBeVisible()
     await expect(page.getByText('Removed from the active roster', { exact: false })).toHaveCount(0)
 
-    await visit('/history/team/BOS?rehearsalRevision=3')
+    await visit(board)
+    await link('Open Boston Red Sox History').click()
+    assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
     await expect(page.getByText(recallText, { exact: true }).first()).toBeVisible()
     await expect(heading('Boston Red Sox historical rehearsal')).toBeVisible()
     const rollback = page.getByRole('article').filter({ has: heading('Revision 3 · Rollback') }).first()
@@ -164,14 +170,26 @@ try {
     assert.equal(new URL(page.url()).searchParams.get('rehearsalGeneration'), generation)
 
     const wrong = generation.startsWith('f') ? '0'.repeat(64) : 'f'.repeat(64)
+    await visit('/search?rehearsalGeneration=' + generation)
+    await expect(page.getByRole('alert')).toHaveText('Invalid historical rehearsal edition.')
+    await expect(page.getByRole('searchbox')).toHaveCount(0)
+    await visit('/search?rehearsalRevision=3&rehearsalGeneration=' + wrong)
+    await page.getByRole('searchbox').fill('Former Boston')
+    await expect(page.getByText('Search is temporarily unavailable.')).toBeVisible()
+    await expect(link('Open Former Boston Reliever')).toHaveCount(0)
+    await visit('/history/team/BOS?rehearsalGeneration=' + generation)
+    await expect(page.getByRole('alert')).toContainText('Invalid historical rehearsal edition.')
+    await visit('/history/team/BOS?rehearsalRevision=3&rehearsalGeneration=' + wrong)
+    await expect(page.getByRole('alert')).toContainText('The requested historical edition could not be verified.')
     await visit(board.replace(generation, wrong))
     await expect(page.getByText('The requested historical Team Board edition could not be verified.')).toBeVisible()
     await expect(heading('Boston Red Sox')).toHaveCount(0)
     assert.deepEqual(reads, [
       prefix + '/league', prefix + '/teams/111/board', prefix + '/pitchers/9111', prefix + '/pitchers/9111/history', prefix + '/teams/111/board', prefix + '/teams/111/stories',
       prefix + '/teams/111/board', prefix + '/trust', prefix + '/tonight', prefix + '/matchups/10101',
-      '/api/sync-v3/revisions/2/tonight', prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
-      '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/teams/111/board',
+      '/api/sync-v3/revisions/2/tonight', prefix + '/teams/111/board', prefix + '/search', prefix + '/pitchers/8999', '/api/sync-v3/revisions/2/pitchers/8999',
+      prefix + '/teams/111/board', '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/pitchers/8999', prefix + '/search',
+      '/api/sync-v3/history/teams/BOS/revisions/3', prefix + '/teams/111/board',
     ])
   }
   assert.deepEqual(unexpected, [])

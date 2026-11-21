@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { rehearsalSearch } from '../../utils/evidenceLinks'
+import { Link, useLocation } from 'react-router-dom'
 
 // Trust-first footer navigation: the explainer and trust surfaces stay one
 // click away from the bottom of every page.
@@ -89,6 +90,8 @@ function ConnectLinks() {
 }
 
 export default function Footer() {
+  const edition = rehearsalSearch(useLocation().search)
+  const links = edition ? LEARN_LINKS.filter(link => link.to === '/trust') : LEARN_LINKS
   return (
     <footer className="border-t border-dirt bg-field/95 px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl rounded-lg border border-dirt bg-dugout/80 px-5 py-7 text-center sm:px-10">
@@ -103,10 +106,10 @@ export default function Footer() {
         <ConnectLinks />
 
         <nav aria-label="Learn and trust pages" className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
-          {LEARN_LINKS.map(link => (
+          {links.map(link => (
             <Link
               key={link.to}
-              to={link.to}
+              to={link.to + edition}
               className="font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
             >
               {link.label}

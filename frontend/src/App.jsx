@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route, useSearchParams } from 'react-router-dom'
+import { rehearsalSearch } from './utils/evidenceLinks'
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
 import Stories from './components/stories/Stories'
@@ -58,11 +59,7 @@ export const APP_ROUTES = [
 
 function AliasRedirect({ pathname }) {
   const [params] = useSearchParams()
-  const edition = new URLSearchParams()
-  for (const key of ['rehearsalRevision', 'rehearsalGeneration']) {
-    for (const value of params.getAll(key)) edition.append(key, value)
-  }
-  return <Navigate to={{ pathname, search: edition.toString() }} replace />
+  return <Navigate to={{ pathname, search: rehearsalSearch(params) }} replace />
 }
 
 export function AppRoutes() {

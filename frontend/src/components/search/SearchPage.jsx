@@ -9,7 +9,7 @@ import {
   buildRehearsalTeamBoardHref,
   buildPitcherHref,
   buildTeamBoardHref,
-  parseRehearsalRevision,
+  readRehearsalEdition,
 } from '../../utils/evidenceLinks'
 import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
 import { formatFreshnessDate } from '../UI/Freshness'
@@ -232,26 +232,28 @@ export function SearchPageView({
 
 export default function SearchPage({ searchFn = searchDiscovery }) {
   const [params] = useSearchParams()
-  let revision
+  let edition
   try {
-    revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
+    edition = readRehearsalEdition(params)
   } catch (error) {
     return <p role="alert">{error.message}</p>
   }
-  return <SearchEdition key={revision ?? 'public'} revision={revision} publicSearch={searchFn} />
+  return <SearchEdition key={JSON.stringify(edition)} revision={edition?.revision ?? null}
+    generation={edition?.generation ?? null} publicSearch={searchFn} />
 }
 
-function SearchEdition({ revision, publicSearch }) {
+function SearchEdition({ revision, generation, publicSearch }) {
   const searchFn = useCallback(async (params, options) => {
     if (revision === null) return { payload: await publicSearch(params, options), edition: null }
     const response = await searchRehearsalEdition(revision, params, options)
     if (response?.status !== 'represented' || response.selection_revision !== revision
+      || (generation !== null && response.generation !== generation)
       || response.current_serving_eligible !== false || typeof response.generation !== 'string'
       || !/^[a-f0-9]{64}$/.test(response.generation) || response.search?.query !== params.q) {
       throw new Error('The historical search edition could not be verified.')
     }
     return { payload: response.search, edition: { revision, generation: response.generation } }
-  }, [revision, publicSearch])
+  }, [revision, generation, publicSearch])
   const [query, setQuery] = useState('')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)

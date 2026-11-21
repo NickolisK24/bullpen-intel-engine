@@ -5,7 +5,7 @@ import { useFetch } from '../../hooks/useFetch'
 import HistoricalChanges from './HistoricalChanges'
 import { GameContext, PitchHistoryPicker } from './HistoryWorkload'
 import { getHistoricalTeamDecisions, getTeamStateHistory } from '../../utils/api'
-import { buildTeamBoardHref, matchesDecisionPage, parseRehearsalRevision } from '../../utils/evidenceLinks'
+import { buildTeamBoardHref, matchesDecisionPage, readRehearsalEdition } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
 import { formatFreshnessDate } from '../UI/Freshness'
 import { EmptyState, ErrorState, LoadingPane } from '../UI'
@@ -536,23 +536,25 @@ export default function TeamHistoryPage() {
   const { abbr } = useParams()
   const teamAbbreviation = safeTeamAbbreviation(abbr)
   const [search] = useSearchParams()
-  const revisionParam = search.get('rehearsalRevision')
-  const repeated = search.getAll('rehearsalRevision').length > 1
-  return <HistoryDestination key={JSON.stringify([teamAbbreviation, revisionParam, repeated])}
-    teamAbbreviation={teamAbbreviation} revisionParam={revisionParam} repeated={repeated} />
+  try {
+    const edition = readRehearsalEdition(search)
+    return <HistoryDestination key={JSON.stringify([teamAbbreviation, edition])} teamAbbreviation={teamAbbreviation}
+      revision={edition?.revision ?? null} generation={edition?.generation ?? null} />
+  } catch (error) {
+    return <ErrorState message={error.message} />
+  }
 }
 
-function HistoryDestination({ teamAbbreviation, revisionParam, repeated }) {
+function HistoryDestination({ teamAbbreviation, revision, generation }) {
   const history = useFetch(async options => {
     if (!teamAbbreviation) throw new Error('This History destination does not contain a valid team abbreviation.')
-    const revision = parseRehearsalRevision(revisionParam, repeated)
     if (revision === null) return getTeamStateHistory(teamAbbreviation, 2026, options)
     const page = await getHistoricalTeamDecisions(teamAbbreviation, revision, options)
-    if (!matchesHistoryCursor(page, teamAbbreviation, revision)) {
+    if (!matchesHistoryCursor(page, teamAbbreviation, revision) || (generation !== null && page.rows[0].generation !== generation)) {
       throw new Error('The requested historical edition could not be verified.')
     }
     return page
-  }, [teamAbbreviation, revisionParam, repeated])
+  }, [teamAbbreviation, revision, generation])
   return (
     <TeamHistoryPageView
       payload={history.data}

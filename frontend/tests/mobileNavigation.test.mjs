@@ -170,3 +170,16 @@ test('persistent navigation begins at xl while the top-bar path remains active b
   assert.ok(appSource.includes('xl:ml-56'))
   assert.equal(appSource.includes('lg:ml-56'), false)
 })
+
+test('historical shell destinations retain the selector without carrying club or search filters', async () => {
+  const { default: Footer } = await server.ssrLoadModule('/src/components/layout/Footer.jsx')
+  const selector = 'rehearsalRevision=4&amp;rehearsalGeneration=' + 'b'.repeat(64)
+  const location = '/pitcher/508?' + selector.replace('&amp;', '&') + '&q=Boston'
+  const sidebar = renderAt(React.createElement(Sidebar), location)
+  const footer = renderAt(React.createElement(Footer), location)
+  const localLinks = html => [...html.matchAll(/href="(\/[^"]*)"/g)].map(match => match[1])
+  assert.deepEqual(localLinks(sidebar), ['/', '/', '/dashboard', '/search', '/trust'].map(path => path + '?' + selector))
+  assert.deepEqual(localLinks(footer), ['/trust?' + selector])
+  const invalid = renderAt(React.createElement(Sidebar), '/search?rehearsalRevision=4&rehearsalRevision=5')
+  assert.ok(localLinks(invalid).every(href => href.endsWith('?rehearsalRevision=4&amp;rehearsalRevision=5')))
+})

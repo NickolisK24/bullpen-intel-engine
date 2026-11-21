@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { rehearsalSearch } from '../utils/evidenceLinks'
 import { PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } from '../utils/navigation'
 
 const PRIMARY_NAVIGATION_ID = 'primary-navigation'
 
-function NavDestination({ item, location, onNavigate }) {
+function NavDestination({ item, location, edition, onNavigate }) {
   const active = isNavDestinationActive(item, location)
   return (
     <Link
-      to={item.to}
+      to={item.to + edition}
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={`nav-item ${active ? 'active' : ''}`}
@@ -24,6 +25,10 @@ export default function Sidebar() {
   // state is irrelevant (the hamburger is hidden and `xl:flex` forces it open).
   const [open, setOpen] = useState(false)
   const location = useLocation()
+  const edition = rehearsalSearch(location.search)
+  // Club Boards and Stories are reached through League; individual Matchups through Tonight.
+  const primary = edition ? PRIMARY_NAV.filter(item => ['tonight', 'league-board', 'search'].includes(item.key)) : PRIMARY_NAV
+  const supporting = edition ? SUPPORTING_NAV.filter(item => item.key === 'data-trust') : SUPPORTING_NAV
 
   // Close the mobile menu whenever the route changes so browser back/forward,
   // deep links, and in-app navigation never leave it stuck open.
@@ -49,7 +54,7 @@ export default function Sidebar() {
       {/* Header row: logo + (mobile) hamburger */}
       <div className="flex items-center justify-between px-5 py-4 xl:py-6 xl:border-b xl:border-dirt">
         <Link
-          to="/"
+          to={'/' + edition}
           aria-label="BaseballOS home"
           data-testid="brand-home-link"
           className="flex items-center gap-2.5 min-w-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
@@ -82,8 +87,8 @@ export default function Sidebar() {
         className={`${open ? 'flex' : 'hidden'} xl:flex flex-1 flex-col px-3 pb-4 pt-1 xl:py-5`}
       >
         <div className="space-y-1">
-          {PRIMARY_NAV.map((item) => (
-            <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
+          {primary.map((item) => (
+            <NavDestination key={item.key} item={item} location={location} edition={edition} onNavigate={closeMenu} />
           ))}
         </div>
 
@@ -92,8 +97,8 @@ export default function Sidebar() {
             Learn &amp; Trust
           </div>
           <div className="space-y-1">
-            {SUPPORTING_NAV.map((item) => (
-              <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
+            {supporting.map((item) => (
+              <NavDestination key={item.key} item={item} location={location} edition={edition} onNavigate={closeMenu} />
             ))}
           </div>
         </div>

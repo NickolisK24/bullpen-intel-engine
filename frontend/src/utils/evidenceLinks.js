@@ -102,6 +102,16 @@ export function parseRehearsalRevision(param, repeated) {
   return revision
 }
 
+// Preserve duplicate or incomplete selectors so the destination can reject them.
+export function rehearsalSearch(search) {
+  const params = new URLSearchParams(search)
+  const edition = new URLSearchParams()
+  for (const key of ['rehearsalRevision', 'rehearsalGeneration']) {
+    for (const value of params.getAll(key)) edition.append(key, value)
+  }
+  return edition.size ? `?${edition}` : ''
+}
+
 export function readRehearsalEdition(params) {
   if (!params.has('rehearsalRevision') && !params.has('rehearsalGeneration')) return null
   const revision = parseRehearsalRevision(params.get('rehearsalRevision'), params.getAll('rehearsalRevision').length > 1)
