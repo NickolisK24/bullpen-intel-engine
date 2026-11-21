@@ -541,3 +541,18 @@ Open `/tonight?rehearsalRevision=3` against the adapter for the represented slat
 The historical Board links to `/trust?rehearsalRevision=<revision>&rehearsalGeneration=<digest>`. This reads the selected generation’s verified source inventory, acquisition spans, and calculation methods. The represented dates and acquisition times refer to different events. The underlying rehearsal has no trusted production snapshot ID.
 
 The historical Board’s editorial observations link opens `/stories?team=<MLB team ID>&rehearsalRevision=<revision>&rehearsalGeneration=<digest>`. The evidence view preserves the observation engine’s inputs, rotation citation and official boxscore digests for that club and edition. Incomplete game evidence displays the qualification reason. Publication of a story and creation of a share artifact require separate authority.
+
+### Reproduce the historical product journeys in Chromium
+
+From the checkout root, install the existing test dependencies in your development environment. PostgreSQL server tools must be installed locally. Run as an unprivileged user.
+
+```sh
+python -m pip install -r backend/requirements-dev.txt
+(cd frontend && npm ci && npx playwright install chromium)
+cd backend
+APP_ENV=test AUTO_SYNC=false SYNC_V3_TEST_BROWSER=1 SYNC_V3_TEST_PG_BIN="$(pg_config --bindir)" \
+  python -m pytest -q -s 'tests/test_sync_v3_corrections.py::test_isolated_core_selection_and_recovery[complete]' \
+  tests/test_sync_v3_corrections.py::test_selected_off_day_has_no_games_and_preserves_the_league
+```
+
+The test creates a private PostgreSQL cluster and synthetic 30-club edition, corrects it, then rolls it back. Chromium reads the Flask rehearsal adapter over loopback and verifies the historical destinations against those records. A mismatched generation must withhold the Board. The off-day case opens the League listing from a selected empty slate and checks all 30 club destinations. The browser build lives in a temporary directory. To use an installed Chromium executable, set `SYNC_V3_TEST_CHROMIUM` to its absolute path.

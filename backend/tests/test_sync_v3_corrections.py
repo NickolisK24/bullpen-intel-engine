@@ -845,6 +845,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     from tests.sync_v3_league_fixture import league_fixtures
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg and os.getenv('SYNC_V3_TEST_BROWSER') == '1':
+        pytest.fail('The browser rehearsal requires SYNC_V3_TEST_PG_BIN')
     if not pg:
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
     day, fixtures = league_fixtures(boston_starter=True)
@@ -1328,7 +1330,10 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             if identity_mode == 'complete':
                 from sync_v3.history_delivery import historical_history_app
-                client = historical_history_app(connect, page_size=2).test_client()
+                adapter = historical_history_app(connect, page_size=2)
+                if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
+                    run_historical_browser_journeys(adapter, 'rollback')
+                client = adapter.test_client()
                 assert_rollback_product_responses(client, first, departure, matchup['historical_comparison']['game'])
                 entry = client.get('/api/sync-v3/history/teams/BOS/revisions/3')
                 assert entry.status_code == 200 and entry.get_json() == page
@@ -1385,6 +1390,25 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 assert cur.fetchone() == (5,5)
 
 
+def run_historical_browser_journeys(adapter, scenario):
+    import subprocess
+    from threading import Thread
+    from werkzeug.serving import make_server
+
+    frontend = Path(__file__).resolve().parents[2] / 'frontend'
+    env = {key: os.environ[key] for key in ('HOME', 'PATH', 'LANG', 'PLAYWRIGHT_BROWSERS_PATH',
+                                            'SYNC_V3_TEST_CHROMIUM') if key in os.environ}
+    with make_server('127.0.0.1', 0, adapter) as server:
+        thread = Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            subprocess.run(['node', 'tests/rehearsal/historicalJourneys.mjs', str(server.server_port), scenario],
+                           cwd=frontend, env=env, check=True, timeout=180)
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 def assert_rollback_product_responses(client, generation, departure, matchup_game):
     """Read the restored fixture edition across products and check their shared identities."""
     event_id = departure['event']['event_id']
@@ -1433,6 +1457,8 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
     from tests.sync_v3_league_fixture import league_fixtures
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg and os.getenv('SYNC_V3_TEST_BROWSER') == '1':
+        pytest.fail('The browser rehearsal requires SYNC_V3_TEST_PG_BIN')
     if not pg:
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
     day, fixtures = league_fixtures(idle_next_day=True)
@@ -1470,6 +1496,9 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
             revision = select_generation(reviewer, batch['after'], expected_revision=0)
             league = read_league(worker, revision=revision)
             slate = read_game_cards(worker, revision=revision)
+            if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
+                from sync_v3.history_delivery import historical_history_app
+                run_historical_browser_journeys(historical_history_app(connect), 'off-day')
             assert len(league['teams']) == 30 and league['generation'] == slate['generation']
             assert slate['status'] == 'represented' and slate['quiet_day'] is True and slate['games'] == []
             assert read_game_cards(worker, game_pk=10101)['status'] == 'game_outside_represented_slate'
