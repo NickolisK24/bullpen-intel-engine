@@ -4,16 +4,16 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3 import canonical, evidence, queue
+from sync_v3 import canonical, evidence, queue, rosters
 from sync_v3.discovery import calendar_requests, game_requests, roster_requests
 
 
-def enqueue_requests(cur, requests, now, *, budget):
+def enqueue_requests(cur, requests, now, *, budget, cause=None):
     for request in requests:
         payload = {'endpoint': request.endpoint, 'params': request.params()}
         # Same request in the same policy slot deduplicates across restart.
         slot = int(now.timestamp()) // request.poll_seconds
-        identity = sha256(evidence.encode_json([budget, slot, request.poll_seconds, payload])).hexdigest()
+        identity = sha256(evidence.encode_json([budget, slot, request.poll_seconds, payload, cause])).hexdigest()
         queue.enqueue(cur, identity, payload, now, budget=budget)
 
 
@@ -33,6 +33,11 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, budget='current', m
             break
         def plan_children(cur, observation_id, acquisition):
             canonical.observe(cur, observation_id, acquisition)
+            affected = rosters.observe(cur, observation_id, acquisition)
+            if affected:
+                day = date.fromisoformat(acquisition.request.params()['endDate'])
+                enqueue_requests(cur, roster_requests(day, affected), acquisition.retrieved_at,
+                                 budget=budget, cause=observation_id)
             if acquisition.request.endpoint == '/schedule':
                 represented = acquisition.request.params()['startDate']
                 requests = game_requests(date.fromisoformat(represented), acquisition.body,
