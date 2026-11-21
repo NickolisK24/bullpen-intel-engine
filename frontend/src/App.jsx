@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useSearchParams } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
 import Stories from './components/stories/Stories'
@@ -56,6 +56,15 @@ export const APP_ROUTES = [
   { path: '*', Component: NotFound },
 ]
 
+function AliasRedirect({ pathname }) {
+  const [params] = useSearchParams()
+  const edition = new URLSearchParams()
+  for (const key of ['rehearsalRevision', 'rehearsalGeneration']) {
+    for (const value of params.getAll(key)) edition.append(key, value)
+  }
+  return <Navigate to={{ pathname, search: edition.toString() }} replace />
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -63,7 +72,7 @@ export function AppRoutes() {
         <Route
           key={path}
           path={path}
-          element={redirectTo ? <Navigate to={redirectTo} replace /> : <Component />}
+          element={redirectTo ? <AliasRedirect pathname={redirectTo} /> : <Component />}
         />
       ))}
     </Routes>

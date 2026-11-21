@@ -72,7 +72,11 @@ try {
     assert.deepEqual(reads, ['/api/sync-v3/revisions/2/league', '/api/sync-v3/revisions/2/teams/111/board',
       '/api/sync-v3/revisions/1/trust'])
   } else if (process.argv[3] === 'off-day') {
-    await visit('/tonight?rehearsalRevision=1')
+    await visit('/today?rehearsalRevision=1&rehearsalRevision=2')
+    await expect(page.getByText('Invalid historical rehearsal revision.')).toBeVisible()
+    assert.deepEqual(reads, [])
+    await visit('/today?rehearsalRevision=1')
+    await expect(page).toHaveURL(origin + '/?rehearsalRevision=1')
     await expect(page.getByText('No games on the represented slate.')).toBeVisible()
     await expect(page.getByTestId('tonight-game-card')).toHaveCount(0)
     await link('Open this League edition').click()
