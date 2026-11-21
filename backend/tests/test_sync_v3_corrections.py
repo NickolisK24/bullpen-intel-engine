@@ -669,7 +669,14 @@ def test_generation_keeps_all_clubs_and_pins_immutable_event_inputs():
                 assert load(cur, first)['stale_comparisons'] == []
                 # Simulate a corrected input whose derived event set has not yet been rebuilt.
                 store(cur, end-timedelta(days=1), 'postseason_participation_unresolved')
+            frozen = verify_generation(db, first, compare_latest=True)
+            assert frozen['selection_review']['reason_codes'] == ['superseded_generation']
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.generations')
+                assert cur.fetchone() == (2,)
             second = freeze_generation(db, end)
+            assert frozen['selection_review']['latest_inventory_digest'] == second
+            assert verify_generation(db, second, compare_latest=True)['selection_review']['status'] == 'withheld'
             with db, db.cursor() as cur:
                 assert load(cur, second)['stale_comparisons'] == [['team', 118, 'candidate_readiness_changes_v1']]
                 assert load(cur, first)['stale_comparisons'] == [] and load(cur, blank) == empty
@@ -820,3 +827,104 @@ def test_generation_event_build_reuses_qualified_inputs_and_revisits_new_receipt
             assert builds == [day] and new[1] == old[1] + 1
             assert history._transaction(db, _build_change_set, 'team', 'team', 111, day) == new
             assert builds == [day]
+
+
+def test_isolated_core_selection_and_recovery(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import closing
+    from threading import Barrier
+    import psycopg2
+
+    from sync_v3.generation import build_batch, freeze_generation
+    from sync_v3.replay import run_fixture
+    from sync_v3.selection import SelectionWithheld, select_generation
+    from tests.sync_v3_league_fixture import league_fixtures
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day, fixtures = league_fixtures()
+    def settle(db):
+        for _ in range(15):
+            batch = build_batch(db, day, 75)
+            if not batch['processed']:
+                return batch['after']
+        pytest.fail('Synthetic league did not settle')
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker, closing(connect(reviewer=True)) as reviewer:
+            blank = freeze_generation(worker, day)
+            with pytest.raises(SelectionWithheld):
+                select_generation(reviewer, blank, expected_revision=0)
+            with pytest.raises(PermissionError):
+                select_generation(worker, blank, expected_revision=0)
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), worker, worker.cursor() as cur:
+                cur.execute("SELECT candidate.record_core_selection(0,%s,'select')", (blank,))
+            with pytest.raises(psycopg2.errors.RaiseException, match='Ineligible'), reviewer, reviewer.cursor() as cur:
+                cur.execute("SELECT candidate.record_core_selection(0,%s,'select')", (blank,))
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reviewer, reviewer.cursor() as cur:
+                cur.execute('DELETE FROM candidate.core_selections')
+            with reviewer, reviewer.cursor() as cur:
+                cur.execute("SELECT has_schema_privilege('public','USAGE'),has_table_privilege('candidate.jobs','UPDATE')")
+                assert cur.fetchone() == (False, False)
+            path = tmp_path / 'synthetic-day.json'
+            for fixture in fixtures:
+                path.write_text(json.dumps(fixture))
+                run_fixture(worker, path)
+            first = settle(worker)
+            assert select_generation(reviewer, first, expected_revision=0) == 1
+
+            refreshed = dict(fixtures[-1], observed_at=f'{day + timedelta(days=3)}T12:00:00Z')
+            path.write_text(json.dumps(refreshed))
+            run_fixture(worker, path)
+            second = settle(worker)
+            assert first != second
+            with pytest.raises(SelectionWithheld, match='superseded_generation'):
+                select_generation(reviewer, first, expected_revision=1)
+
+            # Both reviewers submit the same predecessor: the second sees the committed retry.
+            ready = Barrier(2)
+            def attempt():
+                with closing(connect(reviewer=True)) as other:
+                    ready.wait(timeout=15)
+                    return select_generation(other, second, expected_revision=1)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                attempts = [pool.submit(attempt) for _ in range(2)]
+                assert [f.result(timeout=90) for f in attempts] == [2, 2]
+
+            with pytest.raises(ValueError, match='predecessor'):
+                select_generation(reviewer, first, expected_revision=0, rollback=True)
+            with pytest.raises(psycopg2.errors.RaiseException, match='exact previous'):
+                select_generation(reviewer, None, expected_revision=2, rollback=True)
+            # A database failure after the append must leave readers on generation two.
+            with pytest.raises(psycopg2.errors.DivisionByZero), reviewer, reviewer.cursor() as cur:
+                cur.execute("SELECT candidate.record_core_selection(2,%s,'rollback')", (first,))
+                with worker, worker.cursor() as reader:
+                    reader.execute('SELECT generation FROM candidate.core_selections ORDER BY revision DESC LIMIT 1')
+                    assert reader.fetchone() == (second,)
+                cur.execute('SELECT 1/0')
+            assert select_generation(reviewer, first, expected_revision=2, rollback=True) == 3
+            assert select_generation(reviewer, first, expected_revision=2, rollback=True) == 3
+            with worker, worker.cursor() as cur:
+                cur.execute('SELECT revision,predecessor,action,generation FROM candidate.core_selections ORDER BY revision')
+                assert cur.fetchall() == [(1,None,'select',first), (2,1,'select',second), (3,2,'rollback',first)]
+            assert select_generation(reviewer, second, expected_revision=3) == 4
+            path.write_text(json.dumps(dict(refreshed, observed_at=f'{day + timedelta(days=4)}T12:00:00Z')))
+            run_fixture(worker, path)
+            third = settle(worker)
+            ready = Barrier(2)
+            def compete(digest, rollback):
+                with closing(connect(reviewer=True)) as other:
+                    ready.wait(timeout=15)
+                    try:
+                        return select_generation(other, digest, expected_revision=4, rollback=rollback)
+                    except ValueError as exc:
+                        assert 'predecessor changed' in str(exc)
+                        return None
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(compete, third, False), pool.submit(compete, first, True)]
+                assert {f.result(timeout=90) for f in futures} == {5, None}
+            with worker, worker.cursor() as cur:
+                cur.execute('SELECT count(*),max(revision) FROM candidate.core_selections')
+                assert cur.fetchone() == (5,5)

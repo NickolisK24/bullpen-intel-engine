@@ -120,7 +120,7 @@ def _inventory(through, reference, team_inputs, slate):
     return expected, clubs
 
 
-def _freeze(cur, through):
+def _assemble(cur, through):
     membership, reference = trusted_slate_reference_dates(through)
     if membership != through or reference is None:
         raise ValueError('A represented baseball date is required')
@@ -159,6 +159,11 @@ def _freeze(cur, through):
                     stale_inputs=stale_inputs, stale_comparisons=stale_comparisons, contract='candidate_generation_inventory_v1', represented=through.isoformat(),
                     availability_reference=reference.isoformat(), clubs=clubs, members=members, missing=missing,
                     current_serving_eligible=False)
+    return manifest, parents, schedule_sources
+
+
+def _freeze(cur, through):
+    manifest, parents, schedule_sources = _assemble(cur, through)
     digest = sha256(encode_json(manifest)).hexdigest()
     cur.execute("""INSERT INTO candidate.generations (digest,represented,manifest) VALUES (%s,%s,%s)
                    ON CONFLICT DO NOTHING RETURNING digest""", (digest, through, Json(manifest)))
@@ -301,13 +306,17 @@ def review_coverage(manifest):
                 current_serving_eligible=False)
 
 
-def verify_generation(connection, digest):
+def verify_generation(connection, digest, *, compare_latest=False):
     """Independently recount the pinned inventory, including its immutable facts and calendars."""
-    return _transaction(connection, _verify, digest)
+    return _transaction(connection, _verify, digest, compare_latest)
 
 
-def _verify(cur, digest):
+def _verify(cur, digest, compare_latest):
     cur.execute('SET TRANSACTION READ ONLY')
+    return _inspect(cur, digest, compare_latest)
+
+
+def _inspect(cur, digest, compare_latest):
     cur.execute('SELECT represented,manifest FROM candidate.generations WHERE digest=%s', (digest,))
     stored = cur.fetchone()
     if not stored:
@@ -387,11 +396,20 @@ def _verify(cur, digest):
     coverage = review_coverage(manifest)
     rosters = compare_membership(cur, digest, through.isoformat())
     games = compare_games(cur, digest, manifest)
-    return dict(digest=digest, coverage=coverage, roster_comparison=rosters, game_comparison=games,
+    report = dict(digest=digest, coverage=coverage, roster_comparison=rosters, game_comparison=games,
                 historical_changes=verify_change_lineage(cur, digest, through),
                 core_candidate_review=review_core_candidate(coverage, rosters, games),
                 clubs=len(manifest['clubs']), snapshots=len(manifest['members']),
                 missing_scopes=len(manifest['missing']), calendar_receipts=len(calendars), current_serving_eligible=False)
+    if compare_latest:
+        inventory, _, _ = _assemble(cur, through)
+        current = sha256(encode_json(inventory)).hexdigest()
+        review = report['core_candidate_review']
+        if current != digest:
+            review = dict(status='withheld', reason_codes=['superseded_generation'])
+        report['selection_review'] = dict(**review, latest_inventory_digest=current, represented=through.isoformat(),
+                                          scope='isolated_historical_core')
+    return report
 
 
 def review_core_candidate(coverage, rosters, games):

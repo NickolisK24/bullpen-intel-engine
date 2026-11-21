@@ -1,7 +1,7 @@
 """Create an isolated socket-only PostgreSQL cluster and run the v3 rehearsal."""
 
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import os
 from pathlib import Path
 import shutil
@@ -51,10 +51,11 @@ def isolated_cluster(bindir=None):
                     cur.execute('SHOW listen_addresses')
                     assert cur.fetchone() == ('',)
                     cur.execute('CREATE ROLE sync_v3_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT')
+                    cur.execute('CREATE ROLE sync_v3_reviewer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT')
                     cur.execute('CREATE DATABASE sync_v3_rehearsal')
                     for dbname in ('postgres', 'template1', DATABASE):
                         cur.execute(f'REVOKE ALL ON DATABASE {dbname} FROM PUBLIC')
-                    cur.execute('GRANT CONNECT ON DATABASE sync_v3_rehearsal TO sync_v3_worker')
+                    cur.execute('GRANT CONNECT ON DATABASE sync_v3_rehearsal TO sync_v3_worker,sync_v3_reviewer')
             finally:
                 admin.close()
             owner = connect(DATABASE, 'rehearsal_owner')
@@ -62,8 +63,10 @@ def isolated_cluster(bindir=None):
                 with owner, owner.cursor() as cur:
                     cur.execute('REVOKE ALL ON SCHEMA public FROM PUBLIC')
                     cur.execute('CREATE SCHEMA candidate')
-                    cur.execute('GRANT USAGE ON SCHEMA candidate TO sync_v3_worker')
-                yield owner, lambda: connect(DATABASE, RUNTIME)
+                    cur.execute('GRANT USAGE ON SCHEMA candidate TO sync_v3_worker,sync_v3_reviewer')
+                def runtime(*, reviewer=False):
+                    return connect(DATABASE, 'sync_v3_reviewer' if reviewer else RUNTIME)
+                yield owner, runtime
             finally:
                 owner.close()
         finally:
@@ -72,7 +75,7 @@ def isolated_cluster(bindir=None):
 
 
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -239,10 +242,27 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                         seen.add(digest)
                 else:
                     digest = freeze_generation(worker, through)
-                print(json.dumps(verify_generation(worker, digest)))
+                print(json.dumps(verify_generation(worker, digest, compare_latest=True)))
                 with worker, worker.cursor() as cur:
                     cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
                     print(json.dumps(dict(generation=digest, manifest=cur.fetchone()[0])))
+                if exercise_selection:
+                    from sync_v3.selection import select_generation, SelectionWithheld
+                    with closing(connect(reviewer=True)) as reviewer:
+                        try:
+                            revision = select_generation(reviewer, digest, expected_revision=0)
+                        except SelectionWithheld as exc:
+                            with reviewer, reviewer.cursor() as cur:
+                                cur.execute('SELECT count(*) FROM candidate.core_selections')
+                                if cur.fetchone() != (0,):
+                                    raise RuntimeError('A withheld selection changed the rehearsal ledger')
+                            print(json.dumps(dict(isolated_selection=exc.review, ledger_entries=0)))
+                        else:
+                            if select_generation(reviewer, digest, expected_revision=0) != revision:
+                                raise RuntimeError('Retry changed the committed selection')
+                            restored = select_generation(reviewer, None, expected_revision=revision, rollback=True)
+                            print(json.dumps(dict(isolated_selection=digest, revision=revision,
+                                                  restored_revision=restored, restored_generation=None)))
             print(f'PostgreSQL {worker.server_version}: isolated cluster, worker permissions verified', flush=True)
             if withheld:
                 raise ReplayWithheld('\n'.join(withheld))
@@ -271,6 +291,8 @@ if __name__ == '__main__':
     parser.add_argument('--generation', action='store_true', help='Inventory the frozen candidate scopes after the rehearsal')
     parser.add_argument('--build-generation', action='store_true',
                         help='Rehearse outstanding generation scopes in bounded batches until the inventory settles')
+    parser.add_argument('--exercise-selection', action='store_true',
+                        help='Exercise the isolated core selector and restore its initial state')
     parser.add_argument('--generation-batch', type=int, choices=range(1, 101), metavar='N',
                         help='Build up to N outstanding candidate scopes before freezing a generation')
     parser.add_argument('--since', type=date.fromisoformat, help='First represented snapshot date, inclusive')
@@ -279,6 +301,8 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team,
     ))
+    if args.exercise_selection and not args.build_generation:
+        parser.error('--exercise-selection requires --build-generation')
     if args.since and (not (args.snapshot or args.snapshot_domain) or not args.through or args.since > args.through):
         parser.error('--since requires snapshot mode and a through date on or after the first date')
     if args.snapshot_domain and getattr(args, DOMAINS[args.snapshot_domain][0]) is None:
@@ -290,4 +314,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection)
