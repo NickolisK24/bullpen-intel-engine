@@ -50,7 +50,7 @@ function TeamRow({ team, showState = true }) {
   )
 }
 
-function StateGroup({ group }) {
+function StateGroup({ group, historical }) {
   return (
     <div className="card min-w-0 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2 border-b border-dirt/70 pb-2">
@@ -62,21 +62,21 @@ function StateGroup({ group }) {
           {group.teams.map(team => <TeamRow key={team.teamId} team={team} />)}
         </ul>
       ) : (
-        <p className="py-3 text-xs text-chalk600">No published club reads in this group.</p>
+        <p className="py-3 text-xs text-chalk600">{historical ? 'No represented clubs in this group.' : 'No published club reads in this group.'}</p>
       )}
     </div>
   )
 }
 
-export default function LeagueTeamStateLandscape({ view, loading = false, error = null, staleWithError = false, onRetry }) {
+export default function LeagueTeamStateLandscape({ view, loading = false, error = null, staleWithError = false, onRetry, historical = false }) {
   return (
     <section className="mb-6" aria-labelledby="current-bullpen-state-title">
       <div className="mb-3">
         <h2 id="current-bullpen-state-title" className="font-mono text-xs uppercase tracking-widest text-chalk400">
-          Current Bullpen State
+          {historical ? 'Historical Bullpen State' : 'Current Bullpen State'}
         </h2>
         <p className="mt-1 text-xs leading-relaxed text-chalk600">
-          {view.valid && !view.globalUnavailable
+          {historical ? `Data through ${view.through} · Availability reference ${view.reference}` : view.valid && !view.globalUnavailable
             ? '30 MLB clubs · grouped by published Team State'
             : 'League-wide published Team State view'}
         </p>
@@ -102,20 +102,20 @@ export default function LeagueTeamStateLandscape({ view, loading = false, error 
             <StaleDataNotice dataThrough={freshnessDataThrough(view.freshness)} onRetry={onRetry} />
           )}
           <p className="mb-3 font-mono text-[11px] text-chalk500">
-            {view.representedTeamCount} published read{view.representedTeamCount === 1 ? '' : 's'}
+            {view.representedTeamCount} {historical ? 'represented' : 'published'} read{view.representedTeamCount === 1 ? '' : 's'}
             {' · '}
             {view.withheldTeamCount} unavailable
           </p>
           <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-3">
-            {view.groups.map(group => <StateGroup key={group.key} group={group} />)}
+            {view.groups.map(group => <StateGroup key={group.key} group={group} historical={historical} />)}
           </div>
 
           {view.exceptions.length > 0 && (
-            <div className="mt-4 rounded border border-dirt/80 bg-dugout/60 p-3 sm:p-4" aria-label="Publication exceptions">
+            <div className="mt-4 rounded border border-dirt/80 bg-dugout/60 p-3 sm:p-4" aria-label={historical ? 'Withheld clubs' : 'Publication exceptions'}>
               <div className="border-b border-dirt/70 pb-2">
-                <h3 className="font-mono text-xs uppercase tracking-widest text-chalk500">Publication exceptions</h3>
+                <h3 className="font-mono text-xs uppercase tracking-widest text-chalk500">{historical ? 'Withheld clubs' : 'Publication exceptions'}</h3>
                 <p className="mt-1 text-xs leading-relaxed text-chalk600">
-                  These clubs remain in the league denominator, but a current published Team State read is unavailable.
+                  {historical ? 'Team State is unavailable for these clubs in this edition.' : 'These clubs remain in the league denominator, but a current published Team State read is unavailable.'}
                 </p>
               </div>
               <ul className="mt-1 grid min-w-0 grid-cols-1 divide-y divide-dirt/60 sm:grid-cols-2 sm:gap-x-4 sm:divide-y-0">

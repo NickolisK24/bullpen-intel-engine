@@ -1,5 +1,5 @@
 import { readPublicTeamState } from '../../adapters/publicTeamState'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { buildRehearsalTeamBoardHref, buildTeamBoardHref } from '../../utils/evidenceLinks'
 
 export const LEAGUE_TEAM_STATE_CAPABILITY = 'league_team_state_listing_v1'
 export const LEAGUE_TEAM_STATE_GROUPS = Object.freeze([
@@ -128,12 +128,7 @@ export function getLeagueTeamStateListingView(payload) {
 
   // Group order is governed vocabulary order, never rank order. Within every
   // group the only presentation ordering is team_name then team_id.
-  const groups = LEAGUE_TEAM_STATE_GROUPS.map(group => ({
-    ...group,
-    teams: represented
-      .filter(row => row.teamState.publicState === group.key)
-      .sort(compareTeams),
-  }))
+  const groups = stateGroups(represented)
   if (groups.reduce((count, group) => count + group.teams.length, 0) !== representedTeamCount) {
     return { ...INVALID_VIEW }
   }
@@ -150,4 +145,35 @@ export function getLeagueTeamStateListingView(payload) {
     representedTeamCount,
     withheldTeamCount,
   }
+}
+
+function stateGroups(represented) {
+  return LEAGUE_TEAM_STATE_GROUPS.map(group => ({
+    ...group,
+    teams: represented
+      .filter(row => row.teamState.publicState === group.key)
+      .sort(compareTeams),
+  }))
+}
+
+export function historicalLeagueView(page, revision, generation) {
+  if (page?.status !== 'represented' || page.scope !== 'isolated_historical_core'
+    || page.current_serving_eligible !== false || page.selection_revision !== revision
+    || typeof page.generation !== 'string' || !/^[a-f0-9]{64}$/.test(page.generation)
+    || (generation !== null && generation !== page.generation) || !page.data_through || !page.availability_reference
+    || !Array.isArray(page.teams) || page.teams.length !== 30) return null
+  const rows = []
+  for (const raw of page.teams) {
+    const row = normalizeRow(raw)
+    if (!row || raw.team_state.data_through !== page.data_through || !page.citations?.[row.teamId]?.readiness?.input_digest
+      || (raw.orientation && raw.orientation.rest_reference_date !== page.availability_reference)) return null
+    row.teamHref = buildRehearsalTeamBoardHref(row.teamId, revision, page.generation)
+    if (!row.teamHref) return null
+    rows.push(row)
+  }
+  if (new Set(rows.map(row => row.teamId)).size !== 30) return null
+  const represented = rows.filter(row => row.teamState.available)
+  const exceptions = rows.filter(row => !row.teamState.available).sort(compareTeams)
+  return { valid: true, groups: stateGroups(represented), exceptions, representedTeamCount: represented.length,
+    withheldTeamCount: exceptions.length, through: page.data_through, reference: page.availability_reference }
 }

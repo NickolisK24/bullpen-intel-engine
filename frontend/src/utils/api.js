@@ -529,6 +529,9 @@ export const searchDiscovery   = (params = {}, options = {}) => {
     ...options,
   })
 }
+export const getRehearsalLeague = (revision, options = {}) => request(
+  `/sync-v3/revisions/${revision}/league`, { timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options },
+)
 export const getRehearsalTeamBoard = (team, revision, options = {}) => request(
   `/sync-v3/revisions/${revision}/teams/${team}/board`, { timeoutMs: PUBLIC_SNAPSHOT_TIMEOUT_MS, ...options },
 )

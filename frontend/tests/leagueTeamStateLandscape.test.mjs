@@ -16,7 +16,7 @@ const server = await createServer({
 
 after(async () => server.close())
 
-const { getLeagueTeamStateListingView } = await server.ssrLoadModule('/src/components/dashboard/leagueTeamStateListingView.js')
+const { getLeagueTeamStateListingView, historicalLeagueView } = await server.ssrLoadModule('/src/components/dashboard/leagueTeamStateListingView.js')
 const { default: LeagueTeamStateLandscape } = await server.ssrLoadModule('/src/components/dashboard/LeagueTeamStateLandscape.jsx')
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 const { getLeagueTeamStates } = await server.ssrLoadModule('/src/utils/api.js')
@@ -263,4 +263,23 @@ test('represented rows show three dated counts and movement without filling evid
   row.orientation.movement.previous_label = row.team_state.public_label
   const updated = getLeagueTeamStateListingView(payload).groups.flatMap(group => group.teams)
   assert.equal(updated.find(team => team.teamId === row.team_id).movement, 'Unchanged since 2026-10-06')
+})
+
+test('historical League retains withheld clubs and binds all Board destinations to the edition', () => {
+  const { teams } = makeLeagueTeamStateListing({ withheld: 1 })
+  const generation = 'a'.repeat(64)
+  const page = { scope: 'isolated_historical_core', status: 'represented', selection_revision: 3, generation,
+    current_serving_eligible: false, data_through: '2026-08-14', availability_reference: '2026-08-15', teams,
+    citations: Object.fromEntries(teams.map(row => [row.team_id, { readiness: { input_digest: 'b'.repeat(64) } }])) }
+  const view = historicalLeagueView(page, 3, generation)
+  assert.equal(view.representedTeamCount, 29)
+  assert.equal(view.exceptions.length, 1)
+  const html = render(React.createElement(LeagueTeamStateLandscape, { view, historical: true }))
+  assert.equal((html.match(/rehearsalRevision=3&amp;rehearsalGeneration=/g) || []).length, 30)
+  assert.match(html, /Historical Bullpen State/)
+  for (const override of [{ generation: 'c'.repeat(64) }, { current_serving_eligible: true }, { selection_revision: 2 },
+    { citations: {} }, { teams: teams.slice(1) }, { teams: [teams[1], ...teams.slice(1)] },
+    { data_through: '2026-08-13' }, { status: 'candidate_preview' }]) {
+    assert.equal(historicalLeagueView({ ...page, ...override }, 3, generation), null)
+  }
 })

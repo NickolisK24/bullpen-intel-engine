@@ -102,6 +102,12 @@ export function parseRehearsalRevision(param, repeated) {
   return revision
 }
 
+export function buildRehearsalTeamBoardHref(team, revision, generation) {
+  if (!Number.isSafeInteger(team) || team < 1 || !Number.isSafeInteger(revision) || revision < 1
+    || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) return null
+  return `${buildTeamBoardHref(team)}&rehearsalRevision=${revision}&rehearsalGeneration=${generation}`
+}
+
 export function buildRehearsalPitcherHref(pitcherId, revision, generation) {
   if (!Number.isSafeInteger(pitcherId) || pitcherId < 1 || !Number.isSafeInteger(revision) || revision < 1
     || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) return null

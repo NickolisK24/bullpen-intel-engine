@@ -5,6 +5,7 @@ import { searchDiscovery, searchRehearsalEdition } from '../../utils/api'
 import {
   buildMatchupHref,
   buildRehearsalPitcherHref,
+  buildRehearsalTeamBoardHref,
   buildPitcherHref,
   buildTeamBoardHref,
   parseRehearsalRevision,
@@ -70,7 +71,7 @@ function ResultLink({ result, edition }) {
       : null
     if (result.entity_type === 'team' && Number.isSafeInteger(result.id) && result.id > 0
         && result.metadata?.team_id === result.id) {
-      href = `${buildTeamBoardHref(result.id)}&rehearsalRevision=${edition.revision}&rehearsalGeneration=${edition.generation}`
+      href = buildRehearsalTeamBoardHref(result.id, edition.revision, edition.generation)
     }
     if (result.entity_type === 'matchup' && Number.isSafeInteger(result.id) && result.id > 0
         && result.metadata?.game_pk === result.id) {
