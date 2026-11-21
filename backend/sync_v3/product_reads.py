@@ -269,10 +269,51 @@ def _public_arms(cur, digest):
     return players, 'mapped' if players.keys() == mapping.keys() else 'public_id_mapping_incomplete'
 
 
+def _pitcher_directory(cur, digest):
+    """Add named departures from this edition without inferring a receiving club or current role."""
+    players, status = _public_arms(cur, digest)
+    if status == 'official_pitcher_identity_unresolved':
+        return players, status
+    cur.execute("""SELECT h.mlb_id,h.represented,h.semantic_digest,h.input_digest,h.revision,h.facts->'lineage',e.event,p.pitcher_id
+                   FROM candidate.generations edition JOIN candidate.generation_inputs g ON g.generation=edition.digest
+                   JOIN candidate.workload_history h ON h.id=g.snapshot
+                   CROSS JOIN LATERAL jsonb_array_elements(h.facts->'events') e(event)
+                   LEFT JOIN candidate.public_pitcher_ids p ON p.export=edition.manifest->>'public_identity_export'
+                     AND p.mlb_id=(e.event->>'player')::integer
+                   WHERE edition.digest=%s AND h.subject='team' AND h.methodology='candidate_depth_changes_v1'
+                     AND h.facts->>'status'='complete' AND e.event->>'kind'='active_roster_removed'
+                   ORDER BY h.mlb_id,e.event->>'event_id'""", (digest,))
+    unresolved = set()
+    for club, represented, facts, inputs, revision, lineage, event, public_id in cur:
+        mlb = event['player']
+        name = event['pitcher_name']
+        if mlb in unresolved:
+            continue
+        departure = dict(team=club, represented=represented.isoformat(), event=event,
+                         citation=dict(subject='team', mlb_id=club, methodology='candidate_depth_changes_v1',
+                                       revision=revision, facts_digest=facts, input_digest=inputs, lineage=lineage))
+        if mlb in players:
+            player = players[mlb]
+            if player['team_id'] == club or 'historical_departure' in player or player['public_id'] != public_id:
+                unresolved.add(mlb)
+                del players[mlb]
+                continue
+            player['historical_departure'] = departure
+            continue
+        if not isinstance(name, str) or not name.strip():
+            unresolved.add(mlb)
+            continue
+        players[mlb] = dict(mlb_id=mlb, public_id=public_id, name=name, position=None, team_id=None,
+                            historical_departure=departure)
+        if public_id is None and status == 'mapped':
+            status = 'public_id_mapping_incomplete'
+    return players, 'historical_departure_identity_unresolved' if unresolved else status
+
+
 def read_search(connection, query, *, revision=None, limit=5):
     from datetime import date
     from services.discovery_search import SearchOwners, matchup_results_from_rows, search_discovery
-    from services.roster_status import STATUS_ACTIVE
+    from services.roster_status import STATUS_ACTIVE, STATUS_UNKNOWN
 
     if revision is not None and (type(revision) is not int or revision < 1):
         raise ValueError('Historical selector revision must be a positive integer')
@@ -285,7 +326,7 @@ def read_search(connection, query, *, revision=None, limit=5):
         sequence, digest, _, reference = selected
         directory = {c.team_id: dict(team_id=c.team_id, team_abbreviation=c.abbreviation, team_name=c.team_name)
                      for c in MLB_CLUBS}
-        players, mapping_status = _public_arms(cur, digest)
+        players, mapping_status = _pitcher_directory(cur, digest)
         def pitchers(text, count, day):
             from services.pitcher_search import _match_rank, _normalize_search_text
             if mapping_status not in ('mapped', 'public_id_mapping_incomplete'):
@@ -297,13 +338,13 @@ def read_search(connection, query, *, revision=None, limit=5):
                 rank = _match_rank(name, normalized)
                 if rank is None:
                     continue
-                team = directory[player['team_id']]
+                team = directory.get(player['team_id']) or {}
                 pid = player['public_id']
                 if pid is None:
                     raise ValueError(mapping_status)
-                item = dict(entity_type='pitcher', id=pid, primary_label=name, secondary_label=team['team_name'],
-                            metadata=dict(player_id=pid, player_name=name, position=player['position'], roster_status=STATUS_ACTIVE,
-                                          team_id=player['team_id'], team_name=team['team_name']))
+                item = dict(entity_type='pitcher', id=pid, primary_label=name, secondary_label=team.get('team_name'),
+                            metadata=dict(player_id=pid, player_name=name, position=player['position'], roster_status=STATUS_ACTIVE if team else STATUS_UNKNOWN,
+                                          team_id=player['team_id'], team_name=team.get('team_name')))
                 ranked.append((rank, _normalize_search_text(name), pid, item))
             return [row[-1] for row in sorted(ranked)[:count]]
         def matchups(text, clubs, day, count):
@@ -311,7 +352,7 @@ def read_search(connection, query, *, revision=None, limit=5):
         owners = SearchOwners(teams=lambda: directory, pitchers=pitchers, matchups=matchups)
         payload = search_discovery(query, limit=limit, reference_date=date.fromisoformat(reference), owners=owners)
         return dict(status='represented', generation=digest, selection_revision=sequence, current_serving_eligible=False,
-                    pitcher_identity_status=mapping_status, pitcher_scope='represented_active_bullpens', search=payload)
+                    pitcher_identity_status=mapping_status, pitcher_scope='represented_bullpens_and_dated_departures', search=payload)
     return _read_transaction(connection, search)
 
 
@@ -630,10 +671,12 @@ def read_pitcher(connection, public_id, *, revision=None):
             return dict(result,status='no_selected_generation')
         sequence, digest, through, reference = selected
         result.update(generation=digest, data_through=through.isoformat(), availability_reference=reference)
-        players, status = _public_arms(cur, digest)
+        players, status = _pitcher_directory(cur, digest)
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
             return dict(result, status='outside_represented_bullpens' if status == 'mapped' else status)
+        if player['team_id'] is None:
+            return dict(result, status='historical_roster_departure', identity=player, sections={})
         methods = {method: domain for domain, (subject, method, _) in DOMAINS.items() if subject == 'pitcher'}
         methods[METHODOLOGY] = 'workload'
         blocks = _blocks(cur, digest, 'pitcher', player['mlb_id'], methods)
@@ -641,6 +684,8 @@ def read_pitcher(connection, public_id, *, revision=None):
         result['pitch_hand'] = _pitch_hand(depth, player['mlb_id'])
         changes = _events(cur, player['team_id'], sequence)
         events = [row for row in changes['events'] if row['event'].get('player') == player['mlb_id']]
+        if player.get('historical_departure'):
+            events.append(player['historical_departure'])
         return dict(result, status='represented', identity=player, sections=blocks, represented_events=events,
                     recent_work=appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through))
     return _read_transaction(connection, pitcher)
@@ -692,10 +737,12 @@ def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
         sequence, digest, day, reference = selected
         if digest is None:
             return dict(status='no_selected_generation', events=[])
-        players, status = _public_arms(cur, digest)
+        players, status = _pitcher_directory(cur, digest)
         player = next((p for p in players.values() if p['public_id'] == public_id), None)
         if player is None:
             return dict(status='outside_represented_bullpens' if status == 'mapped' else status, events=[])
+        if player['team_id'] is None:
+            return dict(status='historical_roster_departure', identity=player, events=[player['historical_departure']])
         mlb, club = player['mlb_id'], player['team_id']
         readiness_method = DOMAINS['readiness'][1]
         role_method = DOMAINS['pitcher_profile'][1]
@@ -710,6 +757,8 @@ def read_pitcher_history(connection, public_id, *, through_revision, limit=14):
         role, role_facts, role_inputs = cur.fetchone()
         changes = _event_slice(cur, club, sequence, selected)
         events = [row for row in changes['events'] if row['event'].get('player') == mlb]
+        if player.get('historical_departure'):
+            events.append(player['historical_departure'])
         return dict(status='represented', identity=player, availability_reference=reference, arm=arm, role=role,
                     events=events, citations={
                         readiness_method: dict(facts_digest=facts, input_digest=inputs),

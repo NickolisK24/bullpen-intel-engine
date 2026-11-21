@@ -325,3 +325,9 @@ python -m sync_v3.rehearse --pg-bin "$PG_BIN" "${fixtures[@]}" \
   --competition --through 2026-10-30 --identity-proof "$PROOF_ZIP" \
   209f55a6904abf9602946e9b8f5ea5ce836ee398f662442fe199c7dbf169d449
 ```
+
+Search and Pitcher Detail can also cite a pitcher who left a club's active roster on the represented date. This requires a named departure in a complete, generation-pinned comparison of consecutive official rosters and a verified public pitcher ID. A departure-only result carries the originating club, date and exact Board/History event. Its current team and roster status remain unknown. Where the new club independently has an active bullpen read, the route retains both the new club's read and the former club's departure citation.
+
+The October 2026 isolated replay matched San Diego departures to archive-backed public IDs for Mason Miller (MLB 695243, BaseballOS 423) on October 6 and Wandy Peralta (MLB 593974, BaseballOS 431) on October 7. These dates represent changes between official roster lists. They do not establish the reason for removal or a receiving club. The selected synthetic league also exercised separate source and receiving clubs, missing ID maps and rollback.
+
+Kansas City's August 7, 2024 roster comparison retained Hunter Harvey's named departure (MLB 640451). Snapshot 5843 supplied no public ID for him. The offline read kept the historical event and withheld its pitcher destination. The separate transaction contradiction on August 6 remained recorded.

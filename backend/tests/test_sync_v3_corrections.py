@@ -848,6 +848,24 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     if not pg:
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
     day, fixtures = league_fixtures()
+    from copy import deepcopy
+    prior_day = day - timedelta(days=1)
+    prior = next(f for f in fixtures if f['baseball_date'] == str(prior_day))
+    played = next(f for f in fixtures if f['baseball_date'] == str(day))
+    prior['team_ids'] = [111]
+    for original in played['responses']:
+        if original['endpoint'] != '/teams/111/roster' or 'hydrate' in original['params']:
+            continue
+        receipt = deepcopy(original)
+        receipt['params']['date'] = str(prior_day)
+        if receipt['params']['rosterType'] == 'active':
+            departed = deepcopy(receipt['body']['roster'][0])
+            departed['person'] = dict(id=701234, fullName='Former Boston Reliever')
+            receipt['body']['roster'].append(departed)
+            transferred = deepcopy(departed)
+            transferred['person'] = dict(id=11001, fullName='Rehearsal Arm 11001')
+            receipt['body']['roster'].append(transferred)
+        prior['responses'].append(receipt)
     def settle(db):
         for _ in range(15):
             batch = build_batch(db, day, 75)
@@ -864,6 +882,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
                 cur.execute('CREATE TABLE public.pitchers(id integer PRIMARY KEY,mlb_id integer UNIQUE NOT NULL)')
                 cur.executemany('INSERT INTO public.pitchers VALUES (%s,%s)',
                                 [(team + 9000, team * 100 + 1) for team in MLB_TEAM_IDS])
+                cur.execute('INSERT INTO public.pitchers VALUES (8999,701234)')
             with owner, owner.cursor() as cur:
                 cur.execute('SET TRANSACTION READ ONLY')
                 cur.execute('SELECT id,mlb_id FROM public.pitchers ORDER BY id')
@@ -904,6 +923,8 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             for fixture in fixtures:
                 path.write_text(json.dumps(fixture))
                 run_fixture(worker, path)
+            from sync_v3.intelligence_history import record_intelligence
+            record_intelligence(worker, 'depth', 111, prior_day)
             first = settle(worker)
             assert select_generation(reviewer, first, expected_revision=0) == 1
 
@@ -962,6 +983,20 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert boston_change['source_ref'] == first + '/' + board_event['citation']['facts_digest']
             assert boston_change['game_pks'] == [board_event['event']['game']]
             assert boston_change['change_id'] in boston['away']['change_refs']
+            removal, = (item for item in history['events'] if item['event']['kind'] == 'active_roster_removed' and item['event']['player'] == 701234)
+            if identity_mode != 'absent':
+                old, = read_search(worker, 'Former Boston')['search']['groups'][1]['results']
+                assert old['id'] == 8999 and old['metadata']['team_id'] is None
+                assert old['metadata']['roster_status'] == 'UNKNOWN'
+                traded = read_pitcher(worker, 9110)
+                assert traded['status'] == 'represented' and traded['identity']['team_id'] == 110
+                origin = traded['identity']['historical_departure']
+                assert origin['team'] == 111 and origin in traded['represented_events'] and origin in history['events']
+                assert origin in read_pitcher_history(worker, 9110, through_revision=1)['rows'][0]['events']
+                departed_page = read_pitcher(worker, old['id'])
+                assert departed_page['status'] == 'historical_roster_departure' and departed_page['sections'] == {}
+                assert departed_page['identity']['historical_departure'] == removal
+                assert read_pitcher_history(worker, old['id'], through_revision=1)['rows'][0]['events'] == [removal]
             board = read_team_board(worker, 111)
             assert board['what_changed'] == history and board['team'] == next(r for r in league['teams'] if r['team_id'] == 111)
             assert board['active_bullpen'][0]['name'] == 'Rehearsal Arm 11101'
