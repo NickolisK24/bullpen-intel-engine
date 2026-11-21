@@ -983,6 +983,14 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert matchup['games'] == [next(row for row in slate['games'] if row['game_pk'] == game['id'])]
             assert matchup['generation'] == discovery['generation']
             assert matchup['games'][0]['away']['rest']['worked_yesterday_count'] == 1
+            states = matchup['games'][0]['team_state']
+            assert states['status'] == 'available'
+            for key, club in [('team_a', 111), ('team_b', 110)]:
+                assert states[key] == next(row['team_state'] for row in league['teams'] if row['team_id'] == club)
+            rest_comparison = matchup['games'][0]['rest']
+            assert rest_comparison['status'] == 'available'
+            assert rest_comparison['team_a'] == rest_comparison['team_b'] == dict(
+                rested_options=0, worked_yesterday=1, back_to_back=0)
             weekly = matchup['games'][0]['workload']
             assert weekly['status'] == 'available'
             assert weekly['team_a'] == dict(window_days=7, relief_appearances=1, pitches=15,

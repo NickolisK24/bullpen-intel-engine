@@ -36,3 +36,16 @@ def test_matchup_workload_requires_compared_window_and_official_club_scope(snaps
     snapshot['windows']['compared_windows'] = ['window_7']
     snapshot['windows']['workload']['population_basis'] = 'current_active_only'
     assert _matchup_workload(snapshot, day) is None
+
+
+def test_game_date_controls_both_sides_of_the_rest_comparison():
+    from sync_v3.product_reads import _matchup_rest
+
+    counts = dict(rested_arm_count=0, worked_yesterday_count=1, back_to_back_count=0)
+    side = dict(rest=counts, rest_reference_date='2024-08-08')
+    for away, home in ((side, dict(side, rest_reference_date='2024-08-07')),
+                       (dict(side, rest_reference_date='2024-08-07'), side)):
+        result = _matchup_rest(away, home, '2024-08-08')
+        assert result['reason_code'] == 'rest_reference_date_mismatch'
+        assert result['team_a'] is None and result['team_b'] is None
+    assert _matchup_rest(side, dict(side, rest=None), '2024-08-08')['status'] == 'withheld'

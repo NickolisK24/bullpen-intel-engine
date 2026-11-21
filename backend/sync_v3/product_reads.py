@@ -429,6 +429,24 @@ def read_search(connection, query, *, revision=None, limit=5):
     return _read_transaction(connection, search)
 
 
+def _matchup_rest(away, home, game_day):
+    """Compare the same D-055 counts that League shows for the game's baseball date."""
+    from services.current_bullpen_comparison import REASON_REST_DATE_MISMATCH, _aligned_domain, _withheld_domain
+    from services.bullpen_board import REST_STATUS_METHOD_VERSION
+
+    values = []
+    for orientation in (away, home):
+        if not orientation or orientation.get('rest') is None:
+            return _withheld_domain('rest')
+        if orientation['rest_reference_date'] != game_day:
+            return _withheld_domain('rest', REASON_REST_DATE_MISMATCH, message_key='rest_date')
+        counts = orientation['rest']
+        values.append(dict(rested_options=counts['rested_arm_count'], worked_yesterday=counts['worked_yesterday_count'],
+                           back_to_back=counts['back_to_back_count']))
+    stamp = (REST_STATUS_METHOD_VERSION, game_day)
+    return _aligned_domain('rest', *values, stamp_a=stamp, stamp_b=stamp)
+
+
 def _matchup_workload(snapshot, through):
     """Project only seven-day club relief totals verified against the pinned finals."""
     from datetime import timedelta
@@ -671,9 +689,18 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                   for row in games), key=tonight._game_order)
         performances = {team: _season_comparison(facts[team, DOMAINS['group_performance'][1]]) for team in clubs}
         workloads = {team: _matchup_workload(facts[team, METHODOLOGY], end) for team in clubs}
+        league_by_club = {row['team_id']: row for row in league['teams']}
+        game_dates = {row.game_pk: row.game_date_et.isoformat() for row in games}
         for card in result['games']:
             stamp = (generation, league['data_through'], league['availability_reference'], DOMAINS['pitcher_profile'][1],
                      DOMAINS['pitcher_rest'][1])
+            away_row, home_row = (league_by_club[card[side]['team_id']] for side in ('away', 'home'))
+            card['rest'] = _matchup_rest(away_row['orientation'], home_row['orientation'], game_dates[card['game_pk']])
+            away_state, home_state = away_row['team_state'], home_row['team_state']
+            card['team_state'] = _aligned_domain(
+                'team_state', away_state if away_state['available'] else None, home_state if home_state['available'] else None,
+                stamp_a=(away_state['contract'], away_state['data_through']),
+                stamp_b=(home_state['contract'], home_state['data_through']))
             away_work = workloads[card['away']['team_id']]
             home_work = workloads[card['home']['team_id']]
             work_stamp = (generation, league['data_through'], METHODOLOGY)
