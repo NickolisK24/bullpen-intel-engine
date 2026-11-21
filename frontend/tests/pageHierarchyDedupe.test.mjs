@@ -242,3 +242,23 @@ test('historical Trust requires a selected rehearsal inventory and ordered sourc
     assert.equal(valid(patch), false)
   }
 })
+
+test('historical Trust distinguishes missing, failed, refused and empty MLB transaction receipts', async () => {
+  const { HistoricalTransactionReceipt } = await server.ssrLoadModule('/src/components/trust/HistoricalTrust.jsx')
+  const day = '2017-08-28'
+  const stamp = '2026-11-21T13:31:24Z'
+  const source = { parameters: { sportId: 1, startDate: day, endDate: day }, outcome: 'received', reason: null,
+    recorded_at: stamp, acquired_at: stamp, digest: '1'.repeat(64), revisions_digest: '2'.repeat(64),
+    reported_records: 38, confirmed_transactions: 37 }
+  const read = receipt => render(React.createElement(HistoricalTransactionReceipt, { represented: day, source: receipt }))
+  assert.match(read(null), /no retained transaction receipt/)
+  assert.match(read(source), /contained 38 records\. BaseballOS confirmed 37/)
+  assert.match(read({ ...source, reported_records: 0, confirmed_transactions: 0 }), /contained 0 records/)
+  const failed = read({ ...source, outcome: 'failed', digest: null, acquired_at: null, reason: 'TimeoutError' })
+  assert.match(failed, /Acquisition failed at/)
+  assert.doesNotMatch(failed, /Acquired |contained 0/)
+  const refused = read({ ...source, reason: 'Contradictory evidence', reported_records: null })
+  assert.match(refused, /Response withheld\. Contradictory evidence/)
+  assert.doesNotMatch(refused, /contained 0/)
+  assert.match(read({ ...source, parameters: { ...source.parameters, startDate: '2017-08-27' } }), /could not be verified/)
+})

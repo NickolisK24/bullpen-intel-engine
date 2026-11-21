@@ -113,6 +113,7 @@ try {
     assert.equal(page.url(), origin + board)
     await link('Inspect evidence for this edition').click()
     await expect(heading('Historical evidence · Revision 3')).toBeVisible()
+    await expect(page.getByText('The retained MLB response contained 2 records. BaseballOS confirmed 2.')).toBeVisible()
     await expect(page.getByText('candidate_roster_depth_v1', { exact: true })).toBeVisible()
 
     await visit('/tonight?rehearsalRevision=3')

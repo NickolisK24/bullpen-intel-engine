@@ -18,6 +18,34 @@ function validSource(source) {
   return typeof first === 'string' && typeof last === 'string' && Date.parse(first) <= Date.parse(last)
 }
 
+export function HistoricalTransactionReceipt({ source, represented }) {
+  let summary = 'This edition has no retained transaction receipt.'
+  const scoped = source?.parameters?.sportId === 1 && source.parameters.startDate === represented
+    && source.parameters.endDate === represented
+  const body = scoped && /^[a-f0-9]{64}$/.test(source.digest) && Number.isFinite(Date.parse(source.acquired_at))
+  if (source != null) {
+    summary = 'Transaction evidence could not be verified for this date.'
+    if (scoped && source.outcome === 'failed' && source.digest === null && source.acquired_at === null
+        && Number.isFinite(Date.parse(source.recorded_at))) {
+      summary = `Acquisition failed at ${source.recorded_at}.`
+    } else if (body && (source.outcome === 'invalid' || (source.outcome === 'received' && source.reason))) {
+      summary = `Response withheld. ${source.reason || 'Invalid response'}`
+    } else if (body && source.outcome === 'received' && source.reason === null
+        && Number.isSafeInteger(source.reported_records) && source.reported_records >= 0
+        && Number.isSafeInteger(source.confirmed_transactions) && source.confirmed_transactions >= 0
+        && source.confirmed_transactions <= source.reported_records && /^[a-f0-9]{64}$/.test(source.revisions_digest)) {
+      summary = `The retained MLB response contained ${source.reported_records} ${source.reported_records === 1 ? 'record' : 'records'}. BaseballOS confirmed ${source.confirmed_transactions}.`
+    }
+  }
+  return <section><h2>MLB transaction evidence for {represented}</h2>
+    <p>{summary}</p>
+    {body && <details><summary>Retained response</summary>
+      <p>Acquired {source.acquired_at}</p>
+      <p className="break-all">SHA-256 <code>{source.digest}</code></p>
+    </details>}
+  </section>
+}
+
 export function verifiedHistoricalInventory(page, revision, generation) {
   return page?.status === 'verified_historical_inventory' && page.selection_revision === revision
     && page.trusted_snapshot_id === null && page.current_serving_eligible === false
@@ -55,6 +83,7 @@ export default function HistoricalTrust({ revision, generation }) {
         <p>{source.earliest_acquisition ? `${source.earliest_acquisition} – ${source.latest_acquisition}` : 'Payload acquisition time unavailable'}</p>
       </li>)}</ul>
     </section>
+    <HistoricalTransactionReceipt source={page.transaction_source} represented={page.represented} />
     <section><h2>Calculation methods</h2>
       <ul>{page.methods.map(method => <li key={method.subject + '/' + method.methodology}>
         <code>{method.methodology}</code> · {method.scopes} {method.subject} records
