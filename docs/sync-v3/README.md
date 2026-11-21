@@ -556,3 +556,13 @@ APP_ENV=test AUTO_SYNC=false SYNC_V3_TEST_BROWSER=1 SYNC_V3_TEST_PG_BIN="$(pg_co
 ```
 
 The test creates a private PostgreSQL cluster and synthetic 30-club edition, corrects it, then rolls it back. Chromium reads the Flask rehearsal adapter over loopback and verifies the historical destinations against those records. A mismatched generation must withhold the Board. The off-day case opens the League listing from a selected empty slate and checks all 30 club destinations. The browser build lives in a temporary directory. To use an installed Chromium executable, set `SYNC_V3_TEST_CHROMIUM` to its absolute path.
+
+### Historical pitch coordinate provenance
+
+For Lucas Erceg (668674) on August 7, 2024, all 22 pitches in [game 746272](https://statsapi.mlb.com/api/v1/game/746272/playByPlay) matched [Baseball Savant's CSV](https://baseballsavant.mlb.com/statcast_search/csv?all=true&type=details&player_type=pitcher&game_date_gt=2024-08-07&game_date_lt=2024-08-07&pitchers_lookup%5B%5D=668674) by pitcher, game, one-based at-bat number and pitch number. All 22 pitch classifications and start speeds agreed. The retained Savant CSV SHA-256 was `582b4bcd8a3ae66042e09d8a9398964a01c445e78073dc3a8ddbaa5b90a868e1`. The game feed’s trajectory y0 ranged from 50.000 to 50.007 feet. Savant’s release_pos_y ranged from 53.90 to 54.11 feet. On pitch six of at-bat 66, the two values were 50.002 and 53.91 feet, respectively. All 22 pairs also differed on x and z at Savant’s displayed precision.
+
+The historical Pitcher Detail response exposes the game feed’s three coordinates as trajectory_x0, trajectory_y0 and trajectory_z0 in the pitcher profile section. The section citation identifies its original v1 input facts. The game feed supplies extension independently. Release-position trends require an admitted source for the release measurements.
+
+In the disposable PostgreSQL 17.6 replay, the retained official boxscore and game feed qualified Erceg’s 22 pitches. Aggregating the Savant rows separately reproduced the chart for that outing: eight changeups (91.2 mph, 36.4%), seven four-seamers (98.8 mph, 31.8%), three sinkers (99.2 mph, 13.6%) and four sliders (86.2 mph, 18.2%). This covers one outing. The replay retained the August 7 transaction contradiction and Boston forty-man scope refusal.
+
+From `backend`, run `python -m pytest -q tests/test_sync_v3_pitch_measurements.py -k erceg` to repeat the pitch comparison offline. The fixture retains the joined pitch fields for this pitcher and game. It omits the rest of both responses.

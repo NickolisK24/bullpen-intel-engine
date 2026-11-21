@@ -11,6 +11,7 @@ from sync_v3.appearance_reads import appearance_ledger, pitcher_recent_work, pos
 from sync_v3.generation import _inspect
 from sync_v3.history import _transaction
 from sync_v3.intelligence_history import DOMAINS
+from sync_v3.pitch_measurements import pitch_history_for_display
 from sync_v3.team_history_reads import read_calendar_context
 
 
@@ -991,6 +992,9 @@ def read_pitcher(connection, public_id, *, revision=None):
         result['season_pitch_characteristics'] = (
             monthly_pitch_characteristics(through, history['months']) if history['reason'] is None else None
         )
+        profile = blocks['pitcher_profile']
+        profile['projection'] = 'pitcher_profile_game_feed_coordinates_v1'
+        profile['value'] = dict(profile['value'], pitch_history=pitch_history_for_display(history))
         return dict(result, status='represented', identity=player, sections=blocks)
     return _read_transaction(connection, pitcher)
 

@@ -88,3 +88,18 @@ def monthly_pitch_sample(outings):
                 sum(s['mean'] * s['measured'] for s in samples) / count if known == count else None)}
         result['types'].append(row)
     return result
+
+
+def pitch_history_for_display(history):
+    """Expose game-feed trajectory coordinates under their MLB source field names."""
+    # The v1 frozen facts used release_position_* for pitchData.coordinates.*0.
+    # Preserve those facts and their citations for deterministic historical replay.
+    names = {f'release_position_{axis}': f'trajectory_{axis}0' for axis in 'xyz'}
+    months = []
+    for month in history['months']:
+        types = []
+        for row in month['types']:
+            measurements = {names.get(key, key): value for key, value in row['measurements'].items()}
+            types.append(dict(row, measurements=measurements))
+        months.append(dict(month, types=types))
+    return dict(history, months=months)
