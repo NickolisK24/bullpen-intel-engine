@@ -94,11 +94,21 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache)
     return selected, sorted(set(sources)), latest
 
 
-def represented_membership(cur, team, through, roster, rounds):
+def represented_membership(cur, team, through, roster, rounds=None):
+    from sync_v3.competition_calendar import calendar_games
+    from sync_v3.discovery import competition_calendar_request
     raw = replay(cur, roster[1]).body
     listed, reason = _pitchers(raw, team, team, 'active')
     result = dict(basis='latest_ten_official_pitching_appearances', through=str(through), roster_source=roster[1],
                   samples={}, withheld={}, status='withheld')
+    if rounds is None:
+        calendar = competition_calendar_request(through.year)
+        source = latest_qualified_source(cur, calendar.endpoint, calendar.params())
+        if source is None:
+            return dict(result, reason='missing_competition_calendar')
+        season = calendar_games(calendar.params(), replay(cur, source).body)
+        rounds = {game['game_type'] for day, game, _ in season.values()
+                  if day <= through and game['game_type'] in POSTSEASON_GAME_TYPES}
     if reason or any(row['position']['code'] == 'Y' or
                      (_two_way_eligible(row) and row['position']['code'] != '1') for row in raw['roster']):
         return dict(result, reason=reason or 'two_way_role_evidence_unresolved')
@@ -126,6 +136,7 @@ def represented_membership(cur, team, through, roster, rounds):
                         for row in sample]
     if result['withheld']:
         return result
-    cohort = {c['pitcher'].id for c in eligible_bullpen_pitcher_contexts(
-        arms, reference_date=through, logs_by_pitcher=logs, use_role_authority=True)}
-    return dict(result, status='represented', candidate=sorted(cohort))
+    contexts = eligible_bullpen_pitcher_contexts(arms, reference_date=through, logs_by_pitcher=logs,
+                                                  use_role_authority=True)
+    roles = {c['pitcher'].id: c['eligibility']['role'] for c in contexts}
+    return dict(result, status='represented', candidate=sorted(roles), roles=roles)

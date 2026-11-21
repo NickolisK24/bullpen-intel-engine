@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability import ACTIVE_WINDOW_DAYS, AVAILABILITY_METHOD_VERSION, classify_availability
 from services.availability_reference_date import trusted_slate_reference_dates
 from services.fatigue import calculate_fatigue
 from services.pitcher_public_labels import build_public_arm_read
@@ -50,6 +50,22 @@ def _represented_arm(player, splits, official, reference):
             'last_workload': logs[0].game_date.isoformat(), 'games_compared': sorted(expected)}, None
 
 
+def verified_quiet_arm(player, latest, reference):
+    """Use only after reconciling the complete competitive workload window to the dated player log."""
+    if not latest or date.fromisoformat(latest['game_date']) >= reference - timedelta(days=ACTIVE_WINDOW_DAYS):
+        return None
+    if (type(latest['game_pk']) is not int or latest['game_pk'] <= 0 or type(latest['outs']) is not int
+            or latest['outs'] < 0 or type(latest['pitches']) is not int or latest['pitches'] < 0
+            or not (latest['outs'] or latest['pitches'])):
+        return None
+    day = date.fromisoformat(latest['game_date'])
+    log = SimpleNamespace(game_date=day, pitches_thrown=latest['pitches'], innings_pitched_outs=latest['outs'])
+    score = calculate_fatigue(SimpleNamespace(id=player), [log], reference_date=reference)
+    availability = classify_availability(score, [], reference_date=reference, latest_game_date=day)
+    return dict(availability=availability, arm_read=build_public_arm_read(availability), last_workload=str(day),
+                games_compared=[], verified_prior_outing=latest, availability_method=AVAILABILITY_METHOD_VERSION)
+
+
 def represented_readiness(cur, team, through):
     membership, reference = trusted_slate_reference_dates(through)
     league = competition_status(cur, reference)
@@ -67,6 +83,10 @@ def represented_readiness(cur, team, through):
         return result
     population, splits = active_group_population(cur, team, membership)
     result.update(roster_source=population['roster_source'], profiles=population['profiles'])
+    result['availability_method'] = AVAILABILITY_METHOD_VERSION
+    for key in ('population_method', 'eligibility_games', 'eligibility_gaps'):
+        if key in population:
+            result[key] = population[key]
     if population['reason']:
         result['reason'] = population['reason']
         return result
@@ -84,10 +104,15 @@ def represented_readiness(cur, team, through):
     for member in population['members']:
         player = member['player']
         arm, reason = _represented_arm(player, splits[player], lines, reference)
+        current = arm is not None
+        if reason == 'no_recent_verified_workload':
+            arm = verified_quiet_arm(player, population['latest_membership_work'][player], reference)
+            if arm is not None:
+                reason = None
         result['arms'][player] = {'read': arm, 'reason': reason}
         records.append(_normalize_pitcher_record({
             'availability_status': arm['availability']['availability_status'] if arm else 'unknown',
-            'has_availability': bool(arm), 'has_current_workload': bool(arm),
+            'has_availability': bool(arm), 'has_current_workload': current,
         }))
     usable = sum(record['has_availability'] for record in records)
     reasons = {arm['reason'] for arm in result['arms'].values()}

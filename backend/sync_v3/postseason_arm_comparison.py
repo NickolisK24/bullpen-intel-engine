@@ -8,7 +8,7 @@ from services.game_finality import classify_status
 from sync_v3.competition_calendar import competition_status
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.evidence import latest_qualified_source, replay
-from sync_v3.readiness import _represented_arm
+from sync_v3.readiness import _represented_arm, verified_quiet_arm
 from sync_v3.season_deployment import BaselineWithheld, _count, _counts
 from sync_v3.rosters import roster_on
 from sync_v3.workload import _game_workload
@@ -51,10 +51,7 @@ def _compare_arm(player, splits, lines, availability, evidence):
 
 
 def _method_replay(membership, arms, through, archive_receipt):
-    from types import SimpleNamespace
-    from services.availability import AVAILABILITY_METHOD_VERSION, classify_availability
-    from services.fatigue import calculate_fatigue
-    from services.pitcher_public_labels import build_public_arm_read
+    from services.availability import AVAILABILITY_METHOD_VERSION
     from services.team_readiness_coverage import assess_team_coverage
     from services.team_state_public_vocabulary import is_publishable_state, public_state_for
     from team_operations.bullpen_readiness import (
@@ -75,14 +72,12 @@ def _method_replay(membership, arms, through, archive_receipt):
         current = arm['reason'] is None
         if arm['reason'] == 'no_recent_verified_workload':
             latest = membership['samples'][player]['latest_workload']
-            if latest and date.fromisoformat(latest['game_date']) < reference - timedelta(days=ACTIVE_WINDOW_DAYS):
-                log = SimpleNamespace(game_date=date.fromisoformat(latest['game_date']), pitches_thrown=latest['pitches'],
-                                      innings_pitched_outs=latest['outs'])
-                score = calculate_fatigue(SimpleNamespace(id=player), [log], reference_date=reference)
-                availability = classify_availability(score, [], reference_date=reference, latest_game_date=log.game_date)
+            quiet = verified_quiet_arm(player, latest, reference)
+            if quiet is not None:
+                availability = quiet['availability']
                 status = availability['availability_status']
                 result['quiet_arms'][player] = dict(latest_workload=latest, data_state=availability['data_state'],
-                                                    replay=build_public_arm_read(availability), archive=arm['archived'])
+                                                    replay=quiet['arm_read'], archive=arm['archived'])
         if status is None:
             return dict(result, status='withheld', reason=arm['reason'], player=player)
         records.append(_normalize_pitcher_record(dict(availability_status=status, has_availability=True,

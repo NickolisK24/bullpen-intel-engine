@@ -148,6 +148,35 @@ def compare_team_workload(cur, calendar, candidate):
     return compared
 
 
+def _verified_rest_by_absence(candidate, player, read):
+    from datetime import date, timedelta
+    from services.availability import ACTIVE_WINDOW_DAYS, AVAILABILITY_METHOD_VERSION
+
+    evidence = read.get('verified_prior_outing') or {}
+    games = candidate.get('eligibility_games', {})
+    sample = games.get(player, games.get(str(player))) or []
+    availability = read['availability']
+    inputs = availability['inputs']
+    if (read.get('availability_method') != AVAILABILITY_METHOD_VERSION
+            or candidate.get('availability_method') != AVAILABILITY_METHOD_VERSION
+            or candidate['competition']['status'] != 'active' or not sample or sample[0] != evidence.get('game_pk')
+            or not evidence.get('game_date') or read.get('games_compared') != []
+            or read.get('last_workload') != evidence['game_date'] or inputs.get('latest_game_date') != evidence['game_date']
+            or inputs.get('reference_date') != candidate.get('reference_date')
+            or inputs.get('freshness_state') != 'stale' or availability.get('confidence') != 'medium'
+            or type(evidence.get('pitches')) is not int or evidence['pitches'] < 0
+            or type(evidence.get('outs')) is not int or evidence['outs'] < 0 or not (evidence['pitches'] or evidence['outs'])):
+        return False
+    reference = date.fromisoformat(candidate['reference_date'])
+    prior = date.fromisoformat(evidence['game_date'])
+    counts = ('pitches_yesterday', 'pitches_last_3_days', 'pitches_last_5_days',
+              'appearances_last_3_days', 'appearances_last_5_days')
+    return (prior < reference - timedelta(days=ACTIVE_WINDOW_DAYS)
+            and inputs.get('days_rest') == (reference-prior).days
+            and all(type(inputs.get(k)) is int and inputs[k] == 0 for k in counts)
+            and all(inputs.get(k) is False for k in ('back_to_back', 'consecutive_day_appearances_5d', 'three_in_four', 'four_in_five')))
+
+
 def compare_readiness(candidate):
     """Independently reproduce represented arm decisions and the status-only team partition."""
     from services.production_accuracy_reconciliation import _reproduce_arm_status
@@ -160,7 +189,11 @@ def compare_readiness(candidate):
             continue
         availability = arm['read']['availability']
         status = _reproduce_arm_status(availability['inputs'])
-        if availability['data_state'] != 'fresh' or status != availability['availability_status']:
+        if availability['data_state'] == 'stale' and _verified_rest_by_absence(candidate, player, arm['read']):
+            status = 'Available'
+        elif availability['data_state'] != 'fresh':
+            status = None
+        if status is None or status != availability['availability_status']:
             raise ValueError(f'Unverified represented arm status for {player}')
         counts[status] += 1
     partition = {'active_pitcher_count': len(candidate['arms']), 'clean_count': counts['Available'],

@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters
-from sync_v3.discovery import (affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
+from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 
 
@@ -68,7 +68,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), round_totals=False, budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), round_totals=False, active_roster_profiles=False, budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc), capture=None):
     if capture is not None and budget != 'historical':
         raise ValueError('A captured batch requires the historical budget')
@@ -81,6 +81,8 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
             schedule = schedule_request(cur, day, now, schedule)
         depth_teams = sorted(set(depth_teams))
         requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
+        if active_roster_profiles:
+            requests += tuple(active_profile_request(day, team) for team in sorted(set(teams).union(depth_teams)))
         if competition:
             requests += (competition_calendar_request(day.year),)
         requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)

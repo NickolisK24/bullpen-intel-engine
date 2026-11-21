@@ -88,9 +88,13 @@ def depth_directory(request, body):
     return result
 
 
+def active_profile_request(day, team):
+    return _request(f'/teams/{team}/roster', 21600, date=day.isoformat(), rosterType='active', hydrate='person')
+
+
 def depth_roster_requests(day, directory):
     # Affiliated minor-league levels, plus the parent club for person attributes.
-    return tuple(_request(f'/teams/{team}/roster', 21600, date=day.isoformat(), rosterType='active', hydrate='person')
+    return tuple(active_profile_request(day, team)
                  for team, row in sorted(directory.items()) if row['sport'] in (1, 11, 12, 13, 14, 15, 16))
 
 

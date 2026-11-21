@@ -8,7 +8,7 @@ import tempfile
 
 from services.mlb_api import MLBApiClient
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3.discovery import (affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
+from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 from sync_v3.sources import inspect_response, transport_endpoint
 
@@ -21,6 +21,8 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
     client = MLBApiClient()
     requests = list(calendar_requests(day)) + list(roster_requests(day, teams))
     requests.extend(pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
+    if active_profiles:
+        requests.extend(active_profile_request(day, team) for team in teams)
     requests.extend(affiliate_directory_request(day, club) for club in depth_teams)
     if competition:
         requests.append(competition_calendar_request(day.year))
@@ -64,6 +66,8 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
             out.write('],')
             meta = {'baseball_date':day.isoformat(), 'observed_at':datetime.now(timezone.utc).isoformat(),
                     'team_ids':list(teams), 'pitcher_ids':sorted(discovered_pitchers), 'depth_teams':depth_teams, 'competition':competition, 'provider':'MLB Stats API','kind':'retrospective'}
+            if active_profiles:
+                meta['active_roster_profiles'] = True
             if round_totals:
                 meta['round_totals'] = True
             if postseason_rounds:

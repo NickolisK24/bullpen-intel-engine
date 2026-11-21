@@ -261,7 +261,44 @@ def test_candidate_membership_requires_matching_entities_dates_and_official_rost
     receipts = {key: {7} for key in reads}
     assert _club_membership(118, day, reads, receipts) == 'matched'
     assert _club_membership(118, day, reads, dict(receipts, depth={8})) == 'dated_roster_receipts_differ_or_missing'
+    for domain in ('group_performance', 'readiness'):
+        reads[domain].update(population_method='latest_ten_official_pitching_appearances', eligibility_games={'102':[7]})
+    assert _club_membership(118, day, reads, receipts) == 'matched'
+    reads['readiness']['eligibility_games']['102'] = [8]
+    assert _club_membership(118, day, reads, receipts) == 'eligibility_sample_disagrees'
+    reads['readiness']['eligibility_games']['102'] = [7]
     reads['group_performance']['members'][0]['player'] = 103
     assert _club_membership(118, day, reads, receipts) == 'active_bullpen_identity_conflict'
     reads['depth']['represented'] = '2024-08-06'
     assert _club_membership(118, day, reads, receipts) == 'misaligned_population_snapshot'
+
+
+def test_represented_rest_requires_confirmed_prior_game_and_zero_recent_work():
+    from copy import deepcopy
+    from datetime import timedelta
+    from services.availability import ACTIVE_WINDOW_DAYS, AVAILABILITY_METHOD_VERSION
+    from sync_v3.comparison import compare_readiness
+    from sync_v3.readiness import verified_quiet_arm
+
+    reference = date(2026, 10, 20)
+    prior = dict(game_pk=823407, game_date='2026-09-26', pitches=15, outs=3)
+    for invalid in (None, dict(prior, pitches=None), dict(prior, game_pk=0), dict(prior, outs=-1),
+                    dict(prior, outs=0, pitches=0),
+                    dict(prior, game_date=str(reference - timedelta(days=ACTIVE_WINDOW_DAYS)))):
+        assert verified_quiet_arm(12, invalid, reference) is None
+    read = verified_quiet_arm(12, prior, reference)
+    candidate = dict(competition=dict(status='active'), eligibility_games={12: [823407]},
+                     availability_method=AVAILABILITY_METHOD_VERSION, reference_date=str(reference),
+                     arms={12: dict(read=read)}, team_state=None)
+    assert read['availability']['data_state'] == 'stale' and read['arm_read']['key'] == 'clean_option'
+    assert compare_readiness(candidate)['arm_statuses_compared'] == 1
+    for override in (dict(competition=dict(status='season_complete')), dict(eligibility_games={12: [123]}),
+                     dict(availability_method=None), dict(reference_date='2026-10-19')):
+        with pytest.raises(ValueError, match='Unverified'):
+            compare_readiness(dict(candidate, **override))
+    for key, value in (('pitches_last_3_days', 1), ('latest_game_date', '2026-10-01'),
+                       ('days_rest', None), ('three_in_four', True)):
+        altered = deepcopy(candidate)
+        altered['arms'][12]['read']['availability']['inputs'][key] = value
+        with pytest.raises(ValueError, match='Unverified'):
+            compare_readiness(altered)

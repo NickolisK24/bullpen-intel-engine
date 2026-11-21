@@ -2,34 +2,20 @@
 
 from collections import defaultdict
 from datetime import date, timedelta
-from types import SimpleNamespace
 
-from services.bullpen_population import eligible_bullpen_pitcher_contexts
 from services.performance_intelligence import AppearanceComponents, _exact_ratio
 from services.performance_metrics import CURRENT_ACTIVE_PEN_ERA, CURRENT_ACTIVE_PEN_WHIP
 from services.pitcher_performance import _rate
-from services.pitcher_role import ROLE_WINDOW_DAYS
 from services.public_team_performance import k_bb_from_official_inputs
 from services.roster_status_sync import _two_way_eligible
 from services.team_performance_evidence import DOMAINS, display
 from sync_v3.evidence import replay
+from sync_v3.membership_usage import represented_membership
 from sync_v3.performance import SOURCE_FIELDS, performance_line
 from sync_v3.roster_scope import NON_PITCHING_POSITIONS
 from sync_v3.rosters import roster_on
 from sync_v3.season_deployment import pitcher_season_deployment
 from sync_v3.workload import regular_day
-
-
-def _role_logs(splits, start, through):
-    rows = []
-    for split in splits:
-        day = date.fromisoformat(split['date'])
-        if start <= day <= through:
-            stats = split['stat']
-            rows.append(SimpleNamespace(game_date=day, games_started=stats['gamesStarted'],
-                                        innings_pitched_outs=stats['outs'], save=stats['saves'],
-                                        hold=stats['holds'], save_situation=stats['saveOpportunities']))
-    return rows
 
 
 def _aggregate(rows):
@@ -86,11 +72,7 @@ def active_group_population(cur, team, through):
            for entry in raw_roster):
         result['reason'] = 'two_way_role_evidence_unresolved'
         return result, {}
-    start = through - timedelta(days=ROLE_WINDOW_DAYS)
-    if start.year != through.year:
-        result['reason'] = 'role_window_precedes_season_source'
-        return result, {}
-    arms, logs, splits = [], {}, {}
+    splits = {}
     for member in facts['members']:
         position = member['position']
         if position in NON_PITCHING_POSITIONS:
@@ -109,14 +91,16 @@ def active_group_population(cur, team, through):
         uncredited = set(profile['facts'].get('uncredited_games', []))
         splits[player] = [split for split in replay(cur, profile['sources']['gameLog']).body['stats'][0]['splits']
                           if date.fromisoformat(split['date']) <= through and split['game']['gamePk'] not in uncredited]
-        logs[player] = _role_logs(splits[player], start, through)
-        arms.append(SimpleNamespace(id=player, mlb_id=player, position='P', active=True, full_name=member['name'],
-                                    roster_status='active', roster_status_source='mlb_stats_api:roster_sync:active'))
-    contexts = eligible_bullpen_pitcher_contexts(arms, reference_date=through, logs_by_pitcher=logs,
-                                                  use_role_authority=True)
-    result['members'] = [{'player': context['pitcher'].id, 'role': context['eligibility']['role']}
-                         for context in contexts]
-    if not contexts:
+    membership = represented_membership(cur, team, through, roster)
+    result['population_method'] = membership['basis']
+    if membership['status'] != 'represented':
+        result.update(reason=membership.get('reason') or 'incomplete_eligibility_sample',
+                      eligibility_gaps=membership['withheld'])
+        return result, {}
+    result['eligibility_games'] = {p: sample['games'] for p, sample in membership['samples'].items()}
+    result['latest_membership_work'] = {p: membership['samples'][p]['latest_workload'] for p in membership['candidate']}
+    result['members'] = [dict(player=p, role=membership['roles'][p]) for p in membership['candidate']]
+    if not result['members']:
         result['reason'] = 'active_group_empty'
     return result, splits
 

@@ -543,11 +543,11 @@ def test_candidate_changes_reproduce_prior_revision_and_withhold_unknown_reads()
         pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
     end = date(2024, 8, 7)
 
-    def freeze(cur, day, key):
+    def freeze(cur, day, key, **version):
         arm = {'arm_read': {'key': key}} if key else None
         facts = dict(team=118, membership_date=day.isoformat(), reference_date=(day + timedelta(days=1)).isoformat(),
                      arms={'102': {'read': arm}}, team_state={'public_code': 'stretched'},
-                     comparison={'team_states_compared': 1})
+                     comparison={'team_states_compared': 1}, **version)
         return _store(cur, 'team', 118, day, DOMAINS['readiness'][1], facts, [])
 
     with isolated_cluster(pg) as (owner, connect):
@@ -566,6 +566,13 @@ def test_candidate_changes_reproduce_prior_revision_and_withhold_unknown_reads()
             assert revised['lineage'][1]['revision'] == 2
             assert readiness_changes(cur, 118, end, revisions=(1, 1)) == first
             assert readiness_changes(cur, 118, end, revisions=(3, 1))['status'] == 'missing_snapshot'
+            freeze(cur, end, 'watch_arm', population_method='latest_ten_official_pitching_appearances')
+            changed_method = readiness_changes(cur, 118, end)
+            assert changed_method['status'] == 'incomparable_population_method' and not changed_method['events']
+            freeze(cur, end, 'watch_arm', availability_method='availability_rest_by_absence_v2')
+            changed_method = readiness_changes(cur, 118, end)
+            assert changed_method['status'] == 'incomparable_availability_method' and not changed_method['events']
+            assert readiness_changes(cur, 118, end, revisions=(1, 1)) == first
 
 
 def test_candidate_event_set_retains_exact_inputs_after_correction():

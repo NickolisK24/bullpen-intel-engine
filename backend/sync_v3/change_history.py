@@ -50,6 +50,12 @@ def readiness_changes(cur, team, through, *, revisions=None):
                                kind=kind, player=player, previous=before, current=after))
 
     before, after = [row[-1] for row in rows]
+    if before.get('availability_method') != after.get('availability_method'):
+        result['status'] = 'incomparable_availability_method'
+        return result
+    if before.get('population_method') != after.get('population_method'):
+        result['status'] = 'incomparable_population_method'
+        return result
     add('team_state_changed', before['team_state']['public_code'], after['team_state']['public_code'])
     reads = []
     for facts in (before, after):

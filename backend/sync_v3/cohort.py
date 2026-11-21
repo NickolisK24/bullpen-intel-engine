@@ -26,6 +26,9 @@ def _club_membership(team, day, reads, receipts):
         return 'unverified_dated_active_population'
     if group['reason']:
         return group['reason']
+    if (group.get('population_method') != readiness.get('population_method')
+            or group.get('eligibility_games') != readiness.get('eligibility_games')):
+        return 'eligibility_sample_disagrees'
     cohort = [int(m['player']) for m in group['members']]
     if (not cohort or len(set(cohort)) != len(cohort) or set(cohort) != set(map(int, readiness['arms']))
             or not set(cohort).issubset(map(int, active['pitchers']))):
