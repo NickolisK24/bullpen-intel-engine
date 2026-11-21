@@ -1,5 +1,6 @@
 """Confirm represented competitive workload across regular-season and playoff games."""
 
+from collections import defaultdict
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -12,7 +13,7 @@ from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.evidence import latest_qualified_source, replay
 from sync_v3.season_deployment import BaselineWithheld, _count, _counts
-from sync_v3.workload import _game_workload
+from sync_v3.workload import _game_workload, windows_from_calendar, workload_lines
 
 
 def _represented_arm(player, splits, official, reference):
@@ -125,3 +126,19 @@ def round_game_logs(cur, player, through, rounds):
         if groups:
             splits.extend(groups[0]['splits'])
     return splits, receipts
+
+
+def competitive_pitcher_weeks(window, members, through, roster_source):
+    """Apply the Board's relief-workload rule game by game, including qualifying openers."""
+    calendar = {date.fromisoformat(day): (dict(lines=[], sources=[receipt]), None)
+                for day, receipt in window['sources']['dates'].items()}
+    games = defaultdict(list)
+    for line in window['lines']:
+        games[line['game_date'], line['game_pk']].append(line)
+    for (day, _), staff in games.items():
+        calendar[date.fromisoformat(day)][0]['lines'].extend(workload_lines(staff))
+    result = {}
+    for player in members:
+        week = windows_from_calendar(calendar, player, through, identity_sources=[roster_source], sizes=(7,))[7]
+        result[player] = {k: v for k, v in week.items() if k not in ('sources', 'identity_sources')}
+    return result

@@ -862,6 +862,13 @@ def _historical_arm_display(through):
     return dict(arm_context=context, display_read=build_public_arm_read())
 
 
+def _competitive_week(readiness, mlb):
+    weeks = readiness['value'].get('competitive_pitcher_weeks')
+    if weeks is None or str(mlb) not in weeks:
+        return None
+    return dict(value=weeks[str(mlb)], citation=readiness['citation'], scope='competitive_bullpen_workload')
+
+
 def read_team_board(connection, team, *, revision=None):
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.history import METHODOLOGY
@@ -899,7 +906,7 @@ def read_team_board(connection, team, *, revision=None):
                 identity = {}
             arms.append(dict(mlb_id=mlb, public_pitcher_id=identity.get('public_id'),
                              name=identity.get('name'), pitch_hand=_pitch_hand(blocks['depth'], mlb),
-                             weekly_workload=weeks.get(mlb), read=arm['read'], reason=arm['reason'],
+                             weekly_workload=_competitive_week(blocks['readiness'], mlb) or weeks.get(mlb), read=arm['read'], reason=arm['reason'],
                              **_historical_arm_display(listing['data_through'])))
         from datetime import date
         through = date.fromisoformat(listing['data_through'])
@@ -989,7 +996,10 @@ def read_pitcher(connection, public_id, *, revision=None):
             return dict(result, status=kind, identity=player, sections={}, recent_work=work)
         club = next(c for c in MLB_CLUBS if c.team_id == player['team_id'])
         result['pitcher'].update(team_name=club.team_name, team_abbreviation=club.abbreviation)
-        depth = _blocks(cur, digest, 'team', player['team_id'], {DOMAINS['depth'][1]:'depth'})['depth']
+        team_blocks = _blocks(cur, digest, 'team', player['team_id'],
+                              {DOMAINS['depth'][1]: 'depth', DOMAINS['readiness'][1]: 'readiness'})
+        depth = team_blocks['depth']
+        result['competitive_weekly_workload'] = _competitive_week(team_blocks['readiness'], player['mlb_id'])
         result['postseason_work'] = postseason_appearances(cur, digest, 'pitcher', player['mlb_id'], through, player['team_id'])
         regular = appearance_ledger(cur, digest, 'pitcher', player['mlb_id'], through)
         result['recent_work'] = pitcher_recent_work(regular, result['postseason_work'])

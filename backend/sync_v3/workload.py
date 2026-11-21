@@ -142,16 +142,16 @@ def pitcher_windows(cur, player, through):
                                  identity_sources=dated_pitcher_sources(cur, player, through))
 
 
-def windows_from_calendar(slices, player, through, *, identity_sources=()):
+def windows_from_calendar(slices, player, through, *, identity_sources=(), sizes=WINDOWS):
     """All arms can reuse the same qualified calendar without another database read."""
-    days = [through-timedelta(days=i) for i in range(max(WINDOWS))]
+    days = [through-timedelta(days=i) for i in range(max(sizes))]
     selected_by_day = {
         day:[line for line in observed['lines'] if line['pitcher_mlb_id'] == player]
         for day,(observed,_) in slices.items() if observed
     }
     known_player = bool(identity_sources) or any(selected_by_day.values())
     result = {}
-    for size in WINDOWS:
+    for size in sizes:
         span = days[:size]
         gaps = {day.isoformat():slices[day][1] for day in span if slices[day][1]}
         for day in span:

@@ -9,7 +9,7 @@ from services.fatigue import calculate_fatigue
 from services.pitcher_public_labels import build_public_arm_read
 from services.team_readiness_coverage import assess_team_coverage
 from services.team_state_public_vocabulary import is_publishable_state, public_state_for
-from sync_v3.competitive_workload import _represented_arm, competitive_window, round_game_logs, round_workload
+from sync_v3.competitive_workload import _represented_arm, competitive_pitcher_weeks, competitive_window, round_game_logs, round_workload
 from sync_v3.rosters import roster_on
 from sync_v3.membership_usage import represented_membership
 from sync_v3.competition_calendar import competition_status
@@ -111,6 +111,8 @@ def represented_readiness(cur, team, through):
             'availability_status': arm['availability']['availability_status'] if arm else 'unknown',
             'has_availability': bool(arm), 'has_current_workload': current,
         }))
+    if postseason:
+        result['competitive_pitcher_weeks'] = competitive_pitcher_weeks(window, members, through, roster[1])
     usable = sum(record['has_availability'] for record in records)
     reasons = {arm['reason'] for arm in result['arms'].values()}
     coverage = assess_team_coverage(authority_complete=True, source_current=True, active_bullpen_count=len(records),

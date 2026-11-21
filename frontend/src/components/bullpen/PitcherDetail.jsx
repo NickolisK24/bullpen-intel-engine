@@ -106,7 +106,10 @@ export function PitcherDetailContent({ data, pitcherId }) {
     : teamReference && buildTeamBoardHref(teamReference)
   const rosterUnavailable = rosterStatus?.is_authoritative && rosterStatus.is_inactive_context
     && pitcherLabels?.read?.key === 'unavailable'
-  const week = historicalEdition ? data.sections?.workload?.value?.windows?.['7'] : null
+  const competitiveWeek = historicalEdition && data.competitive_weekly_workload?.scope === 'competitive_bullpen_workload'
+  const week = historicalEdition
+    ? (competitiveWeek ? data.competitive_weekly_workload.value : data.sections?.workload?.value?.windows?.['7'])
+    : null
   const datedWorkload = historicalPitcherWorkload(week, through)
   const currentStateFacts = [
     { label: current ? 'Current Role' : 'Observed Role', value: pitcherLabels?.role?.label },
@@ -187,7 +190,7 @@ export function PitcherDetailContent({ data, pitcherId }) {
 
             {historicalEdition && (
               <p className="mt-2 font-mono text-xs text-chalk400">
-                Seven-day totals cover regular-season bullpen work, including qualifying openers.
+                Seven-day totals cover {competitiveWeek ? 'regular-season and postseason' : 'regular-season'} bullpen work, including qualifying openers.
               </p>
             )}
 

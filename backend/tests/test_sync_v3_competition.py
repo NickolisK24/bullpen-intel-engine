@@ -433,3 +433,27 @@ def test_mixed_postseason_window_binds_off_days_and_both_stages(monkeypatch):
     slates.pop('2026-09-27')
     assert workload.competitive_window(None, through, season_data) == {
         'reason': 'competitive_calendars_disagree', 'gap_date': '2026-09-27'}
+
+
+def test_playoff_pitcher_week_qualifies_each_game_side_and_keeps_quiet_arms():
+    from sync_v3.competitive_workload import competitive_pitcher_weeks
+
+    through = date(2026, 10, 19)
+    dates = {str(through - timedelta(days=i)): i+1 for i in range(14)}
+
+    def line(day, game_pk, team, player, starter, outs, pitches):
+        return dict(game_date=str(day), game_pk=game_pk, team_id=team, pitcher_mlb_id=player,
+                    games_started=starter, outs_recorded=outs, pitches_thrown=pitches, batters_faced=6)
+
+    # One player was a rotation starter for a prior club, then an opener and a reliever.
+    lines = [line(through, 1, 139, 22, 1, 3, 16), line(through, 1, 139, 33, 0, 12, 42),
+             line(through-timedelta(days=1), 2, 158, 22, 1, 18, 83),
+             line(through-timedelta(days=1), 2, 158, 44, 0, 3, 22),
+             line(through-timedelta(days=6), 3, 139, 22, 0, 3, 17),
+             line(through-timedelta(days=7), 4, 139, 22, 0, 3, 27)]
+    weeks = competitive_pitcher_weeks(dict(sources=dict(dates=dates), lines=lines), [22, 99], through, 123)
+    assert weeks[22]['through'] == str(through) and weeks[22]['first'] == '2026-10-13'
+    assert weeks[22]['facts']['appearances'] == 2 and weeks[22]['facts']['pitches_thrown'] == 33
+    assert weeks[99]['player_observed'] and weeks[99]['facts']['appearances'] == 0
+    uncertain = [dict(lines[0], games_started=None), *lines[1:]]
+    assert competitive_pitcher_weeks(dict(sources=dict(dates=dates), lines=uncertain), [22], through, 123)[22]['facts'] is None

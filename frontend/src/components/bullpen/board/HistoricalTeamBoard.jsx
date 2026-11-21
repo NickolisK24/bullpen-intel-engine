@@ -144,7 +144,8 @@ export default function HistoricalTeamBoard({ team, revision, generation }) {
       <p>{state.available ? state.public_label : state.unavailable_message || 'Unavailable'}</p>
     </section>
     <section><h2>Active bullpen through {data.data_through}</h2>
-      {data.active_bullpen.length > 0 && <p>Seven-day regular-season bullpen workload across clubs.</p>}
+      {data.active_bullpen.length > 0 && <p>Seven-day {data.active_bullpen.every(arm => arm.weekly_workload?.scope === 'competitive_bullpen_workload')
+        ? 'regular-season and postseason' : 'regular-season'} bullpen workload across clubs.</p>}
       {data.active_bullpen.length ? <ul>{data.active_bullpen.map(arm => {
         const href = buildRehearsalPitcherHref(arm.public_pitcher_id, revision, generation)
         const label = arm.name || `MLB pitcher ${arm.mlb_id}`
