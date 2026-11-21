@@ -59,3 +59,47 @@ def test_concentration_requires_every_relief_pitch_count_in_its_own_window():
                     dict(other, pitches_thrown=0, innings_pitched_outs=0)]:
         layer, coverage = editorial_reads._concentration([arm, excluded], day)
         assert coverage == 'complete_calendar' and layer['bullpen_workload_total_10d'] == 14
+
+
+@pytest.mark.parametrize('defect,expected', [
+    ('absent_club', 'incomplete_league_clubs'),
+    ('missing_day', 'incomplete_league_calendar'),
+    ('one_sided_game', 'conflicting_league_game'),
+    ('unconfirmed_final', 'missing_or_conflicting_league_final'),
+    ('missing_pitches', 'incomplete_league_pitch_counts'),
+    ('all_idle', 'no_qualifying_league_workload'),
+])
+def test_league_concentration_requires_the_whole_window(defect, expected):
+    from datetime import timedelta
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3.editorial_league_baseline import league_concentration
+
+    through = date(2024, 8, 7)
+    clubs = sorted(MLB_TEAM_IDS)
+    snapshots = []
+    for team in clubs:
+        dates = {(through - timedelta(days=i)).isoformat(): dict(reason=None, games=[]) for i in range(10)}
+        if team in clubs[:2] and defect != 'all_idle':
+            dates[str(through)]['games'] = [dict(game_pk=42)]
+        if team == clubs[-1] and defect == 'missing_day':
+            del dates[str(through)]
+        if team == clubs[0] and defect == 'one_sided_game':
+            dates[str(through)]['games'] = []
+        snapshots.append((team + 1000, team, dates, 'facts', 'inputs'))
+    lines = [dict(team_id=club, game_pk=42, game_date=str(through), games_started=0,
+                  pitches_thrown=None, pitcher_mlb_id=club, outs_recorded=3) for club in clubs[:2]]
+
+    class Cursor:
+        def execute(self, sql, args):
+            if args[0] == 'generation':
+                self.rows = snapshots[:-1] if defect == 'absent_club' else snapshots
+            else:
+                assert args[1] == ([] if defect == 'all_idle' else ['42', '42'])
+                self.rows = [('42', lines)] if defect == 'missing_pitches' else []
+
+        def fetchall(self):
+            return self.rows
+
+    value, reason, citation = league_concentration(Cursor(), 'generation', through)
+    assert value is None and reason == expected
+    assert citation['start'] == '2024-07-29' and citation['through'] == '2024-08-07'

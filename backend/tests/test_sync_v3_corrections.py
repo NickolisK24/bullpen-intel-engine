@@ -1167,6 +1167,11 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert stories['coverage']['bullpen_optionality_context'] == 'complete_dated_arm_reads'
             assert stories['coverage']['role_stability_context'] == 'incomplete_comparison_calendar'
             assert stories['coverage']['bullpen_concentration_context'] == 'complete_calendar'
+            assert stories['coverage']['league_concentration'] == 'complete_league_calendar'
+            assert len(stories['league_concentration_citation']['clubs']) == 30
+            pressure, = (item for item in stories['observations']['observations'] if item['type'] == 'concentration_pressure')
+            assert pressure['baseline_inputs']['league_team_count_10d'] == 30
+            assert pressure['baseline_inputs']['league_top_three_workload_share_10d'] == 100
             pk, = stories['source_games']
             boxscore = next(item['body'] for fixture in fixtures for item in fixture['responses']
                             if item['endpoint'] == f'/game/{pk}/boxscore')

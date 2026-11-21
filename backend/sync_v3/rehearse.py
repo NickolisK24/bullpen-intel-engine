@@ -106,6 +106,13 @@ def verify_editorial_evidence(connection, board, events):
                 or {str(pk) for pk in games} != stories['boxscore_digests'].keys()
                 or not all(stories['boxscore_digests'].values())):
             raise RuntimeError('Story source games or observation scope disagree with the selected Board')
+        if stories['coverage']['league_concentration'] == 'complete_league_calendar':
+            from services.mlb_club_directory import MLB_TEAM_IDS
+            citation = stories['league_concentration_citation']
+            if (citation['through'] != edition[2] or set(citation['clubs']) != set(MLB_TEAM_IDS)
+                    or citation['methodology'] != rotation['citation']['methodology']
+                    or any(citation['clubs'][team][k] != rotation['citation'][k] for k in ('facts_digest', 'input_digest'))):
+                raise RuntimeError('Story league concentration cites a different edition or club snapshot')
         for line in board['recent_relief']['appearances']:
             pk = line['game_pk']
             if pk in games and not set(line['boxscore_digests']).intersection(stories['boxscore_digests'][str(pk)]):

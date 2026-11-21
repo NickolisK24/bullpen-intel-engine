@@ -9,6 +9,7 @@ from services import bullpen_concentration_context as concentration
 from services import rotation_context as rotation_layer
 from services import role_stability_context as stability
 from sync_v3.appearance_reads import appearance_ledger
+from sync_v3.editorial_league_baseline import league_concentration
 from sync_v3.evidence import replay
 from services.story_observation_engine import build_team_story_observation_payload
 from sync_v3.intelligence_history import DOMAINS
@@ -39,7 +40,7 @@ def _optionality(cur, digest, team, reference):
     return layer
 
 
-def _concentration(logs, through):
+def _concentration(logs, through, league_baseline=None):
     rows, _ = concentration._window_logs(logs, reference_date=through)
     relief = [line for line in rows if line['games_started'] == 0]
     if any(line['pitches_thrown'] is None for line in relief):
@@ -48,7 +49,7 @@ def _concentration(logs, through):
         return None, 'invalid_relief_pitch_count'
     if any(not line['pitcher_name'] for line in relief):
         return None, 'missing_official_reliever_identity'
-    return concentration.build_bullpen_concentration_context(rows, reference_date=through), 'complete_calendar'
+    return concentration.build_bullpen_concentration_context(rows, reference_date=through, league_baseline=league_baseline), 'complete_calendar'
 
 
 def _stability(cur, digest, team, through):
@@ -138,7 +139,8 @@ def read_story_observations(connection, team, *, revision=None):
         club = clubs[team]
         layers = {'rotation_context': rotation_layer.build_rotation_context(logs, reference_date=through)}
         coverage = {'rotation_context': 'complete_calendar'}
-        concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through)
+        baseline, coverage['league_concentration'], result['league_concentration_citation'] = league_concentration(cur, digest, through)
+        concentration_layer, coverage['bullpen_concentration_context'] = _concentration(logs, through, baseline)
         if concentration_layer:
             layers['bullpen_concentration_context'] = concentration_layer
         role_stability, coverage['role_stability_context'], result['role_stability_citation'] = _stability(
