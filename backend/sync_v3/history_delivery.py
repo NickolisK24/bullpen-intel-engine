@@ -7,6 +7,7 @@ from flask import Flask, abort
 from services.mlb_club_directory import MLB_CLUBS, MLB_TEAM_IDS
 from sync_v3.product_delivery import product_routes
 from sync_v3.product_reads import read_team_history
+from sync_v3.readiness_history import UnknownAvailabilityEdition, read_availability_edition
 
 
 def historical_history_app(connect, *, page_size=14):
@@ -28,6 +29,16 @@ def historical_history_app(connect, *, page_size=14):
         with closing(connect()) as connection:
             page = read_team_history(connection, team, through_revision=revision, limit=page_size)
         return page, 404 if page['status'] == 'unknown_revision' else 200
+
+    @app.get('/api/sync-v3/availability-editions/<digest>')
+    def availability_edition(digest):
+        if len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
+            abort(404)
+        with closing(connect()) as connection:
+            try:
+                return read_availability_edition(connection, digest)
+            except UnknownAvailabilityEdition:
+                abort(404)
 
     app.register_blueprint(product_routes(connect, page_size))
     return app

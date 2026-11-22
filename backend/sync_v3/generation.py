@@ -428,6 +428,8 @@ def _inspect(cur, digest, compare_latest):
     if not stored:
         raise ValueError('Unknown candidate generation')
     through, manifest = stored
+    if manifest.get('contract') != 'candidate_generation_inventory_v1':
+        raise ValueError('Expected a full historical core generation')
     if (sha256(encode_json(manifest)).hexdigest() != digest or manifest['represented'] != through.isoformat()
             or manifest['current_serving_eligible'] is not False
             or sorted(c['team'] for c in manifest['clubs']) != sorted(MLB_TEAM_IDS)):

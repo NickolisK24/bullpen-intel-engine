@@ -292,8 +292,8 @@ the historical rehearsal tests the day immediately after coverage. The
 `generation_availability_date` result gives the selected date, the dated schedule receipts,
 and the basis for stopping or advancing. With a proof for the same workload date, it reports
 the archive date separately. A missing or contradictory schedule withholds the build.
-A confirmed later date also withholds the build while the stored readiness and rest
-calculations still describe the earlier date. No frozen edition is relabeled.
+A confirmed later date freezes an availability edition and withholds full product selection
+until the other product domains support that date.
 
 Use `--availability-as-of` with `--league`, `--readiness-team MLB_TEAM_ID`, or
 `--pitcher MLB_PLAYER_ID` for a read-only calculation on the independently resolved
@@ -304,7 +304,14 @@ pitching lines and the dated active roster. The shifted rest calculation include
 confirmed intervening off-days. Workload totals and membership keep their original
 coverage date. A conflicting game in a retained competitive season calendar vetoes
 an off-day. A build for a confirmed later date emits these recalculated club facts
-before withholding the mixed-date generation. The report has no selection authority.
+before withholding the mixed-date generation.
+
+Add `--snapshot` to the same rehearsal command to retain the recalculated facts and
+source receipts. With `--league`, the output includes a digest binding the 30 club
+revisions and their pitcher rest readings. Within the disposable historical app,
+`GET /api/sync-v3/availability-editions/<digest>` reads that exact edition, including
+after a later one is built. Team and single-pitcher rehearsals report their individual
+snapshot identities. These editions carry no current-serving or promotion authority.
 
 For July 16, 2024 coverage, Tyler Rogers's last verified relief appearance was July 14.
 The July 17 and 18 reads reported three and four days since that appearance. For

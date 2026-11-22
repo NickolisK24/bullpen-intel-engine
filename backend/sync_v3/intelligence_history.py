@@ -20,7 +20,11 @@ from sync_v3.workload import load_calendar, outing_pitch_comparison, regular_day
 
 
 def _readiness(cur, team, through):
-    report = represented_readiness(cur, team, through)
+    return readiness_history_facts(represented_readiness(cur, team, through))
+
+
+def readiness_history_facts(report):
+    report = dict(report)
     report['comparison'] = compare_readiness(report)
     # The relational source links preserve receipt IDs independently of the facts.
     facts = {key: value for key, value in report.items() if key not in (

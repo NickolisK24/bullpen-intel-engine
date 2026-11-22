@@ -312,6 +312,25 @@ def _candidate_storage(connection):
         return dict(cur.fetchall())
 
 
+def _freeze_availability_report(worker, through, as_of, *, team=None, pitcher=None):
+    import json
+    from sync_v3.readiness_history import (
+        read_availability_edition, read_availability_snapshot, record_availability_snapshots,
+    )
+
+    frozen = record_availability_snapshots(worker, through, as_of, team=team, pitcher=pitcher)
+    review = frozen.pop('review', None)
+    if review is not None:
+        print(json.dumps(review, sort_keys=True), flush=True)
+    print(json.dumps(dict(historical_availability_snapshots=frozen), sort_keys=True), flush=True)
+    if 'generation' in frozen:
+        edition = read_availability_edition(worker, frozen['generation'])
+        print(json.dumps(dict(historical_availability_edition=edition), sort_keys=True), flush=True)
+    elif frozen['snapshots']:
+        row = read_availability_snapshot(worker, frozen['snapshots'][0]['snapshot_id'])
+        print(json.dumps(dict(historical_availability_snapshot=row), sort_keys=True), flush=True)
+
+
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
         deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=(), trace_receipts=False, measure_replay=False):
     with isolated_cluster(bindir) as (owner, connect):
@@ -380,7 +399,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     preserved, = cur.fetchone()
                 print(f'{preserved} parsed HTTP observations preserved across distinct offline captures')
                 print(f'{count} observations in fully accepted days; {games} finals and {appearances} pitching lines compared')
-            if snapshot or snapshot_domain:
+            if snapshot and availability_as_of is not None:
+                _freeze_availability_report(worker, through, availability_as_of, team=readiness_team, pitcher=pitcher)
+            elif snapshot or snapshot_domain:
                 import json
                 from sync_v3.history import record_workload
                 from sync_v3.readiness_history import record_readiness
@@ -520,13 +541,9 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     GenerationDateWithheld, build_batch, freeze_generation, generation_date_decision, verify_generation,
                 )
                 product_day = availability_as_of or (through + timedelta(days=1))
-                recalculated = None
                 with worker, worker.cursor() as cur:
                     cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
                     decision = generation_date_decision(cur, through, product_day)
-                    if build_generation and decision['reason'] == 'generation_facts_require_recalculation_for_selected_date':
-                        from sync_v3.readiness import review_availability_facts
-                        recalculated = review_availability_facts(cur, through, product_day)
                 if identity_proof and reference.provenance['data_through'] == through.isoformat():
                     decision['archived_availability_reference'] = reference.availability_reference
                     if decision['availability_reference'] is None:
@@ -536,8 +553,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     else:
                         decision['archive_date_comparison'] = 'date_differs'
                 print(json.dumps(decision, sort_keys=True), flush=True)
-                if recalculated is not None:
-                    print(json.dumps(recalculated, sort_keys=True), flush=True)
+                if build_generation and decision['reason'] == 'generation_facts_require_recalculation_for_selected_date':
+                    _freeze_availability_report(worker, through, product_day)
                 if decision['reason']:
                     raise GenerationDateWithheld(decision)
                 if generation_batch or build_generation:
@@ -664,7 +681,7 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team, args.availability_as_of,
     ))
-    if args.availability_as_of and any((args.snapshot, args.snapshot_domain, args.competition,
+    if args.availability_as_of and any((args.since, args.snapshot_domain, args.competition,
                                        args.deployment_team, args.performance_team, args.schedule_team,
                                        args.team, args.game)):
         parser.error('--availability-as-of supports generation, --league, --readiness-team, --pitcher, or date replay')
@@ -684,7 +701,7 @@ if __name__ == '__main__':
         parser.error('--since requires snapshot mode and a through date on or after the first date')
     if args.snapshot_domain and getattr(args, DOMAINS[args.snapshot_domain][0]) is None:
         parser.error(f'--snapshot-domain {args.snapshot_domain} requires --{DOMAINS[args.snapshot_domain][0]}')
-    if args.snapshot and not args.snapshot_domain and args.team is None and args.pitcher is None and args.readiness_team is None:
+    if args.snapshot and not args.snapshot_domain and args.team is None and args.pitcher is None and args.readiness_team is None and not (args.league and args.availability_as_of):
         parser.error('--snapshot requires --team, --pitcher or --readiness-team')
     if (args.generation or args.generation_batch) and not (args.snapshot or args.snapshot_domain or args.build_generation):
         parser.error('Generation inventory requires a snapshot calculation or --build-generation')
