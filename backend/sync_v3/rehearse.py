@@ -303,8 +303,17 @@ def verify_board_history(connection, board):
                 verified_pitcher_routes=verified, withheld_pitcher_mlb_ids=withheld, current_serving_eligible=False)
 
 
+def _candidate_storage(connection):
+    """Allocated candidate table, index and TOAST bytes in the private rehearsal."""
+    with connection, connection.cursor() as cur:
+        cur.execute("""SELECT c.relname,pg_total_relation_size(c.oid) FROM pg_class c
+                       JOIN pg_namespace n ON n.oid=c.relnamespace
+                       WHERE n.nspname='candidate' AND c.relkind='r' ORDER BY c.relname""")
+        return dict(cur.fetchall())
+
+
 def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league=False, game=None,
-        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=(), trace_receipts=False):
+        deployment_team=None, performance_team=None, schedule_team=None, competition=False, readiness_team=None, snapshot=False, snapshot_domain=None, since=None, generation=False, generation_batch=0, build_generation=False, exercise_selection=False, identity_fixture=None, identity_proof=None, availability_as_of=None, team_preview_export=None, earlier_identity_proofs=(), trace_receipts=False, measure_replay=False):
     with isolated_cluster(bindir) as (owner, connect):
         with owner, owner.cursor() as cur:
             cur.execute('CREATE TABLE public.legacy_pointer (generation integer PRIMARY KEY)')
@@ -344,11 +353,25 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     print(json.dumps(dict(historical_capture_receipts=page)), flush=True)
 
                 count = 0
+                from time import perf_counter
                 for filename in fixture:
+                    if measure_replay:
+                        before = _candidate_storage(worker)
+                        start = perf_counter()
+                    outcome = 'accepted'
                     try:
                         count += run_fixture(worker, filename, on_receipt_page=emit_receipts if trace_receipts else None)
                     except ReplayWithheld as exc:
+                        outcome = 'withheld'
                         withheld.append(f'{filename}: {exc}')
+                    if measure_replay:
+                        elapsed = perf_counter() - start
+                        after = _candidate_storage(worker)
+                        table_growth = {name: size - before[name] for name, size in after.items() if size != before[name]}
+                        print(json.dumps(dict(historical_replay_resources=dict(
+                            fixture=str(filename), fixture_bytes=Path(filename).stat().st_size,
+                            outcome=outcome, elapsed_seconds=elapsed, candidate_bytes_before=sum(before.values()),
+                            candidate_bytes_after=sum(after.values()), relation_byte_changes=table_growth))), flush=True)
                 from sync_v3.comparison import compare_finals
                 with worker, worker.cursor() as cur:
                     games, appearances = compare_finals(cur)
@@ -568,6 +591,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pg-bin')
     parser.add_argument('--fixture', action='append', help='Path to an offline day (repeat to replay history)')
+    parser.add_argument('--measure-replay', action='store_true', help='Measure elapsed replay time and local candidate relation sizes')
     parser.add_argument('--trace-receipts', action='store_true', help='Report each scoped receipt and its canonical effects')
     from datetime import date
     subject = parser.add_mutually_exclusive_group()
@@ -606,6 +630,8 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team, args.availability_as_of,
     ))
+    if args.measure_replay and not args.fixture:
+        parser.error('--measure-replay requires an offline source fixture')
     if args.trace_receipts and not args.fixture:
         parser.error('--trace-receipts requires an offline source fixture')
     if (args.identity_fixture or args.identity_proof) and not args.fixture:
@@ -627,4 +653,4 @@ if __name__ == '__main__':
     if has_subject != bool(args.through) or (has_subject and not args.fixture):
         parser.error('Supply a subject with --through and at least one --fixture')
     run(args.pg_bin, args.fixture, args.pitcher, args.through, args.team, args.league, args.game,
-        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export, args.earlier_identity_proof, trace_receipts=args.trace_receipts)
+        args.deployment_team, args.performance_team, args.schedule_team, args.competition, args.readiness_team, args.snapshot, args.snapshot_domain, args.since, args.generation, args.generation_batch, args.build_generation, args.exercise_selection, args.identity_fixture, args.identity_proof, args.availability_as_of, args.team_preview_export, args.earlier_identity_proof, trace_receipts=args.trace_receipts, measure_replay=args.measure_replay)

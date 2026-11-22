@@ -50,15 +50,32 @@ def run_fixture(connection, filename, *, on_receipt_page=None):
     # Preserve every supplied HTTP observation, including child roster requests
     # whose transaction parent is refused. The archive grants no canonical authority.
     with connection, connection.cursor() as cur:
+        cur.execute("""SELECT endpoint,parameters,received_at,sha256 FROM candidate.captured_requests
+                       WHERE capture=%s""", (capture,))
+        retained = {(endpoint, tuple(sorted(params.items()))): (at, digest)
+                    for endpoint, params, at, digest in cur}
+        if retained.keys() - responses.keys():
+            raise ValueError('Capture contains a request absent from the supplied fixture')
         for (endpoint, params), observation in responses.items():
             if observation.retrieved_at.utcoffset() is None:
                 raise ValueError('Captured receipt requires a timezone')
             encoded = evidence.encode_json(observation.body)
             digest = sha256(encoded).hexdigest()
+            previous = retained.get((endpoint, params))
+            if previous is not None:
+                if previous != (observation.retrieved_at, digest):
+                    raise ValueError('Retained request disagrees with the supplied fixture')
+                continue
             cur.execute('INSERT INTO candidate.payloads VALUES (%s,%s) ON CONFLICT DO NOTHING', (digest, encoded))
             cur.execute('''INSERT INTO candidate.captured_requests VALUES (%s,%s,%s,%s,%s)
                            ON CONFLICT DO NOTHING''',
                         (capture, endpoint, Json(dict(params)), observation.retrieved_at, digest))
+            if cur.rowcount == 0:
+                cur.execute("""SELECT received_at,sha256 FROM candidate.captured_requests
+                               WHERE capture=%s AND endpoint=%s AND parameters=%s""",
+                            (capture, endpoint, Json(dict(params))))
+                if cur.fetchone() != (observation.retrieved_at, digest):
+                    raise ValueError('Concurrent request disagrees with the supplied fixture')
     results = []
     while True:
         batch = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()),

@@ -999,3 +999,26 @@ On the August 28, 2017 restore, receipt 979 matched 416 latest intelligence scop
 The PostgreSQL queue rehearsal terminates an isolated worker after it has derived a canonical schedule and enqueued dependent game requests, before it settles the job. The disconnected transaction rolls back the payload, receipt, canonical records and child jobs. The committed claim remains leased. At expiry a second worker completes the same job with one receipt, one schedule confirmation and three distinct game requests.
 
 A separate recovery case covers a queue with 17 expired final attempts ahead of a ready job. Each claim can clean up 16 exhausted leases and still claim eligible work. Previously the cleanup limit returned an empty claim while the ready job remained queued. In the August 7, 2024 all-club replay, injecting those 17 abandoned leases preserved the 173 source receipts, including both original source refusals. No historical generation was selected. From `backend`, repeat the crash and backlog checks with `SYNC_V3_TEST_PG_BIN="$PG_BIN" python -m pytest -q tests/test_sync_v3_queue.py`.
+
+### Offline replay time and storage
+
+From `backend`, run the same capture twice in a fresh disposable cluster to measure initial acquisition and reuse.
+
+```sh
+python -m sync_v3.rehearse --pg-bin "$PG_BIN" --measure-replay \
+  --fixture "$DAY_FIXTURE" --fixture "$DAY_FIXTURE"
+```
+
+Each `historical_replay_resources` result reports elapsed time inside the fixture replay, the supplied file size, and the change in allocated bytes for candidate tables, indexes and TOAST. It reports on withheld fixtures as well as accepted ones. The timer excludes cluster startup, subsequent intelligence generation, public delivery and live network latency. Run without `--trace-receipts` for the figures below.
+
+On November 22, 2026, three fresh PostgreSQL 17.6 clusters per fixture gave these local medians. Matching retained requests now reuse their stored payload after validating both the supplied acquisition time and the recomputed digest. Repeating any of these fixtures added zero allocated relation bytes.
+
+| MLB date and capture | Outcome | Initial replay | Repeat before reuse | Repeat with reuse | Initial candidate growth |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Aug 28, 2017, 30 clubs | Accepted | 1.975 s | 0.628 s | 0.407 s | 3,956,736 B |
+| Aug 7, 2024, 30 clubs | Withheld | 2.769 s | 1.138 s | 0.775 s | 6,217,728 B |
+| Oct 30, 2026, Boston capture | Accepted | 0.333 s | 0.062 s | 0.034 s | 712,704 B |
+
+The restored historical research database occupied 855,592,083 bytes. Candidate relations accounted for 847,437,824 bytes, including 450,510,848 for request-to-snapshot provenance, 175,013,888 for the payload table and 136,904,704 for source-to-snapshot links. It held 5,363 distinct payloads, 5,374 jobs and 6,799 snapshots for two represented dates. Its jobs included supplemental historical inputs going back to 2013. This sample describes the retained research edition. Season-long storage requires measurement across successive production-equivalent editions.
+
+For capacity planning, Render quotes $0.30 per provisioned GB-month of PostgreSQL storage. A hypothetical 5 GB allocation costs $1.50 for a full month of storage. Database compute, worker runtime, and any chargeable bandwidth or build usage are additional. Render cron compute is billed for active seconds with a $1 monthly minimum per cron service. The incremental cost of sharing an existing allocation depends on its available capacity. A production bill or budget approval requires the actual plans, available capacity, retention volume and measured hosted runtime. [Render cost model](https://render.com/articles/how-much-does-cloud-application-hosting-cost-for-small-businesses) · [PostgreSQL allocation rules](https://render.com/docs/postgresql-creating-connecting) · [Cron billing](https://render.com/docs/cronjobs)

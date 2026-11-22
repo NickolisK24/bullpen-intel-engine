@@ -2140,3 +2140,30 @@ def test_scoped_receipt_effects_distinguish_creation_confirmation_and_supersessi
             assert empty['status'] == 'represented' and empty['changes'] == [] and empty['sha256'] == refused['sha256']
             assert read_replay_receipts(reader, day, capture) == first
             assert read_replay_receipts(reader, day - timedelta(days=1), capture)['receipts'] == []
+
+
+def test_repeated_archive_checks_digest_and_acquisition_time_before_reuse():
+    from contextlib import closing
+    from sync_v3.replay import run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for an isolated PostgreSQL server')
+    fixture = Path(__file__).parent / 'fixtures/sync_v3/quiet.json'
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            assert run_fixture(db, fixture) > 0
+            assert run_fixture(db, fixture) == 0
+            for assignment in ("received_at=received_at + interval '1 second'",
+                               "sha256=(SELECT sha256 FROM candidate.captured_requests WHERE endpoint='/transactions')"):
+                with owner, owner.cursor() as cur:
+                    cur.execute("SELECT received_at,sha256 FROM candidate.captured_requests WHERE endpoint='/schedule'")
+                    original = cur.fetchone()
+                    cur.execute("UPDATE candidate.captured_requests SET " + assignment + " WHERE endpoint='/schedule'")
+                with pytest.raises(ValueError, match='Retained request disagrees'):
+                    run_fixture(db, fixture)
+                with owner, owner.cursor() as cur:
+                    cur.execute("UPDATE candidate.captured_requests SET received_at=%s,sha256=%s WHERE endpoint='/schedule'",
+                                original)
+            assert run_fixture(db, fixture) == 0
