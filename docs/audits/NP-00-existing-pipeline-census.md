@@ -108,6 +108,14 @@ On November 21 the operator reported that out-of-band writer use is unknown. A r
 
 The window includes a known daily publication. None of the 358 PostgreSQL log entries had an INSERT, UPDATE or DELETE command tag. This log stream cannot enumerate even the known publication writes; extending the same query cannot establish the absence of other writers. A point-in-time session inventory likewise showed infrastructure labels and could not attribute past writers. Retain this as an unresolved authority question.
 
+### GitHub credential bindings for owner reconciliation
+
+At main `678036280a9b7c9acaff5e8c70196c7737310c8b`, 25 of the 27 workflow files bind the Actions secret named `DATABASE_URL` to a job or step. There are 28 distinct workflow/job pairs. The workflow inventory below names them. Exclude `ci.yml` and `phantom_game_log_guard.yml`, which use disposable PostgreSQL. Within `baseballos-sync.yml`, the four recipients are `public-sync`, `internal-enrichment`, `static-team-story-preview` and `intraday-audit`. Each of the other 24 workflows binds the secret in its single listed job. These counts describe configured access. A diagnostic can receive the credential and perform only reads.
+
+The `maintain-production` job is already included in the 28. Its conditional migration step overrides the job-level binding with `DATABASE_MIGRATION_URL` and requires `main`. None of the 28 jobs declares a GitHub Environment. The hostname stored under `BASEBALLOS_SYNC_URL` is also used to derive a dashboard read in `public-sync`; that reference supplies no additional database-role attribution. [Scheduled workflow](https://github.com/NickolisK24/bullpen-intel-engine/blob/678036280a9b7c9acaff5e8c70196c7737310c8b/.github/workflows/baseballos-sync.yml) · [Maintenance workflow](https://github.com/NickolisK24/bullpen-intel-engine/blob/678036280a9b7c9acaff5e8c70196c7737310c8b/.github/workflows/baseballos-production-maintenance.yml)
+
+Owner reconciliation needs the effective PostgreSQL role name behind each of the two GitHub bindings, the role used by each Render service in the execution map above, and any additional credential holders such as external schedulers or standalone operators. Shared roles require every known caller and its responsibility. Secret names and catalog grants alone cannot establish that mapping. Record unknown holders explicitly and keep live shadow operation and retirement pending until ownership is established.
+
 ## Historical reuse evidence
 
 The historical [SP-00 census](https://github.com/NickolisK24/bullpen-intel-engine/blob/617ab650febc1b6a8567fba264150353b2f4b3c4/docs/sync-pipeline/SP-00_BULLPEN_DATA_CENSUS_AND_ACQUISITION_CONTRACT.md) inventories source grain, fields and potential coverage as of September 5. Its claims about current storage and roster support require reconciliation with the newer schema and primary roster input writer above.
