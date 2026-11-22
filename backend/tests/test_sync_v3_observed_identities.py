@@ -264,3 +264,23 @@ def test_archived_quiet_arm_uses_only_a_confirmed_prior_outing_and_matching_coho
     arms[811315]['reason'] = 'no_recent_verified_workload'
     prior['game_date'] = '2026-10-06'
     assert _method_replay(membership, arms, through, receipt)['status'] == 'withheld'
+
+
+def test_arm_claims_require_same_complete_population_and_preserve_partial_results():
+    from sync_v3.archived_comparisons import _compare_arm_population
+
+    read = dict(label='Clean Option', key='clean_option')
+    group = dict(member_pitcher_ids=[1, 2], missing_record_pitcher_ids=[],
+                 records=[dict(pitcher_id=n, mlb_id=n+100, public_read=read) for n in (1, 2)])
+    facts = dict(arms={str(n): dict(read=dict(arm_read=read.copy()), reason=None) for n in (101, 102)})
+    assert _compare_arm_population(facts, group)['matching_players'] == [101, 102]
+    facts['arms']['101']['read']['arm_read']['label'] = 'Limited Read'
+    assert _compare_arm_population(facts, group)['differences'][101]['label']['archive'] == 'Clean Option'
+    facts['arms']['102'] = dict(read=None, reason='missing_workload')
+    partial = _compare_arm_population(facts, group)
+    assert partial['status'] == 'partial_arm_evidence' and partial['missing_players'] == [102]
+    assert 101 in partial['differences']
+    del facts['arms']['102']
+    assert _compare_arm_population(facts, group) == dict(status='population_differs', archive_only=[102], candidate_only=[])
+    group['missing_record_pitcher_ids'] = [2]
+    assert _compare_arm_population(facts, group)['status'] == 'incomplete_archived_population'

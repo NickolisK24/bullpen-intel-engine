@@ -99,3 +99,73 @@ def compare_archived_competition(report, reference):
                     clubs_missing_context=sorted(missing_context), archived_claims_withheld_under_replayed_rules=withheld)
     return dict(result, clubs_compared=len(clubs),
                 status='competition_fields_differ' if result['differences'] else 'competition_fields_match')
+
+
+def _compare_arm_population(facts, group):
+    """Compare observed arm claims only after proving both samples contain the same MLB players."""
+    records = group['records']
+    public_ids = [row['pitcher_id'] for row in records]
+    archived = {row['mlb_id']: row['public_read'] for row in records}
+    if (not records or len(archived) != len(records) or len(set(public_ids)) != len(records)
+            or group.get('missing_record_pitcher_ids') != []
+            or sorted(group['member_pitcher_ids']) != sorted(public_ids)):
+        return dict(status='incomplete_archived_population')
+    candidate = {int(player): arm for player, arm in facts['arms'].items()}
+    if candidate.keys() != archived.keys():
+        return dict(status='population_differs', candidate_only=sorted(candidate.keys() - archived.keys()),
+                    archive_only=sorted(archived.keys() - candidate.keys()))
+    differences, missing, matched = {}, [], []
+    for player, arm in sorted(candidate.items()):
+        observed = archived[player]
+        read = (arm['read'] or {}).get('arm_read')
+        if arm['reason'] or not isinstance(read, dict) or not isinstance(observed, dict) or not read or not observed:
+            missing.append(player)
+            continue
+        delta = _field_differences(read, observed)
+        if delta:
+            differences[player] = delta
+        else:
+            matched.append(player)
+    status = 'arm_fields_differ' if differences else 'arm_fields_match'
+    return dict(status='partial_arm_evidence' if missing else status,
+                matching_players=matched, differences=differences, missing_players=missing)
+
+
+def compare_archived_arm_reads(cur, generation, reference):
+    """Account for every club's pinned readiness population against one postcommit archive."""
+    from sync_v3.cohort import compare_membership
+    from sync_v3.intelligence_history import DOMAINS
+
+    cur.execute("SELECT represented,manifest->>'availability_reference' FROM candidate.generations WHERE digest=%s",
+                (generation,))
+    day, availability = cur.fetchone()
+    report = dict(scope='historical_pitcher_arm_reads', generation=generation, archive=reference.provenance,
+                  clubs={}, current_serving_eligible=False)
+    if (str(day) != reference.provenance['data_through'] or str(day) != reference.membership_reference
+            or availability != reference.availability_reference):
+        return dict(report, status='edition_dates_differ')
+    populations = compare_membership(cur, generation, day.isoformat())['clubs']
+    cur.execute("""SELECT h.mlb_id,h.facts FROM candidate.generation_inputs i
+                   JOIN candidate.workload_history h ON h.id=i.snapshot
+                   WHERE i.generation=%s AND h.subject='team' AND h.methodology=%s""",
+                (generation, DOMAINS['readiness'][1]))
+    readiness = dict(cur.fetchall())
+    for team, population in sorted(populations.items()):
+        inputs = reference.available_inputs.get(str(team))
+        facts = readiness.get(team, {})
+        if facts.get('competition', {}).get('status') == 'season_complete' and not facts.get('arms'):
+            result = dict(status='candidate_season_complete', reason=facts.get('reason'))
+        elif not inputs:
+            result = dict(status='archived_available_inputs_absent')
+        elif population != 'matched':
+            result = dict(status='candidate_population_unverified', reason=population)
+        else:
+            if facts['reference_date'] != availability:
+                raise ValueError('Frozen readiness reference differs from the generation')
+            result = _compare_arm_population(facts, inputs['arm_reads'])
+            method = facts.get('availability_method')
+            archived_method = reference.team_receipts[str(team)].get('availability_method_version')
+            result.update(candidate_method=method, archive_method=archived_method,
+                          same_method_verified=bool(method and method == archived_method))
+        report['clubs'][team] = result
+    return dict(report, status='accounted')

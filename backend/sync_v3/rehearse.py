@@ -346,7 +346,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                 reference = json.loads(Path(identity_fixture).read_text()) if identity_fixture else None
                 from sync_v3.public_identities import from_observed_publication
                 if identity_proof:
-                    reference = from_observed_publication(*identity_proof, include_available_inputs=readiness_team is not None)
+                    compare_arms = readiness_team is not None or generation or generation_batch or build_generation
+                    reference = from_observed_publication(*identity_proof, include_available_inputs=bool(compare_arms))
                 earlier = [from_observed_publication(*proof) for proof in earlier_identity_proofs]
                 install(owner, identity_export=reference, earlier_identity_exports=earlier)
                 def emit_receipts(page):
@@ -526,9 +527,11 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
                     print(json.dumps(dict(generation=digest, manifest=cur.fetchone()[0])))
                 if identity_proof:
-                    from sync_v3.archived_comparisons import compare_archived_league
+                    from sync_v3.archived_comparisons import compare_archived_arm_reads, compare_archived_league
                     from sync_v3.product_reads import preview_league
                     print(json.dumps(compare_archived_league(preview_league(worker, digest), reference)))
+                    with worker, worker.cursor() as cur:
+                        print(json.dumps(compare_archived_arm_reads(cur, digest, reference)))
                 if exercise_selection:
                     from sync_v3.editorial_reads import preview_trust, read_trust
                     from sync_v3.selection import select_generation, SelectionWithheld
