@@ -1,0 +1,104 @@
+name: Sync Pipeline 3.0 daily shadow
+
+on:
+  schedule:
+    - cron: '47 12 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/sync-v3-shadow.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
+    steps:
+      - name: Check out the reviewed candidate
+        uses: actions/checkout@v4
+        with:
+          ref: e282484562a96c0ae33056ae834fab278c11079a
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install candidate dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Capture the previous baseball day from MLB
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/shadow"
+          mkdir "$evidence"
+          day=$(TZ=America/New_York date --date=yesterday +%F)
+          echo "$day" > "$evidence/baseball-date"
+          git rev-parse HEAD > "$evidence/candidate-commit"
+          env -i PATH="$PATH" LANG=C.UTF-8 python -m sync_v3.capture_day \
+            "$day" "$evidence/capture.json" --competition
+          (cd "$evidence" && sha256sum capture.json > capture.sha256)
+
+      - name: Locate a recent scheduled publication receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/shadow"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main"
+              and .name == ("team-state-vnext-proof-" + (.workflow_run.id|tostring))) |
+              [.id,.workflow_run.id,.digest] | @tsv' > "$RUNNER_TEMP/proof-candidates"
+          while read -r id run digest; do
+            source=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" \
+              --jq '[.event,.path,.status] | join(" ")')
+            [[ "$source" == 'schedule .github/workflows/baseballos-sync.yml completed' ]] || continue
+            [[ "$digest" =~ ^sha256:([a-f0-9]{64})$ ]]
+            echo "${digest#sha256:}" > "$evidence/proof-digest"
+            echo "$run" > "$evidence/proof-run"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$evidence/proof.zip"
+            break
+          done < "$RUNNER_TEMP/proof-candidates"
+          if [[ ! -f "$evidence/proof.zip" ]]; then
+            echo 'No scheduled proof among the latest 100 artifacts; production comparison unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build and compare in socket-only PostgreSQL
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/shadow"
+          args=()
+          if [[ -f "$evidence/proof.zip" ]]; then
+            args+=(--identity-proof "$evidence/proof.zip" "$(cat "$evidence/proof-digest")")
+          fi
+          env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
+            --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" \
+            --through "$(cat "$evidence/baseball-date")" --build-generation --trace-receipts \
+            "${args[@]}" > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
+          python - "$evidence/replay.log" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as log:
+              for line in log:
+                  if line.startswith('{'):
+                      row = json.loads(line)
+                      if row.get('scope') in ('historical_league_team_state', 'historical_pitcher_arm_reads'):
+                          print(f"* {row['scope']} — {row['status']} (archive snapshot {row['archive']['snapshot_id']})")
+                  elif line.startswith('PostgreSQL ') or 'observations in fully accepted days' in line:
+                      print(f'* {line.strip()}')
+          PY
+
+      - name: Preserve shadow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-v3-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/shadow/
+          retention-days: 7
+          if-no-files-found: warn
