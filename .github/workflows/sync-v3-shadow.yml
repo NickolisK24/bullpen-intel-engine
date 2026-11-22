@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/sync-v3-shadow.yml'
+      - '.github/scripts/shadow_publication_replay.py'
 
 permissions:
   contents: read
@@ -24,7 +25,14 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: e282484562a96c0ae33056ae834fab278c11079a
+          ref: 542204cbdde908b8ef5638aea4e669a52606f3db
+          persist-credentials: false
+
+      - name: Check out the workflow's replay driver
+        uses: actions/checkout@v4
+        with:
+          path: shadow-driver
+          sparse-checkout: .github/scripts
           persist-credentials: false
 
       - uses: actions/setup-python@v5
@@ -74,20 +82,39 @@ jobs:
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/shadow"
-          args=()
-          if [[ -f "$evidence/proof.zip" ]]; then
-            args+=(--identity-proof "$evidence/proof.zip" "$(cat "$evidence/proof-digest")")
-          fi
           env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
             --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" \
             --through "$(cat "$evidence/baseball-date")" --build-generation --trace-receipts \
-            "${args[@]}" > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
-          python - "$evidence/replay.log" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+            > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
+
+      - name: Compare the archived publication on its baseball dates
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/shadow"
+          [[ -f "$evidence/proof.zip" ]] || exit 0
+          env -i PATH="$PATH" LANG=C.UTF-8 PYTHONPATH=. PYTHONUNBUFFERED=1 python \
+            "$GITHUB_WORKSPACE/shadow-driver/.github/scripts/shadow_publication_replay.py" \
+            "$evidence" "$(pg_config --bindir)" > "$evidence/publication-replay.log" 2>&1 || {
+              tail -c 4000 "$evidence/publication-replay.log"; exit 1;
+            }
+
+      - name: Summarize the comparison
+        if: always()
+        run: |
+          evidence="$RUNNER_TEMP/shadow"
+          [[ -f "$evidence/publication-replay.log" ]] || exit 0
+          python - "$evidence/publication-replay.log" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           with open(sys.argv[1]) as log:
               for line in log:
                   if line.startswith('{'):
                       row = json.loads(line)
+                      if row.get('scope') == 'publication_replay_target':
+                          print(f"* Snapshot {row['snapshot']}, workload {row['workload']}, membership {row['membership']}, availability {row['availability']}")
+                      if row.get('scope') == 'historical_club_competition':
+                          print(f"* Competition on {row['reference_date']} — {row['status']}, {row['clubs_compared']} clubs compared")
+                      if row.get('scope') == 'generation_availability_date':
+                          print(f"* Independently resolved availability {row['availability_reference']} — {row['basis']}")
                       if row.get('scope') in ('historical_league_team_state', 'historical_pitcher_arm_reads'):
                           print(f"* {row['scope']} — {row['status']} (archive snapshot {row['archive']['snapshot_id']})")
                   elif line.startswith('PostgreSQL ') or 'observations in fully accepted days' in line:
