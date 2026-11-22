@@ -17,7 +17,7 @@ from sync_v3.cohort import compare_games, compare_membership, verify_change_line
 from sync_v3.comparison import compare_readiness
 from sync_v3.discovery import calendar_requests
 from sync_v3.evidence import encode_json, latest_source_status, replay
-from sync_v3.schedule_context import missing_listings
+from sync_v3.schedule_context import missing_listings, retrospective_availability_date
 from sync_v3.history import METHODOLOGY, _transaction, encoded_evidence_digest, encoded_request
 from sync_v3.intelligence_history import DOMAINS
 
@@ -115,8 +115,30 @@ def _competitive_games(games):
     return result
 
 
-def freeze_generation(connection, through):
-    return _transaction(connection, _freeze, through)
+class GenerationDateWithheld(ValueError):
+    def __init__(self, decision):
+        self.decision = decision
+        super().__init__(decision['reason'])
+
+
+def generation_date_decision(cur, through, as_of):
+    """Select the product date independently of the archive and admit only compatible facts."""
+    if as_of < through:
+        raise ValueError('The product day precedes workload coverage')
+    decision = retrospective_availability_date(cur, through, as_of)
+    _, facts_reference = trusted_slate_reference_dates(through)
+    selected = decision['availability_reference']
+    reason = None
+    if selected is None:
+        reason = 'schedule_evidence_incomplete'
+    elif selected != facts_reference.isoformat():
+        reason = 'generation_facts_require_recalculation_for_selected_date'
+    return dict(decision, scope='generation_availability_date', facts_reference=facts_reference.isoformat(),
+                status='withheld' if reason else 'aligned', reason=reason)
+
+
+def freeze_generation(connection, through, *, as_of=None):
+    return _transaction(connection, _freeze, through, as_of)
 
 
 CLUB_INPUTS = {DOMAINS[d][1]: d for d in ('depth', 'readiness', 'rotation')}
@@ -216,7 +238,11 @@ def _assemble(cur, through):
     return manifest, parents, sources
 
 
-def _freeze(cur, through):
+def _freeze(cur, through, as_of=None):
+    if as_of is not None:
+        decision = generation_date_decision(cur, through, as_of)
+        if decision['reason']:
+            raise GenerationDateWithheld(decision)
     manifest, parents, sources = _assemble(cur, through)
     digest = sha256(encode_json(manifest)).hexdigest()
     cur.execute("""INSERT INTO candidate.generations (digest,represented,manifest) VALUES (%s,%s,%s)
@@ -295,14 +321,14 @@ def _build_change_set(cur, domain, subject, entity, through):
     return _freeze_changes(cur, domain, entity, through)
 
 
-def build_batch(connection, through, limit):
+def build_batch(connection, through, limit, *, as_of=None):
     """Materialize a bounded batch of missing or superseded candidate calculations."""
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import record_intelligence
 
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError('A rehearsal batch requires a limit between 1 and 100 scopes')
-    initial = freeze_generation(connection, through)
+    initial = freeze_generation(connection, through, as_of=as_of)
     with connection, connection.cursor() as cur:
         cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (initial,))
         manifest = cur.fetchone()[0]
@@ -330,7 +356,7 @@ def build_batch(connection, through, limit):
             _transaction(connection, _build_change_set, changes_for[method], subject, entity, through)
         else:
             build(subject, entity, method, through)
-    return dict(before=initial, after=freeze_generation(connection, through), processed=selected)
+    return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=selected)
 
 
 def review_coverage(manifest):

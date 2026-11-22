@@ -145,6 +145,15 @@ def test_rest_patterns_use_distinct_dates_and_require_coverage():
     days = calendar([0,1,2,4])
     facts = rest_from_calendar(days, 1, through)['facts']
     assert all(facts[key]['value'] for key in ('back_to_back','three_straight','three_in_four','four_in_six'))
+    off_day = through + timedelta(days=1)
+    reference = off_day + timedelta(days=1)
+    evidence = dict(data_through=str(through), availability_reference=str(reference), gaps={},
+                    dates={str(off_day): dict(source=123)})
+    shifted = rest_from_calendar(days, 1, through, date_evidence=evidence)
+    assert shifted['through'] == str(through) and shifted['reference'] == str(reference)
+    assert shifted['facts']['days_since_last_appearance']['value'] == 2
+    assert all(shifted['facts'][key]['value'] is False for key in ('pitched_yesterday', 'back_to_back', 'three_straight'))
+    assert 123 in shifted['sources'] and off_day not in days
     days[through-timedelta(days=3)] = (None,'missing_complete_schedule')
     assert rest_from_calendar(days, 1, through)['facts']['three_in_four']['value'] is None
     days = calendar([12])

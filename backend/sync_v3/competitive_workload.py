@@ -128,7 +128,7 @@ def round_game_logs(cur, player, through, rounds):
     return splits, receipts
 
 
-def competitive_pitcher_weeks(window, members, through, roster_source):
+def competitive_pitcher_weeks(window, members, through, roster_source, *, date_evidence=None):
     """Apply the Board's relief-workload rule game by game, including qualifying openers."""
     calendar = {date.fromisoformat(day): (dict(lines=[], sources=[receipt]), None)
                 for day, receipt in window['sources']['dates'].items()}
@@ -141,6 +141,6 @@ def competitive_pitcher_weeks(window, members, through, roster_source):
     for player in members:
         week = windows_from_calendar(calendar, player, through, identity_sources=[roster_source], sizes=(7,))[7]
         result[player] = {k: v for k, v in week.items() if k not in ('sources', 'identity_sources')}
-        rest = rest_from_calendar(calendar, player, through, identity_sources=[roster_source])
+        rest = rest_from_calendar(calendar, player, through, identity_sources=[roster_source], date_evidence=date_evidence)
         result[player]['rest'] = {k: v for k, v in rest.items() if k not in ('sources', 'identity_sources')}
     return result

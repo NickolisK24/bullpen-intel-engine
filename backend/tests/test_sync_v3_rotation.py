@@ -50,6 +50,7 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
     import pytest
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
+    from sync_v3.generation import build_batch, freeze_generation, GenerationDateWithheld
     from sync_v3.schedule_context import club_schedule_context, retrospective_availability_date
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
@@ -84,6 +85,29 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                 assert played_gap['availability_reference'] == str(ref) and played_gap['dates'][str(ref)]['listed_games'] == 1
                 assert context['games_today_count'] == 1
                 assert context['next_off_day'] == (ref + timedelta(days=1)).isoformat()
+            with pytest.raises(GenerationDateWithheld) as advanced:
+                build_batch(db, before, 1, as_of=ref)
+            decision = advanced.value.decision
+            assert decision['availability_reference'] == str(ref)
+            assert decision['basis'] == 'schedule_confirmed_as_of'
+            assert decision['reason'] == 'generation_facts_require_recalculation_for_selected_date'
+            with pytest.raises(GenerationDateWithheld) as incomplete:
+                freeze_generation(db, ref, as_of=ref + timedelta(days=12))
+            assert incomplete.value.decision['reason'] == 'schedule_evidence_incomplete'
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.generations')
+                assert cur.fetchone() == (0,)
+                from sync_v3.readiness import review_availability_facts
+                report = review_availability_facts(cur, before, ref)
+                assert len(report['clubs']) == 30 and report['current_serving_eligible'] is False
+                assert all(row['readiness']['reference_date'] == str(ref)
+                           and row['readiness']['membership_date'] == str(before)
+                           and row['status'] == 'withheld' for row in report['clubs'].values())
+                report = review_availability_facts(cur, ref, ref + timedelta(days=12), pitcher=123)
+                assert report['reason'] == 'schedule_evidence_incomplete' and 'rest' not in report
+            # A quiet schedule with no later listing cannot establish another rest day.
+            aligned = freeze_generation(db, ref, as_of=ref + timedelta(days=2))
+            assert aligned == freeze_generation(db, ref)
             changed = json.loads(quiet.replace('2026-11-21', str(ref)))
             changed['observed_at'] = f'{ref + timedelta(days=3)}T23:00:00Z'
             path.write_text(json.dumps(changed))
@@ -205,7 +229,7 @@ def test_moved_postponement_cannot_alone_confirm_the_gap(monkeypatch):
     moved = dict(gamePk=1, officialDate=str(as_of), teams={'home': {'team': {'id': 111}},
                  'away': {'team': {'id': 147}}}, status={'detailedState': 'Postponed', 'statusCode': 'DR'})
     games = {str(first + timedelta(days=1)): [moved]}
-    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params['startDate'])
+    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params.get('startDate'))
     monkeypatch.setattr(calendar, 'missing_listings', lambda *a: {})
     monkeypatch.setattr(calendar, 'replay', lambda cur, day: SimpleNamespace(
         body={'dates': [{'games': games.get(day, [])}]}, retrieved_at=as_of))
@@ -215,3 +239,10 @@ def test_moved_postponement_cannot_alone_confirm_the_gap(monkeypatch):
     games[str(as_of)] = [dict(moved, gamePk=2, status={'detailedState': 'Final', 'statusCode': 'F'})]
     confirmed = calendar.retrospective_availability_date(None, first, as_of)
     assert confirmed['availability_reference'] == str(as_of) and confirmed['gaps'] == {}
+    from sync_v3 import competition_calendar
+    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params.get('startDate', 12))
+    monkeypatch.setattr(competition_calendar, 'calendar_games', lambda *_: {
+        10: (first + timedelta(days=1), dict(status_state='final'), {})})
+    conflict = calendar.retrospective_availability_date(None, first, as_of)
+    assert conflict['availability_reference'] is None
+    assert conflict['gaps'] == {str(first + timedelta(days=1)): 'competition_calendar_disagrees_with_off_day'}

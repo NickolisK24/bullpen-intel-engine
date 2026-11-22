@@ -476,3 +476,39 @@ def test_playoff_pitcher_week_qualifies_each_game_side_and_keeps_quiet_arms():
     assert weeks[99]['rest']['facts']['days_since_last_appearance']['value'] is None
     uncertain = [dict(lines[0], games_started=None), *lines[1:]]
     assert competitive_pitcher_weeks(dict(sources=dict(dates=dates), lines=uncertain), [22], through, 123)[22]['facts'] is None
+
+
+def test_shifted_regular_readiness_recalculates_arm_window_without_changing_membership(monkeypatch):
+    from sync_v3 import readiness
+    from sync_v3.comparison import compare_readiness
+
+    through = date(2024, 8, 5)
+    reference = through + timedelta(days=2)
+    first = through - timedelta(days=13)
+    calls = []
+    lines = [dict(pitcher_mlb_id=7, team_id=111, game_pk=pk, game_date=str(day),
+                  pitches_thrown=20, outs_recorded=3) for pk, day in enumerate((first, through), 1)]
+    splits = [dict(date=row['game_date'], game=dict(gamePk=row['game_pk']), team=dict(id=111),
+                   stat=dict(outs=3, numberOfPitches=20)) for row in lines]
+
+    def population(cur, team, membership):
+        calls.append(membership)
+        return dict(roster_source=1, profiles={}, reason=None, members=[dict(player=7)],
+                    latest_membership_work={7: None}), {7: splits}
+
+    def regular_day(cur, day):
+        daily = [row for row in lines if row['game_date'] == str(day)]
+        return dict(lines=daily, official_lines=daily, sources=[day.toordinal()]), None
+
+    monkeypatch.setattr(readiness, 'active_group_population', population)
+    monkeypatch.setattr(readiness, 'regular_day', regular_day)
+    competition = dict(clubs={111: dict(status='active', last_final_game_type='R')},
+                       calendar_source=1, decision_sources={}, missing_decisions=[],
+                       reference_slate_source=2, postseason_started=False)
+    result = readiness._club_readiness(None, 111, through, reference, competition)
+    assert calls == [through] and result['reference_date'] == str(reference)
+    arm = result['arms'][7]['read']
+    assert arm['games_compared'] == [2]
+    assert arm['availability']['inputs']['pitches_yesterday'] == 0
+    assert arm['availability']['inputs']['days_rest'] == 2
+    assert compare_readiness(result)['arm_statuses_compared'] == 1

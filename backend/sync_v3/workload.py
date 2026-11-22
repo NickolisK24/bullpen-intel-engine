@@ -175,8 +175,22 @@ def windows_from_calendar(slices, player, through, *, identity_sources=(), sizes
     return result
 
 
-def rest_from_calendar(slices, player, through, *, identity_sources=()):
+def rest_from_calendar(slices, player, through, *, identity_sources=(), date_evidence=None):
     """The Team Board's governed facts entering the next baseball date."""
+    anchor = through
+    if date_evidence is not None:
+        if date_evidence['data_through'] != through.isoformat() or date_evidence['gaps']:
+            raise ValueError('Rest requires schedule evidence for the workload date')
+        anchor = date.fromisoformat(date_evidence['availability_reference']) - timedelta(days=1)
+        if anchor < through:
+            raise ValueError('Rest reference precedes the workload boundary')
+        slices = dict(slices)
+        for offset in range(1, (anchor - through).days + 1):
+            day = through + timedelta(days=offset)
+            source = date_evidence['dates'][day.isoformat()]['source']
+            if day in slices:
+                raise ValueError('Workload inputs extend beyond the represented date')
+            slices[day] = (dict(lines=[], sources=[source]), None)
     coverage, rows, classes, sources = {}, [], {}, set()
     for day, (observed, reason) in slices.items():
         complete = observed is not None
@@ -194,7 +208,7 @@ def rest_from_calendar(slices, player, through, *, identity_sources=()):
                                           pitches_thrown=line['pitches_thrown'])
                     rows.append(row)
                     classes[(player, row.mlb_game_pk)] = line['workload_class']
-    reference = through + timedelta(days=1)
+    reference = anchor + timedelta(days=1)
     result = {'mlb_player_id': player, 'through': through.isoformat(),
               'reference': reference.isoformat(), 'sources': sorted(sources),
               'identity_sources': list(identity_sources), 'facts': None}
@@ -203,9 +217,9 @@ def rest_from_calendar(slices, player, through, *, identity_sources=()):
 
     # The Board helper's normal input is a seven-day ledger. Check a longer
     # absence against every intervening day before using an older outing.
-    recent = [row for row in rows if row.game_date > through - timedelta(days=7)]
+    recent = [row for row in rows if row.game_date > anchor - timedelta(days=7)]
     carrier = _recent_usage_rest_pitcher(
-        pitcher_id=player, pitcher_name=None, rows=recent, anchor=through,
+        pitcher_id=player, pitcher_name=None, rows=recent, anchor=anchor,
         reference=reference, coverage=coverage, source_days_since=None,
         roster_state=None, classes=classes,
     )
@@ -216,7 +230,7 @@ def rest_from_calendar(slices, player, through, *, identity_sources=()):
     )}
     if rows and not recent:
         last = max(row.game_date for row in rows)
-        span = [last + timedelta(days=i) for i in range((through-last).days+1)]
+        span = [last + timedelta(days=i) for i in range((anchor-last).days+1)]
         if (all(coverage.get(d.isoformat(), {}).get('complete_enough_to_publish') for d in span)
                 and all(classes[(player, row.mlb_game_pk)] != BULLPEN_WORKLOAD_UNKNOWN
                         for row in rows if row.game_date == last)):

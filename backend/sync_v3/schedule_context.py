@@ -10,7 +10,7 @@ from services.schedule_absence import is_unplayed_terminal_schedule_row
 from services.schedule_context import LOOKAHEAD_DAYS, LOOKBACK_DAYS, build_team_schedule_context
 from services.schedule_ingestion import _parse_game
 from sync_v3.dependencies import consult
-from sync_v3.discovery import calendar_requests
+from sync_v3.discovery import calendar_requests, competition_calendar_request
 from sync_v3.evidence import latest_qualified_source, replay
 
 
@@ -102,9 +102,34 @@ def retrospective_availability_date(cur, through, as_of):
         if schedule_aware_availability_reference_date(through, as_of, rows + possible) != resolved:
             gaps.update({day.isoformat(): 'postponed_listing_date_unresolved' for day, _ in moved_postponements})
             resolved = None
-    return dict(scope='retrospective_availability_date', data_through=through.isoformat(),
+    season_sources = []
+    if resolved and resolved > base:
+        from sync_v3.competition_calendar import calendar_games
+        for year in range(base.year, resolved.year + 1):
+            request = competition_calendar_request(year)
+            source = latest_qualified_source(cur, request.endpoint, request.params())
+            if source is None:
+                continue
+            season_sources.append(source)
+            games = calendar_games(request.params(), replay(cur, source).body)
+            for day, row, _ in games.values():
+                if base <= day < resolved and row['status_state'] not in ('postponed', 'cancelled'):
+                    gaps[str(day)] = 'competition_calendar_disagrees_with_off_day'
+        if gaps:
+            resolved = None
+    if resolved is None:
+        basis = 'incomplete_schedule_evidence'
+    elif as_of <= base:
+        basis = 'day_after_workload'
+    elif resolved == as_of:
+        basis = 'schedule_confirmed_as_of'
+    elif any(row.game_date == resolved and row.status_state != 'postponed' for row in rows):
+        basis = 'intervening_game_listed'
+    else:
+        basis = 'no_confirming_later_listing'
+    return dict(scope='retrospective_availability_date', basis=basis, data_through=through.isoformat(),
                 as_of=as_of.isoformat(), availability_reference=resolved.isoformat() if resolved else None,
-                dates=dates, gaps=gaps, current_serving_eligible=False)
+                dates=dates, gaps=gaps, season_calendar_sources=season_sources, current_serving_eligible=False)
 
 
 def club_schedule_context(cur, team, reference):
