@@ -2213,7 +2213,13 @@ def test_multi_player_trade_retains_one_version_and_distinct_participants():
             assert outcome == 'refused'
             conflict, outcome = observe(4, [*rows, leg(543243, 147, 133)])
             assert outcome == 'refused'
+            disconnected, outcome = observe(5, [*corrected, leg(100, 111, 114)])
+            assert outcome == 'refused'
+            expanded, outcome = observe(6, [*corrected, leg(100, 111, 147), leg(101, 133, 111)])
+            assert outcome == 'received'
             with db, db.cursor() as cur:
+                assert not _confirmed_transactions(cur, disconnected)
+                assert len(_confirmed_transactions(cur, expanded)) == 7
                 saved = _confirmed_transactions(cur, first)
                 assert saved == _confirmed_transactions(cur, again)
                 assert {identity for identity, _, _ in saved} == {'326926'}
@@ -2224,5 +2230,5 @@ def test_multi_player_trade_retains_one_version_and_distinct_participants():
                 assert not _confirmed_transactions(cur, partial)
                 assert not _confirmed_transactions(cur, conflict)
                 cur.execute("SELECT id,predecessor FROM candidate.revisions WHERE domain='transaction' ORDER BY revision")
-                original, replacement = cur.fetchall()
-                assert original[1] is None and replacement[1] == original[0]
+                original, replacement, extension = cur.fetchall()
+                assert original[1] is None and replacement[1] == original[0] and extension[1] == replacement[0]

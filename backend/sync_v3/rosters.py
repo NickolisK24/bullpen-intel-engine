@@ -90,10 +90,8 @@ def _transaction_facts(records):
     if all(entry == records[0] for entry in records):
         return first
     # MLB assigns one ID to a trade and reports one row per player or consideration.
-    # Require distinct legs of the same dated two-club trade before grouping them.
-    clubs = (first['from_team_id'], first['to_team_id'])
-    if clubs[0] == clubs[1] or any(team not in MLB_TEAM_IDS for team in clubs):
-        raise Refused('Contradictory evidence at the same source instant')
+    # Require distinct legs of one dated trade connecting the participating MLB clubs.
+    clubs = {}
     legs = {}
     for record, type_description in records:
         player = record['player_mlb_id']
@@ -101,7 +99,8 @@ def _transaction_facts(records):
         descriptions = [value for value in (record['transaction_type_description'], type_description) if value is not None]
         if (record['transaction_type_code'] != 'TR' or not descriptions or any(value != 'Trade' for value in descriptions)
                 or record['transaction_id'] != first['transaction_id']
-                or (origin, destination) not in (clubs, clubs[::-1]) or not first['transaction_date']
+                or origin not in MLB_TEAM_IDS or destination not in MLB_TEAM_IDS or origin == destination
+                or not first['transaction_date']
                 or record['transaction_date'] != first['transaction_date']
                 or (player is not None and (type(player) is not int or player <= 0))):
             raise Refused('Contradictory evidence at the same source instant')
@@ -111,6 +110,18 @@ def _transaction_facts(records):
         if leg in legs:
             raise Refused('Contradictory evidence at the same source instant')
         legs[leg] = dict(record, transaction_type_description='Trade')
+        clubs.setdefault(origin, set()).add(destination)
+        clubs.setdefault(destination, set()).add(origin)
+    # Distinct deals sharing an ID cannot be joined without a connecting transfer.
+    connected = set()
+    pending = [first['from_team_id']]
+    while pending:
+        club = pending.pop()
+        if club not in connected:
+            connected.add(club)
+            pending.extend(clubs[club] - connected)
+    if connected != clubs.keys():
+        raise Refused('Disconnected official trade participants')
     if not any(key[0] for key in legs):
         raise Refused('Trade participants unresolved')
     return dict(transaction_id=first['transaction_id'], trade_legs=[legs[key] for key in sorted(legs)])
