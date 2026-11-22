@@ -97,6 +97,14 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
             with db, db.cursor() as cur:
                 cur.execute('SELECT count(*) FROM candidate.generations')
                 assert cur.fetchone() == (0,)
+                from sync_v3.readiness import review_availability_facts
+                report = review_availability_facts(cur, before, ref)
+                assert len(report['clubs']) == 30 and report['current_serving_eligible'] is False
+                assert all(row['readiness']['reference_date'] == str(ref)
+                           and row['readiness']['membership_date'] == str(before)
+                           and row['status'] == 'withheld' for row in report['clubs'].values())
+                report = review_availability_facts(cur, ref, ref + timedelta(days=12), pitcher=123)
+                assert report['reason'] == 'schedule_evidence_incomplete' and 'rest' not in report
             # A quiet schedule with no later listing cannot establish another rest day.
             aligned = freeze_generation(db, ref, as_of=ref + timedelta(days=2))
             assert aligned == freeze_generation(db, ref)
@@ -221,7 +229,7 @@ def test_moved_postponement_cannot_alone_confirm_the_gap(monkeypatch):
     moved = dict(gamePk=1, officialDate=str(as_of), teams={'home': {'team': {'id': 111}},
                  'away': {'team': {'id': 147}}}, status={'detailedState': 'Postponed', 'statusCode': 'DR'})
     games = {str(first + timedelta(days=1)): [moved]}
-    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params['startDate'])
+    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params.get('startDate'))
     monkeypatch.setattr(calendar, 'missing_listings', lambda *a: {})
     monkeypatch.setattr(calendar, 'replay', lambda cur, day: SimpleNamespace(
         body={'dates': [{'games': games.get(day, [])}]}, retrieved_at=as_of))
@@ -231,3 +239,10 @@ def test_moved_postponement_cannot_alone_confirm_the_gap(monkeypatch):
     games[str(as_of)] = [dict(moved, gamePk=2, status={'detailedState': 'Final', 'statusCode': 'F'})]
     confirmed = calendar.retrospective_availability_date(None, first, as_of)
     assert confirmed['availability_reference'] == str(as_of) and confirmed['gaps'] == {}
+    from sync_v3 import competition_calendar
+    monkeypatch.setattr(calendar, 'latest_qualified_source', lambda cur, ep, params: params.get('startDate', 12))
+    monkeypatch.setattr(competition_calendar, 'calendar_games', lambda *_: {
+        10: (first + timedelta(days=1), dict(status_state='final'), {})})
+    conflict = calendar.retrospective_availability_date(None, first, as_of)
+    assert conflict['availability_reference'] is None
+    assert conflict['gaps'] == {str(first + timedelta(days=1)): 'competition_calendar_disagrees_with_off_day'}

@@ -40,7 +40,11 @@ def verified_quiet_arm(player, latest, reference):
 
 def represented_readiness(cur, team, through):
     membership, reference = trusted_slate_reference_dates(through)
-    league = competition_status(cur, reference)
+    return _club_readiness(cur, team, membership, reference, competition_status(cur, reference))
+
+
+def _club_readiness(cur, team, through, reference, league, date_evidence=None):
+    membership = through
     club = league['clubs'][team]
     result = {'team': team, 'membership_date': membership.isoformat(), 'reference_date': reference.isoformat(),
               'mode': 'retrospective_candidate', 'current_serving_eligible': False, 'competition': club,
@@ -90,17 +94,23 @@ def represented_readiness(cur, team, through):
             sources.update(sample['sources'])
             lines.extend(sample['official_lines'])
         result['workload_sources'] = sorted(sources)
+    arm_lines = window['lines'] if postseason else lines
+    if reference > through + timedelta(days=1):
+        # The membership and season totals still belong to the workload date.
+        # Drop outings that have aged out of the arm classifier's shifted window.
+        start = (reference - timedelta(days=ACTIVE_WINDOW_DAYS)).isoformat()
+        arm_lines = [line for line in arm_lines if line['game_date'] >= start]
     records = []
     for player in members:
         if postseason:
             splits, _ = round_game_logs(cur, player, through, window['rounds'])
             if splits is None:
                 return dict(result, arms={}, reason='missing_round_game_log')
-            arm, reason = round_workload(player, splits, window['lines'], reference)
+            arm, reason = round_workload(player, splits, arm_lines, reference)
             if reason not in (None, 'no_recent_verified_workload'):
                 return dict(result, arms={}, reason=reason)
         else:
-            arm, reason = _represented_arm(player, splits[player], lines, reference)
+            arm, reason = _represented_arm(player, splits[player], arm_lines, reference)
         current = arm is not None
         if reason == 'no_recent_verified_workload':
             arm = verified_quiet_arm(player, latest[player], reference)
@@ -112,7 +122,7 @@ def represented_readiness(cur, team, through):
             'has_availability': bool(arm), 'has_current_workload': current,
         }))
     if postseason:
-        result['competitive_pitcher_weeks'] = competitive_pitcher_weeks(window, members, through, roster[1])
+        result['competitive_pitcher_weeks'] = competitive_pitcher_weeks(window, members, through, roster[1], date_evidence=date_evidence)
     usable = sum(record['has_availability'] for record in records)
     reasons = {arm['reason'] for arm in result['arms'].values()}
     coverage = assess_team_coverage(authority_complete=True, source_current=True, active_bullpen_count=len(records),
@@ -131,3 +141,35 @@ def represented_readiness(cur, team, through):
     else:
         result['reason'] = coverage.reason_code
     return result
+
+
+def review_availability_facts(cur, through, as_of, *, team=None, pitcher=None):
+    """Recalculate isolated facts using a product date established by retained schedules."""
+    from sync_v3.comparison import compare_readiness
+    from sync_v3.rosters import dated_pitcher_sources
+    from sync_v3.schedule_context import retrospective_availability_date
+    from sync_v3.workload import load_calendar, rest_from_calendar
+
+    if (team is not None and pitcher is not None) or as_of < through:
+        raise ValueError('Specify at most one subject and a product day on or after coverage')
+    evidence = retrospective_availability_date(cur, through, as_of)
+    report = dict(scope='historical_availability_facts', date_evidence=evidence, team=team, pitcher=pitcher,
+                  current_serving_eligible=False)
+    if evidence['availability_reference'] is None:
+        return dict(report, status='withheld', reason='schedule_evidence_incomplete')
+    if pitcher is None:
+        reference = date.fromisoformat(evidence['availability_reference'])
+        competition = competition_status(cur, reference)
+        clubs = {}
+        for club in ([team] if team is not None else sorted(competition['clubs'])):
+            facts = _club_readiness(cur, club, through, reference, competition, evidence)
+            clubs[club] = dict(status='calculated' if facts['team_state'] else 'withheld',
+                               reason=facts['reason'], readiness=facts, comparison=compare_readiness(facts))
+        if team is not None:
+            return dict(report, **clubs[team])
+        return dict(report, clubs=clubs)
+    calendar = load_calendar(cur, through)
+    sources = dated_pitcher_sources(cur, pitcher, through)
+    rest = rest_from_calendar(calendar, pitcher, through, identity_sources=sources, date_evidence=evidence)
+    return dict(report, status='calculated' if rest['facts'] else 'withheld',
+                workload_scope='regular_season', rest=rest)

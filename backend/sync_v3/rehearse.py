@@ -414,6 +414,13 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     print(json.dumps(dict(subject=subject, mlb_id=mlb_id, through=day.isoformat(),
                                           snapshot_id=result[0], revision=result[1], semantic_digest=result[2],
                                           input_digest=input_digest)))
+            elif availability_as_of is not None and (readiness_team is not None or pitcher is not None or league):
+                from sync_v3.readiness import review_availability_facts
+                with worker, worker.cursor() as cur:
+                    cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                    report = review_availability_facts(cur, through, availability_as_of,
+                                                       team=readiness_team, pitcher=pitcher)
+                    print(json.dumps(report, sort_keys=True))
             elif readiness_team is not None:
                 import json
                 from sync_v3.comparison import compare_readiness
@@ -513,8 +520,13 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     GenerationDateWithheld, build_batch, freeze_generation, generation_date_decision, verify_generation,
                 )
                 product_day = availability_as_of or (through + timedelta(days=1))
+                recalculated = None
                 with worker, worker.cursor() as cur:
+                    cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
                     decision = generation_date_decision(cur, through, product_day)
+                    if build_generation and decision['reason'] == 'generation_facts_require_recalculation_for_selected_date':
+                        from sync_v3.readiness import review_availability_facts
+                        recalculated = review_availability_facts(cur, through, product_day)
                 if identity_proof and reference.provenance['data_through'] == through.isoformat():
                     decision['archived_availability_reference'] = reference.availability_reference
                     if decision['availability_reference'] is None:
@@ -524,6 +536,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     else:
                         decision['archive_date_comparison'] = 'date_differs'
                 print(json.dumps(decision, sort_keys=True), flush=True)
+                if recalculated is not None:
+                    print(json.dumps(recalculated, sort_keys=True), flush=True)
                 if decision['reason']:
                     raise GenerationDateWithheld(decision)
                 if generation_batch or build_generation:
@@ -617,7 +631,7 @@ if __name__ == '__main__':
     subject = parser.add_mutually_exclusive_group()
     subject.add_argument('--readiness-team', type=int, help='Inspect represented regular-season Team State and arm reads')
     subject.add_argument('--competition', action='store_true', help='Classify all clubs on the retrospective reference date')
-    subject.add_argument('--availability-as-of', type=date.fromisoformat,
+    parser.add_argument('--availability-as-of', type=date.fromisoformat,
                          help='Product day for schedule-based availability date replay or generation admission')
     subject.add_argument('--schedule-team', type=int, help='Inspect the retrospective club calendar around a date')
     subject.add_argument('--performance-team', type=int, help='Inspect retrospective active bullpen performance')
@@ -650,6 +664,10 @@ if __name__ == '__main__':
     has_subject = args.build_generation or args.league or args.competition or any(value is not None for value in (
         args.pitcher, args.team, args.game, args.deployment_team, args.performance_team, args.schedule_team, args.readiness_team, args.availability_as_of,
     ))
+    if args.availability_as_of and any((args.snapshot, args.snapshot_domain, args.competition,
+                                       args.deployment_team, args.performance_team, args.schedule_team,
+                                       args.team, args.game)):
+        parser.error('--availability-as-of supports generation, --league, --readiness-team, --pitcher, or date replay')
     if args.measure_replay and not args.fixture:
         parser.error('--measure-replay requires an offline source fixture')
     if args.trace_receipts and not args.fixture:

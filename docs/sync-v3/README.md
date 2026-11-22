@@ -295,6 +295,24 @@ the archive date separately. A missing or contradictory schedule withholds the b
 A confirmed later date also withholds the build while the stored readiness and rest
 calculations still describe the earlier date. No frozen edition is relabeled.
 
+Use `--availability-as-of` with `--league`, `--readiness-team MLB_TEAM_ID`, or
+`--pitcher MLB_PLAYER_ID` for a read-only calculation on the independently resolved
+date. Supply the workload and roster fixtures for `--through` and the schedule
+fixtures through the product day's confirmation lookahead. Pitcher detail in this
+rehearsal covers regular-season relief. Postseason club readiness uses competitive
+pitching lines and the dated active roster. The shifted rest calculation includes
+confirmed intervening off-days. Workload totals and membership keep their original
+coverage date. A conflicting game in a retained competitive season calendar vetoes
+an off-day. A build for a confirmed later date emits these recalculated club facts
+before withholding the mixed-date generation. The report has no selection authority.
+
+For July 16, 2024 coverage, Tyler Rogers's last verified relief appearance was July 14.
+The July 17 and 18 reads reported three and four days since that appearance. For
+October 19, 2026 coverage, the October 20 and 21 reads retained eight Tampa Bay arms
+and seven Milwaukee arms. All 15 gained a day of rest. The October 21 league check
+reproduced both Team States from their recalculated partitions and withheld states
+for the 28 season-complete clubs.
+
 Snapshot 5844 (sync run 98434) carried October 28 workload and October 30 availability.
 With November 21 as the test product day, all 27 retrospective league schedules from
 October 29 through November 24 were empty. The production resolver therefore stopped
