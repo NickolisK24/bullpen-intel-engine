@@ -42,7 +42,7 @@ def test_shortened_final_keeps_official_work_but_excludes_rotation_assessment():
     assert report['windows']['7']['pressure']['excluded_game_reasons'] == {'incomplete_outs': 1}
 
 
-def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
+def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path, monkeypatch):
     import json
     import os
     from pathlib import Path
@@ -105,6 +105,54 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                            and row['status'] == 'withheld' for row in report['clubs'].values())
                 report = review_availability_facts(cur, ref, ref + timedelta(days=12), pitcher=123)
                 assert report['reason'] == 'schedule_evidence_incomplete' and 'rest' not in report
+            from sync_v3.readiness_history import (
+                read_availability_edition, read_availability_snapshot, record_availability_snapshots,
+            )
+            from sync_v3.selection import select_generation
+            earlier = record_availability_snapshots(db, before, before + timedelta(days=1))
+            original = read_availability_edition(db, earlier['generation'])
+            from sync_v3 import readiness_history
+            store = readiness_history._store
+
+            def fail_after_first_club(cur, subject, entity, *args):
+                if entity != min(original['clubs']):
+                    raise RuntimeError('Interrupted club build')
+                return store(cur, subject, entity, *args)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(readiness_history, '_store', fail_after_first_club)
+                with pytest.raises(RuntimeError, match='Interrupted club build'):
+                    record_availability_snapshots(db, before, ref)
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.workload_history WHERE represented=%s AND methodology=%s',
+                            (ref, readiness_history.AVAILABILITY_HISTORY))
+                assert cur.fetchone() == (0,)
+            later = record_availability_snapshots(db, before, ref)
+            assert later == record_availability_snapshots(db, before, ref)
+            assert later['generation'] != earlier['generation']
+            edition = read_availability_edition(db, later['generation'])
+            assert len(edition['clubs']) == 30 and edition['data_through'] == str(before)
+            assert edition['availability_reference'] == str(ref)
+            assert read_availability_edition(db, earlier['generation']) == original
+            from sync_v3.history_delivery import historical_history_app
+            client = historical_history_app(connect).test_client()
+            for stored in (original, edition):
+                response = client.get('/api/sync-v3/availability-editions/' + stored['generation'])
+                assert response.status_code == 200
+                assert response.json == json.loads(json.dumps(stored))
+            assert client.get('/api/sync-v3/availability-editions/' + '0' * 64).status_code == 404
+            sid = edition['clubs'][111]['snapshot_id']
+            frozen = read_availability_snapshot(db, sid)
+            assert frozen['facts']['readiness'] == edition['clubs'][111]['readiness']
+            assert frozen['availability_reference'] == str(ref)
+            from contextlib import closing
+            with closing(connect(reviewer=True)) as reviewer:
+                with pytest.raises(ValueError, match='full historical core'):
+                    select_generation(reviewer, later['generation'], expected_revision=0)
+                from psycopg2.errors import RaiseException
+                with pytest.raises(RaiseException, match='Ineligible historical selection'), reviewer, reviewer.cursor() as cur:
+                    cur.execute("SELECT candidate.record_core_selection(0,%s,'select')", (later['generation'],))
+            # The newly retained historical sample must leave the old core inventory alone.
             # A quiet schedule with no later listing cannot establish another rest day.
             aligned = freeze_generation(db, ref, as_of=ref + timedelta(days=2))
             assert aligned == freeze_generation(db, ref)
@@ -118,6 +166,12 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                 assert report['gaps'] == {ref.isoformat(): 'previous_listing_requires_absence_proof'}
                 removed = retrospective_availability_date(cur, before, ref)
                 assert removed['availability_reference'] is None and removed['gaps'] == report['gaps']
+            withheld = record_availability_snapshots(db, before, ref)
+            assert withheld['status'] == 'withheld' and not withheld['snapshots']
+            assert read_availability_edition(db, later['generation']) == edition
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.core_selections')
+                assert cur.fetchone() == (0,)
         finally:
             db.close()
 
