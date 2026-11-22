@@ -145,12 +145,13 @@ def _intelligence_dependencies(cur, receipt, domains, *, after_snapshot_id=None)
     by_method = {DOMAINS[domain][1]: domain for domain in domains}
     cur.execute("""SELECT h.methodology,h.mlb_id,h.represented,h.id,h.revision FROM candidate.history_requests d
                    JOIN candidate.workload_history h ON h.id=d.snapshot
-                   WHERE d.endpoint=%s AND d.parameters=%s AND h.methodology=ANY(%s) AND h.id>%s AND NOT EXISTS (
+                   WHERE d.endpoint=%s AND jsonb_hash(d.parameters)=jsonb_hash(%s::jsonb)
+                     AND d.parameters=%s AND h.methodology=ANY(%s) AND h.id>%s AND NOT EXISTS (
                        SELECT 1 FROM candidate.workload_history newer WHERE
                        (newer.subject,newer.mlb_id,newer.represented,newer.methodology)=
                        (h.subject,h.mlb_id,h.represented,h.methodology) AND newer.revision>h.revision)
                    ORDER BY CASE WHEN %s THEN h.id END,h.subject,h.mlb_id,h.represented,h.methodology LIMIT %s""",
-                (request[0], Json(request[1]), list(by_method), after_snapshot_id or 0,
+                (request[0], Json(request[1]), Json(request[1]), list(by_method), after_snapshot_id or 0,
                  after_snapshot_id is not None, 33 if after_snapshot_id is not None else None))
     return [(by_method[method], identity, through, snapshot, revision)
             for method, identity, through, snapshot, revision in cur]

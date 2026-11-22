@@ -30,7 +30,8 @@ CREATE TABLE candidate.history_requests (
     parameters jsonb NOT NULL,
     PRIMARY KEY (snapshot, endpoint, parameters)
 );
-CREATE INDEX history_requests_by_source ON candidate.history_requests(endpoint, parameters, snapshot);
+-- Repeated requests share index keys. Readers still check the full parameters.
+CREATE INDEX history_requests_by_source ON candidate.history_requests(endpoint, jsonb_hash(parameters));
 GRANT SELECT, INSERT ON candidate.history_requests TO sync_v3_worker;
 
 CREATE TABLE candidate.change_inputs (
