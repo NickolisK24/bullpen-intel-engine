@@ -467,6 +467,30 @@ def _schedule(team_id, opponent_id, game_pk, day, state):
     ))
 
 
+def test_retired_world_series_games_cannot_confirm_an_off_day(app):
+    from services.schedule_absence import SCHEDULE_RETIRED_STATUS_CODE
+
+    through = date(2026, 10, 28)
+    as_of = date(2026, 11, 22)
+    for game_pk, day in ((849801, 30), (849800, 31)):
+        for team in (139, 158):
+            db.session.add(ScheduledGame(
+                team_id=team, game_pk=game_pk, game_date=date(2026, 10, day),
+                game_type='W', if_necessary='Y', status_state='other',
+                status_code=SCHEDULE_RETIRED_STATUS_CODE,
+            ))
+    db.session.flush()
+    resolve = reference_authority.resolve_availability_reference_date
+    assert resolve(through, as_of) == date(2026, 10, 29)
+
+    # A real listing still confirms the gap across a retired game's date.
+    # A missing provider status code must keep an unresolved game in scope.
+    _schedule(139, 158, 999999, date(2026, 10, 31), 'other')
+    assert resolve(through, as_of) == date(2026, 10, 31)
+    _schedule(139, 158, 999998, date(2026, 10, 29), 'scheduled')
+    assert resolve(through, as_of) == date(2026, 10, 29)
+
+
 def _seed_sep_29_matchup():
     """Cubs at Padres on Sep 29; both clubs last played Sep 27; no games Sep 28."""
     arms = {}
