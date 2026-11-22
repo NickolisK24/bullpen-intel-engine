@@ -146,6 +146,7 @@ def schedule_aware_availability_reference_date(coverage_date, as_of_date=None, s
 def load_schedule_rows_after(coverage_date, as_of_date):
     """One bounded ``scheduled_games`` read for the gap after ``coverage_date``."""
     from models.scheduled_game import ScheduledGame
+    from services.schedule_absence import SCHEDULE_RETIRED_STATUS_CODE
 
     coverage = parse_reference_date(coverage_date)
     as_of = parse_reference_date(as_of_date)
@@ -157,6 +158,9 @@ def load_schedule_rows_after(coverage_date, as_of_date):
         .with_entities(ScheduledGame.game_date, ScheduledGame.status_state)
         .filter(ScheduledGame.game_date > coverage)
         .filter(ScheduledGame.game_date <= horizon)
+        # MLB removed these conditional games. The retained history is neither
+        # a game in the gap nor a later listing that proves an off-day.
+        .filter(ScheduledGame.status_code.is_distinct_from(SCHEDULE_RETIRED_STATUS_CODE))
         .all()
     )
 
