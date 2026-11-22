@@ -88,7 +88,14 @@ def _confirmed_transactions(cur, source):
     cur.execute("""SELECT c.identity,r.revision,r.facts FROM candidate.confirmations c
                    JOIN candidate.revisions r ON r.id=c.revision_id AND r.domain=c.domain AND r.identity=c.identity
                    WHERE c.source_id=%s AND c.domain='transaction' ORDER BY c.identity""", (source,))
-    return cur.fetchall()
+    rows = []
+    for identity, revision, facts in cur.fetchall():
+        if 'trade_legs' in facts:
+            for leg in facts['trade_legs']:
+                rows.append((identity, revision, leg))
+        else:
+            rows.append((identity, revision, facts))
+    return rows
 
 
 def _bind_transaction_revisions(cur, source, receipt):

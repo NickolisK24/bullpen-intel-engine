@@ -2167,3 +2167,62 @@ def test_repeated_archive_checks_digest_and_acquisition_time_before_reuse():
                     cur.execute("UPDATE candidate.captured_requests SET received_at=%s,sha256=%s WHERE endpoint='/schedule'",
                                 original)
             assert run_fixture(db, fixture) == 0
+
+
+def test_multi_player_trade_retains_one_version_and_distinct_participants():
+    from contextlib import closing
+    from sync_v3.generation import _confirmed_transactions
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2017, 7, 31)
+    at = datetime(2017, 8, 1, tzinfo=timezone.utc)
+
+    def leg(player, origin, destination):
+        row = dict(id=326926, date=str(day), effectiveDate=str(day), typeCode='TR', typeDesc='Trade',
+                   fromTeam=dict(id=origin), toTeam=dict(id=destination))
+        if player:
+            row['person'] = dict(id=player)
+        return row
+
+    rows = [leg(543243, 133, 147), leg(621076, 147, 133), leg(641583, 147, 133),
+            leg(622761, 147, 133), leg(None, 133, 147)]
+    rows[1]['effectiveDate'] = '2017-08-01'
+    corrected = [dict(row, effectiveDate='2017-08-02') for row in rows]
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            def observe(offset, records):
+                from sync_v3.discovery import calendar_requests
+                from sync_v3 import queue, evidence, rosters
+                clock = at + timedelta(hours=offset)
+                request = calendar_requests(day)[1]
+                with db, db.cursor() as cur:
+                    queue.enqueue(cur, f'trade-{offset}', dict(endpoint=request.endpoint, params=request.params()), clock)
+                    claimed = queue.claim(cur, clock)
+                return evidence.execute(db, claimed, lambda *a, **k: {'transactions': records}, lambda: clock,
+                                        on_received=lambda c, oid, acquisition: rosters.observe(c, oid, acquisition))
+            first, outcome = observe(0, rows)
+            assert outcome == 'received'
+            again, outcome = observe(1, list(reversed(rows)))
+            assert outcome == 'received'
+            changed, outcome = observe(2, corrected)
+            assert outcome == 'received'
+            partial, outcome = observe(3, corrected[:1])
+            assert outcome == 'refused'
+            conflict, outcome = observe(4, [*rows, leg(543243, 147, 133)])
+            assert outcome == 'refused'
+            with db, db.cursor() as cur:
+                saved = _confirmed_transactions(cur, first)
+                assert saved == _confirmed_transactions(cur, again)
+                assert {identity for identity, _, _ in saved} == {'326926'}
+                assert {facts['player_mlb_id'] for _, _, facts in saved} == {543243, 621076, 641583, 622761, None}
+                assert {facts['effective_date'] for _, _, facts in saved} == {'2017-07-31', '2017-08-01'}
+                assert len(saved) == 5 and all(rev == 1 for _, rev, _ in saved)
+                assert all(rev == 2 for _, rev, _ in _confirmed_transactions(cur, changed))
+                assert not _confirmed_transactions(cur, partial)
+                assert not _confirmed_transactions(cur, conflict)
+                cur.execute("SELECT id,predecessor FROM candidate.revisions WHERE domain='transaction' ORDER BY revision")
+                original, replacement = cur.fetchall()
+                assert original[1] is None and replacement[1] == original[0]

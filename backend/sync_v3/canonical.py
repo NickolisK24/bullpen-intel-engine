@@ -22,6 +22,13 @@ class Refused(ValueError):
     pass
 
 
+def trade_leg_identity(record):
+    player = record['player_mlb_id']
+    if player is None:
+        return (0, record['from_team_id'], record['to_team_id'])
+    return (player, 0, 0)
+
+
 def accept(cur, domain, identity, facts, source_id, observed_at, *, context_id=None):
     """Serialize a single subject, including its first version and unchanged receipts."""
     identity = str(identity)
@@ -40,6 +47,11 @@ def accept(cur, domain, identity, facts, source_id, observed_at, *, context_id=N
                 return None
         if observed_at == current[3] and current[2] != facts:
             raise Refused('Contradictory evidence at the same source instant')
+        if domain == 'transaction' and ('trade_legs' in current[2] or 'trade_legs' in facts):
+            prior_legs = current[2].get('trade_legs', [current[2]])
+            new_legs = facts.get('trade_legs', [facts])
+            if not {trade_leg_identity(row) for row in prior_legs}.issubset(map(trade_leg_identity, new_legs)):
+                raise Refused('Later trade response omits a previously confirmed participant or consideration')
     if current and current[2] == facts:
         version = current[0]
     else:

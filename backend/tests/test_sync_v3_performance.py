@@ -232,6 +232,10 @@ def test_transaction_qualification_preserves_dates_and_requires_independent_pitc
     assert event['label'] == 'Recalled' and event['pitcher']['pitcher_id'] == 14
     assert event['transaction_date'] == str(day) and event['effective_date'] == '2017-08-28'
     assert event['transaction_revision'] == 2 and event['roster_digest'] == observation['roster_digest']
+    trade = _qualified_event(dict(facts, transaction_type_code='TR', from_team_id=111, transaction_type_description='Trade'),
+                             2, pitcher, day, source)
+    # The existing public qualifier has no classification for MLB's TR code.
+    assert trade is None
     for other in (dict(pitcher, public_id=None), dict(pitcher, mlb_id=101),
                   dict(pitcher, roster_observation=dict(observation, represented='2017-08-28')),
                   dict(pitcher, team_id=552, roster_observation=dict(observation, team_id=552)),

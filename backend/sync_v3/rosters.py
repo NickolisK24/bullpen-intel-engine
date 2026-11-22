@@ -9,7 +9,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import roster_entry_player_id
 from sync_v3.dependencies import consult
 from sync_v3.evidence import latest_source_status
-from sync_v3.canonical import Refused, accept
+from sync_v3.canonical import Refused, accept, trade_leg_identity
 from sync_v3.roster_scope import classify_roster_team
 
 
@@ -58,7 +58,7 @@ def observe(cur, source_id, capture, *, replay_batch=False):
             accept(cur, 'roster', identity, facts, source_id, capture.retrieved_at)
     if req.endpoint != '/transactions':
         return set()
-    teams = set()
+    grouped = {}
     for item in capture.body['transactions']:
         if not isinstance(item, dict):
             raise Refused('Malformed official transaction')
@@ -67,16 +67,53 @@ def observe(cur, source_id, capture, *, replay_batch=False):
             record.pop(key, None)
         if not record['transaction_id']:
             raise Refused('Official transaction identity is required')
-        revision = accept(cur, 'transaction', record['transaction_id'], record, source_id, capture.retrieved_at)
-        if replay_batch:
-            # Independently captured dated roster responses exist even when another
-            # fixture has already confirmed the same transaction. Preserve their scope.
-            teams.update(t for t in (record['from_team_id'], record['to_team_id']) if t in MLB_TEAM_IDS)
-        elif revision:
+        grouped.setdefault(str(record['transaction_id']), []).append((record, item.get('typeDesc')))
+
+    teams = set()
+    for identity, records in grouped.items():
+        facts = _transaction_facts(records)
+        revision = accept(cur, 'transaction', identity, facts, source_id, capture.retrieved_at)
+        if not replay_batch:
+            if not revision:
+                continue
             cur.execute('SELECT source_id FROM candidate.revisions WHERE id=%s', (revision,))
-            if cur.fetchone()[0] == source_id:
-                teams.update(t for t in (record['from_team_id'], record['to_team_id']) if t in MLB_TEAM_IDS)
+            if cur.fetchone()[0] != source_id:
+                continue
+        # A trade signals a dated roster check. Its legs do not establish membership.
+        for record, _ in records:
+            teams.update(t for t in (record['from_team_id'], record['to_team_id']) if t in MLB_TEAM_IDS)
     return teams
+
+
+def _transaction_facts(records):
+    first, _ = records[0]
+    if all(entry == records[0] for entry in records):
+        return first
+    # MLB assigns one ID to a trade and reports one row per player or consideration.
+    # Require distinct legs of the same dated two-club trade before grouping them.
+    clubs = (first['from_team_id'], first['to_team_id'])
+    if clubs[0] == clubs[1] or any(team not in MLB_TEAM_IDS for team in clubs):
+        raise Refused('Contradictory evidence at the same source instant')
+    legs = {}
+    for record, type_description in records:
+        player = record['player_mlb_id']
+        origin, destination = record['from_team_id'], record['to_team_id']
+        descriptions = [value for value in (record['transaction_type_description'], type_description) if value is not None]
+        if (record['transaction_type_code'] != 'TR' or not descriptions or any(value != 'Trade' for value in descriptions)
+                or record['transaction_id'] != first['transaction_id']
+                or (origin, destination) not in (clubs, clubs[::-1]) or not first['transaction_date']
+                or record['transaction_date'] != first['transaction_date']
+                or (player is not None and (type(player) is not int or player <= 0))):
+            raise Refused('Contradictory evidence at the same source instant')
+        # A named player can move only once in this trade. Unnamed considerations
+        # can be distinguished only by their direction, never by array position.
+        leg = trade_leg_identity(record)
+        if leg in legs:
+            raise Refused('Contradictory evidence at the same source instant')
+        legs[leg] = dict(record, transaction_type_description='Trade')
+    if not any(key[0] for key in legs):
+        raise Refused('Trade participants unresolved')
+    return dict(transaction_id=first['transaction_id'], trade_legs=[legs[key] for key in sorted(legs)])
 
 
 def roster_on(cur, team, kind, represented):
