@@ -285,6 +285,25 @@ Supplying an observed identity proof during a generation rehearsal also compares
 
 For snapshot 5843, a PostgreSQL 17.6 replay of October 28, 2026 retained the official final (game 849799) and compared 11 pitching lines. The candidate and archive both used October 28 for workload and membership. The candidate availability date was October 29 and the archived availability date was October 30. The comparison returned `edition_dates_differ` with zero clubs compared. The retrospective MLB schedules retrieved November 21 between 08:10 and 08:14 UTC contained no games October 29 through November 2. Given those rows, an October 30 as-of date and the existing three-day lookahead, BaseballOS's schedule-aware resolver also returned October 29. This evidence cannot reconstruct which future schedule listings were available to the original publisher.
 
+For an isolated generation replay, combine `--build-generation --through YYYY-MM-DD` with
+`--availability-as-of YYYY-MM-DD` and the retained daily fixtures. The first date is workload
+coverage and the second is the product day being tested. Without an explicit product day,
+the historical rehearsal tests the day immediately after coverage. The
+`generation_availability_date` result gives the selected date, the dated schedule receipts,
+and the basis for stopping or advancing. With a proof for the same workload date, it reports
+the archive date separately. A missing or contradictory schedule withholds the build.
+A confirmed later date also withholds the build while the stored readiness and rest
+calculations still describe the earlier date. No frozen edition is relabeled.
+
+Snapshot 5844 (sync run 98434) carried October 28 workload and October 30 availability.
+With November 21 as the test product day, all 27 retrospective league schedules from
+October 29 through November 24 were empty. The production resolver therefore stopped
+on October 29 with `no_confirming_later_listing`. Those responses were retrieved on
+November 21–22 and cannot reconstruct the exact listings used at publication.
+In the July 2024 control, July 16 workload and a July 18 product day selected July 18.
+The July 17 and 18 schedules were empty and July 19 had 14 listed games. The build
+refused the July 17 facts. [Observed publication](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/44930791428)
+
 A separate four-day replay preserved 207 acquisition observations. The October 29 transaction response triggered the existing same-instant contradiction refusal. The overall replay reported withholding. Neither the date comparison nor the transaction refusal advanced a selector.
 
 For a competition-only comparison, pass the same proof ZIP and SHA to the rehearsal with `--competition --through 2026-10-30` and the retained season calendar, playoff-day schedule and final-game fixtures. In this mode the date is the competition reference date. Each playoff decision must reconcile across the season calendar, daily slate and official boxscore. Missing evidence withholds the comparison. For a season-complete club the rehearsal also projects the public withholding block using the archive's workload coverage date. This tests the withholding contract independently of generation date selection.

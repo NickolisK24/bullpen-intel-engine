@@ -438,7 +438,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     from sync_v3.team_preview_comparison import compare_team_export
                     pages = compare_team_export(*team_preview_export, publication_proof=identity_proof, competition=report)
                     print(json.dumps(dict(historical_team_previews=pages), sort_keys=True))
-            elif availability_as_of is not None:
+            elif availability_as_of is not None and not (generation or generation_batch or build_generation):
                 import json
                 from sync_v3.schedule_context import retrospective_availability_date
                 with worker, worker.cursor() as cur:
@@ -508,11 +508,28 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                     print(json.dumps(result, sort_keys=True))
             if generation or generation_batch or build_generation:
                 import json
-                from sync_v3.generation import build_batch, freeze_generation, verify_generation
+                from datetime import timedelta
+                from sync_v3.generation import (
+                    GenerationDateWithheld, build_batch, freeze_generation, generation_date_decision, verify_generation,
+                )
+                product_day = availability_as_of or (through + timedelta(days=1))
+                with worker, worker.cursor() as cur:
+                    decision = generation_date_decision(cur, through, product_day)
+                if identity_proof and reference.provenance['data_through'] == through.isoformat():
+                    decision['archived_availability_reference'] = reference.availability_reference
+                    if decision['availability_reference'] is None:
+                        decision['archive_date_comparison'] = 'insufficient_schedule_evidence'
+                    elif decision['availability_reference'] == reference.availability_reference:
+                        decision['archive_date_comparison'] = 'date_matches'
+                    else:
+                        decision['archive_date_comparison'] = 'date_differs'
+                print(json.dumps(decision, sort_keys=True), flush=True)
+                if decision['reason']:
+                    raise GenerationDateWithheld(decision)
                 if generation_batch or build_generation:
                     seen = set()
                     while True:
-                        batch = build_batch(worker, through, generation_batch or 75)
+                        batch = build_batch(worker, through, generation_batch or 75, as_of=product_day)
                         print(json.dumps(batch), flush=True)
                         digest = batch['after']
                         if not build_generation or not batch['processed']:
@@ -521,7 +538,7 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                             raise RuntimeError('Candidate generation cannot resolve its outstanding inputs')
                         seen.add(digest)
                 else:
-                    digest = freeze_generation(worker, through)
+                    digest = freeze_generation(worker, through, as_of=product_day)
                 print(json.dumps(verify_generation(worker, digest, compare_latest=True)))
                 with worker, worker.cursor() as cur:
                     cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (digest,))
@@ -601,7 +618,7 @@ if __name__ == '__main__':
     subject.add_argument('--readiness-team', type=int, help='Inspect represented regular-season Team State and arm reads')
     subject.add_argument('--competition', action='store_true', help='Classify all clubs on the retrospective reference date')
     subject.add_argument('--availability-as-of', type=date.fromisoformat,
-                         help='Replay the availability reference date from retained daily schedules')
+                         help='Product day for schedule-based availability date replay or generation admission')
     subject.add_argument('--schedule-team', type=int, help='Inspect the retrospective club calendar around a date')
     subject.add_argument('--performance-team', type=int, help='Inspect retrospective active bullpen performance')
     subject.add_argument('--deployment-team', type=int, help='Compare two weeks of observed club deployment')

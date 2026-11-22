@@ -50,6 +50,7 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
     import pytest
     from sync_v3.rehearse import isolated_cluster
     from sync_v3.replay import install, run_fixture
+    from sync_v3.generation import build_batch, freeze_generation, GenerationDateWithheld
     from sync_v3.schedule_context import club_schedule_context, retrospective_availability_date
 
     pg = os.getenv('SYNC_V3_TEST_PG_BIN')
@@ -84,6 +85,21 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path):
                 assert played_gap['availability_reference'] == str(ref) and played_gap['dates'][str(ref)]['listed_games'] == 1
                 assert context['games_today_count'] == 1
                 assert context['next_off_day'] == (ref + timedelta(days=1)).isoformat()
+            with pytest.raises(GenerationDateWithheld) as advanced:
+                build_batch(db, before, 1, as_of=ref)
+            decision = advanced.value.decision
+            assert decision['availability_reference'] == str(ref)
+            assert decision['basis'] == 'schedule_confirmed_as_of'
+            assert decision['reason'] == 'generation_facts_require_recalculation_for_selected_date'
+            with pytest.raises(GenerationDateWithheld) as incomplete:
+                freeze_generation(db, ref, as_of=ref + timedelta(days=12))
+            assert incomplete.value.decision['reason'] == 'schedule_evidence_incomplete'
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.generations')
+                assert cur.fetchone() == (0,)
+            # A quiet schedule with no later listing cannot establish another rest day.
+            aligned = freeze_generation(db, ref, as_of=ref + timedelta(days=2))
+            assert aligned == freeze_generation(db, ref)
             changed = json.loads(quiet.replace('2026-11-21', str(ref)))
             changed['observed_at'] = f'{ref + timedelta(days=3)}T23:00:00Z'
             path.write_text(json.dumps(changed))

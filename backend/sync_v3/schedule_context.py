@@ -102,7 +102,17 @@ def retrospective_availability_date(cur, through, as_of):
         if schedule_aware_availability_reference_date(through, as_of, rows + possible) != resolved:
             gaps.update({day.isoformat(): 'postponed_listing_date_unresolved' for day, _ in moved_postponements})
             resolved = None
-    return dict(scope='retrospective_availability_date', data_through=through.isoformat(),
+    if resolved is None:
+        basis = 'incomplete_schedule_evidence'
+    elif as_of <= base:
+        basis = 'day_after_workload'
+    elif resolved == as_of:
+        basis = 'schedule_confirmed_as_of'
+    elif any(row.game_date == resolved and row.status_state != 'postponed' for row in rows):
+        basis = 'intervening_game_listed'
+    else:
+        basis = 'no_confirming_later_listing'
+    return dict(scope='retrospective_availability_date', basis=basis, data_through=through.isoformat(),
                 as_of=as_of.isoformat(), availability_reference=resolved.isoformat() if resolved else None,
                 dates=dates, gaps=gaps, current_serving_eligible=False)
 
