@@ -28,18 +28,19 @@ def enqueue(cur, identity, payload, now, *, budget='current', priority=100,
 def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None):
     if not timedelta(0) < lease <= timedelta(hours=1):
         raise ValueError('Invalid job lease')
-    # Bound the amount of recovery a single invocation can perform.
-    for _ in range(16):
+    # After cleaning up 16 exhausted leases, still look for a claimable job.
+    for cleanup_remaining in range(16, -1, -1):
         cur.execute("""SELECT j.id,j.payload,j.token,j.attempts,j.max_attempts
                        FROM candidate.jobs j
                        WHERE j.budget=%s AND (%s::date IS NULL OR j.product_date=%s)
                        AND (j.payload->>'capture') IS NOT DISTINCT FROM %s
+                       AND (%s OR j.attempts < j.max_attempts)
                        AND ((j.state='pending' AND j.available_at<=%s)
                        OR (j.state='running' AND j.lease_until<=%s)) AND
                        (j.prerequisite IS NULL OR EXISTS (SELECT 1 FROM candidate.jobs p
                          WHERE p.id=j.prerequisite AND p.state='done'))
                        ORDER BY j.priority,j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
-                    (budget, product_date, product_date, capture, now, now))
+                    (budget, product_date, product_date, capture, cleanup_remaining > 0, now, now))
         row = cur.fetchone()
         if not row:
             return None
