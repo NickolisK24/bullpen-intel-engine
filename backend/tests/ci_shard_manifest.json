@@ -1914,6 +1914,10 @@
           "measured_seconds": 0.03
         },
         {
+          "path": "tests/test_sync_v3_board_delivery_comparison.py",
+          "measured_seconds": 0.77
+        },
+        {
           "path": "tests/test_sync_v3_team_preview_comparison.py",
           "measured_seconds": 0.008
         },

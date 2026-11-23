@@ -1,0 +1,182 @@
+[
+  {
+    "status": "represented",
+    "generation": "3b37268819715428fb74a504e6986cf0c94a42d5b387cd9a111231bcfca44b90",
+    "selection_revision": 5,
+    "current_serving_eligible": false,
+    "data_through": "2017-08-28",
+    "availability_reference": "2017-08-29",
+    "team": {
+      "team_id": 117,
+      "team_abbreviation": "HOU",
+      "team_state": {
+        "contract": "team_state_public_v1",
+        "available": true,
+        "public_state": "stretched",
+        "public_label": "Stretched",
+        "summary": "Recent work or coverage has narrowed the active bullpen's clean options.",
+        "outcome": "available",
+        "unavailable_message": null,
+        "reason_code": null,
+        "data_through": "2017-08-28"
+      }
+    },
+    "active_bullpen": [
+      {
+        "mlb_id": 501789,
+        "read": {
+          "last_workload": "2017-07-05",
+          "arm_read": {
+            "key": "clean_option",
+            "kind": "read",
+            "label": "Clean Option",
+            "source": "backend:availability_status"
+          },
+          "availability": {
+            "data_state": "stale",
+            "availability_status": "Available"
+          }
+        }
+      },
+      {
+        "mlb_id": 434538,
+        "read": {
+          "last_workload": "2017-08-26",
+          "arm_read": {
+            "key": "clean_option",
+            "kind": "read",
+            "label": "Clean Option",
+            "source": "backend:availability_status"
+          },
+          "availability": {
+            "data_state": "fresh",
+            "availability_status": "Available"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "capability": "team_board_answer_core",
+    "contract_version": "team_board_answer_core_v1",
+    "publication_identity": {
+      "availability_reference_date": "2017-08-29",
+      "bullpen_membership_method_version": "team_board_default_bullpen_membership_v1",
+      "contract": "team_board_publication_identity_v1",
+      "dashboard_payload_version": 1,
+      "deployment_profile_method_version": "public_team_deployment_profile_v1",
+      "publication_authority_contract": "trusted_dashboard_publication_v1",
+      "published_at": "2017-08-29T12:00:00",
+      "represented_date": "2017-08-28",
+      "rest_status_method_version": "d055_rest_status_v1",
+      "rotation_impact_method_version": "2026-06-18.phase2",
+      "snapshot_generated_at": "2017-08-29T12:00:00",
+      "snapshot_id": 3,
+      "sync_run_id": 3,
+      "team_abbreviation": "HOU",
+      "team_board_contract_version": "team-board-2.0.0",
+      "team_board_package_contract": "trusted_team_board_publication_v1",
+      "team_id": 117,
+      "team_state_contract": "team_state_public_v1",
+      "workload_windows_method_version": "public_team_relief_work_windows_v1"
+    },
+    "represented_date": "2017-08-28",
+    "team": {
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    "team_state": {
+      "available": true,
+      "contract": "team_state_public_v1",
+      "data_through": "2017-08-28",
+      "outcome": "available",
+      "public_label": "Stretched",
+      "public_state": "stretched",
+      "reason_code": null,
+      "summary": "Recent work or coverage has narrowed the active bullpen's clean options.",
+      "unavailable_message": null
+    },
+    "freshness": {
+      "availability_reference_date": "2017-08-29",
+      "data_through": "2017-08-28",
+      "is_current": true,
+      "is_stale": false,
+      "fail_closed": false
+    },
+    "active_bullpen": {
+      "arms": [
+        {
+          "pitcher_id": 501789,
+          "arm_context": {
+            "data_through": "2017-08-28",
+            "days_rest": null,
+            "mode": "historical"
+          },
+          "availability": {
+            "status": "Available"
+          },
+          "public_labels": {
+            "read": {
+              "key": "limited_read",
+              "kind": "read",
+              "label": "Limited Read",
+              "source": "backend:limited_data"
+            }
+          }
+        },
+        {
+          "pitcher_id": 434538,
+          "arm_context": {
+            "data_through": "2017-08-28",
+            "days_rest": 3,
+            "mode": "current"
+          },
+          "availability": {
+            "status": "Available"
+          },
+          "public_labels": {
+            "read": {
+              "key": "clean_option",
+              "kind": "read",
+              "label": "Clean Option",
+              "source": "backend:availability_status"
+            }
+          }
+        }
+      ],
+      "arm_count": 2
+    }
+  },
+  {
+    "capability": "team_board_deferred_details",
+    "contract_version": "team_board_deferred_details_v1",
+    "represented_date": "2017-08-28",
+    "team": {
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    "publication_identity": {
+      "availability_reference_date": "2017-08-29",
+      "bullpen_membership_method_version": "team_board_default_bullpen_membership_v1",
+      "contract": "team_board_publication_identity_v1",
+      "dashboard_payload_version": 1,
+      "deployment_profile_method_version": "public_team_deployment_profile_v1",
+      "publication_authority_contract": "trusted_dashboard_publication_v1",
+      "published_at": "2017-08-29T12:00:00",
+      "represented_date": "2017-08-28",
+      "rest_status_method_version": "d055_rest_status_v1",
+      "rotation_impact_method_version": "2026-06-18.phase2",
+      "snapshot_generated_at": "2017-08-29T12:00:00",
+      "snapshot_id": 3,
+      "sync_run_id": 3,
+      "team_abbreviation": "HOU",
+      "team_board_contract_version": "team-board-2.0.0",
+      "team_board_package_contract": "trusted_team_board_publication_v1",
+      "team_id": 117,
+      "team_state_contract": "team_state_public_v1",
+      "workload_windows_method_version": "public_team_relief_work_windows_v1"
+    }
+  }
+]
