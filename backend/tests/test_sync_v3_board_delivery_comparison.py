@@ -46,3 +46,34 @@ def test_refuse_incomplete_league(selection):
     board, core, details, ids = selection
     with pytest.raises(ValueError, match='30 MLB clubs'):
         compare_edition({117: board}, {117: (core, details)}, ids, DAY)
+
+
+def test_handoff_requires_every_selected_club_and_its_receipt():
+    from types import SimpleNamespace
+
+    from scripts.rehearse_selected_publication import selection_receipt, verify_frozen_states
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    digest = 'a' * 64
+    through = date(2017, 8, 28)
+    state = dict(available=True, public_state='fresh', data_through=through.isoformat())
+    citation = dict(input_digest='b' * 64, facts_digest='c' * 64, revision=1)
+    league = dict(status='represented', current_serving_eligible=False, selection_revision=5,
+                  generation=digest, data_through=through.isoformat(), availability_reference=DAY.isoformat(),
+                  teams=[dict(team_id=t, team_state=dict(state)) for t in MLB_TEAM_IDS],
+                  citations={t: dict(readiness=citation) for t in MLB_TEAM_IDS})
+    binding = selection_receipt(league, 5, digest)
+    captured = {str(t): dict(dashboard_snapshot_id=7, team_id=t, value=dict(state)) for t in MLB_TEAM_IDS}
+    snap = SimpleNamespace(id=7, data_through=through, availability_reference_date=DAY,
+                           payload={'trusted_team_boards': {'frozen_team_state_by_team_id': captured}})
+    verify_frozen_states(snap, binding)
+    with pytest.raises(ValueError, match='no longer selected'):
+        selection_receipt(league, 4, digest)
+    with pytest.raises(ValueError, match='all 30'):
+        selection_receipt(dict(league, teams=league['teams'][1:]), 5, digest)
+    captured['111']['value']['public_state'] = 'vulnerable'
+    with pytest.raises(ValueError, match='disagree for 111'):
+        verify_frozen_states(snap, binding)
+    del captured['111']
+    with pytest.raises(ValueError, match='populations disagree'):
+        verify_frozen_states(snap, binding)
