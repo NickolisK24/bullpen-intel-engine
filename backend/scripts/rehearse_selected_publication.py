@@ -121,6 +121,7 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
 
 def main():
     import argparse
+    import json
     from contextlib import closing
     from datetime import date
     import os
@@ -158,7 +159,8 @@ def main():
 
     app = create_app('test')
     app.config.update(TRUSTED_PUBLIC_SERVING_ENABLED=True, TEAM_STATE_PUBLICATION_PROOF_REQUIRED=True,
-                      DAILY_EDITION_PUBLICATION_REQUIRED=True)
+                      DAILY_EDITION_PUBLICATION_REQUIRED=True, SHARE_ARTIFACT_AUTOGENERATION_ENABLED=True,
+                      TONIGHT_V1_PROJECTION_ENABLED=True)
     if not install_public_serving_authority(app):
         raise RuntimeError('Trusted publication serving was not installed')
     with closing(psycopg2.connect(host=str(args.source_socket), port=5432, dbname='sync_v3_rehearsal',
@@ -166,7 +168,21 @@ def main():
         with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
                                         predecessor=args.predecessor, sync_run_id=args.sync_run)
-            print(f'Rehearsal publication {snapshot} bound to {args.generation} revision {args.revision}')
+            # The production hooks recover independently after the trust transaction.
+            # Recheck durable rows and public reads because hook failures are nonfatal.
+            from scripts.verify_selected_delivery import verify_delivery
+            from sync_v3.product_reads import read_game_cards
+
+            committed = db.session.get(DashboardSnapshot, snapshot)
+            dashboard_snapshot.run_post_commit_snapshot_publication(committed)
+            db.session.remove()
+            with closing(psycopg2.connect(host=str(args.source_socket), port=5432, dbname='sync_v3_rehearsal',
+                                          user='sync_v3_reviewer', connect_timeout=5)) as reviewer:
+                cards = read_game_cards(reviewer, revision=args.revision)
+            result = verify_delivery(app.test_client(), db.session.get(DashboardSnapshot, snapshot), cards)
+            print(json.dumps(result))
+            if not result['supporting_fields_match']:
+                raise SystemExit('Post-commit delivery verified; Tonight supporting fields differ')
 
 
 if __name__ == '__main__':
