@@ -1,0 +1,173 @@
+"""Bind one immutable v3 Team State selection to a disposable trusted publication.
+
+Called by a fixture with a fresh target session and a transaction-idle source
+owner connection supplied by isolated_cluster. No deployed caller or scheduler.
+"""
+import re
+
+from flask import current_app
+from sqlalchemy import text
+
+from models.dashboard_snapshot import DashboardSnapshot
+from models.sync_run import SyncRun
+from models.team_state_publication_proof import TeamStatePublicationProof
+from scripts.rehearse_trusted_publication import assert_rehearsal_target
+from services import dashboard_snapshot
+from services.mlb_club_directory import MLB_TEAM_IDS
+from sync_v3.generation import _inspect
+from sync_v3.product_reads import _league
+from utils.db import db
+
+
+def selection_receipt(league, revision, generation):
+    if (league['status'] != 'represented' or league['current_serving_eligible'] is not False
+            or league['selection_revision'] != revision or league['generation'] != generation):
+        raise ValueError('The requested generation is no longer selected')
+    teams = {}
+    for row in league['teams']:
+        team = row['team_id']
+        state = row['team_state']
+        citation = league['citations'][team]['readiness']
+        if (team in teams or state['available'] is not True or state['data_through'] != league['data_through']
+                or not citation or not all(re.fullmatch('[0-9a-f]{64}', citation[key])
+                                          for key in ('input_digest', 'facts_digest'))):
+            raise ValueError(f'Missing or ambiguous played-day evidence for {team}')
+        teams[team] = dict(state=state, readiness=citation)
+    if set(teams) != set(MLB_TEAM_IDS):
+        raise ValueError('The played-day handoff requires all 30 clubs')
+    return dict(contract='isolated_selected_team_state_v1', revision=revision, generation=generation,
+                data_through=league['data_through'], availability_reference=league['availability_reference'],
+                teams={str(team): value for team, value in teams.items()})
+
+
+def verify_frozen_states(snapshot, binding):
+    dates = (snapshot.data_through.isoformat(), snapshot.availability_reference_date.isoformat())
+    if dates != (binding['data_through'], binding['availability_reference']):
+        raise ValueError('Selected and published dates disagree')
+    receipts = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+    if receipts.keys() != binding['teams'].keys():
+        raise ValueError('Selected and published populations disagree')
+    for team, expected in binding['teams'].items():
+        actual = receipts[team]
+        if (actual['dashboard_snapshot_id'] != snapshot.id or actual['team_id'] != int(team)
+                or actual['value'] != expected['state']):
+            raise ValueError(f'Selected and published Team State disagree for {team}')
+
+
+def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
+    """Keep the selector pinned until the independent target transaction commits."""
+    assert_rehearsal_target()
+    if (not current_app.testing or not current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED')
+            or not current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED')):
+        raise RuntimeError('A rehearsal with both publication gates enabled is required')
+    if (type(revision) is not int or revision <= 0 or not re.fullmatch('[0-9a-f]{64}', generation)
+            or type(predecessor) is not int or predecessor <= 0):
+        raise ValueError('Expected a pinned selection and predecessor')
+    with owner, owner.cursor() as cur:
+        cur.execute("SELECT current_database(),current_user,inet_server_addr(),current_setting('listen_addresses')")
+        if cur.fetchone() != ('sync_v3_rehearsal', 'rehearsal_owner', None, ''):
+            raise RuntimeError('Source must be the isolated rehearsal cluster')
+    with owner, owner.cursor() as cur, db.session.begin():
+        target = db.session.execute(text(
+            "SELECT current_database(),inet_server_addr(),current_setting('listen_addresses')"
+        )).one()
+        if not target[0].endswith('_rehearsal_test') or tuple(target[1:]) != (None, ''):
+            raise RuntimeError('Destination must be a socket-only rehearsal database')
+        # SHARE blocks selector inserts across databases through the target commit.
+        # The sandbox owner only holds the table lock. Read as the existing reviewer.
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+        cur.execute('LOCK TABLE candidate.core_selections IN SHARE MODE NOWAIT')
+        cur.execute('SET LOCAL ROLE sync_v3_reviewer')
+        league = _league(cur, None, None)
+        binding = selection_receipt(league, revision, generation)
+        review = _inspect(cur, generation, compare_latest=True)['selection_review']
+        if review['status'] != 'core_comparison_complete' or review['latest_inventory_digest'] != generation:
+            raise ValueError('Selected generation no longer passes review')
+        db.session.execute(text('LOCK TABLE dashboard_snapshots IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        prior = DashboardSnapshot.query.filter_by(
+            snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD, is_published=True
+        ).one()
+        receipt = dict(binding, predecessor=predecessor)
+        previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
+        if previous_binding.get('generation') == generation:
+            if previous_binding != receipt or prior.sync_run_id != sync_run_id:
+                raise ValueError('The selected generation already has a different publication receipt')
+            verify_frozen_states(prior, receipt)
+            return prior.id
+        if prior.id != predecessor:
+            raise ValueError('Trusted publication predecessor changed')
+        run = db.session.get(SyncRun, sync_run_id)
+        if (run is None or run.status != 'success' or run.published_dashboard_snapshot_id is not None
+                or str(run.latest_workload_date) != receipt['data_through']
+                or str(prior.data_through) > receipt['data_through']):
+            raise ValueError('An unused, successful sync run for the selected workload date is required')
+        snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+            sync_run_id=sync_run_id, source='v3_team_state_rehearsal', publish=False,
+            commit=False, raise_errors=True,
+        )
+        snapshot.payload = dict(snapshot.payload, v3_rehearsal_selection=receipt)
+        dashboard_snapshot.publish_dashboard_snapshot(snapshot, commit=False)
+        if not snapshot.is_published:
+            raise ValueError(f'Governed publication withheld: {snapshot.error_message}')
+        proof = TeamStatePublicationProof.query.filter_by(snapshot_id=snapshot.id, sync_run_id=sync_run_id).one()
+        inconclusive = {key for key, item in proof.proof['invariants'].items()
+                        if item['result'] == 'INCONCLUSIVE'}
+        if (proof.captured_team_count != 30 or proof.overall_verdict not in ('PASS', 'PASS_WITH_INCONCLUSIVE')
+                or inconclusive - {'no_false_cross_version_change'}):
+            raise ValueError('Incomplete independent publication proof')
+        verify_frozen_states(snapshot, receipt)
+        return snapshot.id
+
+
+def main():
+    import argparse
+    from contextlib import closing
+    from datetime import date
+    import os
+    from pathlib import Path
+    import socket
+    import sys
+    from urllib.parse import parse_qs, urlparse
+
+    import psycopg2
+    from freezegun import freeze_time
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source-socket', type=Path, required=True)
+    parser.add_argument('--revision', type=int, required=True)
+    parser.add_argument('--generation', required=True)
+    parser.add_argument('--predecessor', type=int, required=True)
+    parser.add_argument('--sync-run', type=int, required=True)
+    parser.add_argument('--product-day', type=date.fromisoformat, required=True)
+    args = parser.parse_args()
+    url = urlparse(assert_rehearsal_target())
+    params = parse_qs(url.query)
+    hosts = params.get('host', [])
+    if (not args.source_socket.is_absolute() or len(hosts) != 1 or not Path(hosts[0]).is_absolute()
+            or set(params) != {'host'} or os.environ.get('PGHOSTADDR') or os.environ.get('PGSERVICE')
+            or os.environ.get('AUTO_SYNC') != 'false' or os.environ.get('APP_ENV') != 'test'):
+        parser.error('Use absolute Unix sockets, APP_ENV=test and AUTO_SYNC=false')
+
+    def local_only(event, arguments):
+        if event == 'socket.connect' and arguments[0].family != socket.AF_UNIX:
+            raise RuntimeError('Network unavailable during publication rehearsal')
+
+    sys.addaudithook(local_only)
+    from app import create_app
+    from services.public_serving_authority import install_public_serving_authority
+
+    app = create_app('test')
+    app.config.update(TRUSTED_PUBLIC_SERVING_ENABLED=True, TEAM_STATE_PUBLICATION_PROOF_REQUIRED=True,
+                      DAILY_EDITION_PUBLICATION_REQUIRED=True)
+    if not install_public_serving_authority(app):
+        raise RuntimeError('Trusted publication serving was not installed')
+    with closing(psycopg2.connect(host=str(args.source_socket), port=5432, dbname='sync_v3_rehearsal',
+                                  user='rehearsal_owner', connect_timeout=5)) as owner:
+        with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
+            snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
+                                        predecessor=args.predecessor, sync_run_id=args.sync_run)
+            print(f'Rehearsal publication {snapshot} bound to {args.generation} revision {args.revision}')
+
+
+if __name__ == '__main__':
+    main()
