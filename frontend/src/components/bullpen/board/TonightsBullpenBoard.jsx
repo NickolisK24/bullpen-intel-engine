@@ -93,7 +93,7 @@ export default function TonightsBullpenBoard({
   )
   const teamBoardRead = hasTeamBoardV2Override
     ? legacyTeamBoardRead
-    : readTeamBoardDelivery(teamBoardV2State.data, teamBoardDetails.data)
+    : readTeamBoardDelivery(coreIdentity ? teamBoardV2State.data : null, teamBoardDetails.data)
   const deepLoading = !hasTeamBoardV2Override && Boolean(teamBoardRead) && teamBoardDetails.loading
   const deepError = !hasTeamBoardV2Override
     ? (teamBoardDetails.error || (teamBoardRead?.detailsRejected ? 'Section identity mismatch' : null))
