@@ -373,3 +373,22 @@ def test_eligibility_round_requires_date_scoped_official_totals():
             qualify(*incomplete)
     with pytest.raises(BaselineWithheld, match='game_log_identity_or_season_conflict'):
         qualify(log, total, stage='D')
+
+
+def test_games_finished_conflict_is_scoped_to_deployment():
+    from sync_v3.season_deployment import BaselineWithheld, check_pitcher_final
+
+    expected = dict(pk=490461, team=147, day=date(2017, 4, 30),
+                    counts=dict(gamesStarted=0, outs=3, holds=0, saves=0,
+                                gamesFinished=0, saveOpportunities=0))
+    line = dict(pitcher_mlb_id=547973, team_id=147, game_date='2017-04-30',
+                games_started=0, outs_recorded=3, hold=0, save=0,
+                games_finished=1, save_situation=0)
+    with pytest.raises(BaselineWithheld) as conflict:
+        check_pitcher_final(547973, expected, [line])
+    assert conflict.value.game_evidence['differences'] == {'games_finished': {'game_log': 0, 'boxscore': 1}}
+    assert check_pitcher_final(547973, expected, [line], for_membership=True) == line
+    for field in ('team_id', 'games_started', 'outs_recorded', 'hold', 'save', 'save_situation'):
+        with pytest.raises(BaselineWithheld) as conflict:
+            check_pitcher_final(547973, expected, [dict(line, **{field: line[field] + 1})], for_membership=True)
+        assert field in conflict.value.game_evidence['differences']

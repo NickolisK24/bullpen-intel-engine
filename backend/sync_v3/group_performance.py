@@ -14,7 +14,7 @@ from sync_v3.membership_usage import represented_membership
 from sync_v3.performance import SOURCE_FIELDS, performance_line
 from sync_v3.roster_scope import NON_PITCHING_POSITIONS
 from sync_v3.rosters import roster_on
-from sync_v3.season_deployment import pitcher_season_deployment
+from sync_v3.season_deployment import pitcher_membership_profile, pitcher_season_deployment
 from sync_v3.workload import regular_day
 
 
@@ -58,7 +58,7 @@ def _aggregate(rows):
     return {'appearances': len(rows), 'metrics': metrics, 'descriptive_hr9': hr9}
 
 
-def active_group_population(cur, team, through):
+def active_group_population(cur, team, through, *, for_readiness=False):
     result = {'team': team, 'through': through.isoformat(), 'roster_source': None, 'profiles': {},
               'members': [], 'windows': None, 'reason': None}
     roster = roster_on(cur, team, 'active', through)
@@ -81,7 +81,8 @@ def active_group_population(cur, team, through):
             result['reason'] = 'active_pitching_population_unresolved'
             return result, {}
         player = member['id']
-        profile = pitcher_season_deployment(cur, player, through)
+        build_profile = pitcher_membership_profile if for_readiness else pitcher_season_deployment
+        profile = build_profile(cur, player, through)
         result['profiles'][player] = {'sources': profile['sources'], 'reason': profile['reason']}
         if 'game_evidence' in profile:
             result['profiles'][player]['game_evidence'] = profile['game_evidence']

@@ -491,7 +491,8 @@ def test_shifted_regular_readiness_recalculates_arm_window_without_changing_memb
     splits = [dict(date=row['game_date'], game=dict(gamePk=row['game_pk']), team=dict(id=111),
                    stat=dict(outs=3, numberOfPitches=20)) for row in lines]
 
-    def population(cur, team, membership):
+    def population(cur, team, membership, *, for_readiness):
+        assert for_readiness
         calls.append(membership)
         return dict(roster_source=1, profiles={}, reason=None, members=[dict(player=7)],
                     latest_membership_work={7: None}), {7: splits}

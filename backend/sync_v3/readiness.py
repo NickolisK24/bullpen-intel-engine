@@ -74,7 +74,7 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None):
                       workload_rounds=sorted(window['rounds']))
         latest = {p: evidence['samples'][p]['latest_workload'] for p in members}
     else:
-        population, splits = active_group_population(cur, team, membership)
+        population, splits = active_group_population(cur, team, membership, for_readiness=True)
         result.update(roster_source=population['roster_source'], profiles=population['profiles'])
         for key in ('population_method', 'eligibility_games', 'eligibility_gaps'):
             if key in population:

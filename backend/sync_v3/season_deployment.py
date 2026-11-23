@@ -79,7 +79,7 @@ def _observed_role(rows, through):
             'role': classify_usage_role(logs, reference_date=reference) if start.year == through.year else None}
 
 
-def check_pitcher_final(player, expected, lines):
+def check_pitcher_final(player, expected, lines, *, for_membership=False):
     pk = expected['pk']
     appearances = [r for r in lines if r['pitcher_mlb_id'] == player]
     if len(appearances) != 1:
@@ -92,6 +92,8 @@ def check_pitcher_final(player, expected, lines):
     }
     for field, key in [('hold', 'holds'), ('save', 'saves'), ('games_finished', 'gamesFinished'),
                        ('save_situation', 'saveOpportunities')]:
+        if for_membership and field == 'games_finished':
+            continue  # Games finished is a deployment fact, independent of bullpen eligibility.
         if line[field] is not None:
             expected_line[field] = counts[key]
     differences = {field: {'game_log': value, 'boxscore': line[field]}
@@ -104,7 +106,7 @@ def check_pitcher_final(player, expected, lines):
     return line
 
 
-def _check_retained_finals(cur, player, rows):
+def _check_retained_finals(cur, player, rows, *, for_membership=False):
     endpoints = [f"/game/{r['pk']}/boxscore" for r in rows]
     for endpoint in endpoints:
         consult(cur, endpoint, {})
@@ -144,7 +146,7 @@ def _check_retained_finals(cur, player, rows):
             raise BaselineWithheld('overlapping_boxscore_unconfirmed')
         if schedule_outcome != 'received' or revision is None:
             raise BaselineWithheld('overlapping_boxscore_schedule_unconfirmed')
-        check_pitcher_final(player, expected, lines)
+        check_pitcher_final(player, expected, lines, for_membership=for_membership)
         verified.append(pk)
     return sorted(verified)
 
@@ -253,7 +255,22 @@ def season_deployment_facts(player, through, log, dated_totals, *, cur=None):
             'observed_role': _observed_role(all_rows, through)}
 
 
+def _membership_profile(player, through, log, dated_totals, *, cur):
+    by_club, uncredited = qualified_game_rows(player, through, log, dated_totals, cur=cur, game_type='R')
+    rows = [row for club in by_club.values() for row in club]
+    _check_retained_finals(cur, player, rows, for_membership=True)
+    return {'uncredited_games': sorted(uncredited)}
+
+
+def pitcher_membership_profile(cur, player, through):
+    return _qualified_profile(cur, player, through, _membership_profile)
+
+
 def pitcher_season_deployment(cur, player, through):
+    return _qualified_profile(cur, player, through, season_deployment_facts)
+
+
+def _qualified_profile(cur, player, through, build_facts):
     result = {'mlb_player_id': player, 'through': through.isoformat(),
               'basis': 'official_regular_season_game_dates', 'sources': {}, 'facts': None, 'reason': None}
     bodies = []
@@ -267,7 +284,7 @@ def pitcher_season_deployment(cur, player, through):
         result['reason'] = 'missing_game_log_or_dated_totals'
     else:
         try:
-            result['facts'] = season_deployment_facts(player, through, *bodies, cur=cur)
+            result['facts'] = build_facts(player, through, *bodies, cur=cur)
         except BaselineWithheld as exc:
             result['reason'] = str(exc)
             if exc.game_evidence is not None:
