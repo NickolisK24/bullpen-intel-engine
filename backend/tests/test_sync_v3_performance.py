@@ -65,7 +65,7 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     facts = {'members': [member]}
     monkeypatch.setattr(group, 'roster_on', lambda *args: (facts, 1))
     profile = {'sources': {'gameLog': 2}, 'reason': None, 'facts': {'uncredited_games': [4]}}
-    monkeypatch.setattr(group, 'pitcher_season_deployment', lambda *args: profile)
+    monkeypatch.setattr(group, 'pitcher_membership_profile', lambda *args: profile)
     splits = [{'game': {'gamePk': pk}, 'date': day.isoformat(), 'team': {'id': team},
                'stat': {**STATS, 'gamesStarted': 0, 'saves': 0, 'holds': 0, 'saveOpportunities': 0, 'outs': 3}}
               for pk, team, day in [(1, 111, THROUGH - timedelta(days=1)), (2, 118, THROUGH),

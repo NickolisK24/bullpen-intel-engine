@@ -373,3 +373,54 @@ def test_eligibility_round_requires_date_scoped_official_totals():
             qualify(*incomplete)
     with pytest.raises(BaselineWithheld, match='game_log_identity_or_season_conflict'):
         qualify(log, total, stage='D')
+
+
+def test_games_finished_conflict_is_scoped_to_deployment():
+    from sync_v3.season_deployment import BaselineWithheld, check_pitcher_final
+
+    expected = dict(pk=490461, team=147, day=date(2017, 4, 30),
+                    counts=dict(gamesStarted=0, outs=3, holds=0, saves=0,
+                                gamesFinished=0, saveOpportunities=0))
+    line = dict(pitcher_mlb_id=547973, team_id=147, game_date='2017-04-30',
+                games_started=0, outs_recorded=3, hold=0, save=0,
+                games_finished=1, save_situation=0)
+    with pytest.raises(BaselineWithheld) as conflict:
+        check_pitcher_final(547973, expected, [line])
+    assert conflict.value.game_evidence['differences'] == {'games_finished': {'game_log': 0, 'boxscore': 1}}
+    assert check_pitcher_final(547973, expected, [line], for_membership=True) == line
+    for field in ('team_id', 'games_started', 'outs_recorded', 'hold', 'save', 'save_situation'):
+        with pytest.raises(BaselineWithheld) as conflict:
+            check_pitcher_final(547973, expected, [dict(line, **{field: line[field] + 1})], for_membership=True)
+        assert field in conflict.value.game_evidence['differences']
+
+
+def test_deployment_dispute_preserves_verified_arm_and_performance_population(tmp_path):
+    from contextlib import closing
+
+    from sync_v3.group_performance import active_group_performance
+    from sync_v3.readiness import represented_readiness
+    from sync_v3.season_deployment import pitcher_season_deployment
+    from tests.sync_v3_league_fixture import league_fixtures
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    through, fixtures = league_fixtures()
+    for response in fixtures[-2]['responses']:
+        if response['endpoint'] == '/people/11101/stats':
+            response['body']['stats'][0]['splits'][0]['stat']['gamesFinished'] = 0
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            path = tmp_path / 'fixture.json'
+            for fixture in fixtures:
+                path.write_text(json.dumps(fixture))
+                run_fixture(worker, path)
+            with worker, worker.cursor() as cur:
+                deployment = pitcher_season_deployment(cur, 11101, through)
+                assert deployment['facts'] is None
+                assert deployment['game_evidence']['differences'] == {'games_finished': {'game_log': 0, 'boxscore': 1}}
+                readiness = represented_readiness(cur, 111, through)
+                assert readiness['team_state'] and readiness['arms'][11101]['read']
+                group = active_group_performance(cur, 111, through)
+                assert group['reason'] is None and [m['player'] for m in group['members']] == [11101]

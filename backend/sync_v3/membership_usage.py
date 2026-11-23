@@ -87,7 +87,7 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache)
                 raise BaselineWithheld('eligibility_game_not_confirmed', game_evidence=dict(game_pk=pk, reason=reason))
             final_cache[key] = final[0], (receipt, *final[1])
         lines, receipts = final_cache[key]
-        line = check_pitcher_final(player, row, lines)
+        line = check_pitcher_final(player, row, lines, for_membership=True)
         if row is selected[0] and (line['outs_recorded'] > 0 or (line['pitches_thrown'] or 0) > 0):
             latest = dict(game_pk=pk, game_date=str(day), pitches=line['pitches_thrown'], outs=line['outs_recorded'])
         sources.extend(receipts)
