@@ -659,6 +659,22 @@ test('deferred requests require a core identity for the currently selected team'
 })
 
 
+test('two identically incomplete receipts cannot establish a trusted Board edition', () => {
+  for (const field of Object.keys(identity)) {
+    const partial = { ...identity }
+    delete partial[field]
+    const core = { ...corePayload, publication_identity: partial }
+    const details = { ...detailsPayload, publication_identity: partial }
+    assert.equal(getTeamBoardDetailsIdentity(core, 1), null, field)
+    assert.equal(readTeamBoardDelivery(core, details), null, field)
+  }
+  for (const field of ['contract', 'publication_authority_contract', 'team_board_package_contract',
+    'team_board_contract_version']) {
+    const core = { ...corePayload, publication_identity: { ...identity, [field]: 'isolated_candidate' } }
+    assert.equal(getTeamBoardDetailsIdentity(core, 1), null, field)
+  }
+})
+
 test('the deferred request key covers every exact publication identity field', () => {
   const baseline = teamBoardIdentityKey(identity)
   assert.ok(baseline)

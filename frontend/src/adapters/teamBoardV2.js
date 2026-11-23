@@ -577,6 +577,18 @@ const identityFields = [
   'rotation_impact_method_version',
 ]
 
+const numericIdentityFields = new Set(['team_id', 'snapshot_id', 'sync_run_id', 'dashboard_payload_version'])
+
+function hasTrustedBoardIdentity(identity) {
+  return identity?.contract === 'team_board_publication_identity_v1'
+    && identity.publication_authority_contract === 'trusted_dashboard_publication_v1'
+    && identity.team_board_package_contract === 'trusted_team_board_publication_v1'
+    && identity.team_board_contract_version === TEAM_BOARD_V2_CONTRACT_VERSION
+    && identityFields.every(field => numericIdentityFields.has(field)
+      ? Number.isSafeInteger(identity[field]) && identity[field] > 0
+      : typeof identity[field] === 'string' && identity[field].trim().length > 0)
+}
+
 export function teamBoardIdentityKey(identity) {
   if (!identity) return null
   return JSON.stringify(identityFields.map(field => identity[field] ?? null))
@@ -742,7 +754,7 @@ export function isTeamBoardCorePayload(payload) {
     payload
     && payload.capability === TEAM_BOARD_CORE_CAPABILITY
     && payload.contract_version === TEAM_BOARD_CORE_CONTRACT_VERSION
-    && payload.publication_identity
+    && hasTrustedBoardIdentity(payload.publication_identity)
     && payload.team_state
     && Array.isArray(payload.active_bullpen?.arms)
   )
