@@ -145,4 +145,6 @@ def represented_membership(cur, team, through, roster, rounds=None):
     contexts = eligible_bullpen_pitcher_contexts(arms, reference_date=through, logs_by_pitcher=logs,
                                                   use_role_authority=True)
     roles = {c['pitcher'].id: c['eligibility']['role'] for c in contexts}
-    return dict(result, status='represented', candidate=sorted(roles), roles=roles)
+    label_eligibility = {c['pitcher'].id: {key: c['eligibility'][key] for key in ('status', 'reason')}
+                         for c in contexts}
+    return dict(result, status='represented', candidate=sorted(roles), roles=roles, label_eligibility=label_eligibility)

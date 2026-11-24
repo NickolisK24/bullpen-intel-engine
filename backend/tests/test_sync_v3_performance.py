@@ -82,7 +82,7 @@ def test_group_filters_official_club_and_fails_closed_on_population_conflicts(mo
     # This fixture exercises performance line filtering for an already qualified cohort.
     monkeypatch.setattr(group, 'represented_membership', lambda *args: dict(
         status='represented', basis='latest_ten_official_pitching_appearances', samples={12: dict(games=[1, 2], latest_workload=None)},
-        candidate=[12], roles={12: 'Reliever'}))
+        candidate=[12], roles={12: 'Reliever'}, label_eligibility={12: {'status': 'role_reliever', 'reason': 'relief'}}))
     result = group.active_group_performance(None, 118, THROUGH)
     assert result['reason'] is None and result['windows']['season']['appearances'] == 1
     assert result['dates'][THROUGH.isoformat()]['outings'] == [[2, 12]]

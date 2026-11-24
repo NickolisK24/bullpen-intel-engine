@@ -97,6 +97,7 @@ def active_group_population(cur, team, through, *, roster_day=None):
         result.update(reason=membership.get('reason') or 'incomplete_eligibility_sample',
                       eligibility_gaps=membership['withheld'])
         return result, {}
+    result['label_eligibility'] = membership['label_eligibility']
     result['eligibility_games'] = {p: sample['games'] for p, sample in membership['samples'].items()}
     result['latest_membership_work'] = {p: membership['samples'][p]['latest_workload'] for p in membership['candidate']}
     result['members'] = [dict(player=p, role=membership['roles'][p]) for p in membership['candidate']]
@@ -107,6 +108,7 @@ def active_group_population(cur, team, through, *, roster_day=None):
 
 def active_group_performance(cur, team, through):
     result, splits = active_group_population(cur, team, through)
+    result.pop('label_eligibility', None)
     if result['reason']:
         return result
     expected = defaultdict(dict)

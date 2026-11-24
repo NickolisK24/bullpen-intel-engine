@@ -97,9 +97,11 @@ def test_departure_is_excluded_from_board_rest_without_rewriting_team_state(monk
     report = dict(team=111, reference_date=str(REFERENCE), arms={1: arm(1, True), 2: arm(4)})
     rosters = {THROUGH: {1, 2}, REFERENCE: {2}}
     monkeypatch.setattr(readiness, 'board_rest_pitchers', lambda cur, club, day: rosters[day])
-    rest = readiness.availability_day_rest(None, report, THROUGH)
+    board_arms = readiness.availability_day_arms(None, report, THROUGH)
+    rest = readiness.board_rest_status(board_arms)
     assert (rest['active_arm_count'], rest['rested_arm_count'], rest['back_to_back_count']) == (1, 1, 0)
     assert set(report['arms']) == {1, 2}
+    assert set(board_arms) == {2}
 
 
 def test_new_arm_requires_qualified_evidence_at_the_original_workload_cutoff(monkeypatch):
@@ -113,7 +115,9 @@ def test_new_arm_requires_qualified_evidence_at_the_original_workload_cutoff(mon
         return dict(reason='missing_round_game_log', arms={1: arm(4)})
 
     monkeypatch.setattr(readiness, '_club_readiness', recalculate)
-    rest = readiness.availability_day_rest(None, report, THROUGH)
+    board_arms = readiness.availability_day_arms(None, report, THROUGH)
+    rest = readiness.board_rest_status(board_arms)
+    assert board_arms is None
     assert rest['reason_code'] == 'roster_context_unavailable' and rest['active_arm_count'] is None
 
 
@@ -139,3 +143,31 @@ def test_hydrated_active_roster_cannot_contradict_the_plain_response(monkeypatch
     monkeypatch.setattr(depth, 'latest_source_status', lambda cur, endpoint, params: (2, 'received', None))
     monkeypatch.setattr(depth, '_view', lambda *args: dict(pitchers={8: dict(status_codes=['A'])}))
     assert depth.board_rest_pitchers(None, 111, day) is None
+
+def test_mixed_start_relief_eligibility_cannot_qualify_a_tonight_bridge_arm():
+    from sync_v3.product_reads import _board_role
+
+    role = dict(role_key='setup_bridge', confidence='high', sample_size=7)
+    assert _board_role({'eligibility': {'status': 'role_reliever'}}, role)['key'] == 'bridge_arm'
+    assert _board_role({'eligibility': {'status': 'role_ambiguous'}}, role)['key'] == 'limited_read'
+    assert _board_role({'eligibility': None}, role)['key'] == 'limited_read'
+    mixed = dict(status='role_reliever', reason='Mixed starting and relief usage in the recent window (swing/bulk role).')
+    assert _board_role({'eligibility': mixed}, role)['key'] == 'limited_read'
+
+
+def test_arrival_keeps_board_date_eligibility_and_workload_cutoff(monkeypatch):
+    old_arm = arm(4)
+    arrived = dict(arm(1), label_eligibility={'status': 'role_ambiguous'})
+    report = dict(team=111, reference_date=str(REFERENCE), arms={1: old_arm})
+    monkeypatch.setattr(readiness, 'board_rest_pitchers', lambda _, __, day: {1, 2} if day == REFERENCE else {1})
+    monkeypatch.setattr(readiness, 'competition_status', lambda *_: {})
+
+    def represented(_, team, through, reference, league, *, roster_day):
+        assert (team, through, reference, roster_day) == (111, THROUGH, REFERENCE, REFERENCE)
+        return dict(arms={1: old_arm, 2: arrived}, reason=None)
+
+    monkeypatch.setattr(readiness, '_club_readiness', represented)
+    result = readiness.availability_day_arms(None, report, THROUGH)
+    assert result == {1: old_arm, 2: arrived}
+    assert readiness.board_rest_status(result)['active_arm_count'] == 2
+    assert report['arms'] == {1: old_arm}
