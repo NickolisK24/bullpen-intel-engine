@@ -10,6 +10,7 @@ from pathlib import Path
 import psycopg2
 
 from services.mlb_api import MLBApiClient
+from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import savant
 from sync_v3.cycle import run_cycle
 from sync_v3.replay import schema_digest, schema_scripts
@@ -48,7 +49,11 @@ def verify_target(connection):
         return name
 
 
-def process(connection, day, *, max_jobs, profiles=False):
+def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postseason_rounds=(), round_totals=False):
+    if postseason_rounds and not profiles:
+        raise ValueError("Postseason pitcher acquisition requires active profiles")
+    if round_totals and not postseason_rounds:
+        raise ValueError("Round totals require at least one postseason round")
     name = verify_target(connection)
     client = MLBApiClient()
     with closing(client.session):
@@ -58,7 +63,8 @@ def process(connection, day, *, max_jobs, profiles=False):
             return client._get(endpoint, params=params)
 
         receipts = run_cycle(connection, day, fetch, max_jobs=max_jobs, competition=True,
-                             statcast=True, active_roster_profiles=profiles)
+                             statcast=True, active_roster_profiles=profiles, depth_teams=depth_teams,
+                             postseason_rounds=postseason_rounds, round_totals=round_totals)
     with connection, connection.cursor() as cur:
         cur.execute('SET TRANSACTION READ ONLY')
         cur.execute("""SELECT state,count(*) FROM candidate.jobs
@@ -75,7 +81,16 @@ def main():
     parser.add_argument('--day', type=date.fromisoformat, required=True)
     parser.add_argument('--max-jobs', type=int, choices=range(1, 257), metavar='1..256', default=32)
     parser.add_argument('--active-profiles', action='store_true')
+    parser.add_argument('--depth-team', type=int, choices=MLB_TEAM_IDS, action='append', default=[],
+                        help='Also acquire the dated affiliate rosters for this MLB club')
+    parser.add_argument('--postseason-round', choices=('F', 'D', 'L', 'W'), action='append', default=[],
+                        help='Acquire this round for pitchers discovered through --active-profiles')
+    parser.add_argument('--round-totals', action='store_true')
     args = parser.parse_args()
+    if args.postseason_round and not args.active_profiles:
+        parser.error('--postseason-round requires --active-profiles')
+    if args.round_totals and not args.postseason_round:
+        parser.error('--round-totals requires --postseason-round')
     socket = Path(args.host).is_absolute()
     if not args.host.strip() or ',' in args.host or (args.database == 'sync_v3_rehearsal' and not socket):
         parser.error('Supply a single private host. The rehearsal database requires a local Unix socket.')
@@ -84,7 +99,9 @@ def main():
                                       sslmode='disable' if socket else 'verify-full', connect_timeout=5,
                                       options='-c search_path=pg_catalog',
                                       application_name='baseballos_sync_v3_shadow')) as connection:
-            report = process(connection, args.day, max_jobs=args.max_jobs, profiles=args.active_profiles)
+            report = process(connection, args.day, max_jobs=args.max_jobs, profiles=args.active_profiles,
+                             depth_teams=args.depth_team, postseason_rounds=args.postseason_round,
+                             round_totals=args.round_totals)
     except psycopg2.Error as exc:
         parser.exit(1, f'Candidate database operation failed ({exc.pgcode or type(exc).__name__}).\n')
     print(json.dumps(report, sort_keys=True))
