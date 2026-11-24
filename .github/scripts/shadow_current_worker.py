@@ -1,13 +1,14 @@
 """Run today's source worker and restore its private checkpoint on a fresh server."""
 import argparse
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 from hashlib import file_digest, sha256
 import json
 from pathlib import Path
 import subprocess
 
 from psycopg2 import sql
+from sync_v3 import queue
 from sync_v3.current_worker import acquisition_failed, process, verify_target
 from sync_v3.rehearse import isolated_cluster
 from sync_v3.replay import install
@@ -65,6 +66,13 @@ def run(day, directory, bindir, client_bin):
         report['first_batch'] = first
         if acquisition_failed(first) or first['receipts'] != {'received': 1} or not first['jobs_for_date'].get('pending'):
             raise ValueError('Expected one retained receipt and unfinished current work')
+        # End the worker session immediately after it commits a claim, before acquisition.
+        with closing(connect()) as worker, worker, worker.cursor() as cur:
+            cur.execute('SELECT clock_timestamp()')
+            abandoned = queue.claim(cur, cur.fetchone()[0], product_date=day, lease=timedelta(seconds=1))
+            if abandoned is None:
+                raise ValueError('Expected a ready dated job to interrupt')
+            job_id, original_token, _ = abandoned
         report['before_restart'] = inventory(owner)
         report['pending_checkpoint_sha256'] = checkpoint(owner, client_bin, partial)
 
@@ -82,6 +90,22 @@ def run(day, directory, bindir, client_bin):
             if acquisition_failed(batch) or not batch['receipts'] or set(batch['jobs_for_date']) == {'done'}:
                 break
         report['resumed_batches'] = batches
+        with closing(connect()) as worker, worker, worker.cursor() as cur:
+            cur.execute('''SELECT a.outcome, count(f.id) FROM candidate.attempts a
+                           LEFT JOIN candidate.fetches f ON f.token=a.token
+                           WHERE a.job_id=%s GROUP BY a.claimed_at,a.outcome ORDER BY a.claimed_at''', (job_id,))
+            attempts = cur.fetchall()
+            if attempts != [('expired', 0), ('done', 1)]:
+                raise ValueError(f'Interrupted job {job_id} has unexpected effects: {attempts}')
+            cur.execute('SELECT clock_timestamp()')
+            try:
+                queue.settle(cur, job_id, original_token, cur.fetchone()[0])
+            except ValueError as exc:
+                if str(exc) != 'Expired or superseded job claim':
+                    raise
+            else:
+                raise ValueError('Abandoned worker could settle the recovered job')
+        report['interrupted_job'] = dict(id=job_id, attempts=attempts, stale_settlement_rejected=True)
         report['source'] = inventory(owner)
         report['checkpoint_sha256'] = checkpoint(owner, client_bin, complete)
         report['checkpoint_bytes'] = complete.stat().st_size
