@@ -100,6 +100,7 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
             schedule = schedule_request(cur, day, now, schedule)
         depth_teams = sorted(set(depth_teams))
         profile_teams = set(teams).union(depth_teams)
+        postseason_rounds = tuple(postseason_rounds)
         requests = (schedule, transactions, *roster_requests(day, profile_teams), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
         if active_roster_profiles:
             requests += tuple(active_profile_request(day, team) for team in sorted(profile_teams))

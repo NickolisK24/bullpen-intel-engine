@@ -285,6 +285,12 @@ def test_private_current_worker_admits_only_acquisition_and_reports_partial_prog
             assert not calls
             with owner, owner.cursor() as cur:
                 cur.execute('REVOKE UPDATE(value) ON public.unrelated FROM sync_v3_worker')
+                cur.execute('GRANT UPDATE(generation) ON candidate.core_selections TO sync_v3_worker')
+            with pytest.raises(ValueError, match='restricted acquisition worker'):
+                current_worker.process(worker, date(2026, 11, 23), max_jobs=1)
+            assert not calls
+            with owner, owner.cursor() as cur:
+                cur.execute('REVOKE UPDATE(generation) ON candidate.core_selections FROM sync_v3_worker')
             with owner, owner.cursor() as cur:
                 cur.execute("UPDATE candidate.schema_installation SET digest=repeat('0',64)")
                 cur.execute('SELECT digest FROM candidate.schema_installation')

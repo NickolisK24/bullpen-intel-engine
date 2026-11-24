@@ -19,33 +19,33 @@ def verify_target(connection):
     """Read-only admission before any job is enqueued or any source is contacted."""
     with connection, connection.cursor() as cur:
         cur.execute('SET TRANSACTION READ ONLY')
-        cur.execute("""SELECT current_database(),current_user,session_user,
-                       rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls,
-                       has_database_privilege(current_database(),'CREATE'),
-                       has_schema_privilege('candidate','CREATE'),has_schema_privilege('public','CREATE'),
-                       has_table_privilege('candidate.jobs','INSERT'),
-                       has_table_privilege('candidate.core_selections','INSERT,UPDATE,DELETE,TRUNCATE'),
-                       has_function_privilege('candidate.record_core_selection(bigint,text,text)','EXECUTE'),
-                       EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                               WHERE n.nspname='public' AND c.relname IN ('dashboard_snapshots','sync_runs')),
-                       EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid),
-                       EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                               WHERE n.nspname <> 'candidate' AND n.nspname <> 'information_schema'
-                                 AND n.nspname !~ '^pg_' AND c.relkind IN ('r','p','v','f')
-                                 AND (has_table_privilege(c.oid,'INSERT,UPDATE,DELETE,TRUNCATE')
-                                      OR has_any_column_privilege(c.oid,'INSERT,UPDATE')))
+        cur.execute("""SELECT current_database(),
+                       current_user = 'sync_v3_worker' AND session_user = current_user
+                       AND has_table_privilege('candidate.jobs','INSERT')
+                       AND NOT (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls
+                           OR has_database_privilege(current_database(),'CREATE')
+                           OR has_schema_privilege('candidate','CREATE') OR has_schema_privilege('public','CREATE')
+                           OR has_table_privilege('candidate.core_selections','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
+                           OR has_any_column_privilege('candidate.core_selections','INSERT,UPDATE')
+                           OR has_function_privilege('candidate.record_core_selection(bigint,text,text)','EXECUTE')
+                           OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                                      WHERE n.nspname='public' AND c.relname IN ('dashboard_snapshots','sync_runs'))
+                           OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid)
+                           OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                                      WHERE n.nspname <> 'candidate' AND n.nspname <> 'information_schema'
+                                        AND n.nspname !~ '^pg_' AND c.relkind IN ('r','p','v','f')
+                                        AND (has_table_privilege(c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
+                                             OR has_any_column_privilege(c.oid,'INSERT,UPDATE'))))
                        FROM pg_roles r WHERE rolname=current_user""")
-        row = cur.fetchone()
-        if (row is None or row[0] not in ('sync_v3_shadow', 'sync_v3_rehearsal')
-                or row[1:] != ('sync_v3_worker', 'sync_v3_worker', False, False, False, False,
-                               True, False, False, False, False, False)):
+        name, admitted = cur.fetchone()
+        if name not in ('sync_v3_shadow', 'sync_v3_rehearsal') or not admitted:
             raise ValueError('Expected the isolated candidate database and its restricted acquisition worker')
         cur.execute("SELECT digest,has_table_privilege('candidate.schema_installation','INSERT,UPDATE,DELETE,TRUNCATE'),"
                     "has_any_column_privilege('candidate.schema_installation','INSERT,UPDATE') "
                     "FROM candidate.schema_installation WHERE singleton")
         if cur.fetchall() != [(schema_digest(schema_scripts()), False, False)]:
             raise ValueError('The candidate schema installation differs from the worker revision')
-        return row[0]
+        return name
 
 
 def process(connection, day, *, max_jobs, profiles=False):
