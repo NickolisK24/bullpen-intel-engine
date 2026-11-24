@@ -515,3 +515,46 @@ def test_bounded_current_batch_claims_a_final_alongside_ordinary_work():
         with worker, worker.cursor() as cur:
             cur.execute("SELECT DISTINCT state FROM candidate.jobs")
             assert cur.fetchall() == [('done',)]
+
+
+def test_worker_reports_a_prior_date_job_after_its_last_lease_expires(monkeypatch):
+    from contextlib import closing
+    from sync_v3 import current_worker
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    from datetime import date
+    from test_sync_v3_competition import season
+
+    today = date(2024, 10, 28)
+    past = today - timedelta(days=15)
+    at = datetime.combine(past, datetime.min.time(), timezone.utc)
+
+    def official(self, endpoint, params):
+        if endpoint == '/schedule' and 'season' in params:
+            return season()
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        if endpoint == '/schedule':
+            return {'dates': [], 'totalGames': 0}
+        return {'teamId': int(endpoint.split('/')[2]), 'rosterType': params['rosterType'], 'roster': []}
+    monkeypatch.setattr(current_worker.MLBApiClient, '_get', official)
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        with worker, worker.cursor() as cur:
+            for name, budget, payload in [('untagged', 'current', {}), ('archive', 'historical', {'capture': 'fixture'})]:
+                job = queue.enqueue(cur, name, payload, at, budget=budget, product_date=past)
+                claim = queue.claim(cur, at, budget=budget, product_date=past, capture=payload.get('capture'))
+                queue.settle(cur, job, claim[1], at, error=True, retryable=False)
+        clean = current_worker.process(worker, today, max_jobs=256)
+        assert clean['prior_dead_job'] is None and not current_worker.acquisition_failed(clean)
+        with worker, worker.cursor() as cur:
+            job = queue.enqueue(cur, 'interrupted', {'continuation': {}}, at, product_date=past, max_attempts=1)
+            assert queue.claim(cur, at, product_date=past)[0] == job
+        for _ in range(2):
+            report = current_worker.process(worker, today, max_jobs=256)
+            assert set(report['jobs_for_date']) == {'done'}
+            assert report['prior_dead_job'] == {'id': job, 'product_date': past.isoformat()}
+            assert current_worker.acquisition_failed(report)

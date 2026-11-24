@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import psycopg2
 from psycopg2.extensions import encrypt_password, parse_dsn
 
-from sync_v3.current_worker import process, verify_target
+from sync_v3.current_worker import acquisition_failed, process, verify_target
 from sync_v3.replay import install
 
 HOST = 'dpg-dc2t51mc6qcc738080hg-a'
@@ -89,7 +89,7 @@ def acquire(password):
         if before['first'] and before['first'] != after['first']:
             raise ValueError('Prior acquisition receipt changed')
         print(json.dumps(dict(before=before, after=after, report=report)), flush=True)
-        if set(report['receipts']) - {'received'} or report['jobs_for_date'].get('dead'):
+        if acquisition_failed(report):
             raise ValueError('Incomplete staging acquisition')
 
 
