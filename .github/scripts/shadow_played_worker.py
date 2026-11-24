@@ -10,6 +10,7 @@ from time import monotonic
 from psycopg2.extras import Json
 
 from shadow_current_worker import checkpoint
+from sync_v3 import evidence, savant
 from sync_v3.comparison import compare_finals
 from sync_v3.current_worker import acquisition_failed, process
 from sync_v3.cycle import run_cycle
@@ -48,17 +49,26 @@ def coverage(connection):
         cur.execute("""SELECT DISTINCT ON (identity) facts FROM candidate.revisions
                        WHERE domain='final' ORDER BY identity,revision DESC""")
         pitching = []
+        official_counts = {}
         for facts, in cur:
             for line in facts:
+                official_counts[line['game_pk'], line['pitcher_mlb_id']] = line['pitches_thrown']
                 innings, outs = divmod(line['outs_recorded'], 3)
                 pitching.append((line['game_pk'], line['team_id'], line['pitcher_mlb_id'], f'{innings}.{outs}',
                                  line['pitches_thrown'], line['strikeouts'], line['walks']))
+        request = savant.day_request(DAY)
+        receipt = evidence.latest_qualified_source(cur, request.endpoint, request.params())
+        provider = None
+        if receipt is not None:
+            body = evidence.replay(cur, receipt).body
+            provider = dict(sha256=body['sha256'], **savant.compare_pitch_counts(body['csv'], official_counts))
         cur.execute('SELECT count(*) FROM candidate.core_selections')
         selections, = cur.fetchone()
         cur.execute('SELECT pg_database_size(current_database())')
         size, = cur.fetchone()
     return dict(clubs=len({r['team'] for r in rosters}), roster_lists=len(rosters), finals=finals,
                 pitching_lines=lines, pitcher_profiles=len(pitchers), selections=selections, database_bytes=size,
+                statcast=provider,
                 cohort=dict(roster_members=fingerprint(members), pitcher_profiles=fingerprint(pitchers),
                             pitching_lines=fingerprint(pitching)))
 
@@ -119,7 +129,8 @@ def run(directory, bindir, client_bin):
     (directory / 'performance.json').write_text(json.dumps(report, sort_keys=True))
     for result in (report['acquisition_coverage'], report['replay_coverage']):
         if (result['cohort'] != EXPECTED or result['roster_lists'] != 60 or result['clubs'] != 30
-                or result['finals'] != 10 or result['selections']):
+                or result['finals'] != 10 or result['selections'] or not result['statcast']
+                or result['statcast']['status'] != 'pitch_counts_match' or result['statcast']['thrown_pitch_rows'] != 2824):
             raise ValueError(f'Played-slate coverage differs from the August acceptance cohort: {result}')
     if any(b['seconds'] >= 300 for b in report['acquisition_batches']):
         raise ValueError('A played-slate acquisition batch exceeded the staging command timeout')
