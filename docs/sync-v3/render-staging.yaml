@@ -1,0 +1,44 @@
+services:
+- type: cron
+  name: baseballos-sync-v3-staging-acquire
+  runtime: python
+  region: ohio
+  plan: starter
+  branch: staging/private-persistence
+  autoDeployTrigger: 'off'
+  rootDir: backend
+  buildCommand: pip install -r requirements.txt
+  schedule: 17 * * * *
+  startCommand: timeout -k 10s 300s python -m sync_v3.render_staging acquire
+  envVars:
+  - key: PYTHON_VERSION
+    value: 3.11.13
+  - key: AUTO_SYNC
+    value: 'false'
+  - key: STAGING_WORKER_PASSWORD
+    generateValue: true
+- type: cron
+  name: baseballos-sync-v3-staging-bootstrap
+  runtime: python
+  region: ohio
+  plan: starter
+  branch: staging/private-persistence
+  autoDeployTrigger: 'off'
+  rootDir: backend
+  buildCommand: pip install -r requirements.txt
+  schedule: 0 0 1 1 *
+  startCommand: timeout -k 10s 300s python -m sync_v3.render_staging bootstrap
+  envVars:
+  - key: PYTHON_VERSION
+    value: 3.11.13
+  - key: AUTO_SYNC
+    value: 'false'
+  - key: STAGING_WORKER_PASSWORD
+    fromService:
+      name: baseballos-sync-v3-staging-acquire
+      type: cron
+      envVarKey: STAGING_WORKER_PASSWORD
+  - key: STAGING_OWNER_DSN
+    fromDatabase:
+      name: baseballos-sync-v3-staging
+      property: connectionString
