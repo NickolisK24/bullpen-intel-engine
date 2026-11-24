@@ -12,7 +12,7 @@ from sync_v3.discovery import Request
 
 URL = 'https://baseballsavant.mlb.com/statcast_search/csv'
 MAX_BYTES = 16 * 1024 * 1024
-FIELDS = {'game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'pitcher', 'batter',
+FIELDS = {'game_date', 'game_pk', 'at_bat_number', 'pitch_number', 'pitcher', 'batter', 'description',
           'launch_speed', 'launch_speed_angle', 'estimated_ba_using_speedangle',
           'estimated_slg_using_speedangle', 'estimated_woba_using_speedangle', 'woba_value', 'woba_denom'}
 
@@ -75,3 +75,58 @@ def inspect(params, body):
         raise ValueError('Malformed Savant CSV') from exc
     if not pitches:
         raise ValueError('Savant returned no pitch evidence for the played date')
+
+
+def compare_pitch_counts(raw, official):
+    """Compare thrown pitches by game and arm. Preserve automatic calls in the source."""
+    from collections import Counter
+
+    thrown = Counter()
+    seen = set()
+    automatic = 0
+    for row in csv.DictReader(StringIO(raw.removeprefix('\ufeff'), newline='')):
+        identity = int(row['game_pk']), int(row['pitcher'])
+        seen.add(identity)
+        if row['description'] in ('automatic_ball', 'automatic_strike'):
+            automatic += 1
+        else:
+            thrown[identity] += 1
+    differences = []
+    for game, pitcher in sorted(seen | official.keys()):
+        key = game, pitcher
+        if key not in seen or key not in official or official[key] != thrown[key]:
+            differences.append(dict(game_pk=game, mlb_pitcher_id=pitcher, official=official.get(key),
+                                    provider=thrown[key] if key in seen else None))
+    return dict(status='pitch_counts_match' if official and not differences else 'unqualified',
+                official_lines=len(official), provider_lines=len(seen), thrown_pitch_rows=thrown.total(),
+                automatic_calls=automatic, differences=differences)
+
+
+def review_capture(cur, capture):
+    """Read only provider evidence and official final revisions confirmed in this capture."""
+    from sync_v3.evidence import replay
+
+    cur.execute("""SELECT f.id FROM candidate.jobs j JOIN candidate.attempts a ON a.job_id=j.id
+                   JOIN candidate.fetches f ON f.token=a.token
+                   WHERE j.budget='historical' AND j.payload->>'capture'=%s
+                     AND f.endpoint=%s AND f.outcome='received'""", (capture, URL))
+    receipts = cur.fetchall()
+    if not receipts:
+        return None
+    if len(receipts) != 1:
+        raise ValueError('Expected a single received Savant observation for the capture')
+    source = replay(cur, receipts[0][0])
+    cur.execute("""SELECT r.facts FROM candidate.jobs j JOIN candidate.attempts a ON a.job_id=j.id
+                   JOIN candidate.fetches f ON f.token=a.token
+                   JOIN candidate.confirmations c ON c.source_id=f.id AND c.domain='final'
+                   JOIN candidate.revisions r ON r.id=c.revision_id
+                   WHERE j.budget='historical' AND j.payload->>'capture'=%s""", (capture,))
+    official = {}
+    for lines, in cur:
+        for line in lines:
+            key = line['game_pk'], line['pitcher_mlb_id']
+            if key in official:
+                raise ValueError('Ambiguous official final within a Savant comparison')
+            official[key] = line['pitches_thrown']
+    return dict(capture=capture, provider_sha256=source.body['sha256'],
+                **compare_pitch_counts(source.body['csv'], official))

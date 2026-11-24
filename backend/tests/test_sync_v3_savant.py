@@ -101,8 +101,12 @@ def test_postgres_replays_provider_revisions_without_changing_official_game_line
     with isolated_cluster(pg) as (owner, connect):
         install(owner)
         with closing(connect()) as worker:
-            assert run_fixture(worker, path) > 0
-            assert run_fixture(worker, path) == 0
+            reviews = []
+            assert run_fixture(worker, path, on_statcast_review=reviews.append) > 0
+            assert run_fixture(worker, path, on_statcast_review=reviews.append) == 0
+            assert reviews[0] == reviews[1]
+            assert reviews[0]['status'] == 'unqualified'
+            assert reviews[0]['provider_sha256'] == first['sha256']
             with worker, worker.cursor() as cur:
                 cur.execute('SELECT count(*) FROM candidate.revisions')
                 official_revisions, = cur.fetchone()
@@ -115,5 +119,16 @@ def test_postgres_replays_provider_revisions_without_changing_official_game_line
                 cur.execute('SELECT id FROM candidate.fetches WHERE endpoint=%s ORDER BY id', (savant.URL,))
                 observations = [evidence.replay(cur, oid).body for oid, in cur.fetchall()]
                 assert observations == [first, item['body']]
+                assert savant.review_capture(cur, reviews[0]['capture']) == reviews[0]
                 cur.execute('SELECT count(*) FROM candidate.revisions')
                 assert cur.fetchone() == (official_revisions,)
+
+def test_provider_count_preserves_untracked_pitches_and_separates_automatic_calls():
+    raw = ('game_pk,pitcher,description,pitch_type\n'
+           '42,1001,called_strike,\n42,1001,automatic_ball,\n42,1001,automatic_strike,\n')
+    report = savant.compare_pitch_counts(raw, {(42, 1001): 1})
+    assert report['status'] == 'pitch_counts_match'
+    assert report['automatic_calls'] == 2 and report['thrown_pitch_rows'] == 1
+    mismatched = savant.compare_pitch_counts(raw, {(42, 1002): None})
+    assert mismatched['status'] == 'unqualified'
+    assert len(mismatched['differences']) == 2
