@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import closing, contextmanager
+from functools import partial
 import os
 from pathlib import Path
 import shutil
@@ -52,10 +53,11 @@ def isolated_cluster(bindir=None):
                     assert cur.fetchone() == ('',)
                     cur.execute('CREATE ROLE sync_v3_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT')
                     cur.execute('CREATE ROLE sync_v3_reviewer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT')
+                    cur.execute('CREATE ROLE sync_v3_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT')
                     cur.execute('CREATE DATABASE sync_v3_rehearsal')
                     for dbname in ('postgres', 'template1', DATABASE):
                         cur.execute(f'REVOKE ALL ON DATABASE {dbname} FROM PUBLIC')
-                    cur.execute('GRANT CONNECT ON DATABASE sync_v3_rehearsal TO sync_v3_worker,sync_v3_reviewer')
+                    cur.execute('GRANT CONNECT ON DATABASE sync_v3_rehearsal TO sync_v3_worker,sync_v3_reviewer,sync_v3_reader')
             finally:
                 admin.close()
             owner = connect(DATABASE, 'rehearsal_owner')
@@ -72,6 +74,27 @@ def isolated_cluster(bindir=None):
         finally:
             subprocess.run([pg_ctl, '-D', str(data), '-m', 'fast', '-w', 'stop'],
                            check=True, env=env, stdout=subprocess.DEVNULL)
+
+
+def historical_reader(owner):
+    """Prepare an HTTP reader after installing or restoring a disposable candidate schema."""
+    with owner, owner.cursor() as cur:
+        cur.execute("SELECT current_database(),session_user,current_user,inet_server_addr(),"
+                    "current_setting('listen_addresses')")
+        if cur.fetchone() != (DATABASE, 'rehearsal_owner', 'rehearsal_owner', None, ''):
+            raise ValueError('Reader setup requires the socket-only rehearsal database')
+        cur.execute('GRANT USAGE ON SCHEMA candidate TO sync_v3_reader')
+        cur.execute("""GRANT SELECT ON candidate.payloads, candidate.fetches, candidate.refusals,
+                       candidate.revisions, candidate.confirmations, candidate.workload_history,
+                       candidate.workload_history_sources, candidate.history_requests, candidate.change_inputs,
+                       candidate.generations, candidate.generation_inputs, candidate.generation_sources,
+                       candidate.public_identity_export, candidate.public_pitcher_ids, candidate.core_selections
+                       TO sync_v3_reader""")
+        cur.execute("""GRANT EXECUTE ON FUNCTION candidate.edition_identity_archives(text),
+                       candidate.edition_pitcher_ids(text) TO sync_v3_reader""")
+    return partial(psycopg2.connect, host=owner.info.host, port=owner.info.port, dbname=DATABASE,
+                   user='sync_v3_reader', connect_timeout=5,
+                   options='-c search_path=pg_catalog -c default_transaction_read_only=on')
 
 
 def verify_editorial_evidence(connection, board, events):
