@@ -201,3 +201,104 @@ def test_worker_exit_rolls_back_receipt_canonical_records_and_child_jobs():
                 assert cur.fetchone() == (1,)
                 cur.execute("SELECT count(*),count(DISTINCT payload->>'endpoint') FROM candidate.jobs WHERE state='pending'")
                 assert cur.fetchone() == (3, 3)
+
+
+def test_current_worker_resumes_prior_day_without_replanning_or_changing_profile_scope():
+    from contextlib import closing
+    from datetime import date
+    from sync_v3.cycle import run_cycle
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    first = date(2026, 11, 21)
+    second = first + timedelta(days=1)
+    now = datetime(2026, 11, 21, 23, 59, tzinfo=timezone.utc)
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append((endpoint, params))
+        if endpoint == '/schedule':
+            return {'dates': [], 'totalGames': 0}
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        if endpoint.startswith('/people/'):
+            return {'stats': []}
+        assert endpoint == '/teams/111/roster' and params['date'] == str(first)
+        return {'teamId': 111, 'rosterType': params['rosterType'],
+                'roster': [{'person': {'id': 9001}, 'position': {'code': '1'}}]}
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            run_cycle(worker, first, fetch, teams=[111], active_roster_profiles=True,
+                      postseason_rounds=['W'], round_totals=True, max_jobs=1, clock=lambda: now)
+        with closing(connect()) as replacement:
+            with replacement, replacement.cursor() as cur:
+                cur.execute("SELECT count(*) FROM candidate.jobs WHERE product_date=%s AND state='pending'", (first,))
+                pending, = cur.fetchone()
+                assert pending > 0
+                payload = {'endpoint': '/transactions', 'params': {}}
+                queue.enqueue(cur, 'untagged-prior', payload, now, product_date=first)
+                queue.enqueue(cur, 'future', dict(payload, continuation={}), now, product_date=second+timedelta(days=1))
+                queue.enqueue(cur, 'historical', dict(payload, continuation={}), now, product_date=first, budget='historical')
+            run_cycle(replacement, second, fetch, teams=[], clock=lambda: now + timedelta(minutes=4))
+            with replacement, replacement.cursor() as cur:
+                cur.execute("SELECT DISTINCT state FROM candidate.jobs WHERE product_date=%s AND budget='current' AND payload ? 'continuation'", (first,))
+                assert cur.fetchall() == [('done',)]
+                cur.execute("SELECT state FROM candidate.jobs WHERE identity IN ('untagged-prior','future','historical')")
+                assert cur.fetchall() == [('pending',)] * 3
+        assert [params['startDate'] for endpoint, params in calls if endpoint == '/schedule'] == [str(first), str(second)]
+        assert sorted((p['gameType'], p['stats']) for endpoint, p in calls if endpoint == '/people/9001/stats') == [
+            (stage, kind) for stage in ('R', 'W') for kind in ('byDateRange', 'gameLog')
+        ]
+
+
+def test_private_current_worker_admits_only_acquisition_and_reports_partial_progress(monkeypatch):
+    from contextlib import closing
+    from datetime import date
+    from sync_v3 import current_worker
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    calls = []
+    def official(self, endpoint, params):
+        calls.append(endpoint)
+        return {'totalGames': 0, 'dates': []}
+    monkeypatch.setattr(current_worker.MLBApiClient, '_get', official)
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect(reviewer=True)) as reviewer, closing(connect()) as worker:
+            for unauthorized in (owner, reviewer):
+                with pytest.raises(ValueError, match='restricted acquisition worker'):
+                    current_worker.process(unauthorized, date(2026, 11, 23), max_jobs=1)
+            assert not calls
+            with owner, owner.cursor() as cur:
+                cur.execute('CREATE TABLE public.unrelated (value int)')
+                cur.execute('GRANT UPDATE(value) ON public.unrelated TO sync_v3_worker')
+            with pytest.raises(ValueError, match='restricted acquisition worker'):
+                current_worker.process(worker, date(2026, 11, 23), max_jobs=1)
+            assert not calls
+            with owner, owner.cursor() as cur:
+                cur.execute('REVOKE UPDATE(value) ON public.unrelated FROM sync_v3_worker')
+            with owner, owner.cursor() as cur:
+                cur.execute("UPDATE candidate.schema_installation SET digest=repeat('0',64)")
+                cur.execute('SELECT digest FROM candidate.schema_installation')
+                assert cur.fetchone() == ('0' * 64,)
+            with pytest.raises(ValueError, match='schema installation'):
+                current_worker.process(worker, date(2026, 11, 23), max_jobs=1)
+            assert not calls
+            with owner, owner.cursor() as cur:
+                cur.execute('UPDATE candidate.schema_installation SET digest=%s',
+                            (current_worker.schema_digest(current_worker.schema_scripts()),))
+            report = current_worker.process(worker, date(2026, 11, 23), max_jobs=1)
+            assert calls == ['/schedule']
+            assert report['receipts'] == {'received': 1} and report['jobs_for_date']['pending'] > 0
+            assert report['publication_attempted'] is False
+            with worker, worker.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.core_selections')
+                assert cur.fetchone() == (0,)
