@@ -109,8 +109,37 @@ def _number_change_player(records):
     return None
 
 
+def _assignment_player(records):
+    # The league and destination responses can repeat a club notice alongside
+    # the player-specific record. Keep the notice's resolution date on its source.
+    named = [(record, raw) for record, raw in records if record['player_mlb_id'] is not None]
+    notices = [raw for record, raw in records if record['player_mlb_id'] is None]
+    if len(named) != 1 or not notices or any(raw != notices[0] for raw in notices):
+        return None
+    player, raw = named[0]
+    clubs = (player['from_team_id'], player['to_team_id'])
+    if (any(type(club) is not int or club <= 0 or club in MLB_TEAM_IDS for club in clubs)
+            or clubs[0] == clubs[1] or type(player['player_mlb_id']) is not int or player['player_mlb_id'] <= 0):
+        return None
+    shared = ('id', 'typeCode', 'typeDesc', 'date', 'effectiveDate', 'toTeam', 'description')
+    if (raw.get('typeCode') != 'ASG' or raw.get('typeDesc') != 'Assigned'
+            or not isinstance(raw.get('description'), str) or not raw['description'].strip()
+            or not all(raw.get(key) for key in shared)):
+        return None
+    notice = notices[0]
+    if (set(notice) == {*shared, 'resolutionDate'} and all(notice[key] == raw[key] for key in shared)
+            and notice['resolutionDate'] == raw['effectiveDate']
+            and player['resolution_date'] in (None, notice['resolutionDate'])):
+        return player
+    return None
+
+
 def _transaction_facts(records):
     first, _ = records[0]
+    if first['transaction_type_code'] == 'ASG' and len(records) > 1:
+        player = _assignment_player(records)
+        if player is not None:
+            return player
     if first['transaction_type_code'] == 'NUM' and len(records) > 1:
         description = records[0][1].get('description')
         if any(raw.get('description') != description for _, raw in records):

@@ -2305,3 +2305,52 @@ def test_official_number_change_mirrors_preserve_other_transactions_and_refuse_c
                      dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR'), dict(mirror, typeCode=None)]
         for offset, conflict in enumerate(conflicts, start=2):
             assert observe(offset, [player, conflict, signing])[1] == 'refused'
+
+
+def test_affiliate_assignment_club_summary_preserves_named_event_and_raw_source():
+    from contextlib import closing
+    from sync_v3 import evidence, queue, rosters
+    from sync_v3.discovery import calendar_requests
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2024, 3, 28)
+    request = calendar_requests(day)[1]
+    shared = dict(id=757736, date=str(day), effectiveDate=str(day), toTeam={'id': 556},
+                  typeCode='ASG', typeDesc='Assigned',
+                  description='RHP Harold Chirino,  and  assigned to Nashville Sounds from Biloxi Shuckers.')
+    player = dict(shared, person={'id': 666785, 'fullName': 'Harold Chirino'}, fromTeam={'id': 5015})
+    summary = dict(shared, resolutionDate=str(day))
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+
+        def ingest(offset, rows):
+            now = datetime(2024, 3, 29, tzinfo=timezone.utc) + timedelta(seconds=offset)
+            with worker, worker.cursor() as cur:
+                queue.enqueue(cur, str(offset), dict(endpoint=request.endpoint, params=request.params()), now)
+                claimed = queue.claim(cur, now)
+            return evidence.execute(worker, claimed, lambda *args, **kwargs: {'transactions': rows}, lambda: now,
+                                    on_received=rosters.observe)
+
+        for offset, rows in enumerate(([summary, summary, player], [player, summary], [player])):
+            source, status = ingest(offset, rows)
+            assert status == 'received'
+            with worker, worker.cursor() as cur:
+                assert evidence.replay(cur, source).body['transactions'] == rows
+                cur.execute("SELECT revision,facts FROM candidate.revisions WHERE domain='transaction'")
+                (revision, facts), = cur.fetchall()
+                assert revision == 1 and facts['player_mlb_id'] == 666785
+                assert (facts['from_team_id'], facts['to_team_id'], facts['resolution_date']) == (5015, 556, None)
+                cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='roster'")
+                assert cur.fetchone() == (0,)
+        for offset, conflicting in enumerate((
+            dict(summary, effectiveDate='2024-03-27'), dict(summary, resolutionDate='2024-03-27'),
+            dict(summary, description='A different assignment'), dict(summary, fromTeam={'id': 111}),
+            dict(summary, toTeam={'id': 111}), dict(summary, person={'id': 1234}),
+            dict(summary, typeDesc='Traded'),
+        ), start=3):
+            assert ingest(offset, [player, conflicting])[1] == 'refused'
+        mlb_team = {'id': 111}
+        assert ingest(10, [dict(player, toTeam=mlb_team), dict(summary, toTeam=mlb_team)])[1] == 'refused'
+        assert ingest(11, [player, summary, dict(summary, description='Different notice')])[1] == 'refused'
