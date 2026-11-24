@@ -32,7 +32,7 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: 977308228b086a4cd6eb8527b112394873556f44
+          ref: 823f5c8c751dc632d7721242a42e8931ed95688b
           persist-credentials: false
 
       - name: Check out the workflow's replay driver
@@ -128,6 +128,19 @@ jobs:
           cases = ET.parse(sys.argv[1]).findall('.//testcase')
           if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ('skipped', 'failure', 'error')):
               raise SystemExit('Controlled rollback did not exercise the expected acceptance case')
+          PYTHON
+
+      - name: Verify the historical HTTP reader's database permissions
+        run: |
+          set -euo pipefail
+          env -i PATH="$PATH" LANG=C.UTF-8 SYNC_V3_TEST_PG_BIN="$(pg_config --bindir)" python -m pytest -q \
+            tests/test_sync_v3_corrections.py::test_historical_http_reader_cannot_write_or_select_a_publication \
+            --junitxml="$RUNNER_TEMP/shadow/historical-reader.xml"
+          python - "$RUNNER_TEMP/shadow/historical-reader.xml" <<'PYTHON'
+          import sys, xml.etree.ElementTree as ET
+          cases = ET.parse(sys.argv[1]).findall('.//testcase')
+          if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ('skipped', 'failure', 'error')):
+              raise SystemExit('Historical reader privileges were not verified')
           PYTHON
 
       - name: Measure acquisition and hourly recovery on a played slate
