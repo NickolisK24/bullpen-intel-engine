@@ -58,10 +58,10 @@ def _aggregate(rows):
     return {'appearances': len(rows), 'metrics': metrics, 'descriptive_hr9': hr9}
 
 
-def active_group_population(cur, team, through):
+def active_group_population(cur, team, through, *, roster_day=None):
     result = {'team': team, 'through': through.isoformat(), 'roster_source': None, 'profiles': {},
               'members': [], 'windows': None, 'reason': None}
-    roster = roster_on(cur, team, 'active', through)
+    roster = roster_on(cur, team, 'active', roster_day or through)
     if not roster:
         result['reason'] = 'missing_dated_active_roster'
         return result, {}

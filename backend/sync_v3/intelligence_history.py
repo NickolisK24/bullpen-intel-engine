@@ -11,7 +11,7 @@ from sync_v3.deployment import club_role_movement, game_deployment, pitcher_meas
 from sync_v3.depth import club_depth
 from sync_v3.group_performance import active_group_performance
 from sync_v3.history import _store, _snapshot_transaction, _transaction
-from sync_v3.readiness import represented_readiness
+from sync_v3.readiness import availability_day_rest, represented_readiness
 from sync_v3.rosters import dated_pitcher_sources
 from sync_v3.rotation import club_rotation
 from sync_v3.schedule_context import club_schedule_context
@@ -20,7 +20,11 @@ from sync_v3.workload import load_calendar, outing_pitch_comparison, regular_day
 
 
 def _readiness(cur, team, through):
-    return readiness_history_facts(represented_readiness(cur, team, through))
+    report = represented_readiness(cur, team, through)
+    facts = readiness_history_facts(report)
+    if report['team_state']:
+        facts['board_date_rest'] = availability_day_rest(cur, report, through)
+    return facts
 
 
 def readiness_history_facts(report):

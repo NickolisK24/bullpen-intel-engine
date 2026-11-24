@@ -68,6 +68,29 @@ def _view(cur, team, parent, kind, params, *, membership=False):
     return result
 
 
+def board_rest_pitchers(cur, team, day):
+    """Return the confirmed dated staff for D-055, or None for unresolved membership."""
+    params = dict(date=day.isoformat(), rosterType='active')
+    roster = roster_on(cur, team, 'active', day)
+    if not roster:
+        return None
+    body = replay(cur, roster[1]).body
+    listed, reason = _pitchers(body, team, team, 'active')
+    if (reason or not listed or any(row['status_codes'] != ['A'] for row in listed.values())
+            or any(entry['position']['code'] == 'Y' or
+                   (_two_way_eligible(entry) and entry['position']['code'] != '1') for entry in body['roster'])):
+        return None
+    # Hydration is optional, but contrary official membership cannot support a count.
+    hydrated = dict(params, hydrate='person')
+    if latest_source_status(cur, f'/teams/{team}/roster', hydrated):
+        view = _view(cur, team, team, 'active', hydrated)
+        other = view['pitchers']
+        if (not other or other.keys() != listed.keys()
+                or any(other[p]['status_codes'] != listed[p]['status_codes'] for p in listed)):
+            return None
+    return set(listed)
+
+
 def club_depth(cur, team, day):
     if team not in MLB_TEAM_IDS:
         raise ValueError('Expected an MLB parent')

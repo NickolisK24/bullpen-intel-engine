@@ -3,7 +3,8 @@ from datetime import date
 import pytest
 
 from services.public_team_relief_work import WORKLOAD_WINDOWS_POPULATION_BASIS, WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
-from sync_v3.product_reads import _matchup_workload
+from sync_v3 import readiness
+from sync_v3.product_reads import _board_date_rest, _matchup_workload
 
 
 @pytest.fixture
@@ -81,3 +82,60 @@ def test_competitive_save_work_uses_qualified_club_relief_and_exact_fourteen_day
     assert _competitive_saves(view, lines[2:]) == {}
     week['appearances']['status'] = 'partial'
     assert _competitive_saves(view, lines) == {}
+
+
+THROUGH = date(2017, 8, 28)
+REFERENCE = date(2017, 8, 29)
+
+
+def arm(days, back_to_back=False):
+    return dict(read=dict(availability=dict(data_state='fresh', inputs=dict(
+        days_rest=days, back_to_back=back_to_back))))
+
+
+def test_departure_is_excluded_from_board_rest_without_rewriting_team_state(monkeypatch):
+    report = dict(team=111, reference_date=str(REFERENCE), arms={1: arm(1, True), 2: arm(4)})
+    rosters = {THROUGH: {1, 2}, REFERENCE: {2}}
+    monkeypatch.setattr(readiness, 'board_rest_pitchers', lambda cur, club, day: rosters[day])
+    rest = readiness.availability_day_rest(None, report, THROUGH)
+    assert (rest['active_arm_count'], rest['rested_arm_count'], rest['back_to_back_count']) == (1, 1, 0)
+    assert set(report['arms']) == {1, 2}
+
+
+def test_new_arm_requires_qualified_evidence_at_the_original_workload_cutoff(monkeypatch):
+    report = dict(team=111, reference_date=str(REFERENCE), arms={1: arm(4)})
+    monkeypatch.setattr(readiness, 'board_rest_pitchers',
+                        lambda cur, club, day: {1, 2} if day == REFERENCE else {1})
+    monkeypatch.setattr(readiness, 'competition_status', lambda cur, day: {})
+
+    def recalculate(cur, team, through, reference, league, *, roster_day):
+        assert (team, through, reference, roster_day) == (111, THROUGH, REFERENCE, REFERENCE)
+        return dict(reason='missing_round_game_log', arms={1: arm(4)})
+
+    monkeypatch.setattr(readiness, '_club_readiness', recalculate)
+    rest = readiness.availability_day_rest(None, report, THROUGH)
+    assert rest['reason_code'] == 'roster_context_unavailable' and rest['active_arm_count'] is None
+
+
+@pytest.mark.parametrize('facts,reason', [
+    ({'arms': {1: arm(1)}}, 'roster_context_unavailable'),
+    ({'board_date_rest': {'available': True}}, 'frozen_rest_status_invalid'),
+])
+def test_unqualified_frozen_generations_cannot_publish_rest_counts(facts, reason):
+    rest = _board_date_rest(facts)
+    assert rest['reason_code'] == reason and rest['worked_yesterday_count'] is None
+
+
+def test_hydrated_active_roster_cannot_contradict_the_plain_response(monkeypatch):
+    from types import SimpleNamespace
+    from sync_v3 import depth
+
+    day = REFERENCE
+    body = dict(teamId=111, rosterType='active', roster=[
+        dict(person=dict(id=7), position=dict(code='1'), status=dict(code='A'), parentTeamId=111),
+    ])
+    monkeypatch.setattr(depth, 'roster_on', lambda cur, team, kind, day: ({}, 1))
+    monkeypatch.setattr(depth, 'replay', lambda cur, source: SimpleNamespace(body=body))
+    monkeypatch.setattr(depth, 'latest_source_status', lambda cur, endpoint, params: (2, 'received', None))
+    monkeypatch.setattr(depth, '_view', lambda *args: dict(pitchers={8: dict(status_codes=['A'])}))
+    assert depth.board_rest_pitchers(None, 111, day) is None

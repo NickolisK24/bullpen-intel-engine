@@ -24,9 +24,9 @@ def _most_recent(rows):
     return ordered[:10]
 
 
-def _debut(cur, team, through, player, listed):
+def _debut(cur, team, roster_day, player, listed):
     endpoint = f'/teams/{team}/roster'
-    params = dict(date=str(through), rosterType='active', hydrate='person')
+    params = dict(date=str(roster_day), rosterType='active', hydrate='person')
     source = latest_qualified_source(cur, endpoint, params)
     if source is None:
         raise BaselineWithheld('missing_mlb_debut_evidence')
@@ -39,12 +39,12 @@ def _debut(cur, team, through, player, listed):
     if len(values) != 1 or not all(values):
         raise BaselineWithheld('missing_mlb_debut_evidence')
     day = date.fromisoformat(values.pop())
-    if day > through:
+    if day > roster_day:
         raise BaselineWithheld('mlb_debut_after_membership_date')
     return day, source
 
 
-def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache):
+def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache, *, roster_day):
     rows, sources = [], []
     debut = None
     end = through
@@ -64,8 +64,12 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache)
         if len(rows) >= 10:
             break
         if debut is None:
-            debut, source = _debut(cur, team, through, player, listed)
+            debut, source = _debut(cur, team, roster_day, player, listed)
             sources.append(source)
+            if debut > through:
+                if rows:
+                    raise BaselineWithheld('appearance_predates_mlb_debut')
+                break
         if end.year == debut.year:
             break
         end = date(end.year-1, 12, 31)
@@ -113,12 +117,14 @@ def represented_membership(cur, team, through, roster, rounds=None):
                      (_two_way_eligible(row) and row['position']['code'] != '1') for row in raw['roster']):
         return dict(result, reason=reason or 'two_way_role_evidence_unresolved')
     arms, logs, final_cache = [], {}, {}
+    roster_day = date.fromisoformat(roster[0]['represented'])
     for player, fields in sorted(listed.items()):
         if fields['status_codes'] != ['A']:
             result['withheld'][player] = dict(reason='active_pitching_population_unresolved')
             continue
         try:
-            sample, sources, latest = _eligibility_sample(cur, team, player, through, listed, rounds, final_cache)
+            sample, sources, latest = _eligibility_sample(cur, team, player, through, listed, rounds, final_cache,
+                                                         roster_day=roster_day)
         except BaselineWithheld as exc:
             result['withheld'][player] = dict(reason=str(exc), evidence=exc.game_evidence)
             continue
