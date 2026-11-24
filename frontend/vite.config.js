@@ -19,6 +19,7 @@ export default defineConfig(async ({ command }) => {
   }
   return {
     plugins: [react()],
+    ssr: { resolve: { externalConditions: ['node', 'module-sync'] } },
     build: {
       rollupOptions: {
         input: {
