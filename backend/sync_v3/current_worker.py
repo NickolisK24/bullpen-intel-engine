@@ -70,8 +70,19 @@ def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postse
         cur.execute("""SELECT state,count(*) FROM candidate.jobs
                        WHERE budget='current' AND product_date=%s GROUP BY state""", (day,))
         states = dict(cur.fetchall())
+        cur.execute("""SELECT id,product_date FROM candidate.jobs
+                       WHERE budget='current' AND state='dead' AND product_date < %s
+                         AND payload ? 'continuation' AND payload->>'capture' IS NULL
+                       ORDER BY product_date,id LIMIT 1""", (day,))
+        prior = cur.fetchone()
+    prior_dead_job = dict(id=prior[0], product_date=prior[1].isoformat()) if prior else None
     return dict(database=name, baseball_date=day.isoformat(), receipts=dict(Counter(s for _, s in receipts)),
-                jobs_for_date=states, publication_attempted=False)
+                jobs_for_date=states, prior_dead_job=prior_dead_job, publication_attempted=False)
+
+
+def acquisition_failed(report):
+    return bool(set(report['receipts']) - {'received'} or report['jobs_for_date'].get('dead')
+                or report['prior_dead_job'])
 
 
 def main():
@@ -105,7 +116,7 @@ def main():
     except psycopg2.Error as exc:
         parser.exit(1, f'Candidate database operation failed ({exc.pgcode or type(exc).__name__}).\n')
     print(json.dumps(report, sort_keys=True))
-    if set(report['receipts']) - {'received'} or report['jobs_for_date'].get('dead'):
+    if acquisition_failed(report):
         return 1
     return 0
 
