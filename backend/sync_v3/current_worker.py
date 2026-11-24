@@ -39,7 +39,7 @@ def verify_target(connection):
                                              OR has_any_column_privilege(c.oid,'INSERT,UPDATE'))))
                        FROM pg_roles r WHERE rolname=current_user""")
         name, admitted = cur.fetchone()
-        if name not in ('sync_v3_shadow', 'sync_v3_rehearsal') or not admitted:
+        if name not in ('sync_v3_shadow', 'sync_v3_rehearsal', 'baseballos_sync_v3_staging') or not admitted:
             raise ValueError('Expected the isolated candidate database and its restricted acquisition worker')
         cur.execute("SELECT digest,has_table_privilege('candidate.schema_installation','INSERT,UPDATE,DELETE,TRUNCATE'),"
                     "has_any_column_privilege('candidate.schema_installation','INSERT,UPDATE') "
@@ -77,7 +77,7 @@ def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postse
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, help='Private staging hostname or absolute PostgreSQL socket directory')
-    parser.add_argument('--database', choices=('sync_v3_shadow', 'sync_v3_rehearsal'), default='sync_v3_shadow')
+    parser.add_argument('--database', choices=('sync_v3_shadow', 'sync_v3_rehearsal', 'baseballos_sync_v3_staging'), default='sync_v3_shadow')
     parser.add_argument('--day', type=date.fromisoformat, required=True)
     parser.add_argument('--max-jobs', type=int, choices=range(1, 257), metavar='1..256', default=32)
     parser.add_argument('--active-profiles', action='store_true')
