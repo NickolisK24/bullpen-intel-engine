@@ -130,7 +130,8 @@ def run(directory, bindir, client_bin):
     for result in (report['acquisition_coverage'], report['replay_coverage']):
         if (result['cohort'] != EXPECTED or result['roster_lists'] != 60 or result['clubs'] != 30
                 or result['finals'] != 10 or result['selections'] or not result['statcast']
-                or result['statcast']['status'] != 'pitch_counts_match' or result['statcast']['thrown_pitch_rows'] != 2824):
+                or result['statcast']['status'] != 'pitch_counts_match'
+                or (result['statcast']['thrown_pitch_rows'], result['statcast']['automatic_calls']) != (2808, 16)):
             raise ValueError(f'Played-slate coverage differs from the August acceptance cohort: {result}')
     if any(b['seconds'] >= 300 for b in report['acquisition_batches']):
         raise ValueError('A played-slate acquisition batch exceeded the staging command timeout')
