@@ -556,3 +556,26 @@ test('historical slate binds game navigation and distinguishes an off-day from m
   assert.equal(read({ ...played, availability_reference: page.data_through }), null)
   assert.equal(read({ ...played, league_changes: [{ occurred_on: page.data_through, source_ref: 'different' }] }), null)
 })
+
+test('incomplete Tonight slates cannot present a quiet day or a partial game list', () => {
+  const quiet = quietPayload()
+  const played = productionPayload()
+  for (const payload of [
+    { ...quiet, games: undefined },
+    { ...quiet, games: null },
+    { ...quiet, summary: {} },
+    { ...played, games: played.games.slice(1) },
+    { ...played, games: [played.games[1], ...played.games.slice(1)] },
+  ]) {
+    assert.equal(view.classifyTonightResponse(payload), 'unavailable')
+    const html = renderPage({ payload })
+    assert.match(textOf(html), /trusted bullpen edition isn't available yet/)
+    assert.equal(gamePksIn(html).length, 0)
+  }
+  // A serving overlay can retain a cancelled card while excluding it from game_count.
+  const games = played.games.map((game, index) => index === 0 ? { ...game, state: 'cancelled' } : game)
+  assert.equal(view.classifyTonightResponse({
+    ...played, games, summary: { ...played.summary, game_count: games.length - 1 },
+  }), 'available')
+  assert.equal(view.classifyTonightResponse(quiet), 'quiet')
+})

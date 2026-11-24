@@ -82,9 +82,18 @@ export function classifyTonightResponse(payload) {
   if (!isObject(payload)) return 'unavailable'
   if (payload.contract !== TONIGHT_CONTRACT) return 'unavailable'
   if (payload.status === 'unavailable' || !isObject(payload.edition)) return 'unavailable'
-  const gameCount = payload.summary?.game_count
-  if (gameCount === 0 && list(payload.games).length === 0) return 'quiet'
-  return 'available'
+  const { games } = payload
+  const gameCount = count(payload.summary?.game_count)
+  if (!Array.isArray(games) || gameCount === null) return 'unavailable'
+  const ids = new Set()
+  let cancelled = 0
+  for (const game of games) {
+    if (!Number.isSafeInteger(game?.game_pk) || game.game_pk <= 0 || ids.has(game.game_pk)) return 'unavailable'
+    ids.add(game.game_pk)
+    if (game.state === 'cancelled') cancelled += 1
+  }
+  if (games.length - cancelled !== gameCount) return 'unavailable'
+  return games.length === 0 ? 'quiet' : 'available'
 }
 
 export function gameStatusLabel(game) {
