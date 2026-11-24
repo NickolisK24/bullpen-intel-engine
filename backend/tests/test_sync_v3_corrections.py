@@ -2302,6 +2302,6 @@ def test_official_number_change_mirrors_preserve_other_transactions_and_refuse_c
                 assert evidence.replay(cur, receipt).body['transactions'] == [*pair, signing]
         conflicts = [dict(mirror, description='3B BJ Murray Jr. changed number to 19.'),
                      dict(mirror, fromTeam=dict(id=111)), dict(mirror, effectiveDate='2026-11-25'),
-                     dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR')]
+                     dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR'), dict(mirror, typeCode=None)]
         for offset, conflict in enumerate(conflicts, start=2):
             assert observe(offset, [player, conflict, signing])[1] == 'refused'

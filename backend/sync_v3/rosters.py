@@ -87,7 +87,8 @@ def observe(cur, source_id, capture, *, replay_batch=False):
 
 def _number_change_player(records):
     # A club summary corroborates the named row. It cannot establish a transfer.
-    if len(records) != 2 or any(raw.get('typeDesc') != 'Number Change' for _, raw in records):
+    if len(records) != 2 or any(record['transaction_type_code'] != 'NUM' or raw.get('typeDesc') != 'Number Change'
+                                for record, raw in records):
         return None
     named = [record for record, _ in records if record['player_mlb_id'] is not None]
     if len(named) != 1:
