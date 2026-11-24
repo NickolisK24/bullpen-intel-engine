@@ -1,6 +1,6 @@
 """Read-only HTTP adapter for a rehearsal-owned connection factory."""
 
-from contextlib import closing
+from contextlib import closing, contextmanager
 
 from flask import Flask, abort
 
@@ -16,6 +16,15 @@ def historical_history_app(connect, *, page_size=14):
     clubs = {club.abbreviation: club.team_id for club in MLB_CLUBS}
     app = Flask(__name__, static_folder=None)
 
+    @contextmanager
+    def reader():
+        with closing(connect()) as connection:
+            with connection, connection.cursor() as cur:
+                cur.execute('SELECT current_database(), session_user, current_user, inet_server_addr()')
+                if cur.fetchone() != ('sync_v3_rehearsal', 'sync_v3_reader', 'sync_v3_reader', None):
+                    raise PermissionError('Historical HTTP reads require the dedicated rehearsal reader')
+            yield connection
+
     @app.get('/api/sync-v3/history/teams/<club>/revisions/<int:revision>')
     def club_history(club, revision):
         if club not in clubs:
@@ -26,7 +35,7 @@ def historical_history_app(connect, *, page_size=14):
     def team_history(team, revision):
         if team not in MLB_TEAM_IDS or not 0 < revision < 2**63:
             abort(404)
-        with closing(connect()) as connection:
+        with reader() as connection:
             page = read_team_history(connection, team, through_revision=revision, limit=page_size)
         return page, 404 if page['status'] == 'unknown_revision' else 200
 
@@ -34,11 +43,11 @@ def historical_history_app(connect, *, page_size=14):
     def availability_edition(digest):
         if len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
             abort(404)
-        with closing(connect()) as connection:
+        with reader() as connection:
             try:
                 return read_availability_edition(connection, digest)
             except UnknownAvailabilityEdition:
                 abort(404)
 
-    app.register_blueprint(product_routes(connect, page_size))
+    app.register_blueprint(product_routes(reader, page_size))
     return app

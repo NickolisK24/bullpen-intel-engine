@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from sync_v3.cycle import run_cycle
-from sync_v3.rehearse import isolated_cluster
+from sync_v3.rehearse import historical_reader, isolated_cluster
 from sync_v3.replay import install
 from sync_v3.comparison import compare_finals
 
@@ -1509,7 +1509,7 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             older = read_team_history(worker, 111, through_revision=page['next_revision'])
             if identity_mode == 'complete':
                 from sync_v3.history_delivery import historical_history_app
-                adapter = historical_history_app(connect, page_size=2)
+                adapter = historical_history_app(historical_reader(owner), page_size=2)
                 if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
                     run_historical_browser_journeys(adapter, 'rollback')
                     run_historical_browser_journeys(adapter, 'selected-slate')
@@ -1690,7 +1690,7 @@ def test_selected_off_day_has_no_games_and_preserves_the_league(tmp_path):
             slate = read_game_cards(worker, revision=revision)
             if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
                 from sync_v3.history_delivery import historical_history_app
-                run_historical_browser_journeys(historical_history_app(connect), 'off-day')
+                run_historical_browser_journeys(historical_history_app(historical_reader(owner)), 'off-day')
             assert len(league['teams']) == 30 and league['generation'] == slate['generation']
             assert slate['status'] == 'represented' and slate['quiet_day'] is True and slate['games'] == []
             assert read_game_cards(worker, game_pk=10101)['status'] == 'game_outside_represented_slate'
@@ -2091,7 +2091,7 @@ def test_board_transaction_days_follow_selected_receipts_and_rollback(tmp_path):
             assert event['transaction_id'] == '77' and event['pitcher']['pitcher_id'] == 9111
             if os.getenv('SYNC_V3_TEST_BROWSER') == '1':
                 from sync_v3.history_delivery import historical_history_app
-                run_historical_browser_journeys(historical_history_app(connect), 'transaction-window')
+                run_historical_browser_journeys(historical_history_app(historical_reader(owner)), 'transaction-window')
             restored = select_generation(reviewer, editions[0], expected_revision=revision, rollback=True)
             assert read_team_board(worker, 111, revision=restored)['prior_transaction_days'] == []
             assert read_team_board(worker, 111, revision=revision)['prior_transaction_days'] == [earlier]
@@ -2305,3 +2305,34 @@ def test_official_number_change_mirrors_preserve_other_transactions_and_refuse_c
                      dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR'), dict(mirror, typeCode=None)]
         for offset, conflict in enumerate(conflicts, start=2):
             assert observe(offset, [player, conflict, signing])[1] == 'refused'
+
+
+def test_historical_http_reader_cannot_write_or_select_a_publication():
+    from contextlib import closing
+    from psycopg2.errors import InsufficientPrivilege
+    from sync_v3.history_delivery import historical_history_app
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        reader = historical_reader(owner)
+        with closing(reader()) as db:
+            with db, db.cursor() as cur:
+                cur.execute('SHOW transaction_read_only')
+                assert cur.fetchone() == ('on',)
+            for statement in (
+                'UPDATE candidate.jobs SET state=state WHERE false',
+                'DELETE FROM candidate.core_selections WHERE false',
+                "SELECT candidate.record_core_selection(0, NULL, 'select')",
+                'SET ROLE sync_v3_worker',
+                'SET ROLE sync_v3_reviewer',
+            ):
+                with pytest.raises(InsufficientPrivilege), db, db.cursor() as cur:
+                    cur.execute('SET TRANSACTION READ WRITE')
+                    cur.execute(statement)
+        app = historical_history_app(connect)
+        app.testing = True
+        with pytest.raises(PermissionError, match='dedicated rehearsal reader'):
+            app.test_client().get('/api/sync-v3/revisions/1/league')

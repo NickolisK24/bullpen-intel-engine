@@ -1,7 +1,5 @@
 """Edition-bound GET routes for the disposable product rehearsal."""
 
-from contextlib import closing
-
 from flask import Blueprint, abort, request
 
 from services.mlb_club_directory import MLB_TEAM_IDS
@@ -12,7 +10,7 @@ from sync_v3.product_reads import (
 )
 
 
-def product_routes(connect, page_size):
+def product_routes(reader_connection, page_size):
     routes = Blueprint('historical_products', __name__, url_prefix='/api/sync-v3/revisions/<int:revision>')
 
     @routes.before_request
@@ -24,7 +22,7 @@ def product_routes(connect, page_size):
             abort(404)
 
     def deliver(reader, *args, **kwargs):
-        with closing(connect()) as connection:
+        with reader_connection() as connection:
             payload = reader(connection, *args, **kwargs)
         outcome = payload.get('status', payload.get('qualification'))
         return payload, 404 if outcome in {

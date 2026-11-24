@@ -48,7 +48,7 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path, 
     from pathlib import Path
 
     import pytest
-    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.rehearse import historical_reader, isolated_cluster
     from sync_v3.replay import install, run_fixture
     from sync_v3.generation import build_batch, freeze_generation, GenerationDateWithheld
     from sync_v3.schedule_context import club_schedule_context, retrospective_availability_date
@@ -135,7 +135,7 @@ def test_calendar_gaps_and_disappearing_games_never_create_an_off_day(tmp_path, 
             assert edition['availability_reference'] == str(ref)
             assert read_availability_edition(db, earlier['generation']) == original
             from sync_v3.history_delivery import historical_history_app
-            client = historical_history_app(connect).test_client()
+            client = historical_history_app(historical_reader(owner)).test_client()
             for stored in (original, edition):
                 response = client.get('/api/sync-v3/availability-editions/' + stored['generation'])
                 assert response.status_code == 200
