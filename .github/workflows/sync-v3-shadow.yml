@@ -85,7 +85,7 @@ jobs:
           evidence="$RUNNER_TEMP/shadow"
           /usr/bin/time -o "$evidence/replay-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
             env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
-            --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" \
+            --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" --measure-replay \
             --through "$(cat "$evidence/baseball-date")" --build-generation --trace-receipts \
             > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
 
