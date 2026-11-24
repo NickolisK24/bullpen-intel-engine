@@ -57,6 +57,14 @@ def compare_slate(selected, served, binding):
     expected_changes = _change_facts_by_team(selected)
     actual_changes = _change_facts_by_team(served)
     differences = {}
+    selected_order = [row['team_id'] for row in selected['league_changes']]
+    served_order = [row['team_id'] for row in served['league_changes']]
+    if selected_order != served_order:
+        differences['league_change_order'] = dict(selected=selected_order, served=served_order)
+    playing = {card[side]['team_id'] for card in expected.values() for side in ('home', 'away')}
+    for team in sorted((expected_changes.keys() | actual_changes.keys()) - playing):
+        if expected_changes.get(team, []) != actual_changes.get(team, []):
+            differences.setdefault('change_contents', []).append(dict(team_id=team))
     for pk, game in expected.items():
         other = actual[pk]
         for field in ('game_number', 'first_pitch_utc', 'state'):
