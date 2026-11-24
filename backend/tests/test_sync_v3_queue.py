@@ -362,3 +362,67 @@ def test_private_worker_acquires_scoped_depth_and_rounds(monkeypatch):
         {'date': str(day), 'rosterType': 'active', 'hydrate': 'person'}]
     assert sorted((p['gameType'], p['stats']) for end, p in calls if end == '/people/9001/stats') == [
         (stage, kind) for stage in ('R', 'W') for kind in ('byDateRange', 'gameLog')]
+
+
+def test_current_worker_rechecks_an_overnight_live_game_on_its_original_slate():
+    import copy
+    import json
+    from contextlib import closing
+    from pathlib import Path
+    from zoneinfo import ZoneInfo
+    from sync_v3.cycle import run_cycle
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    rows = {row['endpoint']: row['body'] for row in fixture['responses']}
+    day = datetime.fromisoformat(fixture['baseball_date']).date()
+    midnight = datetime.combine(day + timedelta(days=1), datetime.min.time(), ZoneInfo("America/New_York"))
+    now = midnight - timedelta(minutes=20)
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append((endpoint, params))
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        if endpoint == '/schedule':
+            if params['startDate'] != day.isoformat():
+                return {'dates': [], 'totalGames': 0}
+            body = copy.deepcopy(rows[endpoint])
+            if now < midnight - timedelta(minutes=10):
+                body['dates'][0]['games'][0]['status'] = {
+                    'abstractGameState': 'Live', 'detailedState': 'In Progress', 'statusCode': 'I'}
+            elif now < midnight:
+                body['dates'][0]['games'][0]['teams'].pop('home')
+            return body
+        if endpoint.endswith('/feed/live'):
+            return {'gamePk': 12345, 'liveData': {}}
+        return rows[endpoint]
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            run_cycle(worker, day, fetch, teams=(), clock=lambda: now)
+        assert any(endpoint.endswith('/feed/live') for endpoint, _ in calls)
+        # A structurally valid Final response with contradictory team identity cannot end polling.
+        for minutes in (9, 8, 7, 6):
+            now = midnight - timedelta(minutes=minutes)
+            with closing(connect()) as worker:
+                run_cycle(worker, day, fetch, teams=(), clock=lambda: now)
+        with closing(connect()) as worker, worker.cursor() as cur:
+            cur.execute("SELECT count(*) FROM candidate.refusals")
+            assert cur.fetchone()[0] >= 3
+        calls.clear()
+        now = midnight + timedelta(minutes=3)
+        with closing(connect()) as worker:
+            run_cycle(worker, now.date(), fetch, teams=(), clock=lambda: now)
+            assert '/game/12345/boxscore' in [endpoint for endpoint, _ in calls]
+            with worker, worker.cursor() as cur:
+                cur.execute("SELECT count(*) FROM candidate.revisions WHERE domain='final'")
+                assert cur.fetchone() == (1,)
+            calls.clear()
+            now += timedelta(hours=1)
+            run_cycle(worker, now.date(), fetch, teams=(), clock=lambda: now)
+            assert not any(p.get('startDate') == str(day) for _, p in calls)
