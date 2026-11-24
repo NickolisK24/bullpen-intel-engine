@@ -1,6 +1,6 @@
 """Read the isolated historical League listing at one committed selector revision."""
 
-from services.bullpen_board import build_rest_status
+from services.bullpen_board import build_rest_status, project_frozen_rest_status
 from services.league_team_state_listing import build_league_team_state_row
 from services.mlb_club_directory import MLB_CLUBS
 from services.team_state_public_vocabulary import (
@@ -69,14 +69,15 @@ def _movement(change, current, snapshot):
                 event_id=events[0]['event_id'] if events else None)
 
 
+def _board_date_rest(facts):
+    # Earlier generations have no receipt for the Board-date roster.
+    if 'board_date_rest' not in facts:
+        return build_rest_status([], counts_withheld=True)
+    return project_frozen_rest_status(facts['board_date_rest'])
+
+
 def _orientation(facts, change, digest):
-    cards = []
-    for arm in facts['arms'].values():
-        availability = (arm['read'] or {}).get('availability') or {}
-        inputs = availability.get('inputs') or {}
-        cards.append(dict(data_state=availability.get('data_state'), workload_facts=dict(
-            days_since_last_appearance=inputs.get('days_rest'), back_to_back=inputs.get('back_to_back'))))
-    rest = build_rest_status(cards)
+    rest = _board_date_rest(facts)
     counts = None
     if rest['available']:
         counts = {key: rest[key] for key in ('rested_arm_count', 'worked_yesterday_count', 'back_to_back_count')}
@@ -877,9 +878,7 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 continue
             ids = [int(player) for player in facts[team, reads]['arms']]
             state = row['team_state']
-            orientation = row['orientation'] or {}
-            counts = orientation.get('rest')
-            rest = dict(counts, available=True, active_arm_count=len(ids)) if counts else None
+            rest = _board_date_rest(facts[team, reads]) if state['available'] else None
             pressure = facts[team, rotation]['windows']['7']['pressure']
             if pressure and pressure.get('games_analyzed'):
                 limitations = _split_limitation_reasons(

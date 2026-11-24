@@ -899,6 +899,17 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
     prior_day = day - timedelta(days=1)
     prior = next(f for f in fixtures if f['baseball_date'] == str(prior_day))
     played = next(f for f in fixtures if f['baseball_date'] == str(day))
+    # Tonight rest is dated to the Board. Retain independent next-day
+    # snapshots for covered clubs; leave one club without a receipt.
+    following = next(f for f in fixtures if f['baseball_date'] == str(day + timedelta(days=1)))
+    following['team_ids'] = [team for team in played['team_ids'] if team != 119]
+    for response in played['responses']:
+        if response['endpoint'].endswith('/roster') and 'hydrate' not in response['params']:
+            team = int(response['endpoint'].split('/')[2])
+            if team in following['team_ids']:
+                observed = deepcopy(response)
+                observed['params']['date'] = following['baseball_date']
+                following['responses'].append(observed)
     prior['team_ids'] = [111]
     official = next(r['body'] for r in played['responses'] if r['endpoint'] == '/transactions')
     official['transactions'] = [
@@ -1001,7 +1012,9 @@ def test_isolated_core_selection_and_recovery(tmp_path, identity_mode):
             assert len(league['teams']) == len(league['citations']) == 30
             for row in league['teams']:
                 assert row['team_state']['available'] and row['team_state']['data_through'] == str(day)
-                assert row['orientation']['rest'] == dict(rested_arm_count=0, worked_yesterday_count=1, back_to_back_count=0)
+                expected_rest = None if row['team_id'] == 119 else dict(
+                    rested_arm_count=0, worked_yesterday_count=1, back_to_back_count=0)
+                assert row['orientation']['rest'] == expected_rest
                 assert row['orientation']['movement'] is None
             discovery = read_search(worker, 'Boston')
             assert discovery['generation'] == first
