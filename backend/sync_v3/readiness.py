@@ -71,6 +71,7 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None, *
             return dict(result, reason=evidence.get('reason') or 'incomplete_eligibility_sample',
                         eligibility_gaps=evidence['withheld'])
         members = evidence['candidate']
+        label_eligibility = evidence['label_eligibility']
         result.update(roster_source=roster[1], population_method=evidence['basis'],
                       eligibility_games={p: s['games'] for p, s in evidence['samples'].items()},
                       workload_rounds=sorted(window['rounds']))
@@ -85,6 +86,7 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None, *
             result['reason'] = population['reason']
             return result
         members = [member['player'] for member in population['members']]
+        label_eligibility = population.get('label_eligibility', {})
         latest = population['latest_membership_work']
         lines, sources = [], set()
         for offset in range(ACTIVE_WINDOW_DAYS):
@@ -118,7 +120,7 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None, *
             arm = verified_quiet_arm(player, latest[player], reference)
             if arm is not None:
                 reason = None
-        result['arms'][player] = {'read': arm, 'reason': reason}
+        result['arms'][player] = {'read': arm, 'reason': reason, 'label_eligibility': label_eligibility.get(player)}
         records.append(_normalize_pitcher_record({
             'availability_status': arm['availability']['availability_status'] if arm else 'unknown',
             'has_availability': bool(arm), 'has_current_workload': current,
@@ -145,33 +147,42 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None, *
     return result
 
 
-def availability_day_rest(cur, report, through):
-    """D-055 uses the Board-date roster and outings completed through the workload date."""
+def availability_day_arms(cur, report, through):
+    """Qualify the Board-date population against the unchanged workload cutoff."""
     team = report['team']
     reference = date.fromisoformat(report['reference_date'])
     reference_roster = board_rest_pitchers(cur, team, reference)
     if reference_roster is None:
-        return build_rest_status([], counts_withheld=True)
+        return None
     workload_roster = board_rest_pitchers(cur, team, through)
     if workload_roster is None:
-        return build_rest_status([], counts_withheld=True)
+        return None
     if reference_roster - workload_roster:
         # An arrival could be a starter or a reliever. Qualify its population
         # using the same official workload cutoff before counting any arms.
         report = _club_readiness(cur, team, through, reference, competition_status(cur, reference),
                                  roster_day=reference)
         if report.get('reason') == 'active_group_empty':
-            return build_rest_status([])
+            return {}
         if report.get('reason'):
-            return build_rest_status([], counts_withheld=True)
+            return None
+    return {player: arm for player, arm in report['arms'].items() if int(player) in reference_roster}
+
+
+def board_rest_status(arms):
+    if arms is None:
+        return build_rest_status([], counts_withheld=True)
     cards = []
-    for player, arm in report['arms'].items():
-        if int(player) in reference_roster:
-            availability = (arm['read'] or {}).get('availability') or {}
-            inputs = availability.get('inputs') or {}
-            cards.append(dict(data_state=availability.get('data_state'), workload_facts=dict(
-                days_since_last_appearance=inputs.get('days_rest'), back_to_back=inputs.get('back_to_back'))))
+    for arm in arms.values():
+        availability = (arm['read'] or {}).get('availability') or {}
+        workload = availability.get('inputs') or {}
+        cards.append(dict(data_state=availability.get('data_state'), workload_facts=dict(
+            days_since_last_appearance=workload.get('days_rest'), back_to_back=workload.get('back_to_back'))))
     return build_rest_status(cards)
+
+
+def availability_day_rest(cur, report, through):
+    return board_rest_status(availability_day_arms(cur, report, through))
 
 
 def review_availability_facts(cur, through, as_of, *, team=None, pitcher=None):

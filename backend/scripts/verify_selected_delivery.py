@@ -13,6 +13,32 @@ def _get(client, path):
     return response.get_json()
 
 
+def _change_facts_by_team(edition):
+    """Resolve each club's ordered links inside its own frozen Tonight edition."""
+    changes = edition.get('league_changes')
+    if not isinstance(changes, list):
+        raise ValueError('Tonight edition requires its retained league changes')
+    seen = set()
+    by_team = {}
+    for row in changes:
+        identity = row.get('change_id')
+        if not identity or identity in seen or not row.get('source_ref'):
+            raise ValueError('Tonight change requires a unique identity and source reference')
+        seen.add(identity)
+        by_team.setdefault(row['team_id'], []).append(row)
+    for game in edition['games']:
+        for side in ('home', 'away'):
+            club = game[side]
+            expected = [row['change_id'] for row in by_team.get(club['team_id'], ())]
+            if club['change_refs'] != expected:
+                raise ValueError('Tonight side change references disagree with its ordered club events')
+    public_fields = ('change_class', 'occurred_on', 'evidence_state', 'headline', 'detail', 'game_pks', 'state_change')
+    facts = {}
+    for team, rows in by_team.items():
+        facts[team] = [{key: row.get(key) for key in public_fields} for row in rows]
+    return facts
+
+
 def compare_slate(selected, served, binding):
     if (selected['status'] != 'represented' or selected['selection_revision'] != binding['revision']
             or selected['generation'] != binding['generation'] or selected['data_through'] != binding['data_through']
@@ -28,6 +54,8 @@ def compare_slate(selected, served, binding):
     expected, actual = games(selected['games']), games(served['games'])
     if expected.keys() != actual.keys():
         raise ValueError('Tonight game inventory differs from the selected schedule')
+    expected_changes = _change_facts_by_team(selected)
+    actual_changes = _change_facts_by_team(served)
     differences = {}
     for pk, game in expected.items():
         other = actual[pk]
@@ -39,6 +67,8 @@ def compare_slate(selected, served, binding):
             if (other[side]['team_id'] != team or other[side]['team_state'] != game[side]['team_state']
                     or other[side]['team_state']['public_state'] != binding['teams'][str(team)]['state']['public_state']):
                 raise ValueError(f'Tonight game {pk} differs on its {side} club or Team State')
+            if expected_changes.get(team, []) != actual_changes.get(team, []):
+                differences.setdefault('change_contents', []).append(dict(game_pk=pk, side=side, team_id=team))
             for field in ('rest', 'workload_7d', 'multi_day_usage', 'rotation', 'key_arms', 'change_refs'):
                 if game[side][field] != other[side][field]:
                     differences.setdefault(field, []).append(dict(game_pk=pk, side=side, team_id=team))

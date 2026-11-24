@@ -248,24 +248,27 @@ def _schedule_rows(cur, generation, reference):
     return rows
 
 
-def _public_arms(cur, digest):
-    """Resolve only represented bullpen members using the club receipt pinned by readiness."""
+def _public_arms(cur, digest, *, board_date=False):
+    """Resolve the specified arm population from its own dated, pinned club receipt."""
     cur.execute("SELECT manifest->>'public_identity_export' FROM candidate.generations WHERE digest=%s", (digest,))
     export, = cur.fetchone()
-    cur.execute("""SELECT h.mlb_id,h.facts->'arms',r.facts->'members' FROM candidate.generation_inputs g
+    cur.execute("""SELECT h.mlb_id,h.facts->%s,r.facts->'members' FROM candidate.generation_inputs g
                    JOIN candidate.workload_history h ON h.id=g.snapshot
+                   CROSS JOIN LATERAL (SELECT CASE WHEN %s THEN h.facts->>'reference_date'
+                       ELSE h.represented::text END AS day) roster_date
                    LEFT JOIN LATERAL (SELECT rev.facts FROM candidate.workload_history_sources hs
                      JOIN candidate.fetches f ON f.id=hs.source_id
                      JOIN candidate.confirmations c ON c.source_id=f.id AND c.domain='roster'
                      JOIN candidate.revisions rev ON rev.id=c.revision_id
                      WHERE hs.snapshot=h.id AND f.endpoint='/teams/' || h.mlb_id::text || '/roster'
-                     AND f.parameters=jsonb_build_object('date',h.represented::text,'rosterType','active')
-                     AND c.identity=h.mlb_id::text || '/active/' || h.represented::text) r ON true
-                   WHERE g.generation=%s AND h.methodology=%s""", (digest, DOMAINS['readiness'][1]))
+                     AND f.parameters=jsonb_build_object('date',roster_date.day,'rosterType','active')
+                     AND c.identity=h.mlb_id::text || '/active/' || roster_date.day) r ON true
+                   WHERE g.generation=%s AND h.methodology=%s""", ('board_date_arms' if board_date else 'arms', board_date,
+                                                                  digest, DOMAINS['readiness'][1]))
     players = {}
     for team, arms, roster in cur:
         entries = {member['id']: member for member in roster or ()}
-        for key in arms:
+        for key in arms or ():
             mlb = int(key)
             name = entries.get(mlb, {}).get('name')
             if mlb in players or not isinstance(name, str) or not name.strip():
@@ -758,6 +761,13 @@ def _historical_matchup(game, card, edition):
                 game=_scheduled_game_context(game, comparison, {}), publication_authority=None)
 
 
+def _board_role(arm, observed_role):
+    from services.pitcher_public_labels import build_pitcher_labels
+
+    eligibility = arm.get('eligibility')
+    return build_pitcher_labels(role=observed_role if eligibility else None, eligibility=eligibility)['role']
+
+
 def read_game_cards(connection, *, revision=None, game_pk=None):
     """Serve the same historical game card to the isolated slate and game detail."""
     from datetime import date
@@ -809,13 +819,15 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
         if not games:
             return dict(result, summary=tonight._summary([], {}, changes))
         clubs = {team for row in games for team in (row.home_team_id, row.away_team_id)}
+        board_identities, _ = _public_arms(cur, generation, board_date=True)
         reads, rotation = DOMAINS['readiness'][1], DOMAINS['rotation'][1]
         cur.execute("""SELECT h.mlb_id,h.methodology,h.facts FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='team'
                        AND h.mlb_id=ANY(%s) AND h.methodology=ANY(%s)""",
                     (generation, sorted(clubs), [METHODOLOGY, reads, rotation, DOMAINS['group_performance'][1]]))
         facts = {(team, method): body for team, method, body in cur}
-        arms = {int(player) for team in clubs for player in facts[team, reads]['arms']}
+        arms = {int(player) for team in clubs for field in ('arms', 'board_date_arms')
+                for player in facts[team, reads].get(field, {})}
         cur.execute("""SELECT h.mlb_id,h.facts->'rest'->'facts' FROM candidate.generation_inputs g
                        JOIN candidate.workload_history h ON h.id=g.snapshot WHERE g.generation=%s AND h.subject='pitcher'
                        AND h.mlb_id=ANY(%s) AND h.methodology=%s""", (generation, sorted(arms), DOMAINS['pitcher_rest'][1]))
@@ -825,7 +837,6 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 if 'rest' in week:
                     usage[int(mlb)] = week['rest']['facts'] or {}
 
-        from services.pitcher_public_labels import build_pitcher_labels
         cur.execute("""SELECT h.mlb_id,h.facts#>'{deployment,facts,observed_role,role}'
                        FROM candidate.generation_inputs g JOIN candidate.workload_history h ON h.id=g.snapshot
                        WHERE g.generation=%s AND h.subject='pitcher' AND h.mlb_id=ANY(%s) AND h.methodology=%s""",
@@ -888,7 +899,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                 bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
             key_arms, public_usage, active, named = [], {}, [], []
             # A key-arm ranking needs a complete identity map for this club.
-            club_mapped = all(identities.get(mlb, {}).get('public_id') is not None for mlb in ids)
+            board_arms = facts[team, reads].get('board_date_arms', {})
+            club_mapped = all(board_identities.get(int(mlb), {}).get('public_id') is not None for mlb in board_arms)
             observed_saves = None
             if facts[team, reads].get('workload_scope') == 'competitive_postseason_window':
                 from sync_v3.team_board_windows import board_workload_windows
@@ -902,12 +914,10 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 overview = facts[team, METHODOLOGY]['windows']['workload']
                 workloads[team] = _matchup_workload(facts[team, METHODOLOGY], end)
                 workload_methods[team] = METHODOLOGY
-            for mlb in (ids if club_mapped else []):
-                player = identities[mlb]
-                read = facts[team, reads]['arms'][str(mlb)]['read'] or {}
-                availability = read.get('availability') or {}
-                inputs = availability.get('inputs') or {}
-                role = build_pitcher_labels(availability, roles.get(mlb))['role']
+            for key, arm in (board_arms.items() if club_mapped else ()):
+                mlb = int(key)
+                player = board_identities[mlb]
+                role = _board_role(arm, roles.get(mlb))
                 pid = player['public_id']
                 active.append(dict(pitcher_id=pid, roster_state='active',
                                    days_since_last_appearance=usage.get(mlb, {}).get('days_since_last_appearance')))
@@ -917,8 +927,8 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                 named.append(dict(pitcher_id=pid, pitcher_name=player['name'], public_role_read=role,
                                   observed_profile=dict(saves=saves)))
                 key_arms.append(dict(pitcher_id=player['public_id'], name=player['name'], public_role_read=role,
-                                     workload=dict(days_since_last_appearance=inputs.get('days_rest'),
-                                                   back_to_back=inputs.get('back_to_back'))))
+                                     workload=dict(days_since_last_appearance=arm['days_rest'],
+                                                   back_to_back=arm['back_to_back'])))
                 public_usage[player['public_id']] = usage.get(mlb)
             role_rests[team] = named_role_rest(active, named)
             sides[team] = dict(team_id=team, abbreviation=row['team_abbreviation'], name=row['team_name'],
