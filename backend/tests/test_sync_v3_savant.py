@@ -71,6 +71,7 @@ def test_capture_preserves_stats_api_when_provider_is_unavailable(tmp_path, monk
     assert archived['statcast'] is True
     assert {r['endpoint'] for r in archived['responses']} >= {r['endpoint'] for r in fixture['responses']}
     provider_rows = [r for r in archived['responses'] if r['endpoint'] == savant.URL]
+    assert ('Baseball Savant' in archived['providers']) is (not outage)
     if outage:
         assert not provider_rows and archived['acquisition_failures'][0]['reason'] == 'Timeout'
     else:

@@ -93,7 +93,9 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
                 meta['statcast'] = True
                 if failures:
                     meta['acquisition_failures'] = failures
-                meta['providers'] = ['MLB Stats API', 'Baseball Savant']
+                meta['providers'] = ['MLB Stats API']
+                if any(request.endpoint == savant.URL for request in seen):
+                    meta['providers'].append('Baseball Savant')
             if active_profiles:
                 meta['active_roster_profiles'] = True
             if round_totals:
