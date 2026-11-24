@@ -6,6 +6,7 @@ from hashlib import sha256
 
 from psycopg2.extras import Json
 
+from services.game_ingestion_planner import DEFAULT_CORRECTION_HORIZON_DAYS
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters, savant
 from sync_v3.discovery import (active_pitcher_ids, active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
@@ -87,9 +88,8 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def enqueue_overnight_schedule(cur, day, now):
-    """Continue polling yesterday's live games after the scheduler advances its baseball date."""
-    previous = day - timedelta(days=1)
+def enqueue_prior_schedule(cur, previous, now, *, overnight):
+    """Revisit a retained current-worker slate for overnight finality or an overdue final audit."""
     schedule, _ = calendar_requests(previous)
     cur.execute("""SELECT f.id,j.payload->'continuation' FROM candidate.fetches f
                    JOIN candidate.attempts a ON a.token=f.token
@@ -102,8 +102,10 @@ def enqueue_overnight_schedule(cur, day, now):
     if row is None:
         return
     observation = evidence.replay(cur, row[0])
-    polls = [request.poll_seconds for request in game_requests(previous, observation.body, now=now)
-             if request.endpoint.endswith('/feed/live')]
+    requests = game_requests(previous, observation.body, now=now,
+                             reconciled=canonical.recently_reconciled(cur, row[0], now))
+    polls = [request.poll_seconds for request in requests
+             if request.endpoint.endswith('/boxscore') or (overnight and request.endpoint.endswith('/feed/live'))]
     if polls:
         enqueue_requests(cur, (replace(schedule, poll_seconds=min(polls)),), now,
                          budget='current', day=previous, policy=row[1])
@@ -120,7 +122,8 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         schedule, transactions = calendar_requests(day)
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
-            enqueue_overnight_schedule(cur, day, now)
+            for age in range(1, DEFAULT_CORRECTION_HORIZON_DAYS + 1):
+                enqueue_prior_schedule(cur, day - timedelta(days=age), now, overnight=age == 1)
         depth_teams = sorted(set(depth_teams))
         profile_teams = set(teams).union(depth_teams)
         postseason_rounds = tuple(postseason_rounds)
