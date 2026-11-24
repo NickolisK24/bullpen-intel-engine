@@ -308,3 +308,57 @@ def test_private_current_worker_admits_only_acquisition_and_reports_partial_prog
             with worker, worker.cursor() as cur:
                 cur.execute('SELECT count(*) FROM candidate.core_selections')
                 assert cur.fetchone() == (0,)
+
+
+def test_private_worker_acquires_scoped_depth_and_rounds(monkeypatch):
+    from contextlib import closing
+    from datetime import date
+    from test_sync_v3_competition import season
+    from sync_v3 import current_worker
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    day = date(2024, 10, 28)
+    calls = []
+
+    def official(self, endpoint, params):
+        calls.append((endpoint, params))
+        if endpoint == '/schedule' and 'season' in params:
+            return season()
+        if endpoint == '/schedule':
+            return {'dates': [], 'totalGames': 0}
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        if endpoint == '/teams/affiliates':
+            assert params['teamIds'] == 111
+            return {'teams': [
+                {'id': 111, 'season': 2024, 'sport': {'id': 1}},
+                {'id': 533, 'season': 2024, 'sport': {'id': 11}, 'parentOrgId': 111},
+            ]}
+        if endpoint.startswith('/people/'):
+            return {'stats': []}
+        club = int(endpoint.split('/')[2])
+        rows = [{'person': {'id': 9001}, 'position': {'code': '1'}}] if club == 111 else []
+        return {'teamId': club, 'rosterType': params['rosterType'], 'roster': rows}
+
+    monkeypatch.setattr(current_worker.MLBApiClient, '_get', official)
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            with pytest.raises(ValueError, match='active profiles'):
+                current_worker.process(worker, day, max_jobs=1, postseason_rounds=['W'])
+            with pytest.raises(ValueError, match='postseason round'):
+                current_worker.process(worker, day, max_jobs=1, profiles=True, round_totals=True)
+            assert not calls
+            report = current_worker.process(worker, day, max_jobs=256, profiles=True,
+                                            depth_teams=[111], postseason_rounds=['W'], round_totals=True)
+            with owner, owner.cursor() as cur:
+                cur.execute("SELECT endpoint,reason FROM candidate.fetches WHERE outcome <> 'received' LIMIT 4")
+                assert set(report['jobs_for_date']) == {'done'}, cur.fetchall()
+            assert report['publication_attempted'] is False
+    assert [params for endpoint, params in calls if endpoint == '/teams/533/roster'] == [
+        {'date': str(day), 'rosterType': 'active', 'hydrate': 'person'}]
+    assert sorted((p['gameType'], p['stats']) for end, p in calls if end == '/people/9001/stats') == [
+        (stage, kind) for stage in ('R', 'W') for kind in ('byDateRange', 'gameLog')]
