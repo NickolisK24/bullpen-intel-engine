@@ -171,3 +171,15 @@ def test_arrival_keeps_board_date_eligibility_and_workload_cutoff(monkeypatch):
     assert result == {1: old_arm, 2: arrived}
     assert readiness.board_rest_status(result)['active_arm_count'] == 2
     assert report['arms'] == {1: old_arm}
+
+
+def test_generation_pins_arriving_pitcher_role_and_rest_without_adding_to_workload_roster(monkeypatch):
+    from sync_v3 import generation
+
+    monkeypatch.setattr(generation, '_readiness_status', lambda *_: 'compared')
+    inputs = {111: dict(readiness={'board_date_arms': {'17': {}}},
+                        depth={'views': {'active': {'pitchers': {'9': {}}, 'reason': None}}})}
+    scopes, clubs = generation._inventory(THROUGH, REFERENCE, inputs, {'games': []})
+    arrival = {method for subject, player, method in scopes if subject == 'pitcher' and player == 17}
+    assert arrival == {generation.DOMAINS[d][1] for d in ('pitcher_profile', 'pitcher_rest')}
+    assert next(club for club in clubs if club['team'] == 111)['pitchers'] == [9]

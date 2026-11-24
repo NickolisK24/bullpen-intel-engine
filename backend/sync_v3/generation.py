@@ -162,6 +162,11 @@ def _inventory(through, reference, team_inputs, slate):
             if view['pitchers'] and not view['reason'] and hydrated.get('reason') != 'mlb_active_rosters_disagree':
                 pitchers = sorted(map(int, view['pitchers']))
                 expected.update(('pitcher', player, method) for player in pitchers for method in pitcher_methods)
+        # A Board-date arrival can need a role and rest profile without
+        # belonging to the previous day's roster or changing its Team State.
+        for player in (inputs.get('readiness') or {}).get('board_date_arms', {}):
+            expected.update(('pitcher', int(player), DOMAINS[domain][1])
+                            for domain in ('pitcher_profile', 'pitcher_rest'))
         if rotation:
             club_day = rotation['dates'][through.isoformat()]
             if not club_day['reason']:
