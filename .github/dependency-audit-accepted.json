@@ -24,30 +24,5 @@
     "advisories are reported informationally and must never be listed here."
   ],
   "schema_version": 1,
-  "frontend": [
-    {
-      "advisory_id": "GHSA-wrjc-x8rr-h8h6",
-      "package": "react-router",
-      "summary": "Open redirect via backslash in <Link> and useNavigate (CVE-2025-68470 bypass)",
-      "expires_on": "2026-11-13",
-      "tracking_issue": 645,
-      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
-    },
-    {
-      "advisory_id": "GHSA-jjmj-jmhj-qwj2",
-      "package": "react-router-dom",
-      "summary": "Open redirect leading to XSS",
-      "expires_on": "2026-11-13",
-      "tracking_issue": 645,
-      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
-    },
-    {
-      "advisory_id": "GHSA-337j-9hxr-rhxg",
-      "package": "react-router",
-      "summary": "Arbitrary constructor injection via deserializeErrors() in SSR hydration; not applicable to this client-only SPA",
-      "expires_on": "2026-11-13",
-      "tracking_issue": 645,
-      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
-    }
-  ]
+  "frontend": []
 }
