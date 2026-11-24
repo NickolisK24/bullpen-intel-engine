@@ -2256,3 +2256,52 @@ def test_multi_player_trade_retains_one_version_and_distinct_participants():
                 cur.execute("SELECT id,predecessor FROM candidate.revisions WHERE domain='transaction' ORDER BY revision")
                 original, replacement, extension = cur.fetchall()
                 assert original[1] is None and replacement[1] == original[0] and extension[1] == replacement[0]
+
+
+def test_official_number_change_mirrors_preserve_other_transactions_and_refuse_conflicts():
+    from contextlib import closing
+    from sync_v3 import evidence, queue, rosters
+    from sync_v3.discovery import calendar_requests
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2026, 11, 24)
+    at = datetime(2026, 11, 24, 21, 8, tzinfo=timezone.utc)
+    request = calendar_requests(day)[1]
+    club = dict(id=112)
+    shared = dict(id=950971, date=str(day), effectiveDate=str(day), toTeam=club,
+                  typeCode='NUM', typeDesc='Number Change', description='3B BJ Murray Jr. changed number to 18.')
+    player = dict(shared, resolutionDate=str(day), person=dict(id=681230, fullName='BJ Murray Jr.'))
+    mirror = dict(shared, fromTeam=club)
+    signing = dict(id=950957, date=str(day), effectiveDate=str(day), typeCode='SFA',
+                   person=dict(id=657612), toTeam=dict(id=147))
+
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+
+        def observe(offset, rows):
+            now = at + timedelta(seconds=offset)
+            with worker, worker.cursor() as cur:
+                queue.enqueue(cur, str(offset), dict(endpoint=request.endpoint, params=request.params()), now)
+                claim = queue.claim(cur, now)
+            return evidence.execute(worker, claim, lambda *a, **kw: dict(transactions=rows), lambda: now,
+                                    on_received=rosters.observe)
+
+        for offset, pair in enumerate(([player, mirror], [mirror, player])):
+            receipt, outcome = observe(offset, [*pair, signing])
+            assert outcome == 'received'
+            with worker, worker.cursor() as cur:
+                cur.execute("""SELECT identity,facts,revision FROM candidate.revisions
+                               WHERE domain='transaction' ORDER BY identity""")
+                other, change = cur.fetchall()
+                assert other[0] == '950957'
+                assert change[0] == '950971' and change[2] == 1
+                assert change[1]['player_mlb_id'] == 681230 and change[1]['resolution_date'] == str(day)
+                assert change[1]['from_team_id'] is None and change[1]['to_team_id'] == 112
+                assert evidence.replay(cur, receipt).body['transactions'] == [*pair, signing]
+        conflicts = [dict(mirror, description='3B BJ Murray Jr. changed number to 19.'),
+                     dict(mirror, fromTeam=dict(id=111)), dict(mirror, effectiveDate='2026-11-25'),
+                     dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR'), dict(mirror, typeCode=None)]
+        for offset, conflict in enumerate(conflicts, start=2):
+            assert observe(offset, [player, conflict, signing])[1] == 'refused'
