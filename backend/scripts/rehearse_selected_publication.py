@@ -179,7 +179,8 @@ def main():
             with closing(psycopg2.connect(host=str(args.source_socket), port=5432, dbname='sync_v3_rehearsal',
                                           user='sync_v3_reviewer', connect_timeout=5)) as reviewer:
                 cards = read_game_cards(reviewer, revision=args.revision)
-            result = verify_delivery(app.test_client(), db.session.get(DashboardSnapshot, snapshot), cards)
+            result = verify_delivery(app.test_client(), db.session.get(DashboardSnapshot, snapshot), cards,
+                                     product_day=args.product_day)
             print(json.dumps(result))
             if not result['supporting_fields_match']:
                 raise SystemExit('Post-commit delivery verified; Tonight supporting fields differ')

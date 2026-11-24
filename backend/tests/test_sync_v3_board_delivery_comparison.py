@@ -79,6 +79,43 @@ def test_handoff_requires_every_selected_club_and_its_receipt():
         verify_frozen_states(snap, binding)
 
 
+def test_tonight_edition_keeps_its_workload_availability_and_slate_dates_distinct():
+    from copy import deepcopy
+    from scripts.verify_selected_delivery import verify_tonight_edition
+
+    binding = {'data_through': '2026-10-28', 'availability_reference': '2026-10-29'}
+    day = '2026-11-24'
+    publication = {'dashboard_snapshot_id': 5847, 'sync_run_id': 98739,
+                   'team_board_package_contract': 'trusted_team_board_publication_v1'}
+    edition = {'baseball_date': day, 'data_through': binding['data_through'],
+               'availability_reference_date': binding['availability_reference'], 'publication': publication}
+    page = {'contract': 'tonight_v1', 'edition': edition, 'games': [], 'summary': {'game_count': 0}, 'quiet_day': True}
+    verify_tonight_edition(page, (5847, 98739), binding, day)
+    for key, wrong in [('availability_reference_date', day), ('data_through', day), ('baseball_date', '2026-10-29')]:
+        changed = deepcopy(page)
+        changed['edition'][key] = wrong
+        with pytest.raises(ValueError):
+            verify_tonight_edition(changed, (5847, 98739), binding, day)
+    wrong_package = deepcopy(page)
+    wrong_package['edition']['publication']['team_board_package_contract'] = None
+    for changed in [wrong_package, dict(page, contract='other'), dict(page, quiet_day=False),
+                    dict(page, summary={'game_count': 1}), dict(page, games=None)]:
+        with pytest.raises(ValueError):
+            verify_tonight_edition(changed, (5847, 98739), binding, day)
+    cancelled = dict(page, quiet_day=False, games=[{'game_pk': 123, 'state': 'cancelled'}])
+    verify_tonight_edition(cancelled, (5847, 98739), binding, day)
+
+
+def test_played_day_verification_refuses_a_selection_for_another_slate():
+    from types import SimpleNamespace
+    from scripts.verify_selected_delivery import verify_delivery
+
+    snapshot = SimpleNamespace(id=1, sync_run_id=2, availability_reference_date=DAY,
+                               payload={'v3_rehearsal_selection': {'availability_reference': DAY.isoformat()}})
+    with pytest.raises(ValueError, match='requested product day'):
+        verify_delivery(None, snapshot, {'availability_reference': DAY.isoformat()}, product_day=date(2017, 8, 30))
+
+
 def test_tonight_delivery_requires_exact_game_and_side_identity():
     from copy import deepcopy
     from scripts.verify_selected_delivery import compare_slate
