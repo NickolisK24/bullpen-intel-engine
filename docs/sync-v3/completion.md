@@ -1,10 +1,25 @@
 # Sync v3 acceptance ledger
 
+## November 24 private Render acquisition
+
+The legacy services remain authoritative. Render deployed staging commit `53d04f0f6368e4937bbf2dfc87dc3cc0f2dd6240` on the Ohio private network. [PR #962](https://github.com/NickolisK24/bullpen-intel-engine/pull/962) merged the staging runtime into integration at `0e4bc2d3801515fd7ffd16238339429163fddad2`. The dedicated PostgreSQL 17 instance has 5 GB of fixed storage, autoscaling off and an empty external allowlist. The hourly acquisition process has the restricted worker credential. The separate installer holds the staging owner binding. [Render Blueprint](https://dashboard.render.com/blueprint/exs-dc2t62ks728c73bie2hg)
+
+| Manually initiated staging run | Result for November 24 |
+|---|---|
+| Bootstrap `crn-dc2tlk5g1s2s739sfmt0-1795545854` | Installed the schema and admitted the restricted role. Successful exit at 18:44:43 UTC. |
+| Acquisition `crn-dc2tlk5g1s2s739sfmv0-1795545926` | Started empty, committed one receipt and left 122 pending. Successful exit at 18:46:58 UTC. |
+| Resume `crn-dc2tlk5g1s2s739sfmv0-1795546033` | Reopened the same database, recovered the first receipt and processed the remaining 122. All 123 jobs done at 18:48:02 UTC. |
+| Repeat `crn-dc2tlk5g1s2s739sfmv0-1795546121` | Began and ended with 123 receipts. Claimed zero new jobs. Successful exit at 18:49:06 UTC. |
+
+Each process observed zero selector rows and the same first receipt after acquisition began. Its recorded SHA-256 was `0df09480cdab82637bec50cf0bbd2d70a936823489bcd5f6c5ea55da60d837e7`. This certifies cross-process queue continuation and repeat execution against persistent hosting. A scheduled tick, a hosted database restore and production promotion each require separate evidence. Render sampled the resume instance at 100,339,710 bytes of memory. The cron bandwidth metrics endpoint returned HTTP 404, so actual billed staging egress is unknown.
+
+The November workspace review reported $25.93 unbilled and $34.06 projected across all resources, inclusive of $16.26 in datastore charges and $4.12 in cron charges to date. These are workspace totals. The staging baseline is $7.50/month for the database and fixed storage plus the two $1 cron minima. At review, 414 of 500 included standard build minutes and 2.4 of 5 GB of outbound bandwidth remained. Same-region private database transfer is unmetered. Additional public egress is $0.15/GB; a standard build-minute pack costs $5. The $15 incremental ceiling leaves $5.50 for additional charges. Auto-deploys are off. Recheck usage before repeated builds, increasing frequency or running more expensive workloads. [Pricing](https://render.com/pricing) · [Bandwidth billing](https://render.com/docs/outbound-bandwidth)
+
 ## Production decision on November 24, 2026
 
 **Keep the legacy publisher authoritative.** The current-cycle, retrospective and outage tests below exercised integration code at `bbc398e37b6501e73934e60f5764fe506f0f9ce8`. Hosted run [45430717675](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45430717675) exercised provider revision `0f4275a9241e94a79e2af081bf274f66b8d87885`. These receipts cover different revisions. Both used isolated candidate databases.
 
-At 16:04 UTC the production health, League and sync-status endpoints returned HTTP 200. The League still served 5847 and sync-status identified external scheduled run 98739. Render reported API deployment `dep-dc2r9je0tbcc738efl90`, daily `dep-dc2r9ju0tbcc738efmbg`, morning `dep-dc2r9k60tbcc738efmhg`, postgame `dep-dc2r9ju0tbcc738efmf0` and continuous updates `dep-dc2r9jm0tbcc738eflp0` on main `27d1f9a068d9a78d24302896639b29bf9bb90ac2` during the follow-up. The historical detector stayed at `617ab650`. The legacy services retained their schedules and publication authority. The production database and the separate EpochForge database are the only projects found in the Supabase and Render database inventories respectively. A persistent isolated BaseballOS staging target and an approved incremental hosting budget have yet to be identified.
+At 16:04 UTC the production health, League and sync-status endpoints returned HTTP 200. The League still served 5847 and sync-status identified external scheduled run 98739. Render reported API deployment `dep-dc2r9je0tbcc738efl90`, daily `dep-dc2r9ju0tbcc738efmbg`, morning `dep-dc2r9k60tbcc738efmhg`, postgame `dep-dc2r9ju0tbcc738efmf0` and continuous updates `dep-dc2r9jm0tbcc738eflp0` on main `27d1f9a068d9a78d24302896639b29bf9bb90ac2` during the follow-up. The historical detector stayed at `617ab650`. The legacy services retained their schedules and publication authority. The production database and the separate EpochForge database are the only projects found in the Supabase and Render database inventories respectively. At this earlier checkpoint the dedicated staging target had not yet been provisioned.
 
 ## Earlier November 24 baseline
 
