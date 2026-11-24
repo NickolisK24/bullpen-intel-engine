@@ -380,7 +380,8 @@ def run(bindir=None, fixture=None, pitcher=None, through=None, team=None, league
                         start = perf_counter()
                     outcome = 'accepted'
                     try:
-                        count += run_fixture(worker, filename, on_receipt_page=emit_receipts if trace_receipts else None)
+                        count += run_fixture(worker, filename, on_receipt_page=emit_receipts if trace_receipts else None,
+                                             on_statcast_review=lambda row: print(json.dumps(dict(statcast_coverage=row)), flush=True))
                     except ReplayWithheld as exc:
                         outcome = 'withheld'
                         withheld.append(f'{filename}: {exc}')

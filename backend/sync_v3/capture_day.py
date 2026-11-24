@@ -6,14 +6,17 @@ import json
 from pathlib import Path
 import tempfile
 
+from requests import RequestException
+
 from services.mlb_api import MLBApiClient
 from services.mlb_club_directory import MLB_TEAM_IDS
+from sync_v3 import savant
 from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 from sync_v3.sources import inspect_response, transport_endpoint
 
 
-def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, active_profiles=False, postseason_rounds=(), round_totals=False):
+def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, active_profiles=False, postseason_rounds=(), round_totals=False, statcast=False):
     if path.exists():
         raise FileExistsError(path)
     depth_teams = sorted(set(depth_teams))
@@ -28,6 +31,7 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
         requests.append(competition_calendar_request(day.year))
     discovered_pitchers = set(pitchers)
     seen = set()
+    failures = []
     # Stream individual provider responses; don't accumulate season-sized payloads.
     with tempfile.NamedTemporaryFile('w', dir=path.parent, delete=False) as out:
         temporary = Path(out.name)
@@ -36,11 +40,30 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
             for request in requests:
                 if request in seen:
                     continue
-                body = client._get(transport_endpoint(request), params=request.params())
+                endpoint = transport_endpoint(request)
+                if endpoint == savant.URL:
+                    try:
+                        body = savant.fetch(request.params())
+                    except (RequestException, ValueError) as exc:
+                        failures.append(dict(endpoint=endpoint, params=request.params(), reason=type(exc).__name__,
+                                             observed_at=datetime.now(timezone.utc).isoformat()))
+                        continue
+                else:
+                    body = client._get(endpoint, params=request.params())
                 at = datetime.now(timezone.utc)
-                inspect_response(request, body, at)
+                try:
+                    inspect_response(request, body, at)
+                except ValueError as exc:
+                    if endpoint != savant.URL:
+                        raise
+                    # Preserve the original response. Offline admission will record its invalid receipt.
+                    failures.append(dict(endpoint=endpoint, params=request.params(), reason=type(exc).__name__,
+                                         observed_at=at.isoformat()))
                 if request.endpoint == '/schedule' and 'startDate' in request.params():
-                    requests.extend(game_requests(day, body, now=at))
+                    games = game_requests(day, body, now=at)
+                    requests.extend(games)
+                    if statcast:
+                        requests.extend(savant.after_final(day, games))
                 elif (active_profiles and request.endpoint.endswith('/roster')
                       and request.params().get('rosterType') == 'active' and 'hydrate' not in request.params()):
                     from sync_v3.depth import _pitchers
@@ -66,6 +89,13 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
             out.write('],')
             meta = {'baseball_date':day.isoformat(), 'observed_at':datetime.now(timezone.utc).isoformat(),
                     'team_ids':list(teams), 'pitcher_ids':sorted(discovered_pitchers), 'depth_teams':depth_teams, 'competition':competition, 'provider':'MLB Stats API','kind':'retrospective'}
+            if statcast:
+                meta['statcast'] = True
+                if failures:
+                    meta['acquisition_failures'] = failures
+                meta['providers'] = ['MLB Stats API']
+                if any(request.endpoint == savant.URL for request in seen):
+                    meta['providers'].append('Baseball Savant')
             if active_profiles:
                 meta['active_roster_profiles'] = True
             if round_totals:
@@ -95,7 +125,8 @@ if __name__ == '__main__':
     parser.add_argument('--postseason-round', choices=('F', 'D', 'L', 'W'), action='append', default=[],
                         help='Also capture pitching game logs from this playoff round for requested pitcher profiles')
     parser.add_argument('--round-totals', action='store_true', help='Also retain dated official totals for each requested postseason round')
+    parser.add_argument('--statcast', action='store_true', help='Retain daily Savant pitch CSV on played Statcast-era dates')
     args = parser.parse_args()
     if args.round_totals and not args.postseason_round:
         parser.error('--round-totals requires a postseason round')
-    print(f'{capture(args.day, args.output, args.team or MLB_TEAM_IDS, args.pitcher or (), args.depth_team or (), args.competition, args.active_profiles, args.postseason_round, args.round_totals)} official responses captured')
+    print(f'{capture(args.day, args.output, args.team or MLB_TEAM_IDS, args.pitcher or (), args.depth_team or (), args.competition, args.active_profiles, args.postseason_round, args.round_totals, statcast=args.statcast)} official responses captured')

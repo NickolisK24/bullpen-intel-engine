@@ -30,7 +30,7 @@ def install(owner, *, identity_export=None, earlier_identity_exports=()):
             public_identities.load_reference(cur, earlier)
 
 
-def run_fixture(connection, filename, *, on_receipt_page=None):
+def run_fixture(connection, filename, *, on_receipt_page=None, on_statcast_review=None):
     fixture = json.loads(Path(filename).read_text())
     day = date.fromisoformat(fixture['baseball_date'])
     at = datetime.fromisoformat(fixture['observed_at'])
@@ -81,7 +81,7 @@ def run_fixture(connection, filename, *, on_receipt_page=None):
         batch = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()),
                           clock=lambda: at, depth_teams=fixture.get('depth_teams', ()),
                           competition=fixture.get('competition', False), postseason_rounds=fixture.get('postseason_rounds', ()),
-                          round_totals=fixture.get('round_totals', False), active_roster_profiles=fixture.get('active_roster_profiles', False),
+                          statcast=fixture.get('statcast', False), round_totals=fixture.get('round_totals', False), active_roster_profiles=fixture.get('active_roster_profiles', False),
                           max_jobs=256, budget='historical', capture=capture)
         results.extend(batch)
         if len(batch) < 256:
@@ -107,6 +107,12 @@ def run_fixture(connection, filename, *, on_receipt_page=None):
                              f'{games} accepted finals and {lines} verified lines across this database; '
                              f'job states={states}; unresolved jobs with last recorded receipt (first 32)='
                              f'{json.dumps(work["jobs"], sort_keys=True)}')
+    if fixture.get('statcast') and on_statcast_review is not None:
+        from sync_v3.savant import review_capture
+        with connection, connection.cursor() as cur:
+            review = review_capture(cur, capture)
+        if review is not None:
+            on_statcast_review(review)
     return len(results)
 
 

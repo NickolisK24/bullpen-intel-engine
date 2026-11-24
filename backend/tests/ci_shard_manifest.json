@@ -1898,6 +1898,10 @@
           "measured_seconds": 1.0
         },
         {
+          "path": "tests/test_sync_v3_savant.py",
+          "measured_seconds": 2.36
+        },
+        {
           "path": "tests/test_sync_v3_archived_share_pages.py",
           "measured_seconds": 2.005
         },
