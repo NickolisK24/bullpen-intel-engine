@@ -413,7 +413,7 @@ def test_an_invalid_today_override_is_rejected(tmp_path):
 
 
 # ── end-to-end exit codes ─────────────────────────────────────────────────────
-def test_the_committed_allowlist_passes_against_the_baseline_report(tmp_path):
+def test_the_committed_allowlist_refuses_the_old_vulnerable_router_report(tmp_path):
     audit = tmp_path / 'audit.json'
     audit.write_text(json.dumps(_npm_report()), encoding='utf-8')
 
@@ -424,7 +424,7 @@ def test_the_committed_allowlist_passes_against_the_baseline_report(tmp_path):
         '--today', BEFORE_EXPIRY.isoformat(),
     ])
 
-    assert exit_code == gate.EXIT_OK
+    assert exit_code == gate.EXIT_REFUSED
 
 
 def test_the_evaluator_exits_non_zero_on_an_unknown_advisory(tmp_path):
@@ -452,7 +452,7 @@ def test_the_evaluator_exits_non_zero_on_an_unknown_advisory(tmp_path):
 def test_the_evaluator_is_runnable_as_a_script(tmp_path):
     """CI invokes it as a subprocess, so the module must work that way too."""
     audit = tmp_path / 'audit.json'
-    audit.write_text(json.dumps(_npm_report()), encoding='utf-8')
+    audit.write_text(json.dumps(dict(_npm_report(), vulnerabilities={})), encoding='utf-8')
 
     result = subprocess.run(
         [
@@ -466,20 +466,12 @@ def test_the_evaluator_is_runnable_as_a_script(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert 'PASS WITH 3 REVIEWED EXCEPTION(S)' in result.stdout
+    assert 'PASS (no production advisories reported)' in result.stdout
 
 
 # ── the committed allowlist itself ────────────────────────────────────────────
-def test_the_committed_allowlist_matches_the_reviewed_baseline(accepted_payload):
-    entries = accepted_payload['frontend']
-    by_id = {entry['advisory_id']: entry for entry in entries}
-
-    assert set(by_id) == set(BASELINE_ADVISORIES), (
-        'the machine allowlist must contain exactly the reviewed advisories; '
-        'adding one is a security decision, not a CI fix'
-    )
-    for advisory_id, package in BASELINE_ADVISORIES.items():
-        assert by_id[advisory_id]['package'] == package
+def test_patched_runtime_requires_no_production_exceptions(accepted_payload):
+    assert accepted_payload['frontend'] == []
 
 
 def test_every_committed_entry_carries_the_required_metadata(accepted_payload):
