@@ -120,3 +120,20 @@ def test_tonight_delivery_requires_exact_game_and_side_identity():
     selected['league_changes'].append(event)
     with pytest.raises(ValueError, match='unique identity'):
         compare_slate(selected, selected, binding)
+
+
+def test_tonight_delivery_compares_league_changes_without_game_cards():
+    from scripts.verify_selected_delivery import compare_slate
+
+    binding = dict(revision=1, generation='abc', data_through='2017-08-28', availability_reference='2017-08-29')
+    boston = dict(team_id=111, change_id='bos', source_ref='retained/bos', headline='Boston change')
+    baltimore = dict(team_id=110, change_id='bal', source_ref='retained/bal', headline='Baltimore change')
+    selected = dict(status='represented', selection_revision=1, generation='abc', data_through='2017-08-28',
+                    availability_reference='2017-08-29', games=[], league_changes=[boston, baltimore])
+    missing = compare_slate(selected, dict(selected, league_changes=[boston]), binding)
+    assert missing['change_contents'] == [dict(team_id=110)]
+    reordered = compare_slate(selected, dict(selected, league_changes=[baltimore, boston]), binding)
+    assert reordered == {'league_change_order': dict(selected=[111, 110], served=[110, 111])}
+    changed = compare_slate(selected, dict(selected, league_changes=[boston, dict(baltimore, headline='Different claim')]), binding)
+    assert changed == {'change_contents': [dict(team_id=110)]}
+    assert compare_slate(selected, dict(selected), binding) == {}
