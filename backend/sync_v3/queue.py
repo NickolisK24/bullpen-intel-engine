@@ -25,7 +25,9 @@ def enqueue(cur, identity, payload, now, *, budget='current', priority=100,
     return existing[0]
 
 
-def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None):
+def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None, before_product_date=None):
+    if before_product_date is not None and (budget != 'current' or product_date is not None or capture is not None):
+        raise ValueError('Prior-day recovery requires unscoped current-budget work')
     if not timedelta(0) < lease <= timedelta(hours=1):
         raise ValueError('Invalid job lease')
     # After cleaning up 16 exhausted leases, still look for a claimable job.
@@ -33,6 +35,7 @@ def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_dat
         cur.execute("""SELECT j.id,j.payload,j.token,j.attempts,j.max_attempts
                        FROM candidate.jobs j
                        WHERE j.budget=%s AND (%s::date IS NULL OR j.product_date=%s)
+                       AND (%s::date IS NULL OR (j.product_date < %s AND j.payload ? 'continuation'))
                        AND (j.payload->>'capture') IS NOT DISTINCT FROM %s
                        AND (%s OR j.attempts < j.max_attempts)
                        AND ((j.state='pending' AND j.available_at<=%s)
@@ -40,7 +43,7 @@ def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_dat
                        (j.prerequisite IS NULL OR EXISTS (SELECT 1 FROM candidate.jobs p
                          WHERE p.id=j.prerequisite AND p.state='done'))
                        ORDER BY j.priority,j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
-                    (budget, product_date, product_date, capture, cleanup_remaining > 0, now, now))
+                    (budget, product_date, product_date, before_product_date, before_product_date, capture, cleanup_remaining > 0, now, now))
         row = cur.fetchone()
         if not row:
             return None

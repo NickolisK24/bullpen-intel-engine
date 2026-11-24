@@ -56,3 +56,10 @@ END;
 $$;
 REVOKE ALL ON FUNCTION candidate.record_core_selection(bigint,text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION candidate.record_core_selection(bigint,text,text) TO sync_v3_reviewer;
+
+-- The installer records the ordered schema bundle in the same transaction as DDL.
+CREATE TABLE candidate.schema_installation (
+    singleton boolean PRIMARY KEY CHECK (singleton),
+    digest text NOT NULL CHECK (digest ~ '^[0-9a-f]{64}$')
+);
+GRANT SELECT ON candidate.schema_installation TO sync_v3_worker,sync_v3_reviewer;

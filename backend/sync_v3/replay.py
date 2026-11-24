@@ -16,10 +16,22 @@ class ReplayWithheld(ValueError):
     """All receipts persisted, but some candidate work remains unqualified."""
 
 
+def schema_scripts():
+    return [(module.__name__, Path(module.__file__).with_suffix('.sql').read_bytes())
+            for module in (queue, evidence, canonical, history, public_identities, selection)]
+
+
+def schema_digest(scripts):
+    return sha256(evidence.encode_json([(name, sha256(sql).hexdigest()) for name, sql in scripts])).hexdigest()
+
+
 def install(owner, *, identity_export=None, earlier_identity_exports=()):
     with owner, owner.cursor() as cur:
-        for module in (queue, evidence, canonical, history, public_identities, selection):
-            cur.execute(Path(module.__file__).with_suffix('.sql').read_text())
+        scripts = schema_scripts()
+        for _, sql in scripts:
+            cur.execute(sql.decode('utf-8'))
+        cur.execute('INSERT INTO candidate.schema_installation(singleton,digest) VALUES (true,%s)',
+                    (schema_digest(scripts),))
         if identity_export is not None:
             public_identities.load_reference(cur, identity_export)
         for earlier in earlier_identity_exports:
