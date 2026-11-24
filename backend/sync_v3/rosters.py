@@ -67,7 +67,7 @@ def observe(cur, source_id, capture, *, replay_batch=False):
             record.pop(key, None)
         if not record['transaction_id']:
             raise Refused('Official transaction identity is required')
-        grouped.setdefault(str(record['transaction_id']), []).append((record, item.get('typeDesc')))
+        grouped.setdefault(str(record['transaction_id']), []).append((record, item))
 
     teams = set()
     for identity, records in grouped.items():
@@ -85,8 +85,39 @@ def observe(cur, source_id, capture, *, replay_batch=False):
     return teams
 
 
+def _number_change_player(records):
+    # A club summary corroborates the named row. It cannot establish a transfer.
+    if len(records) != 2 or any(raw.get('typeDesc') != 'Number Change' for _, raw in records):
+        return None
+    named = [record for record, _ in records if record['player_mlb_id'] is not None]
+    if len(named) != 1:
+        return None
+    player, = named
+    summary = next(record for record, _ in records if record['player_mlb_id'] is None)
+    team = player['to_team_id']
+    description = records[0][1].get('description')
+    if (type(player['player_mlb_id']) is int and player['player_mlb_id'] > 0
+            and isinstance(description, str) and description.strip()
+            and team in MLB_TEAM_IDS and player['from_team_id'] in (None, team)
+            and summary['from_team_id'] == summary['to_team_id'] == team
+            and player['transaction_date'] and player['effective_date']
+            and all(summary[key] == player[key] for key in ('transaction_date', 'effective_date'))
+            and all(value is None or value == player[key] for key, value in summary.items()
+                    if key != 'from_team_id')):
+        return player
+    return None
+
+
 def _transaction_facts(records):
     first, _ = records[0]
+    if first['transaction_type_code'] == 'NUM' and len(records) > 1:
+        description = records[0][1].get('description')
+        if any(raw.get('description') != description for _, raw in records):
+            raise Refused('Conflicting official number-change descriptions')
+        player = _number_change_player(records)
+        if player is not None:
+            return player
+    records = [(record, raw.get('typeDesc')) for record, raw in records]
     if all(entry == records[0] for entry in records):
         return first
     # MLB assigns one ID to a trade and reports one row per player or consideration.
