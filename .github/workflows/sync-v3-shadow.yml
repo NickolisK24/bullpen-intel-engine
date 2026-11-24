@@ -26,7 +26,7 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: af060f8494dbace24b9715ed5660da8e81122fd4
+          ref: e8672baeff214d5b4cfe011554c75dce83d1ad58
           persist-credentials: false
 
       - name: Check out the workflow's replay driver
