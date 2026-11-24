@@ -178,3 +178,38 @@ def test_stats_outage_or_malformed_response_preserves_independent_work(tmp_path,
                 assert cur.fetchall() == [('failed' if transport_failure else 'invalid',)]
                 cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='final'")
                 assert cur.fetchone()[0] > 0
+
+
+def test_staging_witness_checks_retained_bytes_on_a_new_connection():
+    from contextlib import closing
+    from sync_v3.render_staging import witness
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    now = datetime(2026, 11, 20, 10, tzinfo=timezone.utc)
+    request = calendar_requests(now.date())[0]
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            assert witness(worker)['verified_payload_receipts'] == 0
+            with worker, worker.cursor() as cur:
+                queue.enqueue(cur, 'schedule', {'endpoint': request.endpoint, 'params': request.params()}, now)
+                claim = queue.claim(cur, now)
+            receipt, outcome = evidence.execute(worker, claim, lambda *a, **k: {'totalGames': 0, 'dates': []}, lambda: now)
+            assert outcome == 'received'
+        with closing(connect()) as worker:
+            proof = witness(worker)
+            assert proof['first'][0] == receipt
+            assert proof['verified_payload_receipts'] == proof['receipts'] == 1
+            assert proof['database_bytes'] > 0
+            # Inject a mismatched payload into the disposable fixture under a distinct digest.
+            with worker, worker.cursor() as cur:
+                queue.enqueue(cur, 'damaged', {'endpoint': request.endpoint, 'params': request.params()}, now)
+                _, token, _ = queue.claim(cur, now)
+                cur.execute("INSERT INTO candidate.payloads VALUES (%s,%s)", ('0' * 64, b'{}'))
+                cur.execute("""INSERT INTO candidate.fetches(token,endpoint,parameters,received_at,sha256,outcome)
+                               VALUES (%s,'/schedule','{}',%s,%s,'received')""", (token, now, '0' * 64))
+            with pytest.raises(ValueError, match='payload digest mismatch'):
+                witness(worker)

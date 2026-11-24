@@ -58,7 +58,24 @@ def witness(worker):
         cur.execute('SELECT count(*) FROM candidate.core_selections')
         if cur.fetchone() != (0,):
             raise ValueError('Staging acquisition requires an empty selector')
-        return dict(first=first, receipts=count)
+        # Verify the original witness and the most recent acquisition batch in the private database.
+        # A restarted worker can detect damaged bytes even when the receipt still has its original digest.
+        cur.execute("""WITH recent AS (
+                           SELECT id,sha256 FROM candidate.fetches ORDER BY id DESC LIMIT 128
+                       ), sample AS (
+                           SELECT id,sha256 FROM recent WHERE sha256 IS NOT NULL
+                           UNION SELECT id,sha256 FROM candidate.fetches WHERE id=%s
+                       )
+                       SELECT count(*),count(*) FILTER (
+                           WHERE p.sha256 IS NULL OR encode(pg_catalog.sha256(p.encoded_json),'hex')<>s.sha256
+                       ) FROM sample s LEFT JOIN candidate.payloads p USING (sha256)""",
+                    (first[0] if first else None,))
+        verified, mismatches = cur.fetchone()
+        if mismatches:
+            raise ValueError('Staging acquisition payload digest mismatch')
+        cur.execute('SELECT pg_database_size(current_database())')
+        database_bytes, = cur.fetchone()
+        return dict(first=first, receipts=count, verified_payload_receipts=verified, database_bytes=database_bytes)
 
 
 def acquire(password):
