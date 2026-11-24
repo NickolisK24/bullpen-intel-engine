@@ -32,7 +32,7 @@ def replay(directory, bindir):
 
     # Preserve the original daily capture separately. These files belong to the cited publication.
     capture(reference, fixture(reference), teams=MLB_TEAM_IDS if reference == through else (),
-            competition=True)
+            competition=True, statcast=reference == through)
     request = competition_calendar_request(reference.year)
     season, = [r for r in json.loads(fixture(reference).read_text())['responses']
                if r['endpoint'] == request.endpoint and r['params'] == request.params()]
@@ -44,7 +44,7 @@ def replay(directory, bindir):
         horizon = reference + timedelta(days=SCHEDULE_CONFIRMATION_LOOKAHEAD_DAYS)
         dates.update(through + timedelta(days=n) for n in range(1, (horizon - through).days + 1))
     for day in sorted((dates | playoff_days) - {reference}):
-        capture(day, fixture(day), teams=MLB_TEAM_IDS if day == through else ())
+        capture(day, fixture(day), teams=MLB_TEAM_IDS if day == through else (), statcast=day == through)
 
     # Competition has an explicit comparison date. The complete generation must
     # independently resolve availability from retained schedules and may refuse it.
