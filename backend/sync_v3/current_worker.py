@@ -49,7 +49,16 @@ def verify_target(connection):
         return name
 
 
-def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postseason_rounds=(), round_totals=False):
+def day_states(cur, day, budget):
+    cur.execute("""SELECT state,count(*) FROM candidate.jobs WHERE budget=%s AND product_date=%s
+                   AND (budget='current' OR payload->>'capture' IS NULL) GROUP BY state""", (budget, day))
+    return dict(cur.fetchall())
+
+
+def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postseason_rounds=(), round_totals=False,
+            budget='current'):
+    if budget not in ('current', 'historical'):
+        raise ValueError('Unknown acquisition budget')
     if postseason_rounds and not profiles:
         raise ValueError("Postseason pitcher acquisition requires active profiles")
     if round_totals and not postseason_rounds:
@@ -64,17 +73,17 @@ def process(connection, day, *, max_jobs, profiles=False, depth_teams=(), postse
 
         receipts = run_cycle(connection, day, fetch, max_jobs=max_jobs, competition=True,
                              statcast=True, active_roster_profiles=profiles, depth_teams=depth_teams,
-                             postseason_rounds=postseason_rounds, round_totals=round_totals)
+                             postseason_rounds=postseason_rounds, round_totals=round_totals, budget=budget)
     with connection, connection.cursor() as cur:
         cur.execute('SET TRANSACTION READ ONLY')
-        cur.execute("""SELECT state,count(*) FROM candidate.jobs
-                       WHERE budget='current' AND product_date=%s GROUP BY state""", (day,))
-        states = dict(cur.fetchall())
-        cur.execute("""SELECT id,product_date FROM candidate.jobs
-                       WHERE budget='current' AND state='dead' AND product_date < %s
-                         AND payload ? 'continuation' AND payload->>'capture' IS NULL
-                       ORDER BY product_date,id LIMIT 1""", (day,))
-        prior = cur.fetchone()
+        states = day_states(cur, day, budget)
+        prior = None
+        if budget == 'current':
+            cur.execute("""SELECT id,product_date FROM candidate.jobs
+                           WHERE budget='current' AND state='dead' AND product_date < %s
+                             AND payload ? 'continuation' AND payload->>'capture' IS NULL
+                           ORDER BY product_date,id LIMIT 1""", (day,))
+            prior = cur.fetchone()
     prior_dead_job = dict(id=prior[0], product_date=prior[1].isoformat()) if prior else None
     return dict(database=name, baseball_date=day.isoformat(), receipts=dict(Counter(s for _, s in receipts)),
                 jobs_for_date=states, prior_dead_job=prior_dead_job, publication_attempted=False)

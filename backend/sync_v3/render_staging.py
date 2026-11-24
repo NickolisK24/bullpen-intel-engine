@@ -1,21 +1,23 @@
 """Install or exercise the isolated Ohio staging database through Render's private network."""
 import argparse
 from contextlib import closing
-from datetime import datetime
+from datetime import date, datetime
 import json
 import os
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 import psycopg2
 from psycopg2.extensions import encrypt_password, parse_dsn
 
-from sync_v3.current_worker import acquisition_failed, process, verify_target
+from sync_v3.current_worker import acquisition_failed, day_states, process, verify_target
 from sync_v3.replay import install
 
 HOST = 'dpg-dc2t51mc6qcc738080hg-a'
 DATABASE = 'baseballos_sync_v3_staging'
 OWNER = 'baseballos_sync_v3_staging_user'
 BATCH_LIMIT = 256
+PLAYED_DAY = date(2017, 8, 28)
 
 
 def connect(user, password):
@@ -79,6 +81,43 @@ def witness(worker):
         return dict(first=first, receipts=count, verified_payload_receipts=verified, database_bytes=database_bytes)
 
 
+def played_batch(worker, current_day, current_report):
+    """Measure one idle historical batch in the dedicated acquisition database."""
+    if current_report['receipts'] or set(current_report['jobs_for_date']) != {'done'}:
+        return dict(status='current_work_has_priority')
+    with worker, worker.cursor() as cur:
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("""SELECT EXISTS (SELECT 1 FROM candidate.jobs WHERE budget='current' AND product_date<=%s
+                       AND state<>'done' AND payload ? 'continuation' AND payload->>'capture' IS NULL)""",
+                    (current_day,))
+        if cur.fetchone()[0]:
+            return dict(status='current_work_has_priority')
+        states = day_states(cur, PLAYED_DAY, 'historical')
+    if states.get('dead'):
+        raise ValueError(f'Historical acquisition has exhausted jobs: {states}')
+    result = dict(status='already_complete', jobs=states)
+    if set(states) != {'done'}:
+        start = monotonic()
+        report = process(worker, PLAYED_DAY, max_jobs=BATCH_LIMIT, profiles=True, budget='historical')
+        result = dict(status='batch', jobs=report['jobs_for_date'], report=report,
+                      seconds=monotonic() - start, after=witness(worker))
+    with worker, worker.cursor() as cur:
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("""SELECT count(DISTINCT (f.endpoint,f.parameters)),
+                          count(DISTINCT f.endpoint) FILTER (WHERE f.endpoint LIKE '/people/%%/stats'),
+                          count(DISTINCT f.endpoint) FILTER (WHERE f.endpoint LIKE '/teams/%%/roster'),
+                          count(DISTINCT f.endpoint) FILTER (WHERE f.endpoint LIKE '/game/%%/boxscore')
+                       FROM candidate.jobs j JOIN candidate.attempts a ON a.job_id=j.id
+                       JOIN candidate.fetches f ON f.token=a.token WHERE j.budget='historical'
+                       AND j.product_date=%s AND j.payload->>'capture' IS NULL AND f.outcome='received'
+                       AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""", (PLAYED_DAY,))
+        requests, pitchers, clubs, finals = cur.fetchone()
+    if set(result['jobs']) == {'done'} and (requests, pitchers, clubs, finals) != (926, 371, 30, 10):
+        raise ValueError(f'Historical acquisition differs from August cohort: {requests} requests, '
+                         f'{pitchers} pitchers, {clubs} clubs, {finals} boxscores')
+    return dict(result, requests=requests, pitcher_profiles=pitchers, roster_clubs=clubs, boxscores=finals)
+
+
 def acquire(password):
     with closing(connect('sync_v3_worker', password)) as worker:
         verify_target(worker)
@@ -91,6 +130,13 @@ def acquire(password):
         print(json.dumps(dict(before=before, after=after, report=report)), flush=True)
         if acquisition_failed(report):
             raise ValueError('Incomplete staging acquisition')
+        if os.environ.get('STAGING_PLAYED_SLATE') == PLAYED_DAY.isoformat():
+            played = played_batch(worker, day, report)
+            print(json.dumps(dict(historical=played)), flush=True)
+            if played['status'] == 'batch':
+                if acquisition_failed(played['report']) or after['first'] != played['after']['first']:
+                    raise ValueError('Incomplete historical acquisition or changed first staging receipt')
+
 
 
 if __name__ == '__main__':

@@ -1,5 +1,17 @@
 # Sync v3 acceptance ledger
 
+## Hosted August 28 acquisition and replay
+
+GitHub Actions acquired 926 requests in 80.00 seconds using the August 28, 2017 slate. Across 30 clubs, the roster lists, 371 pitcher profiles and 73 official pitching lines matched the retained comparison identities. The ten final games had 2,808 thrown pitches and 16 automatic calls with zero pitch-count differences. Replaying that frozen evidence over 24 simulated hourly ticks finished 3,611 jobs. The last two ticks claimed zero jobs, and both databases had zero publication selections. Elapsed time for the whole step was 102.81 seconds, with maximum process RSS of 120,284 KiB. Artifact 14967879912 matched SHA-256 `7b6ce2b26eee5700cbf16e0c8b70335930ae192541114b3ffc816fc0e0e92216`. The source checkpoint independently matched its recorded digest. These measurements used the Actions runner with local PostgreSQL. [Hosted run](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45495238475)
+
+## November 24 transaction coverage and recovery
+
+The private Render acquisition deployed integration `977308228b086a4cd6eb8527b112394873556f44` at 21:43:41 UTC. On the same database the revised worker retained the original receipt, 1,457 completed jobs and zero selections. The candidate tree passed 248 tests on PostgreSQL 17.6. A controlled rollover recovered three late transactions on their original date and repeated without new work. [Staging deployment and rollover evidence](https://github.com/NickolisK24/bullpen-intel-engine/pull/972)
+
+The November 24 GitHub shadow recovered a checkpoint containing one completed job and 152 pending. Six batches on the restored server finished all 1,423 jobs, with 1,224 distinct payloads, zero refusals and zero selections. The corrected worker reconciled seven official transaction rows into five IDs. Both restores matched every table and sequence in the source inventory. The current acquisition and recovery step took 143.29 seconds with peak process RSS of 95,940 KiB. The separate played-slate rollback test passed in 48.189 seconds. Artifact 14966271191 matched SHA-256 `c92a40ed187044d2f672f45d9de982e9b8ae7a320106119b7ac87454d87e7beb`. [Hosted PR run](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45488967397)
+
+That run compared snapshot 5847, sync 98739, with October 28 workload and membership and October 29 availability. Competition and Team State fields matched for all 30 clubs. The candidate withheld season-complete publication. Main `8a8b97a36a6607b2414999fcbe2bc37d921c409e` enabled the verified shadow revision. The legacy services continue to own production. [Scheduled proof](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45483160348) · [Shadow workflow](https://github.com/NickolisK24/bullpen-intel-engine/pull/970)
+
 ## November 24 private Render acquisition
 
 The legacy services remain authoritative. Render deployed staging commit `53d04f0f6368e4937bbf2dfc87dc3cc0f2dd6240` on the Ohio private network. [PR #962](https://github.com/NickolisK24/bullpen-intel-engine/pull/962) merged the staging runtime into integration at `0e4bc2d3801515fd7ffd16238339429163fddad2`. The dedicated PostgreSQL 17 instance has 5 GB of fixed storage, autoscaling off and an empty external allowlist. The hourly acquisition process has the restricted worker credential. The separate installer holds the staging owner binding. [Render Blueprint](https://dashboard.render.com/blueprint/exs-dc2t62ks728c73bie2hg)
@@ -58,9 +70,9 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 | NP-01 coverage | Implemented | coverage.csv identifies source, retention, qualification and consumers | Verify adapter coverage and supported eras for each required field |
 | NP-02 isolation | Isolated verified | rehearse.py creates socket-only candidate DB and distinct worker/reviewer grants | Verify equivalent hosted writer and reader isolation for the proposed primary |
 | NP-03 discovery | Shadow verified for daily capture | discovery.py and capture_day.py, regular and postseason replay | Measure ongoing live schedule, roster and correction discovery |
-| NP-04 orchestration | Isolated verified | queue.sql, queue.py, lease loss and stale settlement tests | Recover a representative hosted interruption within budget |
+| NP-04 orchestration | Shadow verified for pending-job recovery | Hosted pending checkpoint resumed to completion and an idle Render process repeated without claims | Verify recovery across the primary workload and a hosted mid-lease interruption |
 | NP-05 acquisition | Isolated verified | sources.py and capture_day.py pin request identity and retrieval time | Verify complete required adapter and source outage coverage |
-| NP-06 retention | Isolated verified | evidence.sql, evidence.py, immutable replay inputs | Demonstrate durable hosted retention beyond temporary Actions artifacts |
+| NP-06 retention | Shadow verified for private acquisition | Persistent Render receipts and payload samples survived separate process starts and deployments | Measure long-term retention growth, recovery and required domain coverage |
 | NP-07 identities | Isolated verified | canonical.py, public_identities.py, game and pitcher reconciliation | Certify full public identity coverage and real source corrections |
 | NP-08 rosters | Isolated verified | rosters.py and membership_usage.py, dated club populations | Resolve current roster, transaction and writer coverage |
 | NP-09 corrections | Isolated verified | canonical revisions, dependencies.py and correction tests | Demonstrate end-to-end historical correction propagation to every dependent surface |
