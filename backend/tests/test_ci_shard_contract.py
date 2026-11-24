@@ -449,7 +449,7 @@ DEV_REQUIREMENTS_CACHE_KEY = 'backend/requirements-dev.txt'
 
 # The only workflows allowed to install the dev/test layer. Everything else —
 # including the production sync path — stays on the runtime set.
-DEV_REQUIREMENTS_WORKFLOWS = frozenset({'ci.yml', 'phantom_game_log_guard.yml'})
+DEV_REQUIREMENTS_WORKFLOWS = frozenset({'ci.yml', 'phantom_game_log_guard.yml', 'sync-v3-shadow.yml'})
 
 # ci.yml jobs that must install the dev/test layer: one collects the suite, the
 # others run it.
