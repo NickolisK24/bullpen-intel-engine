@@ -88,6 +88,18 @@ def depth_directory(request, body):
     return result
 
 
+def active_pitcher_ids(day, teams, request, body):
+    """Discover player workloads only from the selected club's dated MLB active list."""
+    if request.params() != {'date': day.isoformat(), 'rosterType': 'active'}:
+        return set()
+    team = body.get('teamId')
+    if team not in teams or team not in MLB_TEAM_IDS or request.endpoint != f'/teams/{team}/roster':
+        return set()
+    from sync_v3.depth import _pitchers
+    population, reason = _pitchers(body, team, team, 'active')
+    return set(population) if reason is None else set()
+
+
 def active_profile_request(day, team):
     return _request(f'/teams/{team}/roster', 21600, date=day.isoformat(), rosterType='active', hydrate='person')
 

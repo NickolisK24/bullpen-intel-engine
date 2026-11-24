@@ -302,3 +302,43 @@ def test_represented_rest_requires_confirmed_prior_game_and_zero_recent_work():
         altered['arms'][12]['read']['availability']['inputs'][key] = value
         with pytest.raises(ValueError, match='Unverified'):
             compare_readiness(altered)
+
+
+def test_current_cycle_discovers_requested_profiles_from_the_active_pitcher_population():
+    import json
+    import os
+    from contextlib import closing
+    from pathlib import Path
+
+    from sync_v3.cycle import run_cycle
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/quiet.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    clock = datetime.fromisoformat(fixture['observed_at'])
+    bodies = {(r['endpoint'], r['params'].get('rosterType')): r['body'] for r in fixture['responses']}
+    bodies['/teams/111/roster', 'active']['roster'] = [
+        {'person': {'id': 1111}, 'position': {'code': '1'}},
+        {'person': {'id': 2222}, 'position': {'code': '6'}},
+    ]
+    fetched = []
+
+    def fetch(endpoint, params):
+        if endpoint.startswith('/people/'):
+            fetched.append((endpoint, params['gameType'], params['stats']))
+            return {'stats': []}
+        return bodies[endpoint, params.get('rosterType')]
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            for _ in range(2):
+                run_cycle(worker, day, fetch, teams=[111], active_roster_profiles=True,
+                          postseason_rounds=['W'], round_totals=True, clock=lambda: clock)
+    assert sorted(fetched) == [
+        ('/people/1111/stats', stage, kind) for stage in ('R', 'W') for kind in ('byDateRange', 'gameLog')
+    ]

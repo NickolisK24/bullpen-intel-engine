@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 import os
 
@@ -136,3 +136,45 @@ def test_large_offline_capture_drains_successive_bounded_batches(tmp_path):
         with closing(connect()) as db:
             assert run_fixture(db, path) == len(data['responses']) > 256
             assert run_fixture(db, path) == 0
+
+
+@pytest.mark.parametrize('transport_failure', [False, True])
+def test_stats_outage_or_malformed_response_preserves_independent_work(tmp_path, monkeypatch, transport_failure):
+    import json
+    from contextlib import closing
+    from services.mlb_api import MlbApiFetchError
+    from sync_v3 import capture_day
+    from sync_v3.replay import ReplayWithheld, install, run_fixture
+
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    responses = {(r['endpoint'], tuple(sorted(r['params'].items()))): r['body'] for r in fixture['responses']}
+
+    def fetch(self, endpoint, params):
+        if endpoint == '/transactions':
+            if transport_failure:
+                raise MlbApiFetchError('fixture outage')
+            return {'partial': True}
+        return responses[endpoint, tuple(sorted(params.items()))]
+
+    monkeypatch.setattr(capture_day.MLBApiClient, '_get', fetch)
+    path = tmp_path / 'partial.json'
+    capture_day.capture(date.fromisoformat(fixture['baseball_date']), path, teams=fixture['team_ids'])
+    archive = json.loads(path.read_text())
+    assert [r['endpoint'] for r in archive['acquisition_failures']] == ['/transactions']
+    saved = [r['body'] for r in archive['responses'] if r['endpoint'] == '/transactions']
+    assert saved == ([] if transport_failure else [{'partial': True}])
+    assert any(r['endpoint'].endswith('/boxscore') for r in archive['responses'])
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('PostgreSQL is required for partial-capture replay')
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as worker:
+            with pytest.raises(ReplayWithheld, match='/transactions'):
+                run_fixture(worker, path)
+            with worker, worker.cursor() as cur:
+                cur.execute("SELECT outcome FROM candidate.fetches WHERE endpoint='/transactions'")
+                assert cur.fetchall() == [('failed' if transport_failure else 'invalid',)]
+                cur.execute("SELECT count(*) FROM candidate.confirmations WHERE domain='final'")
+                assert cur.fetchone()[0] > 0
