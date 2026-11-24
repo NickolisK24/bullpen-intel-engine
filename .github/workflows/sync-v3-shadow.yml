@@ -50,7 +50,8 @@ jobs:
           day=$(TZ=America/New_York date --date=yesterday +%F)
           echo "$day" > "$evidence/baseball-date"
           git rev-parse HEAD > "$evidence/candidate-commit"
-          env -i PATH="$PATH" LANG=C.UTF-8 python -m sync_v3.capture_day \
+          /usr/bin/time -o "$evidence/capture-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
+            env -i PATH="$PATH" LANG=C.UTF-8 python -m sync_v3.capture_day \
             "$day" "$evidence/capture.json" --competition
           (cd "$evidence" && sha256sum capture.json > capture.sha256)
 
@@ -82,7 +83,8 @@ jobs:
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/shadow"
-          env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
+          /usr/bin/time -o "$evidence/replay-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
+            env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
             --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" \
             --through "$(cat "$evidence/baseball-date")" --build-generation --trace-receipts \
             > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
@@ -92,7 +94,8 @@ jobs:
           set -euo pipefail
           evidence="$RUNNER_TEMP/shadow"
           [[ -f "$evidence/proof.zip" ]] || exit 0
-          env -i PATH="$PATH" LANG=C.UTF-8 PYTHONPATH=. PYTHONUNBUFFERED=1 python \
+          /usr/bin/time -o "$evidence/publication-comparison-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
+            env -i PATH="$PATH" LANG=C.UTF-8 PYTHONPATH=. PYTHONUNBUFFERED=1 python \
             "$GITHUB_WORKSPACE/shadow-driver/.github/scripts/shadow_publication_replay.py" \
             "$evidence" "$(pg_config --bindir)" > "$evidence/publication-replay.log" 2>&1 || {
               tail -c 4000 "$evidence/publication-replay.log"; exit 1;
