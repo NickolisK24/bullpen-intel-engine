@@ -7,7 +7,7 @@ from hashlib import sha256
 from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3 import canonical, evidence, queue, rosters
+from sync_v3 import canonical, evidence, queue, rosters, savant
 from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 
@@ -32,7 +32,9 @@ def enqueue_requests(cur, requests, now, *, budget, day, cause=None, capture=Non
         queue.enqueue(cur, identity, payload, now, budget=budget, product_date=day)
 
 
-def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture=None):
+def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture=None, statcast=False):
+    if acquisition.request.endpoint == savant.URL:
+        return
     if acquisition.request.endpoint == '/schedule' and 'season' in acquisition.request.params():
         # A retrospective season listing cannot revise the one-day final/schedule authority.
         return
@@ -50,6 +52,8 @@ def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture
         requests = game_requests(date.fromisoformat(represented), acquisition.body,
                                  now=acquisition.retrieved_at, reconciled=() if capture else canonical.recently_reconciled(
                                      cur, observation_id, acquisition.retrieved_at))
+        if statcast:
+            requests = (*requests, *savant.after_final(date.fromisoformat(represented), requests))
         enqueue_requests(cur, requests, now, budget=budget, day=date.fromisoformat(represented), capture=capture)
 
 
@@ -68,7 +72,7 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
-def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), round_totals=False, active_roster_profiles=False, budget='current', max_jobs=32,
+def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competition=False, postseason_rounds=(), round_totals=False, active_roster_profiles=False, statcast=False, budget='current', max_jobs=32,
               clock=lambda: datetime.now(timezone.utc), capture=None):
     if capture is not None and budget != 'historical':
         raise ValueError('A captured batch requires the historical budget')
@@ -95,5 +99,5 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         if not claimed:
             break
         receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=lambda c, oid, acquired:
-                                         plan_children(c, oid, acquired, budget, clock(), day, capture=capture)))
+                                         plan_children(c, oid, acquired, budget, clock(), day, capture=capture, statcast=statcast)))
     return receipts

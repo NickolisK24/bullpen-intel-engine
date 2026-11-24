@@ -5,6 +5,7 @@ from datetime import date, datetime
 import re
 
 from services.mlb_api import MLBApiClient
+from sync_v3 import savant
 from sync_v3.discovery import Request, depth_directory, game_requests
 
 
@@ -26,7 +27,9 @@ def inspect_response(request, body, acquired_at):
     endpoint, params = request.endpoint, request.params()
     if not isinstance(body, dict) or acquired_at.utcoffset() is None:
         raise ValueError('Expected a JSON object and a timezone-aware acquisition time')
-    if endpoint == '/schedule' and 'season' in params:
+    if endpoint == savant.URL:
+        savant.inspect(params, body)
+    elif endpoint == '/schedule' and 'season' in params:
         from sync_v3.competition_calendar import calendar_games
         calendar_games(params, body)
     elif endpoint == '/schedule':
@@ -89,6 +92,9 @@ def inspect_response(request, body, acquired_at):
 
 
 def transport_endpoint(request):
+    if request.endpoint == savant.URL:
+        savant.request_day(request.params())
+        return savant.URL
     if not re.fullmatch(r'/(schedule|transactions|teams/affiliates|people/[1-9][0-9]*/stats|teams/[0-9]+/roster|game/[0-9]+/(boxscore|linescore|playByPlay)|api/v1\.1/game/[0-9]+/feed/live)', request.endpoint):
         raise ValueError('Unsupported acquisition endpoint')
     return request.endpoint.replace('/api/v1.1/', '/../v1.1/', 1)

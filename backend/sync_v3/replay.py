@@ -81,7 +81,7 @@ def run_fixture(connection, filename, *, on_receipt_page=None):
         batch = run_cycle(connection, day, lookup, teams=fixture['team_ids'], pitchers=fixture.get('pitcher_ids', ()),
                           clock=lambda: at, depth_teams=fixture.get('depth_teams', ()),
                           competition=fixture.get('competition', False), postseason_rounds=fixture.get('postseason_rounds', ()),
-                          round_totals=fixture.get('round_totals', False), active_roster_profiles=fixture.get('active_roster_profiles', False),
+                          statcast=fixture.get('statcast', False), round_totals=fixture.get('round_totals', False), active_roster_profiles=fixture.get('active_roster_profiles', False),
                           max_jobs=256, budget='historical', capture=capture)
         results.extend(batch)
         if len(batch) < 256:
