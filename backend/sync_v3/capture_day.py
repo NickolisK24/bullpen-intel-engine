@@ -8,7 +8,7 @@ import tempfile
 
 from requests import RequestException
 
-from services.mlb_api import MLBApiClient
+from services.mlb_api import MLBApiClient, MlbApiError
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import savant
 from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
@@ -31,6 +31,7 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
         requests.append(competition_calendar_request(day.year))
     discovered_pitchers = set(pitchers)
     seen = set()
+    attempted = set()
     failures = []
     # Stream individual provider responses; don't accumulate season-sized payloads.
     with tempfile.NamedTemporaryFile('w', dir=path.parent, delete=False) as out:
@@ -38,27 +39,31 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
         try:
             out.write('{"responses":[')
             for request in requests:
-                if request in seen:
+                if request in attempted:
                     continue
+                attempted.add(request)
                 endpoint = transport_endpoint(request)
-                if endpoint == savant.URL:
-                    try:
+                try:
+                    if endpoint == savant.URL:
                         body = savant.fetch(request.params())
-                    except (RequestException, ValueError) as exc:
-                        failures.append(dict(endpoint=endpoint, params=request.params(), reason=type(exc).__name__,
-                                             observed_at=datetime.now(timezone.utc).isoformat()))
-                        continue
-                else:
-                    body = client._get(endpoint, params=request.params())
+                    else:
+                        body = client._get(endpoint, params=request.params())
+                except (MlbApiError, RequestException, ValueError) as exc:
+                    failures.append(dict(endpoint=endpoint, params=request.params(), reason=type(exc).__name__,
+                                         observed_at=datetime.now(timezone.utc).isoformat()))
+                    continue
                 at = datetime.now(timezone.utc)
+                if seen:
+                    out.write(',')
+                json.dump({'endpoint': endpoint, 'params': request.params(), 'body': body,
+                           'retrieved_at': at.isoformat()}, out, separators=(',', ':'))
+                seen.add(request)
                 try:
                     inspect_response(request, body, at)
-                except ValueError as exc:
-                    if endpoint != savant.URL:
-                        raise
-                    # Preserve the original response. Offline admission will record its invalid receipt.
+                except (ValueError, KeyError, TypeError, AttributeError, MlbApiError) as exc:
                     failures.append(dict(endpoint=endpoint, params=request.params(), reason=type(exc).__name__,
                                          observed_at=at.isoformat()))
+                    continue
                 if request.endpoint == '/schedule' and 'startDate' in request.params():
                     games = game_requests(day, body, now=at)
                     requests.extend(games)
@@ -81,18 +86,13 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
                                                         params=request.params())
                         touched = set((tx['from_team_id'], tx['to_team_id'])).intersection(MLB_TEAM_IDS)
                         requests.extend(roster_requests(day, touched))
-                if seen:
-                    out.write(',')
-                json.dump({'endpoint':transport_endpoint(request),'params':request.params(),
-                           'body':body,'retrieved_at':at.isoformat()}, out, separators=(',',':'))
-                seen.add(request)
             out.write('],')
             meta = {'baseball_date':day.isoformat(), 'observed_at':datetime.now(timezone.utc).isoformat(),
                     'team_ids':list(teams), 'pitcher_ids':sorted(discovered_pitchers), 'depth_teams':depth_teams, 'competition':competition, 'provider':'MLB Stats API','kind':'retrospective'}
+            if failures:
+                meta['acquisition_failures'] = failures
             if statcast:
                 meta['statcast'] = True
-                if failures:
-                    meta['acquisition_failures'] = failures
                 meta['providers'] = ['MLB Stats API']
                 if any(request.endpoint == savant.URL for request in seen):
                     meta['providers'].append('Baseball Savant')
