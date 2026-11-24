@@ -560,7 +560,8 @@ def test_worker_reports_a_prior_date_job_after_its_last_lease_expires(monkeypatc
             assert current_worker.acquisition_failed(report)
 
 
-def test_next_baseball_day_rechecks_transactions_after_last_evening_poll():
+@pytest.mark.parametrize('profiles', [False, True])
+def test_next_baseball_day_rechecks_transactions_after_last_evening_poll(profiles):
     from contextlib import closing
     from datetime import date
     from sync_v3.cycle import run_cycle
@@ -584,15 +585,16 @@ def test_next_baseball_day_rechecks_transactions_after_last_evening_poll():
             rows = []
             if params['startDate'] == str(first) and stamp >= morning:
                 rows.append(dict(id=101, date=str(first), effectiveDate=str(first), typeCode='SFA',
-                                 person=dict(id=123), toTeam=dict(id=111)))
+                                 person=dict(id=123), fromTeam=dict(id=112), toTeam=dict(id=111)))
             return {'transactions': rows}
-        assert endpoint == '/teams/111/roster' and params['date'] == str(first)
-        return {'teamId': 111, 'rosterType': params['rosterType'], 'roster': []}
+        assert endpoint in ('/teams/111/roster', '/teams/112/roster') and params['date'] == str(first)
+        return {'teamId': int(endpoint.split('/')[2]), 'rosterType': params['rosterType'], 'roster': []}
 
     with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
         install(owner)
         def batch(day):
-            return run_cycle(worker, day, fetch, teams=(), max_jobs=32, clock=lambda: stamp)
+            return run_cycle(worker, day, fetch, teams=(111,) if day == first else (),
+                             active_roster_profiles=profiles and day == first, max_jobs=32, clock=lambda: stamp)
         assert all(status == 'received' for _, status in batch(first))
         assert not batch(first)
         calls.clear()
@@ -602,6 +604,8 @@ def test_next_baseball_day_rechecks_transactions_after_last_evening_poll():
             (str(first), str(first))) == 1
         assert {p['rosterType'] for e, p in calls if e.endswith('/roster')} == {
             'active', '40Man', 'fullRoster', 'nonRosterInvitees'}
+        hydrated = [(e, p['date']) for e, p in calls if p.get('hydrate') == 'person']
+        assert hydrated == ([('/teams/111/roster', str(first))] if profiles else [])
         assert not batch(second)
         with worker, worker.cursor() as cur:
             cur.execute("""SELECT r.identity,r.facts->>'effective_date',j.product_date FROM candidate.revisions r
