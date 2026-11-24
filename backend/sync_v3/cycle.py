@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters, savant
-from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
+from sync_v3.discovery import (active_pitcher_ids, active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 
 
@@ -84,13 +84,24 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
         depth_teams = sorted(set(depth_teams))
-        requests = (schedule, transactions, *roster_requests(day, set(teams).union(depth_teams)), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
+        profile_teams = set(teams).union(depth_teams)
+        requests = (schedule, transactions, *roster_requests(day, profile_teams), *pitcher_requests(day, pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
         if active_roster_profiles:
-            requests += tuple(active_profile_request(day, team) for team in sorted(set(teams).union(depth_teams)))
+            requests += tuple(active_profile_request(day, team) for team in sorted(profile_teams))
         if competition:
             requests += (competition_calendar_request(day.year),)
         requests += tuple(affiliate_directory_request(day, club) for club in depth_teams)
         enqueue_requests(cur, requests, now, budget=budget, day=day, capture=capture)
+
+    def derive(cur, receipt, acquisition):
+        now = clock()
+        plan_children(cur, receipt, acquisition, budget, now, day, capture=capture, statcast=statcast)
+        # Archived batches already pin their discovered pitcher identities. The
+        # live cycle must discover these jobs itself from the accepted roster.
+        if active_roster_profiles and capture is None and acquisition.request.endpoint.endswith('/roster'):
+            players = active_pitcher_ids(day, profile_teams, acquisition.request, acquisition.body)
+            requests = pitcher_requests(day, players, postseason_rounds=postseason_rounds, round_totals=round_totals)
+            enqueue_requests(cur, requests, now, budget=budget, day=day)
 
     receipts = []
     for _ in range(max_jobs):
@@ -98,6 +109,5 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
             claimed = queue.claim(cur, clock(), budget=budget, product_date=day, capture=capture)
         if not claimed:
             break
-        receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=lambda c, oid, acquired:
-                                         plan_children(c, oid, acquired, budget, clock(), day, capture=capture, statcast=statcast)))
+        receipts.append(evidence.execute(connection, claimed, fetch, clock, on_received=derive))
     return receipts

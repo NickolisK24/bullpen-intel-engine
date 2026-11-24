@@ -11,7 +11,7 @@ from requests import RequestException
 from services.mlb_api import MLBApiClient, MlbApiError
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import savant
-from sync_v3.discovery import (active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
+from sync_v3.discovery import (active_pitcher_ids, active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 from sync_v3.sources import inspect_response, transport_endpoint
 
@@ -71,13 +71,10 @@ def capture(day, path, teams=MLB_TEAM_IDS, pitchers=(), depth_teams=(), competit
                         requests.extend(savant.after_final(day, games))
                 elif (active_profiles and request.endpoint.endswith('/roster')
                       and request.params().get('rosterType') == 'active' and 'hydrate' not in request.params()):
-                    from sync_v3.depth import _pitchers
-                    team = int(request.endpoint.split('/')[2])
-                    if team in teams:
-                        population, reason = _pitchers(body, team, team, 'active')
-                        if reason is None:
-                            requests.extend(pitcher_requests(day, population.keys()-discovered_pitchers, postseason_rounds=postseason_rounds, round_totals=round_totals))
-                            discovered_pitchers.update(population)
+                    population = active_pitcher_ids(day, teams, request, body)
+                    requests.extend(pitcher_requests(day, population - discovered_pitchers,
+                                                     postseason_rounds=postseason_rounds, round_totals=round_totals))
+                    discovered_pitchers.update(population)
                 elif request.endpoint == '/teams/affiliates':
                     requests.extend(depth_roster_requests(day, depth_directory(request, body)))
                 elif request.endpoint == '/transactions':
