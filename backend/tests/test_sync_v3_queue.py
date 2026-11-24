@@ -558,3 +558,55 @@ def test_worker_reports_a_prior_date_job_after_its_last_lease_expires(monkeypatc
             assert set(report['jobs_for_date']) == {'done'}
             assert report['prior_dead_job'] == {'id': job, 'product_date': past.isoformat()}
             assert current_worker.acquisition_failed(report)
+
+
+def test_next_baseball_day_rechecks_transactions_after_last_evening_poll():
+    from contextlib import closing
+    from datetime import date
+    from sync_v3.cycle import run_cycle
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    first = date(2026, 11, 24)
+    second = first + timedelta(days=1)
+    evening = datetime(2026, 11, 25, 0, 17, tzinfo=timezone.utc)  # 19:17 in New York
+    morning = evening + timedelta(hours=5)
+    stamp = evening
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append((endpoint, params))
+        if endpoint == '/schedule':
+            return {'dates': [], 'totalGames': 0}
+        if endpoint == '/transactions':
+            rows = []
+            if params['startDate'] == str(first) and stamp >= morning:
+                rows.append(dict(id=101, date=str(first), effectiveDate=str(first), typeCode='SFA',
+                                 person=dict(id=123), toTeam=dict(id=111)))
+            return {'transactions': rows}
+        assert endpoint == '/teams/111/roster' and params['date'] == str(first)
+        return {'teamId': 111, 'rosterType': params['rosterType'], 'roster': []}
+
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def batch(day):
+            return run_cycle(worker, day, fetch, teams=(), max_jobs=32, clock=lambda: stamp)
+        assert all(status == 'received' for _, status in batch(first))
+        assert not batch(first)
+        calls.clear()
+        stamp = morning
+        assert all(status == 'received' for _, status in batch(second))
+        assert [(p['startDate'], p['endDate']) for e, p in calls if e == '/transactions'].count(
+            (str(first), str(first))) == 1
+        assert {p['rosterType'] for e, p in calls if e.endswith('/roster')} == {
+            'active', '40Man', 'fullRoster', 'nonRosterInvitees'}
+        assert not batch(second)
+        with worker, worker.cursor() as cur:
+            cur.execute("""SELECT r.identity,r.facts->>'effective_date',j.product_date FROM candidate.revisions r
+                           JOIN candidate.fetches f ON f.id=r.source_id JOIN candidate.attempts a ON a.token=f.token
+                           JOIN candidate.jobs j ON j.id=a.job_id WHERE r.domain='transaction'""")
+            assert cur.fetchall() == [('101', str(first), first)]
+            cur.execute('SELECT count(*) FROM candidate.core_selections')
+            assert cur.fetchone() == (0,)
