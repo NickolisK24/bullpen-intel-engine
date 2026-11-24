@@ -25,7 +25,7 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: 81d53550ef0e9924c6e85e27b3ef6e48ac2b5989
+          ref: 702c8ca9e6760b324a4dd99983b2fe264362ce17
           persist-credentials: false
 
       - name: Check out the workflow's replay driver
@@ -85,7 +85,7 @@ jobs:
           evidence="$RUNNER_TEMP/shadow"
           /usr/bin/time -o "$evidence/replay-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
             env -i PATH="$PATH" LANG=C.UTF-8 PYTHONUNBUFFERED=1 python -m sync_v3.rehearse \
-            --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" \
+            --pg-bin "$(pg_config --bindir)" --fixture "$evidence/capture.json" --measure-replay \
             --through "$(cat "$evidence/baseball-date")" --build-generation --trace-receipts \
             > "$evidence/replay.log" 2>&1 || { tail -c 4000 "$evidence/replay.log"; exit 1; }
 

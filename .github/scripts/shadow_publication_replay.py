@@ -48,9 +48,9 @@ def replay(directory, bindir):
 
     # Competition has an explicit comparison date. The complete generation must
     # independently resolve availability from retained schedules and may refuse it.
-    run(bindir=bindir, fixture=[fixture(d) for d in sorted(playoff_days | {reference})],
+    run(bindir=bindir, measure_replay=True, fixture=[fixture(d) for d in sorted(playoff_days | {reference})],
         competition=True, through=reference, identity_proof=proof)
-    run(bindir=bindir, fixture=[fixture(d) for d in sorted(dates | playoff_days)], through=through,
+    run(bindir=bindir, measure_replay=True, fixture=[fixture(d) for d in sorted(dates | playoff_days)], through=through,
         availability_as_of=reference, build_generation=True, identity_proof=proof)
 
 
