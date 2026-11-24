@@ -378,19 +378,34 @@ def test_no_foundation_3c_workflow_was_recreated():
 # The sole remaining scheduled workflow after the 2026 seasonal intraday repair
 # retirement. Separating a job must not add another scheduled lane outside this
 # workflow's concurrency group where it could overlap a production sync.
-EXISTING_SCHEDULED_WORKFLOWS = (
-    'baseballos-sync.yml',
-)
-
-
-def test_no_scheduled_workflow_was_added():
-    scheduled = []
-    for path in sorted((REPO_ROOT / '.github/workflows').glob('*.yml')):
-        parsed = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+def test_scheduled_lanes_preserve_production_writer_isolation():
+    scheduled = {}
+    for path in sorted((REPO_ROOT / '.github/workflows').iterdir()):
+        if path.suffix not in {'.yml', '.yaml'}:
+            continue
+        source = path.read_text(encoding='utf-8')
+        parsed = yaml.safe_load(source) or {}
         triggers = parsed.get(True) or parsed.get('on') or {}
         if isinstance(triggers, dict) and 'schedule' in triggers:
-            scheduled.append(path.name)
-    assert tuple(scheduled) == EXISTING_SCHEDULED_WORKFLOWS
+            scheduled[path.name] = (parsed, source)
+    assert set(scheduled) == {'baseballos-sync.yml', 'sync-v3-shadow.yml'}
+
+    # The v3 rehearsal has a read-only GitHub token and starts PostgreSQL on
+    # the hosted runner. Production secrets, environments and self-hosted
+    # runners would give this second clock a different authority boundary.
+    shadow, source = scheduled['sync-v3-shadow.yml']
+    assert shadow['permissions'] == {'contents': 'read', 'actions': 'read'}
+    assert set(shadow['jobs']) == {'shadow'}
+    job = shadow['jobs']['shadow']
+    assert job['runs-on'] == 'ubuntu-latest'
+    assert not {'permissions', 'environment', 'uses', 'secrets', 'services'} & set(job)
+    assert not re.search(r'\b(?:secrets|vars)\s*[.\[]', source, re.IGNORECASE)
+    assert all(name not in source for name in PRODUCTION_CREDENTIALS)
+    checkouts = [step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout@')]
+    assert len(checkouts) == 2
+    assert all(step['with']['persist-credentials'] is False for step in checkouts)
+    assert re.fullmatch(r'[0-9a-f]{40}', checkouts[0]['with']['ref'])
+    assert 'python -m sync_v3.rehearse' in source
 
 
 def test_the_observer_did_not_become_its_own_scheduled_workflow():
