@@ -380,7 +380,7 @@ def test_current_worker_rechecks_an_overnight_live_game_on_its_original_slate():
     rows = {row['endpoint']: row['body'] for row in fixture['responses']}
     day = datetime.fromisoformat(fixture['baseball_date']).date()
     midnight = datetime.combine(day + timedelta(days=1), datetime.min.time(), ZoneInfo("America/New_York"))
-    now = midnight - timedelta(minutes=1)
+    now = midnight - timedelta(minutes=20)
     calls = []
 
     def fetch(endpoint, params):
@@ -391,9 +391,11 @@ def test_current_worker_rechecks_an_overnight_live_game_on_its_original_slate():
             if params['startDate'] != day.isoformat():
                 return {'dates': [], 'totalGames': 0}
             body = copy.deepcopy(rows[endpoint])
-            if now < midnight:
+            if now < midnight - timedelta(minutes=10):
                 body['dates'][0]['games'][0]['status'] = {
                     'abstractGameState': 'Live', 'detailedState': 'In Progress', 'statusCode': 'I'}
+            elif now < midnight:
+                body['dates'][0]['games'][0]['teams'].pop('home')
             return body
         if endpoint.endswith('/feed/live'):
             return {'gamePk': 12345, 'liveData': {}}
@@ -404,6 +406,14 @@ def test_current_worker_rechecks_an_overnight_live_game_on_its_original_slate():
         with closing(connect()) as worker:
             run_cycle(worker, day, fetch, teams=(), clock=lambda: now)
         assert any(endpoint.endswith('/feed/live') for endpoint, _ in calls)
+        # A structurally valid Final response with contradictory team identity cannot end polling.
+        for minutes in (9, 8, 7, 6):
+            now = midnight - timedelta(minutes=minutes)
+            with closing(connect()) as worker:
+                run_cycle(worker, day, fetch, teams=(), clock=lambda: now)
+        with closing(connect()) as worker, worker.cursor() as cur:
+            cur.execute("SELECT count(*) FROM candidate.refusals")
+            assert cur.fetchone()[0] >= 3
         calls.clear()
         now = midnight + timedelta(minutes=3)
         with closing(connect()) as worker:

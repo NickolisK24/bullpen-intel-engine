@@ -95,6 +95,7 @@ def enqueue_overnight_schedule(cur, day, now):
                    JOIN candidate.attempts a ON a.token=f.token
                    JOIN candidate.jobs j ON j.id=a.job_id
                    WHERE f.endpoint='/schedule' AND f.parameters=%s AND f.outcome='received'
+                     AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)
                      AND j.budget='current' AND j.product_date=%s AND j.payload ? 'continuation'
                    ORDER BY f.received_at DESC,f.id DESC LIMIT 1""", (Json(schedule.params()), previous))
     row = cur.fetchone()
