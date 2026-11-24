@@ -610,3 +610,61 @@ def test_next_baseball_day_rechecks_transactions_after_last_evening_poll():
             assert cur.fetchall() == [('101', str(first), first)]
             cur.execute('SELECT count(*) FROM candidate.core_selections')
             assert cur.fetchone() == (0,)
+
+
+def test_staging_played_batch_yields_to_current_and_excludes_other_historical_work(monkeypatch):
+    from contextlib import closing
+    from datetime import date
+    from test_sync_v3_competition import season
+    from sync_v3 import render_staging as stage
+    from sync_v3.current_worker import MLBApiClient
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    today = date(2026, 11, 24)
+    archive = date(2024, 10, 28)
+    at = datetime(2026, 11, 24, tzinfo=timezone.utc)
+    calls = []
+
+    def official(self, endpoint, params):
+        calls.append(endpoint)
+        if endpoint == '/schedule':
+            return season() if 'season' in params else {'dates': [], 'totalGames': 0}
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        return {'teamId': int(endpoint.split('/')[2]), 'rosterType': params['rosterType'], 'roster': []}
+
+    monkeypatch.setattr(stage, 'PLAYED_DAY', archive)
+    monkeypatch.setattr(MLBApiClient, '_get', official)
+    idle = dict(receipts={}, jobs_for_date={'done': 1})
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        with worker, worker.cursor() as cur:
+            job = queue.enqueue(cur, 'live', {'continuation': {}}, at, product_date=today)
+            captured = queue.enqueue(cur, 'fixture', {'capture': 'retained'}, at,
+                                     budget='historical', product_date=archive)
+            other = queue.enqueue(cur, 'other-day', {}, at, budget='historical', product_date=today)
+        assert stage.played_batch(worker, today, idle)['status'] == 'current_work_has_priority'
+        with worker, worker.cursor() as cur:
+            claimed = queue.claim(cur, at, product_date=today)
+            queue.settle(cur, job, claimed[1], at)
+        assert stage.played_batch(worker, today, dict(idle, receipts={'received': 1}))['status'] == 'current_work_has_priority'
+        assert not calls
+        monkeypatch.setattr(stage, 'BATCH_LIMIT', 1)
+        first = stage.played_batch(worker, today, idle)
+        assert first['jobs']['pending'] > 0 and first['report']['receipts'] == {'received': 1}
+        monkeypatch.setattr(stage, 'BATCH_LIMIT', 256)
+        # This synthetic date has no pitchers or games. A done queue alone must not certify it.
+        with pytest.raises(ValueError, match='differs from August cohort'):
+            stage.played_batch(worker, today, idle)
+        previous_calls = list(calls)
+        with pytest.raises(ValueError, match='differs from August cohort'):
+            stage.played_batch(worker, today, idle)
+        assert calls == previous_calls
+        with worker, worker.cursor() as cur:
+            cur.execute("SELECT id,state FROM candidate.jobs WHERE id=ANY(%s)", ([job, captured, other],))
+            assert dict(cur.fetchall()) == {job: 'done', captured: 'pending', other: 'pending'}
+            cur.execute('SELECT count(*) FROM candidate.core_selections')
+            assert cur.fetchone() == (0,)
