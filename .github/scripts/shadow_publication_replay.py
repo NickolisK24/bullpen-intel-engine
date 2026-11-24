@@ -51,7 +51,7 @@ def replay(directory, bindir):
     run(bindir=bindir, measure_replay=True, fixture=[fixture(d) for d in sorted(playoff_days | {reference})],
         competition=True, through=reference, identity_proof=proof)
     run(bindir=bindir, measure_replay=True, fixture=[fixture(d) for d in sorted(dates | playoff_days)], through=through,
-        availability_as_of=reference, build_generation=True, identity_proof=proof)
+        availability_as_of=reference, build_generation=True, exercise_selection=True, identity_proof=proof)
 
 
 if __name__ == '__main__':

@@ -26,7 +26,7 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: e8672baeff214d5b4cfe011554c75dce83d1ad58
+          ref: d63cef3db48b4dae6c3ad1021b2d387ba414a506
           persist-credentials: false
 
       - name: Check out the workflow's replay driver
@@ -41,7 +41,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install candidate dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements-dev.txt
 
       - name: Capture the previous baseball day from MLB
         run: |
@@ -111,6 +111,19 @@ jobs:
             "$GITHUB_WORKSPACE/shadow-driver/.github/scripts/shadow_current_worker.py" \
             "$day" "$evidence" "$(pg_config --bindir)" | tee "$evidence/current-worker.log"
 
+      - name: Verify selection and rollback on the controlled played slate
+        run: |
+          set -euo pipefail
+          env -i PATH="$PATH" LANG=C.UTF-8 SYNC_V3_TEST_PG_BIN="$(pg_config --bindir)" python -m pytest -q \
+            'tests/test_sync_v3_corrections.py::test_isolated_core_selection_and_recovery[complete]' \
+            --junitxml="$RUNNER_TEMP/shadow/controlled-rollback.xml"
+          python - "$RUNNER_TEMP/shadow/controlled-rollback.xml" <<'PYTHON'
+          import sys, xml.etree.ElementTree as ET
+          cases = ET.parse(sys.argv[1]).findall('.//testcase')
+          if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ('skipped', 'failure', 'error')):
+              raise SystemExit('Controlled rollback did not exercise the expected acceptance case')
+          PYTHON
+
       - name: Summarize the comparison
         if: always()
         run: |
@@ -130,6 +143,11 @@ jobs:
                           print(f"* Independently resolved availability {row['availability_reference']} — {row['basis']}")
                       if row.get('scope') in ('historical_league_team_state', 'historical_pitcher_arm_reads'):
                           print(f"* {row['scope']} — {row['status']} (archive snapshot {row['archive']['snapshot_id']})")
+                      if 'isolated_selection' in row:
+                          if 'restored_revision' in row:
+                              print(f"* Private selection {row['revision']} exercised; rolled back to an empty selector at revision {row['restored_revision']}.")
+                          else:
+                              print(f"* Private selection withheld ({row['isolated_selection']['status']}); {row['ledger_entries']} selector entries.")
                   elif line.startswith('PostgreSQL ') or 'observations in fully accepted days' in line:
                       print(f'* {line.strip()}')
           PY
