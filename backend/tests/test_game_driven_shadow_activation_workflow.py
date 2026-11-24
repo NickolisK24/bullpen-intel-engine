@@ -375,9 +375,6 @@ def test_no_foundation_3c_workflow_was_recreated():
         assert 'foundation-3c' not in path.name.lower()
 
 
-# The sole remaining scheduled workflow after the 2026 seasonal intraday repair
-# retirement. Separating a job must not add another scheduled lane outside this
-# workflow's concurrency group where it could overlap a production sync.
 def test_scheduled_lanes_preserve_production_writer_isolation():
     scheduled = {}
     for path in sorted((REPO_ROOT / '.github/workflows').iterdir()):
@@ -399,7 +396,8 @@ def test_scheduled_lanes_preserve_production_writer_isolation():
     job = shadow['jobs']['shadow']
     assert job['runs-on'] == 'ubuntu-latest'
     assert not {'permissions', 'environment', 'uses', 'secrets', 'services'} & set(job)
-    assert not re.search(r'\b(?:secrets|vars)\s*[.\[]', source, re.IGNORECASE)
+    expressions = re.findall(r'\$\{\{(.*?)\}\}', source, re.DOTALL)
+    assert not any(re.search(r'\b(?:secrets|vars)\b', expr, re.IGNORECASE) for expr in expressions)
     assert all(name not in source for name in PRODUCTION_CREDENTIALS)
     checkouts = [step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout@')]
     assert len(checkouts) == 2
