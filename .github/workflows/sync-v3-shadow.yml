@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/sync-v3-shadow.yml'
       - '.github/scripts/shadow_publication_replay.py'
+      - '.github/scripts/shadow_current_worker.py'
 
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
       - name: Check out the reviewed candidate
         uses: actions/checkout@v4
         with:
-          ref: 0f4275a9241e94a79e2af081bf274f66b8d87885
+          ref: af060f8494dbace24b9715ed5660da8e81122fd4
           persist-credentials: false
 
       - name: Check out the workflow's replay driver
@@ -99,6 +100,16 @@ jobs:
             "$evidence" "$(pg_config --bindir)" > "$evidence/publication-replay.log" 2>&1 || {
               tail -c 4000 "$evidence/publication-replay.log"; exit 1;
             }
+
+      - name: Acquire the current baseball date and verify private checkpoint recovery
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/shadow"
+          day=$(TZ=America/New_York date +%F)
+          /usr/bin/time -o "$evidence/current-worker-resources.txt" -f 'elapsed_seconds=%e\nmax_process_rss_kib=%M\nexit_code=%x' \
+            env -i PATH="$PATH" LANG=C.UTF-8 PYTHONPATH=. PYTHONUNBUFFERED=1 python \
+            "$GITHUB_WORKSPACE/shadow-driver/.github/scripts/shadow_current_worker.py" \
+            "$day" "$evidence" "$(pg_config --bindir)" | tee "$evidence/current-worker.log"
 
       - name: Summarize the comparison
         if: always()
