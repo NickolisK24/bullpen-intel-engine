@@ -3,7 +3,8 @@ from models.share_artifact import ShareArtifact
 from models.tonight_publication import TonightPublication
 from services.mlb_club_directory import MLB_TEAM_IDS
 from services.team_state_vnext_production_proof import observe_committed_publication_proof
-from services.tonight_read_model import content_sha256
+from services.public_serving_authority import TEAM_BOARD_PACKAGE_CONTRACT
+from services.tonight_read_model import CONTRACT, STATE_CANCELLED, content_sha256
 
 
 def _get(client, path):
@@ -83,9 +84,32 @@ def compare_slate(selected, served, binding):
     return differences
 
 
-def verify_delivery(client, snapshot, selected):
+def verify_tonight_edition(payload, ident, binding, product_day):
+    """Check the frozen or served public edition against the independent selection receipt."""
+    edition = payload.get('edition') or {}
+    published = edition.get('publication') or {}
+    if (payload.get('contract') != CONTRACT
+            or (published.get('dashboard_snapshot_id'), published.get('sync_run_id')) != ident
+            or published.get('team_board_package_contract') != TEAM_BOARD_PACKAGE_CONTRACT
+            or edition.get('data_through') != binding['data_through']
+            or edition.get('availability_reference_date') != binding['availability_reference']
+            or edition.get('baseball_date') != product_day):
+        raise ValueError('Tonight edition differs from the selected publication')
+    games = payload.get('games')
+    if not isinstance(games, list) or payload.get('quiet_day') is not (len(games) == 0):
+        raise ValueError('Tonight edition lacks a consistent slate')
+    # Cancelled cards can survive the serving overlay and are excluded from its count.
+    count = (payload.get('summary') or {}).get('game_count')
+    if type(count) is not int or count != sum(game['state'] != STATE_CANCELLED for game in games):
+        raise ValueError('Tonight summary differs from the delivered game count')
+
+
+def verify_delivery(client, snapshot, selected, *, product_day=None):
     ident = snapshot.id, snapshot.sync_run_id
     binding = snapshot.payload['v3_rehearsal_selection']
+    product_day = product_day or snapshot.availability_reference_date
+    if product_day.isoformat() != selected['availability_reference']:
+        raise ValueError('The selected slate does not represent the requested product day')
     states = {int(t): row['state'] for t, row in binding['teams'].items()}
     proof = observe_committed_publication_proof(snapshot)
     if proof['status'] != 'proof_valid' or set(states) != set(MLB_TEAM_IDS):
@@ -113,16 +137,12 @@ def verify_delivery(client, snapshot, selected):
             raise ValueError(f'Share Artifact differs for club {artifact.team_id}')
 
     row = TonightPublication.query.filter_by(dashboard_snapshot_id=snapshot.id, contract='tonight_v1',
-                                            reference_date=snapshot.availability_reference_date).one()
+                                            reference_date=product_day).one()
     if (row.sync_run_id != snapshot.sync_run_id or content_sha256(row.payload) != row.content_sha256):
         raise ValueError('Stored Tonight edition disagrees with its identity or digest')
     tonight = _get(client, '/api/bullpen/intelligence/tonight?contract=tonight_v1')
-    edition = tonight['edition']
-    published = edition['publication']
-    if ((published['dashboard_snapshot_id'], published['sync_run_id']) != ident
-            or edition['data_through'] != binding['data_through']
-            or edition['baseball_date'] != binding['availability_reference']):
-        raise ValueError('Public Tonight edition differs from the selected publication')
+    for payload in (row.payload, tonight):
+        verify_tonight_edition(payload, ident, binding, product_day.isoformat())
     stored_differences = compare_slate(selected, row.payload, binding)
     served_differences = compare_slate(selected, tonight, binding)
     return dict(snapshot_id=snapshot.id, sync_run_id=snapshot.sync_run_id, generation=binding['generation'],
