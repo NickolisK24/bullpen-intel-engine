@@ -25,7 +25,7 @@ def enqueue(cur, identity, payload, now, *, budget='current', priority=100,
     return existing[0]
 
 
-def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None, before_product_date=None):
+def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None, before_product_date=None, prefer_game_updates=False):
     if before_product_date is not None and (budget != 'current' or product_date is not None or capture is not None):
         raise ValueError('Prior-day recovery requires unscoped current-budget work')
     if not timedelta(0) < lease <= timedelta(hours=1):
@@ -42,8 +42,13 @@ def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_dat
                        OR (j.state='running' AND j.lease_until<=%s)) AND
                        (j.prerequisite IS NULL OR EXISTS (SELECT 1 FROM candidate.jobs p
                          WHERE p.id=j.prerequisite AND p.state='done'))
-                       ORDER BY j.priority,j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
-                    (budget, product_date, product_date, before_product_date, before_product_date, capture, cleanup_remaining > 0, now, now))
+                       ORDER BY j.priority,
+                          CASE WHEN %s AND (
+                              (j.payload->>'endpoint'='/schedule' AND j.payload->'params' ? 'startDate')
+                              OR j.payload->>'endpoint' ~ '^(/game/[0-9]+/boxscore|/api/v1[.]1/game/[0-9]+/feed/live)$'
+                          ) THEN 0 ELSE 1 END,
+                          j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
+                    (budget, product_date, product_date, before_product_date, before_product_date, capture, cleanup_remaining > 0, now, now, prefer_game_updates))
         row = cur.fetchone()
         if not row:
             return None

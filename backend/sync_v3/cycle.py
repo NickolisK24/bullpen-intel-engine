@@ -150,11 +150,14 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
             enqueue_requests(cur, requests, now, budget=budget, day=origin, policy=options)
 
     receipts = []
-    for _ in range(max_jobs):
+    for claim_index in range(max_jobs):
         with connection, connection.cursor() as cur:
             origin = day
             instant = clock()
-            claimed = queue.claim(cur, instant, budget=budget, product_date=day, capture=capture)
+            # Alternate with normal queue order so roster and transaction work keeps progressing.
+            prefer_games = budget == 'current' and claim_index % 2 == 1
+            claimed = queue.claim(cur, instant, budget=budget, product_date=day, capture=capture,
+                                  prefer_game_updates=prefer_games)
             if not claimed and budget == 'current':
                 claimed = queue.claim(cur, instant, budget=budget, before_product_date=day)
                 if claimed:

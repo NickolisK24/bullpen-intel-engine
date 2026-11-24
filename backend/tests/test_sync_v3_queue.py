@@ -477,3 +477,41 @@ def test_recent_official_final_is_rechecked_for_a_later_boxscore_correction():
             assert corrected[1:] == (original[0], 24)
             cur.execute("SELECT count(*) FROM candidate.core_selections")
             assert cur.fetchone() == (0,)
+
+
+def test_bounded_current_batch_claims_a_final_alongside_ordinary_work():
+    from contextlib import closing
+    import json
+    from sync_v3.cycle import run_cycle
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = datetime.fromisoformat(fixture['baseball_date']).date()
+    at = datetime.fromisoformat(fixture['observed_at'])
+    sources = {(r['endpoint'], tuple(sorted(r['params'].items()))): r['body'] for r in fixture['responses']}
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append(endpoint)
+        return sources[endpoint, tuple(sorted(params.items()))]
+
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def batch(limit):
+            return run_cycle(worker, day, fetch, teams=[111], clock=lambda: at, max_jobs=limit)
+
+        receipts = batch(4)
+        assert len(receipts) == 4 and all(status == 'received' for _, status in receipts)
+        assert '/game/12345/boxscore' in calls and '/transactions' in calls
+        assert '/teams/111/roster' in calls
+        with worker, worker.cursor() as cur:
+            cur.execute("SELECT count(*) FROM candidate.revisions WHERE domain='final'")
+            assert cur.fetchone() == (1,)
+        assert all(status == 'received' for _, status in batch(32))
+        assert not batch(32)
+        with worker, worker.cursor() as cur:
+            cur.execute("SELECT DISTINCT state FROM candidate.jobs")
+            assert cur.fetchall() == [('done',)]
