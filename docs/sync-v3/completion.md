@@ -15,7 +15,7 @@ The public League response identified snapshot **5847**, sync **98739**, workloa
 | Continuous updates | dep-dc2peiavcj2c73fjgp00 | dee721f0 |
 | Historical shadow detector | dep-dan8mp6q1p3s73c7gpc0 | 617ab650 |
 
-A live cron deployment identifies installed code. Each execution needs its own receipt. The latest completed scheduled GitHub shadow observed here was run 45296642435 on main revision 37f53593, artifact 14877580648. It predates the new pin. The GitHub connector recovered the ZIP after the CLI download returned HTTP 403. Its SHA-256 matched the Actions manifest. A PR run cannot certify scheduled execution.
+Observed Render schedules in UTC were 10:05 daily, 14:05 morning, 02:05/04:05/06:05 postgame, every 15 minutes for continuous updates and every three minutes for the historical detector. The GitHub fallback clocks are 10:17, 14:23 and 02:11/04:11/06:11. A live cron deployment identifies installed code. Each execution needs its own receipt. The latest completed scheduled GitHub shadow observed here was run 45296642435 on main revision 37f53593, artifact 14877580648. It predates the new pin. The GitHub connector recovered the ZIP after the CLI download returned HTTP 403. Its SHA-256 matched the Actions manifest. A PR run cannot certify scheduled execution.
 
 ## Package evidence
 
@@ -36,9 +36,9 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 | NP-08 rosters | Isolated verified | rosters.py and membership_usage.py, dated club populations | Resolve current roster, transaction and writer coverage |
 | NP-09 corrections | Isolated verified | canonical revisions, dependencies.py and correction tests | Demonstrate end-to-end historical correction propagation to every dependent surface |
 | NP-10 workload | Isolated verified | workload.py, readiness.py, August rest comparison below | Verify all rolling windows under hosted workload |
-| NP-11 deployment | Isolated verified | deployment.py and season_deployment.py, dated role samples | Resolve named-arm comparisons with matched 45-day evidence |
+| NP-11 deployment | Isolated verified | deployment.py and season_deployment.py, dated role samples | Matched 45-day window explains the recorded August differences below. Verify other cohorts and hosted behavior. |
 | NP-12 performance | Isolated verified | group_performance.py and pitch_measurements.py, qualified historical samples | Certify performance and pitch coverage across required eras and consumers |
-| NP-13 rotation and context | Isolated verified | rotation.py, schedule_context.py, depth.py, complete games below | Freeze source-equivalent splits in a new full handoff receipt |
+| NP-13 rotation and context | Isolated verified | rotation.py, schedule_context.py, depth.py, complete games below | August receipt and two supported complete-game differences below. Verify API contracts and other cohorts. |
 | NP-14 state and arm reads | Isolated verified | readiness.py and postseason_arm_comparison.py, August state comparison | Certify availability-date population, eligibility and suppression across seasons |
 | NP-15 history | Isolated verified | history.sql, intelligence_history.py, dependency rebuilds | Prove correction and replay across the complete accepted cohort |
 | NP-16 changes | Isolated verified | change_history.py, readiness_history.py, team_history_reads.py | Match previous edition, methodology and event references on both sides |
@@ -100,3 +100,27 @@ The isolated PR shadow on GitHub runner 45412660230, candidate 81d53550, retaine
 | Capture | 11.75 | 69,064 |
 | Offseason replay | 124.29 | 116,576 |
 | Publication comparison | 253.45 | 127,420 |
+
+## Consecutive editions and rollback controls
+
+On the disposable PostgreSQL 17.6 target, the legacy publisher committed two consecutive trusted editions using the August 27 and 28 workload cutoffs. Each build could see game rows only up to its own cutoff. The roster synchronizer consumed 360 dated MLB club responses across August 27–29 covering active, 40-man, full and non-roster-invitee lists for all 30 teams. Every current What Changed carrier identified snapshot 2 and predecessor 1. SHA-256 for the exported August 27 and 28 carrier sets was respectively `d4741504b57f459c1ba50865ad78357114639dfb1d2e1d2a078f36c53021ea3f` and `717bb005352f544e2d9da690857aa368d9900a7cfe33ca2ef3147465f185cf05`.
+
+The production Tonight aggregator selected twelve highlights from the second edition, eleven back-to-backs and one three-in-four. The earlier isolated candidate selected nine highlights. Both included Sammy Solís's back-to-back. The primary carrier had complete roster and rotation domains for 30 clubs, complete workload-rest for 18, partial workload-rest for 12, and unavailable Team State comparisons for all 30. On the candidate, only two readiness-change records had complete consecutive evidence, while 28 were incomparable. Of the 371 pitcher-rest change records, 293 were complete. A matched predecessor alone does not establish headline or link agreement. League ranking and the twelve-item cap also affect which otherwise valid changes a reader sees.
+
+Using the actual isolated candidate selector, a new dated export of the same 512 public identities yielded generation `1acc0453c206604b37b7271d58f327c20b971ba4585f7f2f2f6956463ee8b322`. The reviewer selected it at revision 4, rolled back to the exact prior generation at revision 5 and retried the same rollback. The retry returned revision 5. The original revision 3 still returned the original 15 cards, and revision 5 returned identical contents apart from its selection revision. This verifies the isolated selector and reader. Exclusive hosted writer handoff and hosted rollback remain open.
+
+Replaying the retained ZIP for artifact 14932400210 against code revision `1f3cea093e5120f212b13ef1bfb1eea68e35156f` again matched league Team State and club competition for all 30 teams. All 30 arm-read scopes were season complete. The archived comparison used publication 5846. Production 5847 needs its own postcommit evidence.
+
+The coverage registry has 70 field groups. Two explicitly required provider domains are hard-hit/barrel and xBA/xSLG/xwOBA/wOBA. The scheduled capture uses Stats API requests from discovery.py. The tracked-pitch normalization in pitch_measurements.py consumes official play-by-play and reconciles outing pitch totals. Neither that qualification nor the hosted schedule comparison certifies provider CSV acquisition, provider-version retention or reproducibility for these two registry rows. NP-05, NP-06 and NP-12 therefore have an open advanced-data obligation even for internal-only fields.
+
+### Qualified August 27 predecessor
+
+The original candidate archive lacked 17 dated active lists and 28 hydrated lists for the prior day. Adding those 45 official responses alone yielded only two complete readiness comparisons. The other 28 clubs encountered missing pitcher logs or date-range totals. The replay then acquired 348 missing official requests for the 371 rostered pitchers and reconciled the preceding eligibility games for seven players through their individual MLB debut seasons. No thresholds or source qualifications changed.
+
+The existing generation builder selected revision 9, `da63c62aae23a675ba2c6b8a0a85ac360c53547e055e8db38a4cdbefcad340db`. All 30 readiness pairs compared successfully. V3 identified 21 qualified pitcher-pattern highlights before league-wide ranking. **All twelve legacy highlights matched** on club, event class and named claim in that set. V3 also identified sixteen Team State transitions. Under the shared priority order, twelve of those filled the league's twelve display slots. The different displayed headlines do not establish a pitcher workload disagreement.
+
+In the initial legacy control the stored Team State outcome was `competition_status_unconfirmed`. Its source schedule was clipped to the workload cutoff before the reference-day competition check. In a separate PG17.6 control, including the dated schedule through the availability reference while keeping pitching lines capped at the workload date let that gate evaluate active competition. The legacy publisher then refused snapshot 1 for Houston, `snapshot_team_state_ineligible:117:data_state:incomplete,confidence:low,status_code_unsupported:data_limited`. That refusal prevents this paired control from certifying the sixteen state changes against a trusted qualifying predecessor. The two rehearsal controls must retain their separate identities.
+
+The postcommit comparator now validates each side's ordered change references against that edition's retained club events, rejects duplicate or uncited event identities and reports differing displayed contents independently of link identity. Both stored and served sides still require exact links for strict parity. This also detects changed claims under identical IDs. PR #950 and the prior tested code revision of #951 passed all four hosted backend PostgreSQL shards, frontend, browser and migration checks. Their dependency-advisory checks failed. No production exception has been approved.
+
+The extended comparator passed the 225-test sync-v3 suite on PostgreSQL 17.6 in 288.57 seconds. Re-reading snapshot 37 through its public Flask routes and immutable stored edition produced identical difference counts on both sides: seven clubs with differing change contents and links, one with differing named arms and two with differing rotation. There were zero rest differences. This postcommit receipt is for selection revision 3. Revision 9's pre-ranking pattern comparison above is a separate experiment.

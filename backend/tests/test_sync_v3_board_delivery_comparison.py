@@ -87,22 +87,36 @@ def test_tonight_delivery_requires_exact_game_and_side_identity():
     game = dict(game_pk=101, game_number=1, first_pitch_utc='2017-08-29T23:00:00Z', state='scheduled',
                 home=dict(team_id=111, team_state=state), away=dict(team_id=147, team_state=state))
     selected = dict(status='represented', selection_revision=5, generation='abc', data_through='2017-08-28',
-                    availability_reference='2017-08-29', games=[game])
+                    availability_reference='2017-08-29', games=[game], league_changes=[])
     binding = dict(revision=5, generation='abc', data_through='2017-08-28', availability_reference='2017-08-29',
                    teams={'111': dict(state=state), '147': dict(state=state)})
     for side in ('away', 'home'):
         game[side].update(rest={}, workload_7d={}, multi_day_usage={}, rotation=None, key_arms=[], change_refs=[])
-    assert compare_slate(selected, {'games': [deepcopy(game)]}, binding) == {}
+    assert compare_slate(selected, {'league_changes': [], 'games': [deepcopy(game)]}, binding) == {}
     changed = deepcopy(game)
     changed['home']['rest'] = None
-    assert compare_slate(selected, {'games': [changed]}, binding) == {
+    assert compare_slate(selected, {'league_changes': [], 'games': [changed]}, binding) == {
         'rest': [dict(game_pk=101, side='home', team_id=111)],
     }
     with pytest.raises(ValueError, match='Duplicate'):
-        compare_slate(selected, {'games': [game, game]}, binding)
+        compare_slate(selected, {'league_changes': [], 'games': [game, game]}, binding)
     with pytest.raises(ValueError, match='inventory'):
-        compare_slate(selected, {'games': []}, binding)
+        compare_slate(selected, {'league_changes': [], 'games': []}, binding)
     with pytest.raises(ValueError, match='home'):
-        compare_slate(selected, {'games': [dict(game, home=game['away'])]}, binding)
+        compare_slate(selected, {'league_changes': [], 'games': [dict(game, home=game['away'])]}, binding)
     with pytest.raises(ValueError, match='pinned'):
-        compare_slate(dict(selected, selection_revision=4), {'games': [game]}, binding)
+        compare_slate(dict(selected, selection_revision=4), {'league_changes': [], 'games': [game]}, binding)
+
+    event = dict(change_id='one', team_id=111, source_ref='snapshot/1', headline='Recorded change')
+    selected['league_changes'] = [event]
+    game['home']['change_refs'] = ['one']
+    assert compare_slate(selected, deepcopy(selected), binding) == {}
+    served = deepcopy(selected)
+    served['league_changes'][0]['headline'] = 'Different claim'
+    assert set(compare_slate(selected, served, binding)) == {'change_contents'}
+    served['games'][0]['away']['change_refs'] = ['one']
+    with pytest.raises(ValueError, match='ordered club events'):
+        compare_slate(selected, served, binding)
+    selected['league_changes'].append(event)
+    with pytest.raises(ValueError, match='unique identity'):
+        compare_slate(selected, selected, binding)
