@@ -15,6 +15,7 @@ from sync_v3.replay import install
 HOST = 'dpg-dc2t51mc6qcc738080hg-a'
 DATABASE = 'baseballos_sync_v3_staging'
 OWNER = 'baseballos_sync_v3_staging_user'
+BATCH_LIMIT = 256
 
 
 def connect(user, password):
@@ -61,7 +62,7 @@ def witness(worker):
         # Verify the original witness and the most recent acquisition batch in the private database.
         # A restarted worker can detect damaged bytes even when the receipt still has its original digest.
         cur.execute("""WITH recent AS (
-                           SELECT id,sha256 FROM candidate.fetches ORDER BY id DESC LIMIT 128
+                           SELECT id,sha256 FROM candidate.fetches ORDER BY id DESC LIMIT %s
                        ), sample AS (
                            SELECT id,sha256 FROM recent WHERE sha256 IS NOT NULL
                            UNION SELECT id,sha256 FROM candidate.fetches WHERE id=%s
@@ -69,7 +70,7 @@ def witness(worker):
                        SELECT count(*),count(*) FILTER (
                            WHERE p.sha256 IS NULL OR encode(pg_catalog.sha256(p.encoded_json),'hex')<>s.sha256
                        ) FROM sample s LEFT JOIN candidate.payloads p USING (sha256)""",
-                    (first[0] if first else None,))
+                    (BATCH_LIMIT, first[0] if first else None))
         verified, mismatches = cur.fetchone()
         if mismatches:
             raise ValueError('Staging acquisition payload digest mismatch')
@@ -83,7 +84,7 @@ def acquire(password):
         verify_target(worker)
         before = witness(worker)
         day = datetime.now(ZoneInfo('America/New_York')).date()
-        report = process(worker, day, max_jobs=128 if before['first'] else 1)
+        report = process(worker, day, max_jobs=BATCH_LIMIT if before['first'] else 1, profiles=True)
         after = witness(worker)
         if before['first'] and before['first'] != after['first']:
             raise ValueError('Prior acquisition receipt changed')
