@@ -426,3 +426,54 @@ def test_current_worker_rechecks_an_overnight_live_game_on_its_original_slate():
             now += timedelta(hours=1)
             run_cycle(worker, now.date(), fetch, teams=(), clock=lambda: now)
             assert not any(p.get('startDate') == str(day) for _, p in calls)
+
+
+def test_recent_official_final_is_rechecked_for_a_later_boxscore_correction():
+    import copy
+    import json
+    from contextlib import closing
+    from sync_v3.cycle import run_cycle
+    from sync_v3.replay import install
+    from services.game_ingestion_planner import DEFAULT_CORRECTION_HORIZON_DAYS
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = datetime.fromisoformat(fixture['baseball_date']).date()
+    sources = {row['endpoint']: row['body'] for row in fixture['responses']}
+    box = '/game/12345/boxscore'
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append(endpoint)
+        if endpoint == '/schedule' and params['startDate'] != str(day):
+            return {'totalGames': 0, 'dates': []}
+        if endpoint == '/transactions':
+            return {'transactions': []}
+        result = copy.deepcopy(sources[endpoint])
+        if endpoint == box and instant.date() > day:
+            result['teams']['home']['players']['ID102']['stats']['pitching']['numberOfPitches'] = 24
+        return result
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        for days, expect_box in [(0, True), (DEFAULT_CORRECTION_HORIZON_DAYS, True),
+                                 (DEFAULT_CORRECTION_HORIZON_DAYS, False), (DEFAULT_CORRECTION_HORIZON_DAYS + 1, False)]:
+            represented = day + timedelta(days=days)
+            instant = datetime.combine(represented, datetime.min.time(), timezone.utc) + timedelta(hours=16)
+            calls.clear()
+            with closing(connect()) as worker:
+                results = run_cycle(worker, represented, fetch, teams=(), clock=lambda: instant)
+                assert all(status == 'received' for _, status in results)
+                assert (box in calls) == expect_box
+        with closing(connect()) as worker, worker.cursor() as cur:
+            cur.execute("""SELECT r.id,r.predecessor,(line->>'pitches_thrown')::int FROM candidate.revisions r,
+                           LATERAL jsonb_array_elements(r.facts) line
+                           WHERE r.domain='final' AND r.identity='12345' AND line->>'pitcher_mlb_id'='102'
+                           ORDER BY r.revision""")
+            original, corrected = cur.fetchall()
+            assert original[1:] == (None, 15)
+            assert corrected[1:] == (original[0], 24)
+            cur.execute("SELECT count(*) FROM candidate.core_selections")
+            assert cur.fetchone() == (0,)

@@ -68,11 +68,13 @@ def test_missing_slate_is_unknown_and_a_proven_off_day_preserves_workload():
         install(owner)
         worker = connect()
         try:
+            def fetch(endpoint, params):
+                if endpoint == '/schedule' and params['startDate'] != str(day):
+                    return {'totalGames': 0, 'dates': []}
+                return sources[endpoint, params.get('rosterType')]
+
             for offset in range(3):
-                if offset:
-                    sources['/schedule',None] = {'totalGames':0,'dates':[]}
-                statuses = run_cycle(worker, day+timedelta(days=offset),
-                                     lambda endpoint,params:sources[endpoint,params.get('rosterType')],
+                statuses = run_cycle(worker, day+timedelta(days=offset), fetch,
                                      teams=[111], clock=lambda:at+timedelta(days=offset))
                 assert all(status=='received' for _,status in statuses)
             with worker, worker.cursor() as cur:
