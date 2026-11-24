@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
+from zoneinfo import ZoneInfo
 
 from psycopg2.extras import Json
 
@@ -88,6 +89,26 @@ def schedule_request(cur, day, now, schedule):
                                              default=schedule.poll_seconds))
 
 
+def enqueue_closing_transactions(cur, previous, now):
+    """Check a previously polled transaction date once after its New York day ends."""
+    zone = ZoneInfo('America/New_York')
+    if now.astimezone(zone).date() <= previous:
+        return
+    _, request = calendar_requests(previous)
+    cur.execute("""SELECT f.received_at,j.payload FROM candidate.fetches f
+                   JOIN candidate.attempts a ON a.token=f.token
+                   JOIN candidate.jobs j ON j.id=a.job_id
+                   WHERE f.endpoint='/transactions' AND f.parameters=%s AND f.outcome='received'
+                     AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)
+                     AND j.budget='current' AND j.product_date=%s AND j.payload ? 'continuation'
+                   ORDER BY f.received_at DESC,f.id DESC LIMIT 1""", (Json(request.params()), previous))
+    latest = cur.fetchone()
+    if latest and latest[0].astimezone(zone).date() <= previous:
+        payload = latest[1]
+        key = sha256(evidence.encode_json(['current', str(previous), 'closing_transactions', payload])).hexdigest()
+        queue.enqueue(cur, key, payload, now, product_date=previous)
+
+
 def enqueue_prior_schedule(cur, previous, now, *, overnight):
     """Revisit a retained current-worker slate for overnight finality or an overdue final audit."""
     schedule, _ = calendar_requests(previous)
@@ -122,6 +143,7 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         schedule, transactions = calendar_requests(day)
         if budget == 'current':
             schedule = schedule_request(cur, day, now, schedule)
+            enqueue_closing_transactions(cur, day - timedelta(days=1), now)
             for age in range(1, DEFAULT_CORRECTION_HORIZON_DAYS + 1):
                 enqueue_prior_schedule(cur, day - timedelta(days=age), now, overnight=age == 1)
         depth_teams = sorted(set(depth_teams))
