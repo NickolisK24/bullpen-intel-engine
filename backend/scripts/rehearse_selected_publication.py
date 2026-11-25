@@ -13,6 +13,7 @@ from sqlalchemy import text
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
+from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
@@ -102,11 +103,12 @@ def _reconcile_confirmed_finals(cur, finals, represented, run_id):
             raise ValueError(f"Final {game['gamePk']} did not converge on its retained pitching lines")
 
 
-def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False):
+def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False,
+                     reconcile_schedules=False):
     """Keep the selector pinned until the independent target transaction commits."""
     assert_rehearsal_target()
-    if reconcile_finals and sync_run_id is not None:
-        raise ValueError('Final reconciliation requires the selected v3 acquisition')
+    if (reconcile_finals or reconcile_schedules) and sync_run_id is not None:
+        raise ValueError('Source reconciliation requires the selected v3 acquisition')
     if (not current_app.testing or not current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED')
             or not current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED')):
         raise RuntimeError('A rehearsal with both publication gates enabled is required')
@@ -145,12 +147,21 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
             receipt['acquisition'], finals = played_day_evidence(cur, represented)
             if reconcile_finals:
                 receipt['reconciled_final_sources'] = {str(game['gamePk']): source for game, source in finals}
+        schedules = {}
+        if reconcile_schedules:
+            receipt['reconciled_schedules'] = {}
+            for day in sorted({represented, date.fromisoformat(binding['availability_reference'])}):
+                identity, observation = pinned_schedule(cur, generation, day)
+                receipt['reconciled_schedules'][str(day)] = identity
+                schedules[day] = observation
         previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
         if previous_binding.get('generation') == generation:
             if previous_binding != receipt or (sync_run_id is not None and prior.sync_run_id != sync_run_id):
                 raise ValueError('The selected generation already has a different publication receipt')
             if reconcile_finals:
                 _verify_final_lines(cur, finals)
+            for day, observation in schedules.items():
+                reconcile_schedule(day, observation, verify_only=True)
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
@@ -174,6 +185,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
         if reconcile_finals:
             _reconcile_confirmed_finals(cur, finals, represented, sync_run_id)
             _verify_final_lines(cur, finals)
+        for day, observation in schedules.items():
+            reconcile_schedule(day, observation)
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
             sync_run_id=sync_run_id, source='v3_team_state_rehearsal', publish=False,
             commit=False, raise_errors=True,
@@ -216,6 +229,8 @@ def main():
                         help='Use the selected date’s settled v3 acquisition in the disposable target')
     parser.add_argument('--reconcile-finals', action='store_true',
                         help='Reconcile retained official final lines before the isolated publication')
+    parser.add_argument('--reconcile-schedule', action='store_true',
+                        help='Populate empty target dates using selected schedule receipts with their acquisition times')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
@@ -245,7 +260,7 @@ def main():
         with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
                                         predecessor=args.predecessor, sync_run_id=args.sync_run,
-                                        reconcile_finals=args.reconcile_finals)
+                                        reconcile_finals=args.reconcile_finals, reconcile_schedules=args.reconcile_schedule)
             # The production hooks recover independently after the trust transaction.
             # Recheck durable rows and public reads because hook failures are nonfatal.
             from scripts.verify_selected_delivery import verify_delivery
