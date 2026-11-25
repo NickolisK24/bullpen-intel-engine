@@ -85,7 +85,7 @@ def project_played_schedule(worker_password):
         observation = replay(cur, receipt)
         cur.execute('SELECT sha256 FROM candidate.fetches WHERE id=%s', (receipt,))
         digest, = cur.fetchone()
-        identities = stage_identity_inputs(cur, observation, receipt, PLAYED_DAY)
+        identities, finals = stage_identity_inputs(cur, observation, receipt, PLAYED_DAY)
 
     # The installer owns DDL. The canonical writer runs with table-scoped privileges.
     with db.engine.begin() as conn:
@@ -118,7 +118,8 @@ def project_played_schedule(worker_password):
             db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
             reconcile_schedule(PLAYED_DAY, observation, private_staging=True, verify_only=verify_only)
     bound = bind_known_pitchers(identities)
-    return dict(bound_pitcher_identities=bound, day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
+    appearances = project_final_appearances(finals, PLAYED_DAY)
+    return dict(appearances=appearances, bound_pitcher_identities=bound, day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
                 games=sum(len(d['games']) for d in observation.body['dates']), repeated=True,
                 current_acquisition=freshness)
 
@@ -162,6 +163,7 @@ def stage_identity_inputs(cur, schedule, schedule_id, day):
         raise ValueError('Unexpected staging cohort directory')
     directory = {mlb: public for public, mlb in pairs}
     identities = {}
+    finals = []
     for entry in schedule.body['dates']:
         for game in entry['games']:
             pk = game['gamePk']
@@ -176,6 +178,7 @@ def stage_identity_inputs(cur, schedule, schedule_id, day):
                         (str(pk), source, str(pk), f'{pk}/{day}', schedule_id))
             facts, = cur.fetchone()
             box = replay(cur, source).body
+            finals.append((game, box, facts))
             for line in facts:
                 mlb = line['pitcher_mlb_id']
                 if mlb not in directory:
@@ -193,7 +196,7 @@ def stage_identity_inputs(cur, schedule, schedule_id, day):
                 identities[mlb] = dict(values, id=directory[mlb])
     if identities.keys() != directory.keys():
         raise ValueError('Approved mapping is outside credited final cohort')
-    return identities
+    return identities, finals
 
 
 def bind_known_pitchers(identities):
@@ -215,3 +218,42 @@ def bind_known_pitchers(identities):
         conn.execute(text("""SELECT setval(pg_get_serial_sequence('public.pitchers','id'),
                           greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"""))
     return len(identities)
+
+def project_final_appearances(finals, day):
+    """Apply the governed appearance plan to the staged product and compare every credited row."""
+    from collections import Counter
+    from services.sync import process_completed_game_for_postgame_refresh, POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+
+    started = monotonic()
+    created = inserted = confirmed = 0
+    with db.session.begin():
+        if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected final rehearsal target')
+        db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        for game, box, facts in finals:
+            def process(plan_only):
+                return process_completed_game_for_postgame_refresh(
+                    game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only)
+            planned = process(True)
+            summary = planned['reconciliation_summary']
+            if planned['incomplete_reason'] or summary['rows_blocked'] or summary['rows_planned'] != len(facts):
+                raise ValueError('Official final has an incomplete governed plan')
+            if summary['rows_unchanged'] != len(facts):
+                applied = process(False)
+                if applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
+                    raise ValueError('Final reconciliation incomplete')
+                created += applied['pitchers_created']
+                inserted += applied['logs_added']
+                db.session.flush()
+            repeated = process(True)
+            if repeated['incomplete_reason'] or repeated['reconciliation_summary']['rows_unchanged'] != len(facts):
+                raise ValueError('Final reconciliation did not converge')
+            rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
+                          l.games_started,l.game_date FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
+                          WHERE l.mlb_game_pk=:pk"""), dict(pk=game['gamePk']))
+            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),day)
+                               for f in facts)
+            if Counter(tuple(row) for row in rows) != expected:
+                raise ValueError('Staged pitching lines differ from confirmed acquisition')
+            confirmed += len(facts)
+    return dict(verified=confirmed, inserted=inserted, identities_created=created, seconds=monotonic()-started)
