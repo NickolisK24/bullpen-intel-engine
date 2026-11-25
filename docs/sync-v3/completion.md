@@ -1,5 +1,19 @@
 # Sync v3 acceptance ledger
 
+## Current primary dispatch and scoped final reconciliation
+
+Revision `e70bec0c7cc963d8ffd10a2eac945d00091fd829` exercised the current-date primary entry point. Private Render run `1795648973` completed acquisition through actual HTTP delivery in 74.70 seconds. It selected the existing November 25 generation, revalidated all required inputs and preserved snapshot 131 / sync 66 without creating a duplicate edition. The restricted publisher returned 30 League clubs, zero games and zero new shares. It used 23.00 CPU-seconds and peaked at 172,916 KiB RSS. The latest retained generation source was 3,082.66 seconds old at delivery. These are replay measurements. The fresh publication, independent Board inspection and rollback measurements appear below.
+
+Private archived postgame run `1795648775` on the same revision verified both dated slates and all 73 credited appearances in ten finals. Its 14-day product workload ledger matched 193 expected finals, 193 represented finals and 1,612 appearances with zero missing games. The archived transaction rolled back. Private role check `1795648690` verified the scoped projector grants. The named cutoff, retained-schedule and correction test suites passed 52 tests on disposable PostgreSQL. Competitive correction through a newly published active-season HTTP edition and production writer attribution remain open. [Private Render runs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
+
+## Public production verification command
+
+At 23:13 UTC the public API served legacy snapshot 5848 / sync 98841. The League, Tonight and all 30 Board cores agreed on the edition, workload through October 28 and availability on October 29. Tonight returned zero games. The read-only check took 37.15 seconds, including a second League read after the individual Boards. Run from `backend` with the intended snapshot and sync-run IDs. For the production handoff, pass the independent v3 source receipt with `--binding FILE` to check the expected club states and game identities.
+
+```bash
+python -m scripts.verify_public_sync_edition --base-url https://baseballos-api.onrender.com --snapshot 5848 --sync 98841
+```
+
 ## November 25 competitive primary date selection
 
 Private Render run `1795646989` selected the August 28 workload cutoff and August 29 availability from the official 2017 season and daily schedules on a pregame invocation. Independent postgame run `1795647201` started from August 28, confirmed the settled slate and selected the same generation, `d5e6b09de51a13e165a2834ca12b78c4cc0ca32449c421f2032bd5ea355fcf79`. Both reviews matched the latest inventory for all 30 clubs and 1,854 snapshots, with zero missing scopes. Source review took 118.42 and 110.04 seconds respectively. These runs exercised cutoff selection and intelligence review. Live-date run `1795647415` on revision `ca4b68206b6e1f1c2b5ec827d0e846e1aa20827a` refreshed current acquisition and independently selected October 28 workload, October 29 availability and the same season-complete generation serving private snapshot 131. Competitive projection, correction and publication through the independent scheduled primary still require verification. [Private Render runs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
@@ -248,24 +262,24 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 | NP-01 coverage | Implemented | coverage.csv identifies source, retention, qualification and consumers | Verify adapter coverage and supported eras for each required field |
 | NP-02 isolation | Hosted private permissions verified for three operations | Read-only product API, scoped publisher and rollback, scoped Board projector | Verify production runtime ownership and the scheduler handoff |
 | NP-03 discovery | Shadow verified for daily capture | discovery.py and capture_day.py, regular and postseason replay | Measure ongoing live schedule, roster and correction discovery |
-| NP-04 orchestration | Shadow verified for pending-job recovery | Hosted pending checkpoint resumed to completion and an idle Render process repeated without claims | Extend the verified hosted lease interruption to the proposed primary workload |
+| NP-04 orchestration | Hosted interruption and retry verified | Lease expiry, private canonical checkpoint 47 and independent replay of 307 retained inputs | Verify scheduler ownership and recovery during the production observation period |
 | NP-05 acquisition | Isolated verified | sources.py and capture_day.py pin request identity and retrieval time | Verify complete required adapter and source outage coverage |
 | NP-06 retention | Persistent postseason retention verified | 18 dated schedule bodies and 35 official boxscores survived independent Render executions and were replayed into current canonical decisions | Measure retention growth under routine primary operation |
 | NP-07 identities | Isolated verified | canonical.py, public_identities.py, game and pitcher reconciliation | Certify full public identity coverage and real source corrections |
-| NP-08 rosters | Isolated verified | rosters.py and membership_usage.py, dated club populations | Resolve current roster, transaction and writer coverage |
+| NP-08 rosters | Hosted dated rosters and Board populations verified | 120 official views per qualified date, 30 independently reviewed clubs and a withdrawn incorrect Boston edition | Verify the public product and exclusive roster writer after handoff |
 | NP-09 corrections | Isolated verified | canonical revisions, dependencies.py and correction tests | Demonstrate end-to-end historical correction propagation to every dependent surface |
-| NP-10 workload | Isolated verified | workload.py, readiness.py, August rest comparison below | Verify all rolling windows under hosted workload |
+| NP-10 workload | Hosted competitive workload verified | The dated postgame run matched 193 expected finals and 1,612 appearances across 14 days. Source evidence resolved the suspended-game pitching dates | Verify corrections through the competitive publication path |
 | NP-11 deployment | Isolated verified | deployment.py and season_deployment.py, dated role samples | Matched 45-day window explains the recorded August differences below. Verify other cohorts and hosted behavior. |
 | NP-12 performance | Isolated verified | group_performance.py and pitch_measurements.py, qualified historical samples | Certify performance and pitch coverage across required eras and consumers |
 | NP-13 rotation and context | Isolated verified | rotation.py, schedule_context.py, depth.py, complete games below | August receipt and two supported complete-game differences below. Verify API contracts and other cohorts. |
 | NP-14 state and arm reads | Hosted current and archived reads verified | 30 archived club rest states, 30 current season-complete states, independent dated Board review and a withdrawn incorrect private edition | Verify actual public delivery after handoff |
 | NP-15 history | Isolated verified | history.sql, intelligence_history.py, dependency rebuilds | Prove correction and replay across the complete accepted cohort |
 | NP-16 changes | Isolated verified | change_history.py, readiness_history.py, team_history_reads.py | Match previous edition, methodology and event references on both sides |
-| NP-17 candidate build | Isolated verified | generation.py and cohort.py, selected 30-club generation | Current offseason ran with restricted credentials. Verify the active-season primary entry point |
+| NP-17 candidate build | Hosted dated generations verified | Live offseason and independent competitive pregame and postgame selection, 30 clubs and 1,854 archived snapshots | Verify a newly delivered competitive correction under the primary entry point |
 | NP-18 promotion and recovery | Hosted private promotion and rollback verified | Scoped publication and rollback, exact restored HTTP edition, immutable historical shares | Verify exclusive production writer permissions and scheduler handoff |
 | NP-19 product delivery | Hosted current and archived delivery verified | Archived regular-season edition, incremental successor, exact restored predecessor and current offseason rehearsal | Verify public production delivery after the handoff |
-| NP-20 operations | Isolated verified | rehearse.py diagnostics, source trace and worker recovery | Demonstrate hosted end-to-end recovery and failure visibility |
-| NP-21 cost and performance | Shadow verified for current and archived acquisition | Private Render run timings, sampled memory, queue counts and database growth above | Measure sustained primary workload, full publication cost and approved operational thresholds |
+| NP-20 operations | Hosted processing and recovery verified | Interrupted work resumed in another process. Private runs verified HTTP after publication, rollback and republication | Observe scheduled production delivery and absence of competing writers |
+| NP-21 cost and performance | Hosted private lifecycle measured | Fresh delivery took 151.64 seconds. Current replay took 74.70 seconds. Freshness, memory, PostgreSQL usage and the $9.50 monthly staging baseline are recorded above | Measure production resource use during the agreed observation period |
 | NP-22 parity | Hosted archived and current comparisons | All 30 current Team State objects matched public snapshot 5848. Dated MLB sources explain Boston’s Burgos/Slaten difference | Verify the public product after authorized cutover |
 | NP-23 cutover | Blocked | Private selection, postcommit comparison and rollback rehearsals | Exclusive-writer handoff, owner approvals, observation duration, healthy observation and separate retirement authorization |
 

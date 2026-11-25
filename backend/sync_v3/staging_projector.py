@@ -12,8 +12,8 @@ READ = {'slate_games', 'compatibility_write_events', 'final_game_versions', 'ros
 INSERT = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
 UPDATE = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games'}
 ROSTER_EVIDENCE = {'source_subjects', 'source_observations', 'source_payload_artifacts', 'source_fetch_attempts'}
-READ |= ROSTER_EVIDENCE | {'roster_status_snapshots'}
-INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots'}
+READ |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
+INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
 UPDATE.add('roster_status_snapshots')
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
@@ -76,7 +76,7 @@ def record_checkpoint(digest, day, through, sources, started):
         return record.id
 
 
-def recover_boards(password, source_password, digest, *, competition_day=None):
+def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
     from sync_v3.render_staging import connect
@@ -95,16 +95,24 @@ def recover_boards(password, source_password, digest, *, competition_day=None):
                 started = datetime.now(timezone.utc).replace(tzinfo=None)
                 from sync_v3.staging_postseason import project_offseason_competition
                 from utils.db import db
-                competition = project_offseason_competition(source, client, competition_day, scoped=True)
-                db.session.remove()
-                sources = set(competition.pop('source_receipts'))
-                print(json.dumps(dict(private_scoped_competition=competition)), flush=True)
                 from datetime import date
-                from sync_v3.staging_publication_target import project_roster_views, project_archived_fatigue
+                from sync_v3.staging_publication_target import project_roster_views, project_archived_fatigue, project_workload_window
                 with source, source.cursor() as cur:
                     cur.execute("SELECT represented, manifest->>'availability_reference' FROM candidate.generations "
                                 "WHERE digest=%s", (digest,))
                     through, availability = cur.fetchone()
+                if competitive:
+                    window = project_workload_window(source_password, workload_day=through, scoped=True)
+                    if window['reason']:
+                        if window['missing_games'] and window['recovered']:
+                            return dict(phase='canonical_pending', generation=digest, workload=window)
+                        raise ValueError(f"Competitive workload coverage is incomplete: {window['reason']}")
+                    sources = set(window['receipts'].values())
+                else:
+                    competition = project_offseason_competition(source, client, competition_day, scoped=True)
+                    sources = set(competition.pop('source_receipts'))
+                    print(json.dumps(dict(private_scoped_competition=competition)), flush=True)
+                db.session.remove()
                 dates = through, date.fromisoformat(availability)
                 roster = project_roster_views(source_password, edition_dates=dates, initialized=True)
                 roster['assignments'] = project_archived_fatigue(edition_dates=dates)
@@ -178,5 +186,11 @@ def project_dated_schedules(password, source_password, digest, *, archive=False)
                 appearances = project_final_appearances(finals, through, include_context=False, in_transaction=True)
                 if archive:
                     transaction.rollback()
-    return dict(generation=digest, boxes=boxes, verified_appearances=appearances['verified'], source_ids=[receipt['source'] for receipt, _ in slates.values()],
+        window = None
+        if archive:
+            from sync_v3.staging_publication_target import project_workload_window
+            window = project_workload_window(source_password, workload_day=through, scoped=True, verify_only=True)
+            if window['reason']:
+                raise ValueError(f"Archived pitching window is incomplete: {window['reason']}")
+    return dict(generation=digest, workload_window=window, boxes=boxes, verified_appearances=appearances['verified'], source_ids=[receipt['source'] for receipt, _ in slates.values()],
                 dates=[str(day) for day in dates], archived_replay=archive)
