@@ -98,3 +98,36 @@ def test_final_handoff_refuses_unresolved_or_nonconverging_plans(monkeypatch, de
     with pytest.raises(ValueError, match='Final 12345'):
         handoff._reconcile_confirmed_finals(None, [({'gamePk': 12345}, 1)], date(2017, 8, 28), 7)
     assert calls == expected_calls
+
+
+def test_publication_requires_same_pitcher_identity_across_both_dates_and_target(monkeypatch):
+    from flask import Flask
+    from models.pitcher import Pitcher
+    from scripts import rehearse_selected_publication as handoff
+    from utils.db import db
+
+    arms = {False: {501: {'public_id': 17}}, True: {501: {'public_id': 17}, 502: {'public_id': 18}}}
+    status = {False: 'mapped', True: 'mapped'}
+    monkeypatch.setattr(handoff, '_public_arms', lambda cur, gen, *, board_date: (arms[board_date], status[board_date]))
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://'
+    db.init_app(app)
+    with app.app_context():
+        Pitcher.__table__.create(db.engine)
+        db.session.add_all([Pitcher(id=17, mlb_id=501, full_name='Returning arm'),
+                            Pitcher(id=18, mlb_id=502, full_name='New arrival')])
+        db.session.flush()
+        receipt = handoff.verify_arm_directory(None, 'generation')
+        assert receipt['players'] == 2 and len(receipt['sha256']) == 64
+        assert handoff.verify_arm_directory(None, 'generation') == receipt
+
+        arms[True][502]['public_id'] = 19
+        with pytest.raises(ValueError, match='target pitcher directories disagree'):
+            handoff.verify_arm_directory(None, 'generation')
+        arms[True][502]['public_id'] = 18
+        arms[True][501]['public_id'] = 20
+        with pytest.raises(ValueError, match='Conflicting selected pitcher identity'):
+            handoff.verify_arm_directory(None, 'generation')
+        status[True] = 'public_id_mapping_incomplete'
+        with pytest.raises(ValueError, match='Incomplete selected pitcher directory'):
+            handoff.verify_arm_directory(None, 'generation')
