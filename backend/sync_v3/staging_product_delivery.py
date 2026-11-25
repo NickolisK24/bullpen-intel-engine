@@ -602,13 +602,33 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
                 found = [r['id'] for group in data['search']['groups'] if group['entity_type'] == 'team' for r in group['results']]
                 if team not in found:
                     raise ValueError('Current search lacks the canonical Boston team')
-                public_arms = [a['pitcher_id'] for a in core['active_bullpen']['arms']]
-                arms = db.session.query(Pitcher.id, Pitcher.mlb_id).filter(Pitcher.id.in_(public_arms)).all()
-                if (len(arms) != len(public_arms) or len({mlb for _, mlb in arms}) != len(arms)
-                        or any(not mlb for _, mlb in arms)):
-                    raise ValueError('Current Board arm has no unique MLB identity')
-                return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details'],
-                            product_day=binding['product_day'], team=team, board_mlb_ids=sorted(mlb for _, mlb in arms))
+                boards = {str(team): core}
+                other_teams = sorted(binding['reviewed_board_mlb_ids'].keys() - boards.keys())
+                responses = http_paths(app, [f'/api/bullpen/teams/{club}/board-v2/core' for club in other_teams])
+                for club, response in zip(other_teams, responses):
+                    response.raise_for_status()
+                    boards[club] = response.json()
+                listed = {club:[a['pitcher_id'] for a in board['active_bullpen']['arms']] for club,board in boards.items()}
+                pitchers = {pid for staff in listed.values() for pid in staff}
+                directory = dict(db.session.query(Pitcher.id, Pitcher.mlb_id).filter(Pitcher.id.in_(pitchers)).all())
+                for club, board in boards.items():
+                    publication = board['publication_identity']
+                    staff = [directory[pid] for pid in listed[club]]
+                    if ((publication['snapshot_id'], publication['sync_run_id']) != ident
+                            or publication['team_id'] != int(club) or publication['availability_reference_date'] != day
+                            or sorted(staff) != binding['reviewed_board_mlb_ids'][club]):
+                        raise ValueError(f'HTTP Board differs from the dated official review for {club}')
+                checked = list(paths) + ['board_details', 'league_boards']
+                if listed[str(team)]:
+                    pid = listed[str(team)][0]
+                    response, = http_paths(app, [f'/api/bullpen/fatigue/{pid}'])
+                    response.raise_for_status()
+                    if response.json()['pitcher']['mlb_id'] != directory[pid]:
+                        raise ValueError('Current Pitcher Detail differs from the Board identity')
+                    checked.append('pitcher')
+                return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=checked,
+                            product_day=binding['product_day'], team=team, verified_boards=len(boards),
+                            board_mlb_ids=binding['reviewed_board_mlb_ids'][str(team)])
             arm = core['active_bullpen']['arms'][0]['pitcher_id']
             player = db.session.get(Pitcher, arm)
             if not player or player.team_id != team:
