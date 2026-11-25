@@ -130,7 +130,7 @@ def main():
                     report = recover(connection, args.recover_eligibility, args.day, max_jobs=args.max_jobs,
                                      fetch=lambda endpoint, params: client._get(endpoint, params=params))
                 print(json.dumps(report, sort_keys=True))
-                return 0 if report['status'] in ('ready', 'batch_limit', 'awaiting_retry_or_lease') else 1
+                return 0 if report['status'] in ('ready', 'season_complete', 'batch_limit', 'awaiting_retry_or_lease') else 1
             report = process(connection, args.day, max_jobs=args.max_jobs, profiles=args.active_profiles,
                              depth_teams=args.depth_team, postseason_rounds=args.postseason_round,
                              round_totals=args.round_totals)

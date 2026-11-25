@@ -71,3 +71,24 @@ def test_uncredited_postseason_appearance_retains_the_required_round():
     with pytest.raises(BaselineWithheld, match='uncredited_game_requires_official_final') as error:
         _confirm_uncredited(None, 102, 147, 12345, date(2024, 10, 18), 'L')
     assert error.value.game_evidence['game_type'] == 'L'
+
+
+@pytest.mark.parametrize('reason,expected', [('world_series_decided', 'season_complete'),
+                                             ('missing_competition_calendar', 'withheld')])
+def test_completed_club_requires_agreeing_competition_evidence(monkeypatch, reason, expected):
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    club = dict(team_id=111, status='season_complete', basis='world_series_decided')
+    monkeypatch.setattr(recovery, 'represented_readiness', lambda cur, team, day:
+                        dict(reason=reason, team_state=None, competition=club))
+
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def unexpected(endpoint, params):
+            pytest.fail('No source request is supported for this club')
+        report = recovery.recover(worker, 111, date(2024, 11, 15), max_jobs=1, fetch=unexpected)
+        assert report['status'] == expected and report['receipts'] == []
+        with worker, worker.cursor() as cur:
+            cur.execute('SELECT count(*) FROM candidate.jobs')
+            assert cur.fetchone() == (0,)

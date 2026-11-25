@@ -13,6 +13,10 @@ from sync_v3.readiness import represented_readiness
 
 def _needed(cur, team, through):
     report = represented_readiness(cur, team, through)
+    competition = report.get('competition') or {}
+    if (competition.get('team_id') == team and competition.get('status') == 'season_complete' and report['reason']
+            and report['reason'] == competition.get('basis') and report.get('team_state') is None):
+        return report['reason'], [], True
     gaps = dict(report.get('eligibility_gaps', {}))
     for player, profile in report.get('profiles', {}).items():
         if profile.get('reason') == 'uncredited_game_requires_official_final':
@@ -60,7 +64,7 @@ def _needed(cur, team, through):
                 and classify_status(game['status']).final_status
                 and fields['team_id'] in (game['teams']['away']['team']['id'], game['teams']['home']['team']['id'])):
             missing(day, f"/game/{game['gamePk']}/boxscore", {})
-    return report['reason'], sorted(requests)
+    return report['reason'], sorted(requests), False
 
 
 def recover(connection, team, through, *, fetch, max_jobs, clock=lambda: datetime.now(timezone.utc)):
@@ -75,7 +79,7 @@ def recover(connection, team, through, *, fetch, max_jobs, clock=lambda: datetim
     while True:
         with connection, connection.cursor() as cur:
             cur.execute('SET TRANSACTION READ ONLY')
-            reason, requests = _needed(cur, team, through)
+            reason, requests, season_complete = _needed(cur, team, through)
         if not reason or not requests or len(outcomes) >= max_jobs:
             break
         count = len(outcomes)
@@ -98,7 +102,9 @@ def recover(connection, team, through, *, fetch, max_jobs, clock=lambda: datetim
                 outcomes.append(outcome)
         if count == len(outcomes) or any(outcome != 'received' for outcome in outcomes):
             break
-    if not reason:
+    if season_complete:
+        status = 'season_complete'
+    elif not reason:
         status = 'ready'
     elif any(outcome != 'received' for outcome in outcomes):
         status = 'acquisition_failed'
