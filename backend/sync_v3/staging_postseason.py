@@ -39,3 +39,83 @@ def retain(worker):
         if checked != 53:
             raise ValueError('Incomplete November postseason archive')
     return dict(verified=checked, inserted=inserted, elapsed_seconds=monotonic()-start)
+
+
+def reconcile_current_decisions(connection, fetch, *, limit=96):
+    """Admit retained decisions and qualify missing public schedule evidence in the private candidate database."""
+    from datetime import date, timezone
+    from collections import Counter
+    from zoneinfo import ZoneInfo
+
+    from sync_v3 import canonical, evidence, queue
+    from sync_v3.competition_calendar import calendar_games, competition_status, matches_calendar_game
+    from sync_v3.discovery import calendar_requests, competition_calendar_request
+    from sync_v3.generation import generation_date_decision
+    from sync_v3.sources import RetainedResponse
+
+    day = datetime.now(ZoneInfo('America/New_York')).date()
+    clock = lambda: datetime.now(timezone.utc)
+    with connection, connection.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        league = competition_status(cur, day)
+        source = evidence.replay(cur, league['calendar_source'])
+        games = calendar_games(competition_calendar_request(day.year).params(), source.body)
+        through = max(d for d, row, _ in games.values() if d <= day and row['status_state'] == 'final')
+        decision = generation_date_decision(cur, through, day)
+        scopes = []
+        for pk in league['missing_decisions']:
+            played, row, game = games[pk]
+            if played > day or row['status_state'] != 'final':
+                continue
+            request = calendar_requests(played)[0]
+            schedule_id = evidence.latest_qualified_source(cur, request.endpoint, request.params())
+            if schedule_id is None:
+                scopes.append((played, request.endpoint, request.params()))
+                continue
+            schedule = evidence.replay(cur, schedule_id)
+            daily = [g for slate in schedule.body['dates'] for g in slate['games'] if g['gamePk'] == pk]
+            if len(daily) != 1 or not matches_calendar_game(daily[0], game):
+                raise ValueError(f'Official season and daily schedules disagree for {pk}')
+            scopes.append((played, f'/game/{pk}/boxscore', {}))
+        for value, reason in decision['gaps'].items():
+            if reason != 'missing_complete_schedule':
+                continue
+            missing_day = date.fromisoformat(value)
+            req = calendar_requests(missing_day)[0]
+            scopes.append((missing_day, req.endpoint, req.params()))
+    seen = set()
+    outcomes = Counter()
+    for played, endpoint, params in scopes:
+        payload = dict(endpoint=endpoint, params=params, current_edition_recovery=True)
+        key = sha256(encode_json(['current_edition_recovery', str(played), payload])).hexdigest()
+        if key in seen:
+            continue
+        seen.add(key)
+        with connection, connection.cursor() as cur:
+            now = clock()
+            job = queue.enqueue(cur, key, payload, now, budget='historical', product_date=played)
+            claim = queue.claim(cur, now, budget='historical', product_date=played, only_job_id=job)
+            if not claim:
+                continue
+            cur.execute("""SELECT c.received_at,c.sha256,p.encoded_json FROM candidate.captured_requests c
+                           JOIN candidate.payloads p USING(sha256) WHERE c.endpoint=%s AND c.parameters=%s
+                           ORDER BY c.received_at DESC,c.capture LIMIT 1""", (endpoint, Json(params)))
+            row = cur.fetchone()
+        if row:
+            observed, digest, encoded = row
+            if sha256(bytes(encoded)).hexdigest() != digest:
+                raise ValueError('Stored recovery source digest differs')
+            def transport(_endpoint, params):
+                return RetainedResponse(json.loads(bytes(encoded)), observed)
+            kind = 'retained'
+        else:
+            transport, kind = fetch, 'live'
+        _, result = evidence.execute(connection, claim, transport, clock,
+                                     on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, played))
+        if result != 'received':
+            raise ValueError(f'Private current-edition recovery withheld {endpoint} on {played}: {result}')
+        outcomes[kind] += 1
+        if sum(outcomes.values()) >= limit:
+            break
+    return dict(day=str(day), through=str(through), prior_missing_decisions=len(league['missing_decisions']),
+                prior_date_gaps=len(decision['gaps']), received=dict(outcomes))

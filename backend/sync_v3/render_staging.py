@@ -48,6 +48,15 @@ def bootstrap(password):
         env = {key: os.environ[key] for key in keep if key in os.environ}
         env['AUTO_SYNC'] = 'false'
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', 'read'], env)
+    if task == 'recover-current-edition':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_postseason import reconcile_current_decisions
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = reconcile_current_decisions(source, client._get)
+        print(json.dumps(dict(private_current_recovery=result)), flush=True)
+        return
     if task == 'inspect-current-edition':
         from collections import Counter
         from sync_v3.competition_calendar import calendar_games, competition_status
