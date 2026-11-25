@@ -129,6 +129,9 @@ def bootstrap(password):
             projector_env['STAGING_COMPETITIVE_CYCLE'] = 'true'
             subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'],
                            env=dict(projector_env, STAGING_ARCHIVE_REPLAY='False'), check=True)
+        # Leave time to commit a club checkpoint before the private host's process limit.
+        projector_env['STAGING_REVIEW_BUDGET'] = str(max(15, min(185, int(255 - (
+            datetime.now(timezone.utc) - started_at).total_seconds()))))
         projection = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-before-publish'],
                                     env=projector_env, check=False)
         if projection.returncode == 75:
@@ -492,7 +495,8 @@ if __name__ == '__main__':
                                     os.environ['STAGING_PRODUCT_GENERATION'],
                                     competition_day=primary_product_day()
                                     if args.operation == 'project-before-publish' else None,
-                                    competitive=os.environ.get('STAGING_COMPETITIVE_CYCLE') == 'true')
+                                    competitive=os.environ.get('STAGING_COMPETITIVE_CYCLE') == 'true',
+                                    review_seconds=int(os.environ.get('STAGING_REVIEW_BUDGET', '185')))
             print(json.dumps(dict(private_board_history=result)), flush=True)
             if args.operation == 'project-before-publish' and (
                     result.get('phase') in ('canonical_ready', 'canonical_pending') or result['completed_clubs'] < result['total']

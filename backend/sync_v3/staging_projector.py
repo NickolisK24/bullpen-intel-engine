@@ -76,7 +76,7 @@ def record_checkpoint(digest, day, through, sources, started):
         return record.id
 
 
-def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False):
+def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False, review_seconds=185):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
     from sync_v3.render_staging import connect
@@ -121,7 +121,7 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
                 checkpoint = record_checkpoint(digest, competition_day, through, sources, started)
                 return dict(phase='canonical_ready', checkpoint=checkpoint, product_writer=PROJECTOR,
                             source_count=len(sources), generation=digest)
-            result = recover_next(source, client, digest)
+            result = recover_next(source, client, digest, seconds=review_seconds)
     return dict(result, canonical_checkpoint=checkpoint, product_writer=PROJECTOR)
 
 
