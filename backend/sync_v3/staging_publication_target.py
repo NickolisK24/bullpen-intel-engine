@@ -2,7 +2,7 @@
 import json
 import os
 import resource
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import date
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -234,14 +234,14 @@ def bind_known_pitchers(identities):
                      dict(reserved=max(pair[0] for pair in json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs'])))
     return len(identities)
 
-def project_final_appearances(finals, day, *, include_context=True):
+def project_final_appearances(finals, day, *, include_context=True, in_transaction=False):
     """Apply the governed appearance plan to the staged product and compare every credited row."""
     from collections import Counter
     from services.sync import process_completed_game_for_postgame_refresh, POSTGAME_MARKER_STATUS_FULLY_PROCESSED
 
     started = monotonic()
     created = inserted = confirmed = contexts = 0
-    with db.session.begin():
+    with (nullcontext() if in_transaction else db.session.begin()):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected final rehearsal target')
         db.session.execute(text("SET LOCAL lock_timeout = '5s'"))
@@ -794,8 +794,8 @@ def recheck_edition_transactions(source, through, digest, fetch):
     return dict(predecessor_generation=digest, acquired=bool(claim), source_id=source_id, sha256=fingerprint)
 
 
-def recover_private_readiness(worker_password, *, budget_seconds):
-    """Resume only the archived clubs whose latest readiness evidence withheld a state."""
+def recover_private_readiness(worker_password, *, budget_seconds, workload_day=None):
+    """Resume the clubs whose dated readiness evidence is still incomplete."""
     from services.mlb_api import MLBApiClient
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.current_worker import verify_target
@@ -803,28 +803,31 @@ def recover_private_readiness(worker_password, *, budget_seconds):
     from sync_v3.intelligence_history import DOMAINS, record_intelligence
     from sync_v3.render_staging import PLAYED_DAY, connect
 
+    workload_day = workload_day or PLAYED_DAY
     started = monotonic()
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         with source, source.cursor() as cur:
-            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason' FROM candidate.workload_history
+            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason',
+                           (facts->'competition'->>'status'='season_complete' AND
+                            facts->>'reason'=facts->'competition'->>'basis') AS settled FROM candidate.workload_history
                            WHERE subject='team' AND methodology=%s AND represented=%s
-                           ORDER BY mlb_id,revision DESC""", (DOMAINS['readiness'][1], PLAYED_DAY))
-            statuses = dict(cur.fetchall())
+                           ORDER BY mlb_id,revision DESC""", (DOMAINS['readiness'][1], workload_day))
+            statuses = {team: (reason, settled) for team, reason, settled in cur}
         if statuses.keys() != set(MLB_TEAM_IDS):
-            raise ValueError('Expected all thirty archived readiness snapshots')
-        outstanding = {team for team, reason in statuses.items() if reason}
+            raise ValueError('Expected all thirty dated readiness snapshots')
+        outstanding = {team for team, (reason, settled) in statuses.items() if reason and not settled}
         blocked = {}
         receipts = 0
         for team in sorted(outstanding):
             while monotonic() - started < budget_seconds:
-                report = recover(source, team, PLAYED_DAY, max_jobs=24, include_workload=True,
+                report = recover(source, team, workload_day, max_jobs=24, include_workload=True,
                                  fetch=lambda endpoint, params: client._get(endpoint, params=params))
                 receipts += len(report['receipts'])
                 state = report['status']
                 if state == 'ready':
-                    record_intelligence(source, 'readiness', team, PLAYED_DAY)
+                    record_intelligence(source, 'readiness', team, workload_day)
                     outstanding.remove(team)
                 elif state != 'batch_limit':
                     blocked[team] = report['readiness_reason']
@@ -839,18 +842,19 @@ def recover_private_readiness(worker_password, *, budget_seconds):
                     withheld=blocked, elapsed_seconds=monotonic()-started)
 
 
-def advance_private_generation(worker_password, *, budget_seconds=90):
+def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
     from sync_v3.current_worker import verify_target
     from sync_v3.generation import build_batch, generation_date_decision, verify_generation
     from sync_v3.render_staging import PLAYED_DAY, connect
 
-    as_of = PLAYED_DAY + timedelta(days=1)
+    workload_day = workload_day or PLAYED_DAY
+    as_of = as_of or workload_day + timedelta(days=1)
     with closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         with source, source.cursor() as cur:
-            decision = generation_date_decision(cur, PLAYED_DAY, as_of)
+            decision = generation_date_decision(cur, workload_day, as_of)
         if decision['reason']:
             return dict(decision=decision, scopes_built=0)
         started = monotonic()
@@ -860,7 +864,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                                   AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
                            FROM candidate.generations WHERE represented=%s
                            AND manifest->>'contract'='candidate_generation_inventory_v1'
-                           ORDER BY creation_xid DESC LIMIT 1''', (PLAYED_DAY,))
+                           ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
             previous = cur.fetchone()
         digest = previous[0] if previous else None
         if previous and previous[1]:
@@ -872,7 +876,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                             snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
             digest = None
         while True:
-            batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
+            batch = build_batch(source, workload_day, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']
             count += len(batch['processed'])
             if not batch['processed'] and digest == batch['before']:

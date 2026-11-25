@@ -814,8 +814,12 @@
       ]
     },
     "3": {
-      "measured_seconds": 538.65,
+      "measured_seconds": 538.652,
       "files": [
+        {
+          "path": "tests/test_sync_v3_primary_date.py",
+          "measured_seconds": 0.002
+        },
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
           "measured_seconds": 1.503
