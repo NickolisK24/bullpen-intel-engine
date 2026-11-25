@@ -111,7 +111,9 @@ def played_batch(worker, current_day, current_report):
                        JOIN candidate.fetches f ON f.token=a.token WHERE j.budget='historical'
                        AND j.product_date=%s AND j.payload->>'capture' IS NULL
                        AND NOT (j.payload ? 'eligibility_recovery') AND f.outcome='received'
-                       AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""", (PLAYED_DAY,))
+                       AND NOT (f.endpoint LIKE '/people/%%/stats' AND f.parameters->>'stats'='byDateRange'
+                           AND f.parameters->>'endDate'<>%s)
+                       AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""", (PLAYED_DAY, PLAYED_DAY.isoformat()))
         requests, pitchers, clubs, finals = cur.fetchone()
     if set(result['jobs']) == {'done'} and (requests, pitchers, clubs, finals) != (926, 371, 30, 10):
         raise ValueError(f'Historical acquisition differs from August cohort: {requests} requests, '

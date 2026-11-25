@@ -10,6 +10,7 @@ from psycopg2.extras import Json
 from services.game_ingestion_planner import DEFAULT_CORRECTION_HORIZON_DAYS
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue, rosters, savant
+from sync_v3.depth import board_rest_pitchers
 from sync_v3.discovery import (active_pitcher_ids, active_profile_request, affiliate_directory_request, calendar_requests, competition_calendar_request, depth_directory, depth_roster_requests,
                                game_requests, pitcher_requests, roster_requests)
 
@@ -77,6 +78,26 @@ def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture
         if statcast:
             requests = (*requests, *savant.after_final(date.fromisoformat(represented), requests))
         enqueue_requests(cur, requests, now, budget=budget, day=date.fromisoformat(represented), capture=capture, policy=policy)
+
+
+def _arrival_requests(cur, day, team, players, planned, policy):
+    # Board-date arrivals are qualified at the preceding workload cutoff.
+    # Keep ordinary same-day profiles and the prior day's official roster intact.
+    through = day - timedelta(days=1)
+    previous = board_rest_pitchers(cur, team, through)
+    if previous is None:
+        return ()
+    arrivals = players - previous
+    requests = pitcher_requests(through, arrivals, postseason_rounds=policy['rounds'],
+                                round_totals=policy['round_totals'])
+    extra = []
+    for request in requests:
+        if request in planned:
+            continue
+        receipt = evidence.latest_source_status(cur, request.endpoint, request.params())
+        if receipt is None or receipt[1] == 'failed':
+            extra.append(request)
+    return tuple(extra)
 
 
 def schedule_request(cur, day, now, schedule):
@@ -174,6 +195,8 @@ def run_cycle(connection, day, fetch, *, teams=MLB_TEAM_IDS, pitchers=(), depth_
         if options.get('profile_teams') and capture is None and acquisition.request.endpoint.endswith('/roster'):
             players = active_pitcher_ids(origin, options['profile_teams'], acquisition.request, acquisition.body)
             requests = pitcher_requests(origin, players, postseason_rounds=options['rounds'], round_totals=options['round_totals'])
+            if players:
+                requests += _arrival_requests(cur, origin, acquisition.body['teamId'], players, requests, options)
             enqueue_requests(cur, requests, now, budget=budget, day=origin, policy=options)
 
     receipts = []
