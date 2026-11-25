@@ -74,6 +74,42 @@ def current_offseason_inputs(cur, through, availability):
     return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)), active_pitcher_mlb_ids=staff)
 
 
+def reviewed_board_populations(cur, password, user, digest, binding):
+    """Read independent, completed team reviews and reject any superseded source input."""
+    from sync_v3.staging_publisher import PUBLISHER
+    from sync_v3.staging_reader import _connect
+
+    if user != PUBLISHER:
+        raise ValueError('The private current edition requires its restricted publisher')
+    teams = binding['active_pitcher_mlb_ids']
+    names = [f'sync_v3_board_review_{team}' for team in teams]
+    with closing(_connect(user, password)) as target, target, target.cursor() as target_cur:
+        target_cur.execute('SET TRANSACTION READ ONLY')
+        target_cur.execute("""SELECT DISTINCT ON (job_name) id, publication_outcome FROM public.sync_runs
+            WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND status='success'
+            AND stage='reviewed' AND publication_outcome->>'generation'=%s ORDER BY job_name,id DESC""", (names, digest))
+        reviews = target_cur.fetchall()
+    populations, receipts, review_ids = {}, set(), {}
+    for run, review in reviews:
+        team = str(review['team'])
+        if team not in teams or team in populations or not set(review['expected']).issubset(teams[team]):
+            raise ValueError('Independent Board membership review has inconsistent club identities')
+        populations[team] = review['expected']
+        review_ids[team] = run
+        receipts.update(review['sources'])
+    if populations.keys() != teams.keys():
+        raise ValueError(f'Current Board workload and population reviews still required for {sorted(teams.keys()-populations.keys())}')
+    cur.execute("""SELECT count(*) FROM candidate.fetches f
+        LEFT JOIN candidate.refusals refusal ON refusal.source_id=f.id WHERE f.id=ANY(%s) AND f.outcome='received'
+        AND refusal.source_id IS NULL AND NOT EXISTS (SELECT 1 FROM candidate.fetches newer
+              WHERE newer.endpoint=f.endpoint AND newer.parameters=f.parameters
+              AND (newer.received_at,newer.id)>(f.received_at,f.id))""", (sorted(receipts),))
+    if cur.fetchone()[0] != len(receipts):
+        raise ValueError('Reviewed Board workload evidence has advanced since reconciliation')
+    binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids)
+    binding['current_source_ids'] = sorted(set(binding['current_source_ids']) | receipts)
+
+
 def product_clock(binding):
     if 'product_day' in binding:
         return nullcontext()
@@ -101,6 +137,8 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                            FROM candidate.generations WHERE digest=%s""", (digest,))
             official_slate, transactions = cur.fetchone()
             extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through']), league['availability_reference']) if offseason else {}
+            if offseason:
+                reviewed_board_populations(cur, worker_password, user, digest, extra)
             if offseason and official_slate != []:
                 raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
             if not offseason and (not transactions or transactions['outcome'] != 'received' or transactions['reason']
@@ -223,9 +261,12 @@ def verify_board_rosters(snapshot, binding):
     ids = {pitcher for club in clubs.values() for pitcher in club['default_pitcher_ids']}
     directory = dict(db.session.query(Pitcher.id, Pitcher.mlb_id).filter(Pitcher.id.in_(ids)).all())
     for team, club in clubs.items():
-        unsupported = {directory.get(pid) for pid in club['default_pitcher_ids']} - set(expected[team])
+        observed = {directory.get(pid) for pid in club['default_pitcher_ids']}
+        unsupported = observed - set(expected[team])
         if unsupported:
             raise ValueError(f'Private Board for {team} includes arms outside the official active roster: {unsupported}')
+        if observed != set(binding['reviewed_board_mlb_ids'][team]) or len(observed) != len(club['default_pitcher_ids']):
+            raise ValueError(f'Private Board population for {team} differs from the qualified official workload')
 
 
 def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker'):
