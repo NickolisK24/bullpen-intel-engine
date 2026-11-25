@@ -59,7 +59,12 @@ def plan_children(cur, observation_id, acquisition, budget, now, day, *, capture
     affected = rosters.observe(cur, observation_id, acquisition, replay_batch=capture is not None)
     if affected:
         day = date.fromisoformat(acquisition.request.params()['endDate'])
-        enqueue_requests(cur, roster_requests(day, affected), now,
+        requests = roster_requests(day, affected)
+        if policy and capture is None:
+            # Refresh both dated views used to verify the active pitching population.
+            for team in sorted(affected.intersection(policy.get('profile_teams', ()))):
+                requests += (active_profile_request(day, team),)
+        enqueue_requests(cur, requests, now,
                          budget=budget, day=day, cause=observation_id, capture=capture, policy=policy)
     if acquisition.request.endpoint == '/teams/affiliates':
         directory = depth_directory(acquisition.request, acquisition.body)
