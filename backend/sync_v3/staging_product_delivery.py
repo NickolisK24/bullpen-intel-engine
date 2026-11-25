@@ -27,7 +27,7 @@ def open_generation_source(password, user):
     return source
 
 
-def current_offseason_inputs(cur, through):
+def current_offseason_inputs(cur, through, availability):
     """Bind an offseason edition to today's qualified calendar, transactions and roster receipts."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -63,7 +63,15 @@ def current_offseason_inputs(cur, through):
             _bind_transaction_revisions(cur, oid, receipt)
             if receipt['reported_records'] and not receipt['confirmed_transactions']:
                 raise ValueError('Current transactions lack canonical confirmation')
-    return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)))
+    from sync_v3.depth import _view
+    staff = {}
+    for team in sorted(MLB_TEAM_IDS):
+        active = _view(cur, team, team, 'active', dict(date=availability, rosterType='active'), membership=True)
+        if active['reason'] or active['pitchers'] is None:
+            raise ValueError(f'Unqualified availability-date pitcher directory for {team}')
+        ids.append(active['source'])
+        staff[str(team)] = sorted(active['pitchers'])
+    return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)), active_pitcher_mlb_ids=staff)
 
 
 def product_clock(binding):
@@ -92,7 +100,7 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source'
                            FROM candidate.generations WHERE digest=%s""", (digest,))
             official_slate, transactions = cur.fetchone()
-            extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through'])) if offseason else {}
+            extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through']), league['availability_reference']) if offseason else {}
             if offseason and official_slate != []:
                 raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
             if not offseason and (not transactions or transactions['outcome'] != 'received' or transactions['reason']
@@ -202,6 +210,24 @@ def report_state_differences(snapshot, binding, worker_password, user='sync_v3_w
                     candidate_arms=candidate, product_arms=product, rule=facts.get('rule')))), flush=True)
 
 
+def verify_board_rosters(snapshot, binding):
+    if 'product_day' not in binding:
+        return
+    from models.pitcher import Pitcher
+    from utils.db import db
+
+    clubs = snapshot.payload['trusted_team_boards']['by_team_id']
+    expected = binding['active_pitcher_mlb_ids']
+    if clubs.keys() != expected.keys():
+        raise ValueError('Private Board club inventory differs from the dated official roster')
+    ids = {pitcher for club in clubs.values() for pitcher in club['default_pitcher_ids']}
+    directory = dict(db.session.query(Pitcher.id, Pitcher.mlb_id).filter(Pitcher.id.in_(ids)).all())
+    for team, club in clubs.items():
+        unsupported = {directory.get(pid) for pid in club['default_pitcher_ids']} - set(expected[team])
+        if unsupported:
+            raise ValueError(f'Private Board for {team} includes arms outside the official active roster: {unsupported}')
+
+
 def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker'):
     from datetime import datetime, timezone
     from models.dashboard_snapshot import DashboardSnapshot
@@ -222,6 +248,7 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         if prior and (prior.payload.get('v3_source_generation') or {}).get('generation') == binding['generation']:
             if prior.payload['v3_source_generation'] == binding:
                 verify_frozen_states(prior, binding)
+                verify_board_rosters(prior, binding)
                 return prior.id, False
             if 'product_day' not in binding:
                 raise ValueError('Generation replay has a different source receipt')
@@ -236,6 +263,7 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         db.session.flush()
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
             sync_run_id=run.id, source='v3_private_publication', publish=False, commit=False, raise_errors=True)
+        verify_board_rosters(snapshot, binding)
         prior_runs = [] if not prior else [r.id for r in SyncRun.query.filter_by(
             published_dashboard_snapshot_id=prior.id).order_by(SyncRun.id)]
         snapshot.payload = dict(snapshot.payload, v3_source_generation=binding, v3_predecessor=prior.id if prior else None,
@@ -333,7 +361,10 @@ def verify_http(app, binding, snapshot_id, run_id):
     sync_status.raise_for_status()
     metadata = sync_status.json()
     latest = metadata.get('last_successful_sync_run') or {}
-    if (metadata.get('metadata_source') != 'sync_runs' or metadata['data']['latest_workload_date'] != binding['data_through']
+    # Sync status reports the canonical game log maximum. Pointer rollback preserves newer logs.
+    canonical_date = db.session.execute(text('SELECT max(game_date) FROM game_logs')).scalar_one()
+    if (metadata.get('metadata_source') != 'sync_runs' or str(canonical_date) != metadata['data']['latest_workload_date']
+            or (latest.get('stage') != 'private_rolled_back' and str(canonical_date) != binding['data_through'])
             or not latest.get('id') or latest.get('source') != 'sync_v3_staging'):
         raise ValueError('Private sync status lacks the archived acquisition identity or workload date')
     if latest['id'] != run_id and latest.get('stage') != 'private_rolled_back':
