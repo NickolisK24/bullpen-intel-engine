@@ -94,7 +94,7 @@ def _dated_team_state(facts, through, reference):
                                   status_code=status_for[state['public_code']] if state else None))
 
 
-def _league(cur, revision, preview):
+def _league(cur, revision, preview, *, compare_latest=False):
     result = dict(scope='isolated_historical_core', current_serving_eligible=False, selection_revision=None,
                   generation=None, data_through=None, availability_reference=None, teams=[], citations={})
     blocked = {}
@@ -105,7 +105,9 @@ def _league(cur, revision, preview):
             return dict(result, status=status, selection_revision=selected[0] if selected else None)
         sequence, generation, through, reference = selected
     else:
-        report = _inspect(cur, preview, compare_latest=False)
+        report = _inspect(cur, preview, compare_latest=compare_latest)
+        if compare_latest:
+            result['selection_review'] = report['selection_review']
         result['core_candidate_review'] = report['core_candidate_review']
         coverage = report['coverage']
         if coverage['stale_inputs'] or coverage['stale_comparisons']:
