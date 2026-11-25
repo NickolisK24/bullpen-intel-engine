@@ -1,5 +1,13 @@
 # Sync v3 acceptance ledger
 
+## Private hosted workload and roster recovery, November 25
+
+The private Render installer replayed August 19–29, 2017 schedule observations into the staging product database. The trusted ten-day appearance check for August 19–28 initially withheld publication. The official schedules established 138 final games, while the target held pitching lines for only ten. At staging revision `30405ded1cc0d2fce0f34ed9f1cbe6d87550d156`, run `1795614963` recovered 103 finals and run `1795615184` resumed across a process restart and recovered the last 25. Each game passed official pitching-line reconciliation and produced two team contexts. The appearance gate then passed with 138 represented finals, 1,142 stored appearances and zero missing games. The target held zero dashboard snapshots. [Tested revision](https://github.com/NickolisK24/bullpen-intel-engine/commit/30405ded1cc0d2fce0f34ed9f1cbe6d87550d156) · [Private run logs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/logs)
+
+The two recovery executions measured 165.82 and 79.09 seconds inside the installer, 25.58 and 19.90 seconds of process CPU, and 129,476 and 124,868 KiB peak RSS. The product database occupied 19,191,475 bytes after recovery. The second invocation verified 120 retained roster views on each of the workload and availability dates. At roster verification it matched 432 dated memberships on each date, including 373 and 372 active memberships respectively. This count predates the last batch of historical appearances. Approved public ID pairs and staging-local identities retain separate provenance. The 35 postseason retention decisions have independent evidence in PR #1004.
+
+The November 25 current-acquisition read at the initial ledger check found every required core request qualified and 942 ready current jobs, with the oldest ready job waiting 31,007 seconds. Full lifecycle freshness, API delivery, hosted publication and rollback, exclusive writer attribution and retirement remain open.
+
 ## Played-day publication from a settled v3 acquisition
 
 On disposable PostgreSQL 17.6, the August 28, 2017 handoff created its successful sync-run record from 926 completed v3 jobs and 926 closed attempts. The receipt digest was `25889ec633e604b477b1ff9a63c9529081732e948a700b2a80784900699b7233`. An exception after staging the sync record rolled back the record and publication together. An identical retry of the committed handoff retained the same publication. The target publisher still reads prepopulated canonical tables, including pitchers, appearances, rosters and schedules. [Acquisition handoff](https://github.com/NickolisK24/bullpen-intel-engine/pull/993)
