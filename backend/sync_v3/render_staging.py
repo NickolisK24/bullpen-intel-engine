@@ -130,13 +130,21 @@ def acquire(password):
         from sync_v3.staging_postseason import retain
         print(json.dumps(dict(postseason_archive=retain(worker))), flush=True)
         day = datetime.now(ZoneInfo('America/New_York')).date()
-        report = process(worker, day, max_jobs=BATCH_LIMIT if before['first'] else 1, profiles=True)
-        after = witness(worker)
-        if before['first'] and before['first'] != after['first']:
-            raise ValueError('Prior acquisition receipt changed')
-        print(json.dumps(dict(before=before, after=after, report=report)), flush=True)
-        if acquisition_failed(report):
-            raise ValueError('Incomplete staging acquisition')
+        started = monotonic()
+        limit = BATCH_LIMIT if before['first'] else 1
+        for batch_number in range(1, 6):
+            report = process(worker, day, max_jobs=limit, profiles=True)
+            after = witness(worker)
+            if before['first'] and before['first'] != after['first']:
+                raise ValueError('Prior acquisition receipt changed')
+            print(json.dumps(dict(before=before, after=after, report=report, batch=batch_number,
+                                  seconds=monotonic()-started)), flush=True)
+            if acquisition_failed(report):
+                raise ValueError('Incomplete staging acquisition')
+            if (limit != BATCH_LIMIT or report['receipts'].get('received') != limit
+                    or not report['jobs_for_date'].get('pending') or monotonic()-started >= 150):
+                break
+            before = after
         if os.environ.get('STAGING_PLAYED_SLATE') == PLAYED_DAY.isoformat():
             played = played_batch(worker, day, report)
             print(json.dumps(dict(historical=played)), flush=True)
