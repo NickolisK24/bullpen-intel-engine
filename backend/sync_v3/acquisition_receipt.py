@@ -10,6 +10,13 @@ from sync_v3.discovery import (active_profile_request, calendar_requests,
 
 
 def played_day_acquisition(cur, day):
+    receipt, _ = played_day_evidence(cur, day)
+    return receipt
+
+
+def played_day_evidence(cur, day):
+    """Return the receipt and its canonical final-game inputs in the same read view."""
+    finals = []
     # The caller holds a consistent view of the queue and the reviewed generation.
     cur.execute("""SELECT 1 FROM candidate.jobs WHERE budget='current' AND product_date<%s
                    AND state<>'done' AND payload->>'capture' IS NULL LIMIT 1""", (day,))
@@ -77,6 +84,7 @@ def played_day_acquisition(cur, day):
         source, options = source_for(request)
         if request == schedule:
             observed = evidence.replay(cur, source)
+            listings = {g['gamePk']: g for entry in observed.body['dates'] for g in entry['games']}
             games = game_requests(day, observed.body, now=observed.retrieved_at)
             if not any(child.endpoint.endswith('/boxscore') for child in games) or any(
                     child.endpoint.endswith('/feed/live') for child in games):
@@ -94,6 +102,7 @@ def played_day_acquisition(cur, day):
                                    AND slate.source_id=%s""", (game, child_source, f'{game}/{day}', game, source))
                     if cur.fetchone() is None:
                         raise ValueError(f'Played-day acquisition lacks a confirmed final on the selected slate for {game}')
+                    finals.append((listings[int(game)], child_source))
         if request.params().get('rosterType') == 'active' and 'hydrate' not in request.params():
             team = int(request.endpoint.split('/')[2])
             players, reason = _pitchers(evidence.replay(cur, source).body, team, team, 'active')
@@ -103,4 +112,4 @@ def played_day_acquisition(cur, day):
                                           round_totals=options['round_totals']):
                 source_for(child)
     return dict(contract='v3_current_acquisition_day_v1', represented=day.isoformat(), jobs=len(jobs), attempts=attempts,
-                digest=digest.hexdigest(), started_at=start.isoformat(), completed_at=finish.isoformat())
+                digest=digest.hexdigest(), started_at=start.isoformat(), completed_at=finish.isoformat()), finals

@@ -3,6 +3,7 @@
 Called by a fixture with a fresh target session and a transaction-idle source
 owner connection supplied by isolated_cluster. No deployed caller or scheduler.
 """
+from collections import Counter
 from datetime import date, datetime
 import re
 
@@ -15,7 +16,8 @@ from models.team_state_publication_proof import TeamStatePublicationProof
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3.acquisition_receipt import played_day_acquisition
+from sync_v3.acquisition_receipt import played_day_evidence
+from sync_v3.evidence import replay
 from sync_v3.generation import _inspect
 from sync_v3.product_reads import _league
 from utils.db import db
@@ -56,9 +58,55 @@ def verify_frozen_states(snapshot, binding):
             raise ValueError(f'Selected and published Team State disagree for {team}')
 
 
-def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
+def _verify_final_lines(cur, finals):
+    for game, source in finals:
+        pk = game['gamePk']
+        cur.execute("""SELECT r.facts FROM candidate.confirmations c
+                       JOIN candidate.revisions r ON r.id=c.revision_id
+                       WHERE c.domain='final' AND c.identity=%s AND c.source_id=%s""", (str(pk), source))
+        facts, = cur.fetchone()
+        expected = Counter((a['pitcher_mlb_id'], a['team_id'], a['outs_recorded'], int(a['is_starter']),
+                            date.fromisoformat(game['officialDate'])) for a in facts)
+        rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
+                                                 l.games_started,l.game_date
+                                          FROM game_logs l LEFT JOIN pitchers p ON p.id=l.pitcher_id
+                                          WHERE l.mlb_game_pk=:pk"""), {'pk': pk})
+        if Counter(tuple(row) for row in rows) != expected:
+            raise ValueError(f'Final {pk} target appearances differ from the credited canonical lines')
+
+
+def _reconcile_confirmed_finals(cur, finals, represented, run_id):
+    from services.sync import POSTGAME_MARKER_STATUS_FULLY_PROCESSED, process_completed_game_for_postgame_refresh
+
+    for game, source_id in finals:
+        box = replay(cur, source_id).body
+
+        def process(plan_only):
+            return process_completed_game_for_postgame_refresh(
+                game, schedule_date=represented, sync_run_id=run_id, boxscore=box,
+                plan_only=plan_only, force=True,
+            )
+
+        plan = process(True)
+        summary = plan.get('reconciliation_summary') or {}
+        if (not summary.get('rows_planned') or summary['rows_blocked'] or plan['incomplete_reason']
+                or summary['pitcher_identity_unchanged'] != summary['rows_planned']):
+            raise ValueError(f"Final {game['gamePk']} requires a resolved, unchanged pitcher identity for every line")
+        applied = process(False)
+        if (applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+                or applied['reconciliation_summary']['complete_reconciliation_fingerprint']
+                != summary['complete_reconciliation_fingerprint']):
+            raise ValueError(f"Final {game['gamePk']} did not apply the governed pitching-line plan")
+        repeated = process(True)
+        if (repeated['incomplete_reason'] or repeated['reconciliation_summary']['rows_unchanged'] != summary['rows_planned']):
+            raise ValueError(f"Final {game['gamePk']} did not converge on its retained pitching lines")
+
+
+def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False):
     """Keep the selector pinned until the independent target transaction commits."""
     assert_rehearsal_target()
+    if reconcile_finals and sync_run_id is not None:
+        raise ValueError('Final reconciliation requires the selected v3 acquisition')
     if (not current_app.testing or not current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED')
             or not current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED')):
         raise RuntimeError('A rehearsal with both publication gates enabled is required')
@@ -93,11 +141,16 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
         ).one()
         receipt = dict(binding, predecessor=predecessor)
         if sync_run_id is None:
-            receipt['acquisition'] = played_day_acquisition(cur, date.fromisoformat(binding['data_through']))
+            represented = date.fromisoformat(binding['data_through'])
+            receipt['acquisition'], finals = played_day_evidence(cur, represented)
+            if reconcile_finals:
+                receipt['reconciled_final_sources'] = {str(game['gamePk']): source for game, source in finals}
         previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
         if previous_binding.get('generation') == generation:
             if previous_binding != receipt or (sync_run_id is not None and prior.sync_run_id != sync_run_id):
                 raise ValueError('The selected generation already has a different publication receipt')
+            if reconcile_finals:
+                _verify_final_lines(cur, finals)
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
@@ -118,6 +171,9 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
                 or str(run.latest_workload_date) != receipt['data_through']
                 or str(prior.data_through) > receipt['data_through']):
             raise ValueError('An unused, successful sync run for the selected workload date is required')
+        if reconcile_finals:
+            _reconcile_confirmed_finals(cur, finals, represented, sync_run_id)
+            _verify_final_lines(cur, finals)
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
             sync_run_id=sync_run_id, source='v3_team_state_rehearsal', publish=False,
             commit=False, raise_errors=True,
@@ -158,6 +214,8 @@ def main():
     source.add_argument('--sync-run', type=int)
     source.add_argument('--source-acquisition', action='store_true',
                         help='Use the selected date’s settled v3 acquisition in the disposable target')
+    parser.add_argument('--reconcile-finals', action='store_true',
+                        help='Reconcile retained official final lines before the isolated publication')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
@@ -186,7 +244,8 @@ def main():
                                   user='rehearsal_owner', connect_timeout=5)) as owner:
         with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
-                                        predecessor=args.predecessor, sync_run_id=args.sync_run)
+                                        predecessor=args.predecessor, sync_run_id=args.sync_run,
+                                        reconcile_finals=args.reconcile_finals)
             # The production hooks recover independently after the trust transaction.
             # Recheck durable rows and public reads because hook failures are nonfatal.
             from scripts.verify_selected_delivery import verify_delivery
