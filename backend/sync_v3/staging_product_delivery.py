@@ -96,7 +96,7 @@ def publish(binding):
             if prior.payload['v3_source_generation'] != binding:
                 raise ValueError('Generation replay has a different source receipt')
             verify_frozen_states(prior, binding)
-            return prior.id
+            return prior.id, False
         if prior and prior.source != 'v3_private_publication':
             raise ValueError('Private predecessor belongs to another publisher')
         def utc(value):
@@ -118,7 +118,7 @@ def publish(binding):
         verify_frozen_states(snapshot, binding)
         if observe_committed_publication_proof(snapshot)['status'] != 'proof_valid':
             raise ValueError('Incomplete private Team State proof')
-        return snapshot.id
+        return snapshot.id, True
 
 
 def exercise(password, worker_password, digest):
@@ -135,7 +135,7 @@ def exercise(password, worker_password, digest):
     app = private_app(password)
     day = binding['availability_reference']
     with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
-        snapshot_id = publish(binding)
+        snapshot_id, promoted = publish(binding)
         try:
             snapshot = db.session.get(DashboardSnapshot, snapshot_id)
             run_id = snapshot.sync_run_id
@@ -144,7 +144,8 @@ def exercise(password, worker_password, digest):
             counts = verify_http(app, binding, snapshot_id, run_id)
         except Exception:
             db.session.rollback()
-            restore_predecessor(digest, snapshot_id)
+            if promoted:
+                restore_predecessor(digest, snapshot_id)
             raise
     return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id,
                 modeled_product_date=day, seconds=perf_counter()-started, **counts)
