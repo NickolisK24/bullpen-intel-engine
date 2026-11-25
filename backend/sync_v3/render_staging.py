@@ -49,7 +49,7 @@ def bootstrap(password):
             result = recheck_edition_transactions(source, PLAYED_DAY, os.environ['STAGING_PRODUCT_GENERATION'], client._get)
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'verify-product-surfaces'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
@@ -58,6 +58,17 @@ def bootstrap(password):
         from sync_v3.staging_product_delivery import verify_product_surfaces
         result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'])
         print(json.dumps(dict(private_surfaces=result)), flush=True)
+        return
+    if task == 'project-roster-provenance':
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_publication_target import project_roster_views
+        from services.public_roster_readiness import build_public_roster_readiness
+        app = private_app(binding['password'])
+        with app.app_context():
+            result = project_roster_views(password)
+            readiness = build_public_roster_readiness(reference_date=PLAYED_DAY)
+            result['readiness'] = {key: readiness[key] for key in ('claims_available', 'reason_codes', 'coverage')}
+        print(json.dumps(dict(private_roster=result)), flush=True)
         return
     if task == 'project-eligibility':
         from sync_v3.staging_product_delivery import private_app

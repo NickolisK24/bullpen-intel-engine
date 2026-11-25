@@ -403,11 +403,15 @@ def project_roster_views(worker_password):
 
 def project_credited_membership(day, by_player):
     from models.pitcher import Pitcher
+    from models.sync_run import SyncRun
     from models.roster_status_snapshot import RosterStatusSnapshot
     from services.primary_roster_inputs import replay_membership
     from services.roster_status_sync import classify_roster_evidence, persist_missing_exact_roster_status_snapshots
 
     with db.session.begin():
+        if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected private roster projection target')
+        db.session.execute(text('LOCK TABLE roster_status_snapshots IN SHARE ROW EXCLUSIVE MODE'))
         pitchers = Pitcher.query.order_by(Pitcher.id).all()
         candidates = []
         for pitcher in pitchers:
@@ -416,7 +420,16 @@ def project_credited_membership(day, by_player):
                 raise ValueError('Conflicting dated club memberships')
             if matches:
                 candidates.append(dict(matches[0], pitcher=pitcher))
-        report = persist_missing_exact_roster_status_snapshots(candidates)
+        attributed = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter(
+            RosterStatusSnapshot.snapshot_date == day, RosterStatusSnapshot.sync_run_id.isnot(None))}
+        unbound = {item['pitcher'].id for item in candidates} - attributed
+        run = None
+        if unbound:
+            run = SyncRun(job_name='sync_v3_roster_reconciliation', source='sync_v3_staging',
+                          latest_workload_date=day, status='running', stage='replaying_observations')
+            db.session.add(run)
+            db.session.flush()
+        report = persist_missing_exact_roster_status_snapshots(candidates, sync_run_id=run.id if run else None)
         if report['conflicts'] or report['failure_records']:
             raise ValueError('Dated roster writer refused observations')
         active = 0
@@ -430,9 +443,16 @@ def project_credited_membership(day, by_player):
                     or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
                     or replay_membership(row) != expected):
                 raise ValueError('Dated roster evidence differs from stored membership')
+            if row.sync_run_id is None:
+                row.sync_run_id = run.id
             active += int(expected[0])
+        if run:
+            run.status = 'success'
+            run.stage = 'verified_roster_observations'
+            run.records_processed = len(unbound)
+            run.completed_at = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
         return dict(verified=len(candidates), active=active, outside_active_and_40man=len(pitchers)-len(candidates),
-                    created=report['created'])
+                    created=report['created'], newly_attributed=len(unbound), reconciliation_run=run.id if run else None)
 
 
 def bind_active_staff(staff):
