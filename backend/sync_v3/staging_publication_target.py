@@ -584,6 +584,49 @@ def recover_missing_finals(worker_password, receipts, missing):
     return recovered
 
 
+def recheck_edition_transactions(source, through, digest, fetch):
+    """Reacquire the published archive day's transactions once, preserving both receipts."""
+    from sync_v3 import evidence, queue
+    from sync_v3.cycle import plan_children
+    from sync_v3.discovery import calendar_requests
+
+    request = calendar_requests(through)[1]
+    capture = f'private-edition-recheck/{digest}'
+    payload = dict(endpoint=request.endpoint, params=request.params(), capture=capture)
+    with source, source.cursor() as cur:
+        cur.execute("""SELECT manifest->'transaction_source' FROM candidate.generations
+                       WHERE digest=%s AND represented=%s""", (digest, through))
+        row = cur.fetchone()
+        if not row or not row[0] or not row[0].get('revisions_digest'):
+            raise ValueError('The archived edition lacks pinned canonical transactions')
+        prior = row[0]
+        cur.execute('SELECT clock_timestamp()')
+        at, = cur.fetchone()
+        job = queue.enqueue(cur, capture, payload, at, budget='historical', product_date=through)
+        claim = queue.claim(cur, at, budget='historical', product_date=through, capture=capture, only_job_id=job)
+    if claim:
+        def reconcile(cur, receipt, observation):
+            plan_children(cur, receipt, observation, 'historical', observation.retrieved_at, through)
+
+        _, outcome = evidence.execute(source, claim, fetch, on_received=reconcile)
+        if outcome != 'received':
+            raise ValueError(f'Private transaction reacquisition returned {outcome}')
+    with source, source.cursor() as cur:
+        cur.execute("""SELECT f.id,f.sha256 FROM candidate.attempts a JOIN candidate.fetches f USING(token)
+                       JOIN candidate.jobs j ON a.job_id=j.id WHERE j.id=%s AND j.state='done'
+                       AND f.outcome='received' AND NOT EXISTS (
+                           SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""", (job,))
+        rows = cur.fetchall()
+        if len(rows) != 1:
+            raise ValueError('Expected a settled, qualified transaction recheck')
+        source_id, fingerprint = rows[0]
+        if evidence.latest_qualified_source(cur, request.endpoint, request.params()) != source_id:
+            raise ValueError('The reacquisition has been superseded')
+        if fingerprint != prior['digest']:
+            raise ValueError('MLB revised the archived transactions. Reconcile the retained change before publication.')
+    return dict(predecessor_generation=digest, acquired=bool(claim), source_id=source_id, sha256=fingerprint)
+
+
 def recover_private_readiness(worker_password, *, budget_seconds):
     """Resume only the archived clubs whose latest readiness evidence withheld a state."""
     from services.mlb_api import MLBApiClient

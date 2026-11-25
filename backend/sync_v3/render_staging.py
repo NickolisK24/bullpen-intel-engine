@@ -40,6 +40,15 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    if task == 'recheck-edition-transactions':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_publication_target import recheck_edition_transactions
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = recheck_edition_transactions(source, PLAYED_DAY, os.environ['STAGING_PRODUCT_GENERATION'], client._get)
+        print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
+        return
     if task not in ('bootstrap', 'publish-generation', 'rollback-generation'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])

@@ -27,8 +27,12 @@ def source_receipt(worker_password, digest):
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or league['data_through'] != str(PLAYED_DAY) or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
-            cur.execute("SELECT manifest->'next_slate'->'games' FROM candidate.generations WHERE digest=%s", (digest,))
-            official_slate, = cur.fetchone()
+            cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source'
+                           FROM candidate.generations WHERE digest=%s""", (digest,))
+            official_slate, transactions = cur.fetchone()
+            if (not transactions or transactions['outcome'] != 'received' or transactions['reason']
+                    or not transactions.get('revisions_digest')):
+                raise ValueError('Archived product edition lacks a qualified transaction receipt')
             teams = {}
             for row in league['teams']:
                 team = row['team_id']
