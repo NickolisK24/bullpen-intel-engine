@@ -463,7 +463,6 @@ def exercise_rollback(password, digest, snapshot_id, *, user=OWNER):
 def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
     """Read the normal product endpoints against one published staging edition."""
     from urllib.parse import urlencode
-    from freezegun import freeze_time
     from models.dashboard_snapshot import DashboardSnapshot
     from models.pitcher import Pitcher
     from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
@@ -483,14 +482,19 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
         through, day = binding['data_through'], binding['availability_reference']
         # Boston's archived Board, role sample and departure-independent club identity have retained evidence.
         team, abbr = 111, 'BOS'
-        game = next(row for row in binding['official_slate'] if team in (row['home'], row['away']))
+        current = 'product_day' in binding
+        game = next((row for row in binding['official_slate'] if team in (row['home'], row['away'])), None)
         paths = {
             'league': '/api/bullpen/league', 'stories': '/api/bullpen/stories', 'trust': '/api/bullpen/trust',
             'board': f'/api/bullpen/teams/{team}/board-v2/core', 'changes': f'/api/bullpen/teams/{team}/changes',
             'history': f'/api/bullpen/teams/{abbr}/history?season={through[:4]}',
-            'search': '/api/search?q=Boston', 'matchup': f"/api/bullpen/matchups/{game['game_pk']}"}
+            'search': '/api/search?q=Boston'}
+        if game:
+            paths['matchup'] = f"/api/bullpen/matchups/{game['game_pk']}"
+        elif not current:
+            raise ValueError('The archived edition lacks the expected Boston game')
         db.session.remove()
-        with freeze_time(f'{day} 12:00:00', real_asyncio=True):
+        with product_clock(binding):
             if inventory or user != OWNER:
                 verify_http(app, binding, ident[0], ident[1])
             data = {}
@@ -507,6 +511,20 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
                     or identity['represented_date'] != through or identity['availability_reference_date'] != day
                     or core['team_state']['public_state'] != binding['teams'][str(team)]['state']['public_state']):
                 raise ValueError('Private Team Board disagrees with the published edition')
+            if current:
+                if (core['team_state'] != binding['teams'][str(team)]['state']
+                        or data['changes']['team']['team_id'] != team or data['history']['team']['team_id'] != team):
+                    raise ValueError('Current offseason Board, History or Changes differ from the frozen club')
+                details, = http_paths(app, [
+                    f'/api/bullpen/teams/{team}/board-v2/details?' + urlencode({k:v for k,v in identity.items() if v is not None})])
+                details.raise_for_status()
+                if details.json()['publication_identity'] != identity:
+                    raise ValueError('Current deferred Board cites a different publication')
+                found = [r['id'] for group in data['search']['groups'] if group['entity_type'] == 'team' for r in group['results']]
+                if team not in found:
+                    raise ValueError('Current search lacks the canonical Boston team')
+                return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details'],
+                            product_day=binding['product_day'], team=team)
             arm = core['active_bullpen']['arms'][0]['pitcher_id']
             player = db.session.get(Pitcher, arm)
             if not player or player.team_id != team:
