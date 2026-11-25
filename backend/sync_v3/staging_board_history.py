@@ -29,7 +29,14 @@ def _acquire_gap(source, client, team, player, through, availability, exc):
     if reason in ('eligibility_game_not_confirmed', 'uncredited_game_requires_official_final'):
         played, pk = date.fromisoformat(fields['game_date']), fields['game_pk']
         request = calendar_requests(played)[0]
-        acquire_window_source(source, client, played, request.endpoint, request.params())
+        schedule = acquire_window_source(source, client, played, request.endpoint, request.params())
+        if fields.get('reason') == 'resumed_game_workload_dates_unresolved':
+            with source, source.cursor() as cur:
+                matching = [g for d in evidence.replay(cur, schedule).body['dates'] for g in d['games'] if g['gamePk'] == pk]
+            resumed = date.fromisoformat(matching[0]['resumeGameDate'])
+            later = calendar_requests(resumed)[0]
+            acquire_window_source(source, client, resumed, later.endpoint, later.params())
+            acquire_window_source(source, client, played, f'/api/v1.1/game/{pk}/feed/live', {})
         acquire_window_source(source, client, played, f'/game/{pk}/boxscore', {})
         return
     raise exc
@@ -81,14 +88,14 @@ def _project_sample(source, client, player, sample, final_cache, projected, thro
 
     if not sample:
         return 0
-    latest = sample[0]['day']
+    latest = sample[0].get('workload_day', sample[0]['day'])
     score_day = availability if (availability-latest).days <= 14 else latest+timedelta(days=1)
     start = score_day - timedelta(days=14)
-    if len(sample) == 10 and sample[-1]['day'] >= start:
+    if len(sample) == 10 and sample[-1].get('workload_day', sample[-1]['day']) >= start:
         sample = _window_beyond_last_ten(source, client, player, through, start, latest, sample, final_cache)
     for row in sample:
         played, pk = row['day'], row['pk']
-        facts, (schedule_id, box_id, _) = final_cache[played, pk, row['game_type']]
+        facts, (schedule_id, box_id, *_) = final_cache[played, pk, row['game_type']]
         if (pk, box_id) in projected:
             continue
         with source, source.cursor() as cur:
@@ -102,7 +109,7 @@ def _project_sample(source, client, player, sample, final_cache, projected, thro
             raise ValueError('Unexpected private Board recovery target')
         lock_private_fatigue()
         pitcher = Pitcher.query.filter_by(mlb_id=player).one()
-        games = {r['pk'] for r in sample if r['day'] >= start}
+        games = {r['pk'] for r in sample if r.get('workload_day', r['day']) >= start}
         logs = (GameLog.query.filter(GameLog.pitcher_id==pitcher.id, GameLog.game_date.between(start,score_day),
                                      GameLog.game_date<=through).order_by(GameLog.game_date.desc(), GameLog.id).all())
         if {log.mlb_game_pk for log in logs} != games or any(log.pitches_thrown is None for log in logs):
@@ -177,7 +184,7 @@ def recover(source, client, team, after, digest, *, seconds=185):
                 with source, source.cursor() as cur:
                     cache = {}
                     sample, _, _ = _eligibility_sample(cur, team, player, through, listed, POSTSEASON_GAME_TYPES,
-                                                       cache, roster_day=availability)
+                                                       cache, roster_day=availability, resolve_sessions=True)
                 count = _project_sample(source, client, player, sample, cache, projected, through, availability)
                 verified.append(dict(mlb=player, games=count))
                 after = player
@@ -232,7 +239,7 @@ def qualify_club(source, team, through, availability, digest, expected_target):
             for player in sorted(view['pitchers']):
                 try:
                     sample, _, _ = _eligibility_sample(cur, team, player, through, view['pitchers'],
-                                                       POSTSEASON_GAME_TYPES, cache, roster_day=availability)
+                                                       POSTSEASON_GAME_TYPES, cache, roster_day=availability, resolve_sessions=True)
                 except BaselineWithheld as exc:
                     if str(exc) != 'missing_mlb_debut_evidence' or not _no_current_pitching_read(
                             cur, team, player, through, availability, POSTSEASON_GAME_TYPES):
@@ -244,7 +251,7 @@ def qualify_club(source, team, through, availability, digest, expected_target):
                 pitchers.append(SimpleNamespace(id=player, mlb_id=player, position=row['position']['abbreviation'],
                                                 active=True, full_name=row['person']['fullName'], roster_status='active',
                                                 roster_status_source='mlb_stats_api:roster_sync:active'))
-                logs[player] = [SimpleNamespace(game_date=r['day'], games_started=r['counts']['gamesStarted'],
+                logs[player] = [SimpleNamespace(game_date=r.get('workload_day', r['day']), games_started=r['counts']['gamesStarted'],
                                   innings_pitched_outs=r['counts']['outs'], save=r['counts']['saves'],
                                   hold=r['counts']['holds'], save_situation=r['counts']['saveOpportunities']) for r in sample]
             paths = list(reads.requests)

@@ -2113,6 +2113,7 @@ def process_completed_game_for_postgame_refresh(
     plan_only: bool = False,
     boxscore=None,
     require_official_pitching_credit=False,
+    appearance_dates=None,
 ) -> dict:
     """Fetch one final game once and reconcile its pitching lines idempotently.
 
@@ -2193,6 +2194,12 @@ def process_completed_game_for_postgame_refresh(
     if require_official_pitching_credit:
         from sync_v3.pitching_credit import uncredited_pitching_line
         pitching_lines = [line for line in pitching_lines if not uncredited_pitching_line(line['stats'])]
+    if appearance_dates is not None:
+        credited = {line['player_id'] for line in pitching_lines}
+        session_days = {game.get('officialDate'), game.get('resumeGameDate')}
+        if (not require_official_pitching_credit or not game.get('resumeDate') or appearance_dates.keys() != credited
+                or any(day.isoformat() not in session_days for day in appearance_dates.values())):
+            raise ValueError('Per-pitcher workload dates require a fully qualified resumed final')
     pitcher_order = _pitcher_order_by_side(boxscore)
     player_ids = sorted({
         player_id
@@ -2272,7 +2279,7 @@ def process_completed_game_for_postgame_refresh(
             pitcher,
             line,
             game,
-            game_date=game_date,
+            game_date=appearance_dates[line['player_id']] if appearance_dates is not None else game_date,
             team_abbr_map=team_abbr_map,
             pitcher_order=pitcher_order,
             sync_run_id=sync_run_id,

@@ -252,3 +252,27 @@ def test_projector_process_receives_only_its_two_required_logins(monkeypatch):
     env = runtime_environment('STAGING_WORKER_PASSWORD', 'STAGING_PROJECTOR_PASSWORD')
     assert set(env) & {'STAGING_OWNER_DSN','DATABASE_URL','STAGING_PRODUCT_PUBLISHER_PASSWORD'} == set()
     assert env['AUTO_SYNC'] == 'false' and env['STAGING_PROJECTOR_PASSWORD'] == env['STAGING_WORKER_PASSWORD'] == 'test'
+
+
+def test_resumed_pitching_lines_require_every_pitch_in_one_official_session():
+    from sync_v3.resumed_appearances import session_dates
+    original = dict(gamePk=824912, officialDate='2026-06-16', resumeGameDate='2026-06-17',
+                    gameDate='2026-06-16T23:15:00Z', resumeDate='2026-06-17T18:00:00Z',
+                    venue={'id': 4705}, teams={k:{'team':{'id':v}} for k,v in [('away',1),('home',2)]})
+    resumed = dict(original, gameDate=original['resumeDate'], resumedFrom=original['gameDate'],
+                   resumedFromDate=original['officialDate'])
+    def plate_appearance(pitcher, stamp):
+        return dict(about={'isComplete':True}, matchup={'pitcher':{'id':pitcher}},
+                    playEvents=[dict(isPitch=True, startTime=stamp)])
+    plays = [plate_appearance(1, '2026-06-17T00:31:00Z'), plate_appearance(2, '2026-06-17T19:24:58Z')]
+    feed = dict(gamePk=824912, gameData=dict(datetime=dict(officialDate='2026-06-16',resumeDate='2026-06-17'),
+                teams={'away':{'id':1},'home':{'id':2}}, venue=dict(id=4705,timeZone={'id':'America/New_York'})),
+                liveData={'plays':{'allPlays':plays}})
+    lines = [dict(pitcher_mlb_id=i,pitches_thrown=1) for i in [1,2]]
+    assert session_dates(original,resumed,feed,lines) == {1:'2026-06-16',2:'2026-06-17'}
+    lines[0]['pitches_thrown'] = 2
+    with pytest.raises(ValueError, match='counts'):
+        session_dates(original,resumed,feed,lines)
+    plays.append(plate_appearance(1, '2026-06-17T19:55:00Z'))
+    with pytest.raises(ValueError, match='dates or counts'):
+        session_dates(original,resumed,feed,lines)

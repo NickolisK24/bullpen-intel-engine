@@ -3,6 +3,7 @@ import json
 import os
 import resource
 from contextlib import closing
+from datetime import date
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from time import monotonic
@@ -246,10 +247,11 @@ def project_final_appearances(finals, day, *, include_context=True):
         db.session.execute(text("SET LOCAL lock_timeout = '5s'"))
         db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE'))
         for game, box, facts, extra in finals:
+            dates = {f['pitcher_mlb_id']: date.fromisoformat(f['workload_date']) for f in facts if 'workload_date' in f}
             def process(plan_only):
                 return process_completed_game_for_postgame_refresh(
                     game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only,
-                    require_official_pitching_credit=True)
+                    require_official_pitching_credit=True, appearance_dates=dates or None)
             planned = process(True)
             summary = planned['reconciliation_summary']
             if planned['incomplete_reason'] or summary['rows_blocked'] or summary['rows_planned'] != len(facts):
@@ -270,7 +272,7 @@ def project_final_appearances(finals, day, *, include_context=True):
             rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
                           l.games_started,l.game_date FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
                           WHERE l.mlb_game_pk=:pk"""), dict(pk=game['gamePk']))
-            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),day)
+            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),dates.get(f['pitcher_mlb_id'], day))
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')

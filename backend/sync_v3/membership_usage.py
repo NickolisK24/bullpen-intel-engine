@@ -44,7 +44,7 @@ def _debut(cur, team, roster_day, player, listed):
     return day, source
 
 
-def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache, *, roster_day):
+def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache, *, roster_day, resolve_sessions=False):
     rows, sources = [], []
     debut = None
     end = through
@@ -86,7 +86,12 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache,
             receipt = latest_qualified_source(cur, request.endpoint, request.params())
             games = [g for slate in replay(cur, receipt).body['dates'] for g in slate['games']
                      if g['gamePk'] == pk and g['gameType'] == row['game_type']] if receipt else []
-            final, reason = _game_workload(cur, games[0], day, receipt) if len(games) == 1 else (None, 'missing_scoped_game')
+            final, reason = None, 'missing_scoped_game'
+            if len(games) == 1:
+                if resolve_sessions:
+                    final, reason = _game_workload(cur, games[0], day, receipt, resolve_sessions=True)
+                else:
+                    final, reason = _game_workload(cur, games[0], day, receipt)
             if not final:
                 raise BaselineWithheld('eligibility_game_not_confirmed', game_evidence=dict(
                     game_pk=pk, game_date=day.isoformat(), game_type=row['game_type'],
@@ -94,8 +99,13 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache,
             final_cache[key] = final[0], (receipt, *final[1])
         lines, receipts = final_cache[key]
         line = check_pitcher_final(player, row, lines, for_membership=True)
+        if 'workload_date' in line:
+            physical = date.fromisoformat(line['workload_date'])
+            if physical > through or any(other['pk'] != pk and day <= other['day'] <= physical for other in rows):
+                raise BaselineWithheld('resumed_appearance_order_unresolved')
+            row['workload_day'] = physical
         if row is selected[0] and (line['outs_recorded'] > 0 or (line['pitches_thrown'] or 0) > 0):
-            latest = dict(game_pk=pk, game_date=str(day), pitches=line['pitches_thrown'], outs=line['outs_recorded'])
+            latest = dict(game_pk=pk, game_date=str(row.get('workload_day', day)), pitches=line['pitches_thrown'], outs=line['outs_recorded'])
         sources.extend(receipts)
     return selected, sorted(set(sources)), latest
 
