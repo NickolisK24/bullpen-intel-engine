@@ -114,12 +114,13 @@ def bootstrap(password):
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
     if task == 'project-offseason-rosters':
-        from sync_v3.staging_product_delivery import private_app, source_receipt
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_postseason import qualify_offseason_edition
         from sync_v3.staging_publication_target import project_archived_fatigue, project_roster_views
-        receipt = source_receipt(password, os.environ['STAGING_PRODUCT_GENERATION'])
-        if 'product_day' not in receipt:
-            raise ValueError('Current offseason source binding required')
-        dates = tuple(date.fromisoformat(receipt[field]) for field in ('data_through', 'availability_reference'))
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            receipt = qualify_offseason_edition(source, datetime.now(ZoneInfo('America/New_York')).date())
+        dates = tuple(date.fromisoformat(receipt[field]) for field in ('through', 'availability'))
         with private_app(binding['password']).app_context():
             result = project_roster_views(password, edition_dates=dates)
             result['assignments'] = project_archived_fatigue(edition_dates=dates)

@@ -315,6 +315,7 @@ def project_roster_views(worker_password, *, edition_dates=None):
     result = {}
     staff = {}
     dated = {}
+    current_club_inputs = {}
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
@@ -395,6 +396,8 @@ def project_roster_views(worker_password, *, edition_dates=None):
                     index, errors = build_exact_date_team_roster_status_index(team, day, evidence=capture)
                     if errors:
                         raise ValueError('Incomplete official roster evidence')
+                    if edition_dates and day == dates[-1]:
+                        current_club_inputs[team] = (index, links)
                     for player, record in index.items():
                         if record['roster_types'] & {'active', '40Man'}:
                             candidates.setdefault(player, []).append(dict(team_id=team, evidence=record,
@@ -406,17 +409,18 @@ def project_roster_views(worker_password, *, edition_dates=None):
             result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
     result['roster_identities'] = bind_active_staff(staff)
     for day, candidates in dated.items():
-        result[str(day)]['membership'] = project_credited_membership(day, candidates, apply_position=day == dates[-1])
+        result[str(day)]['membership'] = project_credited_membership(
+            day, candidates, apply_position=day == dates[-1], club_inputs=current_club_inputs if day == dates[-1] else {})
     return result
 
 
-def project_credited_membership(day, by_player, *, apply_position):
+def project_credited_membership(day, by_player, *, apply_position, club_inputs):
     from models.pitcher import Pitcher
     from models.sync_run import SyncRun
     from sync_v3.render_staging import PLAYED_DAY
     from models.roster_status_snapshot import RosterStatusSnapshot
     from services.primary_roster_inputs import replay_membership
-    from services.roster_status_sync import (_apply_current_position_to_pitcher_cache, _declare_roster_ownership,
+    from services.roster_status_sync import (_apply_current_position_to_pitcher_cache, _apply_snapshot_to_pitcher_cache, _declare_roster_ownership,
                                              classify_roster_evidence, persist_missing_exact_roster_status_snapshots)
 
     with db.session.begin():
@@ -431,6 +435,10 @@ def project_credited_membership(day, by_player, *, apply_position):
                 raise ValueError('Conflicting dated club memberships')
             if matches:
                 candidates.append(dict(matches[0], pitcher=pitcher))
+            elif pitcher.active and pitcher.team_id in club_inputs:
+                index, links = club_inputs[pitcher.team_id]
+                candidates.append(dict(team_id=pitcher.team_id, pitcher=pitcher, snapshot_date=day,
+                                       evidence=index.get(pitcher.mlb_id), observation_links=links))
         attributed = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter(
             RosterStatusSnapshot.snapshot_date == day, RosterStatusSnapshot.sync_run_id.isnot(None))}
         unbound = {item['pitcher'].id for item in candidates} - attributed
@@ -450,19 +458,22 @@ def project_credited_membership(day, by_player, *, apply_position):
                 owner_team = candidate['team_id']
                 _declare_roster_ownership(owner_team)
             row = RosterStatusSnapshot.query.filter_by(pitcher_id=candidate['pitcher'].id, snapshot_date=day).one()
-            kinds = candidate['evidence']['roster_types']
-            expected = ('active' in kinds, '40Man' in kinds)
+            evidence = candidate['evidence']
+            kinds = (evidence or {}).get('roster_types', ())
+            expected = ('active' in kinds, '40Man' in kinds) if evidence is not None else (None, None)
             if (row.team_id != candidate['team_id'] or row.mlb_id != candidate['pitcher'].mlb_id
                     or row.roster_status != classify_roster_evidence(candidate['evidence'])['status']
                     or (row.active_roster, row.forty_man_roster) != expected
                     or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
                     or replay_membership(row) != expected):
                 raise ValueError('Dated roster evidence differs from stored membership')
-            if apply_position:
-                _apply_current_position_to_pitcher_cache(candidate['pitcher'], candidate['evidence'])
+            if apply_position and evidence:
+                _apply_current_position_to_pitcher_cache(candidate['pitcher'], evidence)
+            if club_inputs and not any(expected):
+                _apply_snapshot_to_pitcher_cache(candidate['pitcher'], row)
             if row.sync_run_id is None:
                 row.sync_run_id = run.id
-            active += int(expected[0])
+            active += int(bool(expected[0]))
         if run:
             db.session.flush()
             credited = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter_by(
@@ -881,7 +892,8 @@ def project_archived_fatigue(*, edition_dates=None):
                                 'IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         rows = (db.session.query(Pitcher, RosterStatusSnapshot)
                 .join(RosterStatusSnapshot, RosterStatusSnapshot.pitcher_id == Pitcher.id)
-                .filter(RosterStatusSnapshot.snapshot_date == day)
+                .filter(RosterStatusSnapshot.snapshot_date == day,
+                        RosterStatusSnapshot.active_roster.is_(True) | RosterStatusSnapshot.forty_man_roster.is_(True))
                 .order_by(RosterStatusSnapshot.team_id, Pitcher.id).all())
         count = 0
         last_team = None
