@@ -601,7 +601,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
         started = monotonic()
         count = 0
         while True:
-            batch = build_batch(source, PLAYED_DAY, 16, as_of=as_of)
+            batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds)
             digest = batch['after']
             count += len(batch['processed'])
             if not batch['processed']:
