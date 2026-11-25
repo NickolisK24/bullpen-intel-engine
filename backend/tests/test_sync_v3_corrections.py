@@ -741,7 +741,9 @@ def test_generation_batches_resume_on_another_connection_without_repeating_compl
                 build_batch(db, day, 0)
             first = build_batch(db, day, 2)
         with closing(connect()) as db:
-            second = build_batch(db, day, 1)
+            with pytest.raises(ValueError, match='represented date'):
+                build_batch(db, day + timedelta(days=1), 1, resume=first['after'])
+            second = build_batch(db, day, 1, resume=first['after'])
             assert second['before'] == first['after']
             assert len(first['processed']) == 2 and len(second['processed']) == 1
             assert set(first['processed']).isdisjoint(second['processed'])

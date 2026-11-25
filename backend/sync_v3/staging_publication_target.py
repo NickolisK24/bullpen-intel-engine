@@ -771,11 +771,17 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
             return dict(decision=decision, scopes_built=0)
         started = monotonic()
         count = 0
+        with source, source.cursor() as cur:
+            cur.execute('''SELECT digest FROM candidate.generations WHERE represented=%s
+                           AND manifest->>'contract'='candidate_generation_inventory_v1'
+                           ORDER BY creation_xid DESC LIMIT 1''', (PLAYED_DAY,))
+            previous = cur.fetchone()
+        digest = previous[0] if previous else None
         while True:
-            batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds)
+            batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']
             count += len(batch['processed'])
-            if not batch['processed']:
+            if not batch['processed'] and digest == batch['before']:
                 review = verify_generation(source, digest, compare_latest=True)
                 return dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
                             review=review['selection_review'], clubs=review['clubs'],

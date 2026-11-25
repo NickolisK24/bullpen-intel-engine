@@ -327,21 +327,27 @@ def _build_change_set(cur, domain, subject, entity, through):
     return _freeze_changes(cur, domain, entity, through)
 
 
-def build_batch(connection, through, limit, *, as_of=None, deadline=None):
+def build_batch(connection, through, limit, *, as_of=None, deadline=None, resume=None):
     """Materialize a bounded batch of missing or superseded candidate calculations."""
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import record_intelligence
 
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError('A rehearsal batch requires a limit between 1 and 100 scopes')
-    initial = freeze_generation(connection, through, as_of=as_of)
+    # An interrupted builder can use its last frozen inventory to choose work.
+    # Every nonempty batch still freezes against the latest data before returning.
+    initial = resume or freeze_generation(connection, through, as_of=as_of)
     with connection, connection.cursor() as cur:
-        cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (initial,))
-        manifest = cur.fetchone()[0]
+        cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s AND represented=%s', (initial, through))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError('Unknown generation checkpoint for represented date')
+        manifest = row[0]
     outstanding = {tuple(scope) for key in ('missing', 'stale_inputs', 'stale_comparisons')
                    for scope in manifest[key]}
     if not outstanding:
-        return dict(before=initial, after=initial, processed=[])
+        latest = freeze_generation(connection, through, as_of=as_of) if resume else initial
+        return dict(before=initial, after=latest, processed=[])
     domain_for = {method: domain for domain, (_, method, _) in DOMAINS.items()}
     changes_for = {f'candidate_{domain}_changes_v1': domain for domain in COMPARISONS}
     discovery_methods = [DOMAINS[d][1] for d in ('readiness', 'depth', 'rotation')]
