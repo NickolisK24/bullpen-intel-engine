@@ -89,22 +89,29 @@ def _daily_games(cur, day, schedules):
     return schedules[day]
 
 
+def matches_calendar_game(daily, listing):
+    """Require the same dated game, participants, format, scores and winner flags."""
+    if not daily:
+        return False
+    for key in ('gameType', 'officialDate', 'gamesInSeries'):
+        if daily.get(key) != listing.get(key):
+            return False
+    for side in ('away', 'home'):
+        a, b = daily['teams'][side], listing['teams'][side]
+        if (a['team']['id'], a.get('score'), a.get('isWinner')) != (
+                b['team']['id'], b.get('score'), b.get('isWinner')):
+            return False
+    return True
+
+
 def _decision(cur, day, listing, schedules):
     """Require the same final in the season calendar, daily schedule and confirmed box."""
     from sync_v3.workload import _game_workload
 
     source, games = _daily_games(cur, day, schedules)
     daily = games.get(listing['gamePk'])
-    if not daily:
+    if not matches_calendar_game(daily, listing):
         return None
-    for key in ('gameType', 'officialDate', 'gamesInSeries'):
-        if daily.get(key) != listing.get(key):
-            return None
-    for side in ('away', 'home'):
-        a, b = daily['teams'][side], listing['teams'][side]
-        if (a['team']['id'], a.get('score'), a.get('isWinner')) != (
-                b['team']['id'], b.get('score'), b.get('isWinner')):
-            return None
     final, _ = _game_workload(cur, daily, day, source)
     if not final:
         return None
