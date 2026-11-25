@@ -3,7 +3,7 @@
 from hashlib import sha256
 import json
 
-from psycopg2.extras import Json
+from psycopg2.extras import Json, execute_values
 
 from services.availability_reference_date import trusted_slate_reference_dates
 from services.mlb_club_directory import MLB_TEAM_IDS
@@ -254,9 +254,9 @@ def _freeze(cur, through, as_of=None):
                    ON CONFLICT DO NOTHING RETURNING digest""", (digest, through, Json(manifest)))
     if not cur.fetchone():
         return digest
-    cur.executemany("""INSERT INTO candidate.generation_inputs VALUES (%s,%s) ON CONFLICT DO NOTHING""",
+    execute_values(cur, """INSERT INTO candidate.generation_inputs VALUES %s ON CONFLICT DO NOTHING""",
                     [(digest, parent) for parent in parents])
-    cur.executemany('INSERT INTO candidate.generation_sources VALUES (%s,%s) ON CONFLICT DO NOTHING',
+    execute_values(cur, 'INSERT INTO candidate.generation_sources VALUES %s ON CONFLICT DO NOTHING',
                     [(digest, source) for source in sources])
     return digest
 
