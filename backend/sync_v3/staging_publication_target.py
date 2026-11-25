@@ -614,12 +614,13 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
             with source, source.cursor() as cur:
                 cur.execute("""SELECT jsonb_array_length(manifest->'missing'),
                                       jsonb_array_length(manifest->'stale_inputs'),
-                                      jsonb_array_length(manifest->'stale_comparisons')
+                                      jsonb_array_length(manifest->'stale_comparisons'),
+                                      ARRAY(SELECT club->>'readiness' FROM jsonb_array_elements(manifest->'clubs') club)
                                FROM candidate.generations WHERE digest=%s""", (digest,))
-                missing, stale, comparisons = cur.fetchone()
+                missing, stale, comparisons, club_status = cur.fetchone()
             progress = dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
                             missing_scopes=missing, stale_inputs=stale, stale_comparisons=comparisons,
-                            review='building')
+                            review='building', club_readiness={reason: club_status.count(reason) for reason in sorted(set(club_status))})
             print(json.dumps(dict(private_intelligence=progress)), flush=True)
             if monotonic()-started >= budget_seconds:
                 return progress
