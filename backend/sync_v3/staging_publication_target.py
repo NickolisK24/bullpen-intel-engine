@@ -584,6 +584,51 @@ def recover_missing_finals(worker_password, receipts, missing):
     return recovered
 
 
+def recover_private_readiness(worker_password, *, budget_seconds):
+    """Resume only the archived clubs whose latest readiness evidence withheld a state."""
+    from services.mlb_api import MLBApiClient
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3.current_worker import verify_target
+    from sync_v3.eligibility_recovery import recover
+    from sync_v3.intelligence_history import DOMAINS, record_intelligence
+    from sync_v3.render_staging import PLAYED_DAY, connect
+
+    started = monotonic()
+    client = MLBApiClient()
+    with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        with source, source.cursor() as cur:
+            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason' FROM candidate.workload_history
+                           WHERE subject='team' AND methodology=%s AND represented=%s
+                           ORDER BY mlb_id,revision DESC""", (DOMAINS['readiness'][1], PLAYED_DAY))
+            statuses = dict(cur.fetchall())
+        if statuses.keys() != set(MLB_TEAM_IDS):
+            raise ValueError('Expected all thirty archived readiness snapshots')
+        outstanding = {team for team, reason in statuses.items() if reason}
+        blocked = {}
+        receipts = 0
+        for team in sorted(outstanding):
+            while monotonic() - started < budget_seconds:
+                report = recover(source, team, PLAYED_DAY, max_jobs=24, include_workload=True,
+                                 fetch=lambda endpoint, params: client._get(endpoint, params=params))
+                receipts += len(report['receipts'])
+                state = report['status']
+                if state == 'ready':
+                    record_intelligence(source, 'readiness', team, PLAYED_DAY)
+                    outstanding.remove(team)
+                elif state != 'batch_limit':
+                    blocked[team] = report['readiness_reason']
+                print(json.dumps(dict(private_readiness=dict(club=team, status=state,
+                                 reason=report['readiness_reason'], received=len(report['receipts']),
+                                 remaining=len(outstanding)))), flush=True)
+                if state != 'batch_limit':
+                    break
+            if monotonic() - started >= budget_seconds:
+                break
+        return dict(task='recover-readiness', receipts=receipts, remaining_clubs=sorted(outstanding),
+                    withheld=blocked, elapsed_seconds=monotonic()-started)
+
+
 def advance_private_generation(worker_password, *, budget_seconds=90):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
