@@ -190,7 +190,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
         if performance:
             status = 'outing_finals_complete'
         elif board_rest:
-            status = 'board_inputs_complete'
+            status = 'board_eligibility_complete'
     elif any(outcome != 'received' for outcome in outcomes):
         status = 'acquisition_failed'
     elif requests and len(outcomes) == max_jobs:

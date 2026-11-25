@@ -273,7 +273,7 @@ def test_board_arrival_recovers_earlier_season_only_from_qualified_dated_members
         assert run()['board_rest_reason'] == 'missing_qualified_board_roster' and not calls
         qualified_staff = {474463}
         assert run()['status'] == 'batch_limit'
-        assert run()['status'] == 'board_inputs_complete'
+        assert run()['status'] == 'board_eligibility_complete'
         assert run()['receipts'] == []
         assert len(calls) == 2 and all(ep == '/people/474463/stats' and p['season'] == 2016 for ep, p in calls)
         with worker, worker.cursor() as cur:
