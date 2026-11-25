@@ -772,11 +772,21 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
         started = monotonic()
         count = 0
         with source, source.cursor() as cur:
-            cur.execute('''SELECT digest FROM candidate.generations WHERE represented=%s
+            cur.execute('''SELECT digest, manifest->'missing'='[]'::jsonb
+                                  AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
+                           FROM candidate.generations WHERE represented=%s
                            AND manifest->>'contract'='candidate_generation_inventory_v1'
                            ORDER BY creation_xid DESC LIMIT 1''', (PLAYED_DAY,))
             previous = cur.fetchone()
         digest = previous[0] if previous else None
+        if previous and previous[1]:
+            # The reviewer recomputes the latest inventory in its read-only transaction.
+            review = verify_generation(source, digest, compare_latest=True)
+            if review['selection_review']['latest_inventory_digest'] == digest:
+                return dict(digest=digest, scopes_built=0, elapsed_seconds=monotonic()-started,
+                            review=review['selection_review'], clubs=review['clubs'],
+                            snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
+            digest = None
         while True:
             batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']
@@ -799,7 +809,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                             missing_scopes=missing, stale_inputs=stale, stale_comparisons=comparisons,
                             review='building', club_readiness={reason: club_status.count(reason) for reason in sorted(set(club_status))})
             print(json.dumps(dict(private_intelligence=progress)), flush=True)
-            if monotonic()-started >= budget_seconds:
+            if not (missing or stale or comparisons) or monotonic()-started >= budget_seconds:
                 return progress
 
 
