@@ -218,6 +218,14 @@ The final local selected-publication run used PostgreSQL 17.6, selection revisio
 
 From backend, `SYNC_V3_TEST_PG_BIN=/path/to/pg17/bin python -m pytest -q tests/test_sync_v3*.py` passed 225 tests. The full-slate entry point is `python -m scripts.rehearse_selected_publication --source-socket "$socket" --revision 3 --generation "$generation" --predecessor 6 --sync-run 7 --product-day 2017-08-29` on the described disposable fixture. The command exits unsuccessfully when supporting fields differ.
 
+## November 23 offseason decision recovery
+
+[Scheduled shadow run 45503950761](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45503950761) used candidate `977308228b086a4cd6eb8527b112394873556f44`. Downloaded artifact 14971713235 matched GitHub's ZIP SHA-256 `799c01992739f8e50ddbd0cd13c30f2de925e94e95e897923f799f68342aac31`. Both PostgreSQL checkpoint digests and the included publication-proof ZIP digest matched. The proof comparison concerned snapshot 5847, whose workload and membership were represented October 28 and availability October 29.
+
+With the artifact's 123 November 23 responses alone, the November 24 competition classifier returned 18 season-complete clubs and 12 undetermined, with 40 missing decisions. An isolated chronological replay of the artifact's postseason fixtures plus that same November calendar verified all 40 decisions and classified all 30 clubs as season complete.
+
+On disposable PostgreSQL 17.6 the restricted worker's existing `--recover-readiness 111 --day 2026-11-23 --max-jobs 3` path used the artifact bodies as its transport. Starting with the November capture, four successive processes acquired 3, 3, 3 and 1 receipts. Five dated MLB schedules and five matching official World Series boxscores proved the series had ended. All 30 clubs then qualified as season complete using the original calendar. Another invocation needed zero receipts and no publication was selected. The other 35 postseason game decisions still have independent retention requirements. The original hosted run did not execute the new recovery behavior.
+
 ## Hosted and production observations
 
 The scheduled shadow (45296642435) used candidate 811dd338 on the November 22 capture. PR shadow 45408322187 used candidate 81d53550 on November 23. Each captured 123 observations on an offseason day with zero finals. Both artifacts matched their GitHub ZIP digests. Their separate publication comparisons used proof run 45275818431 for snapshot 5846, workload and membership October 28 and availability October 29. Each compared 40 finals and 406 pitching lines, matched competition and Team State for all 30 clubs and returned an accounted result for pitcher arm reads. Treat the individual per-club qualification in that result as part of its meaning.
