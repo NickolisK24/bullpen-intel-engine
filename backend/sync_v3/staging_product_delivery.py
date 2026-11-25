@@ -37,7 +37,8 @@ def current_edition_inputs(cur, through, availability, *, offseason):
     from sync_v3.discovery import calendar_requests, competition_calendar_request, roster_requests
     from sync_v3.generation import _bind_transaction_revisions, _slate, generation_date_decision
 
-    day = datetime.now(ZoneInfo('America/New_York')).date()
+    from sync_v3.render_staging import primary_product_day
+    day = primary_product_day()
     competition = competition_status(cur, day)
     if len(competition['clubs']) != 30 or competition['missing_decisions']:
         raise ValueError('Incomplete official competition evidence')
@@ -122,10 +123,11 @@ def reviewed_board_populations(cur, password, user, digest, binding):
 
 
 def product_clock(binding):
-    if 'product_day' in binding:
+    from sync_v3.staging_publication_target import ARCHIVE_TARGET
+    if 'product_day' in binding and TARGET != ARCHIVE_TARGET:
         return nullcontext()
     from freezegun import freeze_time
-    return freeze_time(f"{binding['availability_reference']} 12:00:00", real_asyncio=True)
+    return freeze_time(f"{binding.get('product_day', binding['availability_reference'])} 12:00:00", real_asyncio=True)
 
 
 def source_receipt(worker_password, digest, user='sync_v3_worker'):

@@ -27,8 +27,19 @@ def connect(user, password):
 
 
 def runtime_environment(*required):
-    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', 'STAGING_PRODUCT_TIMELINE', *required)
+    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', 'STAGING_PRODUCT_TIMELINE', 'STAGING_PRIMARY_BASEBALL_DATE', *required)
     return {**{key: os.environ[key] for key in keep if key in os.environ}, 'AUTO_SYNC': 'false'}
+
+
+def primary_product_day():
+    from sync_v3.staging_publication_target import TARGET, ARCHIVE_TARGET
+    today = datetime.now(ZoneInfo('America/New_York')).date()
+    if TARGET != ARCHIVE_TARGET:
+        return today
+    day = date.fromisoformat(os.environ['STAGING_PRIMARY_BASEBALL_DATE'])
+    if day >= today:
+        raise ValueError('The isolated competitive timeline requires a historical baseball date')
+    return day
 
 
 def bootstrap(password):
@@ -77,14 +88,18 @@ def bootstrap(password):
         from sync_v3.staging_publication_target import acquisition_freshness
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_postseason import qualify_offseason_edition, reconcile_current_decisions
-        day = datetime.now(ZoneInfo('America/New_York')).date()
+        day = primary_product_day()
+        archived = day < datetime.now(ZoneInfo('America/New_York')).date()
         client = MLBApiClient()
         with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
             verify_target(source)
-            report = process(source, day, max_jobs=BATCH_LIMIT, profiles=True)
-            if acquisition_failed(report):
-                raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
-            recovery = reconcile_current_decisions(source, client._get)
+            if archived:
+                report, recovery = {'receipts': {}}, 'retained_competitive_sources'
+            else:
+                report = process(source, day, max_jobs=BATCH_LIMIT, profiles=True)
+                if acquisition_failed(report):
+                    raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
+                recovery = reconcile_current_decisions(source, client._get)
             if task == 'run-current-primary':
                 from sync_v3.primary_date import prepare
                 phase = os.environ.get('STAGING_PRIMARY_PHASE', 'pregame')
@@ -475,7 +490,7 @@ if __name__ == '__main__':
             from sync_v3.staging_projector import recover_boards
             result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
                                     os.environ['STAGING_PRODUCT_GENERATION'],
-                                    competition_day=datetime.now(ZoneInfo('America/New_York')).date()
+                                    competition_day=primary_product_day()
                                     if args.operation == 'project-before-publish' else None,
                                     competitive=os.environ.get('STAGING_COMPETITIVE_CYCLE') == 'true')
             print(json.dumps(dict(private_board_history=result)), flush=True)
