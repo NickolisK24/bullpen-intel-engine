@@ -237,3 +237,13 @@ def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, m
                               "INSERT INTO dashboard_snapshots DEFAULT VALUES"):
                 with pytest.raises(psycopg2.errors.InsufficientPrivilege), runtime, runtime.cursor() as cur:
                     cur.execute(statement)
+
+
+def test_projector_process_receives_only_its_two_required_logins(monkeypatch):
+    from sync_v3.render_staging import runtime_environment
+    for key in ('STAGING_PROJECTOR_PASSWORD', 'STAGING_PRODUCT_PUBLISHER_PASSWORD', 'STAGING_OWNER_DSN',
+                'STAGING_WORKER_PASSWORD', 'DATABASE_URL'):
+        monkeypatch.setenv(key, 'test')
+    env = runtime_environment('STAGING_WORKER_PASSWORD', 'STAGING_PROJECTOR_PASSWORD')
+    assert set(env) & {'STAGING_OWNER_DSN','DATABASE_URL','STAGING_PRODUCT_PUBLISHER_PASSWORD'} == set()
+    assert env['AUTO_SYNC'] == 'false' and env['STAGING_PROJECTOR_PASSWORD'] == env['STAGING_WORKER_PASSWORD'] == 'test'

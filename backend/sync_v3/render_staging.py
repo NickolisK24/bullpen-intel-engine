@@ -26,6 +26,11 @@ def connect(user, password):
                             application_name='baseballos_v3_staging', sslmode='require')
 
 
+def runtime_environment(*required):
+    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', *required)
+    return {**{key: os.environ[key] for key in keep if key in os.environ}, 'AUTO_SYNC': 'false'}
+
+
 def bootstrap(password):
     task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
     if task in ('build-generation', 'recover-readiness'):
@@ -55,6 +60,17 @@ def bootstrap(password):
         print(json.dumps(dict(current_cycle=dict(day=str(day), receipts=report['receipts'], recovery=recovery,
                                                 generation=qualified['generation']))), flush=True)
         os.environ['STAGING_PRODUCT_GENERATION'] = qualified['generation']
+        import subprocess
+        import sys
+        # Wait for the independent, resumable Board writer before giving the publisher control.
+        projector_env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD',
+                                            'STAGING_PRODUCT_GENERATION')
+        projection = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-before-publish'],
+                                    env=projector_env, check=False)
+        if projection.returncode == 75:
+            print(json.dumps(dict(current_cycle_pending=dict(day=str(day), generation=qualified['generation']))), flush=True)
+            return
+        projection.check_returncode()
         task = 'publish-with-scoped-login'
     operations = {
         'verify-reader-edition': ('read', ('STAGING_PRODUCT_READER_PASSWORD',)),
@@ -65,10 +81,7 @@ def bootstrap(password):
     if task in operations:
         import sys
         operation, secrets = operations[task]
-        keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV',
-                *secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
-        env = {key: os.environ[key] for key in keep if key in os.environ}
-        env['AUTO_SYNC'] = 'false'
+        env = runtime_environment(*secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', operation], env)
     if task == 'qualify-offseason-edition':
         from sync_v3.staging_postseason import qualify_offseason_edition
@@ -366,7 +379,7 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project', 'project-before-publish'))
     args = parser.parse_args()
     try:
         if args.operation in ('publish', 'rollback'):
@@ -381,11 +394,13 @@ if __name__ == '__main__':
             else:
                 result = exercise_rollback(password, digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']), user=PUBLISHER)
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
-        elif args.operation == 'project':
+        elif args.operation in ('project', 'project-before-publish'):
             from sync_v3.staging_projector import recover_boards
             result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
                                     os.environ['STAGING_PRODUCT_GENERATION'])
             print(json.dumps(dict(private_board_history=result)), flush=True)
+            if args.operation == 'project-before-publish' and result['completed_clubs'] < result['total']:
+                parser.exit(75)
         elif args.operation == 'read':
             from sync_v3.staging_reader import serve_edition
             result = serve_edition(os.environ['STAGING_PRODUCT_READER_PASSWORD'], os.environ['STAGING_PRODUCT_GENERATION'])
