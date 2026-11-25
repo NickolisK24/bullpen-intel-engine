@@ -620,7 +620,8 @@ def test_staging_played_batch_yields_to_current_and_excludes_other_historical_wo
     from contextlib import closing
     from datetime import date
     from test_sync_v3_competition import season
-    from sync_v3 import render_staging as stage
+    from sync_v3 import evidence, render_staging as stage
+    from sync_v3.discovery import pitcher_requests
     from sync_v3.current_worker import MLBApiClient
     from sync_v3.replay import install
 
@@ -650,6 +651,13 @@ def test_staging_played_batch_yields_to_current_and_excludes_other_historical_wo
             captured = queue.enqueue(cur, 'fixture', {'capture': 'retained'}, at,
                                      budget='historical', product_date=archive)
             other = queue.enqueue(cur, 'other-day', {}, at, budget='historical', product_date=today)
+            request = pitcher_requests(archive, [102])[0]
+            recovery_job = queue.enqueue(cur, 'pitcher-history',
+                                         dict(endpoint=request.endpoint, params=request.params(), eligibility_recovery=True),
+                                         at, budget='historical', product_date=archive)
+            recovery_claim = queue.claim(cur, at, budget='historical', product_date=archive, only_job_id=recovery_job)
+        _, status = evidence.execute(worker, recovery_claim, lambda endpoint, params: {'stats': []}, lambda: at)
+        assert status == 'received'
         assert stage.played_batch(worker, today, idle)['status'] == 'current_work_has_priority'
         with worker, worker.cursor() as cur:
             claimed = queue.claim(cur, at, product_date=today)
@@ -658,6 +666,7 @@ def test_staging_played_batch_yields_to_current_and_excludes_other_historical_wo
         assert not calls
         monkeypatch.setattr(stage, 'BATCH_LIMIT', 1)
         first = stage.played_batch(worker, today, idle)
+        assert (first['requests'], first['pitcher_profiles']) == (1, 0)
         assert first['jobs']['pending'] > 0 and first['report']['receipts'] == {'received': 1}
         monkeypatch.setattr(stage, 'BATCH_LIMIT', 256)
         # This synthetic date has no pitchers or games. A done queue alone must not certify it.
