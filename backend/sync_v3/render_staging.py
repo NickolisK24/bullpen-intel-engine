@@ -1,7 +1,7 @@
 """Install or exercise the isolated Ohio staging database through Render's private network."""
 import argparse
 from contextlib import closing
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import json
 import os
 from time import monotonic
@@ -26,7 +26,13 @@ def connect(user, password):
                             application_name='baseballos_v3_staging', sslmode='require')
 
 
+def runtime_environment(*required):
+    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', *required)
+    return {**{key: os.environ[key] for key in keep if key in os.environ}, 'AUTO_SYNC': 'false'}
+
+
 def bootstrap(password):
+    started_at = None
     task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
     if task in ('build-generation', 'recover-readiness'):
         import resource
@@ -39,6 +45,98 @@ def bootstrap(password):
         usage = resource.getrusage(resource.RUSAGE_SELF)
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
+        return
+    if task == 'run-current-offseason':
+        import resource
+        started_at = datetime.now(timezone.utc)
+        from sync_v3.staging_publication_target import acquisition_freshness
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_postseason import qualify_offseason_edition, reconcile_current_decisions
+        day = datetime.now(ZoneInfo('America/New_York')).date()
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            report = process(source, day, max_jobs=BATCH_LIMIT, profiles=True)
+            if acquisition_failed(report):
+                raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
+            recovery = reconcile_current_decisions(source, client._get)
+            qualified = qualify_offseason_edition(source, day)
+            with source, source.cursor() as cur:
+                freshness = acquisition_freshness(cur)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps(dict(current_cycle=dict(day=str(day), receipts=report['receipts'], recovery=recovery,
+                                                generation=qualified['generation'], acquisition_freshness=freshness,
+                                                seconds=(datetime.now(timezone.utc)-started_at).total_seconds(),
+                                                process_cpu_seconds=usage.ru_utime+usage.ru_stime,
+                                                peak_rss_kib=usage.ru_maxrss))), flush=True)
+        os.environ['STAGING_PRODUCT_GENERATION'] = qualified['generation']
+        import subprocess
+        import sys
+        # Wait for the independent, resumable Board writer before giving the publisher control.
+        projector_env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD',
+                                            'STAGING_PRODUCT_GENERATION', 'STAGING_ROSTER_PUBLIC_IDENTITIES')
+        projection = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-before-publish'],
+                                    env=projector_env, check=False)
+        if projection.returncode == 75:
+            print(json.dumps(dict(current_cycle_pending=dict(day=str(day), generation=qualified['generation']))), flush=True)
+            return
+        projection.check_returncode()
+        task = 'publish-with-scoped-login'
+    operations = {
+        'verify-reader-edition': ('read', ('STAGING_PRODUCT_READER_PASSWORD',)),
+        'publish-with-scoped-login': ('publish', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
+        'rollback-with-scoped-login': ('rollback', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
+        'recover-board-with-scoped-login': ('project', ('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD')),
+    }
+    if task in operations:
+        import sys
+        operation, secrets = operations[task]
+        env = runtime_environment(*secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
+        if task == 'publish-with-scoped-login' and started_at is not None:
+            env['STAGING_CYCLE_STARTED_AT'] = started_at.isoformat()
+        os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', operation], env)
+    if task == 'qualify-offseason-edition':
+        from sync_v3.staging_postseason import qualify_offseason_edition
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = qualify_offseason_edition(source, datetime.now(ZoneInfo('America/New_York')).date())
+        print(json.dumps(dict(private_offseason_edition=result)), flush=True)
+        return
+    if task == 'recover-current-edition':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_postseason import reconcile_current_decisions
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = reconcile_current_decisions(source, client._get)
+        print(json.dumps(dict(private_current_recovery=result)), flush=True)
+        return
+    if task == 'inspect-current-edition':
+        from collections import Counter
+        from sync_v3.competition_calendar import calendar_games, competition_status
+        from sync_v3.discovery import competition_calendar_request
+        from sync_v3.evidence import replay
+        from sync_v3.generation import generation_date_decision
+        from sync_v3.staging_publication_target import acquisition_freshness
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            with source, source.cursor() as cur:
+                cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                freshness = acquisition_freshness(cur)
+                day = date.fromisoformat(freshness['day'])
+                competition = competition_status(cur, day)
+                latest_final = None
+                if competition['calendar_source']:
+                    request = competition_calendar_request(day.year)
+                    games = calendar_games(request.params(), replay(cur, competition['calendar_source']).body)
+                    latest_final = max((played for played, row, _ in games.values()
+                                        if played <= day and row['status_state'] == 'final'), default=None)
+                decision = generation_date_decision(cur, latest_final, day) if latest_final else None
+                report = dict(freshness=freshness, last_listed_final=str(latest_final) if latest_final else None,
+                              represented_date_decision=decision, confirmed_decisions=len(competition['decision_sources']),
+                              missing_decisions=competition['missing_decisions'],
+                              club_status=dict(Counter(club['status'] for club in competition['clubs'].values())))
+        print(json.dumps(dict(private_current_edition=report), default=str), flush=True)
         return
     if task == 'recheck-edition-transactions':
         from services.mlb_api import MLBApiClient
@@ -54,14 +152,79 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'install-product-projector', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history', 'recover-next-offseason-board'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
-    if task == 'verify-product-surfaces':
+    if task in ('recover-offseason-board-history', 'recover-next-offseason-board'):
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_board_history import recover, recover_next
+        from sync_v3.staging_product_delivery import observe_product_relations, private_app
+        client = MLBApiClient()
+        with private_app(binding['password']).app_context(), closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            product_access = {}
+            observe_product_relations(product_access)
+            digest = os.environ['STAGING_PRODUCT_GENERATION']
+            if task == 'recover-next-offseason-board':
+                result = recover_next(source, client, digest)
+            else:
+                result = recover(source, client, int(os.environ['STAGING_BOARD_CLUB']),
+                                 int(os.environ.get('STAGING_BOARD_AFTER', '0')), digest)
+            result['product_access'] = {op: sorted(tables) for op, tables in product_access.items()}
+        print(json.dumps(dict(private_board_history=result)), flush=True)
+        return
+    if task == 'project-offseason-rosters':
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_postseason import qualify_offseason_edition
+        from sync_v3.staging_publication_target import project_archived_fatigue, project_roster_views
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            receipt = qualify_offseason_edition(source, datetime.now(ZoneInfo('America/New_York')).date())
+        dates = tuple(date.fromisoformat(receipt[field]) for field in ('through', 'availability'))
+        with private_app(binding['password']).app_context():
+            result = project_roster_views(password, edition_dates=dates)
+            result['assignments'] = project_archived_fatigue(edition_dates=dates)
+        print(json.dumps(dict(private_offseason_rosters=result)), flush=True)
+        return
+    if task == 'project-offseason-competition':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_postseason import project_offseason_competition
+        app = private_app(binding['password'])
+        client = MLBApiClient()
+        with app.app_context(), closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = project_offseason_competition(source, client, datetime.now(ZoneInfo('America/New_York')).date())
+        print(json.dumps(dict(private_offseason_projection=result)), flush=True)
+        return
+    if task == 'install-product-projector':
+        from services.migration_authority import require_owner
+        from sync_v3.staging_projector import PROJECTOR, install
+        require_owner()
+        install(binding['password'], os.environ['STAGING_PROJECTOR_PASSWORD'])
+        print(json.dumps(dict(private_projector_install=dict(role=PROJECTOR))), flush=True)
+        return
+    if task == 'install-product-publisher':
+        from services.migration_authority import require_owner
+        from sync_v3.staging_publisher import PUBLISHER, install
+        require_owner()
+        install(binding['password'], os.environ['STAGING_PRODUCT_PUBLISHER_PASSWORD'])
+        print(json.dumps(dict(private_publisher_install=dict(role=PUBLISHER))), flush=True)
+        return
+    if task == 'install-product-reader':
+        from services.migration_authority import require_owner
+        from sync_v3.staging_reader import PRODUCT_RELATIONS, READER, install as install_reader
+        require_owner()
+        install_reader(binding['password'], os.environ['STAGING_PRODUCT_READER_PASSWORD'], PRODUCT_RELATIONS)
+        print(json.dumps(dict(private_reader_install=dict(role=READER, readable_tables=len(PRODUCT_RELATIONS),
+                                                         writable_tables=0))), flush=True)
+        return
+    if task in ('verify-product-surfaces', 'inspect-product-reads'):
         from sync_v3.staging_product_delivery import verify_product_surfaces
-        result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'])
+        result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'],
+                                         inventory=task == 'inspect-product-reads')
         print(json.dumps(dict(private_surfaces=result)), flush=True)
         return
     if task == 'project-roster-provenance':
@@ -87,13 +250,13 @@ def bootstrap(password):
             result = project_eligibility_history(password, budget_seconds=180)
         print(json.dumps(dict(private_eligibility=result)), flush=True)
         return
-    if task in ('publish-generation', 'rollback-generation'):
+    if task in ('publish-generation', 'rollback-generation', 'inspect-publication-access'):
         from sync_v3.staging_product_delivery import exercise, exercise_rollback
         import resource
         started = monotonic()
         digest = os.environ['STAGING_PRODUCT_GENERATION']
-        if task == 'publish-generation':
-            report = exercise(binding['password'], password, digest)
+        if task != 'rollback-generation':
+            report = exercise(binding['password'], password, digest, inventory=task == 'inspect-publication-access')
         else:
             report = exercise_rollback(binding['password'], digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']))
         usage = resource.getrusage(resource.RUSAGE_SELF)
@@ -228,9 +391,44 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project', 'project-before-publish'))
     args = parser.parse_args()
     try:
-        (bootstrap if args.operation == 'bootstrap' else acquire)(os.environ['STAGING_WORKER_PASSWORD'])
+        if args.operation in ('publish', 'rollback'):
+            from sync_v3.staging_publisher import PUBLISHER, check_scope, _connect, TARGET
+            from sync_v3.staging_product_delivery import exercise, exercise_rollback
+            password = os.environ['STAGING_PRODUCT_PUBLISHER_PASSWORD']
+            digest = os.environ['STAGING_PRODUCT_GENERATION']
+            with closing(_connect(PUBLISHER, password)) as target, target, target.cursor() as cur:
+                check_scope(cur, TARGET)
+            if args.operation == 'publish':
+                result = exercise(password, password, digest, user=PUBLISHER, source_user=PUBLISHER)
+            else:
+                result = exercise_rollback(password, digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']), user=PUBLISHER)
+            import resource
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            result.update(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)
+            if args.operation == 'publish' and 'STAGING_CYCLE_STARTED_AT' in os.environ:
+                started_at = datetime.fromisoformat(os.environ['STAGING_CYCLE_STARTED_AT'])
+                result['cycle_started_at'] = started_at.isoformat()
+                result['invocation_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
+            print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
+        elif args.operation in ('project', 'project-before-publish'):
+            from sync_v3.staging_projector import recover_boards
+            result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
+                                    os.environ['STAGING_PRODUCT_GENERATION'],
+                                    competition_day=datetime.now(ZoneInfo('America/New_York')).date()
+                                    if args.operation == 'project-before-publish' else None)
+            print(json.dumps(dict(private_board_history=result)), flush=True)
+            if args.operation == 'project-before-publish' and (
+                    result.get('phase') == 'canonical_ready' or result['completed_clubs'] < result['total']
+                    or result['batches']):
+                parser.exit(75)
+        elif args.operation == 'read':
+            from sync_v3.staging_reader import serve_edition
+            result = serve_edition(os.environ['STAGING_PRODUCT_READER_PASSWORD'], os.environ['STAGING_PRODUCT_GENERATION'])
+            print(json.dumps(dict(private_reader_edition=result)), flush=True)
+        else:
+            (bootstrap if args.operation == 'bootstrap' else acquire)(os.environ['STAGING_WORKER_PASSWORD'])
     except psycopg2.Error as exc:
         parser.exit(1, f'Staging database operation failed ({exc.pgcode or type(exc).__name__}).\n')

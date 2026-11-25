@@ -3,6 +3,7 @@ import json
 import os
 import resource
 from contextlib import closing
+from datetime import date
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from time import monotonic
@@ -246,13 +247,18 @@ def project_final_appearances(finals, day, *, include_context=True):
         db.session.execute(text("SET LOCAL lock_timeout = '5s'"))
         db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE'))
         for game, box, facts, extra in finals:
+            dates = {f['pitcher_mlb_id']: date.fromisoformat(f['workload_date']) for f in facts if 'workload_date' in f}
             def process(plan_only):
                 return process_completed_game_for_postgame_refresh(
-                    game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only)
+                    game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only,
+                    require_official_pitching_credit=True, appearance_dates=dates or None)
             planned = process(True)
             summary = planned['reconciliation_summary']
             if planned['incomplete_reason'] or summary['rows_blocked'] or summary['rows_planned'] != len(facts):
-                raise ValueError('Official final has an incomplete governed plan')
+                raise ValueError(f"Official game {game['gamePk']} on {day}: {planned['incomplete_reason']}, "
+                                 f"{summary['rows_blocked']} blocked, {summary['rows_planned']} planned, "
+                                 f"{len(facts)} official appearances, "
+                                 f"{planned['pitcher_resolution_failures']} unresolved identities")
             if summary['rows_unchanged'] != len(facts):
                 applied = process(False)
                 if applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
@@ -266,7 +272,7 @@ def project_final_appearances(finals, day, *, include_context=True):
             rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
                           l.games_started,l.game_date FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
                           WHERE l.mlb_game_pk=:pk"""), dict(pk=game['gamePk']))
-            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),day)
+            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),dates.get(f['pitcher_mlb_id'], day))
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')
@@ -297,7 +303,7 @@ def project_context(game, box, extra, day):
     return len(contexts)
 
 
-def project_roster_views(worker_password):
+def project_roster_views(worker_password, *, edition_dates=None, initialized=False):
     """Retain the qualified MLB roster observations for workload and availability separately."""
     from datetime import timedelta
     from hashlib import sha256
@@ -315,10 +321,13 @@ def project_roster_views(worker_password):
     result = {}
     staff = {}
     dated = {}
+    roster_sources = set()
+    current_club_inputs = {}
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
-        for day in (PLAYED_DAY, PLAYED_DAY + timedelta(days=1)):
+        dates = edition_dates or (PLAYED_DAY, PLAYED_DAY + timedelta(days=1))
+        for day in dict.fromkeys(dates):
             acquired = 0
             clubs = 0
             candidates = {}
@@ -344,14 +353,23 @@ def project_roster_views(worker_password):
                         acquired += 1
                     with source, source.cursor() as cur:
                         obs = evidence.replay(cur, oid)
+                    roster_sources.add(oid)
                     kind = params['rosterType']
                     bodies[kind] = obs.body
                     stamps[kind] = obs.retrieved_at
-                from sync_v3.depth import board_rest_pitchers
+                from sync_v3.depth import _view, board_rest_pitchers
                 with source, source.cursor() as cur:
-                    members = board_rest_pitchers(cur, team, day)
+                    if edition_dates:
+                        # The offseason directory includes official two-way players. Pregame rest has
+                        # a separate eligibility contract and is withheld for season-complete clubs.
+                        view = _view(cur, team, team, 'active', dict(date=str(day), rosterType='active'), membership=True)
+                        if view['reason']:
+                            raise ValueError(f"Unresolved official roster for {team} on {day}: {view['reason']}")
+                        members = view['pitchers']
+                    else:
+                        members = board_rest_pitchers(cur, team, day)
                 if members is None:
-                    raise ValueError('Unqualified dated staff')
+                    raise ValueError(f'Unqualified dated staff for {team} on {day}')
                 for entry in bodies['active']['roster']:
                     person = entry['person']
                     if person['id'] in members:
@@ -386,28 +404,32 @@ def project_roster_views(worker_password):
                     index, errors = build_exact_date_team_roster_status_index(team, day, evidence=capture)
                     if errors:
                         raise ValueError('Incomplete official roster evidence')
+                    if edition_dates and day == dates[-1]:
+                        current_club_inputs[team] = (index, links)
                     for player, record in index.items():
                         if record['roster_types'] & {'active', '40Man'}:
                             candidates.setdefault(player, []).append(dict(team_id=team, evidence=record,
                                                                          observation_links=links, snapshot_date=day))
-                    if existing and team == 108 and day > PLAYED_DAY:
+                    if existing and not edition_dates and team == 108 and day > PLAYED_DAY:
                         matched_departure_evidence(team, 502032, day, bodies, existing)
                 clubs += 1
             dated[day] = candidates
             result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
-    result['roster_identities'] = bind_active_staff(staff)
+    result['source_receipts'] = sorted(roster_sources)
+    result['roster_identities'] = bind_active_staff(staff, initialized=initialized)
     for day, candidates in dated.items():
-        result[str(day)]['membership'] = project_credited_membership(day, candidates)
+        result[str(day)]['membership'] = project_credited_membership(
+            day, candidates, apply_position=day == dates[-1], club_inputs=current_club_inputs if day == dates[-1] else {})
     return result
 
 
-def project_credited_membership(day, by_player):
+def project_credited_membership(day, by_player, *, apply_position, club_inputs):
     from models.pitcher import Pitcher
     from models.sync_run import SyncRun
     from sync_v3.render_staging import PLAYED_DAY
     from models.roster_status_snapshot import RosterStatusSnapshot
     from services.primary_roster_inputs import replay_membership
-    from services.roster_status_sync import (_apply_current_position_to_pitcher_cache, _declare_roster_ownership,
+    from services.roster_status_sync import (_apply_current_position_to_pitcher_cache, _apply_snapshot_to_pitcher_cache, _declare_roster_ownership,
                                              classify_roster_evidence, persist_missing_exact_roster_status_snapshots)
 
     with db.session.begin():
@@ -422,16 +444,17 @@ def project_credited_membership(day, by_player):
                 raise ValueError('Conflicting dated club memberships')
             if matches:
                 candidates.append(dict(matches[0], pitcher=pitcher))
+            elif pitcher.active and pitcher.team_id in club_inputs:
+                index, links = club_inputs[pitcher.team_id]
+                candidates.append(dict(team_id=pitcher.team_id, pitcher=pitcher, snapshot_date=day,
+                                       evidence=index.get(pitcher.mlb_id), observation_links=links))
         attributed = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter(
             RosterStatusSnapshot.snapshot_date == day, RosterStatusSnapshot.sync_run_id.isnot(None))}
         unbound = {item['pitcher'].id for item in candidates} - attributed
+        start = db.session.execute(text("SELECT transaction_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
+        to_attribute = []
         run = None
-        if unbound:
-            run = SyncRun(job_name='sync_v3_roster_reconciliation', source='sync_v3_staging',
-                          latest_workload_date=day, status='running', stage='replaying_observations')
-            db.session.add(run)
-            db.session.flush()
-        report = persist_missing_exact_roster_status_snapshots(candidates, sync_run_id=run.id if run else None)
+        report = persist_missing_exact_roster_status_snapshots(candidates)
         if report['conflicts'] or report['failure_records']:
             raise ValueError('Dated roster writer refused observations')
         active = 0
@@ -441,34 +464,60 @@ def project_credited_membership(day, by_player):
                 owner_team = candidate['team_id']
                 _declare_roster_ownership(owner_team)
             row = RosterStatusSnapshot.query.filter_by(pitcher_id=candidate['pitcher'].id, snapshot_date=day).one()
-            kinds = candidate['evidence']['roster_types']
-            expected = ('active' in kinds, '40Man' in kinds)
+            evidence = candidate['evidence']
+            kinds = (evidence or {}).get('roster_types', ())
+            expected = ('active' in kinds, '40Man' in kinds) if evidence is not None else (None, None)
             if (row.team_id != candidate['team_id'] or row.mlb_id != candidate['pitcher'].mlb_id
                     or row.roster_status != classify_roster_evidence(candidate['evidence'])['status']
                     or (row.active_roster, row.forty_man_roster) != expected
                     or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
                     or replay_membership(row) != expected):
                 raise ValueError('Dated roster evidence differs from stored membership')
-            if day > PLAYED_DAY:
-                _apply_current_position_to_pitcher_cache(candidate['pitcher'], candidate['evidence'])
+            if apply_position and evidence:
+                _apply_current_position_to_pitcher_cache(candidate['pitcher'], evidence)
+            if club_inputs and not any(expected):
+                from services.team_assignment_sync import (
+                    _apply_assignment, _classification_from_roster_evidence, _source_for, ROSTER_PRECEDENCE,
+                    SOURCE_PREFIX, TEAM_ASSIGNMENT_UNKNOWN,
+                )
+                from services.mlb_club_directory import MLB_CLUBS
+                pitcher = candidate['pitcher']
+                if pitcher.team_assignment_source in {_source_for(kind) for kind in ROSTER_PRECEDENCE}:
+                    # The earlier roster-backed club assignment expired. The four new views can
+                    # establish another assignment or leave present affiliation unknown.
+                    appearances = [dict(team_id=row.team_id, roster_type=kind) for kind in kinds]
+                    team_map = {club.team_id: dict(name=club.team_name, abbreviation=club.abbreviation) for club in MLB_CLUBS}
+                    assignment = _classification_from_roster_evidence(dict(appearances=appearances), team_map)
+                    _apply_assignment(pitcher, assignment or dict(status=TEAM_ASSIGNMENT_UNKNOWN,
+                                      source=f'{SOURCE_PREFIX}:dated_roster_absence'), row.updated_at or row.first_seen_at)
+                _apply_snapshot_to_pitcher_cache(pitcher, row)
             if row.sync_run_id is None:
+                to_attribute.append(row)
+            active += int(bool(expected[0]))
+        if {row.pitcher_id for row in to_attribute} != unbound:
+            raise ValueError('Dated roster reconciliation scope changed')
+        if to_attribute:
+            completed = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
+            run = SyncRun(job_name='sync_v3_roster_reconciliation', source='sync_v3_staging',
+                          latest_workload_date=day, status='success', stage='verified_roster_observations',
+                          records_processed=len(unbound), started_at=start, completed_at=completed)
+            db.session.add(run)
+            db.session.flush()
+            for row in sorted(to_attribute, key=lambda snapshot: (snapshot.team_id, snapshot.pitcher_id)):
+                if row.team_id != owner_team:
+                    owner_team = row.team_id
+                    _declare_roster_ownership(owner_team)
                 row.sync_run_id = run.id
-            active += int(expected[0])
-        if run:
             db.session.flush()
             credited = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter_by(
                 snapshot_date=day, sync_run_id=run.id)}
             if credited != unbound:
                 raise ValueError('Stored roster reconciliation provenance differs from the verified membership')
-            run.status = 'success'
-            run.stage = 'verified_roster_observations'
-            run.records_processed = len(unbound)
-            run.completed_at = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
         return dict(verified=len(candidates), active=active, outside_active_and_40man=len(pitchers)-len(candidates),
                     created=report['created'], newly_attributed=len(unbound), reconciliation_run=run.id if run else None)
 
 
-def bind_active_staff(staff):
+def bind_active_staff(staff, *, initialized=False):
     """Reserve approved public keys before allocating any new staging-local pitcher keys."""
     from models.pitcher import Pitcher
     pairs = json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs']
@@ -476,14 +525,16 @@ def bind_active_staff(staff):
             or any(len({p[i] for p in pairs}) != 60 for i in (0, 1))):
         raise ValueError('Invalid roster identity cohort')
     public = {mlb: pid for pid, mlb in pairs}
-    if not public.keys() <= staff.keys():
-        raise ValueError('Approved mapping exceeds qualified roster cohort')
     table = Pitcher.__table__
     with db.engine.begin() as conn:
         if conn.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private target')
         conn.execute(text('LOCK TABLE pitchers IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         existing = dict(conn.execute(text('SELECT mlb_id,id FROM pitchers')).all())
+        if not public.keys() <= (staff.keys() | existing.keys()):
+            raise ValueError('Unreserved public identity lies outside the qualified roster cohort')
+        if initialized and not public.keys() <= existing.keys():
+            raise ValueError('The current writer requires preinstalled public pitcher identities')
         by_id = {pid: mlb for mlb, pid in existing.items()}
         collisions = sum(existing.get(mlb, pid) != pid or by_id.get(pid, mlb) != mlb
                          for mlb, pid in public.items())
@@ -499,7 +550,7 @@ def bind_active_staff(staff):
                     values['id'] = public[mlb]
                 conn.execute(table.insert().values(**values))
                 created += 1
-            if mapped:
+            if mapped and not initialized:
                 conn.execute(text("""SELECT setval(pg_get_serial_sequence('public.pitchers','id'),
                                  greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"""))
         stored = dict(conn.execute(text('SELECT mlb_id,id FROM pitchers')).all())
@@ -846,7 +897,12 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                 return progress
 
 
-def project_archived_fatigue():
+def lock_private_fatigue():
+    # Coordinate private score writers without granting UPDATE on dated score history.
+    db.session.execute(text("SELECT pg_advisory_xact_lock(hashtext('baseballos_v3_private_fatigue'))"))
+
+
+def project_archived_fatigue(*, edition_dates=None):
     """Project the archived edition's official roster and calculate its fourteen-day scores."""
     from datetime import datetime, time, timedelta
     from models.fatigue_score import FatigueScore
@@ -860,7 +916,7 @@ def project_archived_fatigue():
     from services.team_assignment_sync import _classification_from_roster_evidence, _apply_assignment
     from sync_v3.render_staging import PLAYED_DAY
 
-    day = PLAYED_DAY + timedelta(days=1)
+    through, day = edition_dates or (PLAYED_DAY, PLAYED_DAY + timedelta(days=1))
     # The private archived edition uses the same noon UTC product clock as the disposable rehearsal.
     edition_clock = datetime.combine(day, time(12))
     teams = {club.team_id: dict(name=club.team_name, abbreviation=club.abbreviation) for club in MLB_CLUBS}
@@ -868,11 +924,13 @@ def project_archived_fatigue():
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected historical product target')
-        db.session.execute(text('LOCK TABLE pitchers, roster_status_snapshots, game_logs, fatigue_scores '
+        lock_private_fatigue()
+        db.session.execute(text('LOCK TABLE pitchers, roster_status_snapshots, game_logs '
                                 'IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         rows = (db.session.query(Pitcher, RosterStatusSnapshot)
                 .join(RosterStatusSnapshot, RosterStatusSnapshot.pitcher_id == Pitcher.id)
-                .filter(RosterStatusSnapshot.snapshot_date == day)
+                .filter(RosterStatusSnapshot.snapshot_date == day,
+                        RosterStatusSnapshot.active_roster.is_(True) | RosterStatusSnapshot.forty_man_roster.is_(True))
                 .order_by(RosterStatusSnapshot.team_id, Pitcher.id).all())
         count = 0
         last_team = None
@@ -888,7 +946,7 @@ def project_archived_fatigue():
             _apply_assignment(pitcher, assignment, edition_clock)
             _apply_snapshot_to_pitcher_cache(pitcher, snapshot)
             logs = (GameLog.query.filter(GameLog.pitcher_id == pitcher.id,
-                                         GameLog.game_date.between(day-timedelta(days=14), PLAYED_DAY))
+                                         GameLog.game_date.between(day-timedelta(days=14), through))
                     .order_by(GameLog.game_date.desc(), GameLog.id.desc()).all())
             if not logs:
                 continue
@@ -939,6 +997,7 @@ def project_prior_fatigue(worker_password, digest):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private historical workload target')
         db.session.execute(text('LOCK TABLE game_logs IN SHARE MODE'))
+        lock_private_fatigue()
         db.session.execute(text('LOCK TABLE fatigue_scores IN SHARE ROW EXCLUSIVE MODE'))
         fields = [col.name for col in FatigueScore.__table__.columns if col.name not in ('id', 'calculated_at')]
         for _, arms, samples in clubs:

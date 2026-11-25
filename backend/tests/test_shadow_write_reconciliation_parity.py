@@ -810,3 +810,35 @@ def test_a_correction_stamps_provenance_without_calling_it_evidence(
             reconciliation.PROVENANCE_FIELDS
         )
         assert summary['provenance_only_updates'] == 0
+
+
+def test_v3_plan_and_write_preserve_credited_zero_out_appearance_only(app):
+    game = final_game(824807)
+    zero_stats = dict(gamesPitched=0, gamesPlayed=0, gamesStarted=0, numberOfPitches=0,
+                      battersFaced=0, outs=0, inningsPitched='0.0')
+    box = boxscore([(6003, 'home', pitching_stats()), (6004, 'home', zero_stats),
+                    (6005, 'away', dict(zero_stats, gamesPitched=1, gamesPlayed=1, battersFaced=1))])
+    with app.app_context():
+        for plan_only in (True, False):
+            result = sync_service.process_completed_game_for_postgame_refresh(game, schedule_date=REFERENCE,
+                boxscore=box, plan_only=plan_only, force=True, require_official_pitching_credit=True)
+            assert {row['pitcher_mlb_id'] for row in result['reconciliation_plan']} == {6003, 6005}
+        assert GameLog.query.filter_by(mlb_game_pk=824807).count() == 2
+
+
+def test_v3_resumed_final_uses_each_pitchers_qualified_workload_date(app):
+    from datetime import timedelta
+    second = REFERENCE + timedelta(days=1)
+    game = dict(final_game(824912), resumeDate=f'{second}T18:00:00Z', resumeGameDate=str(second))
+    box = boxscore([(6003, 'home', pitching_stats()), (6005, 'away', pitching_stats())])
+    with app.app_context():
+        dates = {6003: REFERENCE, 6005: second}
+        for plan_only in (True, False, True):
+            run = sync_service.process_completed_game_for_postgame_refresh(
+                game, schedule_date=REFERENCE, boxscore=box, plan_only=plan_only,
+                force=True, require_official_pitching_credit=True, appearance_dates=dates)
+            assert not run['incomplete_reason']
+        rows = db.session.query(Pitcher.mlb_id, GameLog.game_date).join(
+            GameLog, GameLog.pitcher_id == Pitcher.id).filter(GameLog.mlb_game_pk == 824912)
+        assert dict(rows.all()) == dates
+        assert PostgameProcessedGame.query.filter_by(mlb_game_pk=824912).one().game_date == REFERENCE

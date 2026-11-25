@@ -91,3 +91,188 @@ def test_rollback_restores_predecessor_and_refuses_an_unexpected_run_binding(pg)
             assert not db.session.get(Snapshot, new_id).is_published
             assert old_run.published_dashboard_snapshot_id == old_id
             assert new_run.published_dashboard_snapshot_id is None
+
+
+def test_private_product_reader_can_read_rls_rows_and_detect_grant_drift(pg, monkeypatch):
+    import psycopg2
+    from sync_v3 import staging_reader
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            cur.execute('CREATE DATABASE baseballos_v3_roster_staging OWNER baseballos_sync_v3_staging_user')
+            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_roster_staging FROM PUBLIC')
+
+        def connect(user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=TARGET, user=user, password=password)
+
+        monkeypatch.setattr(staging_reader, '_connect', connect)
+        with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+            cur.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+            cur.execute('CREATE TABLE dashboard_snapshots(id int)')
+            cur.execute('INSERT INTO dashboard_snapshots VALUES (5)')
+            cur.execute('ALTER TABLE dashboard_snapshots ENABLE ROW LEVEL SECURITY')
+            cur.execute('CREATE TABLE users(id int)')
+        tables = {'dashboard_snapshots'}
+        staging_reader.install('', 'private-test-reader', tables)
+        staging_reader.install('', 'private-test-reader', tables)
+        with closing(connect(staging_reader.READER, 'private-test-reader')) as reader:
+            with reader, reader.cursor() as cur:
+                cur.execute('SELECT id FROM dashboard_snapshots')
+                assert cur.fetchall() == [(5,)]
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reader, reader.cursor() as cur:
+                cur.execute('SELECT id FROM users')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reader, reader.cursor() as cur:
+                cur.execute('SET TRANSACTION READ WRITE')
+                cur.execute('UPDATE dashboard_snapshots SET id=6')
+            with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+                cur.execute('GRANT UPDATE ON dashboard_snapshots TO baseballos_v3_staging_product_reader')
+            with pytest.raises(ValueError, match='grants differ'):
+                staging_reader.verify(reader, tables)
+
+
+def test_private_publisher_cannot_modify_source_or_product_facts(pg, monkeypatch):
+    import psycopg2
+    from psycopg2 import sql
+    from sync_v3 import staging_publisher as publisher
+    from sync_v3.replay import schema_digest, schema_scripts
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            for database in (TARGET, publisher.DATABASE):
+                cur.execute(sql.SQL('CREATE DATABASE {} OWNER {}').format(sql.Identifier(database), sql.Identifier(OWNER)))
+                cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(database)))
+
+        def connect(database, user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=database, user=user, password=password)
+
+        monkeypatch.setattr(publisher, '_connect', lambda u, p: connect(TARGET, u, p))
+        monkeypatch.setattr(publisher, 'connect', lambda u, p: connect(publisher.DATABASE, u, p))
+        with closing(connect(TARGET, OWNER, '')) as target, target, target.cursor() as cur:
+            for name in publisher.READ:
+                relation = sql.Identifier(name)
+                cur.execute(sql.SQL('CREATE TABLE {} (id serial PRIMARY KEY)').format(relation))
+                cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(relation))
+        with closing(connect(publisher.DATABASE, OWNER, '')) as source, source, source.cursor() as cur:
+            cur.execute('CREATE SCHEMA candidate')
+            cur.execute('CREATE TABLE candidate.schema_installation (singleton boolean, digest text)')
+            cur.execute('INSERT INTO candidate.schema_installation VALUES(true,%s)', (schema_digest(schema_scripts()),))
+        publisher.install('', 'test-private-publisher')
+        with closing(connect(TARGET, publisher.PUBLISHER, 'test-private-publisher')) as target:
+            with target, target.cursor() as cur:
+                cur.execute('INSERT INTO dashboard_snapshots DEFAULT VALUES RETURNING id')
+                assert cur.fetchone() == (1,)
+                cur.execute('UPDATE dashboard_snapshots SET id=2 WHERE id=1')
+                assert cur.rowcount == 1
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), target, target.cursor() as cur:
+                cur.execute('INSERT INTO game_logs DEFAULT VALUES')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), target, target.cursor() as cur:
+                cur.execute('DELETE FROM dashboard_snapshots')
+        with closing(connect(publisher.DATABASE, publisher.PUBLISHER, 'test-private-publisher')) as source:
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), source, source.cursor() as cur:
+                cur.execute('UPDATE candidate.schema_installation SET digest=NULL')
+
+
+def test_current_board_requires_exact_workload_cohort_and_dated_membership():
+    from types import SimpleNamespace
+    from models.pitcher import Pitcher
+    from sync_v3.staging_product_delivery import verify_board_rosters
+
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://'
+    db.init_app(app)
+    with app.app_context():
+        Pitcher.__table__.create(db.engine)
+        db.session.add_all([Pitcher(id=7, mlb_id=547973, full_name='Aroldis Chapman'),
+                            Pitcher(id=8, mlb_id=523260, full_name='Joe Kelly')])
+        db.session.flush()
+        club = dict(default_pitcher_ids=[7])
+        snapshot = SimpleNamespace(payload=dict(trusted_team_boards=dict(by_team_id={'111': club})))
+        binding = dict(product_day='2026-11-25', active_pitcher_mlb_ids={'111': [547973]},
+                       reviewed_board_mlb_ids={'111': [547973]})
+        verify_board_rosters(snapshot, binding)
+        club['default_pitcher_ids'] = [7, 8]
+        with pytest.raises(ValueError, match='outside the official active roster'):
+            verify_board_rosters(snapshot, binding)
+        for ids in ([], [7, 7]):
+            club['default_pitcher_ids'] = ids
+            with pytest.raises(ValueError, match='differs from the qualified official workload'):
+                verify_board_rosters(snapshot, binding)
+
+
+def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, monkeypatch):
+    import psycopg2
+    from psycopg2 import sql
+    from sync_v3 import staging_projector as projector, staging_publisher as publisher
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            cur.execute(sql.SQL('CREATE DATABASE {} OWNER {}').format(sql.Identifier(TARGET), sql.Identifier(OWNER)))
+            cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(TARGET)))
+
+        def connect(user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=TARGET, user=user, password=password)
+
+        monkeypatch.setattr(projector, '_connect', connect)
+        monkeypatch.setattr(publisher, '_connect', connect)
+        with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+            for table in projector.READ | {'dashboard_snapshots'}:
+                name = sql.Identifier(table)
+                primary_key = sql.SQL('game_pk integer') if table == 'slate_games' else sql.SQL('id serial')
+                cur.execute(sql.SQL('CREATE TABLE {} ({} PRIMARY KEY, source text, job_name text, '
+                                    'status text, stage text, published_dashboard_snapshot_id integer)')
+                            .format(name, primary_key))
+                cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(name))
+        projector.install('', 'local-test-password')
+        with closing(connect(projector.PROJECTOR, 'local-test-password')) as runtime:
+            with runtime, runtime.cursor() as cur:
+                cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
+                            "VALUES ('sync_v3_staging','sync_v3_board_review_111','success','reviewed')")
+                cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
+                            "VALUES ('sync_v3_staging','sync_v3_roster_reconciliation','success','verified_roster_observations')")
+            for statement in ("SELECT setval('pitchers_id_seq', 300)",
+                              "INSERT INTO sync_runs(source,job_name,status,stage) "
+                              "VALUES ('sync_v3_staging','daily_sync','success','reviewed')",
+                              "UPDATE sync_runs SET published_dashboard_snapshot_id=1",
+                              "INSERT INTO dashboard_snapshots DEFAULT VALUES"):
+                with pytest.raises(psycopg2.errors.InsufficientPrivilege), runtime, runtime.cursor() as cur:
+                    cur.execute(statement)
+
+
+def test_projector_process_receives_only_its_two_required_logins(monkeypatch):
+    from sync_v3.render_staging import runtime_environment
+    for key in ('STAGING_PROJECTOR_PASSWORD', 'STAGING_PRODUCT_PUBLISHER_PASSWORD', 'STAGING_OWNER_DSN',
+                'STAGING_WORKER_PASSWORD', 'DATABASE_URL'):
+        monkeypatch.setenv(key, 'test')
+    env = runtime_environment('STAGING_WORKER_PASSWORD', 'STAGING_PROJECTOR_PASSWORD')
+    assert set(env) & {'STAGING_OWNER_DSN','DATABASE_URL','STAGING_PRODUCT_PUBLISHER_PASSWORD'} == set()
+    assert env['AUTO_SYNC'] == 'false' and env['STAGING_PROJECTOR_PASSWORD'] == env['STAGING_WORKER_PASSWORD'] == 'test'
+
+
+def test_resumed_pitching_lines_require_every_pitch_in_one_official_session():
+    from sync_v3.resumed_appearances import session_dates
+    original = dict(gamePk=824912, officialDate='2026-06-16', resumeGameDate='2026-06-17',
+                    gameDate='2026-06-16T23:15:00Z', resumeDate='2026-06-17T18:00:00Z',
+                    venue={'id': 4705}, teams={k:{'team':{'id':v}} for k,v in [('away',1),('home',2)]})
+    resumed = dict(original, gameDate=original['resumeDate'], resumedFrom=original['gameDate'],
+                   resumedFromDate=original['officialDate'])
+    def plate_appearance(pitcher, stamp):
+        return dict(about={'isComplete':True}, matchup={'pitcher':{'id':pitcher}},
+                    playEvents=[dict(isPitch=True, startTime=stamp)])
+    plays = [plate_appearance(1, '2026-06-17T00:31:00Z'), plate_appearance(2, '2026-06-17T19:24:58Z')]
+    feed = dict(gamePk=824912, gameData=dict(datetime=dict(officialDate='2026-06-16',resumeDate='2026-06-17'),
+                teams={'away':{'id':1},'home':{'id':2}}, venue=dict(id=4705,timeZone={'id':'America/New_York'})),
+                liveData={'plays':{'allPlays':plays}})
+    lines = [dict(pitcher_mlb_id=i,pitches_thrown=1) for i in [1,2]]
+    assert session_dates(original,resumed,feed,lines) == {1:'2026-06-16',2:'2026-06-17'}
+    lines[0]['pitches_thrown'] = 2
+    with pytest.raises(ValueError, match='counts'):
+        session_dates(original,resumed,feed,lines)
+    plays.append(plate_appearance(1, '2026-06-17T19:55:00Z'))
+    with pytest.raises(ValueError, match='dates or counts'):
+        session_dates(original,resumed,feed,lines)

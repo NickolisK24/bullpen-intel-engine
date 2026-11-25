@@ -85,9 +85,9 @@ def test_final_handoff_refuses_unresolved_or_nonconverging_plans(monkeypatch, de
     box = {'gamePk': 12345}
     monkeypatch.setattr(handoff, 'replay', lambda cur, source: SimpleNamespace(body=box))
 
-    def process(game, *, schedule_date, sync_run_id, boxscore, plan_only, force):
+    def process(game, *, schedule_date, sync_run_id, boxscore, plan_only, force, require_official_pitching_credit):
         calls.append(plan_only)
-        assert boxscore is box and sync_run_id == 7 and force
+        assert boxscore is box and sync_run_id == 7 and force and require_official_pitching_credit
         return dict(incomplete_reason=None, processing_status=sync.POSTGAME_MARKER_STATUS_FULLY_PROCESSED,
                     reconciliation_summary=dict(rows_planned=2, rows_blocked=0,
                         pitcher_identity_unchanged=1 if defect == 'identity_changed' else 2,

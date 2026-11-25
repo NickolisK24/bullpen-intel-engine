@@ -110,7 +110,7 @@ def _reconcile_confirmed_finals(cur, finals, represented, run_id):
         def process(plan_only):
             return process_completed_game_for_postgame_refresh(
                 game, schedule_date=represented, sync_run_id=run_id, boxscore=box,
-                plan_only=plan_only, force=True,
+                plan_only=plan_only, force=True, require_official_pitching_credit=True,
             )
 
         plan = process(True)

@@ -40,17 +40,28 @@ def workload_lines(final_lines):
                 yield dict(line, workload_class=classification)
 
 
-def _game_workload(cur, game, day, schedule_source):
+def _game_workload(cur, game, day, schedule_source, *, resolve_sessions=False):
     status = classify_status(game['status'])
     if status.state in ('postponed', 'cancelled'):
         return None, None
     # MLB can list the same final on its original date and its resumption date.
     # Its one boxscore combines both sessions. A UTC timestamp alone cannot
     # establish the baseball date of an individual appearance.
+    session_inputs = None
     for timestamp, baseball_date in (('resumeDate', 'resumeGameDate'), ('resumedFrom', 'resumedFromDate')):
         represented = game.get(baseball_date)
         if (game.get(timestamp) or represented) and represented != day.isoformat():
-            return None, 'resumed_game_workload_dates_unresolved'
+            if not resolve_sessions or timestamp != 'resumeDate' or not represented or game['officialDate'] != str(day):
+                return None, 'resumed_game_workload_dates_unresolved'
+            from sync_v3.evidence import latest_qualified_source
+            second = latest_qualified_source(cur, '/schedule', calendar_requests(date.fromisoformat(represented))[0].params())
+            feed = latest_qualified_source(cur, f"/api/v1.1/game/{game['gamePk']}/feed/live", {})
+            if not second or not feed:
+                return None, 'resumed_game_workload_dates_unresolved'
+            matches = [g for slate in replay(cur, second).body['dates'] for g in slate['games'] if g['gamePk'] == game['gamePk']]
+            if len(matches) != 1:
+                return None, 'resumed_game_workload_dates_unresolved'
+            session_inputs = matches[0], second, feed
     if not status.final_status or game['officialDate'] != day.isoformat():
         return None, 'regular_game_unresolved'
     pk = game['gamePk']
@@ -69,6 +80,12 @@ def _game_workload(cur, game, day, schedule_source):
     consult(cur, f'/game/{pk}/boxscore', {}, final[1] if final else None, final[2] if final else None)
     if not final or final[0] is None or final[3] != 'received' or final[4] is None or final[4] != final[5]:
         return None, 'missing_compatible_final'
+    if session_inputs:
+        from sync_v3.resumed_appearances import session_dates
+        resumed, second, feed = session_inputs
+        dates = session_dates(game, resumed, replay(cur, feed).body, final[0])
+        lines = [dict(row, workload_date=dates[row['pitcher_mlb_id']]) for row in final[0]]
+        return (lines, (final[1], final[2], second, feed)), None
     return (final[0], (final[1], final[2])), None
 
 
