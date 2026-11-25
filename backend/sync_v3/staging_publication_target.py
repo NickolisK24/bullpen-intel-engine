@@ -96,6 +96,18 @@ def project_played_schedule(worker_password):
         conn.execute(text('GRANT SELECT,INSERT,UPDATE ON scheduled_games,slate_games TO sync_v3_staging_schedule'))
         conn.execute(text('GRANT SELECT ON compatibility_write_events TO sync_v3_staging_schedule'))
         conn.execute(text('GRANT USAGE ON SEQUENCE scheduled_games_id_seq TO sync_v3_staging_schedule'))
+        for table in ('scheduled_games', 'slate_games', 'compatibility_write_events'):
+            operations = ('SELECT',) if table == 'compatibility_write_events' else ('SELECT', 'INSERT', 'UPDATE')
+            for operation in operations:
+                name = f'v3_staging_schedule_{operation.lower()}'
+                present = conn.execute(text('SELECT 1 FROM pg_policies WHERE schemaname=:schema '
+                                            'AND tablename=:table AND policyname=:name'),
+                                       dict(schema='public', table=table, name=name)).first()
+                if present is None:
+                    clauses = {'SELECT': 'USING (true)', 'INSERT': 'WITH CHECK (true)',
+                               'UPDATE': 'USING (true) WITH CHECK (true)'}
+                    conn.execute(text(f'CREATE POLICY {name} ON public.{table} FOR {operation} '
+                                      f'TO sync_v3_staging_schedule {clauses[operation]}'))
 
     for verify_only in (False, True):
         with db.session.begin():
