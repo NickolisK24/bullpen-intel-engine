@@ -424,3 +424,42 @@ def test_deployment_dispute_preserves_verified_arm_and_performance_population(tm
                 assert readiness['team_state'] and readiness['arms'][11101]['read']
                 group = active_group_performance(cur, 111, through)
                 assert group['reason'] is None and [m['player'] for m in group['members']] == [11101]
+
+
+def test_missing_eligibility_final_identifies_the_pitchers_dated_game(tmp_path):
+    from contextlib import closing
+    from sync_v3.discovery import pitcher_requests
+    from sync_v3.membership_usage import _eligibility_sample
+    from sync_v3.season_deployment import BaselineWithheld
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    cutoff = date.fromisoformat(fixture['baseball_date'])
+    latest_game = cutoff - timedelta(days=1)
+    fixture['pitcher_ids'] = [102]
+    stats = dict(gamesPitched=1, gamesStarted=0, outs=3, inningsPitched='1.0',
+                 saves=0, holds=0, saveOpportunities=0, gamesFinished=0)
+    # The retained schedule lists 12345 on the cutoff. The pitching log cites a different day.
+    for request in pitcher_requests(cutoff, [102]):
+        kind = request.params()['stats']
+        if kind == 'gameLog':
+            splits = [dict(sport={'id': 1}, player={'id': 102}, team={'id': 147}, stat=stats,
+                           game={'gamePk': 12345 - i}, gameType='R', season=str(cutoff.year),
+                           date=str(latest_game - timedelta(days=i))) for i in range(10)]
+        else:
+            splits = [dict(sport={'id': 1}, team={'id': 147},
+                           stat=dict(stats, gamesPitched=10, outs=30, inningsPitched='10.0'))]
+        group = dict(type={'displayName': kind}, group={'displayName': 'pitching'}, splits=splits)
+        fixture['responses'].append(dict(endpoint=request.endpoint, params=request.params(), body={'stats': [group]}))
+    path = tmp_path / 'dated-game.json'
+    path.write_text(json.dumps(fixture))
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        run_fixture(worker, path)
+        with worker, worker.cursor() as cur:
+            with pytest.raises(BaselineWithheld, match='eligibility_game_not_confirmed') as error:
+                _eligibility_sample(cur, 111, 102, cutoff, {}, set(), {}, roster_day=cutoff)
+            assert error.value.game_evidence == dict(game_pk=12345, game_date=str(latest_game),
+                                                     game_type='R', team_id=147, reason='missing_scoped_game')

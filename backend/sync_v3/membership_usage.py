@@ -88,7 +88,9 @@ def _eligibility_sample(cur, team, player, through, listed, rounds, final_cache,
                      if g['gamePk'] == pk and g['gameType'] == row['game_type']] if receipt else []
             final, reason = _game_workload(cur, games[0], day, receipt) if len(games) == 1 else (None, 'missing_scoped_game')
             if not final:
-                raise BaselineWithheld('eligibility_game_not_confirmed', game_evidence=dict(game_pk=pk, reason=reason))
+                raise BaselineWithheld('eligibility_game_not_confirmed', game_evidence=dict(
+                    game_pk=pk, game_date=day.isoformat(), game_type=row['game_type'],
+                    team_id=row['team'], reason=reason))
             final_cache[key] = final[0], (receipt, *final[1])
         lines, receipts = final_cache[key]
         line = check_pitcher_final(player, row, lines, for_membership=True)
