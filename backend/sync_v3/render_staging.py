@@ -98,7 +98,7 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
@@ -140,13 +140,13 @@ def bootstrap(password):
             result = project_eligibility_history(password, budget_seconds=180)
         print(json.dumps(dict(private_eligibility=result)), flush=True)
         return
-    if task in ('publish-generation', 'rollback-generation'):
+    if task in ('publish-generation', 'rollback-generation', 'inspect-publication-access'):
         from sync_v3.staging_product_delivery import exercise, exercise_rollback
         import resource
         started = monotonic()
         digest = os.environ['STAGING_PRODUCT_GENERATION']
-        if task == 'publish-generation':
-            report = exercise(binding['password'], password, digest)
+        if task != 'rollback-generation':
+            report = exercise(binding['password'], password, digest, inventory=task == 'inspect-publication-access')
         else:
             report = exercise_rollback(binding['password'], digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']))
         usage = resource.getrusage(resource.RUSAGE_SELF)

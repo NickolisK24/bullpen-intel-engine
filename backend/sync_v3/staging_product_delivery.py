@@ -58,6 +58,25 @@ def source_receipt(worker_password, digest):
                 official_slate=official_slate, source_count=count, first_source_at=first.isoformat(), last_source_at=last.isoformat())
 
 
+def observe_product_relations(access):
+    """Collect relation names and operations in the private product database without recording values."""
+    import re
+    from sqlalchemy import event
+    from utils.db import db
+
+    catalog = set(db.session.execute(text(
+        "SELECT relname FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m')"
+    )).scalars())
+    pattern = re.compile(r'\b(from|join|insert\s+into|update|delete\s+from)\s+(?:"?public"?\.)?"?([a-z0-9_]+)', re.I)
+    def record_relations(conn, cursor, statement, parameters, context, executemany):
+        for operation, table in pattern.findall(statement.lower()):
+            if table in catalog:
+                action = 'read' if operation in ('from', 'join') else operation.split()[0]
+                access.setdefault(action, set()).add(table)
+    event.listen(db.engine, 'before_cursor_execute', record_relations)
+    db.session.remove()
+
+
 def private_app(password, *, user=OWNER, read_only=False):
     from config import TestingConfig, config
 
@@ -174,7 +193,7 @@ def publish(binding, worker_password):
         return snapshot.id, True
 
 
-def exercise(password, worker_password, digest):
+def exercise(password, worker_password, digest, *, inventory=False):
     import re
     from datetime import datetime, timezone
     from freezegun import freeze_time
@@ -189,6 +208,10 @@ def exercise(password, worker_password, digest):
     verified_source_seconds = perf_counter()-started
     app = private_app(password)
     day = binding['availability_reference']
+    access = {}
+    if inventory:
+        with app.app_context():
+            observe_product_relations(access)
     with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
         # clock_gettime measures real time during the archived product clock.
         before_pointer = clock_gettime(CLOCK_MONOTONIC)
@@ -212,6 +235,7 @@ def exercise(password, worker_password, digest):
     verified_at = datetime.now(timezone.utc)
     latest = datetime.fromisoformat(binding['last_source_at'])
     return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id, promoted=promoted,
+                access={k:sorted(v) for k,v in access.items()} if inventory else None,
                 target_database_bytes=target_bytes, modeled_product_date=day, verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
                 latest_retained_source_to_private_delivery_seconds=(verified_at-latest).total_seconds(),
                 verified_source_seconds=verified_source_seconds, publication_seconds=after_pointer-before_pointer,
@@ -378,19 +402,9 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
 
     app = private_app(password, user=user, read_only=inventory or user != OWNER)
     with app.app_context():
-        relations = set()
+        access = {}
         if inventory:
-            import re
-            from sqlalchemy import event
-
-            catalog = set(db.session.execute(text(
-                "SELECT relname FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m')"
-            )).scalars())
-            pattern = re.compile(r'\b(?:from|join)\s+(?:"?public"?\.)?"?([a-z0-9_]+)', re.I)
-            def record_relations(conn, cursor, statement, parameters, context, executemany):
-                relations.update(catalog.intersection(pattern.findall(statement.lower())))
-            event.listen(db.engine, 'before_cursor_execute', record_relations)
-            db.session.remove()
+            observe_product_relations(access)
         snapshot = DashboardSnapshot.query.filter_by(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                                                      is_published=True).one()
         binding = snapshot.payload['v3_source_generation']
@@ -458,4 +472,4 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
         return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details','pitcher'],
                     team=team, pitcher_public_id=arm, pitcher_mlb_id=mlb, game_pk=game['game_pk'],
                     history_artifact=row['artifact']['public_id'], change_state=data['changes']['state'],
-                    read_relations=sorted(relations) if inventory else None)
+                    read_relations=sorted(access.get('read', ())) if inventory else None)
