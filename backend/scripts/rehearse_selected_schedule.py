@@ -71,7 +71,7 @@ def retained_makeups(observations):
     return pairs
 
 
-def reconcile_schedule(day, observation, *, verify_only=False, private_staging=False, makeups=None):
+def reconcile_schedule(day, observation, *, verify_only=False, private_staging=False, makeups=None, predecessor=None):
     target = db.session.execute(text(
         "SELECT current_database(), inet_server_addr(), current_setting('listen_addresses')"
     )).one()
@@ -126,7 +126,20 @@ def reconcile_schedule(day, observation, *, verify_only=False, private_staging=F
                 previous.add(pk)
     empty = not stored and not sides
     only_prior = previous and set(stored) == previous and {pk for pk, team in sides} == previous
-    if games and (empty or only_prior) and not verify_only:
+    changed = False
+    if predecessor is not None:
+        if verify_only or predecessor.retrieved_at >= observation.retrieved_at:
+            raise ValueError('Schedule correction requires an earlier retained observation')
+        # Accept a retry only when every target field already matches the successor.
+        exact = all(expected.keys() == actual.keys() and all(
+            all(getattr(actual[key], field) == value for field, value in fields.items())
+            for key, fields in expected.items()) for expected, actual in ((slate, stored), (teams, sides)))
+        if not exact:
+            reconcile_schedule(day, predecessor, verify_only=True, private_staging=private_staging, makeups=makeups)
+            if not stored.keys() <= slate.keys() or not sides.keys() <= teams.keys():
+                raise ValueError('Schedule correction requires separate authority for removed games or changed clubs')
+            changed = True
+    if games and (empty or only_prior or changed) and not verify_only:
         audit_since = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
         result = _ingest_games(games, source='v3_retained_schedule_rehearsal', commit=False,
                                synced_at=stamp, audit_since=audit_since, atomic=True)

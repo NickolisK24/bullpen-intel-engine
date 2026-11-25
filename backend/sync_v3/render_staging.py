@@ -46,7 +46,7 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
-    if task == 'prepare-dated-primary':
+    if task in ('prepare-dated-primary', 'project-competitive-schedules'):
         from sync_v3.primary_date import prepare
         today = datetime.now(ZoneInfo('America/New_York')).date()
         requested = os.environ.get('STAGING_PRIMARY_BASEBALL_DATE')
@@ -63,6 +63,12 @@ def bootstrap(password):
                 if acquisition_failed(acquisition):
                     raise ValueError('Current acquisition has unresolved failures')
             result = prepare(source, password, day, after_finals=phase == 'postgame')
+        if task == 'project-competitive-schedules' and result['ready'] and result['mode']=='competitive':
+            import subprocess
+            import sys
+            env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD')
+            env.update(STAGING_PRODUCT_GENERATION=result['generation'], STAGING_ARCHIVE_REPLAY=str(day < today))
+            subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'], env=env, check=True)
         print(json.dumps(dict(private_primary_date=result)), flush=True)
         return
     if task == 'run-current-offseason':
@@ -410,7 +416,7 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project', 'project-before-publish'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
     args = parser.parse_args()
     try:
         if args.operation in ('publish', 'rollback'):
@@ -432,6 +438,11 @@ if __name__ == '__main__':
                 result['cycle_started_at'] = started_at.isoformat()
                 result['invocation_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
+        elif args.operation == 'project-schedules':
+            from sync_v3.staging_projector import project_dated_schedules
+            result = project_dated_schedules(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
+                                             os.environ['STAGING_PRODUCT_GENERATION'], archive=os.environ['STAGING_ARCHIVE_REPLAY']=='True')
+            print(json.dumps(dict(private_scoped_schedule=result)), flush=True)
         elif args.operation in ('project', 'project-before-publish'):
             from sync_v3.staging_projector import recover_boards
             result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],

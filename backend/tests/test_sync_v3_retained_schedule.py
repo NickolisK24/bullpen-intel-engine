@@ -61,6 +61,15 @@ def test_retained_schedule_preserves_source_time_and_refuses_conflicting_replay(
                 assert SlateGame.query.one().last_synced == acquired.replace(tzinfo=None)
                 assert db.session.execute(text('SELECT count(*) FROM scheduled_games')).scalar_one() == 2
                 assert db.session.execute(text('SELECT count(*) FROM dashboard_snapshots')).scalar_one() == 0
+            final_body = deepcopy(body)
+            final_body['dates'][0]['games'][0]['status'] = dict(statusCode='F', detailedState='Final', abstractGameState='Final')
+            final = SimpleNamespace(body=final_body, retrieved_at=acquired + timedelta(hours=3))
+            with db.session.begin():
+                reconcile_schedule(day, final, predecessor=observation)
+                reconcile_schedule(day, final, predecessor=observation)
+                assert SlateGame.query.one().normalized_state == SlateGame.STATE_COMPLETED
+            with pytest.raises(ValueError), db.session.begin():
+                reconcile_schedule(day, observation, predecessor=final)
 
 
 def test_makeup_requires_matching_game_clubs_and_reciprocal_mlb_times():
