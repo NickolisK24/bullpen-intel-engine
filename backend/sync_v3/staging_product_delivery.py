@@ -1,5 +1,5 @@
 """Publish a reviewed generation only inside the private product rehearsal database."""
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import date
 import json
 import os
@@ -27,6 +27,52 @@ def open_generation_source(password, user):
     return source
 
 
+def current_offseason_inputs(cur, through):
+    """Bind an offseason edition to today's qualified calendar, transactions and roster receipts."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3 import evidence
+    from sync_v3.competition_calendar import calendar_games, competition_status
+    from sync_v3.discovery import calendar_requests, competition_calendar_request, roster_requests
+    from sync_v3.generation import _bind_transaction_revisions, _slate, generation_date_decision
+
+    day = datetime.now(ZoneInfo('America/New_York')).date()
+    competition = competition_status(cur, day)
+    if (len(competition['clubs']) != 30 or competition['missing_decisions']
+            or any(c['status'] != 'season_complete' for c in competition['clubs'].values())):
+        raise ValueError('Incomplete official offseason competition evidence')
+    season = competition_calendar_request(day.year)
+    games = calendar_games(season.params(), evidence.replay(cur, competition['calendar_source']).body)
+    latest = max(d for d, row, _ in games.values() if d <= day and row['status_state'] == 'final')
+    if latest != through or generation_date_decision(cur, through, day)['status'] != 'aligned':
+        raise ValueError('Offseason candidate differs from the last official final or calendar coverage')
+    slate, _ = _slate(cur, day)
+    if slate['reason'] or slate['games'] != []:
+        raise ValueError('Incomplete or competitive current slate for offseason edition')
+    requests = [season, *calendar_requests(day), *roster_requests(day, MLB_TEAM_IDS)]
+    ids = []
+    for request in requests:
+        oid = evidence.latest_qualified_source(cur, request.endpoint, request.params())
+        if oid is None:
+            raise ValueError(f'Missing qualified current receipt for {request.endpoint}')
+        ids.append(oid)
+        if request.endpoint == '/transactions':
+            observation = evidence.replay(cur, oid)
+            receipt = dict(reported_records=len(observation.body['transactions']))
+            _bind_transaction_revisions(cur, oid, receipt)
+            if receipt['reported_records'] and not receipt['confirmed_transactions']:
+                raise ValueError('Current transactions lack canonical confirmation')
+    return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)))
+
+
+def product_clock(binding):
+    if 'product_day' in binding:
+        return nullcontext()
+    from freezegun import freeze_time
+    return freeze_time(f"{binding['availability_reference']} 12:00:00", real_asyncio=True)
+
+
 def source_receipt(worker_password, digest, user='sync_v3_worker'):
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.product_reads import _league
@@ -36,15 +82,20 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             league = _league(cur, None, digest, compare_latest=True)
             review = league['selection_review']
-            if review['status'] != 'core_comparison_complete' or review['latest_inventory_digest'] != digest:
+            offseason = review['status'] == 'season_complete_withholding'
+            if (review['status'] not in ('core_comparison_complete', 'season_complete_withholding')
+                    or review['latest_inventory_digest'] != digest):
                 raise ValueError(f'Generation review withheld: {review["status"]} {review["reason_codes"]}')
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
-                    or league['data_through'] != str(PLAYED_DAY) or league['selection_revision'] is not None):
+                    or (not offseason and league['data_through'] != str(PLAYED_DAY)) or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
             cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source'
                            FROM candidate.generations WHERE digest=%s""", (digest,))
             official_slate, transactions = cur.fetchone()
-            if (not transactions or transactions['outcome'] != 'received' or transactions['reason']
+            extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through'])) if offseason else {}
+            if offseason and official_slate != []:
+                raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
+            if not offseason and (not transactions or transactions['outcome'] != 'received' or transactions['reason']
                     or not transactions.get('revisions_digest')):
                 raise ValueError('Archived product edition lacks a qualified transaction receipt')
             teams = {}
@@ -52,7 +103,9 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                 team = row['team_id']
                 citation = league['citations'][team]['readiness']
                 state = row['team_state']
-                if team in teams or not citation or not state['available'] or state['data_through'] != str(PLAYED_DAY):
+                qualified = (state['available'] is False and state['outcome'] == 'season_complete'
+                             and state['public_state'] is None) if offseason else state['available'] is True
+                if team in teams or not citation or not qualified or state['data_through'] != league['data_through']:
                     raise ValueError(f'Unqualified or duplicate Team State for {team}')
                 teams[team] = dict(state=state, readiness=citation)
             if teams.keys() != set(MLB_TEAM_IDS):
@@ -60,13 +113,14 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             cur.execute("""WITH sources AS (
                 SELECT source AS id FROM candidate.generation_sources WHERE generation=%s UNION
                 SELECT s.source_id FROM candidate.generation_inputs i
-                JOIN candidate.workload_history_sources s ON s.snapshot=i.snapshot WHERE i.generation=%s)
+                JOIN candidate.workload_history_sources s ON s.snapshot=i.snapshot WHERE i.generation=%s
+                UNION SELECT unnest(%s::bigint[]))
                 SELECT count(*), min(f.received_at), max(f.received_at) FROM sources JOIN candidate.fetches f USING(id)""",
-                        (digest, digest))
+                        (digest, digest, extra.get('current_source_ids', [])))
             count, first, last = cur.fetchone()
             if not count or not first or not last:
                 raise ValueError('Missing retained generation provenance')
-    return dict(contract='private_source_generation_v1', generation=digest, data_through=str(PLAYED_DAY),
+    return dict(contract='private_source_generation_v1', generation=digest, data_through=league['data_through'], **extra,
                 availability_reference=league['availability_reference'], teams={str(k):v for k,v in teams.items()},
                 official_slate=official_slate, source_count=count, first_source_at=first.isoformat(), last_source_at=last.isoformat())
 
@@ -93,6 +147,10 @@ def observe_product_relations(access):
 def private_app(password, *, user=OWNER, read_only=False):
     from config import TestingConfig, config
 
+    from sync_v3.staging_reader import READER
+    from sync_v3.staging_publisher import PUBLISHER
+    if user not in (OWNER, READER, PUBLISHER):
+        raise ValueError('Unexpected private product database login')
     if os.environ.get('AUTO_SYNC', '').lower() != 'false' or 'app' in sys.modules:
         raise ValueError('Private product rehearsal requires a fresh process with the scheduler disabled')
 
@@ -162,10 +220,11 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         prior = DashboardSnapshot.query.filter_by(snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                                                   is_published=True).one_or_none()
         if prior and (prior.payload.get('v3_source_generation') or {}).get('generation') == binding['generation']:
-            if prior.payload['v3_source_generation'] != binding:
+            if prior.payload['v3_source_generation'] == binding:
+                verify_frozen_states(prior, binding)
+                return prior.id, False
+            if 'product_day' not in binding:
                 raise ValueError('Generation replay has a different source receipt')
-            verify_frozen_states(prior, binding)
-            return prior.id, False
         if prior and prior.source != 'v3_private_publication':
             raise ValueError('Private predecessor belongs to another publisher')
         def utc(value):
@@ -198,8 +257,9 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
             raise
         if observe_committed_publication_proof(snapshot)['status'] != 'proof_valid':
             raise ValueError('Incomplete private Team State proof')
-        edition, _ = generate_tonight_v1_for_snapshot(snapshot, commit=False)
-        verify_tonight_edition(edition.payload, (snapshot.id, run.id), binding, binding['availability_reference'])
+        day = binding.get('product_day', binding['availability_reference'])
+        edition, _ = generate_tonight_v1_for_snapshot(snapshot, reference_date=date.fromisoformat(day), commit=False)
+        verify_tonight_edition(edition.payload, (snapshot.id, run.id), binding, day)
         verify_slate(edition.payload['games'], binding)
         return snapshot.id, True
 
@@ -207,7 +267,6 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
 def exercise(password, worker_password, digest, *, inventory=False, user=OWNER, source_user='sync_v3_worker'):
     import re
     from datetime import datetime, timezone
-    from freezegun import freeze_time
     from models.dashboard_snapshot import DashboardSnapshot
     from services import dashboard_snapshot
     from utils.db import db
@@ -218,12 +277,11 @@ def exercise(password, worker_password, digest, *, inventory=False, user=OWNER, 
     binding = source_receipt(worker_password, digest, source_user)
     verified_source_seconds = perf_counter()-started
     app = private_app(password, user=user)
-    day = binding['availability_reference']
     access = {}
     if inventory:
         with app.app_context():
             observe_product_relations(access)
-    with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
+    with app.app_context(), product_clock(binding):
         # clock_gettime measures real time during the archived product clock.
         before_pointer = clock_gettime(CLOCK_MONOTONIC)
         snapshot_id, promoted = publish(binding, worker_password, user=user, source_user=source_user)
@@ -247,7 +305,7 @@ def exercise(password, worker_password, digest, *, inventory=False, user=OWNER, 
     latest = datetime.fromisoformat(binding['last_source_at'])
     return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id, promoted=promoted,
                 access={k:sorted(v) for k,v in access.items()} if inventory else None,
-                target_database_bytes=target_bytes, modeled_product_date=day, verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
+                target_database_bytes=target_bytes, modeled_product_date=binding.get('product_day', binding['availability_reference']), verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
                 latest_retained_source_to_private_delivery_seconds=(verified_at-latest).total_seconds(),
                 verified_source_seconds=verified_source_seconds, publication_seconds=after_pointer-before_pointer,
                 postcommit_seconds=before_http-after_pointer, http_verification_seconds=after_http-before_http,
@@ -260,11 +318,12 @@ def verify_http(app, binding, snapshot_id, run_id):
     from models.share_artifact import ShareArtifact
     from utils.db import db
 
-    day = binding['availability_reference']
+    day = binding.get('product_day', binding['availability_reference'])
     rows = ShareArtifact.query.filter_by(artifact_type='team_state', source_snapshot_id=snapshot_id,
                                          lifecycle_state='published').all()
     shares = {row.team_id: row.public_id for row in rows}
-    if len(rows) != 30 or set(map(str, shares)) != binding['teams'].keys() or len(set(shares.values())) != 30:
+    eligible = {team for team, member in binding['teams'].items() if member['state']['available']}
+    if len(rows) != len(eligible) or set(map(str, shares)) != eligible or len(set(shares.values())) != len(eligible):
         raise ValueError('Incomplete private Team State share inventory')
     db.session.remove()
     paths = [f'/api/share-artifacts/{identifier}' for identifier in shares.values()]
@@ -377,7 +436,6 @@ def restore_predecessor(digest, snapshot_id, *, user=OWNER):
 
 
 def exercise_rollback(password, digest, snapshot_id, *, user=OWNER):
-    from freezegun import freeze_time
     from models.dashboard_snapshot import DashboardSnapshot
     from utils.db import db
 
@@ -387,7 +445,7 @@ def exercise_rollback(password, digest, snapshot_id, *, user=OWNER):
         if predecessor:
             previous = db.session.get(DashboardSnapshot, predecessor)
             binding = previous.payload['v3_source_generation']
-            with freeze_time(f"{binding['availability_reference']} 12:00:00", real_asyncio=True):
+            with product_clock(binding):
                 counts = verify_http(app, binding, predecessor, previous.sync_run_id)
         else:
             league, tonight = http_delivery(app)
