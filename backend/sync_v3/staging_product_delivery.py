@@ -82,7 +82,36 @@ def private_app(password):
     return app
 
 
-def publish(binding):
+def report_state_differences(snapshot, binding, worker_password):
+    from services.team_state_vnext_production_proof import load_durable_proof
+    from sync_v3.intelligence_history import DOMAINS
+    from sync_v3.current_worker import verify_target
+
+    frozen = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
+    mismatches = [team for team, member in binding['teams'].items() if frozen[team]['value'] != member['state']]
+    print(json.dumps(dict(private_state_mismatches=mismatches)), flush=True)
+    inputs = load_durable_proof(snapshot.id).proof['snapshot_team_state_generation_inputs']
+    with closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        with source, source.cursor() as cur:
+            cur.execute('SET TRANSACTION READ ONLY')
+            for team in mismatches:
+                cur.execute("""SELECT h.facts FROM candidate.generation_inputs i
+                    JOIN candidate.workload_history h ON h.id=i.snapshot
+                    WHERE i.generation=%s AND h.mlb_id=%s AND h.methodology=%s""",
+                            (binding['generation'], int(team), DOMAINS['readiness'][1]))
+                facts, = cur.fetchone()
+                observed = inputs[team]['arm_reads'].get('records', [])
+                candidate = {k: (v.get('read') or {}).get('availability', {}).get('availability_status')
+                             for k,v in facts['arms'].items()}
+                product = {arm['mlb_id']: arm['public_read']['key'] for arm in observed}
+                print(json.dumps(dict(private_team_difference=dict(
+                    team=team, candidate_state=binding['teams'][team]['state']['public_state'],
+                    product_state=frozen[team]['value']['public_state'],
+                    candidate_arms=candidate, product_arms=product, rule=facts.get('rule')))), flush=True)
+
+
+def publish(binding, worker_password):
     from datetime import datetime, timezone
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
@@ -129,7 +158,11 @@ def publish(binding):
             raise
         if not snapshot.is_published:
             raise ValueError(f'Private trusted publication withheld: {snapshot.error_message}')
-        verify_frozen_states(snapshot, binding)
+        try:
+            verify_frozen_states(snapshot, binding)
+        except ValueError:
+            report_state_differences(snapshot, binding, worker_password)
+            raise
         if observe_committed_publication_proof(snapshot)['status'] != 'proof_valid':
             raise ValueError('Incomplete private Team State proof')
         edition, _ = generate_tonight_v1_for_snapshot(snapshot, commit=False)
@@ -156,7 +189,7 @@ def exercise(password, worker_password, digest):
     with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
         # clock_gettime measures real time during the archived product clock.
         before_pointer = clock_gettime(CLOCK_MONOTONIC)
-        snapshot_id, promoted = publish(binding)
+        snapshot_id, promoted = publish(binding, worker_password)
         after_pointer = clock_gettime(CLOCK_MONOTONIC)
         try:
             snapshot = db.session.get(DashboardSnapshot, snapshot_id)
