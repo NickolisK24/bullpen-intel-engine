@@ -47,12 +47,16 @@ def bootstrap(password):
         raise ValueError('Render owner binding differs from the approved staging instance')
     if task in ('publish-generation', 'rollback-generation'):
         from sync_v3.staging_product_delivery import exercise, exercise_rollback
+        import resource
+        started = monotonic()
         digest = os.environ['STAGING_PRODUCT_GENERATION']
         if task == 'publish-generation':
             report = exercise(binding['password'], password, digest)
         else:
             report = exercise_rollback(binding['password'], digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']))
-        print(json.dumps(dict(private_product=report)), flush=True)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps(dict(private_product=report, elapsed_seconds=monotonic()-started,
+                              peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
     with closing(connect(OWNER, binding['password'])) as owner:
         with owner.cursor() as cur:
