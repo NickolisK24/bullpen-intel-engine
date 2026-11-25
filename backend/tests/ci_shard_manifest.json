@@ -814,7 +814,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 538.65,
+      "measured_seconds": 538.652,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -925,6 +925,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_burgos_roster_history.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_canonical_season_bullpen_aggregation_workflow.py",
           "measured_seconds": 0.0
         },
@@ -965,6 +969,18 @@
           "measured_seconds": 0.6
         },
         {
+          "path": "tests/test_deployment_profile_delta_substrate.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_distribution_delivery.py",
+          "measured_seconds": 2.5
+        },
+        {
+          "path": "tests/test_distribution_delivery_workflow.py",
+          "measured_seconds": 0.05
+        },
+        {
           "path": "tests/test_editorial_voice_inventory_e2a.py",
           "measured_seconds": 0.001
         },
@@ -987,6 +1003,10 @@
         {
           "path": "tests/test_fatigue.py",
           "measured_seconds": 0.012
+        },
+        {
+          "path": "tests/test_fenced_writer_contracts.py",
+          "measured_seconds": 25.0
         },
         {
           "path": "tests/test_freeze_policy.py",
@@ -1061,28 +1081,36 @@
           "measured_seconds": 0.0
         },
         {
-          "path": "tests/test_intraday_transaction_roster_repair.py",
-          "measured_seconds": 0.8
-        },
-        {
           "path": "tests/test_intraday_schedule_repair.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_intraday_transaction_roster_repair.py",
+          "measured_seconds": 0.8
         },
         {
           "path": "tests/test_intraday_workflow.py",
           "measured_seconds": 0.343
         },
         {
-          "path": "tests/test_league_team_state_listing.py",
-          "measured_seconds": 0.97
-        },
-        {
           "path": "tests/test_league_team_state_artifact_recovery.py",
           "measured_seconds": 0.8
         },
         {
+          "path": "tests/test_league_team_state_listing.py",
+          "measured_seconds": 0.97
+        },
+        {
           "path": "tests/test_legacy_read_reconciliation.py",
           "measured_seconds": 3.06
+        },
+        {
+          "path": "tests/test_mlb_roster_authority_universe.py",
+          "measured_seconds": 3.0
+        },
+        {
+          "path": "tests/test_murphy_transaction_recovery.py",
+          "measured_seconds": 3.0
         },
         {
           "path": "tests/test_narrative_context_service.py",
@@ -1119,10 +1147,6 @@
         {
           "path": "tests/test_performance_intelligence.py",
           "measured_seconds": 60.417
-        },
-        {
-          "path": "tests/test_public_team_performance.py",
-          "measured_seconds": 0.0
         },
         {
           "path": "tests/test_phantom_game_log_reconciliation.py",
@@ -1181,12 +1205,32 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_public_team_performance.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_public_team_relief_work.py",
           "measured_seconds": 12.01
         },
         {
+          "path": "tests/test_publication_candidate_reference_dates.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_publication_criticality.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_publication_preparation_barrier.py",
+          "measured_seconds": 7.0
+        },
+        {
+          "path": "tests/test_publication_reconciliation.py",
+          "measured_seconds": 4.0
+        },
+        {
+          "path": "tests/test_publication_truth_certification_workflow_contract.py",
+          "measured_seconds": 1.1
         },
         {
           "path": "tests/test_qa_reconciliation_scenarios.py",
@@ -1229,6 +1273,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_role_movement.py",
+          "measured_seconds": 1.0
+        },
+        {
           "path": "tests/test_role_stability_context.py",
           "measured_seconds": 0.0
         },
@@ -1245,6 +1293,10 @@
           "measured_seconds": 6.607
         },
         {
+          "path": "tests/test_roster_snapshot_team_precedence.py",
+          "measured_seconds": 2.0
+        },
+        {
           "path": "tests/test_roster_status.py",
           "measured_seconds": 0.0
         },
@@ -1255,26 +1307,6 @@
         {
           "path": "tests/test_roster_status_sync.py",
           "measured_seconds": 2.435
-        },
-        {
-          "path": "tests/test_roster_snapshot_team_precedence.py",
-          "measured_seconds": 2.0
-        },
-        {
-          "path": "tests/test_murphy_transaction_recovery.py",
-          "measured_seconds": 3.0
-        },
-        {
-          "path": "tests/test_burgos_roster_history.py",
-          "measured_seconds": 0.0
-        },
-        {
-          "path": "tests/test_fenced_writer_contracts.py",
-          "measured_seconds": 25.0
-        },
-        {
-          "path": "tests/test_publication_reconciliation.py",
-          "measured_seconds": 4.0
         },
         {
           "path": "tests/test_rotation_game_shape_integration.py",
@@ -1353,8 +1385,20 @@
           "measured_seconds": 10.464
         },
         {
-          "path": "tests/test_team_board_v2.py",
-          "measured_seconds": 0.67
+          "path": "tests/test_sync_v3_acquisition_receipt.py",
+          "measured_seconds": 2.15
+        },
+        {
+          "path": "tests/test_sync_v3_primary_date.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_team_board_delta_substrate.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_team_board_public_deployment_context.py",
+          "measured_seconds": 0.1
         },
         {
           "path": "tests/test_team_board_recent_relief_work.py",
@@ -1365,16 +1409,8 @@
           "measured_seconds": 0.0
         },
         {
-          "path": "tests/test_team_board_public_deployment_context.py",
-          "measured_seconds": 0.1
-        },
-        {
-          "path": "tests/test_team_board_delta_substrate.py",
-          "measured_seconds": 0.0
-        },
-        {
-          "path": "tests/test_deployment_profile_delta_substrate.py",
-          "measured_seconds": 0.0
+          "path": "tests/test_team_board_v2.py",
+          "measured_seconds": 0.67
         },
         {
           "path": "tests/test_team_bullpen_shape.py",
@@ -1409,12 +1445,12 @@
           "measured_seconds": 32.102
         },
         {
-          "path": "tests/test_team_state_history_export.py",
-          "measured_seconds": 0.793
-        },
-        {
           "path": "tests/test_team_state_history.py",
           "measured_seconds": 0.82
+        },
+        {
+          "path": "tests/test_team_state_history_export.py",
+          "measured_seconds": 0.793
         },
         {
           "path": "tests/test_team_state_history_export_workflow.py",
@@ -1445,44 +1481,12 @@
           "measured_seconds": 0.004
         },
         {
-          "path": "tests/test_distribution_delivery.py",
-          "measured_seconds": 2.5
-        },
-        {
-          "path": "tests/test_distribution_delivery_workflow.py",
-          "measured_seconds": 0.05
-        },
-        {
           "path": "tests/test_v4_availability_explanation_integration.py",
           "measured_seconds": 0.021
         },
         {
           "path": "tests/test_workload_concentration.py",
           "measured_seconds": 0.0
-        },
-        {
-          "path": "tests/test_mlb_roster_authority_universe.py",
-          "measured_seconds": 3.0
-        },
-        {
-          "path": "tests/test_publication_preparation_barrier.py",
-          "measured_seconds": 7.0
-        },
-        {
-          "path": "tests/test_role_movement.py",
-          "measured_seconds": 1.0
-        },
-        {
-          "path": "tests/test_publication_truth_certification_workflow_contract.py",
-          "measured_seconds": 1.1
-        },
-        {
-          "path": "tests/test_publication_candidate_reference_dates.py",
-          "measured_seconds": 1.0
-        },
-        {
-          "path": "tests/test_sync_v3_acquisition_receipt.py",
-          "measured_seconds": 2.15
         }
       ]
     },
