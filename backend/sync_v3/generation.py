@@ -361,13 +361,17 @@ def build_batch(connection, through, limit, *, as_of=None, deadline=None):
     while len(processed) < len(selected):
         offset = len(processed)
         subject, entity, method = selected[offset]
-        if subject == 'pitcher' and method not in changes_for:
+        if subject == 'pitcher':
+            changes = method in changes_for
             group = []
             for scope in selected[offset:offset+12]:
-                if scope[0] != 'pitcher' or scope[2] in changes_for:
+                if scope[0] != 'pitcher' or (scope[2] in changes_for) != changes:
                     break
                 group.append(scope)
-            count = _build_pitcher_group(connection, through, group, domain_for, deadline)
+            if changes:
+                count = _transaction(connection, _build_pitcher_changes, through, group, changes_for, deadline)
+            else:
+                count = _build_pitcher_group(connection, through, group, domain_for, deadline)
             processed.extend(group[:count])
             if deadline is not None and monotonic() >= deadline:
                 break
@@ -380,6 +384,17 @@ def build_batch(connection, through, limit, *, as_of=None, deadline=None):
         if deadline is not None and monotonic() >= deadline:
             break
     return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=processed)
+
+
+def _build_pitcher_changes(cur, through, group, domains, deadline):
+    from sync_v3.workload import share_league_calendar
+
+    with share_league_calendar(cur):
+        for count, (subject, player, method) in enumerate(group, start=1):
+            _build_change_set(cur, domains[method], subject, player, through)
+            if deadline is not None and monotonic() >= deadline:
+                return count
+    return len(group)
 
 
 def _build_pitcher_group(connection, through, group, domains, deadline):

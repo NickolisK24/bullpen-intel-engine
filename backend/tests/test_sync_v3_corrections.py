@@ -2341,7 +2341,8 @@ def test_historical_http_reader_cannot_write_or_select_a_publication():
 def test_grouped_pitcher_history_reuses_calendar_and_preserves_individual_provenance(monkeypatch):
     from contextlib import closing
     from sync_v3 import workload
-    from sync_v3.generation import METHODOLOGY, _build_pitcher_group
+    from sync_v3.generation import METHODOLOGY, _build_pitcher_group, _build_pitcher_changes
+    from sync_v3.history import _transaction
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import DOMAINS, record_intelligence
     from sync_v3.replay import run_fixture
@@ -2380,3 +2381,12 @@ def test_grouped_pitcher_history_reuses_calendar_and_preserves_individual_proven
             with db, db.cursor() as cur:
                 cur.execute('SELECT count(*) FROM candidate.workload_history')
                 assert cur.fetchone() == baseline
+
+            changes = [('pitcher', player, 'candidate_pitcher_rest_changes_v1') for player in (101, 102)]
+            change_domains = {'candidate_pitcher_rest_changes_v1': 'pitcher_rest'}
+            loads.clear()
+            assert _transaction(db, _build_pitcher_changes, day, changes, change_domains, None) == 2
+            assert loads == [day-timedelta(days=1)]
+            loads.clear()
+            assert _transaction(db, _build_pitcher_changes, day, changes, change_domains, None) == 2
+            assert not loads
