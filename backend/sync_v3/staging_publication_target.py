@@ -794,8 +794,8 @@ def recheck_edition_transactions(source, through, digest, fetch):
     return dict(predecessor_generation=digest, acquired=bool(claim), source_id=source_id, sha256=fingerprint)
 
 
-def recover_private_readiness(worker_password, *, budget_seconds):
-    """Resume only the archived clubs whose latest readiness evidence withheld a state."""
+def recover_private_readiness(worker_password, *, budget_seconds, workload_day=None):
+    """Resume the clubs whose dated readiness evidence is still incomplete."""
     from services.mlb_api import MLBApiClient
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.current_worker import verify_target
@@ -803,28 +803,31 @@ def recover_private_readiness(worker_password, *, budget_seconds):
     from sync_v3.intelligence_history import DOMAINS, record_intelligence
     from sync_v3.render_staging import PLAYED_DAY, connect
 
+    workload_day = workload_day or PLAYED_DAY
     started = monotonic()
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         with source, source.cursor() as cur:
-            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason' FROM candidate.workload_history
+            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason',
+                           (facts->'competition'->>'status'='season_complete' AND
+                            facts->>'reason'=facts->'competition'->>'basis') AS settled FROM candidate.workload_history
                            WHERE subject='team' AND methodology=%s AND represented=%s
-                           ORDER BY mlb_id,revision DESC""", (DOMAINS['readiness'][1], PLAYED_DAY))
-            statuses = dict(cur.fetchall())
+                           ORDER BY mlb_id,revision DESC""", (DOMAINS['readiness'][1], workload_day))
+            statuses = {team: (reason, settled) for team, reason, settled in cur}
         if statuses.keys() != set(MLB_TEAM_IDS):
-            raise ValueError('Expected all thirty archived readiness snapshots')
-        outstanding = {team for team, reason in statuses.items() if reason}
+            raise ValueError('Expected all thirty dated readiness snapshots')
+        outstanding = {team for team, (reason, settled) in statuses.items() if reason and not settled}
         blocked = {}
         receipts = 0
         for team in sorted(outstanding):
             while monotonic() - started < budget_seconds:
-                report = recover(source, team, PLAYED_DAY, max_jobs=24, include_workload=True,
+                report = recover(source, team, workload_day, max_jobs=24, include_workload=True,
                                  fetch=lambda endpoint, params: client._get(endpoint, params=params))
                 receipts += len(report['receipts'])
                 state = report['status']
                 if state == 'ready':
-                    record_intelligence(source, 'readiness', team, PLAYED_DAY)
+                    record_intelligence(source, 'readiness', team, workload_day)
                     outstanding.remove(team)
                 elif state != 'batch_limit':
                     blocked[team] = report['readiness_reason']

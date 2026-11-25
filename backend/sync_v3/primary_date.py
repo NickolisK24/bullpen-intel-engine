@@ -52,7 +52,7 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
     from services.mlb_api import MLBApiClient
     from sync_v3.discovery import calendar_requests
     from sync_v3.staging_postseason import qualify_offseason_edition
-    from sync_v3.staging_publication_target import acquire_window_source, advance_private_generation
+    from sync_v3.staging_publication_target import acquire_window_source, advance_private_generation, recover_private_readiness
 
     season = competition_calendar_request(day.year)
     client = MLBApiClient()
@@ -77,6 +77,9 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         digest = result.get('digest')
         review = result.get('review')
         decision = review.get('status') if isinstance(review, dict) else review or 'withheld'
+        if isinstance(review, dict) and 'unresolved_club_readiness' in review['reason_codes']:
+            result['recovery'] = recover_private_readiness(worker_password, budget_seconds=45,
+                                                          workload_day=scope['through'])
     return dict(day=str(day), through=str(scope['through']), availability=scope['availability'],
                 mode='offseason' if scope['offseason'] else 'competitive', generation=digest,
                 decision=decision, ready=bool(digest) and decision in ('season_complete_withholding', 'core_comparison_complete'),
