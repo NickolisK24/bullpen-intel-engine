@@ -348,11 +348,19 @@ def project_roster_views(worker_password, *, edition_dates=None):
                     kind = params['rosterType']
                     bodies[kind] = obs.body
                     stamps[kind] = obs.retrieved_at
-                from sync_v3.depth import board_rest_pitchers
+                from sync_v3.depth import _view, board_rest_pitchers
                 with source, source.cursor() as cur:
-                    members = board_rest_pitchers(cur, team, day)
+                    if edition_dates:
+                        # The offseason directory includes official two-way players. Pregame rest has
+                        # a separate eligibility contract and is withheld for season-complete clubs.
+                        view = _view(cur, team, team, 'active', dict(date=str(day), rosterType='active'), membership=True)
+                        if view['reason']:
+                            raise ValueError(f"Unresolved official roster for {team} on {day}: {view['reason']}")
+                        members = view['pitchers']
+                    else:
+                        members = board_rest_pitchers(cur, team, day)
                 if members is None:
-                    raise ValueError('Unqualified dated staff')
+                    raise ValueError(f'Unqualified dated staff for {team} on {day}')
                 for entry in bodies['active']['roster']:
                     person = entry['person']
                     if person['id'] in members:
