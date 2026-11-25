@@ -108,11 +108,23 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'project-offseason-competition'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'project-offseason-competition', 'project-offseason-rosters'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task == 'project-offseason-rosters':
+        from sync_v3.staging_product_delivery import private_app, source_receipt
+        from sync_v3.staging_publication_target import project_archived_fatigue, project_roster_views
+        receipt = source_receipt(password, os.environ['STAGING_PRODUCT_GENERATION'])
+        if 'product_day' not in receipt:
+            raise ValueError('Current offseason source binding required')
+        dates = tuple(date.fromisoformat(receipt[field]) for field in ('data_through', 'availability_reference'))
+        with private_app(binding['password']).app_context():
+            result = project_roster_views(password, edition_dates=dates)
+            result['assignments'] = project_archived_fatigue(edition_dates=dates)
+        print(json.dumps(dict(private_offseason_rosters=result)), flush=True)
+        return
     if task == 'project-offseason-competition':
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_product_delivery import private_app

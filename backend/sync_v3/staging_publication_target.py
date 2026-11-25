@@ -297,7 +297,7 @@ def project_context(game, box, extra, day):
     return len(contexts)
 
 
-def project_roster_views(worker_password):
+def project_roster_views(worker_password, *, edition_dates=None):
     """Retain the qualified MLB roster observations for workload and availability separately."""
     from datetime import timedelta
     from hashlib import sha256
@@ -318,7 +318,8 @@ def project_roster_views(worker_password):
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
-        for day in (PLAYED_DAY, PLAYED_DAY + timedelta(days=1)):
+        dates = edition_dates or (PLAYED_DAY, PLAYED_DAY + timedelta(days=1))
+        for day in dict.fromkeys(dates):
             acquired = 0
             clubs = 0
             candidates = {}
@@ -390,18 +391,18 @@ def project_roster_views(worker_password):
                         if record['roster_types'] & {'active', '40Man'}:
                             candidates.setdefault(player, []).append(dict(team_id=team, evidence=record,
                                                                          observation_links=links, snapshot_date=day))
-                    if existing and team == 108 and day > PLAYED_DAY:
+                    if existing and not edition_dates and team == 108 and day > PLAYED_DAY:
                         matched_departure_evidence(team, 502032, day, bodies, existing)
                 clubs += 1
             dated[day] = candidates
             result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
     result['roster_identities'] = bind_active_staff(staff)
     for day, candidates in dated.items():
-        result[str(day)]['membership'] = project_credited_membership(day, candidates)
+        result[str(day)]['membership'] = project_credited_membership(day, candidates, apply_position=day == dates[-1])
     return result
 
 
-def project_credited_membership(day, by_player):
+def project_credited_membership(day, by_player, *, apply_position):
     from models.pitcher import Pitcher
     from models.sync_run import SyncRun
     from sync_v3.render_staging import PLAYED_DAY
@@ -449,7 +450,7 @@ def project_credited_membership(day, by_player):
                     or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
                     or replay_membership(row) != expected):
                 raise ValueError('Dated roster evidence differs from stored membership')
-            if day > PLAYED_DAY:
+            if apply_position:
                 _apply_current_position_to_pitcher_cache(candidate['pitcher'], candidate['evidence'])
             if row.sync_run_id is None:
                 row.sync_run_id = run.id
@@ -476,14 +477,14 @@ def bind_active_staff(staff):
             or any(len({p[i] for p in pairs}) != 60 for i in (0, 1))):
         raise ValueError('Invalid roster identity cohort')
     public = {mlb: pid for pid, mlb in pairs}
-    if not public.keys() <= staff.keys():
-        raise ValueError('Approved mapping exceeds qualified roster cohort')
     table = Pitcher.__table__
     with db.engine.begin() as conn:
         if conn.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private target')
         conn.execute(text('LOCK TABLE pitchers IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         existing = dict(conn.execute(text('SELECT mlb_id,id FROM pitchers')).all())
+        if not public.keys() <= (staff.keys() | existing.keys()):
+            raise ValueError('Unreserved public identity lies outside the qualified roster cohort')
         by_id = {pid: mlb for mlb, pid in existing.items()}
         collisions = sum(existing.get(mlb, pid) != pid or by_id.get(pid, mlb) != mlb
                          for mlb, pid in public.items())
@@ -846,7 +847,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                 return progress
 
 
-def project_archived_fatigue():
+def project_archived_fatigue(*, edition_dates=None):
     """Project the archived edition's official roster and calculate its fourteen-day scores."""
     from datetime import datetime, time, timedelta
     from models.fatigue_score import FatigueScore
@@ -860,7 +861,7 @@ def project_archived_fatigue():
     from services.team_assignment_sync import _classification_from_roster_evidence, _apply_assignment
     from sync_v3.render_staging import PLAYED_DAY
 
-    day = PLAYED_DAY + timedelta(days=1)
+    through, day = edition_dates or (PLAYED_DAY, PLAYED_DAY + timedelta(days=1))
     # The private archived edition uses the same noon UTC product clock as the disposable rehearsal.
     edition_clock = datetime.combine(day, time(12))
     teams = {club.team_id: dict(name=club.team_name, abbreviation=club.abbreviation) for club in MLB_CLUBS}
@@ -888,7 +889,7 @@ def project_archived_fatigue():
             _apply_assignment(pitcher, assignment, edition_clock)
             _apply_snapshot_to_pitcher_cache(pitcher, snapshot)
             logs = (GameLog.query.filter(GameLog.pitcher_id == pitcher.id,
-                                         GameLog.game_date.between(day-timedelta(days=14), PLAYED_DAY))
+                                         GameLog.game_date.between(day-timedelta(days=14), through))
                     .order_by(GameLog.game_date.desc(), GameLog.id.desc()).all())
             if not logs:
                 continue
