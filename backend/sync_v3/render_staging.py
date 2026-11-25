@@ -61,13 +61,16 @@ def bootstrap(password):
         return
     if task == 'project-roster-provenance':
         from sync_v3.staging_product_delivery import private_app
-        from sync_v3.staging_publication_target import project_roster_views
+        from sync_v3.staging_publication_target import project_archived_fatigue, project_roster_views
         from services.public_roster_readiness import build_public_roster_readiness
         app = private_app(binding['password'])
         with app.app_context():
             result = project_roster_views(password)
-            readiness = build_public_roster_readiness(reference_date=PLAYED_DAY)
+            result['fatigue'] = project_archived_fatigue()
+            readiness = build_public_roster_readiness(reference_date=PLAYED_DAY, scope='league')
             result['readiness'] = {key: readiness[key] for key in ('claims_available', 'reason_codes', 'coverage')}
+            if not readiness['claims_available']:
+                raise ValueError(f"Private roster authority withheld: {readiness['reason_codes']}")
         print(json.dumps(dict(private_roster=result)), flush=True)
         return
     if task == 'project-eligibility':
