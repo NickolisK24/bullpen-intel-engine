@@ -15,7 +15,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
-from scripts.rehearse_selected_roster import prepare_departure, reconcile_departure
+from scripts.rehearse_selected_roster import prepare_departure, reconcile_departure, verify_published_membership
 from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
@@ -195,6 +195,7 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
                 reconcile_schedule(day, observation, verify_only=True)
             if roster_departure:
                 reconcile_departure(roster_candidate, prior.sync_run_id, verify_only=True)
+                verify_published_membership(cur, generation, prior)
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
@@ -236,6 +237,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
         if (proof.captured_team_count != 30 or proof.overall_verdict not in ('PASS', 'PASS_WITH_INCONCLUSIVE')
                 or inconclusive - {'no_false_cross_version_change'}):
             raise ValueError('Incomplete independent publication proof')
+        if roster_departure:
+            verify_published_membership(cur, generation, snapshot)
         verify_frozen_states(snapshot, receipt)
         return snapshot.id
 

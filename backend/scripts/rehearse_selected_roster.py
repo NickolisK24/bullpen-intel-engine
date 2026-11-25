@@ -7,6 +7,8 @@ from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.source_observation import SourceObservation, SourceSubject
 from services.mlb_api import MLBApiClient
+from services.mlb_club_directory import MLB_TEAM_IDS
+from services.team_board_delta_substrate import build_bullpen_membership_capture
 from services.primary_roster_inputs import replay_membership
 from services.roster_status_sync import build_exact_date_team_roster_status_index, persist_missing_exact_roster_status_snapshots
 from sync_v3.discovery import roster_requests
@@ -92,6 +94,20 @@ def prepare_departure(cur, generation, day, team, mlb):
     evidence, links = matched_departure_evidence(team, mlb, day, bodies, observations)
     return (dict(team=team, mlb=mlb, day=str(day), views=receipts),
             dict(pitcher=target, team_id=team, snapshot_date=day, evidence=evidence, observation_links=links))
+
+
+def verify_published_membership(cur, generation, snapshot):
+    arms, status = _public_arms(cur, generation, board_date=True)
+    if status != 'mapped':
+        raise ValueError('Published membership requires mapped availability arms')
+    selected = {team: set() for team in MLB_TEAM_IDS}
+    for arm in arms.values():
+        selected[arm['team_id']].add(arm['public_id'])
+    for team, expected in selected.items():
+        capture = build_bullpen_membership_capture(snapshot=snapshot, team_id=team)
+        if (capture is None or capture['membership_reference_date'] != str(snapshot.availability_reference_date)
+                or set(capture['member_pitcher_ids']) != expected):
+            raise ValueError(f'Selected and published roster membership disagree for {team}')
 
 
 def reconcile_departure(candidate, run_id, *, verify_only=False):

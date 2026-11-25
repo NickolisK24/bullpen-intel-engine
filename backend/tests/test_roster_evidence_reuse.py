@@ -1024,3 +1024,22 @@ def test_selected_departure_preserves_attribution_and_refuses_conflict(fenced_da
         with pytest.raises(ValueError, match='differs from its dated source'):
             reconcile_departure({**candidate, 'team_id': 111}, run.id)
         assert row.team_id == team and row.correction_count == 0
+
+
+def test_selected_membership_checks_club_and_date(monkeypatch):
+    from scripts import rehearse_selected_roster as rehearsal
+
+    monkeypatch.setattr(rehearsal, '_public_arms', lambda *a, **kw: ({502032: {'team_id': 108, 'public_id': 12}}, 'mapped'))
+    club = {team: [] for team in rehearsal.MLB_TEAM_IDS}
+    club[108] = [12]
+    snapshot = SimpleNamespace(availability_reference_date=REFERENCE_DATE)
+    monkeypatch.setattr(rehearsal, 'build_bullpen_membership_capture', lambda *, snapshot, team_id: {
+        'member_pitcher_ids': club[team_id], 'membership_reference_date': str(REFERENCE_DATE)})
+    rehearsal.verify_published_membership(None, 'generation', snapshot)
+    club[109], club[108] = club[108], []
+    with pytest.raises(ValueError, match='roster membership disagree'):
+        rehearsal.verify_published_membership(None, 'generation', snapshot)
+    club[108], club[109] = club[109], []
+    snapshot.availability_reference_date += timedelta(days=1)
+    with pytest.raises(ValueError, match='roster membership disagree'):
+        rehearsal.verify_published_membership(None, 'generation', snapshot)
