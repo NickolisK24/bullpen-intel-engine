@@ -288,6 +288,11 @@ def project_final_appearances(finals, day, *, include_context=True, in_transacti
                                  f"{len(facts)} official appearances, "
                                  f"{planned['pitcher_resolution_failures']} unresolved identities")
             if summary['rows_unchanged'] != len(facts):
+                corrections = [dict(fields=row['semantic_changed_fields'], digest=row['mutation_digest'])
+                               for row in planned['reconciliation_plan'] if row.get('semantic_changed_fields')]
+                if corrections:
+                    print(json.dumps(dict(private_final_correction=dict(game_pk=game['gamePk'], day=str(day),
+                                                                      corrections=corrections))), flush=True)
                 applied = process(False)
                 if applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
                     raise ValueError('Final reconciliation incomplete')
