@@ -9,7 +9,6 @@ from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.membership_usage import _eligibility_sample
 from sync_v3.season_deployment import BaselineWithheld
 from sync_v3.staging_publication_target import TARGET, acquire_window_source, project_final_appearances
-from sync_v3.workload import _game_workload
 from utils.db import db
 
 
@@ -36,7 +35,7 @@ def _acquire_gap(source, client, team, player, through, availability, exc):
     raise exc
 
 
-def _project_sample(source, player, sample, final_cache, through, availability):
+def _project_sample(source, player, sample, final_cache, projected, availability):
     from models.fatigue_score import FatigueScore
     from models.game_log import GameLog
     from models.pitcher import Pitcher
@@ -52,15 +51,14 @@ def _project_sample(source, player, sample, final_cache, through, availability):
     for row in sample:
         played, pk = row['day'], row['pk']
         facts, (schedule_id, box_id, _) = final_cache[played, pk, row['game_type']]
+        if (pk, box_id) in projected:
+            continue
         with source, source.cursor() as cur:
             listing = evidence.replay(cur, schedule_id).body
             game, = [g for day in listing['dates'] for g in day['games'] if g['gamePk'] == pk]
             box = evidence.replay(cur, box_id).body
-        with db.session.begin():
-            pitcher_ids = db.session.execute(text("""SELECT p.mlb_id FROM game_logs l
-                JOIN pitchers p ON p.id=l.pitcher_id WHERE l.mlb_game_pk=:pk"""), dict(pk=pk)).scalars().all()
-        if sorted(pitcher_ids) != sorted(f['pitcher_mlb_id'] for f in facts):
-            project_final_appearances([(game, box, facts, {})], played, include_context=False)
+        project_final_appearances([(game, box, facts, {})], played, include_context=False)
+        projected.add((pk, box_id))
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private Board recovery target')
@@ -82,6 +80,34 @@ def _project_sample(source, player, sample, final_cache, through, availability):
     return len(sample)
 
 
+def _no_current_pitching_evidence(source, team, player, through, availability, rounds):
+    """Allow a withheld role when all current-year logs and matching totals contain no appearances."""
+    from sync_v3.season_deployment import qualified_game_rows
+
+    with source, source.cursor() as cur:
+        req = dict(date=str(availability), rosterType='active', hydrate='person')
+        roster = evidence.latest_qualified_source(cur, f'/teams/{team}/roster', req)
+        if not roster:
+            return False
+        people = [entry['person'] for entry in evidence.replay(cur, roster).body['roster']
+                  if entry['person']['id'] == player]
+        if len(people) != 1 or people[0].get('mlbDebutDate'):
+            return False
+        bodies = {}
+        for request in pitcher_requests(through, [player], postseason_rounds=rounds, round_totals=True):
+            params = request.params()
+            receipt = evidence.latest_qualified_source(cur, request.endpoint, params)
+            if receipt is None:
+                return False
+            bodies[params['gameType'], params['stats']] = evidence.replay(cur, receipt).body
+        for stage in ('R', *sorted(rounds)):
+            groups, _ = qualified_game_rows(player, through, bodies[stage, 'gameLog'], bodies[stage, 'byDateRange'],
+                                            cur=cur, game_type=stage, allow_empty=True)
+            if any(groups.values()):
+                return False
+    return True
+
+
 def recover(source, client, team, after, digest, *, seconds=185):
     from services.club_competition_status import POSTSEASON_GAME_TYPES
     from services.mlb_club_directory import MLB_TEAM_IDS
@@ -100,6 +126,7 @@ def recover(source, client, team, after, digest, *, seconds=185):
         listed = view['pitchers']
     remaining = sorted(player for player in listed if player > after)
     verified = []
+    projected = set()
     for player in remaining:
         seen = set()
         while monotonic()-started < seconds:
@@ -108,12 +135,17 @@ def recover(source, client, team, after, digest, *, seconds=185):
                     cache = {}
                     sample, _, _ = _eligibility_sample(cur, team, player, through, listed, POSTSEASON_GAME_TYPES,
                                                        cache, roster_day=availability)
-                count = _project_sample(source, player, sample, cache, through, availability)
+                count = _project_sample(source, player, sample, cache, projected, availability)
                 verified.append(dict(mlb=player, games=count))
                 after = player
                 break
             except BaselineWithheld as exc:
                 key = (str(exc), str(exc.game_evidence))
+                if key in seen and str(exc) == 'missing_mlb_debut_evidence' and _no_current_pitching_evidence(
+                        source, team, player, through, availability, POSTSEASON_GAME_TYPES):
+                    verified.append(dict(mlb=player, games=0, role='withheld_no_supported_mlb_appearances'))
+                    after = player
+                    break
                 if key in seen:
                     raise ValueError(f'Persistent eligibility gap for MLB {player}: {key}') from exc
                 seen.add(key)
