@@ -50,7 +50,7 @@ def bootstrap(password):
         verify_target(worker)
     print(json.dumps(dict(database=DATABASE, installed=fresh, worker_admitted=True)))
     from sync_v3.staging_publication_target import install_target
-    print(json.dumps(dict(publication_target=install_target(binding["password"]))), flush=True)
+    print(json.dumps(dict(publication_target=install_target(binding["password"], password))), flush=True)
 
 
 def witness(worker):

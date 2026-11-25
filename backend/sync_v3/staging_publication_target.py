@@ -15,7 +15,7 @@ from utils.db import db
 TARGET = 'baseballos_v3_publication_staging'
 
 
-def install_target(password):
+def install_target(password, worker_password):
     from sync_v3.render_staging import DATABASE, HOST, OWNER, connect
 
     start = monotonic()
@@ -60,6 +60,46 @@ def install_target(password):
                 sizes = conn.execute(text("""SELECT pg_database_size(current_database()),
                     (SELECT count(*) FROM public.dashboard_snapshots),
                     (SELECT count(*) FROM public.pitchers)""")).one()
+            schedule = project_played_schedule(worker_password)
             db.engine.dispose()
     return dict(database=TARGET, migration=expected, database_bytes=sizes[0],
-                snapshots=sizes[1], pitchers=sizes[2], elapsed_seconds=monotonic()-start)
+                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, elapsed_seconds=monotonic()-start)
+
+
+def project_played_schedule(worker_password):
+    """Use the verified August acquisition as input to the fenced product writer."""
+    from sync_v3.render_staging import PLAYED_DAY, connect
+    from sync_v3.discovery import calendar_requests
+    from sync_v3.evidence import latest_qualified_source, replay
+    from scripts.rehearse_selected_schedule import reconcile_schedule
+
+    with closing(connect('sync_v3_worker', worker_password)) as source, source, source.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        request = calendar_requests(PLAYED_DAY)[0]
+        receipt = latest_qualified_source(cur, request.endpoint, request.params())
+        if receipt is None:
+            raise ValueError('Private played-day acquisition lacks a qualified schedule')
+        observation = replay(cur, receipt)
+        cur.execute('SELECT sha256 FROM candidate.fetches WHERE id=%s', (receipt,))
+        digest, = cur.fetchone()
+
+    # The installer owns DDL. The canonical writer runs with table-scoped privileges.
+    with db.engine.begin() as conn:
+        found = conn.execute(text("SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole FROM pg_roles "
+                                  "WHERE rolname='sync_v3_staging_schedule'")).first()
+        if found is None:
+            conn.execute(text('CREATE ROLE sync_v3_staging_schedule NOLOGIN NOINHERIT'))
+        elif tuple(found) != (False, False, False, False):
+            raise ValueError('Unexpected staging schedule role attributes')
+        conn.execute(text('GRANT sync_v3_staging_schedule TO baseballos_sync_v3_staging_user'))
+        conn.execute(text('GRANT USAGE ON SCHEMA public TO sync_v3_staging_schedule'))
+        conn.execute(text('GRANT SELECT,INSERT,UPDATE ON scheduled_games,slate_games TO sync_v3_staging_schedule'))
+        conn.execute(text('GRANT SELECT ON compatibility_write_events TO sync_v3_staging_schedule'))
+        conn.execute(text('GRANT USAGE ON SEQUENCE scheduled_games_id_seq TO sync_v3_staging_schedule'))
+
+    for verify_only in (False, True):
+        with db.session.begin():
+            db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+            reconcile_schedule(PLAYED_DAY, observation, private_staging=True, verify_only=verify_only)
+    return dict(day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
+                games=sum(len(d['games']) for d in observation.body['dates']), repeated=True)

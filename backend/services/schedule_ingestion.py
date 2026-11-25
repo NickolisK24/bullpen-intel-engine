@@ -71,6 +71,11 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
     transaction (``services.schedule_absence``). Any other input reconciles
     nothing.
     """
+    now = utc_now_naive()
+    return _ingest_games(games, source=source, commit=commit, synced_at=now, audit_since=now)
+
+
+def _ingest_games(games, *, source, commit, synced_at, audit_since, atomic=False):
     summary = {
         'games_seen': 0,
         'games_ingested': 0,
@@ -83,7 +88,6 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         'slate_games_skipped': 0,
         'errors': 0,
     }
-    synced_at = utc_now_naive()
     integrity = schedule_absence.response_integrity(games)
     games = list(games or [])
     owned_game_pks = [
@@ -123,6 +127,8 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
             summary['rows_retired'] += _retire_non_participant_rows(parsed)
             summary['games_ingested'] += 1
         except Exception:  # noqa: BLE001 — one bad game never sinks the window
+            if atomic:
+                raise
             db.session.rollback()
             # The ownership declaration is transaction-local; the rollback
             # ended that transaction, so re-declare for the remaining writes.
@@ -142,7 +148,7 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
     # rows_updated counts matched rows; a write the schedule fence reverted is
     # reported here instead of being mistaken for an applied update.
     from services.fence_audit import suppressed_write_count_since
-    summary['rows_suppressed'] = suppressed_write_count_since(synced_at, ('schedule',))
+    summary['rows_suppressed'] = suppressed_write_count_since(audit_since, ('schedule',))
     return summary
 
 
