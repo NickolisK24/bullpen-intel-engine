@@ -1,6 +1,7 @@
 """Install the product schema in a private logical database on the approved staging instance."""
 import os
 from contextlib import closing
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from time import monotonic
 
@@ -75,6 +76,7 @@ def project_played_schedule(worker_password):
 
     with closing(connect('sync_v3_worker', worker_password)) as source, source, source.cursor() as cur:
         cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        freshness = acquisition_freshness(cur)
         request = calendar_requests(PLAYED_DAY)[0]
         receipt = latest_qualified_source(cur, request.endpoint, request.params())
         if receipt is None:
@@ -114,4 +116,34 @@ def project_played_schedule(worker_password):
             db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
             reconcile_schedule(PLAYED_DAY, observation, private_staging=True, verify_only=verify_only)
     return dict(day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
-                games=sum(len(d['games']) for d in observation.body['dates']), repeated=True)
+                games=sum(len(d['games']) for d in observation.body['dates']), repeated=True,
+                current_acquisition=freshness)
+
+def acquisition_freshness(cur):
+    """Report local acquisition age, qualified core coverage and ready backlog in one read view."""
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3.discovery import calendar_requests, competition_calendar_request, roster_requests
+    from sync_v3.evidence import latest_qualified_source
+
+    cur.execute('SELECT transaction_timestamp()')
+    at, = cur.fetchone()
+    day = at.astimezone(ZoneInfo('America/New_York')).date()
+    summary = {}
+    groups = dict(calendar=calendar_requests(day)[:1], transactions=calendar_requests(day)[1:],
+                  competition=[competition_calendar_request(day.year)], rosters=roster_requests(day, MLB_TEAM_IDS))
+    for group, requests in groups.items():
+        ages = []
+        for request in requests:
+            receipt = latest_qualified_source(cur, request.endpoint, request.params())
+            if receipt is not None:
+                cur.execute('SELECT received_at FROM candidate.fetches WHERE id=%s', (receipt,))
+                age = (at - cur.fetchone()[0]).total_seconds()
+                ages.append(round(age))
+        summary[group] = dict(required=len(requests), qualified=len(ages), oldest_seconds=max(ages, default=None))
+    cur.execute("""SELECT count(*), EXTRACT(EPOCH FROM transaction_timestamp()-min(j.available_at))::bigint
+                   FROM candidate.jobs j WHERE j.budget='current' AND j.product_date<=%s
+                   AND j.state='pending' AND j.available_at<=transaction_timestamp()
+                   AND (j.prerequisite IS NULL OR EXISTS
+                       (SELECT 1 FROM candidate.jobs p WHERE p.id=j.prerequisite AND p.state='done'))""", (day,))
+    ready, waiting = cur.fetchone()
+    return dict(measured_at=at.isoformat(), day=str(day), groups=summary, ready_jobs=ready, oldest_ready_seconds=waiting)
