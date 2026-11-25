@@ -64,9 +64,10 @@ def install_target(password, worker_password):
                     (SELECT count(*) FROM public.pitchers)""")).one()
             schedule = project_played_schedule(worker_password)
             roster_report = project_roster_views(worker_password)
+            workload_window = project_workload_window(worker_password)
             db.engine.dispose()
     return dict(database=TARGET, migration=expected, database_bytes=sizes[0],
-                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, elapsed_seconds=monotonic()-start)
+                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, elapsed_seconds=monotonic()-start)
 
 
 def project_played_schedule(worker_password):
@@ -465,3 +466,54 @@ def bind_active_staff(staff):
         if not staff.keys() <= stored.keys() or any(stored[k] != v for k,v in public.items()):
             raise ValueError('Roster identity verification failed')
     return dict(mapped=len(public), created=created, collisions=collisions)
+
+
+def project_workload_window(worker_password):
+    """Establish the expected final-game population before evaluating workload completeness."""
+    from datetime import timedelta
+    from hashlib import sha256
+    from services.appearance_ledger import appearance_ledger_publish_block, ledger_window_days
+    from services.mlb_api import MLBApiClient
+    from scripts.rehearse_selected_schedule import reconcile_schedule
+    from sync_v3 import canonical, evidence, queue
+    from sync_v3.current_worker import verify_target
+    from sync_v3.discovery import calendar_requests
+    from sync_v3.render_staging import PLAYED_DAY, connect
+
+    client = MLBApiClient()
+    receipts = {}
+    with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        for offset in range(1-ledger_window_days(), 2):
+            day = PLAYED_DAY + timedelta(days=offset)
+            request = calendar_requests(day)[0]
+            params = request.params()
+            with source, source.cursor() as cur:
+                oid = evidence.latest_qualified_source(cur, request.endpoint, params)
+                if oid is None:
+                    payload = dict(endpoint=request.endpoint, params=params, eligibility_recovery=True)
+                    key = sha256(evidence.encode_json(['eligibility_recovery', str(day), payload])).hexdigest()
+                    cur.execute('SELECT clock_timestamp()')
+                    at, = cur.fetchone()
+                    job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
+                    claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
+            if oid is None:
+                if not claim:
+                    raise ValueError(f'Schedule acquisition pending for {day}')
+                oid, outcome = evidence.execute(source, claim, client._get,
+                    on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, day))
+                if outcome != 'received':
+                    raise ValueError(f'Schedule recovery for {day} returned {outcome}')
+            with source, source.cursor() as cur:
+                obs = evidence.replay(cur, oid)
+            with db.session.begin():
+                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+                reconcile_schedule(day, obs, private_staging=True)
+            receipts[str(day)] = oid
+    with db.session.begin():
+        reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY)
+        if ledger is None:
+            raise ValueError('Appearance ledger unavailable for private publication')
+    return dict(receipts=receipts, reason=reason, expected_games=ledger['expected_games'],
+                represented_games=ledger['represented_games'], stored_appearances=ledger['stored_appearances'],
+                missing_games=len(ledger['missing_games']))
