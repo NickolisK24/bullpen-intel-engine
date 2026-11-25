@@ -269,3 +269,48 @@ def qualify_club(source, team, through, availability, digest, expected_target):
         db.session.add(review)
         db.session.flush()
         return review.id
+
+
+def recover_next(source, client, digest, *, seconds=185):
+    """Resume the dated league inventory from durable team review and player checkpoints."""
+    from models.sync_run import SyncRun
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    with db.session.begin():
+        if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected private Board checkpoint target')
+        names = {f'sync_v3_board_{kind}_{team}' for team in MLB_TEAM_IDS for kind in ('review', 'progress')}
+        runs = (SyncRun.query.filter(SyncRun.job_name.in_(names), SyncRun.source=='sync_v3_staging',
+                                    SyncRun.status=='success').order_by(SyncRun.id.desc()).all())
+        completed, offsets = {}, {}
+        for run in runs:
+            entry = run.publication_outcome or {}
+            if entry.get('generation') != digest:
+                continue
+            team = entry['team']
+            if run.stage == 'reviewed':
+                completed.setdefault(team, entry)
+            elif run.stage == 'checkpoint':
+                offsets.setdefault(team, entry.get('after_mlb', 0))
+    started = monotonic()
+    reports = []
+    for team in sorted(MLB_TEAM_IDS):
+        if team in completed:
+            continue
+        remaining = seconds - (monotonic()-started)
+        if remaining < 15:
+            break
+        report = recover(source, client, team, offsets.get(team, 0), digest, seconds=remaining)
+        reports.append(report)
+        if report['complete']:
+            completed[team] = True
+            continue
+        if report['after_mlb'] != offsets.get(team, 0):
+            with db.session.begin():
+                now = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
+                db.session.add(SyncRun(job_name=f'sync_v3_board_progress_{team}', source='sync_v3_staging',
+                        started_at=now, completed_at=now, status='success', stage='checkpoint',
+                        latest_workload_date=date.fromisoformat(report['through']), records_processed=len(report['verified']),
+                        publication_outcome=dict(team=team, generation=digest, after_mlb=report['after_mlb'])))
+        break
+    return dict(completed_clubs=len(completed), total=len(MLB_TEAM_IDS), seconds=monotonic()-started, batches=reports)
