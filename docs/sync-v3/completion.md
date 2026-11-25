@@ -1,5 +1,11 @@
 # Sync v3 acceptance ledger
 
+## Current primary dispatch and scoped final reconciliation
+
+Revision `e70bec0c7cc963d8ffd10a2eac945d00091fd829` exercised the current-date primary entry point. Private Render run `1795648973` completed acquisition through actual HTTP delivery in 74.70 seconds. It selected the existing November 25 generation, revalidated all required inputs and preserved snapshot 131 / sync 66 without creating a duplicate edition. The restricted publisher returned 30 League clubs, zero games and zero new shares. It used 23.00 CPU-seconds and peaked at 172,916 KiB RSS. The latest retained generation source was 3,082.66 seconds old at delivery. These are replay measurements. The fresh publication, independent Board inspection and rollback measurements appear below.
+
+Private archived postgame run `1795648775` on the same revision verified both dated slates and all 73 credited appearances in ten finals. Its 14-day product workload ledger matched 193 expected finals, 193 represented finals and 1,612 appearances with zero missing games. The archived transaction rolled back. Private role check `1795648690` verified the scoped projector grants. The named cutoff, retained-schedule and correction test suites passed 52 tests on disposable PostgreSQL. Competitive correction through a newly published active-season HTTP edition and production writer attribution remain open. [Private Render runs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
+
 ## Public production verification command
 
 At 23:13 UTC the public API served legacy snapshot 5848 / sync 98841. The League, Tonight and all 30 Board cores agreed on the edition, workload through October 28 and availability on October 29. Tonight returned zero games. The read-only check took 37.15 seconds, including a second League read after the individual Boards. Run from `backend` with the intended snapshot and sync-run IDs. For the production handoff, pass the independent v3 source receipt with `--binding FILE` to check the expected club states and game identities.
