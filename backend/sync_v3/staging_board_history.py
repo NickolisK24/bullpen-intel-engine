@@ -247,7 +247,10 @@ def qualify_club(source, team, through, availability, digest, expected_target):
                                   innings_pitched_outs=r['counts']['outs'], save=r['counts']['saves'],
                                   hold=r['counts']['holds'], save_situation=r['counts']['saveOpportunities']) for r in sample]
             paths = list(reads.requests)
-        sources = sorted({evidence.latest_qualified_source(cur, path, dict(params)) for path, params in paths})
+        scoped = {evidence.latest_qualified_source(cur, path, dict(params)) for path, params in paths}
+        if None in scoped:
+            raise ValueError(f'Board review for {team} consulted an unqualified source')
+        sources = sorted(scoped)
     contexts = eligible_bullpen_pitcher_contexts(pitchers, reference_date=availability, logs_by_pitcher=logs)
     expected = sorted(c['pitcher'].id for c in contexts if build_visibility_contract(
         c['eligibility'], c['roster_status'], c['logs'], availability)['is_visible_by_default'])

@@ -252,7 +252,10 @@ def project_final_appearances(finals, day, *, include_context=True):
             planned = process(True)
             summary = planned['reconciliation_summary']
             if planned['incomplete_reason'] or summary['rows_blocked'] or summary['rows_planned'] != len(facts):
-                raise ValueError('Official final has an incomplete governed plan')
+                raise ValueError(f"Official game {game['gamePk']} on {day}: {planned['incomplete_reason']}, "
+                                 f"{summary['rows_blocked']} blocked, {summary['rows_planned']} planned, "
+                                 f"{len(facts)} official appearances, "
+                                 f"{planned['pitcher_resolution_failures']} unresolved identities")
             if summary['rows_unchanged'] != len(facts):
                 applied = process(False)
                 if applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
