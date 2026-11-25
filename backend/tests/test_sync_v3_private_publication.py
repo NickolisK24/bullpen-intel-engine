@@ -174,3 +174,30 @@ def test_private_publisher_cannot_modify_source_or_product_facts(pg, monkeypatch
         with closing(connect(publisher.DATABASE, publisher.PUBLISHER, 'test-private-publisher')) as source:
             with pytest.raises(psycopg2.errors.InsufficientPrivilege), source, source.cursor() as cur:
                 cur.execute('UPDATE candidate.schema_installation SET digest=NULL')
+
+
+def test_current_board_requires_exact_workload_cohort_and_dated_membership():
+    from types import SimpleNamespace
+    from models.pitcher import Pitcher
+    from sync_v3.staging_product_delivery import verify_board_rosters
+
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://'
+    db.init_app(app)
+    with app.app_context():
+        Pitcher.__table__.create(db.engine)
+        db.session.add_all([Pitcher(id=7, mlb_id=547973, full_name='Aroldis Chapman'),
+                            Pitcher(id=8, mlb_id=523260, full_name='Joe Kelly')])
+        db.session.flush()
+        club = dict(default_pitcher_ids=[7])
+        snapshot = SimpleNamespace(payload=dict(trusted_team_boards=dict(by_team_id={'111': club})))
+        binding = dict(product_day='2026-11-25', active_pitcher_mlb_ids={'111': [547973]},
+                       reviewed_board_mlb_ids={'111': [547973]})
+        verify_board_rosters(snapshot, binding)
+        club['default_pitcher_ids'] = [7, 8]
+        with pytest.raises(ValueError, match='outside the official active roster'):
+            verify_board_rosters(snapshot, binding)
+        for ids in ([], [7, 7]):
+            club['default_pitcher_ids'] = ids
+            with pytest.raises(ValueError, match='differs from the qualified official workload'):
+                verify_board_rosters(snapshot, binding)
