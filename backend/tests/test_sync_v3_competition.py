@@ -513,3 +513,36 @@ def test_shifted_regular_readiness_recalculates_arm_window_without_changing_memb
     assert arm['availability']['inputs']['pitches_yesterday'] == 0
     assert arm['availability']['inputs']['days_rest'] == 2
     assert compare_readiness(result)['arm_statuses_compared'] == 1
+
+
+def test_recovery_only_requests_scoped_dated_postseason_evidence(monkeypatch):
+    from copy import deepcopy
+    from sync_v3 import eligibility_recovery as recovery
+
+    calendar = season()
+    schedule_day = date(2024, 10, 22)
+    unrelated = game(140, 111, 108, '2024-10-05', 'D')
+    unrelated['gamesInSeries'] = 5
+    calendar['dates'].append({'date': '2024-10-05', 'totalGames': 1, 'games': [unrelated]})
+    calendar['totalGames'] += 1
+    original = calendar['dates'][1]['games'][0]
+    daily = deepcopy(original)
+    captured = {1: SimpleNamespace(request=competition_calendar_request(2024), body=calendar),
+                2: SimpleNamespace(body={'dates': [{'games': [daily]}]})}
+    monkeypatch.setattr(recovery.evidence, 'replay', lambda cur, oid: captured[oid])
+    monkeypatch.setattr(recovery.evidence, 'latest_qualified_source', lambda *a: 2)
+    report = dict(calendar_source=1, missing_decisions=[100, 101, 140])
+    requests = []
+
+    def missing(day, endpoint, params):
+        if endpoint == '/schedule':
+            return False
+        requests.append((day, endpoint))
+        return True
+
+    recovery._missing_postseason_decisions(None, 147, schedule_day, report, missing)
+    assert requests == [(schedule_day, '/game/100/boxscore')]
+    daily['teams']['home']['score'] += 1
+    requests.clear()
+    recovery._missing_postseason_decisions(None, 147, schedule_day, report, missing)
+    assert not requests

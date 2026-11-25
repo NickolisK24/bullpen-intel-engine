@@ -233,3 +233,49 @@ def test_source_disagreement_preserves_recovery_for_independent_outings(monkeypa
     })
     assert recovery._performance_gaps(None, 112, through, report, None) == 'official_performance_source_conflict'
     assert recovered_days == [(date(2017, 6, 2), 112)]
+
+
+def test_board_arrival_recovers_earlier_season_only_from_qualified_dated_membership(monkeypatch):
+    from sync_v3 import evidence
+    from sync_v3.discovery import pitcher_requests
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    through = date(2017, 8, 28)
+    old = date(2016, 12, 31)
+    at = datetime.fromisoformat('2017-08-30T12:00:00+00:00')
+    base = dict(team=141, reason=None, reference_date='2017-08-29')
+    qualified_staff = None
+    monkeypatch.setattr(recovery, 'represented_readiness', lambda *args: base)
+
+    def board_population(cur, report, cutoff):
+        assert report is base and cutoff == through
+        if qualified_staff is None:
+            return None, None
+        for request in pitcher_requests(old, [474463]):
+            if evidence.latest_qualified_source(cur, request.endpoint, request.params()) is None:
+                gap = dict(reason='missing_eligibility_stats', evidence=dict(year=2016, round='R'))
+                return qualified_staff, dict(reason='incomplete_eligibility_sample', eligibility_gaps={474463: gap})
+        return qualified_staff, dict(reason=None)
+
+    monkeypatch.setattr(recovery, 'availability_day_population', board_population)
+    calls = []
+
+    def fetch(endpoint, params):
+        calls.append((endpoint, params))
+        return {'stats': []}
+
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def run():
+            return recovery.recover(worker, 141, through, fetch=fetch, board_rest=True, max_jobs=1, clock=lambda: at)
+        assert run()['board_rest_reason'] == 'missing_qualified_board_roster' and not calls
+        qualified_staff = {474463}
+        assert run()['status'] == 'batch_limit'
+        assert run()['status'] == 'board_eligibility_complete'
+        assert run()['receipts'] == []
+        assert len(calls) == 2 and all(ep == '/people/474463/stats' and p['season'] == 2016 for ep, p in calls)
+        with worker, worker.cursor() as cur:
+            cur.execute('SELECT count(*) FROM candidate.core_selections')
+            assert cur.fetchone() == (0,)

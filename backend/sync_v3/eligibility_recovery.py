@@ -8,11 +8,45 @@ from services.availability import ACTIVE_WINDOW_DAYS
 from services.game_finality import classify_status
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue
+from sync_v3.competition_calendar import calendar_games, matches_calendar_game
 from sync_v3.dependencies import capture_reads
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.group_performance import active_group_performance
-from sync_v3.readiness import represented_readiness
+from sync_v3.readiness import availability_day_population, represented_readiness
 from sync_v3.workload import _game_workload
+
+
+def _missing_postseason_decisions(cur, team, through, report, missing):
+    source = report.get('calendar_source')
+    if not source or not report.get('missing_decisions'):
+        return
+    calendar = evidence.replay(cur, source)
+    games = calendar_games(calendar.request.params(), calendar.body)
+    unsettled = [games[pk] for pk in report['missing_decisions']]
+    # A decided World Series settles every club. Try those finals first.
+    world_series = [row for row in unsettled if row[1]['game_type'] == 'W']
+    club_series = [item for item in unsettled if item[1]['game_type'] != 'W'
+                   and team in (item[1]['home_team_id'], item[1]['away_team_id'])]
+    for group in (world_series, club_series):
+        requested = False
+        for day, row, game in group:
+            if day > through:
+                continue
+            schedule, _ = calendar_requests(day)
+            if missing(day, schedule.endpoint, schedule.params()):
+                requested = True
+                continue
+            receipt = evidence.latest_qualified_source(cur, schedule.endpoint, schedule.params())
+            if receipt is None:
+                continue
+            daily = [g for slate in evidence.replay(cur, receipt).body['dates'] for g in slate['games']
+                     if g['gamePk'] == row['game_pk']]
+            if (len(daily) == 1 and matches_calendar_game(daily[0], game)
+                    and classify_status(daily[0]['status']).final_status
+                    and missing(day, f"/game/{row['game_pk']}/boxscore", {})):
+                requested = True
+        if requested:
+            break
 
 
 def _missing_workload(cur, through, report, reads, missing):
@@ -69,7 +103,7 @@ def _performance_gaps(cur, team, through, report, missing):
     return unresolved
 
 
-def _needed(cur, team, through, include_workload, performance=False):
+def _needed(cur, team, through, include_workload, performance=False, board_rest=False):
     if performance:
         report = active_group_performance(cur, team, through)
     else:
@@ -79,6 +113,12 @@ def _needed(cur, team, through, include_workload, performance=False):
     if (competition.get('team_id') == team and competition.get('status') == 'season_complete' and report['reason']
             and report['reason'] == competition.get('basis') and report.get('team_state') is None):
         return report['reason'], [], True
+    if board_rest and not report['reason']:
+        staff, arrival = availability_day_population(cur, report, through)
+        if staff is None:
+            return 'missing_qualified_board_roster', [], False
+        if arrival is not None:
+            report = arrival
     gaps = dict(report.get('eligibility_gaps', {}))
     for player, profile in report.get('profiles', {}).items():
         if profile.get('reason') == 'uncredited_game_requires_official_final':
@@ -91,6 +131,16 @@ def _needed(cur, team, through, include_workload, performance=False):
             requests.add((day, endpoint, tuple(sorted(params.items()))))
             return True
         return False
+
+    if include_workload and competition.get('status') == 'undetermined' and report.get('missing_decisions'):
+        _missing_postseason_decisions(cur, team, through, report, missing)
+        return report['reason'], sorted(requests), False
+
+    if board_rest:
+        for player, profile in report.get('profiles', {}).items():
+            if profile['reason'] == 'missing_game_log_or_dated_totals':
+                for request in pitcher_requests(through, [int(player)]):
+                    missing(through, request.endpoint, request.params())
 
     if not performance and include_workload and report['reason']:
         _missing_workload(cur, through, report, reads, missing)
@@ -133,11 +183,11 @@ def _needed(cur, team, through, include_workload, performance=False):
     return reason, sorted(requests), False
 
 
-def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, performance=False,
+def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, performance=False, board_rest=False,
             clock=lambda: datetime.now(timezone.utc)):
     from sync_v3.current_worker import verify_target
 
-    if include_workload and performance:
+    if sum((include_workload, performance, board_rest)) > 1:
         raise ValueError('Select one historical recovery objective')
     name = verify_target(connection)
     today = clock().astimezone(ZoneInfo('America/New_York')).date()
@@ -148,7 +198,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     while True:
         with connection, connection.cursor() as cur:
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            reason, requests, season_complete = _needed(cur, team, through, include_workload, performance)
+            reason, requests, season_complete = _needed(cur, team, through, include_workload, performance, board_rest)
         if not reason or not requests or len(outcomes) >= max_jobs:
             break
         count = len(outcomes)
@@ -174,7 +224,11 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     if season_complete:
         status = 'season_complete'
     elif not reason:
-        status = 'outing_finals_complete' if performance else 'ready'
+        status = 'ready'
+        if performance:
+            status = 'outing_finals_complete'
+        elif board_rest:
+            status = 'board_eligibility_complete'
     elif any(outcome != 'received' for outcome in outcomes):
         status = 'acquisition_failed'
     elif requests and len(outcomes) == max_jobs:
@@ -185,5 +239,10 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
         status = 'withheld'
     report = dict(database=name, club=team, through=str(through), status=status, receipts=outcomes,
                   publication_attempted=False)
-    report['performance_reason' if performance else 'readiness_reason'] = reason
+    if performance:
+        report['performance_reason'] = reason
+    elif board_rest:
+        report['board_rest_reason'] = reason
+    else:
+        report['readiness_reason'] = reason
     return report

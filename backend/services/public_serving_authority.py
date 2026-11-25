@@ -304,7 +304,8 @@ def build_frozen_team_board_package(dashboard_payload):
 
     # The default-board population is the exact governed current-availability
     # population used by the live builder at candidate time.
-    default_records = current_availability_records(scored_rows, reference_date=reference_date)
+    active_scored_rows = [(score, pitcher) for score, pitcher in scored_rows if pitcher.active]
+    default_records = current_availability_records(active_scored_rows, reference_date=reference_date)
     default_ids_by_team = defaultdict(set)
     for record in default_records:
         pitcher = record.get('pitcher')

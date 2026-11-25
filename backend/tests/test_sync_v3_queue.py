@@ -668,6 +668,18 @@ def test_staging_played_batch_yields_to_current_and_excludes_other_historical_wo
         first = stage.played_batch(worker, today, idle)
         assert (first['requests'], first['pitcher_profiles']) == (1, 0)
         assert first['jobs']['pending'] > 0 and first['report']['receipts'] == {'received': 1}
+        # A Board-date arrival needs a prior-cutoff total. It belongs to this
+        # queue date but is outside the original same-day benchmark.
+        cutoff = next(r for r in pitcher_requests(archive - timedelta(days=1), [103])
+                      if r.params()['stats'] == 'byDateRange')
+        with worker, worker.cursor() as cur:
+            child = queue.enqueue(cur, 'arrival-cutoff', dict(endpoint=cutoff.endpoint, params=cutoff.params()),
+                                  at, budget='historical', product_date=archive)
+            claim = queue.claim(cur, at, budget='historical', product_date=archive, only_job_id=child)
+        _, status = evidence.execute(worker, claim, lambda endpoint, params: {'stats': []}, lambda: at)
+        assert status == 'received'
+        second = stage.played_batch(worker, today, idle)
+        assert (second['requests'], second['pitcher_profiles']) == (2, 0)
         monkeypatch.setattr(stage, 'BATCH_LIMIT', 256)
         # This synthetic date has no pitchers or games. A done queue alone must not certify it.
         with pytest.raises(ValueError, match='differs from August cohort'):

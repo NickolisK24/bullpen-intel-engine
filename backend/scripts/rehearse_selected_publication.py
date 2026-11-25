@@ -3,19 +3,27 @@
 Called by a fixture with a fresh target session and a transaction-idle source
 owner connection supplied by isolated_cluster. No deployed caller or scheduler.
 """
+from collections import Counter
+from datetime import date, datetime
+from hashlib import sha256
 import re
 
 from flask import current_app
 from sqlalchemy import text
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
+from scripts.rehearse_selected_roster import prepare_departure, reconcile_departure, verify_published_membership
+from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
+from sync_v3.acquisition_receipt import played_day_evidence
+from sync_v3.evidence import encode_json, replay
 from sync_v3.generation import _inspect
-from sync_v3.product_reads import _league
+from sync_v3.product_reads import _league, _public_arms
 from utils.db import db
 
 
@@ -54,9 +62,78 @@ def verify_frozen_states(snapshot, binding):
             raise ValueError(f'Selected and published Team State disagree for {team}')
 
 
-def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
+def verify_arm_directory(cur, generation):
+    """Bind the selected workload and availability arms to durable target pitcher IDs."""
+    selected = {}
+    for board_date in (False, True):
+        arms, status = _public_arms(cur, generation, board_date=board_date)
+        if status != 'mapped':
+            raise ValueError(f'Incomplete selected pitcher directory: {status}')
+        for mlb_id, player in arms.items():
+            public_id = player['public_id']
+            if public_id is None or selected.setdefault(mlb_id, public_id) != public_id:
+                raise ValueError(f'Conflicting selected pitcher identity for {mlb_id}')
+    if not selected or len(set(selected.values())) != len(selected):
+        raise ValueError('The selected pitcher directory is empty or ambiguous')
+    # Keep a concurrent target writer from replacing an identity before publication commits.
+    rows = db.session.query(Pitcher.mlb_id, Pitcher.id).filter(Pitcher.mlb_id.in_(selected)).with_for_update(
+        read=True, nowait=True
+    ).all()
+    if dict(rows) != selected:
+        raise ValueError('Selected and target pitcher directories disagree')
+    return dict(players=len(selected), sha256=sha256(encode_json(sorted(selected.items()))).hexdigest())
+
+
+def _verify_final_lines(cur, finals):
+    for game, source in finals:
+        pk = game['gamePk']
+        cur.execute("""SELECT r.facts FROM candidate.confirmations c
+                       JOIN candidate.revisions r ON r.id=c.revision_id
+                       WHERE c.domain='final' AND c.identity=%s AND c.source_id=%s""", (str(pk), source))
+        facts, = cur.fetchone()
+        expected = Counter((a['pitcher_mlb_id'], a['team_id'], a['outs_recorded'], int(a['is_starter']),
+                            date.fromisoformat(game['officialDate'])) for a in facts)
+        rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
+                                                 l.games_started,l.game_date
+                                          FROM game_logs l LEFT JOIN pitchers p ON p.id=l.pitcher_id
+                                          WHERE l.mlb_game_pk=:pk"""), {'pk': pk})
+        if Counter(tuple(row) for row in rows) != expected:
+            raise ValueError(f'Final {pk} target appearances differ from the credited canonical lines')
+
+
+def _reconcile_confirmed_finals(cur, finals, represented, run_id):
+    from services.sync import POSTGAME_MARKER_STATUS_FULLY_PROCESSED, process_completed_game_for_postgame_refresh
+
+    for game, source_id in finals:
+        box = replay(cur, source_id).body
+
+        def process(plan_only):
+            return process_completed_game_for_postgame_refresh(
+                game, schedule_date=represented, sync_run_id=run_id, boxscore=box,
+                plan_only=plan_only, force=True,
+            )
+
+        plan = process(True)
+        summary = plan.get('reconciliation_summary') or {}
+        if (not summary.get('rows_planned') or summary['rows_blocked'] or plan['incomplete_reason']
+                or summary['pitcher_identity_unchanged'] != summary['rows_planned']):
+            raise ValueError(f"Final {game['gamePk']} requires a resolved, unchanged pitcher identity for every line")
+        applied = process(False)
+        if (applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+                or applied['reconciliation_summary']['complete_reconciliation_fingerprint']
+                != summary['complete_reconciliation_fingerprint']):
+            raise ValueError(f"Final {game['gamePk']} did not apply the governed pitching-line plan")
+        repeated = process(True)
+        if (repeated['incomplete_reason'] or repeated['reconciliation_summary']['rows_unchanged'] != summary['rows_planned']):
+            raise ValueError(f"Final {game['gamePk']} did not converge on its retained pitching lines")
+
+
+def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False,
+                     reconcile_schedules=False, require_mapped_arms=False, roster_departure=None):
     """Keep the selector pinned until the independent target transaction commits."""
     assert_rehearsal_target()
+    if (reconcile_finals or reconcile_schedules or roster_departure) and sync_run_id is not None:
+        raise ValueError('Source reconciliation requires the selected v3 acquisition')
     if (not current_app.testing or not current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED')
             or not current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED')):
         raise RuntimeError('A rehearsal with both publication gates enabled is required')
@@ -77,6 +154,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
         # The sandbox owner only holds the table lock. Read as the existing reviewer.
         cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
         cur.execute('LOCK TABLE candidate.core_selections IN SHARE MODE NOWAIT')
+        if sync_run_id is None:
+            cur.execute('LOCK TABLE candidate.jobs IN SHARE MODE NOWAIT')
         cur.execute('SET LOCAL ROLE sync_v3_reviewer')
         league = _league(cur, None, None)
         binding = selection_receipt(league, revision, generation)
@@ -88,19 +167,62 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
             snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD, is_published=True
         ).one()
         receipt = dict(binding, predecessor=predecessor)
+        if require_mapped_arms:
+            receipt['verified_arm_directory'] = verify_arm_directory(cur, generation)
+        if sync_run_id is None:
+            represented = date.fromisoformat(binding['data_through'])
+            receipt['acquisition'], finals = played_day_evidence(cur, represented)
+            if reconcile_finals:
+                receipt['reconciled_final_sources'] = {str(game['gamePk']): source for game, source in finals}
+        schedules = {}
+        if reconcile_schedules:
+            receipt['reconciled_schedules'] = {}
+            for day in sorted({represented, date.fromisoformat(binding['availability_reference'])}):
+                identity, observation = pinned_schedule(cur, generation, day)
+                receipt['reconciled_schedules'][str(day)] = identity
+                schedules[day] = observation
+        if roster_departure:
+            roster_receipt, roster_candidate = prepare_departure(
+                cur, generation, date.fromisoformat(binding['availability_reference']), *roster_departure)
+            receipt['dated_roster_departure'] = roster_receipt
         previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
         if previous_binding.get('generation') == generation:
-            if previous_binding != receipt or prior.sync_run_id != sync_run_id:
+            if previous_binding != receipt or (sync_run_id is not None and prior.sync_run_id != sync_run_id):
                 raise ValueError('The selected generation already has a different publication receipt')
+            if reconcile_finals:
+                _verify_final_lines(cur, finals)
+            for day, observation in schedules.items():
+                reconcile_schedule(day, observation, verify_only=True)
+            if roster_departure:
+                reconcile_departure(roster_candidate, prior.sync_run_id, verify_only=True)
+                verify_published_membership(cur, generation, prior)
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
             raise ValueError('Trusted publication predecessor changed')
-        run = db.session.get(SyncRun, sync_run_id)
+        if sync_run_id is None:
+            acquisition = receipt['acquisition']
+            run = SyncRun(job_name='sync_v3_acquisition_rehearsal', source='sync_v3_rehearsal', status='success',
+                          stage='acquired', latest_workload_date=date.fromisoformat(acquisition['represented']),
+                          started_at=datetime.fromisoformat(acquisition['started_at']).replace(tzinfo=None),
+                          completed_at=datetime.fromisoformat(acquisition['completed_at']).replace(tzinfo=None),
+                          records_processed=acquisition['jobs'])
+            db.session.add(run)
+            db.session.flush()
+            sync_run_id = run.id
+        else:
+            run = db.session.get(SyncRun, sync_run_id)
         if (run is None or run.status != 'success' or run.published_dashboard_snapshot_id is not None
                 or str(run.latest_workload_date) != receipt['data_through']
                 or str(prior.data_through) > receipt['data_through']):
             raise ValueError('An unused, successful sync run for the selected workload date is required')
+        if reconcile_finals:
+            _reconcile_confirmed_finals(cur, finals, represented, sync_run_id)
+            _verify_final_lines(cur, finals)
+        for day, observation in schedules.items():
+            reconcile_schedule(day, observation)
+        if roster_departure:
+            reconcile_departure(roster_candidate, sync_run_id)
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
             sync_run_id=sync_run_id, source='v3_team_state_rehearsal', publish=False,
             commit=False, raise_errors=True,
@@ -115,6 +237,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
         if (proof.captured_team_count != 30 or proof.overall_verdict not in ('PASS', 'PASS_WITH_INCONCLUSIVE')
                 or inconclusive - {'no_false_cross_version_change'}):
             raise ValueError('Incomplete independent publication proof')
+        if roster_departure:
+            verify_published_membership(cur, generation, snapshot)
         verify_frozen_states(snapshot, receipt)
         return snapshot.id
 
@@ -123,7 +247,6 @@ def main():
     import argparse
     import json
     from contextlib import closing
-    from datetime import date
     import os
     from pathlib import Path
     import socket
@@ -138,7 +261,18 @@ def main():
     parser.add_argument('--revision', type=int, required=True)
     parser.add_argument('--generation', required=True)
     parser.add_argument('--predecessor', type=int, required=True)
-    parser.add_argument('--sync-run', type=int, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--sync-run', type=int)
+    source.add_argument('--source-acquisition', action='store_true',
+                        help='Use the selected date’s settled v3 acquisition in the disposable target')
+    parser.add_argument('--reconcile-finals', action='store_true',
+                        help='Reconcile retained official final lines before the isolated publication')
+    parser.add_argument('--reconcile-schedule', action='store_true',
+                        help='Populate empty target dates using selected schedule receipts with their acquisition times')
+    parser.add_argument('--require-mapped-arms', action='store_true',
+                        help='Require identical public IDs for all selected workload and availability arms')
+    parser.add_argument('--reconcile-roster-departure', nargs=2, type=int, metavar=('TEAM', 'MLB_PLAYER'),
+                        help='Fill one missing off-active, forty-man snapshot from matching dated roster receipts')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
@@ -167,7 +301,10 @@ def main():
                                   user='rehearsal_owner', connect_timeout=5)) as owner:
         with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
-                                        predecessor=args.predecessor, sync_run_id=args.sync_run)
+                                        predecessor=args.predecessor, sync_run_id=args.sync_run,
+                                        reconcile_finals=args.reconcile_finals, reconcile_schedules=args.reconcile_schedule,
+                                        require_mapped_arms=args.require_mapped_arms,
+                                        roster_departure=args.reconcile_roster_departure)
             # The production hooks recover independently after the trust transaction.
             # Recheck durable rows and public reads because hook failures are nonfatal.
             from scripts.verify_selected_delivery import verify_delivery

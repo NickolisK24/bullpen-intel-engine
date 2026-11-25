@@ -814,7 +814,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 536.5,
+      "measured_seconds": 538.65,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1479,11 +1479,15 @@
         {
           "path": "tests/test_publication_candidate_reference_dates.py",
           "measured_seconds": 1.0
+        },
+        {
+          "path": "tests/test_sync_v3_acquisition_receipt.py",
+          "measured_seconds": 2.15
         }
       ]
     },
     "4": {
-      "measured_seconds": 569.319,
+      "measured_seconds": 572.849,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1944,6 +1948,10 @@
         {
           "path": "tests/test_sync_v3_eligibility_recovery.py",
           "measured_seconds": 6.439
+        },
+        {
+          "path": "tests/test_sync_v3_retained_schedule.py",
+          "measured_seconds": 3.53
         }
       ]
     }
