@@ -4,15 +4,42 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 from zoneinfo import ZoneInfo
 
+from services.availability import ACTIVE_WINDOW_DAYS
 from services.game_finality import classify_status
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue
+from sync_v3.dependencies import capture_reads
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.readiness import represented_readiness
+from sync_v3.workload import _game_workload
 
 
-def _needed(cur, team, through):
-    report = represented_readiness(cur, team, through)
+def _missing_workload(cur, through, report, reads, missing):
+    reference = date.fromisoformat(report['reference_date'])
+    schedule, _ = calendar_requests(reference)
+    if (schedule.endpoint, tuple(sorted(schedule.params().items()))) in reads.requests:
+        missing(reference, schedule.endpoint, schedule.params())
+
+    if not report.get('gap_date') or report['reason'] not in ('missing_complete_schedule', 'missing_compatible_final'):
+        return
+    day = date.fromisoformat(report['gap_date'])
+    if not 0 <= (through - day).days < ACTIVE_WINDOW_DAYS:
+        return
+    schedule, _ = calendar_requests(day)
+    if missing(day, schedule.endpoint, schedule.params()):
+        return
+    receipt = evidence.latest_qualified_source(cur, schedule.endpoint, schedule.params())
+    if receipt is None:
+        return
+    for listing in evidence.replay(cur, receipt).body['dates']:
+        for game in listing['games']:
+            if game['gameType'] == 'R' and _game_workload(cur, game, day, receipt)[1] == 'missing_compatible_final':
+                missing(day, f"/game/{game['gamePk']}/boxscore", {})
+
+
+def _needed(cur, team, through, include_workload):
+    with capture_reads(cur) as reads:
+        report = represented_readiness(cur, team, through)
     competition = report.get('competition') or {}
     if (competition.get('team_id') == team and competition.get('status') == 'season_complete' and report['reason']
             and report['reason'] == competition.get('basis') and report.get('team_state') is None):
@@ -29,6 +56,9 @@ def _needed(cur, team, through):
             requests.add((day, endpoint, tuple(sorted(params.items()))))
             return True
         return False
+
+    if include_workload and report['reason']:
+        _missing_workload(cur, through, report, reads, missing)
 
     for player, gap in gaps.items():
         fields = gap.get('evidence') or {}
@@ -67,7 +97,7 @@ def _needed(cur, team, through):
     return report['reason'], sorted(requests), False
 
 
-def recover(connection, team, through, *, fetch, max_jobs, clock=lambda: datetime.now(timezone.utc)):
+def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, clock=lambda: datetime.now(timezone.utc)):
     from sync_v3.current_worker import verify_target
 
     name = verify_target(connection)
@@ -78,8 +108,8 @@ def recover(connection, team, through, *, fetch, max_jobs, clock=lambda: datetim
     waiting = False
     while True:
         with connection, connection.cursor() as cur:
-            cur.execute('SET TRANSACTION READ ONLY')
-            reason, requests, season_complete = _needed(cur, team, through)
+            cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            reason, requests, season_complete = _needed(cur, team, through, include_workload)
         if not reason or not requests or len(outcomes) >= max_jobs:
             break
         count = len(outcomes)
