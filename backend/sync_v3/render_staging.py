@@ -142,7 +142,7 @@ def acquire(password):
             if acquisition_failed(report):
                 raise ValueError('Incomplete staging acquisition')
             if (limit != BATCH_LIMIT or report['receipts'].get('received') != limit
-                    or not report['jobs_for_date'].get('pending') or monotonic()-started >= 150):
+                    or monotonic()-started >= 150):
                 break
             before = after
         if os.environ.get('STAGING_PLAYED_SLATE') == PLAYED_DAY.isoformat():
