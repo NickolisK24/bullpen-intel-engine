@@ -2336,3 +2336,47 @@ def test_historical_http_reader_cannot_write_or_select_a_publication():
         app.testing = True
         with pytest.raises(PermissionError, match='dedicated rehearsal reader'):
             app.test_client().get('/api/sync-v3/revisions/1/league')
+
+
+def test_grouped_pitcher_history_reuses_calendar_and_preserves_individual_provenance(monkeypatch):
+    from contextlib import closing
+    from sync_v3 import workload
+    from sync_v3.generation import METHODOLOGY, _build_pitcher_group
+    from sync_v3.history import record_workload
+    from sync_v3.intelligence_history import DOMAINS, record_intelligence
+    from sync_v3.replay import run_fixture
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated PostgreSQL server')
+    day = date(2026, 7, 29)
+    loads = []
+    load = workload._load_calendars
+
+    def counted(cur, through, scopes):
+        if scopes == (None,):
+            loads.append(through)
+        return load(cur, through, scopes)
+
+    monkeypatch.setattr(workload, '_load_calendars', counted)
+    domains = {DOMAINS[key][1]: key for key in ('pitcher_rest', 'pitcher_profile')}
+    group = [('pitcher', player, method) for player in (101, 102) for method in (METHODOLOGY, *domains)]
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        with closing(connect()) as db:
+            run_fixture(db, Path(__file__).parent / 'fixtures/sync_v3/played.json')
+            for subject, player, method in group:
+                if method == METHODOLOGY:
+                    record_workload(db, subject, player, day)
+                else:
+                    record_intelligence(db, domains[method], player, day)
+            assert len(loads) > 1
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.workload_history')
+                baseline = cur.fetchone()
+            loads.clear()
+            assert _build_pitcher_group(db, day, group, domains, None) == len(group)
+            assert loads == [day]
+            with db, db.cursor() as cur:
+                cur.execute('SELECT count(*) FROM candidate.workload_history')
+                assert cur.fetchone() == baseline
