@@ -201,3 +201,39 @@ def test_current_board_requires_exact_workload_cohort_and_dated_membership():
             club['default_pitcher_ids'] = ids
             with pytest.raises(ValueError, match='differs from the qualified official workload'):
                 verify_board_rosters(snapshot, binding)
+
+
+def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, monkeypatch):
+    import psycopg2
+    from psycopg2 import sql
+    from sync_v3 import staging_projector as projector, staging_publisher as publisher
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            cur.execute(sql.SQL('CREATE DATABASE {} OWNER {}').format(sql.Identifier(TARGET), sql.Identifier(OWNER)))
+            cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(TARGET)))
+
+        def connect(user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=TARGET, user=user, password=password)
+
+        monkeypatch.setattr(projector, '_connect', connect)
+        monkeypatch.setattr(publisher, '_connect', connect)
+        with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+            for table in projector.READ | {'dashboard_snapshots'}:
+                name = sql.Identifier(table)
+                cur.execute(sql.SQL('CREATE TABLE {} (id serial PRIMARY KEY, source text, job_name text, '
+                                    'status text, stage text, published_dashboard_snapshot_id integer)').format(name))
+                cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(name))
+        projector.install('', 'local-test-password')
+        with closing(connect(projector.PROJECTOR, 'local-test-password')) as runtime:
+            with runtime, runtime.cursor() as cur:
+                cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
+                            "VALUES ('sync_v3_staging','sync_v3_board_review_111','success','reviewed')")
+            for statement in ("INSERT INTO sync_runs(source,job_name,status,stage) "
+                              "VALUES ('sync_v3_staging','daily_sync','success','reviewed')",
+                              "UPDATE sync_runs SET published_dashboard_snapshot_id=1",
+                              "INSERT INTO dashboard_snapshots DEFAULT VALUES"):
+                with pytest.raises(psycopg2.errors.InsufficientPrivilege), runtime, runtime.cursor() as cur:
+                    cur.execute(statement)

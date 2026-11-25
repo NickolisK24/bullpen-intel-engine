@@ -20,9 +20,9 @@ INSERT = set('dashboard_snapshots share_artifact_evidence share_artifact_generat
 UPDATE = {'dashboard_snapshots', 'share_artifacts', 'sync_runs'}
 
 
-def check_scope(cur, database, *, installer=False):
+def check_scope(cur, database, *, installer=False, login=PUBLISHER, reads=READ, inserts=INSERT, updates=UPDATE):
     cur.execute('SELECT current_database(), session_user, current_user')
-    expected = OWNER if installer else PUBLISHER
+    expected = OWNER if installer else login
     if cur.fetchone() != (database, expected, expected):
         raise ValueError('Unexpected private publication database or effective login')
     cur.execute("""SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls
@@ -34,22 +34,22 @@ def check_scope(cur, database, *, installer=False):
                    OR EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                               WHERE p.prosecdef AND n.nspname !~ '^pg_' AND n.nspname != 'information_schema'
                               AND has_schema_privilege(r.oid,n.oid,'USAGE') AND has_function_privilege(r.oid,p.oid,'EXECUTE'))
-                   FROM pg_roles r WHERE rolname=%s""", (TARGET, PUBLISHER))
+                   FROM pg_roles r WHERE rolname=%s""", (TARGET, login))
     if cur.fetchone() != (False,):
-        raise ValueError('Private publisher has unreviewed administration or routine access')
+        raise ValueError('Private runtime login has unreviewed administration or routine access')
     cur.execute("""SELECT n.nspname,c.relname,
                    has_table_privilege(%s,c.oid,'SELECT'),has_any_column_privilege(%s,c.oid,'SELECT'),
                    has_any_column_privilege(%s,c.oid,'INSERT'),has_any_column_privilege(%s,c.oid,'UPDATE'),
                    has_table_privilege(%s,c.oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER') OR
                    has_any_column_privilege(%s,c.oid,'REFERENCES')
                    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_'
-                   AND n.nspname != 'information_schema' AND c.relkind IN ('r','p','v','f','m')""", (PUBLISHER,)*6)
+                   AND n.nspname != 'information_schema' AND c.relkind IN ('r','p','v','f','m')""", (login,)*6)
     for schema, table, read, columns, insert, update, other in cur.fetchall():
         target = database == TARGET and schema == 'public'
-        can_read = (database == DATABASE and schema == 'candidate') or (target and table in READ)
-        if (read, columns, insert, update, other) != (can_read, can_read, target and table in INSERT,
-                                                      target and table in UPDATE, False):
-            raise ValueError(f'Unexpected publisher access to {schema}.{table}')
+        can_read = (database == DATABASE and schema == 'candidate' and login == PUBLISHER) or (target and table in reads)
+        if (read, columns, insert, update, other) != (can_read, can_read, target and table in inserts,
+                                                      target and table in updates, False):
+            raise ValueError(f'Unexpected {login} access to {schema}.{table}')
 
 
 def verify_source(connection):
@@ -61,35 +61,41 @@ def verify_source(connection):
             raise ValueError('Unexpected private candidate schema revision')
 
 
-def install(owner_password, password):
-    role = sql.Identifier(PUBLISHER)
+def install_target(owner_password, password, login, reads, inserts, updates, policy_prefix, *, insert_checks=None):
+    role = sql.Identifier(login)
     with closing(_connect(OWNER, owner_password)) as owner, owner, owner.cursor() as cur:
         cur.execute('SELECT current_database(), current_user')
         if cur.fetchone() != (TARGET, OWNER):
             raise ValueError('Unexpected private target installer')
-        cur.execute("SELECT pg_advisory_xact_lock(hashtext('private_product_publisher'))")
-        cur.execute('SELECT 1 FROM pg_roles WHERE rolname=%s', (PUBLISHER,))
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (login,))
+        cur.execute('SELECT 1 FROM pg_roles WHERE rolname=%s', (login,))
         if not cur.fetchone():
-            verifier = encrypt_password(password, PUBLISHER, owner, 'scram-sha-256')
+            verifier = encrypt_password(password, login, owner, 'scram-sha-256')
             cur.execute(sql.SQL('CREATE ROLE {} LOGIN NOINHERIT PASSWORD %s').format(role), (verifier,))
         cur.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(sql.Identifier(TARGET), role))
         cur.execute(sql.SQL('GRANT USAGE ON SCHEMA public TO {}').format(role))
-        for tables, action, predicate in ((READ,'SELECT','USING (true)'), (INSERT,'INSERT','WITH CHECK (true)'),
-                                         (UPDATE,'UPDATE','USING (true) WITH CHECK (true)')):
+        for tables, action, predicate in ((reads,'SELECT','USING (true)'), (inserts,'INSERT','WITH CHECK (true)'),
+                                         (updates,'UPDATE','USING (true) WITH CHECK (true)')):
             for table in sorted(tables):
                 relation = sql.Identifier('public', table)
                 cur.execute(sql.SQL('GRANT {} ON {} TO {}').format(sql.SQL(action), relation, role))
-                policy = 'private_publisher_' + action.lower()
+                policy = policy_prefix + '_' + action.lower()
+                condition = (insert_checks or {}).get(table, predicate) if action == 'INSERT' else predicate
                 cur.execute(sql.SQL('DROP POLICY IF EXISTS {} ON {}').format(sql.Identifier(policy), relation))
                 cur.execute(sql.SQL('CREATE POLICY {} ON {} FOR {} TO {} {}')
-                            .format(sql.Identifier(policy), relation, sql.SQL(action), role, sql.SQL(predicate)))
+                            .format(sql.Identifier(policy), relation, sql.SQL(action), role, sql.SQL(condition)))
                 if action == 'INSERT':
                     cur.execute("""SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                                    WHERE c.oid=pg_get_serial_sequence(%s,'id')::regclass""", ('public.'+table,))
                     sequence = cur.fetchone()
                     if sequence:
                         cur.execute(sql.SQL('GRANT USAGE ON SEQUENCE {} TO {}').format(sql.Identifier(*sequence), role))
-        check_scope(cur, TARGET, installer=True)
+        check_scope(cur, TARGET, installer=True, login=login, reads=reads, inserts=inserts, updates=updates)
+
+
+def install(owner_password, password):
+    install_target(owner_password, password, PUBLISHER, READ, INSERT, UPDATE, 'private_publisher')
+    role = sql.Identifier(PUBLISHER)
     with closing(connect(OWNER, owner_password)) as owner, owner, owner.cursor() as cur:
         cur.execute('SELECT current_database(), current_user')
         if cur.fetchone() != (DATABASE, OWNER):

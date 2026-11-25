@@ -191,7 +191,8 @@ def private_app(password, *, user=OWNER, read_only=False):
 
     from sync_v3.staging_reader import READER
     from sync_v3.staging_publisher import PUBLISHER
-    if user not in (OWNER, READER, PUBLISHER):
+    from sync_v3.staging_projector import PROJECTOR
+    if user not in (OWNER, READER, PUBLISHER, PROJECTOR):
         raise ValueError('Unexpected private product database login')
     if os.environ.get('AUTO_SYNC', '').lower() != 'false' or 'app' in sys.modules:
         raise ValueError('Private product rehearsal requires a fresh process with the scheduler disabled')

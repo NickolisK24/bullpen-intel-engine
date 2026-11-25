@@ -56,14 +56,17 @@ def bootstrap(password):
                                                 generation=qualified['generation']))), flush=True)
         os.environ['STAGING_PRODUCT_GENERATION'] = qualified['generation']
         task = 'publish-with-scoped-login'
-    if task in ('verify-reader-edition', 'publish-with-scoped-login', 'rollback-with-scoped-login'):
-        # Run the reader entry point with only its own private database credential.
+    operations = {
+        'verify-reader-edition': ('read', ('STAGING_PRODUCT_READER_PASSWORD',)),
+        'publish-with-scoped-login': ('publish', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
+        'rollback-with-scoped-login': ('rollback', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
+        'recover-board-with-scoped-login': ('project', ('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD')),
+    }
+    if task in operations:
         import sys
-        reader = task == 'verify-reader-edition'
-        operation = 'read' if reader else ('publish' if task == 'publish-with-scoped-login' else 'rollback')
-        secret = 'STAGING_PRODUCT_READER_PASSWORD' if reader else 'STAGING_PRODUCT_PUBLISHER_PASSWORD'
+        operation, secrets = operations[task]
         keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV',
-                secret, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
+                *secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
         env = {key: os.environ[key] for key in keep if key in os.environ}
         env['AUTO_SYNC'] = 'false'
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', operation], env)
@@ -124,7 +127,7 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history', 'recover-next-offseason-board'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'install-product-projector', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history', 'recover-next-offseason-board'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
@@ -170,6 +173,13 @@ def bootstrap(password):
             verify_target(source)
             result = project_offseason_competition(source, client, datetime.now(ZoneInfo('America/New_York')).date())
         print(json.dumps(dict(private_offseason_projection=result)), flush=True)
+        return
+    if task == 'install-product-projector':
+        from services.migration_authority import require_owner
+        from sync_v3.staging_projector import PROJECTOR, install
+        require_owner()
+        install(binding['password'], os.environ['STAGING_PROJECTOR_PASSWORD'])
+        print(json.dumps(dict(private_projector_install=dict(role=PROJECTOR))), flush=True)
         return
     if task == 'install-product-publisher':
         from services.migration_authority import require_owner
@@ -356,7 +366,7 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project'))
     args = parser.parse_args()
     try:
         if args.operation in ('publish', 'rollback'):
@@ -371,6 +381,11 @@ if __name__ == '__main__':
             else:
                 result = exercise_rollback(password, digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']), user=PUBLISHER)
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
+        elif args.operation == 'project':
+            from sync_v3.staging_projector import recover_boards
+            result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
+                                    os.environ['STAGING_PRODUCT_GENERATION'])
+            print(json.dumps(dict(private_board_history=result)), flush=True)
         elif args.operation == 'read':
             from sync_v3.staging_reader import serve_edition
             result = serve_edition(os.environ['STAGING_PRODUCT_READER_PASSWORD'], os.environ['STAGING_PRODUCT_GENERATION'])
