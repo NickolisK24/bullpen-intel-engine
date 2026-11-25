@@ -152,7 +152,7 @@ def _check_retained_finals(cur, player, rows, *, for_membership=False):
 
 
 def _confirm_uncredited(cur, player, team, pk, day, game_type):
-    scope = dict(game_pk=pk, game_date=day.isoformat(), team_id=team)
+    scope = dict(game_pk=pk, game_date=day.isoformat(), game_type=game_type, team_id=team)
 
     def missing(stage):
         return BaselineWithheld('uncredited_game_requires_official_final', game_evidence=dict(scope, stage=stage))

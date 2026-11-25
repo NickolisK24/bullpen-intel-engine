@@ -1483,7 +1483,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 562.88,
+      "measured_seconds": 569.319,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1940,6 +1940,10 @@
         {
           "path": "tests/test_sync_v3_team_history_context.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sync_v3_eligibility_recovery.py",
+          "measured_seconds": 6.439
         }
       ]
     }

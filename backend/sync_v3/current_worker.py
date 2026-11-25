@@ -51,7 +51,7 @@ def verify_target(connection):
 
 def day_states(cur, day, budget):
     cur.execute("""SELECT state,count(*) FROM candidate.jobs WHERE budget=%s AND product_date=%s
-                   AND (budget='current' OR payload->>'capture' IS NULL) GROUP BY state""", (budget, day))
+                   AND (budget='current' OR (payload->>'capture' IS NULL AND NOT (payload ? 'eligibility_recovery'))) GROUP BY state""", (budget, day))
     return dict(cur.fetchall())
 
 
@@ -106,7 +106,11 @@ def main():
     parser.add_argument('--postseason-round', choices=('F', 'D', 'L', 'W'), action='append', default=[],
                         help='Acquire this round for pitchers discovered through --active-profiles')
     parser.add_argument('--round-totals', action='store_true')
+    parser.add_argument('--recover-eligibility', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
+                        help='Recover only missing historical eligibility evidence for this club and date')
     args = parser.parse_args()
+    if args.recover_eligibility and (args.active_profiles or args.depth_team or args.postseason_round or args.round_totals):
+        parser.error('Eligibility recovery derives the source scope from the retained evidence')
     if args.postseason_round and not args.active_profiles:
         parser.error('--postseason-round requires --active-profiles')
     if args.round_totals and not args.postseason_round:
@@ -119,6 +123,14 @@ def main():
                                       sslmode='disable' if socket else 'verify-full', connect_timeout=5,
                                       options='-c search_path=pg_catalog',
                                       application_name='baseballos_sync_v3_shadow')) as connection:
+            if args.recover_eligibility:
+                from sync_v3.eligibility_recovery import recover
+                client = MLBApiClient()
+                with closing(client.session):
+                    report = recover(connection, args.recover_eligibility, args.day, max_jobs=args.max_jobs,
+                                     fetch=lambda endpoint, params: client._get(endpoint, params=params))
+                print(json.dumps(report, sort_keys=True))
+                return 0 if report['status'] in ('ready', 'season_complete', 'batch_limit', 'awaiting_retry_or_lease') else 1
             report = process(connection, args.day, max_jobs=args.max_jobs, profiles=args.active_profiles,
                              depth_teams=args.depth_team, postseason_rounds=args.postseason_round,
                              round_totals=args.round_totals)
