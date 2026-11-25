@@ -310,6 +310,7 @@ def project_roster_views(worker_password):
         for day in (PLAYED_DAY, PLAYED_DAY + timedelta(days=1)):
             acquired = 0
             clubs = 0
+            candidates = {}
             for team in sorted(MLB_TEAM_IDS):
                 bodies, stamps = {}, {}
                 for req in roster_requests(day, [team]):
@@ -355,11 +356,56 @@ def project_roster_views(worker_password):
                                 raise ValueError('Target roster differs from retained acquisition')
                             existing[kind] = row
                     if not existing:
-                        retain_roster_inputs(capture, team, None, [])
+                        links = retain_roster_inputs(capture, team, None, [])
                     elif existing.keys() != bodies.keys():
                         raise ValueError('Partial target roster capture')
+                    if existing:
+                        links = dict(active_roster_observation_id=existing['active'].id,
+                                     forty_man_roster_observation_id=existing['40Man'].id)
+                    from services.roster_status_sync import build_exact_date_team_roster_status_index
+                    index, errors = build_exact_date_team_roster_status_index(team, day, evidence=capture)
+                    if errors:
+                        raise ValueError('Incomplete official roster evidence')
+                    for player, record in index.items():
+                        if record['roster_types'] & {'active', '40Man'}:
+                            candidates.setdefault(player, []).append(dict(team_id=team, evidence=record,
+                                                                         observation_links=links, snapshot_date=day))
                     if existing and team == 108 and day > PLAYED_DAY:
                         matched_departure_evidence(team, 502032, day, bodies, existing)
                 clubs += 1
-            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
+            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired,\n                                    credited_membership=project_credited_membership(day, candidates))
     return result
+
+
+def project_credited_membership(day, by_player):
+    from models.pitcher import Pitcher
+    from models.roster_status_snapshot import RosterStatusSnapshot
+    from services.primary_roster_inputs import replay_membership
+    from services.roster_status_sync import classify_roster_evidence, persist_missing_exact_roster_status_snapshots
+
+    with db.session.begin():
+        pitchers = Pitcher.query.order_by(Pitcher.id).all()
+        candidates = []
+        for pitcher in pitchers:
+            matches = by_player.get(pitcher.mlb_id, [])
+            if len(matches) > 1:
+                raise ValueError('Conflicting dated club memberships')
+            if matches:
+                candidates.append(dict(matches[0], pitcher=pitcher))
+        report = persist_missing_exact_roster_status_snapshots(candidates)
+        if report['conflicts'] or report['failure_records']:
+            raise ValueError('Dated roster writer refused observations')
+        active = 0
+        for candidate in candidates:
+            row = RosterStatusSnapshot.query.filter_by(pitcher_id=candidate['pitcher'].id, snapshot_date=day).one()
+            kinds = candidate['evidence']['roster_types']
+            expected = ('active' in kinds, '40Man' in kinds)
+            if (row.team_id != candidate['team_id'] or row.mlb_id != candidate['pitcher'].mlb_id
+                    or row.roster_status != classify_roster_evidence(candidate['evidence'])['status']
+                    or (row.active_roster, row.forty_man_roster) != expected
+                    or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
+                    or replay_membership(row) != expected):
+                raise ValueError('Dated roster evidence differs from stored membership')
+            active += int(expected[0])
+        return dict(verified=len(candidates), active=active, outside_active_and_40man=len(pitchers)-len(candidates),
+                    created=report['created'])
