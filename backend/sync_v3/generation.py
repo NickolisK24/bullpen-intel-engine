@@ -358,7 +358,20 @@ def build_batch(connection, through, limit, *, as_of=None, deadline=None):
 
     selected = sorted(outstanding, key=priority)[:limit]
     processed = []
-    for subject, entity, method in selected:
+    while len(processed) < len(selected):
+        offset = len(processed)
+        subject, entity, method = selected[offset]
+        if subject == 'pitcher' and method not in changes_for:
+            group = []
+            for scope in selected[offset:offset+12]:
+                if scope[0] != 'pitcher' or scope[2] in changes_for:
+                    break
+                group.append(scope)
+            count = _build_pitcher_group(connection, through, group, domain_for, deadline)
+            processed.extend(group[:count])
+            if deadline is not None and monotonic() >= deadline:
+                break
+            continue
         if method in changes_for:
             _transaction(connection, _build_change_set, changes_for[method], subject, entity, through)
         else:
@@ -367,6 +380,27 @@ def build_batch(connection, through, limit, *, as_of=None, deadline=None):
         if deadline is not None and monotonic() >= deadline:
             break
     return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=processed)
+
+
+def _build_pitcher_group(connection, through, group, domains, deadline):
+    """Use one consistent calendar and seal the exact reads consulted for each pitcher separately."""
+    from sync_v3.history import _append as workload, _snapshot_transaction
+    from sync_v3.intelligence_history import _append as intelligence
+    from sync_v3.workload import share_league_calendar
+
+    def append(cur):
+        rows = []
+        with share_league_calendar(cur):
+            for subject, player, method in group:
+                if method == METHODOLOGY:
+                    rows.append(workload(cur, subject, player, through))
+                else:
+                    rows.append(intelligence(cur, domains[method], player, through))
+                if deadline is not None and monotonic() >= deadline:
+                    break
+        return rows
+
+    return len(_snapshot_transaction(connection, append))
 
 
 def review_coverage(manifest):
