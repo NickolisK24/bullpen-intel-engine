@@ -91,3 +91,42 @@ def test_rollback_restores_predecessor_and_refuses_an_unexpected_run_binding(pg)
             assert not db.session.get(Snapshot, new_id).is_published
             assert old_run.published_dashboard_snapshot_id == old_id
             assert new_run.published_dashboard_snapshot_id is None
+
+
+def test_private_product_reader_can_read_rls_rows_and_detect_grant_drift(pg, monkeypatch):
+    import psycopg2
+    from sync_v3 import staging_reader
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            cur.execute('CREATE DATABASE baseballos_v3_roster_staging OWNER baseballos_sync_v3_staging_user')
+            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_roster_staging FROM PUBLIC')
+
+        def connect(user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=TARGET, user=user, password=password)
+
+        monkeypatch.setattr(staging_reader, '_connect', connect)
+        with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+            cur.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+            cur.execute('CREATE TABLE dashboard_snapshots(id int)')
+            cur.execute('INSERT INTO dashboard_snapshots VALUES (5)')
+            cur.execute('ALTER TABLE dashboard_snapshots ENABLE ROW LEVEL SECURITY')
+            cur.execute('CREATE TABLE users(id int)')
+        tables = {'dashboard_snapshots'}
+        staging_reader.install('', 'private-test-reader', tables)
+        staging_reader.install('', 'private-test-reader', tables)
+        with closing(connect(staging_reader.READER, 'private-test-reader')) as reader:
+            with reader, reader.cursor() as cur:
+                cur.execute('SELECT id FROM dashboard_snapshots')
+                assert cur.fetchall() == [(5,)]
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reader, reader.cursor() as cur:
+                cur.execute('SELECT id FROM users')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), reader, reader.cursor() as cur:
+                cur.execute('SET TRANSACTION READ WRITE')
+                cur.execute('UPDATE dashboard_snapshots SET id=6')
+            with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
+                cur.execute('GRANT UPDATE ON dashboard_snapshots TO baseballos_v3_staging_product_reader')
+            with pytest.raises(ValueError, match='grants differ'):
+                staging_reader.verify(reader, tables)
