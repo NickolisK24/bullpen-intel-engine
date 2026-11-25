@@ -1,4 +1,5 @@
 """Install the product schema in a private logical database on the approved staging instance."""
+import json
 import os
 from contextlib import closing
 from zoneinfo import ZoneInfo
@@ -84,6 +85,7 @@ def project_played_schedule(worker_password):
         observation = replay(cur, receipt)
         cur.execute('SELECT sha256 FROM candidate.fetches WHERE id=%s', (receipt,))
         digest, = cur.fetchone()
+        identities = stage_identity_inputs(cur, observation, receipt, PLAYED_DAY)
 
     # The installer owns DDL. The canonical writer runs with table-scoped privileges.
     with db.engine.begin() as conn:
@@ -115,7 +117,8 @@ def project_played_schedule(worker_password):
         with db.session.begin():
             db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
             reconcile_schedule(PLAYED_DAY, observation, private_staging=True, verify_only=verify_only)
-    return dict(day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
+    bound = bind_known_pitchers(identities)
+    return dict(bound_pitcher_identities=bound, day=str(PLAYED_DAY), receipt=receipt, sha256=digest, received_at=observation.retrieved_at.isoformat(),
                 games=sum(len(d['games']) for d in observation.body['dates']), repeated=True,
                 current_acquisition=freshness)
 
@@ -147,3 +150,68 @@ def acquisition_freshness(cur):
                        (SELECT 1 FROM candidate.jobs p WHERE p.id=j.prerequisite AND p.state='done'))""", (day,))
     ready, waiting = cur.fetchone()
     return dict(measured_at=at.isoformat(), day=str(day), groups=summary, ready_jobs=ready, oldest_ready_seconds=waiting)
+
+def stage_identity_inputs(cur, schedule, schedule_id, day):
+    """Resolve approved ID pairs only against confirmed final pitching lines."""
+    from services.pitcher_identity_reconciliation import minimal_identity_values
+    from sync_v3.evidence import latest_qualified_source, replay
+
+    pairs = json.loads(os.environ['STAGING_BASEBALL_PUBLIC_IDENTITIES'])['pairs']
+    if (len(pairs) != 14 or any(len(p) != 2 or any(type(n) != int or n <= 0 for n in p) for p in pairs)
+            or any(len({p[i] for p in pairs}) != len(pairs) for i in (0, 1))):
+        raise ValueError('Unexpected staging cohort directory')
+    directory = {mlb: public for public, mlb in pairs}
+    identities = {}
+    for entry in schedule.body['dates']:
+        for game in entry['games']:
+            pk = game['gamePk']
+            source = latest_qualified_source(cur, f'/game/{pk}/boxscore', {})
+            cur.execute("""SELECT DISTINCT r.facts FROM candidate.confirmations f
+                           JOIN candidate.revisions r ON r.id=f.revision_id
+                           JOIN candidate.confirmations ctx ON ctx.source_id=f.context_id
+                           JOIN candidate.confirmations slate ON slate.revision_id=ctx.revision_id
+                           WHERE f.domain='final' AND f.identity=%s AND f.source_id=%s
+                           AND ctx.domain='schedule' AND ctx.identity IN (%s,%s)
+                           AND slate.domain=ctx.domain AND slate.identity=ctx.identity AND slate.source_id=%s""",
+                        (str(pk), source, str(pk), f'{pk}/{day}', schedule_id))
+            facts, = cur.fetchone()
+            box = replay(cur, source).body
+            for line in facts:
+                mlb = line['pitcher_mlb_id']
+                if mlb not in directory:
+                    continue
+                team = box['teams'][line['side']]
+                player = team['players'][f'ID{mlb}']
+                if team['team']['id'] != line['team_id'] or player['person']['id'] != mlb:
+                    raise ValueError('Final appearance identity mismatch')
+                name = player['person']['fullName']
+                position = player['position']['abbreviation']
+                if not name or not position:
+                    raise ValueError('Missing credited player identity')
+                values = minimal_identity_values(player_mlb_id=mlb, line_name=name, line_position=position,
+                                                 position_override=position not in ('P', 'Pitcher'))
+                identities[mlb] = dict(values, id=directory[mlb])
+    if identities.keys() != directory.keys():
+        raise ValueError('Approved mapping is outside credited final cohort')
+    return identities
+
+
+def bind_known_pitchers(identities):
+    """Bootstrap existing public keys once under the private migration owner's transaction."""
+    from models.pitcher import Pitcher
+
+    table = Pitcher.__table__
+    with db.engine.begin() as conn:
+        if conn.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected identity bootstrap target')
+        conn.execute(text('LOCK TABLE public.pitchers IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        for mlb, values in identities.items():
+            row = conn.execute(table.select().where((table.c.id == values['id']) | (table.c.mlb_id == mlb))).one_or_none()
+            if row is None:
+                conn.execute(table.insert().values(**values))
+            elif (row.id, row.mlb_id) != (values['id'], mlb):
+                raise ValueError('Existing staging identity conflicts with approved mapping')
+        # Explicit primary keys must not collide with subsequent generated identities.
+        conn.execute(text("""SELECT setval(pg_get_serial_sequence('public.pitchers','id'),
+                          greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"""))
+    return len(identities)
