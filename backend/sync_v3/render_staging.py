@@ -106,7 +106,17 @@ def bootstrap(password):
                 if phase not in ('pregame', 'postgame'):
                     raise ValueError('Unknown primary synchronization phase')
                 from sync_v3.staging_projector import reviewed_resume
-                resume_digest = reviewed_resume(source, os.environ['STAGING_PROJECTOR_PASSWORD'], day)
+                resume_digest, boards_pending = reviewed_resume(source, os.environ['STAGING_PROJECTOR_PASSWORD'], day)
+                if boards_pending:
+                    import subprocess
+                    import sys
+                    env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD')
+                    elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+                    env.update(STAGING_PRODUCT_GENERATION=resume_digest,
+                               STAGING_REVIEW_BUDGET=str(max(15, min(230, int(255-elapsed)))))
+                    subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project'], env=env, check=True)
+                    print(json.dumps(dict(current_cycle_pending=dict(day=str(day), generation=resume_digest))), flush=True)
+                    return
                 qualified = prepare(source, password, day, after_finals=phase=='postgame',
                                     for_projection=True, resume_digest=resume_digest)
                 if not qualified['ready']:

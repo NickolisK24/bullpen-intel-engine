@@ -83,11 +83,19 @@ def reviewed_resume(source, password, day):
             AND job_name='sync_v3_canonical_cycle' AND stage='canonical_ready' AND status='success'
             ORDER BY id DESC LIMIT 1""")
         row = cur.fetchone()
-    if row and row[0]['day'] == str(day):
-        with source, source.cursor() as cur:
-            if inputs_still_current(cur, row[0]['sources']):
-                return row[0]['generation']
-    return None
+        if not row or row[0]['day'] != str(day):
+            return None, False
+        digest = row[0]['generation']
+        from services.mlb_club_directory import MLB_TEAM_IDS
+        names = [f'sync_v3_board_review_{team}' for team in MLB_TEAM_IDS]
+        cur.execute("""SELECT count(DISTINCT job_name) FROM public.sync_runs
+            WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND stage='reviewed' AND status='success'
+              AND publication_outcome->>'generation'=%s""", (names, digest))
+        complete = cur.fetchone()[0] == len(names)
+    with source, source.cursor() as cur:
+        if inputs_still_current(cur, row[0]['sources']):
+            return digest, not complete
+    return None, False
 
 
 def record_checkpoint(digest, day, through, sources, started):
