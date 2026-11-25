@@ -5,12 +5,14 @@ owner connection supplied by isolated_cluster. No deployed caller or scheduler.
 """
 from collections import Counter
 from datetime import date, datetime
+from hashlib import sha256
 import re
 
 from flask import current_app
 from sqlalchemy import text
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
 from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
@@ -18,9 +20,9 @@ from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3.acquisition_receipt import played_day_evidence
-from sync_v3.evidence import replay
+from sync_v3.evidence import encode_json, replay
 from sync_v3.generation import _inspect
-from sync_v3.product_reads import _league
+from sync_v3.product_reads import _league, _public_arms
 from utils.db import db
 
 
@@ -57,6 +59,28 @@ def verify_frozen_states(snapshot, binding):
         if (actual['dashboard_snapshot_id'] != snapshot.id or actual['team_id'] != int(team)
                 or actual['value'] != expected['state']):
             raise ValueError(f'Selected and published Team State disagree for {team}')
+
+
+def verify_arm_directory(cur, generation):
+    """Bind the selected workload and availability arms to durable target pitcher IDs."""
+    selected = {}
+    for board_date in (False, True):
+        arms, status = _public_arms(cur, generation, board_date=board_date)
+        if status != 'mapped':
+            raise ValueError(f'Incomplete selected pitcher directory: {status}')
+        for mlb_id, player in arms.items():
+            public_id = player['public_id']
+            if public_id is None or selected.setdefault(mlb_id, public_id) != public_id:
+                raise ValueError(f'Conflicting selected pitcher identity for {mlb_id}')
+    if not selected or len(set(selected.values())) != len(selected):
+        raise ValueError('The selected pitcher directory is empty or ambiguous')
+    # Keep a concurrent target writer from replacing an identity before publication commits.
+    rows = db.session.query(Pitcher.mlb_id, Pitcher.id).filter(Pitcher.mlb_id.in_(selected)).with_for_update(
+        read=True, nowait=True
+    ).all()
+    if dict(rows) != selected:
+        raise ValueError('Selected and target pitcher directories disagree')
+    return dict(players=len(selected), sha256=sha256(encode_json(sorted(selected.items()))).hexdigest())
 
 
 def _verify_final_lines(cur, finals):
@@ -104,7 +128,7 @@ def _reconcile_confirmed_finals(cur, finals, represented, run_id):
 
 
 def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False,
-                     reconcile_schedules=False):
+                     reconcile_schedules=False, require_mapped_arms=False):
     """Keep the selector pinned until the independent target transaction commits."""
     assert_rehearsal_target()
     if (reconcile_finals or reconcile_schedules) and sync_run_id is not None:
@@ -142,6 +166,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
             snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD, is_published=True
         ).one()
         receipt = dict(binding, predecessor=predecessor)
+        if require_mapped_arms:
+            receipt['verified_arm_directory'] = verify_arm_directory(cur, generation)
         if sync_run_id is None:
             represented = date.fromisoformat(binding['data_through'])
             receipt['acquisition'], finals = played_day_evidence(cur, represented)
@@ -231,6 +257,8 @@ def main():
                         help='Reconcile retained official final lines before the isolated publication')
     parser.add_argument('--reconcile-schedule', action='store_true',
                         help='Populate empty target dates using selected schedule receipts with their acquisition times')
+    parser.add_argument('--require-mapped-arms', action='store_true',
+                        help='Require identical public IDs for all selected workload and availability arms')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
@@ -260,7 +288,8 @@ def main():
         with app.app_context(), freeze_time(f'{args.product_day} 12:00:00', real_asyncio=True):
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
                                         predecessor=args.predecessor, sync_run_id=args.sync_run,
-                                        reconcile_finals=args.reconcile_finals, reconcile_schedules=args.reconcile_schedule)
+                                        reconcile_finals=args.reconcile_finals, reconcile_schedules=args.reconcile_schedule,
+                                        require_mapped_arms=args.require_mapped_arms)
             # The production hooks recover independently after the trust transaction.
             # Recheck durable rows and public reads because hook failures are nonfatal.
             from scripts.verify_selected_delivery import verify_delivery
