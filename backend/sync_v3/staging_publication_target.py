@@ -470,7 +470,21 @@ def project_credited_membership(day, by_player, *, apply_position, club_inputs):
             if apply_position and evidence:
                 _apply_current_position_to_pitcher_cache(candidate['pitcher'], evidence)
             if club_inputs and not any(expected):
-                _apply_snapshot_to_pitcher_cache(candidate['pitcher'], row)
+                from services.team_assignment_sync import (
+                    _apply_assignment, _classification_from_roster_evidence, _source_for, ROSTER_PRECEDENCE,
+                    SOURCE_PREFIX, TEAM_ASSIGNMENT_UNKNOWN,
+                )
+                from services.mlb_club_directory import MLB_CLUBS
+                pitcher = candidate['pitcher']
+                if pitcher.team_assignment_source in {_source_for(kind) for kind in ROSTER_PRECEDENCE}:
+                    # The earlier roster-backed club assignment expired. The four new views can
+                    # establish another assignment or leave present affiliation unknown.
+                    appearances = [dict(team_id=row.team_id, roster_type=kind) for kind in kinds]
+                    team_map = {club.team_id: dict(name=club.team_name, abbreviation=club.abbreviation) for club in MLB_CLUBS}
+                    assignment = _classification_from_roster_evidence(dict(appearances=appearances), team_map)
+                    _apply_assignment(pitcher, assignment or dict(status=TEAM_ASSIGNMENT_UNKNOWN,
+                                      source=f'{SOURCE_PREFIX}:dated_roster_absence'), row.updated_at or row.first_seen_at)
+                _apply_snapshot_to_pitcher_cache(pitcher, row)
             if row.sync_run_id is None:
                 row.sync_run_id = run.id
             active += int(bool(expected[0]))
