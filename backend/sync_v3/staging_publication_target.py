@@ -584,7 +584,7 @@ def recover_missing_finals(worker_password, receipts, missing):
     return recovered
 
 
-def advance_private_generation(worker_password):
+def advance_private_generation(worker_password, *, budget_seconds=90):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
     from sync_v3.current_worker import verify_target
@@ -611,9 +611,18 @@ def advance_private_generation(worker_password):
                             snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
             if digest == batch['before']:
                 raise ValueError('Private intelligence batch did not advance')
-            if monotonic()-started >= 90:
-                return dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
+            with source, source.cursor() as cur:
+                cur.execute("""SELECT jsonb_array_length(manifest->'missing'),
+                                      jsonb_array_length(manifest->'stale_inputs'),
+                                      jsonb_array_length(manifest->'stale_comparisons')
+                               FROM candidate.generations WHERE digest=%s""", (digest,))
+                missing, stale, comparisons = cur.fetchone()
+            progress = dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
+                            missing_scopes=missing, stale_inputs=stale, stale_comparisons=comparisons,
                             review='building')
+            print(json.dumps(dict(private_intelligence=progress)), flush=True)
+            if monotonic()-started >= budget_seconds:
+                return progress
 
 
 def project_archived_fatigue():
