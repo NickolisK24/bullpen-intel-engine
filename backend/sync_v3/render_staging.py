@@ -71,7 +71,7 @@ def bootstrap(password):
             subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'], env=env, check=True)
         print(json.dumps(dict(private_primary_date=result)), flush=True)
         return
-    if task == 'run-current-offseason':
+    if task in ('run-current-offseason', 'run-current-primary'):
         import resource
         started_at = datetime.now(timezone.utc)
         from sync_v3.staging_publication_target import acquisition_freshness
@@ -85,7 +85,17 @@ def bootstrap(password):
             if acquisition_failed(report):
                 raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
             recovery = reconcile_current_decisions(source, client._get)
-            qualified = qualify_offseason_edition(source, day)
+            if task == 'run-current-primary':
+                from sync_v3.primary_date import prepare
+                phase = os.environ.get('STAGING_PRIMARY_PHASE', 'pregame')
+                if phase not in ('pregame', 'postgame'):
+                    raise ValueError('Unknown primary synchronization phase')
+                qualified = prepare(source, password, day, after_finals=phase=='postgame')
+                if not qualified['ready']:
+                    print(json.dumps(dict(current_cycle_pending=qualified)), flush=True)
+                    return
+            else:
+                qualified = qualify_offseason_edition(source, day)
             with source, source.cursor() as cur:
                 freshness = acquisition_freshness(cur)
         usage = resource.getrusage(resource.RUSAGE_SELF)
@@ -100,6 +110,10 @@ def bootstrap(password):
         # Wait for the independent, resumable Board writer before giving the publisher control.
         projector_env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD',
                                             'STAGING_PRODUCT_GENERATION', 'STAGING_ROSTER_PUBLIC_IDENTITIES')
+        if qualified.get('mode') == 'competitive':
+            projector_env['STAGING_COMPETITIVE_CYCLE'] = 'true'
+            subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'],
+                           env=dict(projector_env, STAGING_ARCHIVE_REPLAY='False'), check=True)
         projection = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-before-publish'],
                                     env=projector_env, check=False)
         if projection.returncode == 75:
@@ -448,10 +462,11 @@ if __name__ == '__main__':
             result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
                                     os.environ['STAGING_PRODUCT_GENERATION'],
                                     competition_day=datetime.now(ZoneInfo('America/New_York')).date()
-                                    if args.operation == 'project-before-publish' else None)
+                                    if args.operation == 'project-before-publish' else None,
+                                    competitive=os.environ.get('STAGING_COMPETITIVE_CYCLE') == 'true')
             print(json.dumps(dict(private_board_history=result)), flush=True)
             if args.operation == 'project-before-publish' and (
-                    result.get('phase') == 'canonical_ready' or result['completed_clubs'] < result['total']
+                    result.get('phase') in ('canonical_ready', 'canonical_pending') or result['completed_clubs'] < result['total']
                     or result['batches']):
                 parser.exit(75)
         elif args.operation == 'read':

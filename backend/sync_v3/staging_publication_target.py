@@ -559,7 +559,7 @@ def bind_active_staff(staff, *, initialized=False):
     return dict(mapped=len(public), created=created, collisions=collisions)
 
 
-def project_workload_window(worker_password):
+def project_workload_window(worker_password, *, workload_day=None, scoped=False, verify_only=False):
     """Establish the expected final-game population before evaluating workload completeness."""
     from datetime import timedelta
     from services.appearance_ledger import appearance_ledger_publish_block, ledger_window_days
@@ -570,6 +570,7 @@ def project_workload_window(worker_password):
     from sync_v3.discovery import calendar_requests
     from sync_v3.render_staging import PLAYED_DAY, connect
 
+    workload_day = workload_day or PLAYED_DAY
     client = MLBApiClient()
     receipts = {}
     observations = {}
@@ -578,7 +579,7 @@ def project_workload_window(worker_password):
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         for offset in range(1-required_days, 2):
-            day = PLAYED_DAY + timedelta(days=offset)
+            day = workload_day + timedelta(days=offset)
             request = calendar_requests(day)[0]
             params = request.params()
             oid = acquire_window_source(source, client, day, request.endpoint, params)
@@ -589,17 +590,18 @@ def project_workload_window(worker_password):
     makeups = retained_makeups(observations)
     for day, obs in observations.items():
         with db.session.begin():
-            db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
-            reconcile_schedule(day, obs, private_staging=True, makeups=makeups)
+            if not scoped:
+                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+            reconcile_schedule(day, obs, private_staging=True, makeups=makeups, verify_only=verify_only)
     with db.session.begin():
-        reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
+        reason, ledger = appearance_ledger_publish_block(end_date=workload_day, window_days=required_days)
         if ledger is None:
             raise ValueError('Appearance ledger unavailable for private publication')
     recovered = 0
-    if ledger['missing_games']:
+    if ledger['missing_games'] and not verify_only:
         recovered = recover_missing_finals(worker_password, receipts, ledger['missing_games'])
         with db.session.begin():
-            reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
+            reason, ledger = appearance_ledger_publish_block(end_date=workload_day, window_days=required_days)
             if ledger is None:
                 raise ValueError('Appearance ledger unavailable after recovery')
     return dict(receipts=receipts, reconciled_makeups=sorted(makeups), window_days=ledger['window_days'], recovered=recovered, reason=reason, expected_games=ledger['expected_games'],

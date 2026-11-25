@@ -27,8 +27,8 @@ def open_generation_source(password, user):
     return source
 
 
-def current_offseason_inputs(cur, through, availability):
-    """Bind an offseason edition to today's qualified calendar, transactions and roster receipts."""
+def current_edition_inputs(cur, through, availability, *, offseason):
+    """Bind the actual product day to qualified schedules, transactions and dated club rosters."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from services.mlb_club_directory import MLB_TEAM_IDS
@@ -39,17 +39,24 @@ def current_offseason_inputs(cur, through, availability):
 
     day = datetime.now(ZoneInfo('America/New_York')).date()
     competition = competition_status(cur, day)
-    if (len(competition['clubs']) != 30 or competition['missing_decisions']
-            or any(c['status'] != 'season_complete' for c in competition['clubs'].values())):
-        raise ValueError('Incomplete official offseason competition evidence')
+    if len(competition['clubs']) != 30 or competition['missing_decisions']:
+        raise ValueError('Incomplete official competition evidence')
     season = competition_calendar_request(day.year)
-    games = calendar_games(season.params(), evidence.replay(cur, competition['calendar_source']).body)
-    latest = max(d for d, row, _ in games.values() if d <= day and row['status_state'] == 'final')
-    if latest != through or generation_date_decision(cur, through, day)['status'] != 'aligned':
-        raise ValueError('Offseason candidate differs from the last official final or calendar coverage')
+    if offseason:
+        if any(club['status'] != 'season_complete' for club in competition['clubs'].values()):
+            raise ValueError('The offseason generation conflicts with official competition status')
+        games = calendar_games(season.params(), evidence.replay(cur, competition['calendar_source']).body)
+        latest = max(d for d, row, _ in games.values() if d <= day and row['status_state'] == 'final')
+        if latest != through or generation_date_decision(cur, through, day)['status'] != 'aligned':
+            raise ValueError('Offseason candidate differs from the last official final or calendar coverage')
+    else:
+        from sync_v3.primary_date import edition_scope
+        scope = edition_scope(cur, day, after_finals=(through == day))
+        if scope['offseason'] or scope['through'] != through or scope['availability'] != availability:
+            raise ValueError('Competitive edition differs from the current supported workload and availability')
     slate, _ = _slate(cur, day)
-    if slate['reason'] or slate['games'] != []:
-        raise ValueError('Incomplete or competitive current slate for offseason edition')
+    if slate['reason'] or slate['games'] is None or (offseason and slate['games']):
+        raise ValueError('Incomplete or conflicting current product slate')
     requests = [season, *calendar_requests(day), *roster_requests(day, MLB_TEAM_IDS)]
     ids = []
     for request in requests:
@@ -71,7 +78,7 @@ def current_offseason_inputs(cur, through, availability):
             raise ValueError(f'Unqualified availability-date pitcher directory for {team}')
         ids.append(active['source'])
         staff[str(team)] = sorted(active['pitchers'])
-    return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)), active_pitcher_mlb_ids=staff)
+    return dict(product_day=day.isoformat(), current_source_ids=sorted(set(ids)), active_pitcher_mlb_ids=staff), slate['games']
 
 
 def reviewed_board_populations(cur, password, user, digest, binding):
@@ -141,11 +148,13 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                            FROM candidate.generations WHERE digest=%s""", (digest,))
             official_slate, transactions, clubs = cur.fetchone()
             completed = {club['team'] for club in clubs if club['readiness'] == 'season_complete'}
-            extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through']), league['availability_reference']) if offseason else {}
-            if offseason:
+            extra = {}
+            if offseason or os.environ.get('STAGING_CYCLE_STARTED_AT'):
+                if offseason and official_slate != []:
+                    raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
+                extra, official_slate = current_edition_inputs(cur, date.fromisoformat(league['data_through']),
+                                                            league['availability_reference'], offseason=offseason)
                 reviewed_board_populations(cur, worker_password, user, digest, extra)
-            if offseason and official_slate != []:
-                raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
             if not offseason:
                 from sync_v3.generation import generation_date_decision
                 represented = date.fromisoformat(league['data_through'])
