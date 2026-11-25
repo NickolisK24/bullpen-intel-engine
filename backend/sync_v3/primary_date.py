@@ -73,8 +73,9 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         result = advance_private_generation(worker_password, workload_day=scope['through'],
                                             as_of=scope['as_of'], budget_seconds=budget_seconds)
         digest = result.get('digest')
-        decision = (result.get('review') or {}).get('status')
+        review = result.get('review')
+        decision = review.get('status') if isinstance(review, dict) else review or 'withheld'
     return dict(day=str(day), through=str(scope['through']), availability=scope['availability'],
                 mode='offseason' if scope['offseason'] else 'competitive', generation=digest,
-                decision=decision, ready=decision in ('season_complete_withholding','core_comparison_complete'),
+                decision=decision, ready=bool(digest) and decision in ('season_complete_withholding', 'core_comparison_complete'),
                 source_review=result)
