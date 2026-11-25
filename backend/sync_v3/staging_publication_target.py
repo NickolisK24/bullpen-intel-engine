@@ -487,9 +487,11 @@ def project_workload_window(worker_password):
 
     client = MLBApiClient()
     receipts = {}
+    # calculate_fatigue counts appearances in the fourteen days before the availability date.
+    required_days = max(ledger_window_days(), 14)
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
-        for offset in range(1-ledger_window_days(), 2):
+        for offset in range(1-required_days, 2):
             day = PLAYED_DAY + timedelta(days=offset)
             request = calendar_requests(day)[0]
             params = request.params()
@@ -501,17 +503,17 @@ def project_workload_window(worker_password):
                 reconcile_schedule(day, obs, private_staging=True)
             receipts[str(day)] = oid
     with db.session.begin():
-        reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY)
+        reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
         if ledger is None:
             raise ValueError('Appearance ledger unavailable for private publication')
     recovered = 0
     if ledger['missing_games']:
         recovered = recover_missing_finals(worker_password, receipts, ledger['missing_games'])
         with db.session.begin():
-            reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY)
+            reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
             if ledger is None:
                 raise ValueError('Appearance ledger unavailable after recovery')
-    return dict(receipts=receipts, recovered=recovered, reason=reason, expected_games=ledger['expected_games'],
+    return dict(receipts=receipts, window_days=ledger['window_days'], recovered=recovered, reason=reason, expected_games=ledger['expected_games'],
                 represented_games=ledger['represented_games'], stored_appearances=ledger['stored_appearances'],
                 missing_games=len(ledger['missing_games']))
 
