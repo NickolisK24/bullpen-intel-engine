@@ -1,9 +1,10 @@
 """Assemble an immutable inventory of one represented candidate generation."""
 
 from hashlib import sha256
+from time import monotonic
 import json
 
-from psycopg2.extras import Json
+from psycopg2.extras import Json, execute_values
 
 from services.availability_reference_date import trusted_slate_reference_dates
 from services.mlb_club_directory import MLB_TEAM_IDS
@@ -254,9 +255,9 @@ def _freeze(cur, through, as_of=None):
                    ON CONFLICT DO NOTHING RETURNING digest""", (digest, through, Json(manifest)))
     if not cur.fetchone():
         return digest
-    cur.executemany("""INSERT INTO candidate.generation_inputs VALUES (%s,%s) ON CONFLICT DO NOTHING""",
+    execute_values(cur, """INSERT INTO candidate.generation_inputs VALUES %s ON CONFLICT DO NOTHING""",
                     [(digest, parent) for parent in parents])
-    cur.executemany('INSERT INTO candidate.generation_sources VALUES (%s,%s) ON CONFLICT DO NOTHING',
+    execute_values(cur, 'INSERT INTO candidate.generation_sources VALUES %s ON CONFLICT DO NOTHING',
                     [(digest, source) for source in sources])
     return digest
 
@@ -326,19 +327,27 @@ def _build_change_set(cur, domain, subject, entity, through):
     return _freeze_changes(cur, domain, entity, through)
 
 
-def build_batch(connection, through, limit, *, as_of=None):
+def build_batch(connection, through, limit, *, as_of=None, deadline=None, resume=None):
     """Materialize a bounded batch of missing or superseded candidate calculations."""
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import record_intelligence
 
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError('A rehearsal batch requires a limit between 1 and 100 scopes')
-    initial = freeze_generation(connection, through, as_of=as_of)
+    # An interrupted builder can use its last frozen inventory to choose work.
+    # Every nonempty batch still freezes against the latest data before returning.
+    initial = resume or freeze_generation(connection, through, as_of=as_of)
     with connection, connection.cursor() as cur:
-        cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (initial,))
-        manifest = cur.fetchone()[0]
+        cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s AND represented=%s', (initial, through))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError('Unknown generation checkpoint for represented date')
+        manifest = row[0]
     outstanding = {tuple(scope) for key in ('missing', 'stale_inputs', 'stale_comparisons')
                    for scope in manifest[key]}
+    if not outstanding:
+        latest = freeze_generation(connection, through, as_of=as_of) if resume else initial
+        return dict(before=initial, after=latest, processed=[])
     domain_for = {method: domain for domain, (_, method, _) in DOMAINS.items()}
     changes_for = {f'candidate_{domain}_changes_v1': domain for domain in COMPARISONS}
     discovery_methods = [DOMAINS[d][1] for d in ('readiness', 'depth', 'rotation')]
@@ -356,12 +365,65 @@ def build_batch(connection, through, limit, *, as_of=None):
             record_intelligence(connection, domain_for[method], entity, day)
 
     selected = sorted(outstanding, key=priority)[:limit]
-    for subject, entity, method in selected:
+    processed = []
+    while len(processed) < len(selected):
+        offset = len(processed)
+        subject, entity, method = selected[offset]
+        if subject == 'pitcher':
+            changes = method in changes_for
+            group = []
+            for scope in selected[offset:offset+12]:
+                if scope[0] != 'pitcher' or (scope[2] in changes_for) != changes:
+                    break
+                group.append(scope)
+            if changes:
+                count = _transaction(connection, _build_pitcher_changes, through, group, changes_for, deadline)
+            else:
+                count = _build_pitcher_group(connection, through, group, domain_for, deadline)
+            processed.extend(group[:count])
+            if deadline is not None and monotonic() >= deadline:
+                break
+            continue
         if method in changes_for:
             _transaction(connection, _build_change_set, changes_for[method], subject, entity, through)
         else:
             build(subject, entity, method, through)
-    return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=selected)
+        processed.append((subject, entity, method))
+        if deadline is not None and monotonic() >= deadline:
+            break
+    return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=processed)
+
+
+def _build_pitcher_changes(cur, through, group, domains, deadline):
+    from sync_v3.workload import share_league_calendar
+
+    with share_league_calendar(cur):
+        for count, (subject, player, method) in enumerate(group, start=1):
+            _build_change_set(cur, domains[method], subject, player, through)
+            if deadline is not None and monotonic() >= deadline:
+                return count
+    return len(group)
+
+
+def _build_pitcher_group(connection, through, group, domains, deadline):
+    """Use one consistent calendar and seal the exact reads consulted for each pitcher separately."""
+    from sync_v3.history import _append as workload, _snapshot_transaction
+    from sync_v3.intelligence_history import _append as intelligence
+    from sync_v3.workload import share_league_calendar
+
+    def append(cur):
+        rows = []
+        with share_league_calendar(cur):
+            for subject, player, method in group:
+                if method == METHODOLOGY:
+                    rows.append(workload(cur, subject, player, through))
+                else:
+                    rows.append(intelligence(cur, domains[method], player, through))
+                if deadline is not None and monotonic() >= deadline:
+                    break
+        return rows
+
+    return len(_snapshot_transaction(connection, append))
 
 
 def review_coverage(manifest):

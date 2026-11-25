@@ -1337,7 +1337,7 @@ def content_sha256(payload):
     ).hexdigest()
 
 
-def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None, reference_date=None):
+def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None, reference_date=None, commit=True):
     """Build and store the tonight_v1 row for one trusted snapshot.
 
     The edition's baseball date is ``reference_date`` when given, otherwise the
@@ -1345,7 +1345,8 @@ def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None, reference_d
     Returns ``(row, outcome)`` where outcome is ``'created'`` or ``'reused'``.
     A rebuild of the same publication identity with identical content reuses
     the stored row; different content raises ``TonightPublicationConflict``
-    and leaves the stored row untouched.
+    and leaves the stored row untouched. With commit=False, the publication caller
+    owns the transaction containing both the selector and the Tonight edition.
     """
     availability_date = getattr(snapshot, 'availability_reference_date', None)
     baseball_date = reference_date if reference_date is not None else availability_date
@@ -1383,7 +1384,10 @@ def generate_tonight_v1_for_snapshot(snapshot, *, generated_at=None, reference_d
         generated_at=generated_at,
     )
     db.session.add(row)
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return row, 'created'
 
 

@@ -38,6 +38,8 @@ services:
       name: baseballos-sync-v3-staging-acquire
       type: cron
       envVarKey: STAGING_WORKER_PASSWORD
+  - key: DATABASE_MIGRATION_MODE
+    value: owner
   - key: STAGING_OWNER_DSN
     fromDatabase:
       name: baseballos-sync-v3-staging

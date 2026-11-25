@@ -30,3 +30,10 @@ def consult(cur, endpoint, params, *receipts):
     if reads is not None and reads.cursor is cur:
         reads.requests.add((endpoint, tuple(sorted(params.items()))))
         reads.receipts.update(r for r in receipts if r is not None)
+
+
+def include_reads(cur, previous):
+    reads = _active.get()
+    if reads is not None and reads.cursor is cur and previous.cursor is cur:
+        reads.requests.update(previous.requests)
+        reads.receipts.update(previous.receipts)

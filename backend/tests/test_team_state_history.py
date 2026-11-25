@@ -362,6 +362,30 @@ def test_history_selects_exact_frozen_rows_and_reports_gaps(app):
     assert payload['rows'][1]['events'] == []
 
 
+def test_dashboard_rollback_restores_predecessor_history_without_removing_evidence(app):
+    from models.sync_run import SyncRun
+    from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+
+    day = date(2026, 7, 23)
+    runs = [SyncRun(status='success') for _ in range(2)]
+    db.session.add_all(runs)
+    db.session.flush()
+    snapshots = [DashboardSnapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                                   sync_run_id=run.id, data_through=day, payload={}, status='ready',
+                                   is_published=(i == 1)) for i, run in enumerate(runs)]
+    db.session.add_all(snapshots)
+    db.session.commit()
+    first, second = [_publish(day, snapshot_id=snap.id, sync_run_id=snap.sync_run_id) for snap in snapshots]
+    assert build_team_state_history('TST', season=2026)['rows'][0]['artifact']['public_id'] == second.public_id
+    snapshots[1].is_published = False
+    runs[1].publication_outcome = dict(restored_snapshot=snapshots[0].id, rolled_back_at='2026-07-24T12:00:00Z')
+    db.session.flush()
+    snapshots[0].is_published = True
+    db.session.commit()
+    assert build_team_state_history('TST', season=2026)['rows'][0]['artifact']['public_id'] == first.public_id
+    assert db.session.get(ShareArtifact, second.id).lifecycle_state == 'published'
+
+
 def test_newest_active_correction_wins_and_lifecycle_rows_are_excluded(app):
     original = _publish(date(2026, 7, 23), snapshot_id=5001)
     replacement = _publish(

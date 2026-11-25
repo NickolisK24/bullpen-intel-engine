@@ -27,9 +27,81 @@ def connect(user, password):
 
 
 def bootstrap(password):
+    task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
+    if task in ('build-generation', 'recover-readiness'):
+        import resource
+        from sync_v3.staging_publication_target import advance_private_generation
+        if task == 'build-generation':
+            result = advance_private_generation(password, budget_seconds=185)
+        else:
+            from sync_v3.staging_publication_target import recover_private_readiness
+            result = recover_private_readiness(password, budget_seconds=185)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
+                              process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
+        return
+    if task == 'recheck-edition-transactions':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_publication_target import recheck_edition_transactions
+        from sync_v3.generation import freeze_generation
+        from datetime import timedelta
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = recheck_edition_transactions(source, PLAYED_DAY, os.environ['STAGING_PRODUCT_GENERATION'], client._get)
+            result['next_generation'] = freeze_generation(source, PLAYED_DAY, as_of=PLAYED_DAY + timedelta(days=1))
+            if result['next_generation'] == result['predecessor_generation']:
+                raise ValueError('A new retained transaction receipt did not advance the generation')
+        print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
+        return
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces'):
+        raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task == 'verify-product-surfaces':
+        from sync_v3.staging_product_delivery import verify_product_surfaces
+        result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'])
+        print(json.dumps(dict(private_surfaces=result)), flush=True)
+        return
+    if task == 'project-roster-provenance':
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_publication_target import project_archived_fatigue, project_prior_fatigue, project_roster_views
+        from services.public_roster_readiness import build_public_roster_readiness
+        app = private_app(binding['password'])
+        with app.app_context():
+            result = project_roster_views(password)
+            result['fatigue'] = project_archived_fatigue()
+            result['prior_scores'] = project_prior_fatigue(password, os.environ['STAGING_PRODUCT_GENERATION'])
+            readiness = build_public_roster_readiness(reference_date=PLAYED_DAY, scope='league')
+            result['readiness'] = {key: readiness[key] for key in ('claims_available', 'reason_codes', 'coverage')}
+            if not readiness['claims_available']:
+                raise ValueError(f"Private roster authority withheld: {readiness['reason_codes']}")
+        print(json.dumps(dict(private_roster=result)), flush=True)
+        return
+    if task == 'project-eligibility':
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_publication_target import project_eligibility_history
+        app = private_app(binding['password'])
+        with app.app_context():
+            result = project_eligibility_history(password, budget_seconds=180)
+        print(json.dumps(dict(private_eligibility=result)), flush=True)
+        return
+    if task in ('publish-generation', 'rollback-generation'):
+        from sync_v3.staging_product_delivery import exercise, exercise_rollback
+        import resource
+        started = monotonic()
+        digest = os.environ['STAGING_PRODUCT_GENERATION']
+        if task == 'publish-generation':
+            report = exercise(binding['password'], password, digest)
+        else:
+            report = exercise_rollback(binding['password'], digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']))
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps(dict(private_product=report, elapsed_seconds=monotonic()-started,
+                              peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
+        return
+    from services.migration_authority import require_owner
+    require_owner()
     with closing(connect(OWNER, binding['password'])) as owner:
         with owner.cursor() as cur:
             cur.execute("""SELECT current_database(),current_user,current_setting('server_version_num')::int/10000,
@@ -49,6 +121,8 @@ def bootstrap(password):
     with closing(connect('sync_v3_worker', password)) as worker:
         verify_target(worker)
     print(json.dumps(dict(database=DATABASE, installed=fresh, worker_admitted=True)))
+    from sync_v3.staging_publication_target import install_target
+    print(json.dumps(dict(publication_target=install_target(binding["password"], password))), flush=True)
 
 
 def witness(worker):
@@ -125,14 +199,24 @@ def acquire(password):
     with closing(connect('sync_v3_worker', password)) as worker:
         verify_target(worker)
         before = witness(worker)
+        from sync_v3.staging_postseason import retain
+        print(json.dumps(dict(postseason_archive=retain(worker))), flush=True)
         day = datetime.now(ZoneInfo('America/New_York')).date()
-        report = process(worker, day, max_jobs=BATCH_LIMIT if before['first'] else 1, profiles=True)
-        after = witness(worker)
-        if before['first'] and before['first'] != after['first']:
-            raise ValueError('Prior acquisition receipt changed')
-        print(json.dumps(dict(before=before, after=after, report=report)), flush=True)
-        if acquisition_failed(report):
-            raise ValueError('Incomplete staging acquisition')
+        started = monotonic()
+        limit = BATCH_LIMIT if before['first'] else 1
+        for batch_number in range(1, 6):
+            report = process(worker, day, max_jobs=limit, profiles=True)
+            after = witness(worker)
+            if before['first'] and before['first'] != after['first']:
+                raise ValueError('Prior acquisition receipt changed')
+            print(json.dumps(dict(before=before, after=after, report=report, batch=batch_number,
+                                  seconds=monotonic()-started)), flush=True)
+            if acquisition_failed(report):
+                raise ValueError('Incomplete staging acquisition')
+            if (limit != BATCH_LIMIT or report['receipts'].get('received') != limit
+                    or monotonic()-started >= 150):
+                break
+            before = after
         if os.environ.get('STAGING_PLAYED_SLATE') == PLAYED_DAY.isoformat():
             played = played_batch(worker, day, report)
             print(json.dumps(dict(historical=played)), flush=True)

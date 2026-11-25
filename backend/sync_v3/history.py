@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 import re
 
-from psycopg2.extras import Json
+from psycopg2.extras import Json, execute_values
 
 from services.mlb_club_directory import MLB_TEAM_IDS
 
@@ -168,9 +168,9 @@ def _store(cur, subject, mlb_id, through, methodology, facts, sources, requests=
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (*scope, revision, previous[0] if previous else None, content_hash, input_hash, serialized))
     identifier = cur.fetchone()[0]
-    cur.executemany('INSERT INTO candidate.workload_history_sources VALUES (%s,%s)',
+    execute_values(cur, 'INSERT INTO candidate.workload_history_sources VALUES %s',
                     [(identifier, source) for source in sources])
-    cur.executemany('INSERT INTO candidate.history_requests VALUES (%s,%s,%s)',
+    execute_values(cur, 'INSERT INTO candidate.history_requests VALUES %s',
                     [(identifier, endpoint, Json(dict(params))) for endpoint, params in requests])
     return identifier, revision, content_hash
 
