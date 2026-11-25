@@ -498,7 +498,10 @@ def project_credited_membership(day, by_player, *, apply_position, club_inputs):
                           records_processed=len(unbound), started_at=start, completed_at=completed)
             db.session.add(run)
             db.session.flush()
-            for row in to_attribute:
+            for row in sorted(to_attribute, key=lambda snapshot: (snapshot.team_id, snapshot.pitcher_id)):
+                if row.team_id != owner_team:
+                    owner_team = row.team_id
+                    _declare_roster_ownership(owner_team)
                 row.sync_run_id = run.id
             db.session.flush()
             credited = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter_by(
