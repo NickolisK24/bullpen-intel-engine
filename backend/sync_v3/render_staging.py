@@ -105,7 +105,7 @@ def bootstrap(password):
                 phase = os.environ.get('STAGING_PRIMARY_PHASE', 'pregame')
                 if phase not in ('pregame', 'postgame'):
                     raise ValueError('Unknown primary synchronization phase')
-                qualified = prepare(source, password, day, after_finals=phase=='postgame')
+                qualified = prepare(source, password, day, after_finals=phase=='postgame', for_projection=True)
                 if not qualified['ready']:
                     print(json.dumps(dict(current_cycle_pending=qualified)), flush=True)
                     return
