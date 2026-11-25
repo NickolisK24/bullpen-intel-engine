@@ -105,7 +105,10 @@ def bootstrap(password):
                 phase = os.environ.get('STAGING_PRIMARY_PHASE', 'pregame')
                 if phase not in ('pregame', 'postgame'):
                     raise ValueError('Unknown primary synchronization phase')
-                qualified = prepare(source, password, day, after_finals=phase=='postgame', for_projection=True)
+                from sync_v3.staging_projector import reviewed_resume
+                resume_digest = reviewed_resume(source, os.environ['STAGING_PROJECTOR_PASSWORD'], day)
+                qualified = prepare(source, password, day, after_finals=phase=='postgame',
+                                    for_projection=True, resume_digest=resume_digest)
                 if not qualified['ready']:
                     print(json.dumps(dict(current_cycle_pending=qualified)), flush=True)
                     return
@@ -127,8 +130,9 @@ def bootstrap(password):
                                             'STAGING_PRODUCT_GENERATION', 'STAGING_ROSTER_PUBLIC_IDENTITIES')
         if qualified.get('mode') == 'competitive':
             projector_env['STAGING_COMPETITIVE_CYCLE'] = 'true'
-            subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'],
-                           env=dict(projector_env, STAGING_ARCHIVE_REPLAY='False'), check=True)
+            if resume_digest != qualified['generation']:
+                subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-schedules'],
+                               env=dict(projector_env, STAGING_ARCHIVE_REPLAY='False'), check=True)
         # Leave time to commit a club checkpoint before the private host's process limit.
         projector_env['STAGING_REVIEW_BUDGET'] = str(max(15, min(185, int(255 - (
             datetime.now(timezone.utc) - started_at).total_seconds()))))

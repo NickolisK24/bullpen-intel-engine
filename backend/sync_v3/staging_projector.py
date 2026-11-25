@@ -60,6 +60,26 @@ def current_checkpoint(source, digest, day):
         return review if inputs_still_current(cur, proof['sources']) else None
 
 
+def reviewed_resume(source, password, day):
+    """Reuse a completed private projection only while its dated receipts still match."""
+    from sync_v3.staging_board_history import inputs_still_current
+
+    with closing(_connect(PROJECTOR, password)) as target, target, target.cursor() as cur:
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("SELECT current_database(),current_user")
+        if cur.fetchone() != (TARGET, PROJECTOR):
+            raise ValueError('Unexpected private projection checkpoint reader')
+        cur.execute("""SELECT publication_outcome FROM public.sync_runs WHERE source='sync_v3_staging'
+            AND job_name='sync_v3_canonical_cycle' AND stage='canonical_ready' AND status='success'
+            ORDER BY id DESC LIMIT 1""")
+        row = cur.fetchone()
+    if row and row[0]['day'] == str(day):
+        with source, source.cursor() as cur:
+            if inputs_still_current(cur, row[0]['sources']):
+                return row[0]['generation']
+    return None
+
+
 def record_checkpoint(digest, day, through, sources, started):
     from sqlalchemy import text
     from models.sync_run import SyncRun

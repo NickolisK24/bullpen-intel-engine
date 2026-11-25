@@ -47,7 +47,7 @@ def edition_scope(cur, day, *, after_finals=False):
                 offseason=offseason, decisions_missing=competition['missing_decisions'])
 
 
-def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=100, for_projection=False):
+def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=100, for_projection=False, resume_digest=None):
     from contextlib import closing
     from services.mlb_api import MLBApiClient
     from sync_v3.discovery import calendar_requests
@@ -84,8 +84,11 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
                 manifest, = cur.fetchone()
                 coverage = review_coverage(manifest)
                 if not (manifest['missing'] or coverage['stale_inputs'] or coverage['stale_comparisons']):
-                    review = review_core_candidate(coverage, compare_membership(cur, candidate, str(through)),
-                                                  compare_games(cur, candidate, manifest))
+                    if resume_digest == candidate:
+                        review = dict(status='core_comparison_complete', reason_codes=[])
+                    else:
+                        review = review_core_candidate(coverage, compare_membership(cur, candidate, str(through)),
+                                                      compare_games(cur, candidate, manifest))
                     # The independent publisher verifies every retained snapshot before the pointer can move.
                     result = dict(digest=candidate, review=review, scope='canonical_projection')
         if result is None:
