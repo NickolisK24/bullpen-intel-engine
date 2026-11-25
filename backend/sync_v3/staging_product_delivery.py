@@ -427,7 +427,11 @@ def verify_product_surfaces(password, digest):
                 raise ValueError('Change feed cites a different club')
             history = data['history']
             row, = [row for row in history['rows'] if row['represented_date'] == through]
-            if (history['team']['team_id'] != team or not row['artifact']['public_id']
+            from models.share_artifact import ShareArtifact
+            expected_share = ShareArtifact.query.filter_by(
+                team_id=team, source_snapshot_id=ident[0], source_sync_run_id=ident[1],
+                artifact_type='team_state', lifecycle_state='published').one()
+            if (history['team']['team_id'] != team or row['artifact']['public_id'] != expected_share.public_id
                     or row['team_state']['public_code'] != core['team_state']['public_state']):
                 raise ValueError('Team History lacks the archived publication evidence')
             found = [r['id'] for group in data['search']['groups'] if group['entity_type'] == 'team' for r in group['results']]

@@ -18,10 +18,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.sync_run import SyncRun
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.share_artifact import (
     LIFECYCLE_PUBLISHED,
+    SUBJECT_TYPE_TEAM_PROGRESSIVE,
     ShareArtifact,
     ShareArtifactRelation,
 )
@@ -94,6 +96,15 @@ def _team_for_abbreviation(abbreviation, directory):
 
 def _artifact_candidates(team_id, season, session):
     start, end = _season_bounds(season)
+    rolled_back = (
+        session.query(DashboardSnapshot.id)
+        .join(SyncRun, SyncRun.id == DashboardSnapshot.sync_run_id)
+        .filter(DashboardSnapshot.id == ShareArtifact.source_snapshot_id,
+                DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                DashboardSnapshot.is_published.is_(False),
+                SyncRun.publication_outcome['rolled_back_at'].as_string().isnot(None))
+        .correlate(ShareArtifact).exists()
+    )
     return (
         session.query(ShareArtifact)
         .options(
@@ -104,6 +115,7 @@ def _artifact_candidates(team_id, season, session):
             ShareArtifact.artifact_type == TEAM_STATE_ARTIFACT_TYPE,
             ShareArtifact.team_id == int(team_id),
             ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED,
+            or_(ShareArtifact.subject_type == SUBJECT_TYPE_TEAM_PROGRESSIVE, ~rolled_back),
             ShareArtifact.product_date >= start,
             ShareArtifact.product_date <= end,
         )
