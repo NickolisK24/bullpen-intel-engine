@@ -154,3 +154,82 @@ def test_readiness_recovery_limits_reference_acquisition_to_consulted_evidence(m
             expected = (reference, request.endpoint, tuple(sorted(request.params().items())))
             assert recovery._needed(cur, 111, day, True)[1] == [expected]
             assert recovery._needed(cur, 111, day, False)[1] == []
+
+
+def test_performance_recovery_uses_only_the_dated_club_finals(monkeypatch):
+    from copy import deepcopy
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    at = datetime.fromisoformat(fixture['observed_at']) + timedelta(days=1)
+    calls = []
+    def official(endpoint, params):
+        calls.append(endpoint)
+        body = deepcopy(next(row['body'] for row in fixture['responses']
+                             if row['endpoint'] == endpoint and row['params'] == params))
+        if endpoint == '/schedule':
+            listing = body['dates'][0]
+            other = deepcopy(listing['games'][0])
+            other['gamePk'] += 1
+            other['teams']['home']['team']['id'] = 109
+            other['teams']['away']['team']['id'] = 112
+            listing['games'].append(other)
+            listing['totalGames'] = body['totalGames'] = 2
+        return body
+
+    conflict = True
+    def represented(cur, team, through):
+        assert team == 111 and through == day
+        _, gap = regular_day(cur, day, team=team)
+        due = dict(reason=gap, outings=[[12345, 102]])
+        if conflict:
+            due['source_conflicts'] = [{'fields': ['walks']}]
+        return dict(reason=None, dates={str(day): due})
+
+    monkeypatch.setattr(recovery, 'active_group_performance', represented)
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def run():
+            return recovery.recover(worker, 111, day, fetch=official, max_jobs=1, performance=True, clock=lambda: at)
+        assert run()['performance_reason'] == 'official_performance_source_conflict' and not calls
+        conflict = False
+        assert run()['status'] == 'batch_limit'
+        assert run()['status'] == 'outing_finals_complete'
+        assert run()['receipts'] == []
+        assert calls == ['/schedule', '/game/12345/boxscore']
+        with worker, worker.cursor() as cur:
+            cur.execute('SELECT count(*) FROM candidate.core_selections')
+            assert cur.fetchone() == (0,)
+
+
+@pytest.mark.parametrize('represented,reason', [
+    ('2025-08-01', 'missing_compatible_final'),
+    ('2026-08-01', 'missing_complete_schedule'),
+    ('2026-07-29', 'previous_listing_requires_absence_proof'),
+])
+def test_performance_recovery_leaves_unsupported_refusals_intact(represented, reason):
+    def unexpected(*args):
+        pytest.fail('No recovery request is supported for this scope')
+    result = dict(reason=None, dates={represented: dict(reason=reason, outings=[[12345, 102]])})
+    through = date(2026, 7, 29)
+    assert recovery._performance_gaps(None, 111, through, result, unexpected) == reason
+    assert recovery._performance_gaps(None, 111, through, dict(reason=None, dates={}), unexpected) == 'no_supported_relief_outings'
+
+
+def test_source_disagreement_preserves_recovery_for_independent_outings(monkeypatch):
+
+    recovered_days = []
+    def capture(cur, day, missing, *, team):
+        recovered_days.append((day, team))
+    monkeypatch.setattr(recovery, '_missing_day_finals', capture)
+    through = date(2017, 8, 28)
+    report = dict(reason=None, dates={
+        '2017-05-01': dict(reason=None, source_conflicts=[{'fields': ['batters_faced']}]),
+        '2017-06-02': dict(reason='missing_compatible_final', outings=[[456, 102]]),
+    })
+    assert recovery._performance_gaps(None, 112, through, report, None) == 'official_performance_source_conflict'
+    assert recovered_days == [(date(2017, 6, 2), 112)]
