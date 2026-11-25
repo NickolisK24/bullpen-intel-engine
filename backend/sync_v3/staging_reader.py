@@ -47,28 +47,38 @@ def install(owner_password, reader_password, tables):
                                 .format(relation, sql.Identifier(READER)))
         cur.execute(sql.SQL('ALTER ROLE {} IN DATABASE {} SET default_transaction_read_only=on')
                     .format(sql.Identifier(READER), sql.Identifier(TARGET)))
+        _verify_grants(cur, tables)
     with closing(_connect(READER, reader_password)) as reader:
         verify(reader, tables)
 
 
+def _verify_grants(cur, tables):
+    cur.execute("""SELECT rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls
+                   OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid)
+                   OR has_database_privilege(r.oid,current_database(),'CREATE,TEMP')
+                   OR has_schema_privilege(r.oid,'public','CREATE') FROM pg_roles r WHERE rolname=%s""", (READER,))
+    if cur.fetchone() != (False,):
+        raise ValueError('The private API login has administrative or writable schema privileges')
+    cur.execute("""SELECT relname,has_table_privilege(%s,oid,'SELECT'),has_any_column_privilege(%s,oid,'SELECT'),
+                   has_table_privilege(%s,oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES')
+                   OR has_any_column_privilege(%s,oid,'INSERT,UPDATE,REFERENCES')
+                   FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m')""",
+                (READER, READER, READER, READER))
+    rows = cur.fetchall()
+    allowed = set(tables)
+    if any(write or read != (name in allowed) or columns != read for name, read, columns, write in rows):
+        raise ValueError('The API grants differ from the reviewed read-only product scope')
+    cur.execute("""SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                   WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND p.prosecdef
+                   AND has_schema_privilege(%s,n.oid,'USAGE') AND has_function_privilege(%s,p.oid,'EXECUTE'))""",
+                (READER, READER))
+    if cur.fetchone()[0]:
+        raise ValueError('Unexpected security-definer routine accessible to the private API login')
+
+
 def verify(connection, tables):
     with connection, connection.cursor() as cur:
-        cur.execute("""SELECT current_database(), current_user, current_setting('transaction_read_only'),
-                       rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls
-                       OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid)
-                       OR has_database_privilege(current_database(),'CREATE,TEMP')
-                       OR has_schema_privilege('public','CREATE') FROM pg_roles r WHERE rolname=current_user""")
-        if cur.fetchone() != (TARGET, READER, 'on', False):
-            raise ValueError('The private API login has administrative or writable schema privileges')
-        cur.execute("""SELECT relname,has_table_privilege(oid,'SELECT'),
-                       has_table_privilege(oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES')
-                       OR has_any_column_privilege(oid,'INSERT,UPDATE,REFERENCES')
-                       FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m')""")
-        rows = cur.fetchall()
-        if any(write for _, _, write in rows) or {name for name, read, _ in rows if read} != set(tables):
-            raise ValueError('The API grants differ from the reviewed read-only product scope')
-        cur.execute("""SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                       WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND p.prosecdef
-                       AND has_schema_privilege(n.oid,'USAGE') AND has_function_privilege(p.oid,'EXECUTE'))""")
-        if cur.fetchone()[0]:
-            raise ValueError('Unexpected security-definer routine accessible to the private API login')
+        cur.execute("SELECT current_database(), current_user, current_setting('transaction_read_only')")
+        if cur.fetchone() != (TARGET, READER, 'on'):
+            raise ValueError('Unexpected private API identity or transaction mode')
+        _verify_grants(cur, tables)
