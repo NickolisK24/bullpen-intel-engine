@@ -63,9 +63,10 @@ def install_target(password, worker_password):
                     (SELECT count(*) FROM public.dashboard_snapshots),
                     (SELECT count(*) FROM public.pitchers)""")).one()
             schedule = project_played_schedule(worker_password)
+            roster_report = project_roster_views(worker_password)
             db.engine.dispose()
     return dict(database=TARGET, migration=expected, database_bytes=sizes[0],
-                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, elapsed_seconds=monotonic()-start)
+                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, elapsed_seconds=monotonic()-start)
 
 
 def project_played_schedule(worker_password):
@@ -285,3 +286,80 @@ def project_context(game, box, extra, day):
                if k in context and k != 'generated_at'):
             raise ValueError('Stored game context differs from retained final evidence')
     return len(contexts)
+
+
+def project_roster_views(worker_password):
+    """Retain the qualified MLB roster observations for workload and availability separately."""
+    from datetime import timedelta
+    from hashlib import sha256
+    from sync_v3 import evidence, queue, rosters
+    from sync_v3.render_staging import PLAYED_DAY, connect
+    from sync_v3.discovery import roster_requests
+    from sync_v3.current_worker import verify_target
+    from services.mlb_api import MLBApiClient
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.roster_evidence import RunRosterEvidence
+    from services.primary_roster_inputs import retain_roster_inputs
+    from scripts.rehearse_selected_roster import CapturedRoster, matched_departure_evidence
+    from models.source_observation import SourceObservation, SourceSubject
+
+    result = {}
+    client = MLBApiClient()
+    with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        for day in (PLAYED_DAY, PLAYED_DAY + timedelta(days=1)):
+            acquired = 0
+            clubs = 0
+            for team in sorted(MLB_TEAM_IDS):
+                bodies, stamps = {}, {}
+                for req in roster_requests(day, [team]):
+                    params = req.params()
+                    with source, source.cursor() as cur:
+                        oid = evidence.latest_qualified_source(cur, req.endpoint, params)
+                        if oid is None:
+                            payload = dict(endpoint=req.endpoint, params=params, eligibility_recovery=True)
+                            key = sha256(evidence.encode_json(['eligibility_recovery', str(day), payload])).hexdigest()
+                            cur.execute('SELECT clock_timestamp()')
+                            at, = cur.fetchone()
+                            job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
+                            claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
+                    if oid is None:
+                        if not claim:
+                            raise ValueError('Roster acquisition pending retry or lease')
+                        oid, outcome = evidence.execute(source, claim, client._get, on_received=rosters.observe)
+                        if outcome != 'received':
+                            raise ValueError(f'Historical roster recovery returned {outcome}')
+                        acquired += 1
+                    with source, source.cursor() as cur:
+                        obs = evidence.replay(cur, oid)
+                    kind = params['rosterType']
+                    bodies[kind] = obs.body
+                    stamps[kind] = obs.retrieved_at
+                capture = RunRosterEvidence(CapturedRoster(team, day, bodies), represented_date=day)
+                with db.session.begin():
+                    existing = {}
+                    for kind in bodies:
+                        view = capture.roster_view(team, kind)
+                        if view.error:
+                            raise ValueError('Invalid retained roster view')
+                        stamp = stamps[kind].astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+                        capture.fetch_times[team, kind] = (stamp, stamp)
+                        row = (SourceObservation.query.join(SourceSubject)
+                               .filter(SourceSubject.subject_key == f'primary:{team}:{kind}',
+                                       SourceSubject.baseball_date == day, SourceSubject.source_domain == 'roster')
+                               .order_by(SourceObservation.version_number.desc()).first())
+                        if row:
+                            if (not row.is_authoritative or row.completeness != 'complete'
+                                    or row.payload_artifact.payload_json['records'] != list(view.entries)
+                                    or row.observed_at != stamp):
+                                raise ValueError('Target roster differs from retained acquisition')
+                            existing[kind] = row
+                    if not existing:
+                        retain_roster_inputs(capture, team, None, [])
+                    elif existing.keys() != bodies.keys():
+                        raise ValueError('Partial target roster capture')
+                    if existing and team == 108 and day > PLAYED_DAY:
+                        matched_departure_evidence(team, 502032, day, bodies, existing)
+                clubs += 1
+            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
+    return result
