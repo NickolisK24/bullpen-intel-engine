@@ -54,14 +54,15 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
-    if task == 'verify-product-surfaces':
+    if task in ('verify-product-surfaces', 'inspect-product-reads'):
         from sync_v3.staging_product_delivery import verify_product_surfaces
-        result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'])
+        result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'],
+                                         inventory=task == 'inspect-product-reads')
         print(json.dumps(dict(private_surfaces=result)), flush=True)
         return
     if task == 'project-roster-provenance':

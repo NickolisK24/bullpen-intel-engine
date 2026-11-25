@@ -58,7 +58,7 @@ def source_receipt(worker_password, digest):
                 official_slate=official_slate, source_count=count, first_source_at=first.isoformat(), last_source_at=last.isoformat())
 
 
-def private_app(password):
+def private_app(password, *, user=OWNER, read_only=False):
     from config import TestingConfig, config
 
     if os.environ.get('AUTO_SYNC', '').lower() != 'false' or 'app' in sys.modules:
@@ -69,9 +69,12 @@ def private_app(password):
 
         @staticmethod
         def init_app(app):
+            options = {'sslmode':'require', 'connect_timeout':'10'}
+            if read_only:
+                options['options'] = '-c default_transaction_read_only=on'
             app.config['SQLALCHEMY_DATABASE_URI'] = URL.create(
-                'postgresql+psycopg2', username=OWNER, password=password, host=HOST, port=5432,
-                database=TARGET, query={'sslmode':'require','connect_timeout':'10'})
+                'postgresql+psycopg2', username=user, password=password, host=HOST, port=5432,
+                database=TARGET, query=options)
 
     config['private_product_staging'] = PrivateProduct
     os.environ['APP_ENV'] = 'private_product_staging'
@@ -364,7 +367,7 @@ def exercise_rollback(password, digest, snapshot_id):
             counts = dict(withheld_clubs=30, tonight_games=0)
         return dict(rolled_back_snapshot=snapshot_id, restored_snapshot=predecessor, **counts)
 
-def verify_product_surfaces(password, digest):
+def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
     """Read the normal product endpoints against one published staging edition."""
     from urllib.parse import urlencode
     from freezegun import freeze_time
@@ -373,8 +376,21 @@ def verify_product_surfaces(password, digest):
     from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
     from utils.db import db
 
-    app = private_app(password)
+    app = private_app(password, user=user, read_only=inventory or user != OWNER)
     with app.app_context():
+        relations = set()
+        if inventory:
+            import re
+            from sqlalchemy import event
+
+            catalog = set(db.session.execute(text(
+                "SELECT relname FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p','v','m')"
+            )).scalars())
+            pattern = re.compile(r'\b(?:from|join)\s+(?:"?public"?\.)?"?([a-z0-9_]+)', re.I)
+            def record_relations(conn, cursor, statement, parameters, context, executemany):
+                relations.update(catalog.intersection(pattern.findall(statement.lower())))
+            event.listen(db.engine, 'before_cursor_execute', record_relations)
+            db.session.remove()
         snapshot = DashboardSnapshot.query.filter_by(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                                                      is_published=True).one()
         binding = snapshot.payload['v3_source_generation']
@@ -392,6 +408,8 @@ def verify_product_surfaces(password, digest):
             'search': '/api/search?q=Boston', 'matchup': f"/api/bullpen/matchups/{game['game_pk']}"}
         db.session.remove()
         with freeze_time(f'{day} 12:00:00', real_asyncio=True):
+            if inventory or user != OWNER:
+                verify_http(app, binding, ident[0], ident[1])
             data = {}
             for key, response in zip(paths, http_paths(app, paths.values())):
                 response.raise_for_status()
@@ -439,4 +457,5 @@ def verify_product_surfaces(password, digest):
                 raise ValueError('Discovery Search lacks the represented Boston identity')
         return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details','pitcher'],
                     team=team, pitcher_public_id=arm, pitcher_mlb_id=mlb, game_pk=game['game_pk'],
-                    history_artifact=row['artifact']['public_id'], change_state=data['changes']['state'])
+                    history_artifact=row['artifact']['public_id'], change_state=data['changes']['state'],
+                    read_relations=sorted(relations) if inventory else None)
