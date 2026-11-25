@@ -29,6 +29,8 @@ def source_receipt(worker_password, digest):
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or league['data_through'] != str(PLAYED_DAY) or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
+            cur.execute("SELECT manifest->'next_slate'->'games' FROM candidate.generations WHERE digest=%s", (digest,))
+            official_slate, = cur.fetchone()
             teams = {}
             for row in league['teams']:
                 team = row['team_id']
@@ -50,7 +52,7 @@ def source_receipt(worker_password, digest):
                 raise ValueError('Missing retained generation provenance')
     return dict(contract='private_source_generation_v1', generation=digest, data_through=str(PLAYED_DAY),
                 availability_reference=league['availability_reference'], teams={str(k):v for k,v in teams.items()},
-                source_count=count, first_source_at=first.isoformat(), last_source_at=last.isoformat())
+                official_slate=official_slate, source_count=count, first_source_at=first.isoformat(), last_source_at=last.isoformat())
 
 
 def private_app(password):
@@ -154,8 +156,18 @@ def exercise(password, worker_password, digest):
 def verify_http(app, binding, snapshot_id, run_id):
     from scripts.verify_selected_delivery import verify_tonight_edition
 
+    from models.share_artifact import ShareArtifact
+    from utils.db import db
+
     day = binding['availability_reference']
-    league, tonight = http_delivery(app)
+    rows = ShareArtifact.query.filter_by(artifact_type='team_state', source_snapshot_id=snapshot_id,
+                                         lifecycle_state='published').all()
+    shares = {row.team_id: row.public_id for row in rows}
+    if len(rows) != 30 or set(map(str, shares)) != binding['teams'].keys() or len(set(shares.values())) != 30:
+        raise ValueError('Incomplete private Team State share inventory')
+    db.session.remove()
+    paths = [f'/api/share-artifacts/{identifier}' for identifier in shares.values()]
+    league, tonight, *responses = http_delivery(app, paths)
     if (league.status_code, tonight.status_code) != (200, 200):
         raise ValueError(f'Private product status codes: League {league.status_code}, Tonight {tonight.status_code}')
     data = league.json()
@@ -164,11 +176,35 @@ def verify_http(app, binding, snapshot_id, run_id):
     if ((authority['snapshot_id'], authority['sync_run_id']) != (snapshot_id, run_id)
             or len(data['teams']) != 30 or served != {k:v['state'] for k,v in binding['teams'].items()}):
         raise ValueError('Private League response differs from the immutable input generation')
-    verify_tonight_edition(tonight.json(), (snapshot_id, run_id), binding, day)
-    return dict(league_clubs=len(served), tonight_games=len(tonight.json()['games']))
+    payload = tonight.json()
+    verify_tonight_edition(payload, (snapshot_id, run_id), binding, day)
+    verify_slate(payload['games'], binding)
+    for (team, identifier), response in zip(shares.items(), responses):
+        response.raise_for_status()
+        view = response.json()['artifact']
+        source = view['authority']
+        if (view['lifecycle_state'] != 'published' or view['team']['team_id'] != team
+                or view['public_id'] != identifier or view['product_date'] != binding['data_through']
+                or (source['source_snapshot_id'], source['source_sync_run_id']) != (snapshot_id, run_id)
+                or any(view['team_state'][key] != served[str(team)][key] for key in ('public_state', 'public_label'))):
+            raise ValueError(f'Private share for club {team} differs from the published edition')
+    return dict(league_clubs=len(served), tonight_games=len(payload['games']), share_artifacts=len(responses))
 
 
-def http_delivery(app):
+def verify_slate(cards, binding):
+    expected = {game['game_pk']: (game['away'], game['home']) for game in binding['official_slate']}
+    actual = {card['game_pk']: (card['away']['team_id'], card['home']['team_id']) for card in cards}
+    if actual != expected or len(cards) != len(expected):
+        raise ValueError('Private Tonight game identities differ from the retained official schedule')
+    for card in cards:
+        for side in ('home', 'away'):
+            team = card[side]
+            state = binding['teams'][str(team['team_id'])]['state']
+            if any(team['team_state'][key] != state[key] for key in ('public_state', 'public_label')):
+                raise ValueError('Private Tonight club differs from the frozen Team State')
+
+
+def http_delivery(app, extra_paths=()):
     from threading import Thread
     from requests import Session
     from werkzeug.serving import make_server
@@ -180,7 +216,7 @@ def http_delivery(app):
         thread.start()
         try:
             return tuple(client.get(base + path, timeout=45, allow_redirects=False) for path in (
-                '/api/bullpen/team-states', '/api/bullpen/intelligence/tonight?contract=tonight_v1'))
+                '/api/bullpen/team-states', '/api/bullpen/intelligence/tonight?contract=tonight_v1', *extra_paths))
         finally:
             server.shutdown()
             thread.join()
