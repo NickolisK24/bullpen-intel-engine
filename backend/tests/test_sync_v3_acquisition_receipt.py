@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from sync_v3 import savant
-from sync_v3.acquisition_receipt import played_day_acquisition
+from sync_v3.acquisition_receipt import played_day_acquisition, played_day_evidence
 from sync_v3.cycle import run_cycle
 from sync_v3.rehearse import isolated_cluster
 from sync_v3.replay import install
@@ -41,6 +41,12 @@ def test_acquisition_requires_qualified_completions_and_full_played_day_scope():
                   competition=True, clock=lambda: at)
         with owner, owner.cursor() as cur:
             receipt = played_day_acquisition(cur, day)
+            attestation, finals = played_day_evidence(cur, day)
+            assert receipt == attestation
+            assert [g['gamePk'] for g, _ in finals] == [12345]
+            cur.execute('SELECT identity FROM candidate.confirmations WHERE source_id=%s AND domain=%s',
+                        (finals[0][1], 'final'))
+            assert cur.fetchall() == [('12345',)]
             assert receipt['jobs'] >= 156 and receipt['represented'] == str(day)
             cur.execute("SET LOCAL timezone='America/New_York'")
             assert played_day_acquisition(cur, day) == receipt
@@ -64,3 +70,31 @@ def test_acquisition_requires_qualified_completions_and_full_played_day_scope():
                 with pytest.raises(ValueError, match='acquisition|completion'):
                     played_day_acquisition(cur, day)
                 cur.execute('ROLLBACK TO SAVEPOINT invalid_source')
+
+@pytest.mark.parametrize('defect, expected_calls', [
+    ('identity_changed', [True]),
+    ('different_write', [True, False]),
+    ('repeat_update', [True, False, True]),
+])
+def test_final_handoff_refuses_unresolved_or_nonconverging_plans(monkeypatch, defect, expected_calls):
+    from types import SimpleNamespace
+    from scripts import rehearse_selected_publication as handoff
+    from services import sync
+
+    calls = []
+    box = {'gamePk': 12345}
+    monkeypatch.setattr(handoff, 'replay', lambda cur, source: SimpleNamespace(body=box))
+
+    def process(game, *, schedule_date, sync_run_id, boxscore, plan_only, force):
+        calls.append(plan_only)
+        assert boxscore is box and sync_run_id == 7 and force
+        return dict(incomplete_reason=None, processing_status=sync.POSTGAME_MARKER_STATUS_FULLY_PROCESSED,
+                    reconciliation_summary=dict(rows_planned=2, rows_blocked=0,
+                        pitcher_identity_unchanged=1 if defect == 'identity_changed' else 2,
+                        complete_reconciliation_fingerprint='different' if defect == 'different_write' and not plan_only else 'same',
+                        rows_unchanged=1 if defect == 'repeat_update' else 2))
+
+    monkeypatch.setattr(sync, 'process_completed_game_for_postgame_refresh', process)
+    with pytest.raises(ValueError, match='Final 12345'):
+        handoff._reconcile_confirmed_finals(None, [({'gamePk': 12345}, 1)], date(2017, 8, 28), 7)
+    assert calls == expected_calls
