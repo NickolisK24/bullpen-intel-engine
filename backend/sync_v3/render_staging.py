@@ -28,10 +28,14 @@ def connect(user, password):
 
 def bootstrap(password):
     task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
-    if task == 'build-generation':
+    if task in ('build-generation', 'recover-readiness'):
         import resource
         from sync_v3.staging_publication_target import advance_private_generation
-        result = advance_private_generation(password, budget_seconds=185)
+        if task == 'build-generation':
+            result = advance_private_generation(password, budget_seconds=185)
+        else:
+            from sync_v3.staging_publication_target import recover_private_readiness
+            result = recover_private_readiness(password, budget_seconds=185)
         usage = resource.getrusage(resource.RUSAGE_SELF)
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
