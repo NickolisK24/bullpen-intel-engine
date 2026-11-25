@@ -7,12 +7,12 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from time import monotonic
 
-from alembic.script import ScriptDirectory
 from flask import Flask
-from flask_migrate import Migrate, upgrade
+from flask_migrate import Migrate
 from sqlalchemy import URL, text
 
-from services.migration_authority import read_current_heads, verify_heads
+from scripts.database_migrations import upgrade_private_staging
+from services.migration_authority import require_owner
 from utils.db import db
 
 TARGET = 'baseballos_v3_roster_staging'
@@ -21,6 +21,7 @@ TARGET = 'baseballos_v3_roster_staging'
 def install_target(password, worker_password):
     from sync_v3.render_staging import DATABASE, HOST, OWNER, connect
 
+    require_owner()
     start = monotonic()
     # CREATE DATABASE runs outside a transaction. Serialize creation and verification.
     with closing(connect(OWNER, password)) as admin:
@@ -48,17 +49,13 @@ def install_target(password, worker_password):
         db.init_app(app)
         migrations = str(Path(__file__).resolve().parents[1] / 'migrations')
         Migrate(app, db, directory=migrations)
-        expected = ScriptDirectory(migrations).get_current_head()
         with app.app_context():
             with db.engine.begin() as conn:
                 identity = conn.execute(text('SELECT current_database(),current_user')).one()
                 if tuple(identity) != (TARGET, OWNER):
                     raise ValueError('Unexpected publication migration target')
                 conn.execute(text('REVOKE CREATE ON SCHEMA public FROM PUBLIC'))
-            os.environ['DATABASE_MIGRATION_MODE'] = 'owner'
-            if read_current_heads(db.engine) != (expected,):
-                upgrade(directory=migrations, revision=expected)
-            verify_heads(read_current_heads(db.engine), expected)
+            expected = upgrade_private_staging()
             schedule = project_played_schedule(worker_password)
             workload_window = project_workload_window(worker_password)
             roster_report = project_roster_views(worker_password)
@@ -246,7 +243,8 @@ def project_final_appearances(finals, day, *, include_context=True):
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected final rehearsal target')
-        db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        db.session.execute(text("SET LOCAL lock_timeout = '5s'"))
+        db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE'))
         for game, box, facts, extra in finals:
             def process(plan_only):
                 return process_completed_game_for_postgame_refresh(
@@ -625,6 +623,8 @@ def project_eligibility_history(worker_password, *, budget_seconds):
             present = set(rows)
         missing = sorted({pk for player, games in samples.items() for pk in games if (player, pk) not in present})
         reconciled = 0
+        print(json.dumps(dict(eligibility_projection_start=dict(pitchers=len(samples), missing_games=len(missing)))),
+              flush=True)
         for pk in missing:
             with source, source.cursor() as cur:
                 cur.execute("""SELECT f.parameters->>'startDate' FROM candidate.confirmations c

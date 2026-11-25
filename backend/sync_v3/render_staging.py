@@ -75,6 +75,8 @@ def bootstrap(password):
         print(json.dumps(dict(private_product=report, elapsed_seconds=monotonic()-started,
                               peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    from services.migration_authority import require_owner
+    require_owner()
     with closing(connect(OWNER, binding['password'])) as owner:
         with owner.cursor() as cur:
             cur.execute("""SELECT current_database(),current_user,current_setting('server_version_num')::int/10000,

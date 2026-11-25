@@ -45,6 +45,28 @@ def upgrade(target):
     )
 
 
+def upgrade_private_staging():
+    """Install the repository head only in the isolated Render product rehearsal database."""
+    from flask_migrate import upgrade as upgrade_context
+    from sqlalchemy import text
+    from sync_v3.render_staging import HOST, OWNER
+    from sync_v3.staging_publication_target import TARGET
+    from utils.db import db
+
+    require_owner()
+    url = db.engine.url
+    if (url.get_backend_name(), url.host, url.database, url.username) != ('postgresql', HOST, TARGET, OWNER):
+        raise MigrationAuthorityError('unexpected_private_staging_migration_binding')
+    with db.engine.connect() as conn:
+        if tuple(conn.execute(text('SELECT current_database(),current_user,session_user')).one()) != (TARGET, OWNER, OWNER):
+            raise MigrationAuthorityError('unexpected_private_staging_migration_identity')
+    expected = target_head()
+    if read_current_heads(db.engine) != (expected,):
+        upgrade_context(directory=str(BACKEND / 'migrations'), revision=expected)
+    verify_heads(read_current_heads(db.engine), expected)
+    return expected
+
+
 def promote(*, source_branch, expected_commit, expected_head):
     require_owner()
     if os.environ.get('SKIP_STARTUP_MIGRATIONS') == 'true':
