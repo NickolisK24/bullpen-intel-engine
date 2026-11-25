@@ -48,6 +48,13 @@ def bootstrap(password):
         env = {key: os.environ[key] for key in keep if key in os.environ}
         env['AUTO_SYNC'] = 'false'
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', 'read'], env)
+    if task == 'qualify-offseason-edition':
+        from sync_v3.staging_postseason import qualify_offseason_edition
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = qualify_offseason_edition(source, datetime.now(ZoneInfo('America/New_York')).date())
+        print(json.dumps(dict(private_offseason_edition=result)), flush=True)
+        return
     if task == 'recover-current-edition':
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_postseason import reconcile_current_decisions

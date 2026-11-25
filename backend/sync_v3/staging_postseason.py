@@ -119,3 +119,46 @@ def reconcile_current_decisions(connection, fetch, *, limit=96):
             break
     return dict(day=str(day), through=str(through), prior_missing_decisions=len(league['missing_decisions']),
                 prior_date_gaps=len(decision['gaps']), received=dict(outcomes))
+
+
+def qualify_offseason_edition(connection, day):
+    """Freeze the real dated club facts only when official evidence establishes the offseason."""
+    from collections import Counter
+    from sync_v3 import evidence
+    from sync_v3.competition_calendar import calendar_games, competition_status
+    from sync_v3.discovery import competition_calendar_request
+    from sync_v3.generation import freeze_generation, generation_date_decision
+    from sync_v3.intelligence_history import record_intelligence
+    from sync_v3.product_reads import _league
+
+    with connection, connection.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        competition = competition_status(cur, day)
+        clubs = competition['clubs']
+        if competition['missing_decisions'] or Counter(c['status'] for c in clubs.values()) != {'season_complete': 30}:
+            raise ValueError('The private current edition lacks complete offseason competition evidence')
+        receipt = evidence.replay(cur, competition['calendar_source'])
+        games = calendar_games(competition_calendar_request(day.year).params(), receipt.body)
+        through = max(d for d,row,_ in games.values() if d <= day and row['status_state'] == 'final')
+        dates = generation_date_decision(cur, through, day)
+        if dates['status'] != 'aligned':
+            raise ValueError('The retained current schedule does not support the workload and availability dates')
+    for team in sorted(clubs):
+        record_intelligence(connection, 'readiness', team, through)
+    digest = freeze_generation(connection, through, as_of=day)
+    with connection, connection.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        league = _league(cur, None, digest, compare_latest=True)
+        review = league['selection_review']
+        if review['status'] != 'season_complete_withholding' or review['latest_inventory_digest'] != digest:
+            raise ValueError(f'Offseason generation withheld for unresolved evidence: {review}')
+        states = {}
+        for club in league['teams']:
+            state = club['team_state']
+            if state.get('available') is not False or state.get('outcome') != 'season_complete':
+                raise ValueError('A current active Team State lacks offseason authority')
+            states[str(club['team_id'])] = sha256(encode_json(state)).hexdigest()
+        if set(states) != {str(team) for team in clubs}:
+            raise ValueError('Current private League roster differs from the official club inventory')
+    return dict(day=str(day), through=str(through), availability=dates['availability_reference'],
+                generation=digest, decision=review['status'], club_state_digests=states)
