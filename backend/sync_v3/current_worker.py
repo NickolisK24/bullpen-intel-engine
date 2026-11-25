@@ -106,10 +106,14 @@ def main():
     parser.add_argument('--postseason-round', choices=('F', 'D', 'L', 'W'), action='append', default=[],
                         help='Acquire this round for pitchers discovered through --active-profiles')
     parser.add_argument('--round-totals', action='store_true')
-    parser.add_argument('--recover-eligibility', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
+    recovery_modes = parser.add_mutually_exclusive_group()
+    recovery_modes.add_argument('--recover-eligibility', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
                         help='Recover only missing historical eligibility evidence for this club and date')
+    recovery_modes.add_argument('--recover-readiness', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
+                                help='Also recover the dated schedule and finals required for historical club readiness')
     args = parser.parse_args()
-    if args.recover_eligibility and (args.active_profiles or args.depth_team or args.postseason_round or args.round_totals):
+    recovery_team = args.recover_eligibility or args.recover_readiness
+    if recovery_team and (args.active_profiles or args.depth_team or args.postseason_round or args.round_totals):
         parser.error('Eligibility recovery derives the source scope from the retained evidence')
     if args.postseason_round and not args.active_profiles:
         parser.error('--postseason-round requires --active-profiles')
@@ -123,11 +127,12 @@ def main():
                                       sslmode='disable' if socket else 'verify-full', connect_timeout=5,
                                       options='-c search_path=pg_catalog',
                                       application_name='baseballos_sync_v3_shadow')) as connection:
-            if args.recover_eligibility:
+            if recovery_team:
                 from sync_v3.eligibility_recovery import recover
                 client = MLBApiClient()
                 with closing(client.session):
-                    report = recover(connection, args.recover_eligibility, args.day, max_jobs=args.max_jobs,
+                    report = recover(connection, recovery_team, args.day, max_jobs=args.max_jobs,
+                                     include_workload=bool(args.recover_readiness),
                                      fetch=lambda endpoint, params: client._get(endpoint, params=params))
                 print(json.dumps(report, sort_keys=True))
                 return 0 if report['status'] in ('ready', 'season_complete', 'batch_limit', 'awaiting_retry_or_lease') else 1

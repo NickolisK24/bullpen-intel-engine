@@ -92,3 +92,65 @@ def test_completed_club_requires_agreeing_competition_evidence(monkeypatch, reas
         with worker, worker.cursor() as cur:
             cur.execute('SELECT count(*) FROM candidate.jobs')
             assert cur.fetchone() == (0,)
+
+
+def test_workload_recovery_fetches_only_the_missing_schedule_and_official_final(monkeypatch):
+    from sync_v3.workload import regular_day
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    fixture = json.loads((Path(__file__).parent / 'fixtures/sync_v3/played.json').read_text())
+    day = date.fromisoformat(fixture['baseball_date'])
+    at = datetime.fromisoformat(fixture['observed_at']) + timedelta(days=1)
+    def readiness(cur, club, through):
+        _, gap = regular_day(cur, day)
+        return dict(reference_date=str(through + timedelta(days=1)), reason=gap, gap_date=str(day))
+    monkeypatch.setattr(recovery, 'represented_readiness', readiness)
+    calls = []
+    def fetch(endpoint, params):
+        calls.append(endpoint)
+        return next(row['body'] for row in fixture['responses'] if row['endpoint'] == endpoint and row['params'] == params)
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        def run(include, through=day):
+            return recovery.recover(worker, 111, through, max_jobs=1, fetch=fetch, include_workload=include,
+                                    clock=lambda: at + timedelta(days=30))
+        assert run(False)['status'] == 'withheld'
+        assert run(True, day + timedelta(days=recovery.ACTIVE_WINDOW_DAYS))['status'] == 'withheld'
+        assert calls == []
+        assert run(True)['status'] == 'batch_limit'
+        assert calls == ['/schedule']
+        assert run(True)['status'] == 'ready'
+        assert run(True)['receipts'] == []
+        assert calls == ['/schedule', '/game/12345/boxscore']
+        with worker, worker.cursor() as cur:
+            cur.execute('SELECT count(*) FROM candidate.core_selections')
+            assert cur.fetchone() == (0,)
+
+
+def test_readiness_recovery_limits_reference_acquisition_to_consulted_evidence(monkeypatch):
+    from sync_v3.dependencies import consult
+    from sync_v3.discovery import calendar_requests
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for isolated PostgreSQL')
+    day = date(2024, 8, 10)
+    reference = day + timedelta(days=1)
+    request, _ = calendar_requests(reference)
+    consulted = None
+    def readiness(cur, club, through):
+        if consulted is not None:
+            consult(cur, consulted.endpoint, consulted.params())
+        return dict(reference_date=str(reference), reason='unresolved_source_conflict')
+    monkeypatch.setattr(recovery, 'represented_readiness', readiness)
+    with isolated_cluster(pg) as (owner, connect), closing(connect()) as worker:
+        install(owner)
+        with worker, worker.cursor() as cur:
+            for consulted in (None, calendar_requests(day)[0]):
+                assert recovery._needed(cur, 111, day, True)[1] == []
+            consulted = request
+            expected = (reference, request.endpoint, tuple(sorted(request.params().items())))
+            assert recovery._needed(cur, 111, day, True)[1] == [expected]
+            assert recovery._needed(cur, 111, day, False)[1] == []
