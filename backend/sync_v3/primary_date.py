@@ -61,9 +61,9 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         with source, source.cursor() as cur:
             games = calendar_games(season.params(), evidence.replay(cur, calendar).body)
         cutoff = workload_cutoff(games, day, after_finals=after_finals)
-        for played in {cutoff, day}:
-            request = calendar_requests(played)[0]
-            acquire_window_source(source, client, played, request.endpoint, request.params())
+        for played in sorted({cutoff, day}):
+            for request in calendar_requests(played):
+                acquire_window_source(source, client, played, request.endpoint, request.params())
 
     with source, source.cursor() as cur:
         cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')

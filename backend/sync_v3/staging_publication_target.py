@@ -662,8 +662,13 @@ def acquire_window_source(source, client, day, endpoint, params):
     if oid is None:
         if not claim:
             raise ValueError(f'Acquisition pending for {day}')
-        oid, outcome = evidence.execute(source, claim, client._get,
-            on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, day))
+        def reconcile(cur, source_id, observation):
+            if endpoint == '/transactions':
+                from sync_v3.cycle import plan_children
+                plan_children(cur, source_id, observation, 'historical', observation.retrieved_at, day)
+            elif endpoint != '/schedule' or 'season' not in params:
+                canonical.observe(cur, source_id, observation, day)
+        oid, outcome = evidence.execute(source, claim, client._get, on_received=reconcile)
         if outcome != 'received':
             raise ValueError(f'Source recovery for {day} returned {outcome}')
     return oid
