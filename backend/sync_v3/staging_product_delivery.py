@@ -3,7 +3,7 @@ from contextlib import closing
 from datetime import date
 import os
 import sys
-from time import perf_counter
+from time import CLOCK_MONOTONIC, clock_gettime, perf_counter
 
 from sqlalchemy import URL, text
 
@@ -123,6 +123,7 @@ def publish(binding):
 
 def exercise(password, worker_password, digest):
     import re
+    from datetime import datetime, timezone
     from freezegun import freeze_time
     from models.dashboard_snapshot import DashboardSnapshot
     from services import dashboard_snapshot
@@ -132,23 +133,35 @@ def exercise(password, worker_password, digest):
         raise ValueError('An explicit immutable generation is required')
     started = perf_counter()
     binding = source_receipt(worker_password, digest)
+    verified_source_seconds = perf_counter()-started
     app = private_app(password)
     day = binding['availability_reference']
     with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
+        # clock_gettime measures real time during the archived product clock.
+        before_pointer = clock_gettime(CLOCK_MONOTONIC)
         snapshot_id, promoted = publish(binding)
+        after_pointer = clock_gettime(CLOCK_MONOTONIC)
         try:
             snapshot = db.session.get(DashboardSnapshot, snapshot_id)
             run_id = snapshot.sync_run_id
             dashboard_snapshot.run_post_commit_snapshot_publication(snapshot)
             db.session.remove()
+            before_http = clock_gettime(CLOCK_MONOTONIC)
             counts = verify_http(app, binding, snapshot_id, run_id)
+            after_http = clock_gettime(CLOCK_MONOTONIC)
         except Exception:
             db.session.rollback()
             if promoted:
                 restore_predecessor(digest, snapshot_id)
             raise
-    return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id,
-                modeled_product_date=day, seconds=perf_counter()-started, **counts)
+    verified_at = datetime.now(timezone.utc)
+    latest = datetime.fromisoformat(binding['last_source_at'])
+    return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id, promoted=promoted,
+                modeled_product_date=day, verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
+                latest_retained_source_to_private_delivery_seconds=(verified_at-latest).total_seconds(),
+                verified_source_seconds=verified_source_seconds, publication_seconds=after_pointer-before_pointer,
+                postcommit_seconds=before_http-after_pointer, http_verification_seconds=after_http-before_http,
+                seconds=perf_counter()-started, **counts)
 
 
 def verify_http(app, binding, snapshot_id, run_id):
