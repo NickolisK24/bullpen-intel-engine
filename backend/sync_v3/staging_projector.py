@@ -19,7 +19,8 @@ CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
       OR (stage='checkpoint' AND job_name ~ '^sync_v3_board_progress_[0-9]+$')
-      OR (stage='verified_roster_observations' AND job_name='sync_v3_roster_reconciliation')))"""
+      OR (stage='verified_roster_observations' AND job_name='sync_v3_roster_reconciliation')
+      OR (stage='canonical_ready' AND job_name='sync_v3_canonical_cycle')))"""
 
 
 def verify(cur):
@@ -41,6 +42,40 @@ def install(owner_password, password):
         verify(cur)
 
 
+def current_checkpoint(source, digest, day):
+    from models.sync_run import SyncRun
+    from sync_v3.staging_board_history import inputs_still_current
+    from utils.db import db
+
+    with db.session.begin():
+        row = SyncRun.query.filter_by(job_name='sync_v3_canonical_cycle', stage='canonical_ready',
+                                      source='sync_v3_staging', status='success').order_by(SyncRun.id.desc()).first()
+        if not row:
+            return None
+        proof = row.publication_outcome
+        if proof['generation'] != digest or proof['day'] != str(day):
+            return None
+        review = row.id
+    with source, source.cursor() as cur:
+        return review if inputs_still_current(cur, proof['sources']) else None
+
+
+def record_checkpoint(digest, day, through, sources, started):
+    from sqlalchemy import text
+    from models.sync_run import SyncRun
+    from utils.db import db
+
+    with db.session.begin():
+        now = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
+        record = SyncRun(job_name='sync_v3_canonical_cycle', stage='canonical_ready', source='sync_v3_staging',
+                         status='success', latest_workload_date=through, records_processed=len(sources),
+                         started_at=started, completed_at=now,
+                         publication_outcome=dict(generation=digest, day=str(day), sources=sorted(sources)))
+        db.session.add(record)
+        db.session.flush()
+        return record.id
+
+
 def recover_boards(password, source_password, digest, *, competition_day=None):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
@@ -54,11 +89,15 @@ def recover_boards(password, source_password, digest, *, competition_day=None):
     with private_app(password, user=PROJECTOR).app_context(), closing(client.session):
         with closing(connect('sync_v3_worker', source_password)) as source:
             verify_target(source)
-            if competition_day:
+            checkpoint = current_checkpoint(source, digest, competition_day) if competition_day else None
+            if competition_day and not checkpoint:
+                from datetime import datetime, timezone
+                started = datetime.now(timezone.utc).replace(tzinfo=None)
                 from sync_v3.staging_postseason import project_offseason_competition
                 from utils.db import db
                 competition = project_offseason_competition(source, client, competition_day, scoped=True)
                 db.session.remove()
+                sources = set(competition.pop('source_receipts'))
                 print(json.dumps(dict(private_scoped_competition=competition)), flush=True)
                 from datetime import date
                 from sync_v3.staging_publication_target import project_roster_views, project_archived_fatigue
@@ -69,6 +108,10 @@ def recover_boards(password, source_password, digest, *, competition_day=None):
                 dates = through, date.fromisoformat(availability)
                 roster = project_roster_views(source_password, edition_dates=dates, initialized=True)
                 roster['assignments'] = project_archived_fatigue(edition_dates=dates)
+                sources.update(roster.pop('source_receipts'))
                 print(json.dumps(dict(private_scoped_roster=roster)), flush=True)
+                checkpoint = record_checkpoint(digest, competition_day, through, sources, started)
+                return dict(phase='canonical_ready', checkpoint=checkpoint, product_writer=PROJECTOR,
+                            source_count=len(sources), generation=digest)
             result = recover_next(source, client, digest)
-    return dict(result, product_writer=PROJECTOR)
+    return dict(result, canonical_checkpoint=checkpoint, product_writer=PROJECTOR)

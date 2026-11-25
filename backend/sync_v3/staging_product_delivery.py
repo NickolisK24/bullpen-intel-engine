@@ -89,6 +89,12 @@ def reviewed_board_populations(cur, password, user, digest, binding):
             WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND status='success'
             AND stage='reviewed' AND publication_outcome->>'generation'=%s ORDER BY job_name,id DESC""", (names, digest))
         reviews = target_cur.fetchall()
+        target_cur.execute("""SELECT id, publication_outcome, started_at FROM public.sync_runs
+            WHERE job_name='sync_v3_canonical_cycle' AND source='sync_v3_staging' AND status='success'
+              AND stage='canonical_ready' ORDER BY id DESC LIMIT 1""")
+        projection = target_cur.fetchone()
+        if not projection or (projection[1]['generation'], projection[1]['day']) != (digest, binding['product_day']):
+            raise ValueError('Current publication requires its dated canonical checkpoint')
     populations, receipts, review_ids = {}, set(), {}
     for run, review in reviews:
         team = str(review['team'])
@@ -100,9 +106,11 @@ def reviewed_board_populations(cur, password, user, digest, binding):
     if populations.keys() != teams.keys():
         raise ValueError(f'Current Board workload and population reviews still required for {sorted(teams.keys()-populations.keys())}')
     from sync_v3.staging_board_history import inputs_still_current
+    receipts.update(projection[1]['sources'])
     if not inputs_still_current(cur, receipts):
         raise ValueError('Reviewed Board workload evidence has advanced since reconciliation')
-    binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids)
+    binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids,
+                   canonical_checkpoint=projection[0], canonical_started_at=projection[2].isoformat()+'+00:00')
     binding['current_source_ids'] = sorted(set(binding['current_source_ids']) | receipts)
 
 
@@ -373,6 +381,8 @@ def exercise(password, worker_password, digest, *, inventory=False, user=OWNER, 
                 access={k:sorted(v) for k,v in access.items()} if inventory else None,
                 target_database_bytes=target_bytes, modeled_product_date=binding.get('product_day', binding['availability_reference']), verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
                 latest_retained_source_to_private_delivery_seconds=(verified_at-latest).total_seconds(),
+                canonical_start_to_delivery_seconds=(verified_at-datetime.fromisoformat(binding['canonical_started_at'])).total_seconds()
+                if 'canonical_started_at' in binding else None,
                 verified_source_seconds=verified_source_seconds, publication_seconds=after_pointer-before_pointer,
                 postcommit_seconds=before_http-after_pointer, http_verification_seconds=after_http-before_http,
                 seconds=perf_counter()-started, **counts)

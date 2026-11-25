@@ -202,6 +202,7 @@ def project_offseason_competition(source, client, day, *, scoped=False):
     makeups = retained_makeups(schedules)
     rows = 0
     applied = set()
+    sources = {competition['calendar_source'], *receipts.values()}
     for played, obs in schedules.items():
         with source, source.cursor() as cur:
             finals = []
@@ -218,6 +219,7 @@ def project_offseason_competition(source, client, day, *, scoped=False):
                         raise ValueError('Official decision receipt changed during projection')
                     finals.append((game, evidence.replay(cur, box).body, facts, {}))
                     applied.add(pk)
+                    sources.add(box)
         for verify_only in (False, True):
             with db.session.begin():
                 if not scoped:
@@ -231,4 +233,5 @@ def project_offseason_competition(source, client, day, *, scoped=False):
         observed = resolve_club_competition_status(team, day).to_dict()
         if observed != expected:
             raise ValueError(f'Private competition projection differs for club {team}: {observed} / {expected}')
-    return dict(day=str(day), dates=len(days), decisions=len(applied), appearances=rows, verified_clubs=len(clubs))
+    return dict(day=str(day), dates=len(days), decisions=len(applied), appearances=rows, verified_clubs=len(clubs),
+                source_receipts=sorted(sources))

@@ -411,7 +411,7 @@ if __name__ == '__main__':
             if args.operation == 'publish' and 'STAGING_CYCLE_STARTED_AT' in os.environ:
                 started_at = datetime.fromisoformat(os.environ['STAGING_CYCLE_STARTED_AT'])
                 result['cycle_started_at'] = started_at.isoformat()
-                result['cycle_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
+                result['invocation_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
         elif args.operation in ('project', 'project-before-publish'):
             from sync_v3.staging_projector import recover_boards
@@ -420,7 +420,9 @@ if __name__ == '__main__':
                                     competition_day=datetime.now(ZoneInfo('America/New_York')).date()
                                     if args.operation == 'project-before-publish' else None)
             print(json.dumps(dict(private_board_history=result)), flush=True)
-            if args.operation == 'project-before-publish' and result['completed_clubs'] < result['total']:
+            if args.operation == 'project-before-publish' and (
+                    result.get('phase') == 'canonical_ready' or result['completed_clubs'] < result['total']
+                    or result['batches']):
                 parser.exit(75)
         elif args.operation == 'read':
             from sync_v3.staging_reader import serve_edition

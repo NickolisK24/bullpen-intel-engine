@@ -319,6 +319,7 @@ def project_roster_views(worker_password, *, edition_dates=None, initialized=Fal
     result = {}
     staff = {}
     dated = {}
+    roster_sources = set()
     current_club_inputs = {}
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
@@ -350,6 +351,7 @@ def project_roster_views(worker_password, *, edition_dates=None, initialized=Fal
                         acquired += 1
                     with source, source.cursor() as cur:
                         obs = evidence.replay(cur, oid)
+                    roster_sources.add(oid)
                     kind = params['rosterType']
                     bodies[kind] = obs.body
                     stamps[kind] = obs.retrieved_at
@@ -411,6 +413,7 @@ def project_roster_views(worker_password, *, edition_dates=None, initialized=Fal
                 clubs += 1
             dated[day] = candidates
             result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
+    result['source_receipts'] = sorted(roster_sources)
     result['roster_identities'] = bind_active_staff(staff, initialized=initialized)
     for day, candidates in dated.items():
         result[str(day)]['membership'] = project_credited_membership(
