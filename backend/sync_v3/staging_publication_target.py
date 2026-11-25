@@ -178,7 +178,13 @@ def stage_identity_inputs(cur, schedule, schedule_id, day):
                         (str(pk), source, str(pk), f'{pk}/{day}', schedule_id))
             facts, = cur.fetchone()
             box = replay(cur, source).body
-            finals.append((game, box, facts))
+            extra = {}
+            for key, endpoint in (('linescore', 'linescore'), ('play_by_play', 'playByPlay')):
+                context_source = latest_qualified_source(cur, f'/game/{pk}/{endpoint}', {})
+                if context_source is None:
+                    raise ValueError('Missing qualified final context input')
+                extra[key] = replay(cur, context_source).body
+            finals.append((game, box, facts, extra))
             for line in facts:
                 mlb = line['pitcher_mlb_id']
                 if mlb not in directory:
@@ -225,12 +231,12 @@ def project_final_appearances(finals, day):
     from services.sync import process_completed_game_for_postgame_refresh, POSTGAME_MARKER_STATUS_FULLY_PROCESSED
 
     started = monotonic()
-    created = inserted = confirmed = 0
+    created = inserted = confirmed = contexts = 0
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected final rehearsal target')
         db.session.execute(text('LOCK TABLE pitchers,game_logs,postgame_processed_games IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
-        for game, box, facts in finals:
+        for game, box, facts, extra in finals:
             def process(plan_only):
                 return process_completed_game_for_postgame_refresh(
                     game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only)
@@ -255,5 +261,27 @@ def project_final_appearances(finals, day):
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')
+            contexts += project_context(game, box, extra, day)
             confirmed += len(facts)
-    return dict(verified=confirmed, inserted=inserted, identities_created=created, seconds=monotonic()-started)
+    return dict(verified=confirmed, team_game_contexts=contexts, inserted=inserted, identities_created=created, seconds=monotonic()-started)
+
+def project_context(game, box, extra, day):
+    from models.completed_game_context import CompletedGameContext
+    from services.completed_game_context_payload_adapter import build_completed_game_payload
+    from services.completed_game_context_service import extract_completed_game_contexts, upsert_completed_game_context
+
+    payload = build_completed_game_payload(game, boxscore=box, game_date=day, **extra)
+    contexts = extract_completed_game_contexts(payload)
+    expected = {(side['team']['id'], side['score']) for side in game['teams'].values()}
+    if len(contexts) != 2 or {(c['team_id'], c['final_score_for']) for c in contexts} != expected:
+        raise ValueError('Derived final context differs from official result')
+    for context in contexts:
+        row = CompletedGameContext.query.filter_by(team_id=context['team_id'], game_pk=game['gamePk']).one_or_none()
+        if row is None:
+            row = upsert_completed_game_context(context)
+            db.session.flush()
+            db.session.refresh(row)
+        if any(getattr(row, k) != context[k] for k in CompletedGameContext.DERIVED_COLUMNS
+               if k in context and k != 'generated_at'):
+            raise ValueError('Stored game context differs from retained final evidence')
+    return len(contexts)
