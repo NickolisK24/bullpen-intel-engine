@@ -751,6 +751,17 @@ def test_builder_module_does_not_import_legacy_engines():
 
 # ── Immutable, publication-bound storage ─────────────────────────────────────
 
+def test_private_edition_can_rollback_tonight_with_its_publication(tonight_app):
+    snapshot = tonight_app.snapshot
+    snapshot_id = snapshot.id
+    snapshot.is_published = False
+    row, outcome = tonight_read_model.generate_tonight_v1_for_snapshot(snapshot, commit=False)
+    assert outcome == 'created' and row.id is not None
+    db.session.rollback()
+    assert db.session.get(DashboardSnapshot, snapshot_id).is_published
+    assert TonightPublication.query.filter_by(dashboard_snapshot_id=snapshot_id).count() == 0
+
+
 def test_storage_is_immutable_and_publication_bound(tonight_app):
     snapshot = tonight_app.snapshot
     legacy = tonight_intelligence_snapshot.write_snapshot(

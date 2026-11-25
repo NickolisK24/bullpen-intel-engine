@@ -86,7 +86,9 @@ def publish(binding):
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
     from scripts.rehearse_selected_publication import verify_frozen_states
+    from scripts.verify_selected_delivery import verify_tonight_edition
     from services import dashboard_snapshot, sync_metadata
+    from services.tonight_read_model import generate_tonight_v1_for_snapshot
     from services.team_state_vnext_production_proof import observe_committed_publication_proof
     from utils.db import db
 
@@ -122,6 +124,9 @@ def publish(binding):
         verify_frozen_states(snapshot, binding)
         if observe_committed_publication_proof(snapshot)['status'] != 'proof_valid':
             raise ValueError('Incomplete private Team State proof')
+        edition, _ = generate_tonight_v1_for_snapshot(snapshot, commit=False)
+        verify_tonight_edition(edition.payload, (snapshot.id, run.id), binding, binding['availability_reference'])
+        verify_slate(edition.payload['games'], binding)
         return snapshot.id, True
 
 
