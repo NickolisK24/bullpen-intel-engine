@@ -46,6 +46,8 @@ def test_acquisition_requires_qualified_completions_and_full_played_day_scope():
             assert played_day_acquisition(cur, day) == receipt
             assert receipt['attempts'] == receipt['jobs']
             for tamper in (
+                "DELETE FROM candidate.confirmations WHERE domain='final'",
+                "UPDATE candidate.confirmations SET context_id=NULL WHERE domain='final'",
                 "UPDATE candidate.jobs SET state='pending',product_date=product_date-1 WHERE id=1",
                 "UPDATE candidate.jobs SET attempts=2 WHERE id=1",
                 """UPDATE candidate.jobs SET payload=jsonb_set(payload,'{continuation,profile_teams}','[]'::jsonb)

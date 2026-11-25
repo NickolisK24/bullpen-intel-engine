@@ -82,7 +82,18 @@ def played_day_acquisition(cur, day):
                     child.endpoint.endswith('/feed/live') for child in games):
                 raise ValueError('Played-day acquisition requires a settled slate with an official final')
             for child in (*games, *savant.after_final(day, games)):
-                source_for(child)
+                child_source, _ = source_for(child)
+                if child.endpoint.endswith('/boxscore'):
+                    game = child.endpoint.split('/')[2]
+                    cur.execute("""SELECT 1 FROM candidate.confirmations f
+                                   JOIN candidate.confirmations context ON context.source_id=f.context_id
+                                   JOIN candidate.confirmations slate ON slate.revision_id=context.revision_id
+                                   WHERE f.domain='final' AND f.identity=%s AND f.source_id=%s
+                                   AND context.domain='schedule' AND context.identity IN (%s,%s)
+                                   AND slate.domain=context.domain AND slate.identity=context.identity
+                                   AND slate.source_id=%s""", (game, child_source, f'{game}/{day}', game, source))
+                    if cur.fetchone() is None:
+                        raise ValueError(f'Played-day acquisition lacks a confirmed final on the selected slate for {game}')
         if request.params().get('rosterType') == 'active' and 'hydrate' not in request.params():
             team = int(request.endpoint.split('/')[2])
             players, reason = _pitchers(evidence.replay(cur, source).body, team, team, 'active')
