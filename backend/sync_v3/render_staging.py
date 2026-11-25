@@ -40,6 +40,22 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    if task == 'run-current-offseason':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_postseason import qualify_offseason_edition, reconcile_current_decisions
+        day = datetime.now(ZoneInfo('America/New_York')).date()
+        client = MLBApiClient()
+        with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            report = process(source, day, max_jobs=BATCH_LIMIT, profiles=True)
+            if acquisition_failed(report):
+                raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
+            recovery = reconcile_current_decisions(source, client._get)
+            qualified = qualify_offseason_edition(source, day)
+        print(json.dumps(dict(current_cycle=dict(day=str(day), receipts=report['receipts'], recovery=recovery,
+                                                generation=qualified['generation']))), flush=True)
+        os.environ['STAGING_PRODUCT_GENERATION'] = qualified['generation']
+        task = 'publish-with-scoped-login'
     if task in ('verify-reader-edition', 'publish-with-scoped-login', 'rollback-with-scoped-login'):
         # Run the reader entry point with only its own private database credential.
         import sys
