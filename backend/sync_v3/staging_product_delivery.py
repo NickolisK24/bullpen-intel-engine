@@ -12,13 +12,26 @@ from sync_v3.render_staging import HOST, OWNER, PLAYED_DAY, connect
 from sync_v3.staging_publication_target import TARGET
 
 
-def source_receipt(worker_password, digest):
-    from services.mlb_club_directory import MLB_TEAM_IDS
+def open_generation_source(password, user):
     from sync_v3.current_worker import verify_target
+    from sync_v3.staging_publisher import PUBLISHER, verify_source
+
+    if user not in ('sync_v3_worker', PUBLISHER):
+        raise ValueError('Unexpected private generation source reader')
+    source = connect(user, password)
+    try:
+        (verify_target if user == 'sync_v3_worker' else verify_source)(source)
+    except Exception:
+        source.close()
+        raise
+    return source
+
+
+def source_receipt(worker_password, digest, user='sync_v3_worker'):
+    from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.product_reads import _league
 
-    with closing(connect('sync_v3_worker', worker_password)) as source:
-        verify_target(source)
+    with closing(open_generation_source(worker_password, user)) as source:
         with source, source.cursor() as cur:
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             league = _league(cur, None, digest, compare_latest=True)
@@ -104,17 +117,15 @@ def private_app(password, *, user=OWNER, read_only=False):
     return app
 
 
-def report_state_differences(snapshot, binding, worker_password):
+def report_state_differences(snapshot, binding, worker_password, user='sync_v3_worker'):
     from services.team_state_vnext_production_proof import load_durable_proof
     from sync_v3.intelligence_history import DOMAINS
-    from sync_v3.current_worker import verify_target
 
     frozen = snapshot.payload['trusted_team_boards']['frozen_team_state_by_team_id']
     mismatches = [team for team, member in binding['teams'].items() if frozen[team]['value'] != member['state']]
     print(json.dumps(dict(private_state_mismatches=mismatches)), flush=True)
     inputs = load_durable_proof(snapshot.id).proof['snapshot_team_state_generation_inputs']
-    with closing(connect('sync_v3_worker', worker_password)) as source:
-        verify_target(source)
+    with closing(open_generation_source(worker_password, user)) as source:
         with source, source.cursor() as cur:
             cur.execute('SET TRANSACTION READ ONLY')
             for team in mismatches:
@@ -133,7 +144,7 @@ def report_state_differences(snapshot, binding, worker_password):
                     candidate_arms=candidate, product_arms=product, rule=facts.get('rule')))), flush=True)
 
 
-def publish(binding, worker_password):
+def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker'):
     from datetime import datetime, timezone
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
@@ -145,7 +156,7 @@ def publish(binding, worker_password):
     from utils.db import db
 
     with db.session.begin():
-        if tuple(db.session.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, OWNER):
+        if tuple(db.session.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, user):
             raise ValueError('Unexpected private publisher target')
         db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         prior = DashboardSnapshot.query.filter_by(snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
@@ -183,7 +194,7 @@ def publish(binding, worker_password):
         try:
             verify_frozen_states(snapshot, binding)
         except ValueError:
-            report_state_differences(snapshot, binding, worker_password)
+            report_state_differences(snapshot, binding, worker_password, source_user)
             raise
         if observe_committed_publication_proof(snapshot)['status'] != 'proof_valid':
             raise ValueError('Incomplete private Team State proof')
@@ -193,7 +204,7 @@ def publish(binding, worker_password):
         return snapshot.id, True
 
 
-def exercise(password, worker_password, digest, *, inventory=False):
+def exercise(password, worker_password, digest, *, inventory=False, user=OWNER, source_user='sync_v3_worker'):
     import re
     from datetime import datetime, timezone
     from freezegun import freeze_time
@@ -204,9 +215,9 @@ def exercise(password, worker_password, digest, *, inventory=False):
     if not re.fullmatch(r'[0-9a-f]{64}', digest):
         raise ValueError('An explicit immutable generation is required')
     started = perf_counter()
-    binding = source_receipt(worker_password, digest)
+    binding = source_receipt(worker_password, digest, source_user)
     verified_source_seconds = perf_counter()-started
-    app = private_app(password)
+    app = private_app(password, user=user)
     day = binding['availability_reference']
     access = {}
     if inventory:
@@ -215,7 +226,7 @@ def exercise(password, worker_password, digest, *, inventory=False):
     with app.app_context(), freeze_time(f'{day} 12:00:00', real_asyncio=True):
         # clock_gettime measures real time during the archived product clock.
         before_pointer = clock_gettime(CLOCK_MONOTONIC)
-        snapshot_id, promoted = publish(binding, worker_password)
+        snapshot_id, promoted = publish(binding, worker_password, user=user, source_user=source_user)
         after_pointer = clock_gettime(CLOCK_MONOTONIC)
         try:
             snapshot = db.session.get(DashboardSnapshot, snapshot_id)
@@ -228,7 +239,7 @@ def exercise(password, worker_password, digest, *, inventory=False):
         except Exception:
             db.session.rollback()
             if promoted:
-                restore_predecessor(digest, snapshot_id)
+                restore_predecessor(digest, snapshot_id, user=user)
             raise
     with app.app_context():
         target_bytes = db.session.execute(text('SELECT pg_database_size(current_database())')).scalar_one()
@@ -324,14 +335,14 @@ def http_paths(app, paths):
             thread.join()
 
 
-def restore_predecessor(digest, snapshot_id):
+def restore_predecessor(digest, snapshot_id, *, user=OWNER):
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
     from scripts.rehearse_selected_publication import verify_frozen_states
     from utils.db import db
 
     with db.session.begin():
-        if tuple(db.session.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, OWNER):
+        if tuple(db.session.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, user):
             raise ValueError('Unexpected private rollback target')
         db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         current = db.session.get(DashboardSnapshot, snapshot_id)
@@ -365,14 +376,14 @@ def restore_predecessor(digest, snapshot_id):
         return prev_id
 
 
-def exercise_rollback(password, digest, snapshot_id):
+def exercise_rollback(password, digest, snapshot_id, *, user=OWNER):
     from freezegun import freeze_time
     from models.dashboard_snapshot import DashboardSnapshot
     from utils.db import db
 
-    app = private_app(password)
+    app = private_app(password, user=user)
     with app.app_context():
-        predecessor = restore_predecessor(digest, snapshot_id)
+        predecessor = restore_predecessor(digest, snapshot_id, user=user)
         if predecessor:
             previous = db.session.get(DashboardSnapshot, predecessor)
             binding = previous.payload['v3_source_generation']

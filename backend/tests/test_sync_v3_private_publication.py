@@ -130,3 +130,47 @@ def test_private_product_reader_can_read_rls_rows_and_detect_grant_drift(pg, mon
                 cur.execute('GRANT UPDATE ON dashboard_snapshots TO baseballos_v3_staging_product_reader')
             with pytest.raises(ValueError, match='grants differ'):
                 staging_reader.verify(reader, tables)
+
+
+def test_private_publisher_cannot_modify_source_or_product_facts(pg, monkeypatch):
+    import psycopg2
+    from psycopg2 import sql
+    from sync_v3 import staging_publisher as publisher
+    from sync_v3.replay import schema_digest, schema_scripts
+
+    with isolated_cluster(pg) as (admin, _):
+        admin.autocommit = True
+        with admin.cursor() as cur:
+            cur.execute('CREATE ROLE baseballos_sync_v3_staging_user LOGIN CREATEROLE')
+            for database in (TARGET, publisher.DATABASE):
+                cur.execute(sql.SQL('CREATE DATABASE {} OWNER {}').format(sql.Identifier(database), sql.Identifier(OWNER)))
+                cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(database)))
+
+        def connect(database, user, password):
+            return psycopg2.connect(host=admin.info.host, dbname=database, user=user, password=password)
+
+        monkeypatch.setattr(publisher, '_connect', lambda u, p: connect(TARGET, u, p))
+        monkeypatch.setattr(publisher, 'connect', lambda u, p: connect(publisher.DATABASE, u, p))
+        with closing(connect(TARGET, OWNER, '')) as target, target, target.cursor() as cur:
+            for name in publisher.READ:
+                relation = sql.Identifier(name)
+                cur.execute(sql.SQL('CREATE TABLE {} (id serial PRIMARY KEY)').format(relation))
+                cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(relation))
+        with closing(connect(publisher.DATABASE, OWNER, '')) as source, source, source.cursor() as cur:
+            cur.execute('CREATE SCHEMA candidate')
+            cur.execute('CREATE TABLE candidate.schema_installation (singleton boolean, digest text)')
+            cur.execute('INSERT INTO candidate.schema_installation VALUES(true,%s)', (schema_digest(schema_scripts()),))
+        publisher.install('', 'test-private-publisher')
+        with closing(connect(TARGET, publisher.PUBLISHER, 'test-private-publisher')) as target:
+            with target, target.cursor() as cur:
+                cur.execute('INSERT INTO dashboard_snapshots DEFAULT VALUES RETURNING id')
+                assert cur.fetchone() == (1,)
+                cur.execute('UPDATE dashboard_snapshots SET id=2 WHERE id=1')
+                assert cur.rowcount == 1
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), target, target.cursor() as cur:
+                cur.execute('INSERT INTO game_logs DEFAULT VALUES')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), target, target.cursor() as cur:
+                cur.execute('DELETE FROM dashboard_snapshots')
+        with closing(connect(publisher.DATABASE, publisher.PUBLISHER, 'test-private-publisher')) as source:
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege), source, source.cursor() as cur:
+                cur.execute('UPDATE candidate.schema_installation SET digest=NULL')
