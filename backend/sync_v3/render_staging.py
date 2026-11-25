@@ -40,6 +40,33 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    if task == 'inspect-current-edition':
+        from collections import Counter
+        from sync_v3.competition_calendar import calendar_games, competition_status
+        from sync_v3.discovery import competition_calendar_request
+        from sync_v3.evidence import replay
+        from sync_v3.generation import generation_date_decision
+        from sync_v3.staging_publication_target import acquisition_freshness
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            with source, source.cursor() as cur:
+                cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                freshness = acquisition_freshness(cur)
+                day = date.fromisoformat(freshness['day'])
+                competition = competition_status(cur, day)
+                latest_final = None
+                if competition['calendar_source']:
+                    request = competition_calendar_request(day.year)
+                    games = calendar_games(request.params(), replay(cur, competition['calendar_source']).body)
+                    latest_final = max((played for played, row, _ in games.values()
+                                        if played <= day and row['status_state'] == 'final'), default=None)
+                decision = generation_date_decision(cur, latest_final, day) if latest_final else None
+                report = dict(freshness=freshness, last_listed_final=str(latest_final) if latest_final else None,
+                              represented_date_decision=decision, confirmed_decisions=len(competition['decision_sources']),
+                              missing_decisions=competition['missing_decisions'],
+                              club_status=dict(Counter(club['status'] for club in competition['clubs'].values())))
+        print(json.dumps(dict(private_current_edition=report), default=str), flush=True)
+        return
     if task == 'recheck-edition-transactions':
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_publication_target import recheck_edition_transactions

@@ -66,7 +66,8 @@ def _verify_grants(cur, tables):
                 (READER, READER, READER, READER))
     rows = cur.fetchall()
     allowed = set(tables)
-    if any(write or read != (name in allowed) or columns != read for name, read, columns, write in rows):
+    if ({name for name, read, _, _ in rows if read} != allowed
+            or any(write or columns != read for _, read, columns, write in rows)):
         raise ValueError('The API grants differ from the reviewed read-only product scope')
     cur.execute("""SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                    WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND p.prosecdef
