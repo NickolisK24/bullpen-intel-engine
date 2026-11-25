@@ -6,7 +6,8 @@ from sync_v3.staging_publisher import check_scope, install_target
 from sync_v3.staging_reader import _connect
 
 PROJECTOR = 'baseballos_v3_staging_projector'
-READ = {'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
+# Final-game and roster trigger guards consult the two version tables inside PostgreSQL.
+READ = {'final_game_versions', 'roster_membership_intervals', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
 INSERT = {'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
 UPDATE = {'pitchers', 'game_logs', 'postgame_processed_games'}
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'

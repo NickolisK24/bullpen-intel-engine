@@ -1,7 +1,7 @@
 """Install or exercise the isolated Ohio staging database through Render's private network."""
 import argparse
 from contextlib import closing
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import json
 import os
 from time import monotonic
@@ -32,6 +32,7 @@ def runtime_environment(*required):
 
 
 def bootstrap(password):
+    started_at = None
     task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
     if task in ('build-generation', 'recover-readiness'):
         import resource
@@ -46,6 +47,9 @@ def bootstrap(password):
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
     if task == 'run-current-offseason':
+        import resource
+        started_at = datetime.now(timezone.utc)
+        from sync_v3.staging_publication_target import acquisition_freshness
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_postseason import qualify_offseason_edition, reconcile_current_decisions
         day = datetime.now(ZoneInfo('America/New_York')).date()
@@ -57,8 +61,14 @@ def bootstrap(password):
                 raise ValueError('The current scheduled source cycle has unsettled acquisition failures')
             recovery = reconcile_current_decisions(source, client._get)
             qualified = qualify_offseason_edition(source, day)
+            with source, source.cursor() as cur:
+                freshness = acquisition_freshness(cur)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
         print(json.dumps(dict(current_cycle=dict(day=str(day), receipts=report['receipts'], recovery=recovery,
-                                                generation=qualified['generation']))), flush=True)
+                                                generation=qualified['generation'], acquisition_freshness=freshness,
+                                                seconds=(datetime.now(timezone.utc)-started_at).total_seconds(),
+                                                process_cpu_seconds=usage.ru_utime+usage.ru_stime,
+                                                peak_rss_kib=usage.ru_maxrss))), flush=True)
         os.environ['STAGING_PRODUCT_GENERATION'] = qualified['generation']
         import subprocess
         import sys
@@ -82,6 +92,8 @@ def bootstrap(password):
         import sys
         operation, secrets = operations[task]
         env = runtime_environment(*secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
+        if task == 'publish-with-scoped-login' and started_at is not None:
+            env['STAGING_CYCLE_STARTED_AT'] = started_at.isoformat()
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', operation], env)
     if task == 'qualify-offseason-edition':
         from sync_v3.staging_postseason import qualify_offseason_edition
@@ -393,6 +405,13 @@ if __name__ == '__main__':
                 result = exercise(password, password, digest, user=PUBLISHER, source_user=PUBLISHER)
             else:
                 result = exercise_rollback(password, digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']), user=PUBLISHER)
+            import resource
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            result.update(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)
+            if args.operation == 'publish' and 'STAGING_CYCLE_STARTED_AT' in os.environ:
+                started_at = datetime.fromisoformat(os.environ['STAGING_CYCLE_STARTED_AT'])
+                result['cycle_started_at'] = started_at.isoformat()
+                result['cycle_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
         elif args.operation in ('project', 'project-before-publish'):
             from sync_v3.staging_projector import recover_boards
