@@ -158,7 +158,25 @@ def project_dated_schedules(password, source_password, digest, *, archive=False)
                             predecessor = evidence.replay(cur, ids[0])
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, predecessor=predecessor)
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, verify_only=True)
+                from services.game_finality import classify_status
+                from services.club_competition_status import COMPETITIVE_GAME_TYPES
+                from sync_v3.workload import _game_workload
+                from sync_v3.staging_publication_target import project_final_appearances
+                receipt, observed = slates[through]
+                finals = []
+                boxes = []
+                for entry in observed.body['dates']:
+                    for game in entry['games']:
+                        if game['gameType'] not in COMPETITIVE_GAME_TYPES or not classify_status(game['status']).final_status:
+                            continue
+                        qualified, reason = _game_workload(cur, game, through, receipt['source'], resolve_sessions=True)
+                        if not qualified:
+                            raise ValueError(f"Unqualified pitching workload for game {game['gamePk']}: {reason}")
+                        facts, (box, *_) = qualified
+                        finals.append((game, evidence.replay(cur, box).body, facts, {}))
+                        boxes.append(box)
+                appearances = project_final_appearances(finals, through, include_context=False, in_transaction=True)
                 if archive:
                     transaction.rollback()
-    return dict(generation=digest, source_ids=[receipt['source'] for receipt, _ in slates.values()],
+    return dict(generation=digest, boxes=boxes, verified_appearances=appearances['verified'], source_ids=[receipt['source'] for receipt, _ in slates.values()],
                 dates=[str(day) for day in dates], archived_replay=archive)

@@ -131,13 +131,19 @@ def reconcile_schedule(day, observation, *, verify_only=False, private_staging=F
         if verify_only or predecessor.retrieved_at >= observation.retrieved_at:
             raise ValueError('Schedule correction requires an earlier retained observation')
         # Accept a retry only when every target field already matches the successor.
-        exact = all(expected.keys() == actual.keys() and all(
-            all(getattr(actual[key], field) == value for field, value in fields.items())
-            for key, fields in expected.items()) for expected, actual in ((slate, stored), (teams, sides)))
+        def matches(expected, actual):
+            if expected.keys() != actual.keys():
+                return False
+            return all(getattr(actual[key], field) == value
+                       for key, fields in expected.items() for field, value in fields.items())
+        exact = matches(slate, stored) and matches(teams, sides)
         if not exact:
             reconcile_schedule(day, predecessor, verify_only=True, private_staging=private_staging, makeups=makeups)
             if not stored.keys() <= slate.keys() or not sides.keys() <= teams.keys():
                 raise ValueError('Schedule correction requires separate authority for removed games or changed clubs')
+            if any((row.home_team_id, row.away_team_id) != (slate[pk]['home_team_id'], slate[pk]['away_team_id'])
+                   for pk, row in stored.items()):
+                raise ValueError('Official home and away identities changed for an existing game')
             changed = True
     if games and (empty or only_prior or changed) and not verify_only:
         audit_since = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()

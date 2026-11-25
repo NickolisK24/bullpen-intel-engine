@@ -2,7 +2,7 @@
 import json
 import os
 import resource
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import date
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -234,14 +234,14 @@ def bind_known_pitchers(identities):
                      dict(reserved=max(pair[0] for pair in json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs'])))
     return len(identities)
 
-def project_final_appearances(finals, day, *, include_context=True):
+def project_final_appearances(finals, day, *, include_context=True, in_transaction=False):
     """Apply the governed appearance plan to the staged product and compare every credited row."""
     from collections import Counter
     from services.sync import process_completed_game_for_postgame_refresh, POSTGAME_MARKER_STATUS_FULLY_PROCESSED
 
     started = monotonic()
     created = inserted = confirmed = contexts = 0
-    with db.session.begin():
+    with (nullcontext() if in_transaction else db.session.begin()):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected final rehearsal target')
         db.session.execute(text("SET LOCAL lock_timeout = '5s'"))
