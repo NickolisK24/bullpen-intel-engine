@@ -43,10 +43,15 @@ def bootstrap(password):
     if task == 'recheck-edition-transactions':
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_publication_target import recheck_edition_transactions
+        from sync_v3.generation import freeze_generation
+        from datetime import timedelta
         client = MLBApiClient()
         with closing(client.session), closing(connect('sync_v3_worker', password)) as source:
             verify_target(source)
             result = recheck_edition_transactions(source, PLAYED_DAY, os.environ['STAGING_PRODUCT_GENERATION'], client._get)
+            result['next_generation'] = freeze_generation(source, PLAYED_DAY, as_of=PLAYED_DAY + timedelta(days=1))
+            if result['next_generation'] == result['predecessor_generation']:
+                raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
     if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces'):
