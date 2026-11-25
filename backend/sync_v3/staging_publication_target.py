@@ -893,7 +893,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
 
 
 def lock_private_fatigue():
-    # Coordinate the two private score writers without granting UPDATE on dated score history.
+    # Coordinate private score writers without granting UPDATE on dated score history.
     db.session.execute(text("SELECT pg_advisory_xact_lock(hashtext('baseballos_v3_private_fatigue'))"))
 
 
@@ -992,6 +992,7 @@ def project_prior_fatigue(worker_password, digest):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private historical workload target')
         db.session.execute(text('LOCK TABLE game_logs IN SHARE MODE'))
+        lock_private_fatigue()
         db.session.execute(text('LOCK TABLE fatigue_scores IN SHARE ROW EXCLUSIVE MODE'))
         fields = [col.name for col in FatigueScore.__table__.columns if col.name not in ('id', 'calculated_at')]
         for _, arms, samples in clubs:
