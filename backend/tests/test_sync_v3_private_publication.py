@@ -223,8 +223,10 @@ def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, m
         with closing(connect(OWNER, '')) as owner, owner, owner.cursor() as cur:
             for table in projector.READ | {'dashboard_snapshots'}:
                 name = sql.Identifier(table)
-                cur.execute(sql.SQL('CREATE TABLE {} (id serial PRIMARY KEY, source text, job_name text, '
-                                    'status text, stage text, published_dashboard_snapshot_id integer)').format(name))
+                primary_key = sql.SQL('game_pk integer') if table == 'slate_games' else sql.SQL('id serial')
+                cur.execute(sql.SQL('CREATE TABLE {} ({} PRIMARY KEY, source text, job_name text, '
+                                    'status text, stage text, published_dashboard_snapshot_id integer)')
+                            .format(name, primary_key))
                 cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(name))
         projector.install('', 'local-test-password')
         with closing(connect(projector.PROJECTOR, 'local-test-password')) as runtime:

@@ -164,7 +164,7 @@ def qualify_offseason_edition(connection, day):
                 generation=digest, decision=review['status'], club_state_digests=states)
 
 
-def project_offseason_competition(source, client, day):
+def project_offseason_competition(source, client, day, *, scoped=False):
     """Replay the dated club finals and official playoff decisions into the private product."""
     from datetime import date
     from sqlalchemy import text
@@ -220,7 +220,8 @@ def project_offseason_competition(source, client, day):
                     applied.add(pk)
         for verify_only in (False, True):
             with db.session.begin():
-                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+                if not scoped:
+                    db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
                 reconcile_schedule(played, obs, private_staging=True, verify_only=verify_only, makeups=makeups)
         if finals:
             rows += project_final_appearances(finals, played, include_context=False)['verified']

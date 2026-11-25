@@ -416,7 +416,9 @@ if __name__ == '__main__':
         elif args.operation in ('project', 'project-before-publish'):
             from sync_v3.staging_projector import recover_boards
             result = recover_boards(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],
-                                    os.environ['STAGING_PRODUCT_GENERATION'])
+                                    os.environ['STAGING_PRODUCT_GENERATION'],
+                                    competition_day=datetime.now(ZoneInfo('America/New_York')).date()
+                                    if args.operation == 'project-before-publish' else None)
             print(json.dumps(dict(private_board_history=result)), flush=True)
             if args.operation == 'project-before-publish' and result['completed_clubs'] < result['total']:
                 parser.exit(75)

@@ -1,5 +1,6 @@
 """Restricted canonical writer for the private product's offseason Board recovery."""
 from contextlib import closing
+import json
 
 from sync_v3.staging_publication_target import TARGET
 from sync_v3.staging_publisher import check_scope, install_target
@@ -7,9 +8,9 @@ from sync_v3.staging_reader import _connect
 
 PROJECTOR = 'baseballos_v3_staging_projector'
 # Final-game and roster trigger guards consult the two version tables inside PostgreSQL.
-READ = {'final_game_versions', 'roster_membership_intervals', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
-INSERT = {'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
-UPDATE = {'pitchers', 'game_logs', 'postgame_processed_games'}
+READ = {'slate_games', 'compatibility_write_events', 'final_game_versions', 'roster_membership_intervals', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
+INSERT = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
+UPDATE = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games'}
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
@@ -35,7 +36,7 @@ def install(owner_password, password):
         verify(cur)
 
 
-def recover_boards(password, source_password, digest):
+def recover_boards(password, source_password, digest, *, competition_day=None):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
     from sync_v3.render_staging import connect
@@ -48,5 +49,11 @@ def recover_boards(password, source_password, digest):
     with private_app(password, user=PROJECTOR).app_context(), closing(client.session):
         with closing(connect('sync_v3_worker', source_password)) as source:
             verify_target(source)
+            if competition_day:
+                from sync_v3.staging_postseason import project_offseason_competition
+                from utils.db import db
+                competition = project_offseason_competition(source, client, competition_day, scoped=True)
+                db.session.remove()
+                print(json.dumps(dict(private_scoped_competition=competition)), flush=True)
             result = recover_next(source, client, digest)
     return dict(result, product_writer=PROJECTOR)

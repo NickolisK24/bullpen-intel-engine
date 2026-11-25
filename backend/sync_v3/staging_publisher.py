@@ -86,7 +86,8 @@ def install_target(owner_password, password, login, reads, inserts, updates, pol
                             .format(sql.Identifier(policy), relation, sql.SQL(action), role, sql.SQL(condition)))
                 if action == 'INSERT':
                     cur.execute("""SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                                   WHERE c.oid=pg_get_serial_sequence(%s,'id')::regclass""", ('public.'+table,))
+                                   WHERE c.oid=(SELECT pg_get_serial_sequence(%s,'id')::regclass
+                                     FROM pg_attribute WHERE attrelid=%s::regclass AND attname='id' AND NOT attisdropped)""", ('public.'+table, 'public.'+table))
                     sequence = cur.fetchone()
                     if sequence:
                         cur.execute(sql.SQL('GRANT USAGE ON SEQUENCE {} TO {}').format(sql.Identifier(*sequence), role))

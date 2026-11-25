@@ -224,13 +224,13 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 
 | Package | Evidence level | Implementation and evidence | Outstanding acceptance or dependency |
 |---|---|---|---|
-| NP-00 census | Blocked | Production census, physical relations, trigger and workflow inventories | Attribute all shared writer accounts and historical obligations |
+| NP-00 census | External attribution open | Production service, workflow, trigger and credential inventories | Identify any external consumers of pooled postgres and service_role with write access to BaseballOS |
 | NP-01 coverage | Implemented | coverage.csv identifies source, retention, qualification and consumers | Verify adapter coverage and supported eras for each required field |
-| NP-02 isolation | Isolated verified | rehearse.py creates socket-only candidate DB and distinct worker/reviewer grants | Hosted product reader verified on 19 SELECT-only relations. Verify restricted publication and proposed production ownership |
+| NP-02 isolation | Hosted private permissions verified for three operations | Read-only product API, scoped publisher and rollback, scoped Board projector | Scope the remaining schedule and roster operations and verify production ownership |
 | NP-03 discovery | Shadow verified for daily capture | discovery.py and capture_day.py, regular and postseason replay | Measure ongoing live schedule, roster and correction discovery |
 | NP-04 orchestration | Shadow verified for pending-job recovery | Hosted pending checkpoint resumed to completion and an idle Render process repeated without claims | Extend the verified hosted lease interruption to the proposed primary workload |
 | NP-05 acquisition | Isolated verified | sources.py and capture_day.py pin request identity and retrieval time | Verify complete required adapter and source outage coverage |
-| NP-06 retention | Shadow verified for private acquisition | Persistent Render receipts and payload samples survived separate process starts and deployments | Measure long-term retention growth, recovery and required domain coverage |
+| NP-06 retention | Persistent postseason retention verified | 18 dated schedule bodies and 35 official boxscores survived independent Render executions and were replayed into current canonical decisions | Measure retention growth under routine primary operation |
 | NP-07 identities | Isolated verified | canonical.py, public_identities.py, game and pitcher reconciliation | Certify full public identity coverage and real source corrections |
 | NP-08 rosters | Isolated verified | rosters.py and membership_usage.py, dated club populations | Resolve current roster, transaction and writer coverage |
 | NP-09 corrections | Isolated verified | canonical revisions, dependencies.py and correction tests | Demonstrate end-to-end historical correction propagation to every dependent surface |
@@ -238,15 +238,15 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 | NP-11 deployment | Isolated verified | deployment.py and season_deployment.py, dated role samples | Matched 45-day window explains the recorded August differences below. Verify other cohorts and hosted behavior. |
 | NP-12 performance | Isolated verified | group_performance.py and pitch_measurements.py, qualified historical samples | Certify performance and pitch coverage across required eras and consumers |
 | NP-13 rotation and context | Isolated verified | rotation.py, schedule_context.py, depth.py, complete games below | August receipt and two supported complete-game differences below. Verify API contracts and other cohorts. |
-| NP-14 state and arm reads | Isolated verified | readiness.py and postseason_arm_comparison.py, August state comparison | Certify availability-date population, eligibility and suppression across seasons |
+| NP-14 state and arm reads | Hosted comparison in progress | 30 archived club rest states, 30 current season-complete states, independent dated Board review and a withdrawn incorrect private edition | Finish all current Board populations and verify the replacement through the API |
 | NP-15 history | Isolated verified | history.sql, intelligence_history.py, dependency rebuilds | Prove correction and replay across the complete accepted cohort |
 | NP-16 changes | Isolated verified | change_history.py, readiness_history.py, team_history_reads.py | Match previous edition, methodology and event references on both sides |
 | NP-17 candidate build | Isolated verified | generation.py and cohort.py, selected 30-club generation | Verify date-driven primary operation with runtime credentials and current source evidence |
-| NP-18 promotion and recovery | Isolated verified | selection.py, handoff.py and selected-publication rehearsal | Hosted private rollback and restored HTTP verified. Rehearse exclusive production writer permissions and the scheduler handoff |
-| NP-19 product delivery | Isolated verified | product_reads.py, history_delivery.py, editorial_reads.py, archived_share_pages.py, historical browser rehearsals | Hosted archived HTTP editions and restored predecessor verified. Confirm current production delivery after authorized handoff |
+| NP-18 promotion and recovery | Hosted private promotion and rollback verified | Scoped publication and rollback, exact restored HTTP edition, immutable historical shares | Verify exclusive production writer permissions and scheduler handoff |
+| NP-19 product delivery | Hosted archived delivery verified | Archived regular-season edition, incremental successor, exact restored predecessor and current offseason rehearsal | Verify the corrected current edition and public production delivery after the handoff |
 | NP-20 operations | Isolated verified | rehearse.py diagnostics, source trace and worker recovery | Demonstrate hosted end-to-end recovery and failure visibility |
 | NP-21 cost and performance | Shadow verified for current and archived acquisition | Private Render run timings, sampled memory, queue counts and database growth above | Measure sustained primary workload, full publication cost and approved operational thresholds |
-| NP-22 parity | Shadow verified for the cited fields of 5846 | Hosted shadow and paired full-slate comparator | Obtain equivalent live cohorts and resolve material differences |
+| NP-22 parity | Hosted archived and current comparisons | All 30 current Team State objects matched public snapshot 5848. Dated MLB sources explain Boston’s Burgos/Slaten difference | Finish source-backed current Board comparisons and replacement publication |
 | NP-23 cutover | Blocked | Private selection, postcommit comparison and rollback rehearsals | Exclusive-writer handoff, owner approvals, observation duration, healthy observation and separate retirement authorization |
 
 ## August 29 full-slate evidence

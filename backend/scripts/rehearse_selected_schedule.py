@@ -80,7 +80,8 @@ def reconcile_schedule(day, observation, *, verify_only=False, private_staging=F
         from sync_v3.staging_publication_target import TARGET
         url = db.engine.url
         role = db.session.execute(text('SELECT current_user')).scalar_one()
-        if (url.host, url.database, target[0], role) != (HOST, TARGET, TARGET, 'sync_v3_staging_schedule'):
+        from sync_v3.staging_projector import PROJECTOR
+        if (url.host, url.database, target[0]) != (HOST, TARGET, TARGET) or role not in ('sync_v3_staging_schedule', PROJECTOR):
             raise ValueError('Unexpected private schedule target')
     elif not target[0].endswith('_rehearsal_test') or tuple(target[1:]) != (None, ''):
         raise ValueError('Schedule replay requires a socket-only rehearsal database')
