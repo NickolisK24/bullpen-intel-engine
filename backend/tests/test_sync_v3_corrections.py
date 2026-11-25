@@ -1923,7 +1923,7 @@ def test_withheld_roster_role_explanation_uses_generation_receipts(tmp_path, fai
             if failure != 'invalid_single_game_stat':
                 conflict = failure == 'uncredited_game_and_boxscore_disagree'
                 expected['game_evidence'] = dict(game_pk=split['game']['gamePk'], game_date=split['date'], team_id=111,
-                                                 stage='boxscore_disagreement' if conflict else 'qualified_schedule_required')
+                                                 game_type='R', stage='boxscore_disagreement' if conflict else 'qualified_schedule_required')
                 if conflict:
                     endpoints.update(['/schedule', f"/game/{split['game']['gamePk']}/boxscore"])
             assert refusal['failed_profiles'] == [expected]

@@ -63,3 +63,11 @@ def test_dated_recovery_obeys_the_official_slate_and_leaves_other_jobs_pending(m
                 assert cur.fetchone() == (0,)
         with pytest.raises(ValueError):
             recovery.recover(owner, 111, day, max_jobs=3, fetch=fetch, clock=lambda: at)
+
+
+def test_uncredited_postseason_appearance_retains_the_required_round():
+    from sync_v3.season_deployment import BaselineWithheld, _confirm_uncredited
+
+    with pytest.raises(BaselineWithheld, match='uncredited_game_requires_official_final') as error:
+        _confirm_uncredited(None, 102, 147, 12345, date(2024, 10, 18), 'L')
+    assert error.value.game_evidence['game_type'] == 'L'

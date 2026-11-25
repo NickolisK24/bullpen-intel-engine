@@ -16,8 +16,7 @@ def _needed(cur, team, through):
     gaps = dict(report.get('eligibility_gaps', {}))
     for player, profile in report.get('profiles', {}).items():
         if profile.get('reason') == 'uncredited_game_requires_official_final':
-            # These are the regular-season per-club profiles used by active_group_population.
-            gaps[player] = dict(reason=profile['reason'], evidence={'game_type': 'R', **(profile.get('game_evidence') or {})})
+            gaps[player] = dict(reason=profile['reason'], evidence=profile.get('game_evidence'))
     requests = set()
 
     def missing(day, endpoint, params):
