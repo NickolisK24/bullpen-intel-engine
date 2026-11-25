@@ -29,7 +29,49 @@ def pinned_schedule(cur, generation, day):
     return dict(source=source, sha256=digest, acquired_at=observation.retrieved_at.astimezone(timezone.utc).isoformat()), observation
 
 
-def reconcile_schedule(day, observation, *, verify_only=False, private_staging=False):
+def schedule_rows(game, stamp):
+    fields = slate_fields_from_game(game, synced_at=stamp)
+    parsed = _parse_game(game)
+    if not fields or not parsed:
+        raise ValueError('Incomplete retained schedule identity')
+    pk = fields['game_pk']
+    home = parsed.pop('home_team_id')
+    away = parsed.pop('away_team_id')
+    if home == away:
+        raise ValueError(f'Duplicate schedule participant for {pk}')
+    participants = {(pk, team): dict(parsed, opponent_team_id=opponent, home_away=side, schedule_absent_since=None)
+                    for team, opponent, side in ((home, away, 'home'), (away, home, 'away'))}
+    return pk, fields, participants
+
+
+def retained_makeups(observations):
+    """Bind both official time references, both clubs and the final to one canonical game."""
+    from services.game_finality import classify_game_finality
+    listings = {}
+    for day, obs in observations.items():
+        for entry in obs.body['dates']:
+            for game in entry['games']:
+                listings.setdefault(game['gamePk'], []).append((day, game, obs.retrieved_at))
+    pairs = {}
+    for pk, rows in listings.items():
+        if len(rows) == 1:
+            continue
+        if len(rows) != 2:
+            raise ValueError(f'Ambiguous dated schedule listings for {pk}')
+        (earlier, old, old_stamp), (later, new, new_stamp) = sorted(rows, key=lambda row: row[0])
+        if (earlier >= later or old['status'].get('detailedState') != 'Postponed'
+                or not classify_game_finality(new).has_safe_final_status
+                or old.get('rescheduleDate') != new['gameDate'] or new.get('rescheduledFrom') != old['gameDate']
+                or new.get('rescheduledFromDate') != str(earlier) or new['officialDate'] != str(later)
+                or any(old['teams'][s]['team']['id'] != new['teams'][s]['team']['id'] for s in ('home','away'))):
+            raise ValueError(f'Conflicting dated schedule listings for {pk}')
+        def fields(game, stamp):
+            return schedule_rows(game, stamp.astimezone(timezone.utc).replace(tzinfo=None))[1:]
+        pairs[pk] = (earlier, fields(old, old_stamp), later, fields(new, new_stamp))
+    return pairs
+
+
+def reconcile_schedule(day, observation, *, verify_only=False, private_staging=False, makeups=None):
     target = db.session.execute(text(
         "SELECT current_database(), inet_server_addr(), current_setting('listen_addresses')"
     )).one()
@@ -52,19 +94,11 @@ def reconcile_schedule(day, observation, *, verify_only=False, private_staging=F
     slate, teams = {}, {}
     for entry in body['dates']:
         for game in entry['games']:
-            fields = slate_fields_from_game(game, synced_at=stamp)
-            parsed = _parse_game(game)
-            if not fields or not parsed or fields['game_pk'] in slate:
-                raise ValueError(f'Incomplete or conflicting schedule identity for {day}')
-            pk = fields['game_pk']
+            pk, fields, participants = schedule_rows(game, stamp)
+            if pk in slate:
+                raise ValueError(f'Duplicate schedule identity for {day}')
             slate[pk] = fields
-            home = parsed.pop('home_team_id')
-            away = parsed.pop('away_team_id')
-            if home == away:
-                raise ValueError(f'Duplicate schedule participant for {pk}')
-            for team, opponent, side in ((home, away, 'home'), (away, home, 'away')):
-                teams[pk, team] = dict(parsed, opponent_team_id=opponent, home_away=side,
-                                       schedule_absent_since=None)
+            teams.update(participants)
             games.append(game)
 
     def inventory():
@@ -73,12 +107,30 @@ def reconcile_schedule(day, observation, *, verify_only=False, private_staging=F
         return {row.game_pk: row for row in slates}, {(row.game_pk, row.team_id): row for row in sides}
 
     stored, sides = inventory()
-    if games and not stored and not sides and not verify_only:
+    previous = set()
+    for pk, (old_day, old_rows, new_day, new_rows) in (makeups or {}).items():
+        if pk not in stored or pk not in slate:
+            continue
+        alternate = new_rows if day == old_day else old_rows if day == new_day else None
+        if alternate is None:
+            continue
+        other_slate, other_teams = alternate
+        if (all(getattr(stored[pk], field) == value for field, value in other_slate.items())
+                and all(key in sides and all(getattr(sides[key], field) == value for field, value in expected.items())
+                        for key, expected in other_teams.items())):
+            if day == old_day:
+                slate[pk] = other_slate
+                teams.update(other_teams)
+            else:
+                previous.add(pk)
+    empty = not stored and not sides
+    only_prior = previous and set(stored) == previous and {pk for pk, team in sides} == previous
+    if games and (empty or only_prior) and not verify_only:
         audit_since = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
         result = _ingest_games(games, source='v3_retained_schedule_rehearsal', commit=False,
                                synced_at=stamp, audit_since=audit_since, atomic=True)
         if (result['errors'] or result['games_ingested'] != len(games) or result['rows_suppressed'] != 0
-                or result['rows_created'] != len(teams) or result['slate_games_created'] != len(slate)):
+                or result['rows_created'] != len(teams)-len(sides) or result['slate_games_created'] != len(slate)-len(stored)):
             raise ValueError(f'Incomplete schedule write or unavailable ownership audit for {day}')
         db.session.expire_all()
         stored, sides = inventory()
