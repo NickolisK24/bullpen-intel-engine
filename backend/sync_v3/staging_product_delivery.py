@@ -99,12 +99,8 @@ def reviewed_board_populations(cur, password, user, digest, binding):
         receipts.update(review['sources'])
     if populations.keys() != teams.keys():
         raise ValueError(f'Current Board workload and population reviews still required for {sorted(teams.keys()-populations.keys())}')
-    cur.execute("""SELECT count(*) FROM candidate.fetches f
-        LEFT JOIN candidate.refusals refusal ON refusal.source_id=f.id WHERE f.id=ANY(%s) AND f.outcome='received'
-        AND refusal.source_id IS NULL AND NOT EXISTS (SELECT 1 FROM candidate.fetches newer
-              WHERE newer.endpoint=f.endpoint AND newer.parameters=f.parameters
-              AND (newer.received_at,newer.id)>(f.received_at,f.id))""", (sorted(receipts),))
-    if cur.fetchone()[0] != len(receipts):
+    from sync_v3.staging_board_history import inputs_still_current
+    if not inputs_still_current(cur, receipts):
         raise ValueError('Reviewed Board workload evidence has advanced since reconciliation')
     binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids)
     binding['current_source_ids'] = sorted(set(binding['current_source_ids']) | receipts)

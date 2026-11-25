@@ -271,6 +271,17 @@ def qualify_club(source, team, through, availability, digest, expected_target):
         return review.id
 
 
+def inputs_still_current(cur, receipts):
+    if not receipts:
+        return False
+    cur.execute("""SELECT count(*) FROM candidate.fetches f
+        LEFT JOIN candidate.refusals refusal ON refusal.source_id=f.id WHERE f.id=ANY(%s) AND f.outcome='received'
+        AND refusal.source_id IS NULL AND NOT EXISTS (SELECT 1 FROM candidate.fetches newer
+              WHERE newer.endpoint=f.endpoint AND newer.parameters=f.parameters
+              AND (newer.received_at,newer.id)>(f.received_at,f.id))""", (sorted(receipts),))
+    return cur.fetchone()[0] == len(receipts)
+
+
 def recover_next(source, client, digest, *, seconds=185):
     """Resume the dated league inventory from durable team review and player checkpoints."""
     from models.sync_run import SyncRun
@@ -293,6 +304,12 @@ def recover_next(source, client, digest, *, seconds=185):
             elif run.stage == 'checkpoint':
                 offsets.setdefault(team, entry.get('after_mlb', 0))
     started = monotonic()
+    with source, source.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        for team, review in list(completed.items()):
+            if not inputs_still_current(cur, review['sources']):
+                del completed[team]
+                offsets.pop(team, None)
     reports = []
     for team in sorted(MLB_TEAM_IDS):
         if team in completed:
@@ -313,4 +330,13 @@ def recover_next(source, client, digest, *, seconds=185):
                         latest_workload_date=date.fromisoformat(report['through']), records_processed=len(report['verified']),
                         publication_outcome=dict(team=team, generation=digest, after_mlb=report['after_mlb'])))
         break
-    return dict(completed_clubs=len(completed), total=len(MLB_TEAM_IDS), seconds=monotonic()-started, batches=reports)
+    import resource
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    with source, source.cursor() as cur:
+        cur.execute('SELECT pg_database_size(current_database())')
+        source_bytes, = cur.fetchone()
+    with db.session.begin():
+        target_bytes = db.session.execute(text('SELECT pg_database_size(current_database())')).scalar_one()
+    return dict(completed_clubs=len(completed), total=len(MLB_TEAM_IDS), seconds=monotonic()-started, batches=reports,
+                peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime,
+                source_database_bytes=source_bytes, target_database_bytes=target_bytes)
