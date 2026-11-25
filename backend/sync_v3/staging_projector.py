@@ -125,15 +125,37 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
     return dict(result, canonical_checkpoint=checkpoint, product_writer=PROJECTOR)
 
 
+def product_schedule_predecessor(cur, day, observation):
+    """Resolve the exact retained predecessor from the private target's dated schedule stamp."""
+    from datetime import timezone
+    from psycopg2.extras import Json
+    from sqlalchemy import text
+    from sync_v3 import evidence
+    from sync_v3.discovery import calendar_requests
+    from utils.db import db
+
+    stamps = db.session.execute(text('SELECT DISTINCT last_synced FROM slate_games WHERE game_date_et=:day'),
+                                dict(day=day)).scalars().all()
+    predecessor = None
+    if len(stamps) == 1 and stamps[0] < observation.retrieved_at.astimezone(timezone.utc).replace(tzinfo=None):
+        request = calendar_requests(day)[0]
+        cur.execute("""SELECT id FROM candidate.fetches f WHERE endpoint=%s AND parameters=%s
+            AND received_at=%s AND outcome='received' AND reason IS NULL AND NOT EXISTS
+            (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""",
+                    (request.endpoint, Json(request.params()), stamps[0].replace(tzinfo=timezone.utc)))
+        ids = [item[0] for item in cur]
+        if len(ids) == 1:
+            predecessor = evidence.replay(cur, ids[0])
+    return predecessor
+
+
 def project_dated_schedules(password, source_password, digest, *, archive=False):
     """Apply the two generation-bound slates together and preserve the current product on archive replay."""
-    from datetime import date, timezone
-    from psycopg2.extras import Json
+    from datetime import date
     from sqlalchemy import text
     from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule, retained_makeups
     from sync_v3 import evidence
     from sync_v3.current_worker import verify_target
-    from sync_v3.discovery import calendar_requests
     from sync_v3.render_staging import connect
     from sync_v3.staging_product_delivery import private_app
     from utils.db import db
@@ -152,18 +174,7 @@ def project_dated_schedules(password, source_password, digest, *, archive=False)
             with db.session.begin() as transaction:
                 db.session.execute(text('LOCK TABLE scheduled_games,slate_games IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
                 for day, (_, observation) in slates.items():
-                    stamps = db.session.execute(text('SELECT DISTINCT last_synced FROM slate_games WHERE game_date_et=:day'),
-                                                dict(day=day)).scalars().all()
-                    predecessor = None
-                    if len(stamps) == 1 and stamps[0] < observation.retrieved_at.astimezone(timezone.utc).replace(tzinfo=None):
-                        request = calendar_requests(day)[0]
-                        cur.execute("""SELECT id FROM candidate.fetches f WHERE endpoint=%s AND parameters=%s
-                            AND received_at=%s AND outcome='received' AND reason IS NULL AND NOT EXISTS
-                            (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""",
-                                    (request.endpoint, Json(request.params()), stamps[0].replace(tzinfo=timezone.utc)))
-                        ids = [item[0] for item in cur]
-                        if len(ids) == 1:
-                            predecessor = evidence.replay(cur, ids[0])
+                    predecessor = product_schedule_predecessor(cur, day, observation)
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, predecessor=predecessor)
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, verify_only=True)
                 from services.game_finality import classify_status

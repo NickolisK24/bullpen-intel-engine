@@ -27,7 +27,7 @@ def connect(user, password):
 
 
 def runtime_environment(*required):
-    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', *required)
+    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', 'STAGING_PRODUCT_TIMELINE', *required)
     return {**{key: os.environ[key] for key in keep if key in os.environ}, 'AUTO_SYNC': 'false'}
 
 
@@ -191,7 +191,7 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'install-product-projector', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history', 'recover-next-offseason-board'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'install-product-projector', 'install-competitive-timeline', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history', 'recover-next-offseason-board'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
@@ -237,6 +237,20 @@ def bootstrap(password):
             verify_target(source)
             result = project_offseason_competition(source, client, datetime.now(ZoneInfo('America/New_York')).date())
         print(json.dumps(dict(private_offseason_projection=result)), flush=True)
+        return
+    if task == 'install-competitive-timeline':
+        from sync_v3.staging_publication_target import TARGET, ARCHIVE_TARGET, install_target
+        from sync_v3.staging_projector import install as install_projector
+        from sync_v3.staging_publisher import install as install_publisher
+        from sync_v3.staging_reader import install as install_reader, PRODUCT_RELATIONS
+        if TARGET != ARCHIVE_TARGET:
+            raise ValueError('Competitive timeline installation requires its private archive database')
+        owner = binding['password']
+        result = install_target(owner, password)
+        install_projector(owner, os.environ['STAGING_PROJECTOR_PASSWORD'])
+        install_publisher(owner, os.environ['STAGING_PRODUCT_PUBLISHER_PASSWORD'])
+        install_reader(owner, os.environ['STAGING_PRODUCT_READER_PASSWORD'], PRODUCT_RELATIONS)
+        print(json.dumps(dict(private_competitive_timeline=result)), flush=True)
         return
     if task == 'install-product-projector':
         from services.migration_authority import require_owner

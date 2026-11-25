@@ -16,12 +16,15 @@ from scripts.database_migrations import upgrade_private_staging
 from services.migration_authority import require_owner
 from utils.db import db
 
-TARGET = 'baseballos_v3_roster_staging'
+CURRENT_TARGET = 'baseballos_v3_roster_staging'
+ARCHIVE_TARGET = 'baseballos_v3_competitive_rehearsal'
+TARGET = ARCHIVE_TARGET if os.environ.get('STAGING_PRODUCT_TIMELINE') == 'competitive_archive' else CURRENT_TARGET
 
 
 def install_target(password, worker_password):
     from sync_v3.render_staging import DATABASE, HOST, OWNER, connect
 
+    from psycopg2 import sql
     require_owner()
     start = monotonic()
     # CREATE DATABASE runs outside a transaction. Serialize creation and verification.
@@ -35,10 +38,10 @@ def install_target(password, worker_password):
             cur.execute('SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=%s', (TARGET,))
             existing = cur.fetchone()
             if existing is None:
-                cur.execute('CREATE DATABASE baseballos_v3_roster_staging TEMPLATE template0')
+                cur.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(TARGET)))
             elif existing != (OWNER,):
                 raise ValueError('Unexpected staging publication database owner')
-            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_roster_staging FROM PUBLIC')
+            cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(TARGET)))
             cur.execute("SELECT has_database_privilege('sync_v3_worker',%s,'CONNECT')", (TARGET,))
             if cur.fetchone() != (False,):
                 raise ValueError('Acquisition worker can connect to publication staging')
@@ -57,6 +60,31 @@ def install_target(password, worker_password):
                     raise ValueError('Unexpected publication migration target')
                 conn.execute(text('REVOKE CREATE ON SCHEMA public FROM PUBLIC'))
             expected = upgrade_private_staging()
+            if TARGET == ARCHIVE_TARGET:
+                from sqlalchemy.dialects.postgresql import insert
+                from models.pitcher import Pitcher
+                # Transfer only the immutable lookup keys and names. Dated roster, game and
+                # intelligence facts must enter this timeline through the regular writers.
+                import psycopg2
+                with closing(psycopg2.connect(host=HOST, dbname=CURRENT_TARGET, user=OWNER, password=password,
+                                              sslmode='require', connect_timeout=10)) as original:
+                    with original, original.cursor() as cur:
+                        cur.execute('SET TRANSACTION READ ONLY')
+                        cur.execute('SELECT id,mlb_id,full_name FROM public.pitchers ORDER BY id')
+                        directory = cur.fetchall()
+                if not directory:
+                    raise ValueError('Missing established private identity directory')
+                with db.engine.begin() as conn:
+                    table = Pitcher.__table__
+                    stmt = insert(table).on_conflict_do_nothing(index_elements=['id'])
+                    conn.execute(stmt, [dict(id=k, mlb_id=mlb, full_name=name, active=False)
+                                        for k, mlb, name in directory])
+                    known = dict(conn.execute(text('SELECT id,mlb_id FROM pitchers')).all())
+                    if any(known.get(k) != mlb for k, mlb, _ in directory):
+                        raise ValueError('Competitive timeline canonical identities conflict')
+                    conn.execute(text("SELECT setval(pg_get_serial_sequence('public.pitchers','id'), "
+                                      "greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"))
+                return dict(database=TARGET, identities=len(directory), migration=expected)
             schedule = project_played_schedule(worker_password)
             workload_window = project_workload_window(worker_password)
             roster_report = project_roster_views(worker_password)
@@ -587,12 +615,17 @@ def project_workload_window(worker_password, *, workload_day=None, scoped=False,
                 obs = evidence.replay(cur, oid)
             observations[day] = obs
             receipts[str(day)] = oid
-    makeups = retained_makeups(observations)
-    for day, obs in observations.items():
-        with db.session.begin():
-            if not scoped:
-                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
-            reconcile_schedule(day, obs, private_staging=True, makeups=makeups, verify_only=verify_only)
+        makeups = retained_makeups(observations)
+        for day, obs in observations.items():
+            with db.session.begin(), source, source.cursor() as cur:
+                predecessor = None
+                if not scoped:
+                    db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+                elif not verify_only:
+                    from sync_v3.staging_projector import product_schedule_predecessor
+                    predecessor = product_schedule_predecessor(cur, day, obs)
+                reconcile_schedule(day, obs, private_staging=True, makeups=makeups, verify_only=verify_only,
+                                   predecessor=predecessor)
     with db.session.begin():
         reason, ledger = appearance_ledger_publish_block(end_date=workload_day, window_days=required_days)
         if ledger is None:
