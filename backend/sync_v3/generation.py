@@ -340,6 +340,8 @@ def build_batch(connection, through, limit, *, as_of=None, deadline=None):
         manifest = cur.fetchone()[0]
     outstanding = {tuple(scope) for key in ('missing', 'stale_inputs', 'stale_comparisons')
                    for scope in manifest[key]}
+    if not outstanding:
+        return dict(before=initial, after=initial, processed=[])
     domain_for = {method: domain for domain, (_, method, _) in DOMAINS.items()}
     changes_for = {f'candidate_{domain}_changes_v1': domain for domain in COMPARISONS}
     discovery_methods = [DOMAINS[d][1] for d in ('readiness', 'depth', 'rotation')]
