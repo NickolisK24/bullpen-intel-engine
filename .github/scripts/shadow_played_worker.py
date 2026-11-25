@@ -12,6 +12,7 @@ from psycopg2.extras import Json
 from services.mlb_api import MLBApiClient
 from shadow_current_worker import checkpoint, inventory, restore
 from sync_v3 import evidence, savant
+from sync_v3.acquisition_receipt import played_day_acquisition
 from sync_v3.comparison import compare_finals
 from sync_v3.current_worker import acquisition_failed, process
 from sync_v3.cycle import run_cycle
@@ -119,6 +120,12 @@ def boston_evidence(connect):
                 selections=selections)
 
 
+def acquisition_receipt(connect):
+    with closing(connect(reviewer=True)) as reader, reader, reader.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        return played_day_acquisition(cur, DAY)
+
+
 def run(directory, bindir, client_bin):
     directory.mkdir()
     report = dict(represented=str(DAY), acquisition_batches=[], hourly_replay=[])
@@ -140,6 +147,7 @@ def run(directory, bindir, client_bin):
             raise ValueError('Played-slate source queue did not drain within its batch budget')
         report['acquisition_seconds'] = monotonic()-start
         report['acquisition_coverage'] = coverage(source)
+        report['acquisition_receipt'] = acquisition_receipt(connect)
         report['checkpoint_sha256'] = checkpoint(source, client_bin, directory / 'played-source.pgdump')
 
         # Replay the latest retained payload for each request at the end of acquisition.
@@ -183,6 +191,9 @@ def run(directory, bindir, client_bin):
         if before_restore != inventory(restored):
             raise ValueError('Historical acquisition changed during checkpoint restore')
         report['restored_readiness'] = boston_evidence(read_restored)
+        report['restored_acquisition_receipt'] = acquisition_receipt(read_restored)
+        if report['restored_acquisition_receipt'] != report['acquisition_receipt']:
+            raise ValueError('Played-day canonical acquisition receipt changed across recovery')
 
     (directory / 'performance.json').write_text(json.dumps(report, sort_keys=True))
     for result in (report['acquisition_coverage'], report['replay_coverage']):
