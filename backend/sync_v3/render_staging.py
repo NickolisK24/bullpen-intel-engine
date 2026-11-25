@@ -61,12 +61,13 @@ def bootstrap(password):
         return
     if task == 'project-roster-provenance':
         from sync_v3.staging_product_delivery import private_app
-        from sync_v3.staging_publication_target import project_archived_fatigue, project_roster_views
+        from sync_v3.staging_publication_target import project_archived_fatigue, project_prior_fatigue, project_roster_views
         from services.public_roster_readiness import build_public_roster_readiness
         app = private_app(binding['password'])
         with app.app_context():
             result = project_roster_views(password)
             result['fatigue'] = project_archived_fatigue()
+            result['prior_scores'] = project_prior_fatigue(password, os.environ['STAGING_PRODUCT_GENERATION'])
             readiness = build_public_roster_readiness(reference_date=PLAYED_DAY, scope='league')
             result['readiness'] = {key: readiness[key] for key in ('claims_available', 'reason_codes', 'coverage')}
             if not readiness['claims_available']:

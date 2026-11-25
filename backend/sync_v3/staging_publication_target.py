@@ -404,9 +404,11 @@ def project_roster_views(worker_password):
 def project_credited_membership(day, by_player):
     from models.pitcher import Pitcher
     from models.sync_run import SyncRun
+    from sync_v3.render_staging import PLAYED_DAY
     from models.roster_status_snapshot import RosterStatusSnapshot
     from services.primary_roster_inputs import replay_membership
-    from services.roster_status_sync import _declare_roster_ownership, classify_roster_evidence, persist_missing_exact_roster_status_snapshots
+    from services.roster_status_sync import (_apply_current_position_to_pitcher_cache, _declare_roster_ownership,
+                                             classify_roster_evidence, persist_missing_exact_roster_status_snapshots)
 
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
@@ -447,6 +449,8 @@ def project_credited_membership(day, by_player):
                     or any(getattr(row, key) != value for key, value in candidate['observation_links'].items())
                     or replay_membership(row) != expected):
                 raise ValueError('Dated roster evidence differs from stored membership')
+            if day > PLAYED_DAY:
+                _apply_current_position_to_pitcher_cache(candidate['pitcher'], candidate['evidence'])
             if row.sync_run_id is None:
                 row.sync_run_id = run.id
             active += int(expected[0])
@@ -905,3 +909,65 @@ def project_archived_fatigue():
             raise ValueError('Historical fatigue population changed')
         return dict(represented_date=str(day), modeled_product_clock=edition_clock.isoformat()+'Z',
                     roster_assignments=len(rows), verified_scores=count)
+
+
+def project_prior_fatigue(worker_password, digest):
+    """Restore previous scores for qualified relievers whose last outing predates the edition window."""
+    from datetime import datetime, time, timedelta
+    from models.fatigue_score import FatigueScore
+    from models.game_log import GameLog
+    from models.pitcher import Pitcher
+    from services.fatigue import calculate_fatigue
+    from sync_v3.current_worker import verify_target
+    from sync_v3.intelligence_history import DOMAINS
+    from sync_v3.render_staging import PLAYED_DAY, connect
+
+    with closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        with source, source.cursor() as cur:
+            cur.execute('SET TRANSACTION READ ONLY')
+            cur.execute("""SELECT h.mlb_id,h.facts->'arms',h.facts->'eligibility_games'
+                           FROM candidate.generation_inputs i JOIN candidate.workload_history h ON h.id=i.snapshot
+                           WHERE i.generation=%s AND h.represented=%s AND h.methodology=%s""",
+                        (digest, PLAYED_DAY, DOMAINS['readiness'][1]))
+            clubs = cur.fetchall()
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    if {club for club, _, _ in clubs} != set(MLB_TEAM_IDS):
+        raise ValueError('Expected all clubs in the pinned readiness inventory')
+    restored = []
+    with db.session.begin():
+        if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected private historical workload target')
+        db.session.execute(text('LOCK TABLE game_logs IN SHARE MODE'))
+        db.session.execute(text('LOCK TABLE fatigue_scores IN SHARE ROW EXCLUSIVE MODE'))
+        fields = [col.name for col in FatigueScore.__table__.columns if col.name not in ('id', 'calculated_at')]
+        for _, arms, samples in clubs:
+            for mlb in arms:
+                games = set(samples[mlb])
+                if not games:
+                    continue
+                pitcher = Pitcher.query.filter_by(mlb_id=int(mlb)).one()
+                logs = (GameLog.query.filter(GameLog.pitcher_id == pitcher.id, GameLog.mlb_game_pk.in_(games))
+                        .order_by(GameLog.game_date.desc(), GameLog.id.desc()).all())
+                if len(logs) != len(games) or any(log.game_type != 'R' or log.game_date > PLAYED_DAY for log in logs):
+                    raise ValueError(f'Incomplete private pitching sample for {mlb}')
+                last = logs[0].game_date
+                if (PLAYED_DAY-last).days < 14:
+                    continue
+                day = last + timedelta(days=1)
+                start = day - timedelta(days=14)
+                if len(games) == 10 and logs[-1].game_date >= start:
+                    raise ValueError(f'Prior score window extends beyond the retained sample for {mlb}')
+                window = [log for log in logs if log.game_date >= start]
+                if any(log.pitches_thrown is None for log in window):
+                    raise ValueError(f'Historical score lacks a pitch count for {mlb}')
+                score = calculate_fatigue(pitcher, window, reference_date=day)
+                score.calculated_at = datetime.combine(day, time(12))
+                prior = FatigueScore.query.filter_by(pitcher_id=pitcher.id, calculated_at=score.calculated_at).one_or_none()
+                if prior is None:
+                    db.session.add(score)
+                elif any(getattr(prior, name) != getattr(score, name) for name in fields):
+                    raise ValueError(f'Prior fatigue revision differs for {mlb}')
+                restored.append(dict(mlb_id=int(mlb), represented_date=day.isoformat(), created=prior is None,
+                                     games=sorted(log.mlb_game_pk for log in window)))
+    return restored
