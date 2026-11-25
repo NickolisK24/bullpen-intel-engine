@@ -35,7 +35,45 @@ def _acquire_gap(source, client, team, player, through, availability, exc):
     raise exc
 
 
-def _project_sample(source, player, sample, final_cache, projected, through, availability):
+def _window_beyond_last_ten(source, client, player, through, start, latest, sample, cache):
+    from services.club_competition_status import POSTSEASON_GAME_TYPES
+    from sync_v3.season_deployment import check_pitcher_final, qualified_game_rows
+    from sync_v3.workload import _game_workload
+
+    selected = {r['pk']: r for r in sample}
+    for year in range(start.year, latest.year + 1):
+        end = through if year == through.year else date(year, 12, 31)
+        groups = {}
+        for request in pitcher_requests(end, [player], postseason_rounds=POSTSEASON_GAME_TYPES, round_totals=True):
+            params = request.params()
+            oid = acquire_window_source(source, client, end, request.endpoint, params)
+            with source, source.cursor() as cur:
+                groups[params['gameType'], params['stats']] = evidence.replay(cur, oid).body
+        for stage in ('R', *sorted(POSTSEASON_GAME_TYPES)):
+            with source, source.cursor() as cur:
+                clubs, _ = qualified_game_rows(player, end, groups[stage,'gameLog'], groups[stage,'byDateRange'],
+                                               cur=cur, game_type=stage, allow_empty=True)
+            for row in (r for club in clubs.values() for r in club if start <= r['day'] <= latest):
+                pk, day = row['pk'], row['day']
+                if pk in selected:
+                    continue
+                request = calendar_requests(day)[0]
+                schedule = acquire_window_source(source, client, day, request.endpoint, request.params())
+                acquire_window_source(source, client, day, f'/game/{pk}/boxscore', {})
+                with source, source.cursor() as cur:
+                    listing = evidence.replay(cur, schedule).body
+                    game, = [g for slate in listing['dates'] for g in slate['games'] if g['gamePk'] == pk]
+                    final, reason = _game_workload(cur, game, day, schedule)
+                    if not final or game['gameType'] != stage:
+                        raise ValueError(f'Incomplete official workload for {player} in {pk}: {reason}')
+                    facts, receipts = final
+                    check_pitcher_final(player, row, facts, for_membership=True)
+                    cache[day,pk,stage] = facts, (schedule,*receipts)
+                    selected[pk] = dict(row, game_type=stage)
+    return list(selected.values())
+
+
+def _project_sample(source, client, player, sample, final_cache, projected, through, availability):
     from models.fatigue_score import FatigueScore
     from models.game_log import GameLog
     from models.pitcher import Pitcher
@@ -47,7 +85,7 @@ def _project_sample(source, player, sample, final_cache, projected, through, ava
     score_day = availability if (availability-latest).days <= 14 else latest+timedelta(days=1)
     start = score_day - timedelta(days=14)
     if len(sample) == 10 and sample[-1]['day'] >= start:
-        raise ValueError(f'Official last-ten sample needs the full score window for {player}')
+        sample = _window_beyond_last_ten(source, client, player, through, start, latest, sample, final_cache)
     for row in sample:
         played, pk = row['day'], row['pk']
         facts, (schedule_id, box_id, _) = final_cache[played, pk, row['game_type']]
@@ -139,7 +177,7 @@ def recover(source, client, team, after, digest, *, seconds=185):
                     cache = {}
                     sample, _, _ = _eligibility_sample(cur, team, player, through, listed, POSTSEASON_GAME_TYPES,
                                                        cache, roster_day=availability)
-                count = _project_sample(source, player, sample, cache, projected, through, availability)
+                count = _project_sample(source, client, player, sample, cache, projected, through, availability)
                 verified.append(dict(mlb=player, games=count))
                 after = player
                 break
