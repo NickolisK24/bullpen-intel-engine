@@ -14,7 +14,7 @@ from sqlalchemy import URL, text
 from services.migration_authority import read_current_heads, verify_heads
 from utils.db import db
 
-TARGET = 'baseballos_v3_publication_staging'
+TARGET = 'baseballos_v3_roster_staging'
 
 
 def install_target(password, worker_password):
@@ -32,10 +32,10 @@ def install_target(password, worker_password):
             cur.execute('SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=%s', (TARGET,))
             existing = cur.fetchone()
             if existing is None:
-                cur.execute('CREATE DATABASE baseballos_v3_publication_staging TEMPLATE template0')
+                cur.execute('CREATE DATABASE baseballos_v3_roster_staging TEMPLATE template0')
             elif existing != (OWNER,):
                 raise ValueError('Unexpected staging publication database owner')
-            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_publication_staging FROM PUBLIC')
+            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_roster_staging FROM PUBLIC')
             cur.execute("SELECT has_database_privilege('sync_v3_worker',%s,'CONNECT')", (TARGET,))
             if cur.fetchone() != (False,):
                 raise ValueError('Acquisition worker can connect to publication staging')
@@ -223,7 +223,8 @@ def bind_known_pitchers(identities):
                 raise ValueError('Existing staging identity conflicts with approved mapping')
         # Explicit primary keys must not collide with subsequent generated identities.
         conn.execute(text("""SELECT setval(pg_get_serial_sequence('public.pitchers','id'),
-                          greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"""))
+                          greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq),:reserved))"""),
+                     dict(reserved=max(pair[0] for pair in json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs'])))
     return len(identities)
 
 def project_final_appearances(finals, day):
