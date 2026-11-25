@@ -137,9 +137,10 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or not league['data_through'] or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
-            cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source'
+            cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source',manifest->'clubs'
                            FROM candidate.generations WHERE digest=%s""", (digest,))
-            official_slate, transactions = cur.fetchone()
+            official_slate, transactions, clubs = cur.fetchone()
+            completed = {club['team'] for club in clubs if club['readiness'] == 'season_complete'}
             extra = current_offseason_inputs(cur, date.fromisoformat(league['data_through']), league['availability_reference']) if offseason else {}
             if offseason:
                 reviewed_board_populations(cur, worker_password, user, digest, extra)
@@ -161,7 +162,7 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                 citation = league['citations'][team]['readiness']
                 state = row['team_state']
                 qualified = (state['available'] is False and state['outcome'] == 'season_complete'
-                             and state['public_state'] is None) if offseason else state['available'] is True
+                             and state['public_state'] is None) if team in completed else state['available'] is True
                 if team in teams or not citation or not qualified or state['data_through'] != league['data_through']:
                     raise ValueError(f'Unqualified or duplicate Team State for {team}')
                 teams[team] = dict(state=state, readiness=citation)
