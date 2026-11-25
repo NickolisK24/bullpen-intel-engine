@@ -11,7 +11,7 @@ from sync_v3 import canonical, evidence, queue
 from sync_v3.dependencies import capture_reads
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.group_performance import active_group_performance
-from sync_v3.readiness import represented_readiness
+from sync_v3.readiness import availability_day_population, represented_readiness
 from sync_v3.workload import _game_workload
 
 
@@ -69,7 +69,7 @@ def _performance_gaps(cur, team, through, report, missing):
     return unresolved
 
 
-def _needed(cur, team, through, include_workload, performance=False):
+def _needed(cur, team, through, include_workload, performance=False, board_rest=False):
     if performance:
         report = active_group_performance(cur, team, through)
     else:
@@ -79,6 +79,12 @@ def _needed(cur, team, through, include_workload, performance=False):
     if (competition.get('team_id') == team and competition.get('status') == 'season_complete' and report['reason']
             and report['reason'] == competition.get('basis') and report.get('team_state') is None):
         return report['reason'], [], True
+    if board_rest and not report['reason']:
+        staff, arrival = availability_day_population(cur, report, through)
+        if staff is None:
+            return 'missing_qualified_board_roster', [], False
+        if arrival is not None:
+            report = arrival
     gaps = dict(report.get('eligibility_gaps', {}))
     for player, profile in report.get('profiles', {}).items():
         if profile.get('reason') == 'uncredited_game_requires_official_final':
@@ -91,6 +97,12 @@ def _needed(cur, team, through, include_workload, performance=False):
             requests.add((day, endpoint, tuple(sorted(params.items()))))
             return True
         return False
+
+    if board_rest:
+        for player, profile in report.get('profiles', {}).items():
+            if profile['reason'] == 'missing_game_log_or_dated_totals':
+                for request in pitcher_requests(through, [int(player)]):
+                    missing(through, request.endpoint, request.params())
 
     if not performance and include_workload and report['reason']:
         _missing_workload(cur, through, report, reads, missing)
@@ -133,11 +145,11 @@ def _needed(cur, team, through, include_workload, performance=False):
     return reason, sorted(requests), False
 
 
-def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, performance=False,
+def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, performance=False, board_rest=False,
             clock=lambda: datetime.now(timezone.utc)):
     from sync_v3.current_worker import verify_target
 
-    if include_workload and performance:
+    if sum((include_workload, performance, board_rest)) > 1:
         raise ValueError('Select one historical recovery objective')
     name = verify_target(connection)
     today = clock().astimezone(ZoneInfo('America/New_York')).date()
@@ -148,7 +160,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     while True:
         with connection, connection.cursor() as cur:
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            reason, requests, season_complete = _needed(cur, team, through, include_workload, performance)
+            reason, requests, season_complete = _needed(cur, team, through, include_workload, performance, board_rest)
         if not reason or not requests or len(outcomes) >= max_jobs:
             break
         count = len(outcomes)
@@ -174,7 +186,11 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     if season_complete:
         status = 'season_complete'
     elif not reason:
-        status = 'outing_finals_complete' if performance else 'ready'
+        status = 'ready'
+        if performance:
+            status = 'outing_finals_complete'
+        elif board_rest:
+            status = 'board_inputs_complete'
     elif any(outcome != 'received' for outcome in outcomes):
         status = 'acquisition_failed'
     elif requests and len(outcomes) == max_jobs:
@@ -185,5 +201,10 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
         status = 'withheld'
     report = dict(database=name, club=team, through=str(through), status=status, receipts=outcomes,
                   publication_attempted=False)
-    report['performance_reason' if performance else 'readiness_reason'] = reason
+    if performance:
+        report['performance_reason'] = reason
+    elif board_rest:
+        report['board_rest_reason'] = reason
+    else:
+        report['readiness_reason'] = reason
     return report

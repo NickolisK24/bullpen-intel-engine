@@ -147,21 +147,30 @@ def _club_readiness(cur, team, through, reference, league, date_evidence=None, *
     return result
 
 
-def availability_day_arms(cur, report, through):
-    """Qualify the Board-date population against the unchanged workload cutoff."""
+def availability_day_population(cur, report, through):
+    """Return the dated staff and any separately required arrival qualification."""
     team = report['team']
     reference = date.fromisoformat(report['reference_date'])
     reference_roster = board_rest_pitchers(cur, team, reference)
     if reference_roster is None:
-        return None
+        return None, None
     workload_roster = board_rest_pitchers(cur, team, through)
     if workload_roster is None:
-        return None
+        return None, None
     if reference_roster - workload_roster:
-        # An arrival could be a starter or a reliever. Qualify its population
-        # using the same official workload cutoff before counting any arms.
-        report = _club_readiness(cur, team, through, reference, competition_status(cur, reference),
-                                 roster_day=reference)
+        arrival_report = _club_readiness(cur, team, through, reference, competition_status(cur, reference),
+                                         roster_day=reference)
+        return reference_roster, arrival_report
+    return reference_roster, None
+
+
+def availability_day_arms(cur, report, through):
+    """Qualify the Board-date population against the unchanged workload cutoff."""
+    reference_roster, arrival_report = availability_day_population(cur, report, through)
+    if reference_roster is None:
+        return None
+    if arrival_report is not None:
+        report = arrival_report
         if report.get('reason') == 'active_group_empty':
             return {}
         if report.get('reason'):
