@@ -62,6 +62,9 @@ def install_target(password, worker_password):
             schedule = project_played_schedule(worker_password)
             roster_report = project_roster_views(worker_password)
             workload_window = project_workload_window(worker_password)
+            generation = None
+            if workload_window['reason'] is None:
+                generation = advance_private_generation(worker_password)
             with db.engine.connect() as conn:
                 sizes = conn.execute(text("""SELECT pg_database_size(current_database()),
                     (SELECT count(*) FROM public.dashboard_snapshots),
@@ -70,7 +73,7 @@ def install_target(password, worker_password):
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return dict(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime,
                 database=TARGET, migration=expected, database_bytes=sizes[0],
-                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, elapsed_seconds=monotonic()-start)
+                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, generation=generation, elapsed_seconds=monotonic()-start)
 
 
 def project_played_schedule(worker_password):
@@ -571,3 +574,35 @@ def recover_missing_finals(worker_password, receipts, missing):
             project_final_appearances([(game, bodies.pop('box'), facts, bodies)], day)
             recovered += 1
     return recovered
+
+
+def advance_private_generation(worker_password):
+    """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
+    from datetime import timedelta
+    from sync_v3.current_worker import verify_target
+    from sync_v3.generation import build_batch, generation_date_decision, verify_generation
+    from sync_v3.render_staging import PLAYED_DAY, connect
+
+    as_of = PLAYED_DAY + timedelta(days=1)
+    with closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        with source, source.cursor() as cur:
+            decision = generation_date_decision(cur, PLAYED_DAY, as_of)
+        if decision['reason']:
+            return dict(decision=decision, scopes_built=0)
+        started = monotonic()
+        count = 0
+        while True:
+            batch = build_batch(source, PLAYED_DAY, 16, as_of=as_of)
+            digest = batch['after']
+            count += len(batch['processed'])
+            if not batch['processed']:
+                review = verify_generation(source, digest, compare_latest=True)
+                return dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
+                            review=review['selection_review'], clubs=review['clubs'],
+                            snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
+            if digest == batch['before']:
+                raise ValueError('Private intelligence batch did not advance')
+            if monotonic()-started >= 90:
+                return dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
+                            review='building')
