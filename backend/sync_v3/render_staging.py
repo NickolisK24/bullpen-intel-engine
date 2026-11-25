@@ -49,11 +49,19 @@ def bootstrap(password):
             result = recheck_edition_transactions(source, PLAYED_DAY, os.environ['STAGING_PRODUCT_GENERATION'], client._get)
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task == 'project-eligibility':
+        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_publication_target import project_eligibility_history
+        app = private_app(binding['password'])
+        with app.app_context():
+            result = project_eligibility_history(password, budget_seconds=180)
+        print(json.dumps(dict(private_eligibility=result)), flush=True)
+        return
     if task in ('publish-generation', 'rollback-generation'):
         from sync_v3.staging_product_delivery import exercise, exercise_rollback
         import resource

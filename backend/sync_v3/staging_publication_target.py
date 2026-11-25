@@ -236,7 +236,7 @@ def bind_known_pitchers(identities):
                      dict(reserved=max(pair[0] for pair in json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs'])))
     return len(identities)
 
-def project_final_appearances(finals, day):
+def project_final_appearances(finals, day, *, include_context=True):
     """Apply the governed appearance plan to the staged product and compare every credited row."""
     from collections import Counter
     from services.sync import process_completed_game_for_postgame_refresh, POSTGAME_MARKER_STATUS_FULLY_PROCESSED
@@ -272,7 +272,8 @@ def project_final_appearances(finals, day):
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')
-            contexts += project_context(game, box, extra, day)
+            if include_context:
+                contexts += project_context(game, box, extra, day)
             confirmed += len(facts)
     return dict(verified=confirmed, team_game_contexts=contexts, inserted=inserted, identities_created=created, seconds=monotonic()-started)
 
@@ -582,6 +583,88 @@ def recover_missing_finals(worker_password, receipts, missing):
             project_final_appearances([(game, bodies.pop('box'), facts, bodies)], day)
             recovered += 1
     return recovered
+
+
+def project_eligibility_history(worker_password, *, budget_seconds):
+    """Reconcile the actual historical appearances used by the qualified ten-appearance role samples."""
+    from datetime import date
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from sync_v3 import evidence
+    from sync_v3.current_worker import verify_target
+    from sync_v3.discovery import calendar_requests
+    from sync_v3.intelligence_history import DOMAINS
+    from sync_v3.render_staging import PLAYED_DAY, connect
+    from sync_v3.workload import _game_workload
+
+    started = monotonic()
+    with closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        with source, source.cursor() as cur:
+            cur.execute("""SELECT DISTINCT ON (mlb_id) mlb_id,facts->>'reason',facts->'eligibility_games'
+                           FROM candidate.workload_history WHERE subject='team' AND methodology=%s AND represented=%s
+                           ORDER BY mlb_id, revision DESC""", (DOMAINS['readiness'][1], PLAYED_DAY))
+            samples = {}
+            clubs = set()
+            for team, reason, staff in cur:
+                if reason or staff is None:
+                    raise ValueError(f'Club {team} still lacks a qualified eligibility sample')
+                clubs.add(team)
+                for player, games in staff.items():
+                    if int(player) in samples or len(games) != len(set(games)) or len(games) > 10:
+                        raise ValueError('Ambiguous official pitcher eligibility sample')
+                    samples[int(player)] = set(games)
+            if clubs != set(MLB_TEAM_IDS) or not samples:
+                raise ValueError('Incomplete private eligibility population')
+
+        with db.session.begin():
+            if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+                raise ValueError('Unexpected private eligibility target')
+            rows = db.session.execute(text("""SELECT p.mlb_id,l.mlb_game_pk FROM pitchers p JOIN game_logs l
+                ON p.id=l.pitcher_id WHERE p.mlb_id=ANY(:players) AND l.game_date<=:day"""),
+                dict(players=sorted(samples), day=PLAYED_DAY))
+            present = set(rows)
+        missing = sorted({pk for player, games in samples.items() for pk in games if (player, pk) not in present})
+        reconciled = 0
+        for pk in missing:
+            with source, source.cursor() as cur:
+                cur.execute("""SELECT f.parameters->>'startDate' FROM candidate.confirmations c
+                    JOIN candidate.fetches f ON f.id=c.context_id WHERE c.domain='final' AND c.identity=%s
+                    ORDER BY c.observed_at DESC,c.source_id DESC LIMIT 1""", (str(pk),))
+                row = cur.fetchone()
+                if not row or not row[0]:
+                    raise ValueError(f'Missing dated final confirmation for eligibility game {pk}')
+                day = date.fromisoformat(row[0])
+                schedule = calendar_requests(day)[0]
+                receipt = evidence.latest_qualified_source(cur, schedule.endpoint, schedule.params())
+                listing = evidence.replay(cur, receipt).body
+                game, = [g for entry in listing['dates'] for g in entry['games'] if g['gamePk'] == pk]
+                final, reason = _game_workload(cur, game, day, receipt)
+                if not final:
+                    raise ValueError(f'Eligibility game {pk} withheld: {reason}')
+                facts, (box_id, _) = final
+                box = evidence.replay(cur, box_id).body
+            project_final_appearances([(game, box, facts, {})], day, include_context=False)
+            reconciled += 1
+            if monotonic()-started >= budget_seconds:
+                break
+
+        if reconciled == len(missing):
+            with db.session.begin():
+                rows = db.session.execute(text("""SELECT mlb_id,mlb_game_pk FROM (
+                    SELECT p.mlb_id,l.mlb_game_pk,row_number() OVER (
+                        PARTITION BY p.id ORDER BY l.game_date DESC,l.id) AS position
+                    FROM pitchers p JOIN game_logs l ON l.pitcher_id=p.id
+                    WHERE p.mlb_id=ANY(:players) AND l.game_date<=:day
+                ) ranked WHERE position<=10"""), dict(players=sorted(samples), day=PLAYED_DAY))
+                actual = {player: set() for player in samples}
+                for player, pk in rows:
+                    actual[player].add(pk)
+                conflicts = sorted(player for player in samples if actual[player] != samples[player])
+                if conflicts:
+                    raise ValueError(f'Private target eligibility dates disagree for MLB pitchers {conflicts}')
+        return dict(qualified_clubs=len(clubs), pitchers=len(samples), represented_appearances=sum(map(len, samples.values())),
+                    missing_games_at_start=len(missing), reconciled_games=reconciled, remaining_games=len(missing)-reconciled,
+                    elapsed_seconds=monotonic()-started)
 
 
 def recheck_edition_transactions(source, through, digest, fetch):

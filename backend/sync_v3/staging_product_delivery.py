@@ -86,7 +86,7 @@ def publish(binding):
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
     from scripts.rehearse_selected_publication import verify_frozen_states
-    from services import dashboard_snapshot
+    from services import dashboard_snapshot, sync_metadata
     from services.team_state_vnext_production_proof import observe_committed_publication_proof
     from utils.db import db
 
@@ -105,7 +105,7 @@ def publish(binding):
             raise ValueError('Private predecessor belongs to another publisher')
         def utc(value):
             return datetime.fromisoformat(value).astimezone(timezone.utc).replace(tzinfo=None)
-        run = SyncRun(job_name='sync_v3_private_edition', source='sync_v3_staging', status='success', stage='acquired',
+        run = SyncRun(job_name=sync_metadata.JOB_DAILY_SYNC, source='sync_v3_staging', status='success', stage='acquired',
                       started_at=utc(binding['first_source_at']), completed_at=utc(binding['last_source_at']),
                       latest_workload_date=date.fromisoformat(binding['data_through']), records_processed=binding['source_count'])
         db.session.add(run)
@@ -182,9 +182,17 @@ def verify_http(app, binding, snapshot_id, run_id):
         raise ValueError('Incomplete private Team State share inventory')
     db.session.remove()
     paths = [f'/api/share-artifacts/{identifier}' for identifier in shares.values()]
-    league, tonight, *responses = http_delivery(app, paths)
+    league, tonight, sync_status, *responses = http_delivery(app, ['/api/bullpen/sync/status', *paths])
     if (league.status_code, tonight.status_code) != (200, 200):
         raise ValueError(f'Private product status codes: League {league.status_code}, Tonight {tonight.status_code}')
+    sync_status.raise_for_status()
+    metadata = sync_status.json()
+    latest = metadata.get('last_successful_sync_run') or {}
+    if (metadata.get('metadata_source') != 'sync_runs' or metadata['data']['latest_workload_date'] != binding['data_through']
+            or not latest.get('id') or latest.get('source') != 'sync_v3_staging'):
+        raise ValueError('Private sync status lacks the archived acquisition identity or workload date')
+    if latest['id'] != run_id and latest.get('stage') != 'private_rolled_back':
+        raise ValueError('Private sync status cites a different active edition')
     data = league.json()
     authority = data['publication_authority']
     served = {str(row['team_id']):row['team_state'] for row in data['teams']}
