@@ -1,6 +1,7 @@
 """Assemble an immutable inventory of one represented candidate generation."""
 
 from hashlib import sha256
+from time import monotonic
 import json
 
 from psycopg2.extras import Json, execute_values
@@ -326,7 +327,7 @@ def _build_change_set(cur, domain, subject, entity, through):
     return _freeze_changes(cur, domain, entity, through)
 
 
-def build_batch(connection, through, limit, *, as_of=None):
+def build_batch(connection, through, limit, *, as_of=None, deadline=None):
     """Materialize a bounded batch of missing or superseded candidate calculations."""
     from sync_v3.history import record_workload
     from sync_v3.intelligence_history import record_intelligence
@@ -356,12 +357,16 @@ def build_batch(connection, through, limit, *, as_of=None):
             record_intelligence(connection, domain_for[method], entity, day)
 
     selected = sorted(outstanding, key=priority)[:limit]
+    processed = []
     for subject, entity, method in selected:
         if method in changes_for:
             _transaction(connection, _build_change_set, changes_for[method], subject, entity, through)
         else:
             build(subject, entity, method, through)
-    return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=selected)
+        processed.append((subject, entity, method))
+        if deadline is not None and monotonic() >= deadline:
+            break
+    return dict(before=initial, after=freeze_generation(connection, through, as_of=as_of), processed=processed)
 
 
 def review_coverage(manifest):
