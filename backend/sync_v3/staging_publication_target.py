@@ -304,6 +304,8 @@ def project_roster_views(worker_password):
     from models.source_observation import SourceObservation, SourceSubject
 
     result = {}
+    staff = {}
+    dated = {}
     client = MLBApiClient()
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
@@ -336,6 +338,15 @@ def project_roster_views(worker_password):
                     kind = params['rosterType']
                     bodies[kind] = obs.body
                     stamps[kind] = obs.retrieved_at
+                from sync_v3.depth import board_rest_pitchers
+                with source, source.cursor() as cur:
+                    members = board_rest_pitchers(cur, team, day)
+                if members is None:
+                    raise ValueError('Unqualified dated staff')
+                for entry in bodies['active']['roster']:
+                    person = entry['person']
+                    if person['id'] in members:
+                        staff[person['id']] = person['fullName']
                 capture = RunRosterEvidence(CapturedRoster(team, day, bodies), represented_date=day)
                 with db.session.begin():
                     existing = {}
@@ -373,8 +384,11 @@ def project_roster_views(worker_password):
                     if existing and team == 108 and day > PLAYED_DAY:
                         matched_departure_evidence(team, 502032, day, bodies, existing)
                 clubs += 1
-            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired,
-                                    credited_membership=project_credited_membership(day, candidates))
+            dated[day] = candidates
+            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired)
+    result['roster_identities'] = bind_active_staff(staff)
+    for day, candidates in dated.items():
+        result[str(day)]['membership'] = project_credited_membership(day, candidates)
     return result
 
 
@@ -410,3 +424,43 @@ def project_credited_membership(day, by_player):
             active += int(expected[0])
         return dict(verified=len(candidates), active=active, outside_active_and_40man=len(pitchers)-len(candidates),
                     created=report['created'])
+
+
+def bind_active_staff(staff):
+    """Reserve approved public keys before allocating any new staging-local pitcher keys."""
+    from models.pitcher import Pitcher
+    pairs = json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs']
+    if (len(pairs) != 60 or any(len(p) != 2 or any(type(x) != int or x <= 0 for x in p) for p in pairs)
+            or any(len({p[i] for p in pairs}) != 60 for i in (0, 1))):
+        raise ValueError('Invalid roster identity cohort')
+    public = {mlb: pid for pid, mlb in pairs}
+    if not public.keys() <= staff.keys():
+        raise ValueError('Approved mapping exceeds qualified roster cohort')
+    table = Pitcher.__table__
+    with db.engine.begin() as conn:
+        if conn.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected private target')
+        conn.execute(text('LOCK TABLE pitchers IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        existing = dict(conn.execute(text('SELECT mlb_id,id FROM pitchers')).all())
+        by_id = {pid: mlb for mlb, pid in existing.items()}
+        collisions = sum(existing.get(mlb, pid) != pid or by_id.get(pid, mlb) != mlb
+                         for mlb, pid in public.items())
+        if collisions:
+            raise ValueError(f'{collisions} staging public identity collisions')
+        created = 0
+        for mapped in (True, False):
+            for mlb, name in sorted(staff.items()):
+                if mlb in existing or (mlb in public) != mapped:
+                    continue
+                values = dict(mlb_id=mlb, full_name=name, position='P', active=False)
+                if mapped:
+                    values['id'] = public[mlb]
+                conn.execute(table.insert().values(**values))
+                created += 1
+            if mapped:
+                conn.execute(text("""SELECT setval(pg_get_serial_sequence('public.pitchers','id'),
+                                 greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"""))
+        stored = dict(conn.execute(text('SELECT mlb_id,id FROM pitchers')).all())
+        if not staff.keys() <= stored.keys() or any(stored[k] != v for k,v in public.items()):
+            raise ValueError('Roster identity verification failed')
+    return dict(mapped=len(public), created=created, collisions=collisions)
