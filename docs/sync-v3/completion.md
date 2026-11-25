@@ -1,5 +1,9 @@
 # Sync v3 acceptance ledger
 
+## November 25 competitive primary date selection
+
+Private Render run `1795646989` selected the August 28 workload cutoff and August 29 availability from the official 2017 season and daily schedules on a pregame invocation. Independent postgame run `1795647201` started from August 28, confirmed the settled slate and selected the same generation, `d5e6b09de51a13e165a2834ca12b78c4cc0ca32449c421f2032bd5ea355fcf79`. Both reviews matched the latest inventory for all 30 clubs and 1,854 snapshots, with zero missing scopes. Source review took 118.42 and 110.04 seconds respectively. These runs exercised cutoff selection and intelligence review. Private snapshot 131 continued to serve the current offseason edition. Competitive projection, correction and publication through the independent scheduled primary still require verification. [Private Render runs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
+
 ## November 25 current private acceptance
 
 **The current offseason lifecycle passed in private Render staging. Production remains legacy-primary.** The tested revision was `b6915b3200ef91900bfb4415dc37b9182599de16`. All nine hosted CI jobs passed, including four PostgreSQL shards, migrations, browser coverage and dependency audit. Source acquisition, canonical reconciliation, intelligence, publication, normal API delivery and rollback used the existing private database and crons. The durable postseason archive covers all 35 outstanding decisions. All 40 postseason decisions reconciled to current official MLB evidence. [CI](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/45712502616) · [Retention evidence](https://github.com/NickolisK24/bullpen-intel-engine/pull/1004)
