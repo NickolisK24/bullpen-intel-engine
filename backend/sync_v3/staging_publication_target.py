@@ -481,7 +481,7 @@ def project_workload_window(worker_password):
     from datetime import timedelta
     from services.appearance_ledger import appearance_ledger_publish_block, ledger_window_days
     from services.mlb_api import MLBApiClient
-    from scripts.rehearse_selected_schedule import reconcile_schedule
+    from scripts.rehearse_selected_schedule import reconcile_schedule, retained_makeups
     from sync_v3 import evidence
     from sync_v3.current_worker import verify_target
     from sync_v3.discovery import calendar_requests
@@ -489,6 +489,7 @@ def project_workload_window(worker_password):
 
     client = MLBApiClient()
     receipts = {}
+    observations = {}
     # calculate_fatigue counts appearances in the fourteen days before the availability date.
     required_days = max(ledger_window_days(), 14)
     with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
@@ -500,10 +501,13 @@ def project_workload_window(worker_password):
             oid = acquire_window_source(source, client, day, request.endpoint, params)
             with source, source.cursor() as cur:
                 obs = evidence.replay(cur, oid)
-            with db.session.begin():
-                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
-                reconcile_schedule(day, obs, private_staging=True)
+            observations[day] = obs
             receipts[str(day)] = oid
+    makeups = retained_makeups(observations)
+    for day, obs in observations.items():
+        with db.session.begin():
+            db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+            reconcile_schedule(day, obs, private_staging=True, makeups=makeups)
     with db.session.begin():
         reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
         if ledger is None:
@@ -515,7 +519,7 @@ def project_workload_window(worker_password):
             reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY, window_days=required_days)
             if ledger is None:
                 raise ValueError('Appearance ledger unavailable after recovery')
-    return dict(receipts=receipts, window_days=ledger['window_days'], recovered=recovered, reason=reason, expected_games=ledger['expected_games'],
+    return dict(receipts=receipts, reconciled_makeups=sorted(makeups), window_days=ledger['window_days'], recovered=recovered, reason=reason, expected_games=ledger['expected_games'],
                 represented_games=ledger['represented_games'], stored_appearances=ledger['stored_appearances'],
                 missing_games=len(ledger['missing_games']))
 
