@@ -9,11 +9,14 @@ from time import monotonic
 
 from psycopg2.extras import Json
 
-from shadow_current_worker import checkpoint
+from services.mlb_api import MLBApiClient
+from shadow_current_worker import checkpoint, inventory, restore
 from sync_v3 import evidence, savant
 from sync_v3.comparison import compare_finals
 from sync_v3.current_worker import acquisition_failed, process
 from sync_v3.cycle import run_cycle
+from sync_v3.eligibility_recovery import recover
+from sync_v3.readiness import represented_readiness
 from sync_v3.rehearse import isolated_cluster
 from sync_v3.render_staging import BATCH_LIMIT
 from sync_v3.replay import install
@@ -73,6 +76,49 @@ def coverage(connection):
                             pitching_lines=fingerprint(pitching)))
 
 
+def recover_boston(connect):
+    # Expected reads come from the independent August board-111.json.
+    # SHA-256 of the complete board: 76bfa4359ad2791bc7ed656e0e8d78fffc55e9f35921bb33ca430a1b0a5169c2.
+    client = MLBApiClient()
+    with closing(connect()) as reader, reader, reader.cursor() as cur:
+        cur.execute('SET TRANSACTION READ ONLY')
+        initial = represented_readiness(cur, 111, DAY)
+    if initial['team_state'] is not None or not initial['reason']:
+        raise ValueError('The played checkpoint did not reproduce missing Boston readiness')
+    batches = []
+    with closing(client.session):
+        for _ in range(12):
+            with closing(connect()) as worker:
+                outcome = recover(worker, 111, DAY, max_jobs=32, include_workload=True,
+                                  fetch=lambda endpoint, params: client._get(endpoint, params=params))
+            batches.append(dict(status=outcome['status'], received=len(outcome['receipts'])))
+            if outcome['status'] == 'ready' and not outcome['receipts']:
+                break
+            if outcome['status'] not in ('batch_limit', 'ready'):
+                raise ValueError(f"Boston recovery refused: {outcome}")
+        else:
+            raise ValueError(f'Boston recovery exceeded its historical request budget: {batches}')
+    if not any(batch['received'] for batch in batches):
+        raise ValueError('Historical readiness recovered without a new receipt')
+    return dict(**boston_evidence(connect), initial_refusal=initial['reason'], batches=batches)
+
+
+def boston_evidence(connect):
+    with closing(connect()) as reader, reader, reader.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        report = represented_readiness(cur, 111, DAY)
+        reads = sorted((int(pid), arm['read']['arm_read']) for pid, arm in report['arms'].items())
+        digest = sha256(json.dumps(reads, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        cur.execute('SELECT count(*) FROM candidate.core_selections')
+        selections, = cur.fetchone()
+    if (report['membership_date'], report['reference_date'], report['team_state']['public_label'], digest, selections) != (
+            '2017-08-28', '2017-08-29', 'Vulnerable', '13909568729de1806f113e791a4b1a8b91332add6b3a6ae4cba3c957d2583f82', 0):
+        raise ValueError(f'Boston readiness differs from the archived board: {report}')
+    return dict(club=111, membership=report['membership_date'], availability=report['reference_date'],
+                state=report['team_state']['public_label'], arm_count=len(reads), arm_sha256=digest,
+                selections=selections)
+
+
 def run(directory, bindir, client_bin):
     directory.mkdir()
     report = dict(represented=str(DAY), acquisition_batches=[], hourly_replay=[])
@@ -126,6 +172,18 @@ def run(directory, bindir, client_bin):
                 if any(outcome != 'received' for _, outcome in receipts) or states.get('dead'):
                     raise ValueError(f'Incomplete played-slate replay at hour {hour}')
             report['replay_coverage'] = coverage(destination)
+        (directory / 'performance.json').write_text(json.dumps(report, sort_keys=True))
+        report['historical_readiness'] = recover_boston(connect)
+        dump = directory / 'played-readiness.pgdump'
+        report['readiness_checkpoint_sha256'] = checkpoint(source, client_bin, dump)
+        (directory / 'performance.json').write_text(json.dumps(report, sort_keys=True))
+        before_restore = inventory(source)
+    with isolated_cluster(bindir) as (restored, read_restored):
+        restore(restored, client_bin, dump)
+        if before_restore != inventory(restored):
+            raise ValueError('Historical acquisition changed during checkpoint restore')
+        report['restored_readiness'] = boston_evidence(read_restored)
+
     (directory / 'performance.json').write_text(json.dumps(report, sort_keys=True))
     for result in (report['acquisition_coverage'], report['replay_coverage']):
         if (result['cohort'] != EXPECTED or result['roster_lists'] != 60 or result['clubs'] != 30
