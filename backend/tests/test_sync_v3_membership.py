@@ -342,3 +342,48 @@ def test_current_cycle_discovers_requested_profiles_from_the_active_pitcher_popu
     assert sorted(fetched) == [
         ('/people/1111/stats', stage, kind) for stage in ('R', 'W') for kind in ('byDateRange', 'gameLog')
     ]
+
+
+def test_worker_acquires_previous_cutoff_only_for_a_board_date_arrival():
+    from contextlib import closing
+    from datetime import timedelta
+    import os
+
+    from sync_v3.cycle import run_cycle
+    from sync_v3.rehearse import isolated_cluster
+    from sync_v3.replay import install
+
+    pg = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not pg:
+        pytest.skip('Set SYNC_V3_TEST_PG_BIN for the isolated server rehearsal')
+    first = date(2017, 8, 28)
+    second = first + timedelta(days=1)
+    requests = []
+
+    def fetch(endpoint, params):
+        if endpoint == '/schedule':
+            return dict(totalGames=0, dates=[])
+        if endpoint == '/transactions':
+            return dict(transactions=[])
+        if endpoint.startswith('/people/'):
+            requests.append((endpoint, params['stats'], params.get('endDate')))
+            return {'stats': []}
+        members = [1101] if params['date'] == str(first) else [1101, 2202]
+        roster = [dict(person=dict(id=player), position=dict(code='1'), status=dict(code='A')) for player in members]
+        return dict(teamId=111, rosterType=params['rosterType'], roster=roster)
+
+    with isolated_cluster(pg) as (owner, connect):
+        install(owner)
+        for day in (first, second):
+            stamp = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+            with closing(connect()) as worker:
+                receipts = run_cycle(worker, day, fetch, teams=[111], active_roster_profiles=True,
+                                     max_jobs=64, clock=lambda: stamp)
+                assert all(result == 'received' for _, result in receipts)
+        assert requests.count(('/people/2202/stats', 'byDateRange', str(first))) == 1
+        assert requests.count(('/people/2202/stats', 'byDateRange', str(second))) == 1
+        assert requests.count(('/people/2202/stats', 'gameLog', None)) == 1
+        assert requests.count(('/people/1101/stats', 'byDateRange', str(first))) == 1
+        with closing(connect()) as worker:
+            assert run_cycle(worker, second, fetch, teams=[111], active_roster_profiles=True,
+                             max_jobs=64, clock=lambda: stamp) == []
