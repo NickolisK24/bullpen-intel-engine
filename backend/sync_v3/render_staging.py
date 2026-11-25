@@ -27,6 +27,17 @@ def connect(user, password):
 
 
 def bootstrap(password):
+    task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
+    if task == 'build-generation':
+        import resource
+        from sync_v3.staging_publication_target import advance_private_generation
+        result = advance_private_generation(password, budget_seconds=185)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
+                              process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
+        return
+    if task != 'bootstrap':
+        raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
