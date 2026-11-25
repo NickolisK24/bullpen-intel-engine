@@ -60,11 +60,13 @@ def install_target(password, worker_password):
                 upgrade(directory=migrations, revision=expected)
             verify_heads(read_current_heads(db.engine), expected)
             schedule = project_played_schedule(worker_password)
-            roster_report = project_roster_views(worker_password)
             workload_window = project_workload_window(worker_password)
-            generation = None
+            roster_report = project_roster_views(worker_password)
+            generation = fatigue = None
             if workload_window['reason'] is None:
-                generation = advance_private_generation(worker_password)
+                fatigue = project_archived_fatigue()
+                if monotonic()-start < 135:
+                    generation = advance_private_generation(worker_password)
             with db.engine.connect() as conn:
                 sizes = conn.execute(text("""SELECT pg_database_size(current_database()),
                     (SELECT count(*) FROM public.dashboard_snapshots),
@@ -73,7 +75,7 @@ def install_target(password, worker_password):
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return dict(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime,
                 database=TARGET, migration=expected, database_bytes=sizes[0],
-                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, generation=generation, elapsed_seconds=monotonic()-start)
+                snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, generation=generation, archived_fatigue=fatigue, elapsed_seconds=monotonic()-start)
 
 
 def project_played_schedule(worker_password):
@@ -608,3 +610,68 @@ def advance_private_generation(worker_password):
             if monotonic()-started >= 90:
                 return dict(digest=digest, scopes_built=count, elapsed_seconds=monotonic()-started,
                             review='building')
+
+
+def project_archived_fatigue():
+    """Project the archived edition's official roster and calculate its fourteen-day scores."""
+    from datetime import datetime, time, timedelta
+    from models.fatigue_score import FatigueScore
+    from models.game_log import GameLog
+    from models.pitcher import Pitcher
+    from models.roster_status_snapshot import RosterStatusSnapshot
+    from services.fatigue import calculate_fatigue
+    from services.mlb_club_directory import MLB_CLUBS
+    from services.primary_roster_inputs import replay_membership
+    from services.roster_status_sync import _apply_snapshot_to_pitcher_cache, _declare_roster_ownership
+    from services.team_assignment_sync import _classification_from_roster_evidence, _apply_assignment
+    from sync_v3.render_staging import PLAYED_DAY
+
+    day = PLAYED_DAY + timedelta(days=1)
+    # The private archived edition uses the same noon UTC product clock as the disposable rehearsal.
+    edition_clock = datetime.combine(day, time(12))
+    teams = {club.team_id: dict(name=club.team_name, abbreviation=club.abbreviation) for club in MLB_CLUBS}
+    fields = [col.name for col in FatigueScore.__table__.columns if col.name not in ('id', 'calculated_at')]
+    with db.session.begin():
+        if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
+            raise ValueError('Unexpected historical product target')
+        db.session.execute(text('LOCK TABLE pitchers, roster_status_snapshots, game_logs, fatigue_scores '
+                                'IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        rows = (db.session.query(Pitcher, RosterStatusSnapshot)
+                .join(RosterStatusSnapshot, RosterStatusSnapshot.pitcher_id == Pitcher.id)
+                .filter(RosterStatusSnapshot.snapshot_date == day)
+                .order_by(RosterStatusSnapshot.team_id, Pitcher.id).all())
+        count = 0
+        last_team = None
+        for pitcher, snapshot in rows:
+            active, forty = replay_membership(snapshot)
+            if not (active or forty) or pitcher.mlb_id != snapshot.mlb_id:
+                raise ValueError('Historical membership does not support the assignment')
+            if snapshot.team_id != last_team:
+                _declare_roster_ownership(snapshot.team_id)
+                last_team = snapshot.team_id
+            evidence = dict(appearances=[dict(team_id=snapshot.team_id, roster_type='active' if active else '40Man')])
+            assignment = _classification_from_roster_evidence(evidence, teams)
+            _apply_assignment(pitcher, assignment, edition_clock)
+            _apply_snapshot_to_pitcher_cache(pitcher, snapshot)
+            logs = (GameLog.query.filter(GameLog.pitcher_id == pitcher.id,
+                                         GameLog.game_date.between(day-timedelta(days=14), PLAYED_DAY))
+                    .order_by(GameLog.game_date.desc(), GameLog.id.desc()).all())
+            if not logs:
+                continue
+            score = calculate_fatigue(pitcher, logs, reference_date=day)
+            score.calculated_at = edition_clock
+            prior = FatigueScore.query.filter_by(pitcher_id=pitcher.id, calculated_at=edition_clock).one_or_none()
+            if prior is None:
+                db.session.add(score)
+            elif any(getattr(prior, name) != getattr(score, name) for name in fields):
+                raise ValueError('Stored archived score differs from current qualified workload')
+            count += 1
+        db.session.flush()
+        db.session.expire_all()
+        for pitcher, snapshot in rows:
+            if not pitcher.active or pitcher.team_id != snapshot.team_id or pitcher.roster_status != snapshot.roster_status:
+                raise ValueError('Dated roster cache differs from qualified official evidence')
+        if count != FatigueScore.query.filter_by(calculated_at=edition_clock).count():
+            raise ValueError('Historical fatigue population changed')
+        return dict(represented_date=str(day), modeled_product_clock=edition_clock.isoformat()+'Z',
+                    roster_assignments=len(rows), verified_scores=count)
