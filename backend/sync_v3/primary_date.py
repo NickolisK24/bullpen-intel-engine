@@ -1,6 +1,7 @@
 """Choose the workload and availability dates from retained MLB schedules."""
 from datetime import timedelta
 
+from services.game_finality import classify_status
 from sync_v3 import evidence
 from sync_v3.competition_calendar import calendar_games, competition_status
 from sync_v3.discovery import competition_calendar_request
@@ -11,8 +12,9 @@ def workload_cutoff(games, day, *, after_finals):
     """An unfinished slate cannot advance the published workload date."""
     eligible = {played for played, row, _ in games.values()
                 if played < day and row['status_state'] == 'final'}
-    today = [row['status_state'] for played, row, _ in games.values() if played == day]
-    if after_finals and 'final' in today and all(s in ('final', 'postponed', 'cancelled') for s in today):
+    today = [classify_status(game['status']) for played, _, game in games.values() if played == day]
+    if after_finals and any(s.final_status for s in today) and all(
+            s.final_status or s.state in ('postponed', 'cancelled') for s in today):
         eligible.add(day)
     if not eligible:
         raise ValueError('No confirmed competitive workload date for the requested edition')
