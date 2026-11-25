@@ -162,3 +162,66 @@ def qualify_offseason_edition(connection, day):
             raise ValueError('Current private League roster differs from the official club inventory')
     return dict(day=str(day), through=str(through), availability=dates['availability_reference'],
                 generation=digest, decision=review['status'], club_state_digests=states)
+
+
+def project_offseason_competition(source, client, day):
+    """Replay the dated club finals and official playoff decisions into the private product."""
+    from datetime import date
+    from sqlalchemy import text
+    from scripts.rehearse_selected_schedule import reconcile_schedule
+    from services.club_competition_status import resolve_club_competition_status
+    from sync_v3 import evidence
+    from sync_v3.competition_calendar import competition_status
+    from sync_v3.discovery import calendar_requests
+    from sync_v3.staging_publication_target import acquire_window_source, project_final_appearances
+    from sync_v3.workload import _game_workload
+    from utils.db import db
+
+    with source, source.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        competition = competition_status(cur, day)
+        clubs = competition['clubs']
+        if len(clubs) != 30 or any(club['status'] != 'season_complete' for club in clubs.values()):
+            raise ValueError('Current source does not establish an all-club offseason')
+        if not competition['decision_sources'] or competition['missing_decisions']:
+            raise ValueError('Incomplete postseason decisions')
+        days = {date.fromisoformat(club['last_final_game_date']) for club in clubs.values()}
+        calendar = evidence.replay(cur, competition['calendar_source']).body
+        decisions = set(competition['decision_sources'])
+        for slate in calendar['dates']:
+            if any(game['gamePk'] in decisions for game in slate['games']):
+                days.add(date.fromisoformat(slate['date']))
+    rows = 0
+    applied = set()
+    for played in sorted(days):
+        request = calendar_requests(played)[0]
+        receipt = acquire_window_source(source, client, played, request.endpoint, request.params())
+        with source, source.cursor() as cur:
+            obs = evidence.replay(cur, receipt)
+            finals = []
+            for entry in obs.body['dates']:
+                for game in entry['games']:
+                    pk = game['gamePk']
+                    if pk not in decisions:
+                        continue
+                    qualified, reason = _game_workload(cur, game, played, receipt)
+                    if not qualified:
+                        raise ValueError(f'Unresolved current final {pk}: {reason}')
+                    facts, (box, _) = qualified
+                    if box not in competition['decision_sources'][pk]:
+                        raise ValueError('Official decision receipt changed during projection')
+                    finals.append((game, evidence.replay(cur, box).body, facts, {}))
+                    applied.add(pk)
+        for verify_only in (False, True):
+            with db.session.begin():
+                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+                reconcile_schedule(played, obs, private_staging=True, verify_only=verify_only)
+        if finals:
+            rows += project_final_appearances(finals, played, include_context=False)['verified']
+    if applied != decisions:
+        raise ValueError('Projected final game identities differ from confirmed postseason decisions')
+    for team, expected in clubs.items():
+        observed = resolve_club_competition_status(team, day).to_dict()
+        if observed != expected:
+            raise ValueError(f'Private competition projection differs for club {team}: {observed} / {expected}')
+    return dict(day=str(day), dates=len(days), decisions=len(applied), appearances=rows, verified_clubs=len(clubs))
