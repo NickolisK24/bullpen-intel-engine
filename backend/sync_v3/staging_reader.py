@@ -10,6 +10,14 @@ from sync_v3.staging_publication_target import TARGET
 
 
 READER = 'baseballos_v3_staging_product_reader'
+# Relations read by the normal private HTTP routes in hosted run 1795634882.
+PRODUCT_RELATIONS = frozenset({
+    'dashboard_snapshots', 'fatigue_scores', 'game_ingestion_work_items', 'game_logs',
+    'game_pitch_events', 'pitchers', 'play_by_play_processed_games', 'player_transaction_sync_windows',
+    'player_transactions', 'postgame_processed_games', 'scheduled_games', 'share_artifact_assets',
+    'share_artifact_evidence', 'share_artifact_relations', 'share_artifacts', 'slate_games',
+    'sync_runs', 'team_game_pitching_splits', 'tonight_publications',
+})
 
 
 def _connect(user, password):
@@ -83,3 +91,12 @@ def verify(connection, tables):
         if cur.fetchone() != (TARGET, READER, 'on'):
             raise ValueError('Unexpected private API identity or transaction mode')
         _verify_grants(cur, tables)
+
+
+def serve_edition(password, digest):
+    from sync_v3.staging_product_delivery import verify_product_surfaces
+
+    with closing(_connect(READER, password)) as reader:
+        verify(reader, PRODUCT_RELATIONS)
+    result = verify_product_surfaces(password, digest, user=READER)
+    return dict(result, database_role=READER, readable_tables=len(PRODUCT_RELATIONS), writable_tables=0)

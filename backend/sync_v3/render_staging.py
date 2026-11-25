@@ -40,6 +40,14 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    if task == 'verify-reader-edition':
+        # Run the reader entry point with only its own private database credential.
+        import sys
+        keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV',
+                'STAGING_PRODUCT_READER_PASSWORD', 'STAGING_PRODUCT_GENERATION')
+        env = {key: os.environ[key] for key in keep if key in os.environ}
+        env['AUTO_SYNC'] = 'false'
+        os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', 'read'], env)
     if task == 'inspect-current-edition':
         from collections import Counter
         from sync_v3.competition_calendar import calendar_games, competition_status
@@ -81,11 +89,19 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task == 'install-product-reader':
+        from services.migration_authority import require_owner
+        from sync_v3.staging_reader import PRODUCT_RELATIONS, READER, install as install_reader
+        require_owner()
+        install_reader(binding['password'], os.environ['STAGING_PRODUCT_READER_PASSWORD'], PRODUCT_RELATIONS)
+        print(json.dumps(dict(private_reader_install=dict(role=READER, readable_tables=len(PRODUCT_RELATIONS),
+                                                         writable_tables=0))), flush=True)
+        return
     if task in ('verify-product-surfaces', 'inspect-product-reads'):
         from sync_v3.staging_product_delivery import verify_product_surfaces
         result = verify_product_surfaces(binding['password'], os.environ['STAGING_PRODUCT_GENERATION'],
@@ -256,9 +272,14 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read'))
     args = parser.parse_args()
     try:
-        (bootstrap if args.operation == 'bootstrap' else acquire)(os.environ['STAGING_WORKER_PASSWORD'])
+        if args.operation == 'read':
+            from sync_v3.staging_reader import serve_edition
+            result = serve_edition(os.environ['STAGING_PRODUCT_READER_PASSWORD'], os.environ['STAGING_PRODUCT_GENERATION'])
+            print(json.dumps(dict(private_reader_edition=result)), flush=True)
+        else:
+            (bootstrap if args.operation == 'bootstrap' else acquire)(os.environ['STAGING_WORKER_PASSWORD'])
     except psycopg2.Error as exc:
         parser.exit(1, f'Staging database operation failed ({exc.pgcode or type(exc).__name__}).\n')
