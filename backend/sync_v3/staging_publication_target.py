@@ -373,7 +373,8 @@ def project_roster_views(worker_password):
                     if existing and team == 108 and day > PLAYED_DAY:
                         matched_departure_evidence(team, 502032, day, bodies, existing)
                 clubs += 1
-            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired,\n                                    credited_membership=project_credited_membership(day, candidates))
+            result[str(day)] = dict(clubs=clubs, views=clubs*4, newly_acquired=acquired,
+                                    credited_membership=project_credited_membership(day, candidates))
     return result
 
 
