@@ -109,7 +109,8 @@ def played_batch(worker, current_day, current_report):
                           count(DISTINCT f.endpoint) FILTER (WHERE f.endpoint LIKE '/game/%%/boxscore')
                        FROM candidate.jobs j JOIN candidate.attempts a ON a.job_id=j.id
                        JOIN candidate.fetches f ON f.token=a.token WHERE j.budget='historical'
-                       AND j.product_date=%s AND j.payload->>'capture' IS NULL AND f.outcome='received'
+                       AND j.product_date=%s AND j.payload->>'capture' IS NULL
+                       AND NOT (j.payload ? 'eligibility_recovery') AND f.outcome='received'
                        AND NOT EXISTS (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""", (PLAYED_DAY,))
         requests, pitchers, clubs, finals = cur.fetchone()
     if set(result['jobs']) == {'done'} and (requests, pitchers, clubs, finals) != (926, 371, 30, 10):
