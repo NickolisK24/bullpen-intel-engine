@@ -3,6 +3,7 @@
 Called by a fixture with a fresh target session and a transaction-idle source
 owner connection supplied by isolated_cluster. No deployed caller or scheduler.
 """
+from datetime import date, datetime
 import re
 
 from flask import current_app
@@ -14,6 +15,7 @@ from models.team_state_publication_proof import TeamStatePublicationProof
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
+from sync_v3.acquisition_receipt import played_day_acquisition
 from sync_v3.generation import _inspect
 from sync_v3.product_reads import _league
 from utils.db import db
@@ -77,6 +79,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
         # The sandbox owner only holds the table lock. Read as the existing reviewer.
         cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
         cur.execute('LOCK TABLE candidate.core_selections IN SHARE MODE NOWAIT')
+        if sync_run_id is None:
+            cur.execute('LOCK TABLE candidate.jobs IN SHARE MODE NOWAIT')
         cur.execute('SET LOCAL ROLE sync_v3_reviewer')
         league = _league(cur, None, None)
         binding = selection_receipt(league, revision, generation)
@@ -88,15 +92,28 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id):
             snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD, is_published=True
         ).one()
         receipt = dict(binding, predecessor=predecessor)
+        if sync_run_id is None:
+            receipt['acquisition'] = played_day_acquisition(cur, date.fromisoformat(binding['data_through']))
         previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
         if previous_binding.get('generation') == generation:
-            if previous_binding != receipt or prior.sync_run_id != sync_run_id:
+            if previous_binding != receipt or (sync_run_id is not None and prior.sync_run_id != sync_run_id):
                 raise ValueError('The selected generation already has a different publication receipt')
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
             raise ValueError('Trusted publication predecessor changed')
-        run = db.session.get(SyncRun, sync_run_id)
+        if sync_run_id is None:
+            acquisition = receipt['acquisition']
+            run = SyncRun(job_name='sync_v3_acquisition_rehearsal', source='sync_v3_rehearsal', status='success',
+                          stage='acquired', latest_workload_date=date.fromisoformat(acquisition['represented']),
+                          started_at=datetime.fromisoformat(acquisition['started_at']).replace(tzinfo=None),
+                          completed_at=datetime.fromisoformat(acquisition['completed_at']).replace(tzinfo=None),
+                          records_processed=acquisition['jobs'])
+            db.session.add(run)
+            db.session.flush()
+            sync_run_id = run.id
+        else:
+            run = db.session.get(SyncRun, sync_run_id)
         if (run is None or run.status != 'success' or run.published_dashboard_snapshot_id is not None
                 or str(run.latest_workload_date) != receipt['data_through']
                 or str(prior.data_through) > receipt['data_through']):
@@ -123,7 +140,6 @@ def main():
     import argparse
     import json
     from contextlib import closing
-    from datetime import date
     import os
     from pathlib import Path
     import socket
@@ -138,7 +154,10 @@ def main():
     parser.add_argument('--revision', type=int, required=True)
     parser.add_argument('--generation', required=True)
     parser.add_argument('--predecessor', type=int, required=True)
-    parser.add_argument('--sync-run', type=int, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--sync-run', type=int)
+    source.add_argument('--source-acquisition', action='store_true',
+                        help='Use the selected date’s settled v3 acquisition in the disposable target')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
