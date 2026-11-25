@@ -1,5 +1,7 @@
 """Calculate relief workload only inside an explicitly covered baseball-date window."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -16,7 +18,7 @@ from services.public_team_relief_work import (
 )
 from services.workload_appearance import is_workload_appearance_log
 from sync_v3.discovery import calendar_requests
-from sync_v3.dependencies import consult
+from sync_v3.dependencies import capture_reads, consult, include_reads
 from sync_v3.evidence import latest_source_status, replay
 from sync_v3.rosters import dated_pitcher_sources, roster_on
 from sync_v3.schedule_context import missing_listings
@@ -129,8 +131,31 @@ def _load_calendars(cur, through, scopes):
     return calendars
 
 
+_shared_calendar = ContextVar('private_batch_calendar', default=None)
+
+
+@contextmanager
+def share_league_calendar(cur):
+    # The caller owns one serializable transaction covering the entire group.
+    token = _shared_calendar.set((cur, {}))
+    try:
+        yield
+    finally:
+        _shared_calendar.reset(token)
+
+
 def load_calendar(cur, through, *, team=None):
-    return _load_calendars(cur, through, (team,))[team]
+    shared = _shared_calendar.get()
+    if team is not None or shared is None or shared[0] is not cur:
+        return _load_calendars(cur, through, (team,))[team]
+    cache = shared[1]
+    if through not in cache:
+        with capture_reads(cur) as reads:
+            calendar = _load_calendars(cur, through, (None,))[None]
+        cache[through] = calendar, reads
+    calendar, reads = cache[through]
+    include_reads(cur, reads)
+    return calendar
 
 
 def load_club_calendars(cur, through):
