@@ -370,7 +370,7 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/schedule_ingestion.py': {
         'digest_after':
-            '17de0e404dd627f86acb8aeab64a34ba892fd96251d709ee919a2a3287823ece',
+            '323b15a5fbcb56fc89df0896fdcb0d47776df43428c6e60453e5a0f79ab73fef',
         'change': (
             'Schedule finality persistence (SyncRun 92585): ingest_games now '
             'declares transaction-local schedule ownership '
@@ -393,7 +393,11 @@ PACKAGE_MODIFIED_MODULES = {
             'response, observes and (on a later confirming response) retires '
             'stored postseason if-necessary games MLB stopped listing, as '
             'cancelled rows (code RETIRED) in both schedule tables within the '
-            'same transaction; any other absence is reported and changes nothing'
+            'same transaction; any other absence is reported and changes nothing. '
+            'The isolated v3 schedule rehearsal uses the same writer with the '
+            'retained acquisition time for freshness, a separate database clock '
+            'for the fence audit and atomic failure handling. Live ingest_games '
+            'continues to use its original clock and error handling.'
         ),
         # Stored schedule facts for adopted games now follow authoritative MLB
         # transitions instead of freezing at their pre-adoption state, which is
