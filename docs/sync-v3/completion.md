@@ -1,5 +1,13 @@
 # Sync v3 acceptance ledger
 
+## Public production verification command
+
+At 23:13 UTC the public API served legacy snapshot 5848 / sync 98841. The League, Tonight and all 30 Board cores agreed on the edition, workload through October 28 and availability on October 29. Tonight returned zero games. The read-only check took 37.15 seconds, including a second League read after the individual Boards. Run from `backend` with the intended snapshot and sync-run IDs. For the production handoff, pass the independent v3 source receipt with `--binding FILE` to check the expected club states and game identities.
+
+```bash
+python -m scripts.verify_public_sync_edition --base-url https://baseballos-api.onrender.com --snapshot 5848 --sync 98841
+```
+
 ## November 25 competitive primary date selection
 
 Private Render run `1795646989` selected the August 28 workload cutoff and August 29 availability from the official 2017 season and daily schedules on a pregame invocation. Independent postgame run `1795647201` started from August 28, confirmed the settled slate and selected the same generation, `d5e6b09de51a13e165a2834ca12b78c4cc0ca32449c421f2032bd5ea355fcf79`. Both reviews matched the latest inventory for all 30 clubs and 1,854 snapshots, with zero missing scopes. Source review took 118.42 and 110.04 seconds respectively. These runs exercised cutoff selection and intelligence review. Live-date run `1795647415` on revision `ca4b68206b6e1f1c2b5ec827d0e846e1aa20827a` refreshed current acquisition and independently selected October 28 workload, October 29 availability and the same season-complete generation serving private snapshot 131. Competitive projection, correction and publication through the independent scheduled primary still require verification. [Private Render runs](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
