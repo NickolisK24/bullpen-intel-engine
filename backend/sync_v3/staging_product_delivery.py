@@ -8,7 +8,7 @@ from time import CLOCK_MONOTONIC, clock_gettime, perf_counter
 
 from sqlalchemy import URL, text
 
-from sync_v3.render_staging import HOST, OWNER, PLAYED_DAY, connect
+from sync_v3.render_staging import HOST, OWNER, connect
 from sync_v3.staging_publication_target import TARGET
 
 
@@ -135,7 +135,7 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                     or review['latest_inventory_digest'] != digest):
                 raise ValueError(f'Generation review withheld: {review["status"]} {review["reason_codes"]}')
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
-                    or (not offseason and league['data_through'] != str(PLAYED_DAY)) or league['selection_revision'] is not None):
+                    or not league['data_through'] or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
             cur.execute("""SELECT manifest->'next_slate'->'games',manifest->'transaction_source'
                            FROM candidate.generations WHERE digest=%s""", (digest,))
@@ -145,6 +145,13 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                 reviewed_board_populations(cur, worker_password, user, digest, extra)
             if offseason and official_slate != []:
                 raise ValueError('Offseason candidate lacks a qualified empty availability-date slate')
+            if not offseason:
+                from sync_v3.generation import generation_date_decision
+                represented = date.fromisoformat(league['data_through'])
+                reference = date.fromisoformat(league['availability_reference'])
+                dates = generation_date_decision(cur, represented, reference)
+                if dates['status'] != 'aligned' or dates['availability_reference'] != reference.isoformat():
+                    raise ValueError('Competitive candidate lacks its independently supported product date')
             if not offseason and (not transactions or transactions['outcome'] != 'received' or transactions['reason']
                     or not transactions.get('revisions_digest')):
                 raise ValueError('Archived product edition lacks a qualified transaction receipt')

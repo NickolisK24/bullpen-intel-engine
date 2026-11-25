@@ -839,18 +839,19 @@ def recover_private_readiness(worker_password, *, budget_seconds):
                     withheld=blocked, elapsed_seconds=monotonic()-started)
 
 
-def advance_private_generation(worker_password, *, budget_seconds=90):
+def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
     from sync_v3.current_worker import verify_target
     from sync_v3.generation import build_batch, generation_date_decision, verify_generation
     from sync_v3.render_staging import PLAYED_DAY, connect
 
-    as_of = PLAYED_DAY + timedelta(days=1)
+    workload_day = workload_day or PLAYED_DAY
+    as_of = as_of or workload_day + timedelta(days=1)
     with closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         with source, source.cursor() as cur:
-            decision = generation_date_decision(cur, PLAYED_DAY, as_of)
+            decision = generation_date_decision(cur, workload_day, as_of)
         if decision['reason']:
             return dict(decision=decision, scopes_built=0)
         started = monotonic()
@@ -860,7 +861,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                                   AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
                            FROM candidate.generations WHERE represented=%s
                            AND manifest->>'contract'='candidate_generation_inventory_v1'
-                           ORDER BY creation_xid DESC LIMIT 1''', (PLAYED_DAY,))
+                           ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
             previous = cur.fetchone()
         digest = previous[0] if previous else None
         if previous and previous[1]:
@@ -872,7 +873,7 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                             snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
             digest = None
         while True:
-            batch = build_batch(source, PLAYED_DAY, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
+            batch = build_batch(source, workload_day, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']
             count += len(batch['processed'])
             if not batch['processed'] and digest == batch['before']:

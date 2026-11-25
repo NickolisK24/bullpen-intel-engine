@@ -46,6 +46,18 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
+    if task == 'prepare-dated-primary':
+        from sync_v3.primary_date import prepare
+        today = datetime.now(ZoneInfo('America/New_York')).date()
+        requested = os.environ.get('STAGING_PRIMARY_BASEBALL_DATE')
+        day = date.fromisoformat(requested) if requested else today
+        if day > today:
+            raise ValueError('A primary edition cannot use a future source calendar')
+        with closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = prepare(source, password, day, after_finals=os.environ.get('STAGING_PRIMARY_PHASE')=='postgame')
+        print(json.dumps(dict(private_primary_date=result)), flush=True)
+        return
     if task == 'run-current-offseason':
         import resource
         started_at = datetime.now(timezone.utc)
