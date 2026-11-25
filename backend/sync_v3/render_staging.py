@@ -108,11 +108,22 @@ def bootstrap(password):
                 raise ValueError('A new retained transaction receipt did not advance the generation')
         print(json.dumps(dict(private_transaction_recheck=result)), flush=True)
         return
-    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'project-offseason-competition', 'project-offseason-rosters'):
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation', 'project-eligibility', 'project-roster-provenance', 'verify-product-surfaces', 'inspect-product-reads', 'install-product-reader', 'inspect-publication-access', 'install-product-publisher', 'project-offseason-competition', 'project-offseason-rosters', 'recover-offseason-board-history'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task == 'recover-offseason-board-history':
+        from services.mlb_api import MLBApiClient
+        from sync_v3.staging_board_history import recover
+        from sync_v3.staging_product_delivery import private_app
+        client = MLBApiClient()
+        with private_app(binding['password']).app_context(), closing(client.session), closing(connect('sync_v3_worker', password)) as source:
+            verify_target(source)
+            result = recover(source, client, int(os.environ['STAGING_BOARD_CLUB']),
+                             int(os.environ.get('STAGING_BOARD_AFTER', '0')), os.environ['STAGING_PRODUCT_GENERATION'])
+        print(json.dumps(dict(private_board_history=result)), flush=True)
+        return
     if task == 'project-offseason-rosters':
         from sync_v3.staging_product_delivery import private_app
         from sync_v3.staging_postseason import qualify_offseason_edition
