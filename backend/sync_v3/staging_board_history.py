@@ -35,7 +35,7 @@ def _acquire_gap(source, client, team, player, through, availability, exc):
     raise exc
 
 
-def _project_sample(source, player, sample, final_cache, projected, availability):
+def _project_sample(source, player, sample, final_cache, projected, through, availability):
     from models.fatigue_score import FatigueScore
     from models.game_log import GameLog
     from models.pitcher import Pitcher
@@ -135,7 +135,7 @@ def recover(source, client, team, after, digest, *, seconds=185):
                     cache = {}
                     sample, _, _ = _eligibility_sample(cur, team, player, through, listed, POSTSEASON_GAME_TYPES,
                                                        cache, roster_day=availability)
-                count = _project_sample(source, player, sample, cache, projected, availability)
+                count = _project_sample(source, player, sample, cache, projected, through, availability)
                 verified.append(dict(mlb=player, games=count))
                 after = player
                 break
