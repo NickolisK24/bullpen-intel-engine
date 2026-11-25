@@ -132,16 +132,19 @@ def bootstrap(password):
     if task in ('recover-offseason-board-history', 'recover-next-offseason-board'):
         from services.mlb_api import MLBApiClient
         from sync_v3.staging_board_history import recover, recover_next
-        from sync_v3.staging_product_delivery import private_app
+        from sync_v3.staging_product_delivery import observe_product_relations, private_app
         client = MLBApiClient()
         with private_app(binding['password']).app_context(), closing(client.session), closing(connect('sync_v3_worker', password)) as source:
             verify_target(source)
+            product_access = {}
+            observe_product_relations(product_access)
             digest = os.environ['STAGING_PRODUCT_GENERATION']
             if task == 'recover-next-offseason-board':
                 result = recover_next(source, client, digest)
             else:
                 result = recover(source, client, int(os.environ['STAGING_BOARD_CLUB']),
                                  int(os.environ.get('STAGING_BOARD_AFTER', '0')), digest)
+            result['product_access'] = {op: sorted(tables) for op, tables in product_access.items()}
         print(json.dumps(dict(private_board_history=result)), flush=True)
         return
     if task == 'project-offseason-rosters':
