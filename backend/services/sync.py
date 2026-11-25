@@ -2112,6 +2112,7 @@ def process_completed_game_for_postgame_refresh(
     force: bool = False,
     plan_only: bool = False,
     boxscore=None,
+    require_official_pitching_credit=False,
 ) -> dict:
     """Fetch one final game once and reconcile its pitching lines idempotently.
 
@@ -2189,6 +2190,9 @@ def process_completed_game_for_postgame_refresh(
         boxscore = mlb_client.get_game_boxscore(game_pk)
     finality = classify_game_finality(game, boxscore=boxscore, require_boxscore=True)
     pitching_lines = _extract_pitching_lines_from_boxscore(boxscore)
+    if require_official_pitching_credit:
+        from sync_v3.pitching_credit import uncredited_pitching_line
+        pitching_lines = [line for line in pitching_lines if not uncredited_pitching_line(line['stats'])]
     pitcher_order = _pitcher_order_by_side(boxscore)
     player_ids = sorted({
         player_id

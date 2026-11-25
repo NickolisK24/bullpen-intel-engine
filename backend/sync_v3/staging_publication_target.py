@@ -248,7 +248,8 @@ def project_final_appearances(finals, day, *, include_context=True):
         for game, box, facts, extra in finals:
             def process(plan_only):
                 return process_completed_game_for_postgame_refresh(
-                    game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only)
+                    game, schedule_date=day, boxscore=box, force=True, plan_only=plan_only,
+                    require_official_pitching_credit=True)
             planned = process(True)
             summary = planned['reconciliation_summary']
             if planned['incomplete_reason'] or summary['rows_blocked'] or summary['rows_planned'] != len(facts):
