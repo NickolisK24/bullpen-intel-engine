@@ -25,7 +25,7 @@ def enqueue(cur, identity, payload, now, *, budget='current', priority=100,
     return existing[0]
 
 
-def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None, before_product_date=None, prefer_game_updates=False):
+def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_date=None, capture=None, before_product_date=None, prefer_game_updates=False, only_job_id=None):
     if before_product_date is not None and (budget != 'current' or product_date is not None or capture is not None):
         raise ValueError('Prior-day recovery requires unscoped current-budget work')
     if not timedelta(0) < lease <= timedelta(hours=1):
@@ -34,7 +34,9 @@ def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_dat
     for cleanup_remaining in range(16, -1, -1):
         cur.execute("""SELECT j.id,j.payload,j.token,j.attempts,j.max_attempts
                        FROM candidate.jobs j
-                       WHERE j.budget=%s AND (%s::date IS NULL OR j.product_date=%s)
+                       WHERE j.budget=%s AND ((%s::bigint IS NULL AND NOT (j.payload ? 'eligibility_recovery'))
+                                             OR j.id=%s)
+                       AND (%s::date IS NULL OR j.product_date=%s)
                        AND (%s::date IS NULL OR (j.product_date < %s AND j.payload ? 'continuation'))
                        AND (j.payload->>'capture') IS NOT DISTINCT FROM %s
                        AND (%s OR j.attempts < j.max_attempts)
@@ -48,7 +50,7 @@ def claim(cur, now, *, budget='current', lease=timedelta(minutes=5), product_dat
                               OR j.payload->>'endpoint' ~ '^(/game/[0-9]+/boxscore|/api/v1[.]1/game/[0-9]+/feed/live)$'
                           ) THEN 0 ELSE 1 END,
                           j.available_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED""",
-                    (budget, product_date, product_date, before_product_date, before_product_date, capture, cleanup_remaining > 0, now, now, prefer_game_updates))
+                    (budget, only_job_id, only_job_id, product_date, product_date, before_product_date, before_product_date, capture, cleanup_remaining > 0, now, now, prefer_game_updates))
         row = cur.fetchone()
         if not row:
             return None
