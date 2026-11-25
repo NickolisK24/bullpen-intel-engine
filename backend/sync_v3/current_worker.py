@@ -116,7 +116,7 @@ def main():
     args = parser.parse_args()
     recovery_team = args.recover_eligibility or args.recover_readiness or args.recover_performance
     if recovery_team and (args.active_profiles or args.depth_team or args.postseason_round or args.round_totals):
-        parser.error('Eligibility recovery derives the source scope from the retained evidence')
+        parser.error('Historical recovery derives the source scope from the retained evidence')
     if args.postseason_round and not args.active_profiles:
         parser.error('--postseason-round requires --active-profiles')
     if args.round_totals and not args.postseason_round:

@@ -218,3 +218,18 @@ def test_performance_recovery_leaves_unsupported_refusals_intact(represented, re
     through = date(2026, 7, 29)
     assert recovery._performance_gaps(None, 111, through, result, unexpected) == reason
     assert recovery._performance_gaps(None, 111, through, dict(reason=None, dates={}), unexpected) == 'no_supported_relief_outings'
+
+
+def test_source_disagreement_preserves_recovery_for_independent_outings(monkeypatch):
+
+    recovered_days = []
+    def capture(cur, day, missing, *, team):
+        recovered_days.append((day, team))
+    monkeypatch.setattr(recovery, '_missing_day_finals', capture)
+    through = date(2017, 8, 28)
+    report = dict(reason=None, dates={
+        '2017-05-01': dict(reason=None, source_conflicts=[{'fields': ['batters_faced']}]),
+        '2017-06-02': dict(reason='missing_compatible_final', outings=[[456, 102]]),
+    })
+    assert recovery._performance_gaps(None, 112, through, report, None) == 'official_performance_source_conflict'
+    assert recovered_days == [(date(2017, 6, 2), 112)]

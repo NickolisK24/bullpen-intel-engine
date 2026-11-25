@@ -52,10 +52,13 @@ def _performance_gaps(cur, team, through, report, missing):
     days = report.get('dates') or {}
     if not days:
         return 'no_supported_relief_outings'
-    if any(row.get('source_conflicts') for row in days.values()):
-        return 'official_performance_source_conflict'
     unresolved = None
     for represented, row in sorted(days.items()):
+        if row.get('source_conflicts'):
+            # The metric qualifier handles the disputed fields. Other outing
+            # dates can still supply evidence for independent season metrics.
+            unresolved = 'official_performance_source_conflict'
+            continue
         reason = row['reason']
         if reason:
             unresolved = unresolved or reason
@@ -139,7 +142,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     name = verify_target(connection)
     today = clock().astimezone(ZoneInfo('America/New_York')).date()
     if team not in MLB_TEAM_IDS or not 1 <= max_jobs <= 256 or through >= today:
-        raise ValueError('Historical eligibility recovery requires an MLB club, a completed date and a bounded job limit')
+        raise ValueError('Historical evidence recovery requires an MLB club, a completed date and a bounded job limit')
     outcomes = []
     waiting = False
     while True:
