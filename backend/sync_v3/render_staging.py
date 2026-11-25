@@ -36,11 +36,20 @@ def bootstrap(password):
         print(json.dumps(dict(generation=result, peak_rss_kib=usage.ru_maxrss,
                               process_cpu_seconds=usage.ru_utime+usage.ru_stime)), flush=True)
         return
-    if task != 'bootstrap':
+    if task not in ('bootstrap', 'publish-generation', 'rollback-generation'):
         raise ValueError('Unsupported private installer operation')
     binding = parse_dsn(os.environ['STAGING_OWNER_DSN'])
     if (binding.get('host'), binding.get('dbname'), binding.get('user')) != (HOST, DATABASE, OWNER):
         raise ValueError('Render owner binding differs from the approved staging instance')
+    if task in ('publish-generation', 'rollback-generation'):
+        from sync_v3.staging_product_delivery import exercise, exercise_rollback
+        digest = os.environ['STAGING_PRODUCT_GENERATION']
+        if task == 'publish-generation':
+            report = exercise(binding['password'], password, digest)
+        else:
+            report = exercise_rollback(binding['password'], digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']))
+        print(json.dumps(dict(private_product=report)), flush=True)
+        return
     with closing(connect(OWNER, binding['password'])) as owner:
         with owner.cursor() as cur:
             cur.execute("""SELECT current_database(),current_user,current_setting('server_version_num')::int/10000,
