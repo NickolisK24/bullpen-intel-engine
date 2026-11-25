@@ -1,6 +1,7 @@
 """Install the product schema in a private logical database on the approved staging instance."""
 import json
 import os
+import resource
 from contextlib import closing
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -58,15 +59,17 @@ def install_target(password, worker_password):
             if read_current_heads(db.engine) != (expected,):
                 upgrade(directory=migrations, revision=expected)
             verify_heads(read_current_heads(db.engine), expected)
+            schedule = project_played_schedule(worker_password)
+            roster_report = project_roster_views(worker_password)
+            workload_window = project_workload_window(worker_password)
             with db.engine.connect() as conn:
                 sizes = conn.execute(text("""SELECT pg_database_size(current_database()),
                     (SELECT count(*) FROM public.dashboard_snapshots),
                     (SELECT count(*) FROM public.pitchers)""")).one()
-            schedule = project_played_schedule(worker_password)
-            roster_report = project_roster_views(worker_password)
-            workload_window = project_workload_window(worker_password)
             db.engine.dispose()
-    return dict(database=TARGET, migration=expected, database_bytes=sizes[0],
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return dict(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime,
+                database=TARGET, migration=expected, database_bytes=sizes[0],
                 snapshots=sizes[1], pitchers=sizes[2], schedule=schedule, rosters=roster_report, workload_window=workload_window, elapsed_seconds=monotonic()-start)
 
 
@@ -471,11 +474,10 @@ def bind_active_staff(staff):
 def project_workload_window(worker_password):
     """Establish the expected final-game population before evaluating workload completeness."""
     from datetime import timedelta
-    from hashlib import sha256
     from services.appearance_ledger import appearance_ledger_publish_block, ledger_window_days
     from services.mlb_api import MLBApiClient
     from scripts.rehearse_selected_schedule import reconcile_schedule
-    from sync_v3 import canonical, evidence, queue
+    from sync_v3 import evidence
     from sync_v3.current_worker import verify_target
     from sync_v3.discovery import calendar_requests
     from sync_v3.render_staging import PLAYED_DAY, connect
@@ -488,22 +490,7 @@ def project_workload_window(worker_password):
             day = PLAYED_DAY + timedelta(days=offset)
             request = calendar_requests(day)[0]
             params = request.params()
-            with source, source.cursor() as cur:
-                oid = evidence.latest_qualified_source(cur, request.endpoint, params)
-                if oid is None:
-                    payload = dict(endpoint=request.endpoint, params=params, eligibility_recovery=True)
-                    key = sha256(evidence.encode_json(['eligibility_recovery', str(day), payload])).hexdigest()
-                    cur.execute('SELECT clock_timestamp()')
-                    at, = cur.fetchone()
-                    job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
-                    claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
-            if oid is None:
-                if not claim:
-                    raise ValueError(f'Schedule acquisition pending for {day}')
-                oid, outcome = evidence.execute(source, claim, client._get,
-                    on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, day))
-                if outcome != 'received':
-                    raise ValueError(f'Schedule recovery for {day} returned {outcome}')
+            oid = acquire_window_source(source, client, day, request.endpoint, params)
             with source, source.cursor() as cur:
                 obs = evidence.replay(cur, oid)
             with db.session.begin():
@@ -514,6 +501,73 @@ def project_workload_window(worker_password):
         reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY)
         if ledger is None:
             raise ValueError('Appearance ledger unavailable for private publication')
-    return dict(receipts=receipts, reason=reason, expected_games=ledger['expected_games'],
+    recovered = 0
+    if ledger['missing_games']:
+        recovered = recover_missing_finals(worker_password, receipts, ledger['missing_games'])
+        with db.session.begin():
+            reason, ledger = appearance_ledger_publish_block(end_date=PLAYED_DAY)
+            if ledger is None:
+                raise ValueError('Appearance ledger unavailable after recovery')
+    return dict(receipts=receipts, recovered=recovered, reason=reason, expected_games=ledger['expected_games'],
                 represented_games=ledger['represented_games'], stored_appearances=ledger['stored_appearances'],
                 missing_games=len(ledger['missing_games']))
+
+
+def acquire_window_source(source, client, day, endpoint, params):
+    from hashlib import sha256
+    from sync_v3 import canonical, evidence, queue
+    with source, source.cursor() as cur:
+        oid = evidence.latest_qualified_source(cur, endpoint, params)
+        if oid is None:
+            payload = dict(endpoint=endpoint, params=params, eligibility_recovery=True)
+            key = sha256(evidence.encode_json(['eligibility_recovery', str(day), payload])).hexdigest()
+            cur.execute('SELECT clock_timestamp()')
+            at, = cur.fetchone()
+            job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
+            claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
+    if oid is None:
+        if not claim:
+            raise ValueError(f'Acquisition pending for {day}')
+        oid, outcome = evidence.execute(source, claim, client._get,
+            on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, day))
+        if outcome != 'received':
+            raise ValueError(f'Source recovery for {day} returned {outcome}')
+    return oid
+
+
+def recover_missing_finals(worker_password, receipts, missing):
+    """Commit a verified final at a time. A later execution resumes at the first missing game."""
+    from datetime import date
+    from services.mlb_api import MLBApiClient
+    from sync_v3 import evidence
+    from sync_v3.current_worker import verify_target
+    from sync_v3.render_staging import connect
+
+    client = MLBApiClient()
+    started = monotonic()
+    recovered = 0
+    with closing(client.session), closing(connect('sync_v3_worker', worker_password)) as source:
+        verify_target(source)
+        for entry in sorted(missing, key=lambda item: (item['game_date'], item['game_pk'])):
+            if monotonic() - started > 120:
+                break
+            day = date.fromisoformat(entry['game_date'])
+            pk = entry['game_pk']
+            schedule_id = receipts[str(day)]
+            with source, source.cursor() as cur:
+                schedule = evidence.replay(cur, schedule_id)
+                game, = [g for d in schedule.body['dates'] for g in d['games'] if g['gamePk'] == pk]
+            bodies = {}
+            for key, path in [('box', 'boxscore'), ('linescore', 'linescore'), ('play_by_play', 'playByPlay')]:
+                oid = acquire_window_source(source, client, day, f'/game/{pk}/{path}', {})
+                with source, source.cursor() as cur:
+                    if key == 'box':
+                        cur.execute("""SELECT DISTINCT r.facts FROM candidate.confirmations c
+                            JOIN candidate.revisions r ON r.id=c.revision_id
+                            WHERE c.domain='final' AND c.identity=%s AND c.context_id=%s AND c.source_id=%s""",
+                                    (str(pk), schedule_id, oid))
+                        facts, = cur.fetchone()
+                    bodies[key] = evidence.replay(cur, oid).body
+            project_final_appearances([(game, bodies.pop('box'), facts, bodies)], day)
+            recovered += 1
+    return recovered
