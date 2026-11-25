@@ -964,3 +964,63 @@ def test_offline_replay_checks_the_pair_and_normalized_payload_digest(app):
             with pytest.raises(ValueError, match='digest or count mismatch'):
                 replay_membership(row)
         db.session.rollback()
+
+
+def test_frozen_board_ignores_retained_scores_for_inactive_directory_pitchers(monkeypatch):
+    from services import public_serving_authority as serving
+
+    active = (object(), SimpleNamespace(id=1, active=True))
+    departed = (object(), SimpleNamespace(id=2, active=False))
+    monkeypatch.setattr(serving, 'latest_fatigue_rows', lambda: [active, departed])
+
+    class PopulationChecked(Exception):
+        pass
+
+    def classify(rows, reference_date):
+        assert rows == [active]
+        assert reference_date == REFERENCE_DATE
+        raise PopulationChecked
+
+    monkeypatch.setattr(serving, 'current_availability_records', classify)
+    with pytest.raises(PopulationChecked):
+        serving.build_frozen_team_board_package({'freshness': {'reference_date': str(REFERENCE_DATE)}})
+
+
+def test_selected_departure_preserves_attribution_and_refuses_conflict(fenced_database_url):
+    from models.source_observation import SourceObservation
+    from scripts.rehearse_selected_roster import matched_departure_evidence, reconcile_departure
+
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = fenced_database_url
+    db.init_app(app)
+    team = 108
+    player = 502032
+    day = date(2017, 8, 29)
+    rosters = {(team, 'active'): [roster_entry(700001)],
+               (team, '40Man'): [roster_entry(700001), roster_entry(player)]}
+    with app.app_context():
+        seed_pitcher('Active teammate', 700001, team_id=team)
+        run = seed_sync_run()
+        sync_roster_statuses(team_ids=[team], client=CountingRosterClient(rosters=rosters),
+                             snapshot_date=day, sync_run_id=run.id)
+        observations = {row.subject.request_parameters['rosterType']: row for row in SourceObservation.query.all()}
+        bodies = {kind: {'roster': rosters.get((team, kind), [])} for kind in ROSTER_TYPES}
+        evidence, links = matched_departure_evidence(team, player, day, bodies, observations)
+        with pytest.raises(ValueError, match='contents differ'):
+            matched_departure_evidence(team, player, day, {**bodies, 'active': {'roster': []}}, observations)
+        with pytest.raises(ValueError, match='off-active'):
+            matched_departure_evidence(team, 700001, day, bodies, observations)
+        pitcher = seed_pitcher('Off-active pitcher', player, team_id=team)
+        candidate = dict(pitcher=pitcher, team_id=team, snapshot_date=day, evidence=evidence, observation_links=links)
+        db.session.commit()
+        reconcile_departure(candidate, run.id)
+        db.session.rollback()
+        assert not RosterStatusSnapshot.query.filter_by(mlb_id=player).count()
+        reconcile_departure(candidate, run.id)
+        db.session.commit()
+        reconcile_departure(candidate, run.id, verify_only=True)
+        row = RosterStatusSnapshot.query.filter_by(mlb_id=player).one()
+        assert (row.active_roster, row.forty_man_roster, row.sync_run_id) == (False, True, run.id)
+        with pytest.raises(ValueError, match='differs from its dated source'):
+            reconcile_departure({**candidate, 'team_id': 111}, run.id)
+        assert row.team_id == team and row.correction_count == 0

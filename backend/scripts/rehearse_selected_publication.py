@@ -15,6 +15,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
+from scripts.rehearse_selected_roster import prepare_departure, reconcile_departure
 from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
 from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
@@ -128,10 +129,10 @@ def _reconcile_confirmed_finals(cur, finals, represented, run_id):
 
 
 def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False,
-                     reconcile_schedules=False, require_mapped_arms=False):
+                     reconcile_schedules=False, require_mapped_arms=False, roster_departure=None):
     """Keep the selector pinned until the independent target transaction commits."""
     assert_rehearsal_target()
-    if (reconcile_finals or reconcile_schedules) and sync_run_id is not None:
+    if (reconcile_finals or reconcile_schedules or roster_departure) and sync_run_id is not None:
         raise ValueError('Source reconciliation requires the selected v3 acquisition')
     if (not current_app.testing or not current_app.config.get('TEAM_STATE_PUBLICATION_PROOF_REQUIRED')
             or not current_app.config.get('DAILY_EDITION_PUBLICATION_REQUIRED')):
@@ -180,6 +181,10 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
                 identity, observation = pinned_schedule(cur, generation, day)
                 receipt['reconciled_schedules'][str(day)] = identity
                 schedules[day] = observation
+        if roster_departure:
+            roster_receipt, roster_candidate = prepare_departure(
+                cur, generation, date.fromisoformat(binding['availability_reference']), *roster_departure)
+            receipt['dated_roster_departure'] = roster_receipt
         previous_binding = prior.payload.get('v3_rehearsal_selection') or {}
         if previous_binding.get('generation') == generation:
             if previous_binding != receipt or (sync_run_id is not None and prior.sync_run_id != sync_run_id):
@@ -188,6 +193,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
                 _verify_final_lines(cur, finals)
             for day, observation in schedules.items():
                 reconcile_schedule(day, observation, verify_only=True)
+            if roster_departure:
+                reconcile_departure(roster_candidate, prior.sync_run_id, verify_only=True)
             verify_frozen_states(prior, receipt)
             return prior.id
         if prior.id != predecessor:
@@ -213,6 +220,8 @@ def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, r
             _verify_final_lines(cur, finals)
         for day, observation in schedules.items():
             reconcile_schedule(day, observation)
+        if roster_departure:
+            reconcile_departure(roster_candidate, sync_run_id)
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
             sync_run_id=sync_run_id, source='v3_team_state_rehearsal', publish=False,
             commit=False, raise_errors=True,
@@ -259,6 +268,8 @@ def main():
                         help='Populate empty target dates using selected schedule receipts with their acquisition times')
     parser.add_argument('--require-mapped-arms', action='store_true',
                         help='Require identical public IDs for all selected workload and availability arms')
+    parser.add_argument('--reconcile-roster-departure', nargs=2, type=int, metavar=('TEAM', 'MLB_PLAYER'),
+                        help='Fill one missing off-active, forty-man snapshot from matching dated roster receipts')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
     url = urlparse(assert_rehearsal_target())
@@ -289,7 +300,8 @@ def main():
             snapshot = rehearse_handoff(owner, revision=args.revision, generation=args.generation,
                                         predecessor=args.predecessor, sync_run_id=args.sync_run,
                                         reconcile_finals=args.reconcile_finals, reconcile_schedules=args.reconcile_schedule,
-                                        require_mapped_arms=args.require_mapped_arms)
+                                        require_mapped_arms=args.require_mapped_arms,
+                                        roster_departure=args.reconcile_roster_departure)
             # The production hooks recover independently after the trust transaction.
             # Recheck durable rows and public reads because hook failures are nonfatal.
             from scripts.verify_selected_delivery import verify_delivery
