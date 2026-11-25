@@ -8,7 +8,7 @@ from sync_v3 import evidence
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.membership_usage import _eligibility_sample
 from sync_v3.season_deployment import BaselineWithheld
-from sync_v3.staging_publication_target import TARGET, acquire_window_source, project_final_appearances
+from sync_v3.staging_publication_target import TARGET, acquire_window_source, lock_private_fatigue, project_final_appearances
 from utils.db import db
 
 
@@ -100,6 +100,7 @@ def _project_sample(source, client, player, sample, final_cache, projected, thro
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private Board recovery target')
+        lock_private_fatigue()
         pitcher = Pitcher.query.filter_by(mlb_id=player).one()
         games = {r['pk'] for r in sample if r['day'] >= start}
         logs = (GameLog.query.filter(GameLog.pitcher_id==pitcher.id, GameLog.game_date.between(start,score_day),

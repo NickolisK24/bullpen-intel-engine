@@ -892,6 +892,11 @@ def advance_private_generation(worker_password, *, budget_seconds=90):
                 return progress
 
 
+def lock_private_fatigue():
+    # Coordinate the two private score writers without granting UPDATE on dated score history.
+    db.session.execute(text("SELECT pg_advisory_xact_lock(hashtext('baseballos_v3_private_fatigue'))"))
+
+
 def project_archived_fatigue(*, edition_dates=None):
     """Project the archived edition's official roster and calculate its fourteen-day scores."""
     from datetime import datetime, time, timedelta
@@ -914,7 +919,8 @@ def project_archived_fatigue(*, edition_dates=None):
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected historical product target')
-        db.session.execute(text('LOCK TABLE pitchers, roster_status_snapshots, game_logs, fatigue_scores '
+        lock_private_fatigue()
+        db.session.execute(text('LOCK TABLE pitchers, roster_status_snapshots, game_logs '
                                 'IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         rows = (db.session.query(Pitcher, RosterStatusSnapshot)
                 .join(RosterStatusSnapshot, RosterStatusSnapshot.pitcher_id == Pitcher.id)
