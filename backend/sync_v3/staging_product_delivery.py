@@ -1,6 +1,7 @@
 """Publish a reviewed generation only inside the private product rehearsal database."""
 from contextlib import closing
 from datetime import date
+import json
 import os
 import sys
 from time import CLOCK_MONOTONIC, clock_gettime, perf_counter
@@ -89,7 +90,7 @@ def publish(binding):
     from scripts.verify_selected_delivery import verify_tonight_edition
     from services import dashboard_snapshot, sync_metadata
     from services.tonight_read_model import generate_tonight_v1_for_snapshot
-    from services.team_state_vnext_production_proof import observe_committed_publication_proof
+    from services.team_state_vnext_production_proof import TeamStatePublicationIneligible, observe_committed_publication_proof
     from utils.db import db
 
     with db.session.begin():
@@ -118,7 +119,14 @@ def publish(binding):
             published_dashboard_snapshot_id=prior.id).order_by(SyncRun.id)]
         snapshot.payload = dict(snapshot.payload, v3_source_generation=binding, v3_predecessor=prior.id if prior else None,
                                 v3_predecessor_runs=prior_runs)
-        dashboard_snapshot.publish_dashboard_snapshot(snapshot, commit=False)
+        try:
+            dashboard_snapshot.publish_dashboard_snapshot(snapshot, commit=False)
+        except TeamStatePublicationIneligible as exc:
+            evidence = exc.publication_evidence
+            print(json.dumps(dict(private_proof_withheld=dict(
+                workload=evidence['candidate_data_through'], dates=evidence['reference_dates'],
+                clubs=evidence['affected_team_ids'], first_club=evidence['teams'][0]))), flush=True)
+            raise
         if not snapshot.is_published:
             raise ValueError(f'Private trusted publication withheld: {snapshot.error_message}')
         verify_frozen_states(snapshot, binding)
