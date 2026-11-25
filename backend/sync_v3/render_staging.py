@@ -123,6 +123,8 @@ def acquire(password):
     with closing(connect('sync_v3_worker', password)) as worker:
         verify_target(worker)
         before = witness(worker)
+        from sync_v3.staging_postseason import retain
+        print(json.dumps(dict(postseason_archive=retain(worker))), flush=True)
         day = datetime.now(ZoneInfo('America/New_York')).date()
         report = process(worker, day, max_jobs=BATCH_LIMIT if before['first'] else 1, profiles=True)
         after = witness(worker)
