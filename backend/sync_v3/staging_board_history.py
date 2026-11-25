@@ -152,5 +152,15 @@ def recover(source, client, team, after, digest, *, seconds=185):
                 _acquire_gap(source, client, team, player, through, availability, exc)
         if monotonic()-started >= seconds:
             break
+    complete = not any(p > after for p in listed)
+    board = None
+    if complete:
+        from services.availability_population import current_availability_records
+        from services.availability_snapshot import latest_fatigue_rows
+        with db.session.begin():
+            rows = [(score, pitcher) for score, pitcher in latest_fatigue_rows(team_id=team) if pitcher.active]
+            board = sorted(record['pitcher'].mlb_id for record in current_availability_records(rows, reference_date=availability))
+            if not set(board).issubset(listed):
+                raise ValueError(f'Current Board still claims unsupported official club membership for {team}')
     return dict(team=team, through=str(through), availability=ref, roster=len(listed), after_mlb=after,
-                complete=not any(p > after for p in listed), verified=verified, seconds=monotonic()-started)
+                complete=complete, verified=verified, board_mlb_ids=board, seconds=monotonic()-started)
