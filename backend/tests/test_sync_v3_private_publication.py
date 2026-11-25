@@ -233,7 +233,10 @@ def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, m
             with runtime, runtime.cursor() as cur:
                 cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
                             "VALUES ('sync_v3_staging','sync_v3_board_review_111','success','reviewed')")
-            for statement in ("INSERT INTO sync_runs(source,job_name,status,stage) "
+                cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
+                            "VALUES ('sync_v3_staging','sync_v3_roster_reconciliation','success','verified_roster_observations')")
+            for statement in ("SELECT setval('pitchers_id_seq', 300)",
+                              "INSERT INTO sync_runs(source,job_name,status,stage) "
                               "VALUES ('sync_v3_staging','daily_sync','success','reviewed')",
                               "UPDATE sync_runs SET published_dashboard_snapshot_id=1",
                               "INSERT INTO dashboard_snapshots DEFAULT VALUES"):

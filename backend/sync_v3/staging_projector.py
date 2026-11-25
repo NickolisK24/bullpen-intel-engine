@@ -11,10 +11,15 @@ PROJECTOR = 'baseballos_v3_staging_projector'
 READ = {'slate_games', 'compatibility_write_events', 'final_game_versions', 'roster_membership_intervals', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
 INSERT = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
 UPDATE = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games'}
+ROSTER_EVIDENCE = {'source_subjects', 'source_observations', 'source_payload_artifacts', 'source_fetch_attempts'}
+READ |= ROSTER_EVIDENCE | {'roster_status_snapshots'}
+INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots'}
+UPDATE.add('roster_status_snapshots')
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
-      OR (stage='checkpoint' AND job_name ~ '^sync_v3_board_progress_[0-9]+$')))"""
+      OR (stage='checkpoint' AND job_name ~ '^sync_v3_board_progress_[0-9]+$')
+      OR (stage='verified_roster_observations' AND job_name='sync_v3_roster_reconciliation')))"""
 
 
 def verify(cur):
@@ -55,5 +60,15 @@ def recover_boards(password, source_password, digest, *, competition_day=None):
                 competition = project_offseason_competition(source, client, competition_day, scoped=True)
                 db.session.remove()
                 print(json.dumps(dict(private_scoped_competition=competition)), flush=True)
+                from datetime import date
+                from sync_v3.staging_publication_target import project_roster_views, project_archived_fatigue
+                with source, source.cursor() as cur:
+                    cur.execute("SELECT represented, manifest->>'availability_reference' FROM candidate.generations "
+                                "WHERE digest=%s", (digest,))
+                    through, availability = cur.fetchone()
+                dates = through, date.fromisoformat(availability)
+                roster = project_roster_views(source_password, edition_dates=dates, initialized=True)
+                roster['assignments'] = project_archived_fatigue(edition_dates=dates)
+                print(json.dumps(dict(private_scoped_roster=roster)), flush=True)
             result = recover_next(source, client, digest)
     return dict(result, product_writer=PROJECTOR)

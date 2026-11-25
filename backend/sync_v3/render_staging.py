@@ -74,7 +74,7 @@ def bootstrap(password):
         import sys
         # Wait for the independent, resumable Board writer before giving the publisher control.
         projector_env = runtime_environment('STAGING_PROJECTOR_PASSWORD', 'STAGING_WORKER_PASSWORD',
-                                            'STAGING_PRODUCT_GENERATION')
+                                            'STAGING_PRODUCT_GENERATION', 'STAGING_ROSTER_PUBLIC_IDENTITIES')
         projection = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project-before-publish'],
                                     env=projector_env, check=False)
         if projection.returncode == 75:
