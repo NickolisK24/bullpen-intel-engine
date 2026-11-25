@@ -168,7 +168,7 @@ def project_offseason_competition(source, client, day):
     """Replay the dated club finals and official playoff decisions into the private product."""
     from datetime import date
     from sqlalchemy import text
-    from scripts.rehearse_selected_schedule import reconcile_schedule
+    from scripts.rehearse_selected_schedule import reconcile_schedule, retained_makeups
     from services.club_competition_status import resolve_club_competition_status
     from sync_v3 import evidence
     from sync_v3.competition_calendar import competition_status
@@ -191,20 +191,26 @@ def project_offseason_competition(source, client, day):
         for slate in calendar['dates']:
             if any(game['gamePk'] in decisions for game in slate['games']):
                 days.add(date.fromisoformat(slate['date']))
-    rows = 0
-    applied = set()
+    schedules = {}
+    receipts = {}
     for played in sorted(days):
         request = calendar_requests(played)[0]
         receipt = acquire_window_source(source, client, played, request.endpoint, request.params())
         with source, source.cursor() as cur:
-            obs = evidence.replay(cur, receipt)
+            schedules[played] = evidence.replay(cur, receipt)
+            receipts[played] = receipt
+    makeups = retained_makeups(schedules)
+    rows = 0
+    applied = set()
+    for played, obs in schedules.items():
+        with source, source.cursor() as cur:
             finals = []
             for entry in obs.body['dates']:
                 for game in entry['games']:
                     pk = game['gamePk']
-                    if pk not in decisions:
+                    if pk not in decisions or (pk in makeups and played == makeups[pk][0]):
                         continue
-                    qualified, reason = _game_workload(cur, game, played, receipt)
+                    qualified, reason = _game_workload(cur, game, played, receipts[played])
                     if not qualified:
                         raise ValueError(f'Unresolved current final {pk}: {reason}')
                     facts, (box, _) = qualified
@@ -215,7 +221,7 @@ def project_offseason_competition(source, client, day):
         for verify_only in (False, True):
             with db.session.begin():
                 db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
-                reconcile_schedule(played, obs, private_staging=True, verify_only=verify_only)
+                reconcile_schedule(played, obs, private_staging=True, verify_only=verify_only, makeups=makeups)
         if finals:
             rows += project_final_appearances(finals, played, include_context=False)['verified']
     if applied != decisions:
