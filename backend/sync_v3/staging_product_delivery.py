@@ -14,18 +14,16 @@ from sync_v3.staging_publication_target import TARGET
 def source_receipt(worker_password, digest):
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3.current_worker import verify_target
-    from sync_v3.generation import _inspect
     from sync_v3.product_reads import _league
 
     with closing(connect('sync_v3_worker', worker_password)) as source:
         verify_target(source)
         with source, source.cursor() as cur:
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            report = _inspect(cur, digest, compare_latest=True)
-            review = report['selection_review']
+            league = _league(cur, None, digest, compare_latest=True)
+            review = league['selection_review']
             if review['status'] != 'core_comparison_complete' or review['latest_inventory_digest'] != digest:
                 raise ValueError(f'Generation review withheld: {review["status"]} {review["reason_codes"]}')
-            league = _league(cur, None, digest)
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or league['data_through'] != str(PLAYED_DAY) or league['selection_revision'] is not None):
                 raise ValueError('Unexpected private generation scope')
