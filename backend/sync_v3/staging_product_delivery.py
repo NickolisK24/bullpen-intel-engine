@@ -523,8 +523,13 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
                 found = [r['id'] for group in data['search']['groups'] if group['entity_type'] == 'team' for r in group['results']]
                 if team not in found:
                     raise ValueError('Current search lacks the canonical Boston team')
+                public_arms = [a['pitcher_id'] for a in core['active_bullpen']['arms']]
+                arms = db.session.query(Pitcher.id, Pitcher.mlb_id).filter(Pitcher.id.in_(public_arms)).all()
+                if (len(arms) != len(public_arms) or len({mlb for _, mlb in arms}) != len(arms)
+                        or any(not mlb for _, mlb in arms)):
+                    raise ValueError('Current Board arm has no unique MLB identity')
                 return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details'],
-                            product_day=binding['product_day'], team=team)
+                            product_day=binding['product_day'], team=team, board_mlb_ids=sorted(mlb for _, mlb in arms))
             arm = core['active_bullpen']['arms'][0]['pitcher_id']
             player = db.session.get(Pitcher, arm)
             if not player or player.team_id != team:
