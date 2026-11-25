@@ -10,6 +10,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3 import canonical, evidence, queue
 from sync_v3.dependencies import capture_reads
 from sync_v3.discovery import calendar_requests, pitcher_requests
+from sync_v3.group_performance import active_group_performance
 from sync_v3.readiness import represented_readiness
 from sync_v3.workload import _game_workload
 
@@ -25,6 +26,10 @@ def _missing_workload(cur, through, report, reads, missing):
     day = date.fromisoformat(report['gap_date'])
     if not 0 <= (through - day).days < ACTIVE_WINDOW_DAYS:
         return
+    _missing_day_finals(cur, day, missing)
+
+
+def _missing_day_finals(cur, day, missing, *, team=None):
     schedule, _ = calendar_requests(day)
     if missing(day, schedule.endpoint, schedule.params()):
         return
@@ -33,13 +38,40 @@ def _missing_workload(cur, through, report, reads, missing):
         return
     for listing in evidence.replay(cur, receipt).body['dates']:
         for game in listing['games']:
-            if game['gameType'] == 'R' and _game_workload(cur, game, day, receipt)[1] == 'missing_compatible_final':
+            if game['gameType'] != 'R':
+                continue
+            if team is not None and team not in (game['teams']['home']['team']['id'], game['teams']['away']['team']['id']):
+                continue
+            if _game_workload(cur, game, day, receipt)[1] == 'missing_compatible_final':
                 missing(day, f"/game/{game['gamePk']}/boxscore", {})
 
 
-def _needed(cur, team, through, include_workload):
-    with capture_reads(cur) as reads:
-        report = represented_readiness(cur, team, through)
+def _performance_gaps(cur, team, through, report, missing):
+    if report['reason']:
+        return report['reason']
+    days = report.get('dates') or {}
+    if not days:
+        return 'no_supported_relief_outings'
+    if any(row.get('source_conflicts') for row in days.values()):
+        return 'official_performance_source_conflict'
+    unresolved = None
+    for represented, row in sorted(days.items()):
+        reason = row['reason']
+        if reason:
+            unresolved = unresolved or reason
+            day = date.fromisoformat(represented)
+            if (day.year == through.year and day <= through and row['outings']
+                    and reason in ('missing_complete_schedule', 'missing_compatible_final')):
+                _missing_day_finals(cur, day, missing, team=team)
+    return unresolved
+
+
+def _needed(cur, team, through, include_workload, performance=False):
+    if performance:
+        report = active_group_performance(cur, team, through)
+    else:
+        with capture_reads(cur) as reads:
+            report = represented_readiness(cur, team, through)
     competition = report.get('competition') or {}
     if (competition.get('team_id') == team and competition.get('status') == 'season_complete' and report['reason']
             and report['reason'] == competition.get('basis') and report.get('team_state') is None):
@@ -57,7 +89,7 @@ def _needed(cur, team, through, include_workload):
             return True
         return False
 
-    if include_workload and report['reason']:
+    if not performance and include_workload and report['reason']:
         _missing_workload(cur, through, report, reads, missing)
 
     for player, gap in gaps.items():
@@ -94,12 +126,16 @@ def _needed(cur, team, through, include_workload):
                 and classify_status(game['status']).final_status
                 and fields['team_id'] in (game['teams']['away']['team']['id'], game['teams']['home']['team']['id'])):
             missing(day, f"/game/{game['gamePk']}/boxscore", {})
-    return report['reason'], sorted(requests), False
+    reason = _performance_gaps(cur, team, through, report, missing) if performance else report['reason']
+    return reason, sorted(requests), False
 
 
-def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, clock=lambda: datetime.now(timezone.utc)):
+def recover(connection, team, through, *, fetch, max_jobs, include_workload=False, performance=False,
+            clock=lambda: datetime.now(timezone.utc)):
     from sync_v3.current_worker import verify_target
 
+    if include_workload and performance:
+        raise ValueError('Select one historical recovery objective')
     name = verify_target(connection)
     today = clock().astimezone(ZoneInfo('America/New_York')).date()
     if team not in MLB_TEAM_IDS or not 1 <= max_jobs <= 256 or through >= today:
@@ -109,7 +145,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     while True:
         with connection, connection.cursor() as cur:
             cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            reason, requests, season_complete = _needed(cur, team, through, include_workload)
+            reason, requests, season_complete = _needed(cur, team, through, include_workload, performance)
         if not reason or not requests or len(outcomes) >= max_jobs:
             break
         count = len(outcomes)
@@ -135,7 +171,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
     if season_complete:
         status = 'season_complete'
     elif not reason:
-        status = 'ready'
+        status = 'outing_finals_complete' if performance else 'ready'
     elif any(outcome != 'received' for outcome in outcomes):
         status = 'acquisition_failed'
     elif requests and len(outcomes) == max_jobs:
@@ -144,5 +180,7 @@ def recover(connection, team, through, *, fetch, max_jobs, include_workload=Fals
         status = 'awaiting_retry_or_lease'
     else:
         status = 'withheld'
-    return dict(database=name, club=team, through=str(through), status=status, readiness_reason=reason, receipts=outcomes,
-                publication_attempted=False)
+    report = dict(database=name, club=team, through=str(through), status=status, receipts=outcomes,
+                  publication_attempted=False)
+    report['performance_reason' if performance else 'readiness_reason'] = reason
+    return report

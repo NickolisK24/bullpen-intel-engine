@@ -111,8 +111,10 @@ def main():
                         help='Recover only missing historical eligibility evidence for this club and date')
     recovery_modes.add_argument('--recover-readiness', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
                                 help='Also recover the dated schedule and finals required for historical club readiness')
+    recovery_modes.add_argument('--recover-performance', type=int, choices=MLB_TEAM_IDS, metavar='MLB_TEAM_ID',
+                                help='Recover missing official season relief lines for this historical active group')
     args = parser.parse_args()
-    recovery_team = args.recover_eligibility or args.recover_readiness
+    recovery_team = args.recover_eligibility or args.recover_readiness or args.recover_performance
     if recovery_team and (args.active_profiles or args.depth_team or args.postseason_round or args.round_totals):
         parser.error('Eligibility recovery derives the source scope from the retained evidence')
     if args.postseason_round and not args.active_profiles:
@@ -132,10 +134,10 @@ def main():
                 client = MLBApiClient()
                 with closing(client.session):
                     report = recover(connection, recovery_team, args.day, max_jobs=args.max_jobs,
-                                     include_workload=bool(args.recover_readiness),
+                                     include_workload=bool(args.recover_readiness), performance=bool(args.recover_performance),
                                      fetch=lambda endpoint, params: client._get(endpoint, params=params))
                 print(json.dumps(report, sort_keys=True))
-                return 0 if report['status'] in ('ready', 'season_complete', 'batch_limit', 'awaiting_retry_or_lease') else 1
+                return 0 if report['status'] in ('ready', 'outing_finals_complete', 'season_complete', 'batch_limit', 'awaiting_retry_or_lease') else 1
             report = process(connection, args.day, max_jobs=args.max_jobs, profiles=args.active_profiles,
                              depth_teams=args.depth_team, postseason_rounds=args.postseason_round,
                              round_totals=args.round_totals)
