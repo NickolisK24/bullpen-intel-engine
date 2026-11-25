@@ -406,7 +406,7 @@ def project_credited_membership(day, by_player):
     from models.sync_run import SyncRun
     from models.roster_status_snapshot import RosterStatusSnapshot
     from services.primary_roster_inputs import replay_membership
-    from services.roster_status_sync import classify_roster_evidence, persist_missing_exact_roster_status_snapshots
+    from services.roster_status_sync import _declare_roster_ownership, classify_roster_evidence, persist_missing_exact_roster_status_snapshots
 
     with db.session.begin():
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
@@ -433,7 +433,11 @@ def project_credited_membership(day, by_player):
         if report['conflicts'] or report['failure_records']:
             raise ValueError('Dated roster writer refused observations')
         active = 0
-        for candidate in candidates:
+        owner_team = None
+        for candidate in sorted(candidates, key=lambda item: (item['team_id'], item['pitcher'].id)):
+            if candidate['team_id'] != owner_team:
+                owner_team = candidate['team_id']
+                _declare_roster_ownership(owner_team)
             row = RosterStatusSnapshot.query.filter_by(pitcher_id=candidate['pitcher'].id, snapshot_date=day).one()
             kinds = candidate['evidence']['roster_types']
             expected = ('active' in kinds, '40Man' in kinds)
@@ -447,6 +451,11 @@ def project_credited_membership(day, by_player):
                 row.sync_run_id = run.id
             active += int(expected[0])
         if run:
+            db.session.flush()
+            credited = {pid for pid, in db.session.query(RosterStatusSnapshot.pitcher_id).filter_by(
+                snapshot_date=day, sync_run_id=run.id)}
+            if credited != unbound:
+                raise ValueError('Stored roster reconciliation provenance differs from the verified membership')
             run.status = 'success'
             run.stage = 'verified_roster_observations'
             run.records_processed = len(unbound)
