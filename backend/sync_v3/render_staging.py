@@ -53,9 +53,16 @@ def bootstrap(password):
         day = date.fromisoformat(requested) if requested else today
         if day > today:
             raise ValueError('A primary edition cannot use a future source calendar')
+        phase = os.environ.get('STAGING_PRIMARY_PHASE', 'pregame')
+        if phase not in ('pregame', 'postgame'):
+            raise ValueError('Unknown primary synchronization phase')
         with closing(connect('sync_v3_worker', password)) as source:
             verify_target(source)
-            result = prepare(source, password, day, after_finals=os.environ.get('STAGING_PRIMARY_PHASE')=='postgame')
+            if day == today:
+                acquisition = process(source, day, max_jobs=BATCH_LIMIT, profiles=True)
+                if acquisition_failed(acquisition):
+                    raise ValueError('Current acquisition has unresolved failures')
+            result = prepare(source, password, day, after_finals=phase == 'postgame')
         print(json.dumps(dict(private_primary_date=result)), flush=True)
         return
     if task == 'run-current-offseason':
