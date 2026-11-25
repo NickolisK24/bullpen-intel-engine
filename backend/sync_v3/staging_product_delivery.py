@@ -163,10 +163,12 @@ def exercise(password, worker_password, digest):
             if promoted:
                 restore_predecessor(digest, snapshot_id)
             raise
+    with app.app_context():
+        target_bytes = db.session.execute(text('SELECT pg_database_size(current_database())')).scalar_one()
     verified_at = datetime.now(timezone.utc)
     latest = datetime.fromisoformat(binding['last_source_at'])
     return dict(generation=digest, snapshot=snapshot_id, sync_run=run_id, promoted=promoted,
-                modeled_product_date=day, verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
+                target_database_bytes=target_bytes, modeled_product_date=day, verified_at=verified_at.isoformat(), last_source_at=latest.isoformat(),
                 latest_retained_source_to_private_delivery_seconds=(verified_at-latest).total_seconds(),
                 verified_source_seconds=verified_source_seconds, publication_seconds=after_pointer-before_pointer,
                 postcommit_seconds=before_http-after_pointer, http_verification_seconds=after_http-before_http,
@@ -233,6 +235,11 @@ def verify_slate(cards, binding):
 
 
 def http_delivery(app, extra_paths=()):
+    return http_paths(app, ['/api/bullpen/team-states', '/api/bullpen/intelligence/tonight?contract=tonight_v1',
+                            *extra_paths])
+
+
+def http_paths(app, paths):
     from threading import Thread
     from requests import Session
     from werkzeug.serving import make_server
@@ -243,8 +250,7 @@ def http_delivery(app, extra_paths=()):
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            return tuple(client.get(base + path, timeout=45, allow_redirects=False) for path in (
-                '/api/bullpen/team-states', '/api/bullpen/intelligence/tonight?contract=tonight_v1', *extra_paths))
+            return tuple(client.get(base + path, timeout=45, allow_redirects=False) for path in paths)
         finally:
             server.shutdown()
             thread.join()
@@ -316,3 +322,76 @@ def exercise_rollback(password, digest, snapshot_id):
                 raise ValueError('The private API served a generation after rollback to an empty selector')
             counts = dict(withheld_clubs=30, tonight_games=0)
         return dict(rolled_back_snapshot=snapshot_id, restored_snapshot=predecessor, **counts)
+
+def verify_product_surfaces(password, digest):
+    """Read the normal product endpoints against one published staging edition."""
+    from urllib.parse import urlencode
+    from freezegun import freeze_time
+    from models.dashboard_snapshot import DashboardSnapshot
+    from models.pitcher import Pitcher
+    from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+    from utils.db import db
+
+    app = private_app(password)
+    with app.app_context():
+        snapshot = DashboardSnapshot.query.filter_by(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                                                     is_published=True).one()
+        binding = snapshot.payload['v3_source_generation']
+        if snapshot.source != 'v3_private_publication' or binding['generation'] != digest:
+            raise ValueError('Unexpected private product selector')
+        ident = snapshot.id, snapshot.sync_run_id
+        through, day = binding['data_through'], binding['availability_reference']
+        # Boston's archived Board, role sample and departure-independent club identity have retained evidence.
+        team, abbr = 111, 'BOS'
+        game = next(row for row in binding['official_slate'] if team in (row['home'], row['away']))
+        paths = {
+            'league': '/api/bullpen/league', 'stories': '/api/bullpen/stories', 'trust': '/api/bullpen/trust',
+            'board': f'/api/bullpen/teams/{team}/board-v2/core', 'changes': f'/api/bullpen/teams/{team}/changes',
+            'history': f'/api/bullpen/teams/{abbr}/history?season={through[:4]}',
+            'search': '/api/search?q=Boston', 'matchup': f"/api/bullpen/matchups/{game['game_pk']}"}
+        db.session.remove()
+        with freeze_time(f'{day} 12:00:00', real_asyncio=True):
+            data = {}
+            for key, response in zip(paths, http_paths(app, paths.values())):
+                response.raise_for_status()
+                data[key] = response.json()
+            for key in ('league', 'stories', 'trust'):
+                authority = data[key]['publication_authority']
+                if (authority['snapshot_id'], authority['sync_run_id']) != ident or authority['data_through'] != through:
+                    raise ValueError(f'Private {key} cites a different edition')
+            core = data['board']
+            identity = core['publication_identity']
+            if ((identity['snapshot_id'], identity['sync_run_id']) != ident or identity['team_id'] != team
+                    or identity['represented_date'] != through or identity['availability_reference_date'] != day
+                    or core['team_state']['public_state'] != binding['teams'][str(team)]['state']['public_state']):
+                raise ValueError('Private Team Board disagrees with the published edition')
+            arm = core['active_bullpen']['arms'][0]['pitcher_id']
+            player = db.session.get(Pitcher, arm)
+            if not player or player.team_id != team:
+                raise ValueError('Private Team Board arm has no canonical club identity')
+            mlb = player.mlb_id
+            db.session.remove()
+            details, pitcher = http_paths(app, [
+                f'/api/bullpen/teams/{team}/board-v2/details?' + urlencode({k:v for k,v in identity.items() if v is not None}),
+                f'/api/bullpen/fatigue/{arm}'])
+            details.raise_for_status()
+            pitcher.raise_for_status()
+            if details.json()['publication_identity'] != identity or pitcher.json()['pitcher']['mlb_id'] != mlb:
+                raise ValueError('Deferred Board or Pitcher Detail identity disagrees')
+            matchup = data['matchup']['game']
+            if (matchup['game_pk'], matchup['home']['team_id'], matchup['away']['team_id']) != (
+                    game['game_pk'], game['home'], game['away']):
+                raise ValueError('Matchup identity differs from the retained MLB slate')
+            if data['changes']['team']['team_id'] != team:
+                raise ValueError('Change feed cites a different club')
+            history = data['history']
+            row, = [row for row in history['rows'] if row['represented_date'] == through]
+            if (history['team']['team_id'] != team or not row['artifact']['public_id']
+                    or row['team_state']['public_code'] != core['team_state']['public_state']):
+                raise ValueError('Team History lacks the archived publication evidence')
+            found = [r['id'] for group in data['search']['groups'] if group['entity_type'] == 'team' for r in group['results']]
+            if team not in found or data['search']['represented_date'] != day:
+                raise ValueError('Discovery Search lacks the represented Boston identity')
+        return dict(generation=digest, snapshot=ident[0], sync_run=ident[1], checked=list(paths)+['board_details','pitcher'],
+                    team=team, pitcher_public_id=arm, pitcher_mlb_id=mlb, game_pk=game['game_pk'],
+                    history_artifact=row['artifact']['public_id'], change_state=data['changes']['state'])
