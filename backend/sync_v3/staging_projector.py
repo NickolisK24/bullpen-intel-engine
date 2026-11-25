@@ -14,7 +14,12 @@ UPDATE = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_p
 ROSTER_EVIDENCE = {'source_subjects', 'source_observations', 'source_payload_artifacts', 'source_fetch_attempts'}
 READ |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
 INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
-UPDATE.add('roster_status_snapshots')
+UPDATE.update({'roster_status_snapshots', 'evidence_objects'})
+READ.update({'evidence_citations', 'evidence_objects'})
+INVALIDATION_FIELDS = {'recompute_status', 'recompute_reason_codes', 'invalidated_at', 'invalidated_by_source_table',
+                       'invalidated_by_source_pk', 'last_corrected_at', 'correction_count', 'correction_source', 'updated_at'}
+INVALIDATION_POLICY = """USING (recompute_status='current') WITH CHECK (recompute_status='recompute_needed'
+    AND invalidated_by_source_table='game_logs' AND invalidated_by_source_pk IS NOT NULL)"""
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
@@ -25,6 +30,10 @@ CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
 
 def verify(cur):
     check_scope(cur, TARGET, login=PROJECTOR, reads=READ, inserts=INSERT, updates=UPDATE)
+    cur.execute("""SELECT attname FROM pg_attribute WHERE attrelid='public.evidence_objects'::regclass
+                   AND attnum>0 AND NOT attisdropped AND has_column_privilege(current_user,attrelid,attnum,'UPDATE')""")
+    if {name for name, in cur} != INVALIDATION_FIELDS:
+        raise ValueError('Private correction writer requires exactly the evidence invalidation columns')
     cur.execute("""SELECT relrowsecurity FROM pg_class WHERE oid='public.sync_runs'::regclass""")
     if cur.fetchone() != (True,):
         raise ValueError('Private projectors require row-level protection on sync runs')
@@ -37,7 +46,8 @@ def verify(cur):
 
 def install(owner_password, password):
     install_target(owner_password, password, PROJECTOR, READ, INSERT, UPDATE, 'private_projector',
-                   insert_checks={'sync_runs': CHECKPOINT})
+                   insert_checks={'sync_runs': CHECKPOINT}, update_columns={'evidence_objects': INVALIDATION_FIELDS},
+                   update_checks={'evidence_objects': INVALIDATION_POLICY})
     with closing(_connect(PROJECTOR, password)) as target, target, target.cursor() as cur:
         verify(cur)
 
