@@ -1,6 +1,7 @@
 """Compare the public League, Tonight and all club Boards with a single publication."""
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import os
 import json
 from pathlib import Path
 from time import monotonic
@@ -63,10 +64,40 @@ def verify(session, base_url, snapshot, sync, binding=None):
                   states=states, board_pitchers=arm_ids, tonight=content_sha256(tonight))
     fingerprint = sha256(json.dumps(frozen, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return dict(snapshot=snapshot, sync=sync, data_through=through, availability=reference,
-                public_edition_sha256=fingerprint,
+                public_edition_sha256=fingerprint, tonight_sha256=frozen['tonight'], product_day=edition.get('baseball_date'),
                 clubs=len(states), board_arms={team: len(staff) for team, staff in arm_ids.items()}, games=len(tonight['games']),
                 compared_generation=binding['generation'] if binding else None,
                 measured_at=datetime.now(timezone.utc).isoformat(), seconds=round(monotonic()-started, 2))
+
+
+def capture_legacy_predecessor(served):
+    """Read the selected legacy edition using the operator's existing PostgreSQL read binding."""
+    from flask import Flask
+    from sqlalchemy import text
+    from sqlalchemy.engine import make_url
+    from models.dashboard_snapshot import DashboardSnapshot
+    from services.dashboard_snapshot import SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+    from sync_v3.staging_product_delivery import legacy_predecessor_receipt
+    from utils.db import db
+
+    url = make_url(os.environ['SYNC_V3_PREFLIGHT_DATABASE_URL'])
+    if url.get_backend_name() != 'postgresql':
+        raise ValueError('First-handoff preflight requires the product PostgreSQL database')
+    app = Flask(__name__)
+    app.config.update(SQLALCHEMY_DATABASE_URI=url, SQLALCHEMY_ENGINE_OPTIONS={
+        'connect_args': {'options': '-c default_transaction_read_only=on', 'connect_timeout': 10}})
+    db.init_app(app)
+    with app.app_context(), db.session.begin():
+        db.session.execute(text('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'))
+        database = db.session.execute(text('SELECT current_database()')).scalar_one()
+        selected = DashboardSnapshot.query.filter_by(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                                                     is_published=True).one()
+        if (selected.id, selected.sync_run_id) != (served['snapshot'], served['sync']):
+            raise ValueError('Database selector differs from the verified public edition')
+        pin = legacy_predecessor_receipt(selected, date.fromisoformat(served['product_day']))
+        if pin['tonight_sha256'] != served['tonight_sha256']:
+            raise ValueError('Stored Tonight content differs from the served predecessor')
+        return dict(database=database, database_edition=pin, public_edition_sha256=served['public_edition_sha256'])
 
 
 if __name__ == '__main__':
@@ -76,10 +107,14 @@ if __name__ == '__main__':
     parser.add_argument('--sync', type=int, required=True)
     parser.add_argument('--binding', type=Path, help='Independently reviewed source-generation receipt')
     parser.add_argument('--expect-public-sha256', help='Public edition fingerprint captured before the handoff')
+    parser.add_argument('--capture-legacy-predecessor', action='store_true',
+                        help='Include the first-handoff receipt using SYNC_V3_PREFLIGHT_DATABASE_URL')
     args = parser.parse_args()
     with requests.Session() as session:
         result = verify(session, args.base_url, args.snapshot, args.sync,
                         json.loads(args.binding.read_text()) if args.binding else None)
     if args.expect_public_sha256 and result['public_edition_sha256'] != args.expect_public_sha256:
         parser.exit(1, 'Public edition differs from the approved rollback receipt\n')
+    if args.capture_legacy_predecessor:
+        result['legacy_predecessor'] = capture_legacy_predecessor(result)
     print(json.dumps(result))

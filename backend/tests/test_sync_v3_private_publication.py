@@ -332,3 +332,41 @@ def test_first_handoff_requires_exact_database_and_immutable_predecessor(monkeyp
                     dict(pin, database_edition=dict(actual, payload_sha256='3' * 64))):
         with pytest.raises(ValueError, match='predecessor'):
             delivery.require_legacy_predecessor(snapshot, invalid)
+
+
+def test_public_preflight_reads_one_matching_legacy_edition_without_write_access(pg, monkeypatch):
+    from sqlalchemy import text
+    from scripts.verify_public_sync_edition import capture_legacy_predecessor
+    from sync_v3 import staging_product_delivery
+
+    with isolated_cluster(pg) as (admin, _):
+        app = Flask(__name__)
+        url = f'postgresql://rehearsal_owner@localhost/postgres?host={admin.info.host}'
+        app.config['SQLALCHEMY_DATABASE_URI'] = url
+        db.init_app(app)
+        with app.app_context(), db.session.begin():
+            SyncRun.__table__.create(db.engine)
+            Snapshot.__table__.create(db.engine)
+            run = SyncRun(job_name='daily_sync', status='success')
+            db.session.add(run)
+            db.session.flush()
+            snapshot = Snapshot(snapshot_type='bullpen_dashboard', sync_run_id=run.id,
+                                source='scheduled_sync', is_published=True, payload={})
+            db.session.add(snapshot)
+            db.session.flush()
+            served = dict(snapshot=snapshot.id, sync=run.id, product_day='2017-08-29',
+                          public_edition_sha256='a'*64, tonight_sha256='b'*64)
+
+        def stored_receipt(selected, day):
+            assert db.session.execute(text('SHOW transaction_read_only')).scalar_one() == 'on'
+            assert db.session.execute(text('SHOW transaction_isolation')).scalar_one() == 'repeatable read'
+            assert selected.id == served['snapshot'] and day.isoformat() == served['product_day']
+            return dict(tonight_sha256='b'*64)
+
+        monkeypatch.setenv('SYNC_V3_PREFLIGHT_DATABASE_URL', url)
+        monkeypatch.setattr(staging_product_delivery, 'legacy_predecessor_receipt', stored_receipt)
+        assert capture_legacy_predecessor(served)['database'] == 'postgres'
+        with pytest.raises(ValueError, match='selector differs'):
+            capture_legacy_predecessor(dict(served, sync=served['sync']+1))
+        with pytest.raises(ValueError, match='Tonight content differs'):
+            capture_legacy_predecessor(dict(served, tonight_sha256='c'*64))
