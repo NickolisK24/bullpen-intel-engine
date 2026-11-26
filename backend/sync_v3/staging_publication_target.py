@@ -660,6 +660,15 @@ def acquire_window_source(source, client, day, endpoint, params):
             at, = cur.fetchone()
             job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
             claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
+    if oid is not None and endpoint == '/transactions':
+        from sync_v3.cycle import plan_children
+        from sync_v3.rosters import transactions_confirmed
+        with source, source.cursor() as cur:
+            retained = evidence.replay(cur, oid)
+            if not transactions_confirmed(cur, oid, retained):
+                plan_children(cur, oid, retained, 'historical', retained.retrieved_at, day)
+                if not transactions_confirmed(cur, oid, retained):
+                    raise ValueError(f'Retained official transactions remain unresolved for {day}')
     if oid is None:
         if not claim:
             raise ValueError(f'Acquisition pending for {day}')

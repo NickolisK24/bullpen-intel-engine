@@ -29,13 +29,12 @@ def open_generation_source(password, user):
 
 def current_edition_inputs(cur, through, availability, *, offseason):
     """Bind the actual product day to qualified schedules, transactions and dated club rosters."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3 import evidence
     from sync_v3.competition_calendar import calendar_games, competition_status
     from sync_v3.discovery import calendar_requests, competition_calendar_request, roster_requests
-    from sync_v3.generation import _bind_transaction_revisions, _slate, generation_date_decision
+    from sync_v3.rosters import transactions_confirmed
+    from sync_v3.generation import _slate, generation_date_decision
 
     from sync_v3.render_staging import primary_product_day
     day = primary_product_day()
@@ -67,9 +66,7 @@ def current_edition_inputs(cur, through, availability, *, offseason):
         ids.append(oid)
         if request.endpoint == '/transactions':
             observation = evidence.replay(cur, oid)
-            receipt = dict(reported_records=len(observation.body['transactions']))
-            _bind_transaction_revisions(cur, oid, receipt)
-            if receipt['reported_records'] and not receipt['confirmed_transactions']:
+            if not transactions_confirmed(cur, oid, observation):
                 raise ValueError('Current transactions lack canonical confirmation')
     from sync_v3.depth import _view
     staff = {}

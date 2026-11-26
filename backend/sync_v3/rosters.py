@@ -49,15 +49,8 @@ def roster_facts(capture):
             'members': [members[person] for person in sorted(members)]}
 
 
-def observe(cur, source_id, capture, *, replay_batch=False):
+def _transaction_groups(capture):
     req = capture.request
-    if req.endpoint.endswith('/roster') and 'hydrate' not in req.params():
-        facts = roster_facts(capture)
-        if facts:
-            identity = f"{facts['team']}/{facts['type']}/{facts['represented']}"
-            accept(cur, 'roster', identity, facts, source_id, capture.retrieved_at)
-    if req.endpoint != '/transactions':
-        return set()
     grouped = {}
     for item in capture.body['transactions']:
         if not isinstance(item, dict):
@@ -69,6 +62,27 @@ def observe(cur, source_id, capture, *, replay_batch=False):
             raise Refused('Official transaction identity is required')
         grouped.setdefault(str(record['transaction_id']), []).append((record, item))
 
+    return grouped
+
+
+def transactions_confirmed(cur, source_id, capture):
+    expected = {identity: _transaction_facts(records) for identity, records in _transaction_groups(capture).items()}
+    cur.execute("""SELECT c.identity,r.facts FROM candidate.confirmations c
+                JOIN candidate.revisions r ON r.id=c.revision_id AND (r.domain,r.identity)=(c.domain,c.identity)
+                WHERE c.domain='transaction' AND c.source_id=%s""", (source_id,))
+    return dict(cur.fetchall()) == expected
+
+
+def observe(cur, source_id, capture, *, replay_batch=False):
+    req = capture.request
+    if req.endpoint.endswith('/roster') and 'hydrate' not in req.params():
+        facts = roster_facts(capture)
+        if facts:
+            identity = f"{facts['team']}/{facts['type']}/{facts['represented']}"
+            accept(cur, 'roster', identity, facts, source_id, capture.retrieved_at)
+    if req.endpoint != '/transactions':
+        return set()
+    grouped = _transaction_groups(capture)
     teams = set()
     for identity, records in grouped.items():
         facts = _transaction_facts(records)
