@@ -21,6 +21,9 @@ PRODUCT_RELATIONS = frozenset({
 
 
 def _connect(user, password):
+    from sync_v3 import runtime_binding
+    if runtime_binding.PRODUCTION:
+        return runtime_binding.connect_runtime(user, password)
     return psycopg2.connect(host=HOST, port=5432, dbname=TARGET, user=user, password=password,
                             connect_timeout=10, sslmode='require', application_name='baseballos_staging_reader_admission')
 

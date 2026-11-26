@@ -2,11 +2,12 @@
 from contextlib import closing
 import json
 
+from sync_v3 import runtime_binding
 from sync_v3.staging_publication_target import TARGET
 from sync_v3.staging_publisher import check_scope, install_target
 from sync_v3.staging_reader import _connect
 
-PROJECTOR = 'baseballos_v3_staging_projector'
+PROJECTOR = runtime_binding.PROJECTOR if runtime_binding.PRODUCTION else 'baseballos_v3_staging_projector'
 # Final-game and roster trigger guards consult the two version tables inside PostgreSQL.
 READ = {'slate_games', 'compatibility_write_events', 'final_game_versions', 'roster_membership_intervals', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'scheduled_games', 'sync_runs', 'sync_failures'}
 INSERT = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_processed_games', 'fatigue_scores', 'sync_runs'}
@@ -22,7 +23,7 @@ INVALIDATION_FIELDS = {'recompute_status', 'recompute_reason_codes', 'invalidate
                        'invalidated_by_source_pk', 'last_corrected_at', 'correction_count', 'correction_source', 'updated_at'}
 INVALIDATION_POLICY = """USING (recompute_status='current') WITH CHECK (recompute_status='recompute_needed'
     AND invalidated_by_source_table IN ('game_logs','team_game_pitching_splits') AND invalidated_by_source_pk IS NOT NULL)"""
-CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
+CHECKPOINT = f"""WITH CHECK (source='{runtime_binding.RUN_SOURCE}' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
       OR (stage='checkpoint' AND job_name ~ '^sync_v3_board_progress_[0-9]+$')
@@ -61,7 +62,7 @@ def current_checkpoint(source, digest, day):
 
     with db.session.begin():
         row = SyncRun.query.filter_by(job_name='sync_v3_canonical_cycle', stage='canonical_ready',
-                                      source='sync_v3_staging', status='success').order_by(SyncRun.id.desc()).first()
+                                      source=runtime_binding.RUN_SOURCE, status='success').order_by(SyncRun.id.desc()).first()
         if not row:
             return None
         proof = row.publication_outcome
@@ -81,7 +82,7 @@ def reviewed_resume(source, password, day):
         cur.execute("SELECT current_database(),current_user")
         if cur.fetchone() != (TARGET, PROJECTOR):
             raise ValueError('Unexpected private projection checkpoint reader')
-        cur.execute("""SELECT publication_outcome FROM public.sync_runs WHERE source='sync_v3_staging'
+        cur.execute(f"""SELECT publication_outcome FROM public.sync_runs WHERE source='{runtime_binding.RUN_SOURCE}'
             AND job_name='sync_v3_canonical_cycle' AND stage='canonical_ready' AND status='success'
             ORDER BY id DESC LIMIT 1""")
         row = cur.fetchone()
@@ -90,8 +91,8 @@ def reviewed_resume(source, password, day):
         digest = row[0]['generation']
         from services.mlb_club_directory import MLB_TEAM_IDS
         names = [f'sync_v3_board_review_{team}' for team in MLB_TEAM_IDS]
-        cur.execute("""SELECT count(DISTINCT job_name) FROM public.sync_runs
-            WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND stage='reviewed' AND status='success'
+        cur.execute(f"""SELECT count(DISTINCT job_name) FROM public.sync_runs
+            WHERE job_name=ANY(%s) AND source='{runtime_binding.RUN_SOURCE}' AND stage='reviewed' AND status='success'
               AND publication_outcome->>'generation'=%s""", (names, digest))
         complete = cur.fetchone()[0] == len(names)
     with source, source.cursor() as cur:
@@ -107,7 +108,7 @@ def record_checkpoint(digest, day, through, sources, started):
 
     with db.session.begin():
         now = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
-        record = SyncRun(job_name='sync_v3_canonical_cycle', stage='canonical_ready', source='sync_v3_staging',
+        record = SyncRun(job_name='sync_v3_canonical_cycle', stage='canonical_ready', source=runtime_binding.RUN_SOURCE,
                          status='success', latest_workload_date=through, records_processed=len(sources),
                          started_at=started, completed_at=now,
                          publication_outcome=dict(generation=digest, day=str(day), sources=sorted(sources)))

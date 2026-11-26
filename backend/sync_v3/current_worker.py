@@ -11,7 +11,7 @@ import psycopg2
 
 from services.mlb_api import MLBApiClient
 from services.mlb_club_directory import MLB_TEAM_IDS
-from sync_v3 import savant
+from sync_v3 import runtime_binding, savant
 from sync_v3.cycle import run_cycle
 from sync_v3.replay import schema_digest, schema_scripts
 
@@ -29,17 +29,22 @@ def verify_target(connection):
                            OR has_table_privilege('candidate.core_selections','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
                            OR has_any_column_privilege('candidate.core_selections','INSERT,UPDATE')
                            OR has_function_privilege('candidate.record_core_selection(bigint,text,text)','EXECUTE')
-                           OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                                      WHERE n.nspname='public' AND c.relname IN ('dashboard_snapshots','sync_runs'))
+                           OR (NOT %s AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                                      WHERE n.nspname='public' AND c.relname IN ('dashboard_snapshots','sync_runs')))
+                           OR (%s AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                                      WHERE p.prosecdef AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+                                        AND has_schema_privilege(n.oid,'USAGE') AND has_function_privilege(p.oid,'EXECUTE')))
                            OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid)
                            OR EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                                       WHERE n.nspname <> 'candidate' AND n.nspname <> 'information_schema'
                                         AND n.nspname !~ '^pg_' AND c.relkind IN ('r','p','v','f')
                                         AND (has_table_privilege(c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
                                              OR has_any_column_privilege(c.oid,'INSERT,UPDATE'))))
-                       FROM pg_roles r WHERE rolname=current_user""")
+                       FROM pg_roles r WHERE rolname=current_user""", (runtime_binding.PRODUCTION, runtime_binding.PRODUCTION))
         name, admitted = cur.fetchone()
-        if name not in ('sync_v3_shadow', 'sync_v3_rehearsal', 'baseballos_sync_v3_staging') or not admitted:
+        allowed = (runtime_binding.DATABASE,) if runtime_binding.PRODUCTION else (
+            'sync_v3_shadow', 'sync_v3_rehearsal', 'baseballos_sync_v3_staging')
+        if name not in allowed or not admitted:
             raise ValueError('Expected the isolated candidate database and its restricted acquisition worker')
         cur.execute("SELECT digest,has_table_privilege('candidate.schema_installation','INSERT,UPDATE,DELETE,TRUNCATE'),"
                     "has_any_column_privilege('candidate.schema_installation','INSERT,UPDATE') "

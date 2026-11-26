@@ -148,3 +148,12 @@ def test_preview_fences_named_service_role_and_preserves_unrelated_grants():
             with pytest.raises(psycopg2.errors.InsufficientPrivilege):
                 cur.execute(denied)
             cur.execute('ROLLBACK TO SAVEPOINT probe')
+
+
+def test_production_handoff_on_migrated_postgres():
+    import subprocess
+    import sys
+    if not os.environ.get('SYNC_V3_TEST_PG_BIN'):
+        pytest.skip('Requires disposable PostgreSQL')
+    subprocess.run([sys.executable, '-m', 'tests.production_writer_rehearsal'],
+                   env=dict(os.environ, SYNC_V3_DEPLOYMENT='production', AUTO_SYNC='false'), check=True)
