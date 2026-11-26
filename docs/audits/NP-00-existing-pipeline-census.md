@@ -114,7 +114,21 @@ At main `678036280a9b7c9acaff5e8c70196c7737310c8b`, 25 of the 27 workflow files 
 
 The `maintain-production` job is already included in the 28. Its conditional migration step overrides the job-level binding with `DATABASE_MIGRATION_URL` and requires `main`. None of the 28 jobs declares a GitHub Environment. The hostname stored under `BASEBALLOS_SYNC_URL` is also used to derive a dashboard read in `public-sync`; that reference supplies no additional database-role attribution. [Scheduled workflow](https://github.com/NickolisK24/bullpen-intel-engine/blob/678036280a9b7c9acaff5e8c70196c7737310c8b/.github/workflows/baseballos-sync.yml) · [Maintenance workflow](https://github.com/NickolisK24/bullpen-intel-engine/blob/678036280a9b7c9acaff5e8c70196c7737310c8b/.github/workflows/baseballos-production-maintenance.yml)
 
-Owner reconciliation needs the effective PostgreSQL role name behind each of the two GitHub bindings, the role used by each Render service in the execution map above, and any additional credential holders such as external schedulers or standalone operators. Shared roles require every known caller and its responsibility. Secret names and catalog grants alone cannot establish that mapping. Record unknown holders explicitly and keep live shadow operation and retirement pending until ownership is established.
+### November 26 owner verification of masked deployment bindings
+
+The owner inspected the Render workspace and GitHub settings with every value masked. No setting was changed. The table identifies where each reference is configured. The role behind each binding and any historical or external copies remain unresolved.
+
+| Consumer | Source of the production reference |
+|---|---|
+| BaseballOS API | Direct service variables `DATABASE_URL` and `DATABASE_MIGRATION_URL` |
+| Daily Primary, Morning Primary, Postgame Primary, Continuous Updates | Each inherits `DATABASE_URL` from `baseballos-production` |
+| Continuous Shadow Detect | Inherits `DATABASE_URL` from `baseballos-production` and defines `DATABASE_MIGRATION_URL` directly |
+| GitHub Actions repository | Owner confirmed repository secret `DATABASE_URL`. Maintenance workflow code conditionally references `DATABASE_MIGRATION_URL`; its configured presence was not confirmed. |
+| GitHub environments and agents | Production, Preview and copilot contained no additional secrets or variables. Copilot Agents listed no repository secrets. |
+
+The owner found no named Supabase `service_role` credential in these locations. A key under another name, a local script, a separate deployment or an old copy could still have access. The shared group accounts for five runtime consumers. Direct bindings require separate role receipts even when their variable names match.
+
+Production catalog evidence showed that pooled `postgres` owns all 89 public tables and bypasses RLS. Since the November 20 statistics reset it executed 20 write statements on dashboard snapshots, 15 on Tonight publications and five on Team State proofs. The pool logs could not assign these statements to individual consumers. `service_role` had write capability on all 89 tables and bypassed RLS. The November 19–26 edge sample showed 144 requests and zero REST write requests or GraphQL POSTs. The project had no listed Edge Functions or Vault entries. SQL statement logging covered DDL and the audit class was none. These observations establish actual writes under one role and potential writes under both. They cannot enumerate everyone holding a credential.
 
 ## Historical reuse evidence
 
