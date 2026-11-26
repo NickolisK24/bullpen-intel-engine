@@ -887,7 +887,7 @@ def recover_private_readiness(worker_password, *, budget_seconds, workload_day=N
                     withheld=blocked, elapsed_seconds=monotonic()-started)
 
 
-def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None):
+def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None, checkpoint=None):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
     from sync_v3.current_worker import verify_target
@@ -904,22 +904,24 @@ def advance_private_generation(worker_password, *, budget_seconds=90, workload_d
             return dict(decision=decision, scopes_built=0)
         started = monotonic()
         count = 0
-        with source, source.cursor() as cur:
-            cur.execute('''SELECT digest, manifest->'missing'='[]'::jsonb
-                                  AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
-                           FROM candidate.generations WHERE represented=%s
-                           AND manifest->>'contract'='candidate_generation_inventory_v1'
-                           ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
-            previous = cur.fetchone()
-        digest = previous[0] if previous else None
-        if previous and previous[1]:
-            # The reviewer recomputes the latest inventory in its read-only transaction.
-            review = verify_generation(source, digest, compare_latest=True)
-            if review['selection_review']['latest_inventory_digest'] == digest:
-                return dict(digest=digest, scopes_built=0, elapsed_seconds=monotonic()-started,
-                            review=review['selection_review'], clubs=review['clubs'],
-                            snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
-            digest = None
+        digest = checkpoint
+        if digest is None:
+            with source, source.cursor() as cur:
+                cur.execute('''SELECT digest, manifest->'missing'='[]'::jsonb
+                                      AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
+                               FROM candidate.generations WHERE represented=%s
+                               AND manifest->>'contract'='candidate_generation_inventory_v1'
+                               ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
+                previous = cur.fetchone()
+            digest = previous[0] if previous else None
+            if previous and previous[1]:
+                # The reviewer recomputes the latest inventory in its read-only transaction.
+                review = verify_generation(source, digest, compare_latest=True)
+                if review['selection_review']['latest_inventory_digest'] == digest:
+                    return dict(digest=digest, scopes_built=0, elapsed_seconds=monotonic()-started,
+                                review=review['selection_review'], clubs=review['clubs'],
+                                snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
+                digest = None
         while True:
             batch = build_batch(source, workload_day, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']

@@ -73,6 +73,7 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         digest, decision = result['generation'], result['decision']
     else:
         result = None
+        candidate = None
         if for_projection:
             from sync_v3.cohort import compare_games, compare_membership
             from sync_v3.generation import freeze_generation, review_core_candidate, review_coverage
@@ -93,7 +94,7 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
                     result = dict(digest=candidate, review=review, scope='canonical_projection')
         if result is None:
             result = advance_private_generation(worker_password, workload_day=scope['through'],
-                                                as_of=scope['as_of'], budget_seconds=budget_seconds)
+                                                as_of=scope['as_of'], budget_seconds=budget_seconds, checkpoint=candidate)
         digest = result.get('digest')
         review = result.get('review')
         decision = review.get('status') if isinstance(review, dict) else review or 'withheld'
