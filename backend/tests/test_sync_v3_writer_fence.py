@@ -111,3 +111,40 @@ def test_signup_and_publication_have_independent_write_authority(monkeypatch):
         with owner, owner.cursor() as cur:
             cur.execute('GRANT UPDATE(is_published) ON public.dashboard_snapshots TO fixture_web')
         assert inspect(dsn)['catalog_write_paths']['public.dashboard_snapshots'] == ['update']
+
+
+def test_preview_fences_named_service_role_and_preserves_unrelated_grants():
+    from pathlib import Path
+
+    bindir = os.getenv('SYNC_V3_TEST_PG_BIN')
+    if not bindir:
+        pytest.skip('Requires disposable PostgreSQL')
+    preview = (Path(__file__).resolve().parents[2] / 'docs/sync-v3/preview-service-role-fence.sql').read_text()
+    with isolated_cluster(bindir) as (owner, _), owner, owner.cursor() as cur:
+        cur.execute('CREATE ROLE service_role BYPASSRLS')
+        cur.execute('CREATE TABLE public.dashboard_snapshots (id serial, is_published boolean)')
+        cur.execute('CREATE TABLE public.audience_subscribers (id serial)')
+        cur.execute('GRANT USAGE ON SCHEMA public TO service_role')
+        cur.execute('GRANT SELECT, INSERT, UPDATE ON public.dashboard_snapshots, public.audience_subscribers TO service_role')
+        cur.execute('GRANT UPDATE(is_published) ON public.dashboard_snapshots TO service_role')
+        cur.execute('GRANT USAGE, UPDATE ON SEQUENCE public.dashboard_snapshots_id_seq, '
+                    'public.audience_subscribers_id_seq TO service_role')
+        cur.execute(preview)
+        proposals = cur.fetchall()
+        assert len(proposals) == 5
+        for row in proposals:
+            cur.execute(row[-1])
+        cur.execute(preview)
+        assert cur.fetchall() == []
+        cur.execute('SET LOCAL ROLE service_role')
+        cur.execute('INSERT INTO public.audience_subscribers DEFAULT VALUES RETURNING id')
+        assert cur.fetchone() == (1,)
+        cur.execute('SELECT count(*) FROM public.dashboard_snapshots')
+        assert cur.fetchone() == (0,)
+        for denied in ('UPDATE public.dashboard_snapshots SET is_published=true WHERE false',
+                       'INSERT INTO public.dashboard_snapshots DEFAULT VALUES',
+                       "SELECT nextval('public.dashboard_snapshots_id_seq')"):
+            cur.execute('SAVEPOINT probe')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege):
+                cur.execute(denied)
+            cur.execute('ROLLBACK TO SAVEPOINT probe')
