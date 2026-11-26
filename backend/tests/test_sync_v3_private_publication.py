@@ -317,3 +317,18 @@ def test_public_rollback_receipt_distinguishes_equal_size_board_rosters():
     assert changed['public_edition_sha256'] != original['public_edition_sha256']
     roster[111] = [111]
     assert verify(session, 'https://example.test', 8, 19)['public_edition_sha256'] == original['public_edition_sha256']
+
+
+def test_first_handoff_requires_exact_database_and_immutable_predecessor(monkeypatch):
+    from types import SimpleNamespace
+    from sync_v3 import staging_product_delivery as delivery
+
+    snapshot = SimpleNamespace(id=32)
+    actual = dict(snapshot=32, sync=71, product_day='2017-08-29', payload_sha256='1' * 64)
+    pin = dict(database=TARGET, database_edition=actual, public_edition_sha256='2' * 64)
+    monkeypatch.setattr(delivery, 'legacy_predecessor_receipt', lambda row, day: actual)
+    delivery.require_legacy_predecessor(snapshot, pin)
+    for invalid in (None, dict(pin, database='another_database'), dict(pin, public_edition_sha256=''),
+                    dict(pin, database_edition=dict(actual, payload_sha256='3' * 64))):
+        with pytest.raises(ValueError, match='predecessor'):
+            delivery.require_legacy_predecessor(snapshot, invalid)

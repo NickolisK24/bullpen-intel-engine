@@ -417,6 +417,9 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         if prior and prior.source != 'v3_private_publication':
             legacy_pin = json.loads(supplied) if supplied else None
             require_legacy_predecessor(prior, legacy_pin)
+            if (binding['data_through'] < legacy_pin['database_edition']['data_through']
+                    or binding['availability_reference'] < legacy_pin['database_edition']['availability']):
+                raise ValueError('First handoff would regress the current product dates')
         elif supplied:
             raise ValueError('The pinned legacy predecessor is no longer selected')
         def utc(value):
@@ -625,16 +628,16 @@ def restore_predecessor(digest, snapshot_id, *, user=OWNER):
         prev_id = current.payload['v3_predecessor']
         selected = DashboardSnapshot.query.filter_by(snapshot_type=current.snapshot_type, is_published=True).one_or_none()
         run = db.session.get(SyncRun, current.sync_run_id)
-        if (selected.id if selected else None) == prev_id and run.stage == 'private_rolled_back':
-            return prev_id
-        if selected is None or selected.id != snapshot_id:
-            raise ValueError('Private publication advanced since the rollback request')
         prior = db.session.get(DashboardSnapshot, prev_id) if prev_id else None
         legacy = current.payload.get('v3_legacy_predecessor')
         if legacy:
             require_legacy_predecessor(prior, legacy)
         elif prior:
             verify_frozen_states(prior, prior.payload['v3_source_generation'])
+        if (selected.id if selected else None) == prev_id and run.stage == 'private_rolled_back':
+            return prev_id
+        if selected is None or selected.id != snapshot_id:
+            raise ValueError('Private publication advanced since the rollback request')
         previous_runs = set(current.payload['v3_predecessor_runs'])
         linked = SyncRun.query.filter_by(published_dashboard_snapshot_id=snapshot_id).all()
         if {row.id for row in linked} != previous_runs | {run.id}:
