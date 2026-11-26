@@ -303,9 +303,10 @@ def project_final_appearances(finals, day, *, include_context=True, in_transacti
             if repeated['incomplete_reason'] or repeated['reconciliation_summary']['rows_unchanged'] != len(facts):
                 raise ValueError('Final reconciliation did not converge')
             rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
-                          l.games_started,l.game_date FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
+                          l.games_started,l.game_date,l.pitches_thrown,l.batters_faced FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
                           WHERE l.mlb_game_pk=:pk"""), dict(pk=game['gamePk']))
-            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),dates.get(f['pitcher_mlb_id'], day))
+            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),
+                                dates.get(f['pitcher_mlb_id'], day), f['pitches_thrown'], f['batters_faced'])
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')

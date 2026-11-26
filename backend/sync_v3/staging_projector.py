@@ -118,7 +118,9 @@ def record_checkpoint(digest, day, through, sources, started):
 
 def project_competitive_splits(source, through, window_days, receipts):
     """Populate the rotation and recent relief-work inputs from the qualified pitching ledger."""
-    from datetime import timedelta
+    from datetime import date, timedelta
+    from sqlalchemy import text
+    from sync_v3.staging_publication_target import project_final_appearances
     from services.appearance_ledger import _expected_final_games
     from services.mlb_club_directory import MLB_TEAM_IDS
     from services.team_game_pitching_splits import recompute_team_game_pitching_splits_for_game
@@ -148,7 +150,13 @@ def project_competitive_splits(source, through, window_days, receipts):
                  for day, oid in receipts.items()}
         start = through - timedelta(days=window_days-1)
         expected = _expected_final_games(start, through)
-        rows = 0
+        stored = {}
+        for row in db.session.execute(text("""SELECT l.mlb_game_pk, p.mlb_id, l.appearance_team_id,
+                l.games_started, l.innings_pitched_outs, l.pitches_thrown, l.batters_faced, l.game_date
+                FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id WHERE l.mlb_game_pk=ANY(:games)"""),
+                dict(games=sorted(expected))):
+            stored.setdefault(row[0], set()).add(tuple(row[1:]))
+        rows = corrected = 0
         for pk, played in sorted(expected.items()):
             if pk not in games or games[pk][0] != played or games[pk][1]['status_state'] != 'final':
                 raise ValueError(f'Dated calendar and final-game ledger disagree for {pk}')
@@ -158,6 +166,13 @@ def project_competitive_splits(source, through, window_days, receipts):
                 raise ValueError(f'Final {pk} lacks qualified pitching lines: {reason}')
             facts, (box, _, *sessions) = qualified
             box_sources.update([box, *sessions])
+            official = {(line['pitcher_mlb_id'], line['team_id'], int(line['is_starter']), line['outs_recorded'],
+                         line['pitches_thrown'], line['batters_faced'], date.fromisoformat(line['workload_date'])
+                         if 'workload_date' in line else played) for line in facts}
+            if stored.get(pk, set()) != official:
+                project_final_appearances([(game, replay(cur, box).body, facts, {})], played,
+                                          include_context=False, in_transaction=True)
+                corrected += 1
             solo = {}
             for side in game['teams'].values():
                 team = side['team']['id']
@@ -169,7 +184,7 @@ def project_competitive_splits(source, through, window_days, receipts):
             if result['status'] != 'processed' or result['rows_total'] != 2:
                 raise ValueError(f'Missing starter and relief split for final {pk}')
             rows += result['rows_total']
-    return dict(calendar=calendar, games=len(expected), team_games=rows, source_receipts=sorted(box_sources))
+    return dict(calendar=calendar, games=len(expected), team_games=rows, corrected_games=corrected, source_receipts=sorted(box_sources))
 
 
 def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False, review_seconds=185):
