@@ -27,17 +27,21 @@ def open_generation_source(password, user):
     return source
 
 
+class ReviewedGenerationAdvanced(ValueError):
+    """The primary worker must refresh this generation before it can be published."""
+
+
 def current_edition_inputs(cur, through, availability, *, offseason):
     """Bind the actual product day to qualified schedules, transactions and dated club rosters."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
     from services.mlb_club_directory import MLB_TEAM_IDS
     from sync_v3 import evidence
     from sync_v3.competition_calendar import calendar_games, competition_status
     from sync_v3.discovery import calendar_requests, competition_calendar_request, roster_requests
-    from sync_v3.generation import _bind_transaction_revisions, _slate, generation_date_decision
+    from sync_v3.rosters import transactions_confirmed
+    from sync_v3.generation import _slate, generation_date_decision
 
-    day = datetime.now(ZoneInfo('America/New_York')).date()
+    from sync_v3.render_staging import primary_product_day
+    day = primary_product_day()
     competition = competition_status(cur, day)
     if len(competition['clubs']) != 30 or competition['missing_decisions']:
         raise ValueError('Incomplete official competition evidence')
@@ -66,9 +70,7 @@ def current_edition_inputs(cur, through, availability, *, offseason):
         ids.append(oid)
         if request.endpoint == '/transactions':
             observation = evidence.replay(cur, oid)
-            receipt = dict(reported_records=len(observation.body['transactions']))
-            _bind_transaction_revisions(cur, oid, receipt)
-            if receipt['reported_records'] and not receipt['confirmed_transactions']:
+            if not transactions_confirmed(cur, oid, observation):
                 raise ValueError('Current transactions lack canonical confirmation')
     from sync_v3.depth import _view
     staff = {}
@@ -115,17 +117,18 @@ def reviewed_board_populations(cur, password, user, digest, binding):
     from sync_v3.staging_board_history import inputs_still_current
     receipts.update(projection[1]['sources'])
     if not inputs_still_current(cur, receipts):
-        raise ValueError('Reviewed Board workload evidence has advanced since reconciliation')
+        raise ReviewedGenerationAdvanced('Reviewed Board workload evidence has advanced since reconciliation')
     binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids,
                    canonical_checkpoint=projection[0], canonical_started_at=projection[2].isoformat()+'+00:00')
     binding['current_source_ids'] = sorted(set(binding['current_source_ids']) | receipts)
 
 
 def product_clock(binding):
-    if 'product_day' in binding:
+    from sync_v3.staging_publication_target import ARCHIVE_TARGET
+    if 'product_day' in binding and TARGET != ARCHIVE_TARGET:
         return nullcontext()
     from freezegun import freeze_time
-    return freeze_time(f"{binding['availability_reference']} 12:00:00", real_asyncio=True)
+    return freeze_time(f"{binding.get('product_day', binding['availability_reference'])} 12:00:00", real_asyncio=True)
 
 
 def source_receipt(worker_password, digest, user='sync_v3_worker'):
@@ -138,8 +141,9 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             league = _league(cur, None, digest, compare_latest=True)
             review = league['selection_review']
             offseason = review['status'] == 'season_complete_withholding'
-            if (review['status'] not in ('core_comparison_complete', 'season_complete_withholding')
-                    or review['latest_inventory_digest'] != digest):
+            if review['latest_inventory_digest'] != digest:
+                raise ReviewedGenerationAdvanced('A newer inventory supersedes the reviewed generation')
+            if review['status'] not in ('core_comparison_complete', 'season_complete_withholding'):
                 raise ValueError(f'Generation review withheld: {review["status"]} {review["reason_codes"]}')
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or not league['data_through'] or league['selection_revision'] is not None):
@@ -155,6 +159,17 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                 extra, official_slate = current_edition_inputs(cur, date.fromisoformat(league['data_through']),
                                                             league['availability_reference'], offseason=offseason)
                 reviewed_board_populations(cur, worker_password, user, digest, extra)
+                if not offseason:
+                    from sync_v3.intelligence_history import DOMAINS
+                    from sync_v3.product_reads import tonight_rotation
+                    cur.execute("""SELECT h.mlb_id,h.facts#>'{windows,7,pressure}' FROM candidate.generation_inputs i
+                                JOIN candidate.workload_history h ON h.id=i.snapshot
+                                WHERE i.generation=%s AND h.subject='team' AND h.methodology=%s""",
+                                (digest, DOMAINS['rotation'][1]))
+                    rotations = {str(team): tonight_rotation(pressure) for team, pressure in cur}
+                    if set(rotations) != {str(team) for team in MLB_TEAM_IDS}:
+                        raise ValueError('Competitive rotation coverage lacks a club')
+                    extra['reviewed_tonight_rotation'] = rotations
             if not offseason:
                 from sync_v3.generation import generation_date_decision
                 represented = date.fromisoformat(league['data_through'])
@@ -464,6 +479,14 @@ def verify_slate(cards, binding):
         for side in ('home', 'away'):
             team = card[side]
             state = binding['teams'][str(team['team_id'])]['state']
+            if 'reviewed_tonight_rotation' in binding:
+                rotation = binding['reviewed_tonight_rotation'][str(team['team_id'])]
+                keys = ('short_start_count', 'bullpen_innings', 'games_analyzed')
+                observed = team.get('rotation')
+                if ((rotation is None) != (observed is None)
+                        or rotation and any(rotation[key] != observed.get(key) for key in keys)):
+                    raise ValueError(f"Tonight rotation for {team['team_id']} differs from qualified final lines: "
+                                     f"{rotation} / {observed}")
             if any(team['team_state'][key] != state[key] for key in ('public_state', 'public_label')):
                 raise ValueError('Private Tonight club differs from the frozen Team State')
 

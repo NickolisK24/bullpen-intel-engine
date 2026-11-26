@@ -2301,12 +2301,18 @@ def test_official_number_change_mirrors_preserve_other_transactions_and_refuse_c
                 assert change[0] == '950971' and change[2] == 1
                 assert change[1]['player_mlb_id'] == 681230 and change[1]['resolution_date'] == str(day)
                 assert change[1]['from_team_id'] is None and change[1]['to_team_id'] == 112
-                assert evidence.replay(cur, receipt).body['transactions'] == [*pair, signing]
+                observed = evidence.replay(cur, receipt)
+                assert observed.body['transactions'] == [*pair, signing]
+                assert rosters.transactions_confirmed(cur, receipt, observed)
         conflicts = [dict(mirror, description='3B BJ Murray Jr. changed number to 19.'),
                      dict(mirror, fromTeam=dict(id=111)), dict(mirror, effectiveDate='2026-11-25'),
                      dict(mirror, person=dict(id=699393)), dict(mirror, typeCode='TR'), dict(mirror, typeCode=None)]
         for offset, conflict in enumerate(conflicts, start=2):
             assert observe(offset, [player, conflict, signing])[1] == 'refused'
+        subset, outcome = observe(20, [signing])
+        assert outcome == 'received'
+        with worker, worker.cursor() as cur:
+            assert not rosters.transactions_confirmed(cur, subset, observed)
 
 
 def test_historical_http_reader_cannot_write_or_select_a_publication():

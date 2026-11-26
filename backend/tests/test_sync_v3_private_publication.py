@@ -228,6 +228,9 @@ def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, m
                                     'status text, stage text, published_dashboard_snapshot_id integer)')
                             .format(name, primary_key))
                 cur.execute(sql.SQL('ALTER TABLE {} ENABLE ROW LEVEL SECURITY').format(name))
+            for field in sorted(projector.INVALIDATION_FIELDS):
+                cur.execute(sql.SQL('ALTER TABLE evidence_objects ADD COLUMN {} text').format(sql.Identifier(field)))
+            cur.execute("INSERT INTO evidence_objects (source, recompute_status) VALUES ('official','current')")
         projector.install('', 'local-test-password')
         with closing(connect(projector.PROJECTOR, 'local-test-password')) as runtime:
             with runtime, runtime.cursor() as cur:
@@ -235,7 +238,12 @@ def test_projector_can_record_club_reviews_but_cannot_select_a_publication(pg, m
                             "VALUES ('sync_v3_staging','sync_v3_board_review_111','success','reviewed')")
                 cur.execute("INSERT INTO sync_runs(source,job_name,status,stage) "
                             "VALUES ('sync_v3_staging','sync_v3_roster_reconciliation','success','verified_roster_observations')")
-            for statement in ("SELECT setval('pitchers_id_seq', 300)",
+            with runtime, runtime.cursor() as cur:
+                cur.execute("UPDATE evidence_objects SET recompute_status='recompute_needed', "
+                            "invalidated_by_source_table='game_logs',invalidated_by_source_pk='1' WHERE id=1")
+                assert cur.rowcount == 1
+            for statement in ("UPDATE evidence_objects SET source='rewritten' WHERE id=1",
+                              "SELECT setval('pitchers_id_seq', 300)",
                               "INSERT INTO sync_runs(source,job_name,status,stage) "
                               "VALUES ('sync_v3_staging','daily_sync','success','reviewed')",
                               "UPDATE sync_runs SET published_dashboard_snapshot_id=1",

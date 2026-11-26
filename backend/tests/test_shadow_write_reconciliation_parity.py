@@ -826,6 +826,23 @@ def test_v3_plan_and_write_preserve_credited_zero_out_appearance_only(app):
         assert GameLog.query.filter_by(mlb_game_pk=824807).count() == 2
 
 
+def test_v3_historical_opponent_uses_the_dated_boxscore_before_and_after_roster_changes(app):
+    game = final_game(492047)
+    box = boxscore([(6003, 'home', pitching_stats())])
+    box['teams']['away']['team']['abbreviation'] = 'PIT'
+    with app.app_context():
+        def reconcile(plan_only):
+            return sync_service.process_completed_game_for_postgame_refresh(
+                game, schedule_date=REFERENCE, boxscore=box, plan_only=plan_only, force=True,
+                require_official_pitching_credit=True)
+
+        reconcile(False)
+        assert GameLog.query.filter_by(mlb_game_pk=492047).one().opponent_abbreviation == 'PIT'
+        _pitcher(6010, team_id=AWAY_TEAM).team_abbreviation = 'NEW'
+        db.session.flush()
+        assert reconcile(True)['reconciliation_summary']['rows_unchanged'] == 1
+
+
 def test_v3_resumed_final_uses_each_pitchers_qualified_workload_date(app):
     from datetime import timedelta
     second = REFERENCE + timedelta(days=1)

@@ -61,7 +61,7 @@ def verify_source(connection):
             raise ValueError('Unexpected private candidate schema revision')
 
 
-def install_target(owner_password, password, login, reads, inserts, updates, policy_prefix, *, insert_checks=None):
+def install_target(owner_password, password, login, reads, inserts, updates, policy_prefix, *, insert_checks=None, update_columns=None, update_checks=None):
     role = sql.Identifier(login)
     with closing(_connect(OWNER, owner_password)) as owner, owner, owner.cursor() as cur:
         cur.execute('SELECT current_database(), current_user')
@@ -78,9 +78,14 @@ def install_target(owner_password, password, login, reads, inserts, updates, pol
                                          (updates,'UPDATE','USING (true) WITH CHECK (true)')):
             for table in sorted(tables):
                 relation = sql.Identifier('public', table)
-                cur.execute(sql.SQL('GRANT {} ON {} TO {}').format(sql.SQL(action), relation, role))
+                privilege = sql.SQL(action)
+                if action == 'UPDATE' and table in (update_columns or {}):
+                    cols = sql.SQL(', ').join(map(sql.Identifier, sorted(update_columns[table])))
+                    privilege = sql.SQL('UPDATE ({})').format(cols)
+                cur.execute(sql.SQL('GRANT {} ON {} TO {}').format(privilege, relation, role))
                 policy = policy_prefix + '_' + action.lower()
-                condition = (insert_checks or {}).get(table, predicate) if action == 'INSERT' else predicate
+                conditions = {'INSERT': insert_checks or {}, 'UPDATE': update_checks or {}}
+                condition = conditions.get(action, {}).get(table, predicate)
                 cur.execute(sql.SQL('DROP POLICY IF EXISTS {} ON {}').format(sql.Identifier(policy), relation))
                 cur.execute(sql.SQL('CREATE POLICY {} ON {} FOR {} TO {} {}')
                             .format(sql.Identifier(policy), relation, sql.SQL(action), role, sql.SQL(condition)))

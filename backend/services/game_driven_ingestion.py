@@ -551,6 +551,18 @@ def _process_one_game(
             + int(persisted_summary.get('statistical_corrections') or 0),
         )
 
+        _apply_plan_outcome(outcome, report, persisted)
+        if persisted['unsafe']:
+            raise _IngestionFailure(
+                ERROR_CORRECTION_CONFLICT,
+                'a governed correction could not be applied safely',
+            )
+        if persisted['unresolved_pitchers']:
+            raise _IngestionFailure(
+                ERROR_STARTER_IDENTITY_UNRESOLVED,
+                'a pitching line could not be resolved to a pitcher',
+            )
+
         if handlers.get('process_optional') is not None:
             optional_payload = handlers['fetch_optional'](item)
             outcome['optional_source_domains']['final_play_by_play'] = (
@@ -578,7 +590,6 @@ def _process_one_game(
                     'completed-game editorial context did not reconcile',
                 ) from exc
 
-        _apply_plan_outcome(outcome, report, persisted)
         pitch_mutations = (
             outcome['optional_source_domains']['final_play_by_play'].get('pitch_rows')
             or {}
@@ -595,17 +606,6 @@ def _process_one_game(
                 ERROR_RECONCILIATION_FAILED,
                 'expected appearance rows did not all reconcile',
             )
-        if persisted['unsafe']:
-            raise _IngestionFailure(
-                ERROR_CORRECTION_CONFLICT,
-                'a governed correction could not be applied safely',
-            )
-        if persisted['unresolved_pitchers']:
-            raise _IngestionFailure(
-                ERROR_STARTER_IDENTITY_UNRESOLVED,
-                'a pitching line could not be resolved to a pitcher',
-            )
-
         checkpoint_started = time.monotonic()
         correction_applied = (
             work_item.source_revision is not None

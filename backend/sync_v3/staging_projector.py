@@ -14,7 +14,14 @@ UPDATE = {'scheduled_games', 'slate_games', 'pitchers', 'game_logs', 'postgame_p
 ROSTER_EVIDENCE = {'source_subjects', 'source_observations', 'source_payload_artifacts', 'source_fetch_attempts'}
 READ |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
 INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
-UPDATE.add('roster_status_snapshots')
+UPDATE.update({'roster_status_snapshots', 'evidence_objects'})
+READ.update({'evidence_citations', 'evidence_objects'})
+for privileges in (READ, INSERT, UPDATE):
+    privileges.add('team_game_pitching_splits')
+INVALIDATION_FIELDS = {'recompute_status', 'recompute_reason_codes', 'invalidated_at', 'invalidated_by_source_table',
+                       'invalidated_by_source_pk', 'last_corrected_at', 'correction_count', 'correction_source', 'updated_at'}
+INVALIDATION_POLICY = """USING (recompute_status='current') WITH CHECK (recompute_status='recompute_needed'
+    AND invalidated_by_source_table IN ('game_logs','team_game_pitching_splits') AND invalidated_by_source_pk IS NOT NULL)"""
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
@@ -25,6 +32,10 @@ CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
 
 def verify(cur):
     check_scope(cur, TARGET, login=PROJECTOR, reads=READ, inserts=INSERT, updates=UPDATE)
+    cur.execute("""SELECT attname FROM pg_attribute WHERE attrelid='public.evidence_objects'::regclass
+                   AND attnum>0 AND NOT attisdropped AND has_column_privilege(current_user,attrelid,attnum,'UPDATE')""")
+    if {name for name, in cur} != INVALIDATION_FIELDS:
+        raise ValueError('Private correction writer requires exactly the evidence invalidation columns')
     cur.execute("""SELECT relrowsecurity FROM pg_class WHERE oid='public.sync_runs'::regclass""")
     if cur.fetchone() != (True,):
         raise ValueError('Private projectors require row-level protection on sync runs')
@@ -37,7 +48,8 @@ def verify(cur):
 
 def install(owner_password, password):
     install_target(owner_password, password, PROJECTOR, READ, INSERT, UPDATE, 'private_projector',
-                   insert_checks={'sync_runs': CHECKPOINT})
+                   insert_checks={'sync_runs': CHECKPOINT}, update_columns={'evidence_objects': INVALIDATION_FIELDS},
+                   update_checks={'evidence_objects': INVALIDATION_POLICY})
     with closing(_connect(PROJECTOR, password)) as target, target, target.cursor() as cur:
         verify(cur)
 
@@ -60,6 +72,34 @@ def current_checkpoint(source, digest, day):
         return review if inputs_still_current(cur, proof['sources']) else None
 
 
+def reviewed_resume(source, password, day):
+    """Reuse a completed private projection only while its dated receipts still match."""
+    from sync_v3.staging_board_history import inputs_still_current
+
+    with closing(_connect(PROJECTOR, password)) as target, target, target.cursor() as cur:
+        cur.execute('SET TRANSACTION READ ONLY')
+        cur.execute("SELECT current_database(),current_user")
+        if cur.fetchone() != (TARGET, PROJECTOR):
+            raise ValueError('Unexpected private projection checkpoint reader')
+        cur.execute("""SELECT publication_outcome FROM public.sync_runs WHERE source='sync_v3_staging'
+            AND job_name='sync_v3_canonical_cycle' AND stage='canonical_ready' AND status='success'
+            ORDER BY id DESC LIMIT 1""")
+        row = cur.fetchone()
+        if not row or row[0]['day'] != str(day):
+            return None, False
+        digest = row[0]['generation']
+        from services.mlb_club_directory import MLB_TEAM_IDS
+        names = [f'sync_v3_board_review_{team}' for team in MLB_TEAM_IDS]
+        cur.execute("""SELECT count(DISTINCT job_name) FROM public.sync_runs
+            WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND stage='reviewed' AND status='success'
+              AND publication_outcome->>'generation'=%s""", (names, digest))
+        complete = cur.fetchone()[0] == len(names)
+    with source, source.cursor() as cur:
+        if inputs_still_current(cur, row[0]['sources']):
+            return digest, not complete
+    return None, False
+
+
 def record_checkpoint(digest, day, through, sources, started):
     from sqlalchemy import text
     from models.sync_run import SyncRun
@@ -76,7 +116,78 @@ def record_checkpoint(digest, day, through, sources, started):
         return record.id
 
 
-def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False):
+def project_competitive_splits(source, through, window_days, receipts):
+    """Populate the rotation and recent relief-work inputs from the qualified pitching ledger."""
+    from datetime import date, timedelta
+    from sqlalchemy import text
+    from sync_v3.staging_publication_target import project_final_appearances
+    from services.appearance_ledger import _expected_final_games
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_game_pitching_splits import recompute_team_game_pitching_splits_for_game
+    from sync_v3.competition_calendar import calendar_games
+    from sync_v3.discovery import competition_calendar_request
+    from sync_v3.evidence import latest_qualified_source, replay
+    from utils.db import db
+
+    from sync_v3.workload import _game_workload
+
+    request = competition_calendar_request(through.year)
+    with source, source.cursor() as cur:
+        calendar = latest_qualified_source(cur, request.endpoint, request.params())
+        games = calendar_games(request.params(), replay(cur, calendar).body)
+    playable = {team: set() for team in MLB_TEAM_IDS}
+    for day, row, game in games.values():
+        if row['status_state'] in ('scheduled', 'final'):
+            for side in ('home_team_id', 'away_team_id'):
+                dates = playable[row[side]]
+                dates.add(day)
+                if game.get('resumedFromDate') and row['original_game_date']:
+                    dates.add(row['original_game_date'])
+    box_sources = set()
+    with db.session.begin(), source, source.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        daily = {day: {g['gamePk']: g for slate in replay(cur, oid).body['dates'] for g in slate['games']}
+                 for day, oid in receipts.items()}
+        start = through - timedelta(days=window_days-1)
+        expected = _expected_final_games(start, through)
+        stored = {}
+        for row in db.session.execute(text("""SELECT l.mlb_game_pk, p.mlb_id, l.appearance_team_id,
+                l.games_started, l.innings_pitched_outs, l.pitches_thrown, l.batters_faced, l.game_date
+                FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id WHERE l.mlb_game_pk=ANY(:games)"""),
+                dict(games=sorted(expected))):
+            stored.setdefault(row[0], set()).add(tuple(row[1:]))
+        rows = corrected = 0
+        for pk, played in sorted(expected.items()):
+            if pk not in games or games[pk][0] != played or games[pk][1]['status_state'] != 'final':
+                raise ValueError(f'Dated calendar and final-game ledger disagree for {pk}')
+            game = daily[str(played)][pk]
+            qualified, reason = _game_workload(cur, game, played, receipts[str(played)], resolve_sessions=True)
+            if not qualified:
+                raise ValueError(f'Final {pk} lacks qualified pitching lines: {reason}')
+            facts, (box, _, *sessions) = qualified
+            box_sources.update([box, *sessions])
+            official = {(line['pitcher_mlb_id'], line['team_id'], int(line['is_starter']), line['outs_recorded'],
+                         line['pitches_thrown'], line['batters_faced'], date.fromisoformat(line['workload_date'])
+                         if 'workload_date' in line else played) for line in facts}
+            if stored.get(pk, set()) != official:
+                project_final_appearances([(game, replay(cur, box).body, facts, {})], played,
+                                          include_context=False, in_transaction=True)
+                corrected += 1
+            solo = {}
+            for side in game['teams'].values():
+                team = side['team']['id']
+                staff = [line for line in facts if line['team_id'] == team]
+                if len(staff) == 1 and staff[0]['is_starter']:
+                    solo[team] = staff[0]['pitcher_mlb_id']
+            result = recompute_team_game_pitching_splits_for_game(
+                pk, game_date=played, playable_dates_by_team=playable, official_solo_starters=solo)
+            if result['status'] != 'processed' or result['rows_total'] != 2:
+                raise ValueError(f'Missing starter and relief split for final {pk}')
+            rows += result['rows_total']
+    return dict(calendar=calendar, games=len(expected), team_games=rows, corrected_games=corrected, source_receipts=sorted(box_sources))
+
+
+def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False, review_seconds=185):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
     from sync_v3.render_staging import connect
@@ -107,7 +218,9 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
                         if window['missing_games'] and window['recovered']:
                             return dict(phase='canonical_pending', generation=digest, workload=window)
                         raise ValueError(f"Competitive workload coverage is incomplete: {window['reason']}")
-                    sources = set(window['receipts'].values())
+                    splits = project_competitive_splits(source, through, window['window_days'], window['receipts'])
+                    sources = set(window['receipts'].values()) | {splits['calendar']} | set(splits.pop('source_receipts'))
+                    print(json.dumps(dict(private_rotation_splits=splits)), flush=True)
                 else:
                     competition = project_offseason_competition(source, client, competition_day, scoped=True)
                     sources = set(competition.pop('source_receipts'))
@@ -121,19 +234,41 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
                 checkpoint = record_checkpoint(digest, competition_day, through, sources, started)
                 return dict(phase='canonical_ready', checkpoint=checkpoint, product_writer=PROJECTOR,
                             source_count=len(sources), generation=digest)
-            result = recover_next(source, client, digest)
+            result = recover_next(source, client, digest, seconds=review_seconds)
     return dict(result, canonical_checkpoint=checkpoint, product_writer=PROJECTOR)
+
+
+def product_schedule_predecessor(cur, day, observation):
+    """Resolve the exact retained predecessor from the private target's dated schedule stamp."""
+    from datetime import timezone
+    from psycopg2.extras import Json
+    from sqlalchemy import text
+    from sync_v3 import evidence
+    from sync_v3.discovery import calendar_requests
+    from utils.db import db
+
+    stamps = db.session.execute(text('SELECT DISTINCT last_synced FROM slate_games WHERE game_date_et=:day'),
+                                dict(day=day)).scalars().all()
+    predecessor = None
+    if len(stamps) == 1 and stamps[0] < observation.retrieved_at.astimezone(timezone.utc).replace(tzinfo=None):
+        request = calendar_requests(day)[0]
+        cur.execute("""SELECT id FROM candidate.fetches f WHERE endpoint=%s AND parameters=%s
+            AND received_at=%s AND outcome='received' AND reason IS NULL AND NOT EXISTS
+            (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""",
+                    (request.endpoint, Json(request.params()), stamps[0].replace(tzinfo=timezone.utc)))
+        ids = [item[0] for item in cur]
+        if len(ids) == 1:
+            predecessor = evidence.replay(cur, ids[0])
+    return predecessor
 
 
 def project_dated_schedules(password, source_password, digest, *, archive=False):
     """Apply the two generation-bound slates together and preserve the current product on archive replay."""
-    from datetime import date, timezone
-    from psycopg2.extras import Json
+    from datetime import date
     from sqlalchemy import text
     from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule, retained_makeups
     from sync_v3 import evidence
     from sync_v3.current_worker import verify_target
-    from sync_v3.discovery import calendar_requests
     from sync_v3.render_staging import connect
     from sync_v3.staging_product_delivery import private_app
     from utils.db import db
@@ -152,18 +287,7 @@ def project_dated_schedules(password, source_password, digest, *, archive=False)
             with db.session.begin() as transaction:
                 db.session.execute(text('LOCK TABLE scheduled_games,slate_games IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
                 for day, (_, observation) in slates.items():
-                    stamps = db.session.execute(text('SELECT DISTINCT last_synced FROM slate_games WHERE game_date_et=:day'),
-                                                dict(day=day)).scalars().all()
-                    predecessor = None
-                    if len(stamps) == 1 and stamps[0] < observation.retrieved_at.astimezone(timezone.utc).replace(tzinfo=None):
-                        request = calendar_requests(day)[0]
-                        cur.execute("""SELECT id FROM candidate.fetches f WHERE endpoint=%s AND parameters=%s
-                            AND received_at=%s AND outcome='received' AND reason IS NULL AND NOT EXISTS
-                            (SELECT 1 FROM candidate.refusals r WHERE r.source_id=f.id)""",
-                                    (request.endpoint, Json(request.params()), stamps[0].replace(tzinfo=timezone.utc)))
-                        ids = [item[0] for item in cur]
-                        if len(ids) == 1:
-                            predecessor = evidence.replay(cur, ids[0])
+                    predecessor = product_schedule_predecessor(cur, day, observation)
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, predecessor=predecessor)
                     reconcile_schedule(day, observation, private_staging=True, makeups=makeups, verify_only=True)
                 from services.game_finality import classify_status

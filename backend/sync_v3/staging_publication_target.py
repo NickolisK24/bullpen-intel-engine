@@ -16,12 +16,15 @@ from scripts.database_migrations import upgrade_private_staging
 from services.migration_authority import require_owner
 from utils.db import db
 
-TARGET = 'baseballos_v3_roster_staging'
+CURRENT_TARGET = 'baseballos_v3_roster_staging'
+ARCHIVE_TARGET = 'baseballos_v3_competitive_rehearsal'
+TARGET = ARCHIVE_TARGET if os.environ.get('STAGING_PRODUCT_TIMELINE') == 'competitive_archive' else CURRENT_TARGET
 
 
 def install_target(password, worker_password):
     from sync_v3.render_staging import DATABASE, HOST, OWNER, connect
 
+    from psycopg2 import sql
     require_owner()
     start = monotonic()
     # CREATE DATABASE runs outside a transaction. Serialize creation and verification.
@@ -35,10 +38,10 @@ def install_target(password, worker_password):
             cur.execute('SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=%s', (TARGET,))
             existing = cur.fetchone()
             if existing is None:
-                cur.execute('CREATE DATABASE baseballos_v3_roster_staging TEMPLATE template0')
+                cur.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(TARGET)))
             elif existing != (OWNER,):
                 raise ValueError('Unexpected staging publication database owner')
-            cur.execute('REVOKE ALL ON DATABASE baseballos_v3_roster_staging FROM PUBLIC')
+            cur.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(TARGET)))
             cur.execute("SELECT has_database_privilege('sync_v3_worker',%s,'CONNECT')", (TARGET,))
             if cur.fetchone() != (False,):
                 raise ValueError('Acquisition worker can connect to publication staging')
@@ -57,6 +60,31 @@ def install_target(password, worker_password):
                     raise ValueError('Unexpected publication migration target')
                 conn.execute(text('REVOKE CREATE ON SCHEMA public FROM PUBLIC'))
             expected = upgrade_private_staging()
+            if TARGET == ARCHIVE_TARGET:
+                from sqlalchemy.dialects.postgresql import insert
+                from models.pitcher import Pitcher
+                # Transfer only the immutable lookup keys and names. Dated roster, game and
+                # intelligence facts must enter this timeline through the regular writers.
+                import psycopg2
+                with closing(psycopg2.connect(host=HOST, dbname=CURRENT_TARGET, user=OWNER, password=password,
+                                              sslmode='require', connect_timeout=10)) as original:
+                    with original, original.cursor() as cur:
+                        cur.execute('SET TRANSACTION READ ONLY')
+                        cur.execute('SELECT id,mlb_id,full_name FROM public.pitchers ORDER BY id')
+                        directory = cur.fetchall()
+                if not directory:
+                    raise ValueError('Missing established private identity directory')
+                with db.engine.begin() as conn:
+                    table = Pitcher.__table__
+                    stmt = insert(table).on_conflict_do_nothing(index_elements=['id'])
+                    conn.execute(stmt, [dict(id=k, mlb_id=mlb, full_name=name, active=False)
+                                        for k, mlb, name in directory])
+                    known = dict(conn.execute(text('SELECT id,mlb_id FROM pitchers')).all())
+                    if any(known.get(k) != mlb for k, mlb, _ in directory):
+                        raise ValueError('Competitive timeline canonical identities conflict')
+                    conn.execute(text("SELECT setval(pg_get_serial_sequence('public.pitchers','id'), "
+                                      "greatest((SELECT max(id) FROM pitchers),(SELECT last_value FROM pitchers_id_seq)))"))
+                return dict(database=TARGET, identities=len(directory), migration=expected)
             schedule = project_played_schedule(worker_password)
             workload_window = project_workload_window(worker_password)
             roster_report = project_roster_views(worker_password)
@@ -260,6 +288,11 @@ def project_final_appearances(finals, day, *, include_context=True, in_transacti
                                  f"{len(facts)} official appearances, "
                                  f"{planned['pitcher_resolution_failures']} unresolved identities")
             if summary['rows_unchanged'] != len(facts):
+                corrections = [dict(fields=row['semantic_changed_fields'], digest=row['mutation_digest'])
+                               for row in planned['reconciliation_plan'] if row.get('semantic_changed_fields')]
+                if corrections:
+                    print(json.dumps(dict(private_final_correction=dict(game_pk=game['gamePk'], day=str(day),
+                                                                      corrections=corrections))), flush=True)
                 applied = process(False)
                 if applied['incomplete_reason'] or applied['processing_status'] != POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
                     raise ValueError('Final reconciliation incomplete')
@@ -270,9 +303,10 @@ def project_final_appearances(finals, day, *, include_context=True, in_transacti
             if repeated['incomplete_reason'] or repeated['reconciliation_summary']['rows_unchanged'] != len(facts):
                 raise ValueError('Final reconciliation did not converge')
             rows = db.session.execute(text("""SELECT p.mlb_id,l.appearance_team_id,l.innings_pitched_outs,
-                          l.games_started,l.game_date FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
+                          l.games_started,l.game_date,l.pitches_thrown,l.batters_faced FROM game_logs l JOIN pitchers p ON p.id=l.pitcher_id
                           WHERE l.mlb_game_pk=:pk"""), dict(pk=game['gamePk']))
-            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),dates.get(f['pitcher_mlb_id'], day))
+            expected = Counter((f['pitcher_mlb_id'],f['team_id'],f['outs_recorded'],int(f['is_starter']),
+                                dates.get(f['pitcher_mlb_id'], day), f['pitches_thrown'], f['batters_faced'])
                                for f in facts)
             if Counter(tuple(row) for row in rows) != expected:
                 raise ValueError('Staged pitching lines differ from confirmed acquisition')
@@ -587,12 +621,17 @@ def project_workload_window(worker_password, *, workload_day=None, scoped=False,
                 obs = evidence.replay(cur, oid)
             observations[day] = obs
             receipts[str(day)] = oid
-    makeups = retained_makeups(observations)
-    for day, obs in observations.items():
-        with db.session.begin():
-            if not scoped:
-                db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
-            reconcile_schedule(day, obs, private_staging=True, makeups=makeups, verify_only=verify_only)
+        makeups = retained_makeups(observations)
+        for day, obs in observations.items():
+            with db.session.begin(), source, source.cursor() as cur:
+                predecessor = None
+                if not scoped:
+                    db.session.execute(text('SET LOCAL ROLE sync_v3_staging_schedule'))
+                elif not verify_only:
+                    from sync_v3.staging_projector import product_schedule_predecessor
+                    predecessor = product_schedule_predecessor(cur, day, obs)
+                reconcile_schedule(day, obs, private_staging=True, makeups=makeups, verify_only=verify_only,
+                                   predecessor=predecessor)
     with db.session.begin():
         reason, ledger = appearance_ledger_publish_block(end_date=workload_day, window_days=required_days)
         if ledger is None:
@@ -621,11 +660,25 @@ def acquire_window_source(source, client, day, endpoint, params):
             at, = cur.fetchone()
             job = queue.enqueue(cur, key, payload, at, budget='historical', product_date=day)
             claim = queue.claim(cur, at, budget='historical', product_date=day, only_job_id=job)
+    if oid is not None and endpoint == '/transactions':
+        from sync_v3.cycle import plan_children
+        from sync_v3.rosters import transactions_confirmed
+        with source, source.cursor() as cur:
+            retained = evidence.replay(cur, oid)
+            if not transactions_confirmed(cur, oid, retained):
+                plan_children(cur, oid, retained, 'historical', retained.retrieved_at, day)
+                if not transactions_confirmed(cur, oid, retained):
+                    raise ValueError(f'Retained official transactions remain unresolved for {day}')
     if oid is None:
         if not claim:
             raise ValueError(f'Acquisition pending for {day}')
-        oid, outcome = evidence.execute(source, claim, client._get,
-            on_received=lambda cur, oid, obs: canonical.observe(cur, oid, obs, day))
+        def reconcile(cur, source_id, observation):
+            if endpoint == '/transactions':
+                from sync_v3.cycle import plan_children
+                plan_children(cur, source_id, observation, 'historical', observation.retrieved_at, day)
+            elif endpoint != '/schedule' or 'season' not in params:
+                canonical.observe(cur, source_id, observation, day)
+        oid, outcome = evidence.execute(source, claim, client._get, on_received=reconcile)
         if outcome != 'received':
             raise ValueError(f'Source recovery for {day} returned {outcome}')
     return oid
@@ -844,7 +897,7 @@ def recover_private_readiness(worker_password, *, budget_seconds, workload_day=N
                     withheld=blocked, elapsed_seconds=monotonic()-started)
 
 
-def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None):
+def advance_private_generation(worker_password, *, budget_seconds=90, workload_day=None, as_of=None, checkpoint=None):
     """Build candidate intelligence from private acquisition. Keep the selection pointer untouched."""
     from datetime import timedelta
     from sync_v3.current_worker import verify_target
@@ -861,22 +914,24 @@ def advance_private_generation(worker_password, *, budget_seconds=90, workload_d
             return dict(decision=decision, scopes_built=0)
         started = monotonic()
         count = 0
-        with source, source.cursor() as cur:
-            cur.execute('''SELECT digest, manifest->'missing'='[]'::jsonb
-                                  AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
-                           FROM candidate.generations WHERE represented=%s
-                           AND manifest->>'contract'='candidate_generation_inventory_v1'
-                           ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
-            previous = cur.fetchone()
-        digest = previous[0] if previous else None
-        if previous and previous[1]:
-            # The reviewer recomputes the latest inventory in its read-only transaction.
-            review = verify_generation(source, digest, compare_latest=True)
-            if review['selection_review']['latest_inventory_digest'] == digest:
-                return dict(digest=digest, scopes_built=0, elapsed_seconds=monotonic()-started,
-                            review=review['selection_review'], clubs=review['clubs'],
-                            snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
-            digest = None
+        digest = checkpoint
+        if digest is None:
+            with source, source.cursor() as cur:
+                cur.execute('''SELECT digest, manifest->'missing'='[]'::jsonb
+                                      AND manifest->'stale_inputs'='[]'::jsonb AND manifest->'stale_comparisons'='[]'::jsonb
+                               FROM candidate.generations WHERE represented=%s
+                               AND manifest->>'contract'='candidate_generation_inventory_v1'
+                               ORDER BY creation_xid DESC LIMIT 1''', (workload_day,))
+                previous = cur.fetchone()
+            digest = previous[0] if previous else None
+            if previous and previous[1]:
+                # The reviewer recomputes the latest inventory in its read-only transaction.
+                review = verify_generation(source, digest, compare_latest=True)
+                if review['selection_review']['latest_inventory_digest'] == digest:
+                    return dict(digest=digest, scopes_built=0, elapsed_seconds=monotonic()-started,
+                                review=review['selection_review'], clubs=review['clubs'],
+                                snapshots=review['snapshots'], missing_scopes=review['missing_scopes'])
+                digest = None
         while True:
             batch = build_batch(source, workload_day, 100, as_of=as_of, deadline=started+budget_seconds, resume=digest)
             digest = batch['after']

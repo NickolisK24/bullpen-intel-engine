@@ -47,7 +47,7 @@ def edition_scope(cur, day, *, after_finals=False):
                 offseason=offseason, decisions_missing=competition['missing_decisions'])
 
 
-def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=100):
+def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=100, for_projection=False, resume_digest=None):
     from contextlib import closing
     from services.mlb_api import MLBApiClient
     from sync_v3.discovery import calendar_requests
@@ -61,9 +61,9 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         with source, source.cursor() as cur:
             games = calendar_games(season.params(), evidence.replay(cur, calendar).body)
         cutoff = workload_cutoff(games, day, after_finals=after_finals)
-        for played in {cutoff, day}:
-            request = calendar_requests(played)[0]
-            acquire_window_source(source, client, played, request.endpoint, request.params())
+        for played in sorted({cutoff, day}):
+            for request in calendar_requests(played):
+                acquire_window_source(source, client, played, request.endpoint, request.params())
 
     with source, source.cursor() as cur:
         cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
@@ -72,8 +72,29 @@ def prepare(source, worker_password, day, *, after_finals=False, budget_seconds=
         result = qualify_offseason_edition(source, day)
         digest, decision = result['generation'], result['decision']
     else:
-        result = advance_private_generation(worker_password, workload_day=scope['through'],
-                                            as_of=scope['as_of'], budget_seconds=budget_seconds)
+        result = None
+        candidate = None
+        if for_projection:
+            from sync_v3.cohort import compare_games, compare_membership
+            from sync_v3.generation import freeze_generation, review_core_candidate, review_coverage
+            through = scope['through']
+            candidate = freeze_generation(source, through, as_of=scope['as_of'])
+            with source, source.cursor() as cur:
+                cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                cur.execute('SELECT manifest FROM candidate.generations WHERE digest=%s', (candidate,))
+                manifest, = cur.fetchone()
+                coverage = review_coverage(manifest)
+                if not (manifest['missing'] or coverage['stale_inputs'] or coverage['stale_comparisons']):
+                    if resume_digest == candidate:
+                        review = dict(status='core_comparison_complete', reason_codes=[])
+                    else:
+                        review = review_core_candidate(coverage, compare_membership(cur, candidate, str(through)),
+                                                      compare_games(cur, candidate, manifest))
+                    # The independent publisher verifies every retained snapshot before the pointer can move.
+                    result = dict(digest=candidate, review=review, scope='canonical_projection')
+        if result is None:
+            result = advance_private_generation(worker_password, workload_day=scope['through'],
+                                                as_of=scope['as_of'], budget_seconds=budget_seconds, checkpoint=candidate)
         digest = result.get('digest')
         review = result.get('review')
         decision = review.get('status') if isinstance(review, dict) else review or 'withheld'
