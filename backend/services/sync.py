@@ -2217,12 +2217,20 @@ def process_completed_game_for_postgame_refresh(
             .all()
         )
     }
-    team_abbr_map = dict(
-        db.session.query(Pitcher.team_id, Pitcher.team_abbreviation)
-        .filter(Pitcher.team_abbreviation.isnot(None))
-        .distinct()
-        .all()
-    )
+    if require_official_pitching_credit:
+        # A pitcher's present club label cannot establish a historical opponent's abbreviation.
+        team_abbr_map = {}
+        for side in ('home', 'away'):
+            club = (boxscore or {}).get('teams', {}).get(side, {}).get('team') or {}
+            if club.get('id') and club['id'] == _game_team_id(game, side):
+                team_abbr_map[club['id']] = _team_abbreviation_from(club) or _team_abbreviation_from(_game_team(game, side))
+    else:
+        team_abbr_map = dict(
+            db.session.query(Pitcher.team_id, Pitcher.team_abbreviation)
+            .filter(Pitcher.team_abbreviation.isnot(None))
+            .distinct()
+            .all()
+        )
     game_date = _game_date(game, schedule_date)
     logs_added = 0
     logs_corrected = 0
@@ -2273,7 +2281,7 @@ def process_completed_game_for_postgame_refresh(
             pitchers_reactivated += 1
         if resolution.get('position_override_from_pitching_line'):
             position_overrides_from_pitching_line += 1
-        if pitcher is not None and pitcher.team_id and pitcher.team_abbreviation:
+        if not require_official_pitching_credit and pitcher is not None and pitcher.team_id and pitcher.team_abbreviation:
             team_abbr_map[pitcher.team_id] = pitcher.team_abbreviation
         result = _ingest_boxscore_pitching_line(
             pitcher,
