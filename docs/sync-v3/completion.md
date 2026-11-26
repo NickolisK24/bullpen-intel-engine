@@ -1,5 +1,31 @@
 # Sync v3 acceptance ledger
 
+## November 26 competitive primary publication and interruption recovery
+
+**The independent competitive lifecycle passed in private staging.** The command selected its workload and availability dates from MLB, recovered canonical data across multiple executions, recomputed the affected intelligence and atomically published competitive snapshot 1 / sync 70. Its source generation is `e00608336ffb0a976eb8aafc0c3a17ec53d1fc42528cba63a02ef724e3b1e816`. The database contained 386 rotation splits from 193 finals. Dated team identities and the seven-day rotation values on the actual Tonight cards matched the independently reviewed generation. Official sole-starter evidence supports zero relief totals. No statistical pitching-line change was observed in this window's final split pass.
+
+Run `1795656228` on `4a47b9ef37861efbae7cba4974f31edbe03aa31e` committed the publication and hit the 300-second host command limit before reporting HTTP completion. Run `1795656734` on `a54a0855eb359f857d7cefab23c4fb4d852ea7b9` resumed from canonical checkpoint 39 and the 30 club reviews. The restricted publisher independently rechecked the source and the selected pointer. It finished postcommit delivery for snapshot 1 / sync 70 without creating a duplicate. The HTTP verifier returned 30 clubs, 15 games and 30 team shares. The successful recovery invocation took 175.18 seconds, including 112.71 seconds of independent source verification and 53.19 seconds of postcommit processing. The publisher used 14.50 CPU-seconds and 179,164 KiB peak process RSS. Its product database occupied 32,282,291 bytes. Across the interruption and recovery, peak one-minute samples were 255,971,330 bytes and 0.162 CPU cores for the cron and 217,763,840 bytes and 0.100 cores for PostgreSQL, with three database connections.
+
+The latest retained archive source preceded successful HTTP delivery by 4,308.62 seconds. The canonical checkpoint start preceded it by 1,497.41 seconds. From installing the clean timeline to verified delivery took 2 hours 2 minutes 57 seconds, including engineering changes and the interrupted run. Live-source freshness and routine offseason execution have separate measurements below.
+
+Read-only run `1795657000` exercised eleven checks across normal HTTP routes including all 30 Board populations, Matchup, Pitcher Detail, League, Stories, Trust, Changes, Search and History. Its login had 19 readable tables and zero writable tables. Restricted rollback `1795657089` restored this timeline's original empty selector in 38.20 seconds including startup. The API withheld 30 clubs and returned zero Tonight games. The earlier current rehearsal separately restored a nonempty predecessor with all 15 games and 30 original shares. The manual staging service was returned to its real-date primary configuration. [Verified runtime](https://github.com/NickolisK24/bullpen-intel-engine/commit/a54a0855eb359f857d7cefab23c4fb4d852ea7b9) · [Render events](https://dashboard.render.com/cron/crn-dc2tlk5g1s2s739sfmt0/events)
+
+### Production authority handoff status
+
+**Blocking.** The production owner must identify external consumers of pooled PostgreSQL `postgres` and Supabase `service_role`. Review credential references outside the known Render and GitHub bindings, then correlate Supavisor session metadata and REST write methods, tables or RPCs, and timestamps. Record the caller, owner, role, table and latest observed write, or an explicit finding of no additional consumers after reviewing both credentials. Keep credential values, headers and connection strings out of the evidence. Production role assignment, writer fencing and the first legacy-to-v3 pointer transition depend on this inventory. The private runtime pins its staging databases and logins. The production binding, executable first-handoff rollback, and specific approval still require completion. The existing public verifier can check the pinned old or new edition.
+
+| Production control | Verified ownership or timing |
+|---|---|
+| API `srv-d7qp8na8qa3s73d149sg` | Legacy revision `4c570f1b8a7a42f94eb476369096c2c2cd7979a7`. Preserve product reads and unrelated application writes during handoff. |
+| Continuous `crn-daaer0e7bikc7388ghag` | Every 15 minutes |
+| Daily `crn-da8f605g1s2s73983o1g` | 10:05 UTC |
+| Morning `crn-da8ldm6gekts73ao3a6g` | 14:05 UTC |
+| Postgame `crn-da8f4mbtqb8s73a1htdg` | 02:05, 04:05 and 06:05 UTC |
+| GitHub `baseballos-sync.yml` | Scheduled recovery at 10:17, 14:23, 02:11, 04:11 and 06:11 UTC, plus manual write dispatch |
+| Shadow detector `crn-da98kclg1s2s739k0870` | Separate three-minute deployment on `617ab650febc1b6a8567fba264150353b2f4b3c4` |
+
+All four legacy primary crons were live on `550d04a1b5a602d4ee720bc805b07f0c8755d909` at the November 26 inspection. For the eventual cutover approval, a proposed 24-hour observation covers every named daily and overnight opportunity plus the continuous cadence. The owner still needs to agree to the duration and approve the specific production resource changes. Explained legacy label and zero-reliever differences are nonblocking. Presentation changes remain deferred.
+
 ## Independent competitive timeline on private Render staging
 
 The competitive rehearsal uses a second logical product database on the existing 5 GB staging PostgreSQL instance. This isolates the historical baseball clock from the November edition's snapshot 131 / sync 66. Installer run `1795649555` applied product migration `e241f709cd36` and carried over 1,679 reviewed MLBAM-to-product identity mappings. Rosters, games and publication pointers were built on the isolated timeline. The fixed staging baseline remains $9.50 per month.
@@ -287,7 +313,7 @@ Module paths below are relative to `backend/sync_v3/`. The [rehearsal record](RE
 | NP-14 state and arm reads | Hosted current and archived reads verified | 30 archived club rest states, 30 current season-complete states, independent dated Board review and a withdrawn incorrect private edition | Verify actual public delivery after handoff |
 | NP-15 history | Isolated verified | history.sql, intelligence_history.py, dependency rebuilds | Prove correction and replay across the complete accepted cohort |
 | NP-16 changes | Isolated verified | change_history.py, readiness_history.py, team_history_reads.py | Match previous edition, methodology and event references on both sides |
-| NP-17 candidate build | Hosted dated generations verified | Live offseason and independent competitive pregame and postgame selection, 30 clubs and 1,854 archived snapshots | Verify a newly delivered competitive correction under the primary entry point |
+| NP-17 candidate build | Hosted current and competitive primary delivery verified | Source-driven dated selection, corrected historical opponent labels, rotation splits for 193 finals and competitive snapshot 1 / sync 70 | Bind the tested primary to exclusive production writers |
 | NP-18 promotion and recovery | Hosted private promotion and rollback verified | Scoped publication and rollback, exact restored HTTP edition, immutable historical shares | Verify exclusive production writer permissions and scheduler handoff |
 | NP-19 product delivery | Hosted current and archived delivery verified | Archived regular-season edition, incremental successor, exact restored predecessor and current offseason rehearsal | Verify public production delivery after the handoff |
 | NP-20 operations | Hosted processing and recovery verified | Interrupted work resumed in another process. Private runs verified HTTP after publication, rollback and republication | Observe scheduled production delivery and absence of competing writers |
