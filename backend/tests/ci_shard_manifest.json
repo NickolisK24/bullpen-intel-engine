@@ -1491,7 +1491,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 576.049,
+      "measured_seconds": 578.779,
       "files": [
         {
           "path": "tests/test_independent_sync_scheduling.py",
@@ -1960,6 +1960,10 @@
         {
           "path": "tests/test_sync_v3_private_publication.py",
           "measured_seconds": 3.2
+        },
+        {
+          "path": "tests/test_sync_v3_writer_fence.py",
+          "measured_seconds": 2.73
         }
       ]
     }
