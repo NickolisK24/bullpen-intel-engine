@@ -16,15 +16,19 @@ from scripts.database_migrations import upgrade_private_staging
 from services.migration_authority import require_owner
 from utils.db import db
 
+from sync_v3 import runtime_binding
+
 CURRENT_TARGET = 'baseballos_v3_roster_staging'
 ARCHIVE_TARGET = 'baseballos_v3_competitive_rehearsal'
-TARGET = ARCHIVE_TARGET if os.environ.get('STAGING_PRODUCT_TIMELINE') == 'competitive_archive' else CURRENT_TARGET
+TARGET = runtime_binding.DATABASE if runtime_binding.PRODUCTION else ARCHIVE_TARGET if os.environ.get('STAGING_PRODUCT_TIMELINE') == 'competitive_archive' else CURRENT_TARGET
 
 
 def install_target(password, worker_password):
     from sync_v3.render_staging import DATABASE, HOST, OWNER, connect
 
     from psycopg2 import sql
+    if runtime_binding.PRODUCTION:
+        raise ValueError('Private database installation is disabled in production')
     require_owner()
     start = monotonic()
     # CREATE DATABASE runs outside a transaction. Serialize creation and verification.
@@ -532,7 +536,7 @@ def project_credited_membership(day, by_player, *, apply_position, club_inputs):
             raise ValueError('Dated roster reconciliation scope changed')
         if to_attribute:
             completed = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
-            run = SyncRun(job_name='sync_v3_roster_reconciliation', source='sync_v3_staging',
+            run = SyncRun(job_name='sync_v3_roster_reconciliation', source=runtime_binding.RUN_SOURCE,
                           latest_workload_date=day, status='success', stage='verified_roster_observations',
                           records_processed=len(unbound), started_at=start, completed_at=completed)
             db.session.add(run)
@@ -554,6 +558,21 @@ def project_credited_membership(day, by_player, *, apply_position, club_inputs):
 def bind_active_staff(staff, *, initialized=False):
     """Reserve approved public keys before allocating any new staging-local pitcher keys."""
     from models.pitcher import Pitcher
+    if runtime_binding.PRODUCTION:
+        if not initialized:
+            raise ValueError('Production identity bootstrap is forbidden')
+        # Existing product IDs remain authoritative. Allocate only for new official MLB identities.
+        with db.engine.begin() as conn:
+            if tuple(conn.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, runtime_binding.PROJECTOR):
+                raise ValueError('Unexpected production identity writer')
+            conn.execute(text('LOCK TABLE public.pitchers IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+            existing = dict(conn.execute(text('SELECT mlb_id,id FROM public.pitchers WHERE mlb_id=ANY(:ids)'),
+                                         {'ids': list(staff)}).all())
+            missing = sorted(staff.keys()-existing.keys())
+            if missing:
+                conn.execute(Pitcher.__table__.insert(), [dict(mlb_id=mlb, full_name=staff[mlb], position='P',
+                                                               active=False) for mlb in missing])
+        return dict(mapped=len(existing), created=len(missing), collisions=0)
     pairs = json.loads(os.environ['STAGING_ROSTER_PUBLIC_IDENTITIES'])['pairs']
     if (len(pairs) != 60 or any(len(p) != 2 or any(type(x) != int or x <= 0 for x in p) for p in pairs)
             or any(len({p[i] for p in pairs}) != 60 for i in (0, 1))):

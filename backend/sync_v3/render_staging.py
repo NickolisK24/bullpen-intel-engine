@@ -13,21 +13,25 @@ from psycopg2.extensions import encrypt_password, parse_dsn
 from sync_v3.current_worker import acquisition_failed, day_states, process, verify_target
 from sync_v3.replay import install
 
+from sync_v3 import runtime_binding
+
 HOST = 'dpg-dc2t51mc6qcc738080hg-a'
-DATABASE = 'baseballos_sync_v3_staging'
+DATABASE = runtime_binding.DATABASE if runtime_binding.PRODUCTION else 'baseballos_sync_v3_staging'
 OWNER = 'baseballos_sync_v3_staging_user'
 BATCH_LIMIT = 256
 PLAYED_DAY = date(2017, 8, 28)
 
 
 def connect(user, password):
+    if runtime_binding.PRODUCTION:
+        return runtime_binding.connect_runtime(user, password)
     return psycopg2.connect(host=HOST, port=5432, dbname=DATABASE, user=user, password=password,
                             connect_timeout=10, options='-c search_path=pg_catalog',
                             application_name='baseballos_v3_staging', sslmode='require')
 
 
 def runtime_environment(*required):
-    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', 'STAGING_PRODUCT_TIMELINE', 'STAGING_PRIMARY_BASEBALL_DATE', *required)
+    keep = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'VIRTUAL_ENV', 'SYNC_V3_DEPLOYMENT', 'SYNC_V3_SESSION_HOST', 'SYNC_V3_SSL_ROOT_CERT', 'STAGING_PRODUCT_TIMELINE', 'STAGING_PRIMARY_BASEBALL_DATE', *required)
     return {**{key: os.environ[key] for key in keep if key in os.environ}, 'AUTO_SYNC': 'false'}
 
 
@@ -45,6 +49,8 @@ def primary_product_day():
 def bootstrap(password):
     started_at = None
     task = os.environ.get('STAGING_INSTALLER_TASK', 'bootstrap')
+    if runtime_binding.PRODUCTION and task != 'run-current-primary':
+        raise ValueError('Only the scheduled primary is supported on the production target')
     if task in ('build-generation', 'recover-readiness'):
         import resource
         from sync_v3.staging_publication_target import advance_private_generation
@@ -503,6 +509,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'publish-reviewed', 'legacy-predecessor', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
     args = parser.parse_args()
+    if runtime_binding.PRODUCTION and args.operation not in (
+            'bootstrap', 'publish', 'publish-reviewed', 'rollback', 'project-before-publish', 'project', 'project-schedules'):
+        parser.error('Operation is restricted to private staging')
     try:
         if args.operation in ('publish', 'publish-reviewed', 'rollback'):
             from sync_v3.staging_publisher import PUBLISHER, check_scope, _connect, TARGET

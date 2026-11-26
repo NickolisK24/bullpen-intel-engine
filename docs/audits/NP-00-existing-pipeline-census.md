@@ -123,12 +123,14 @@ The owner inspected the Render workspace and GitHub settings with every value ma
 | BaseballOS API | Direct service variables `DATABASE_URL` and `DATABASE_MIGRATION_URL` |
 | Daily Primary, Morning Primary, Postgame Primary, Continuous Updates | Each inherits `DATABASE_URL` from `baseballos-production` |
 | Continuous Shadow Detect | Inherits `DATABASE_URL` from `baseballos-production` and defines `DATABASE_MIGRATION_URL` directly |
-| GitHub Actions repository | Owner confirmed repository secret `DATABASE_URL`. Maintenance workflow code conditionally references `DATABASE_MIGRATION_URL`; its configured presence was not confirmed. |
+| GitHub Actions repository | Owner confirmed repository secrets `DATABASE_URL`, `BASEBALLOS_ADMIN_API_TOKEN`, `BASEBALLOS_SYNC_URL`, a dashboard snapshot build secret and `SECRET_KEY`. The admin and build bindings also reach the API, whose database role determines its effective authority. Maintenance workflow code conditionally references `DATABASE_MIGRATION_URL`; its configured presence was not confirmed. |
 | GitHub environments and agents | Production, Preview and copilot contained no additional secrets or variables. Copilot Agents listed no repository secrets. |
 
 The owner found no named Supabase `service_role` credential in these locations. A key under another name, a local script, a separate deployment or an old copy could still have access. The shared group accounts for five runtime consumers. Direct bindings require separate role receipts even when their variable names match.
 
 Production catalog evidence showed that pooled `postgres` owns all 89 public tables and bypasses RLS. Since the November 20 statistics reset it executed 20 write statements on dashboard snapshots, 15 on Tonight publications and five on Team State proofs. The pool logs could not assign these statements to individual consumers. `service_role` had write capability on all 89 tables and bypassed RLS. The November 19–26 edge sample showed 144 requests and zero REST write requests or GraphQL POSTs. The project had no listed Edge Functions or Vault entries. SQL statement logging covered DDL and the audit class was none. These observations establish actual writes under one role and potential writes under both. They cannot enumerate everyone holding a credential.
+
+The proposed handoff assigns the API to `baseballos_product_api`, the outgoing jobs and controlled fallback to `baseballos_legacy_sync`, source retention to `sync_v3_worker`, product facts to `baseballos_v3_projector`, and promotion and restoration to `baseballos_v3_publisher`. The database owner remains in a separately controlled migration context. These are proposed destinations. The masked settings establish neither a per-service database username nor a holder of the service-role key. The direct owner password, previously authenticated pool clients and effective service-role grants each require a separate fence. [Handoff procedure](../sync-v3/production-handoff.md)
 
 ## Historical reuse evidence
 

@@ -5,6 +5,7 @@ from time import monotonic
 from sqlalchemy import text
 
 from sync_v3 import evidence
+from sync_v3 import runtime_binding
 from sync_v3.discovery import calendar_requests, pitcher_requests
 from sync_v3.membership_usage import _eligibility_sample
 from sync_v3.season_deployment import BaselineWithheld
@@ -270,11 +271,11 @@ def qualify_club(source, team, through, availability, digest, expected_target):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private Board qualification target')
         job_name = f'sync_v3_board_review_{team}'
-        previous = SyncRun.query.filter_by(job_name=job_name, source='sync_v3_staging').order_by(SyncRun.id.desc()).first()
+        previous = SyncRun.query.filter_by(job_name=job_name, source=runtime_binding.RUN_SOURCE).order_by(SyncRun.id.desc()).first()
         if previous and previous.publication_outcome == proof:
             return previous.id
         now = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
-        review = SyncRun(job_name=job_name, source='sync_v3_staging', status='success', stage='reviewed',
+        review = SyncRun(job_name=job_name, source=runtime_binding.RUN_SOURCE, status='success', stage='reviewed',
                          started_at=now, completed_at=now, latest_workload_date=through,
                          records_processed=len(expected), publication_outcome=proof)
         db.session.add(review)
@@ -302,7 +303,7 @@ def recover_next(source, client, digest, *, seconds=185):
         if db.session.execute(text('SELECT current_database()')).scalar_one() != TARGET:
             raise ValueError('Unexpected private Board checkpoint target')
         names = {f'sync_v3_board_{kind}_{team}' for team in MLB_TEAM_IDS for kind in ('review', 'progress')}
-        runs = (SyncRun.query.filter(SyncRun.job_name.in_(names), SyncRun.source=='sync_v3_staging',
+        runs = (SyncRun.query.filter(SyncRun.job_name.in_(names), SyncRun.source==runtime_binding.RUN_SOURCE,
                                     SyncRun.status=='success').order_by(SyncRun.id.desc()).all())
         completed, offsets = {}, {}
         for run in runs:
@@ -336,7 +337,7 @@ def recover_next(source, client, digest, *, seconds=185):
         if report['after_mlb'] != offsets.get(team, 0):
             with db.session.begin():
                 now = db.session.execute(text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")).scalar_one()
-                db.session.add(SyncRun(job_name=f'sync_v3_board_progress_{team}', source='sync_v3_staging',
+                db.session.add(SyncRun(job_name=f'sync_v3_board_progress_{team}', source=runtime_binding.RUN_SOURCE,
                         started_at=now, completed_at=now, status='success', stage='checkpoint',
                         latest_workload_date=date.fromisoformat(report['through']), records_processed=len(report['verified']),
                         publication_outcome=dict(team=team, generation=digest, after_mlb=report['after_mlb'])))

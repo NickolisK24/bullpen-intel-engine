@@ -1,5 +1,11 @@
 # Sync v3 acceptance ledger
 
+## November 26 production-role rehearsal and exclusive-writer handoff
+
+The [operator procedure](production-handoff.md) binds the existing primary to dedicated production roles and an exact build. The new isolated rehearsal migrates all 89 product tables, runs the actual publication builder through a legacy edition and two v3 promotions, and restores the first legacy edition through both successors. It checks the public League, Tonight and all 30 Boards under the proposed API role, compares the restored fingerprint, exercises unrelated account and traffic writes, and challenges the outgoing and service-role grants. Its source replay uses the played fixture. The earlier hosted tests below independently exercised current and competitive MLB acquisition, persistent retention, interruption and public delivery. A production-shaped played fixture also required publisher SELECT on play-by-play events and ingestion completion evidence.
+
+**NP-23 remains open.** Pooled `postgres` owns all 89 tables. No executed SQL-only test can establish that a managed transaction pool disconnected every previously authenticated frontend. Obtain Supabase's supported tenant-wide disconnect operation and expected service impact before cutover approval. The operator canary keeps old sessions open across approved password replacement and pool drainage, requires a fresh control on each endpoint and records a non-secret receipt. No production change is recorded here.
+
 ## November 26 first-handoff rehearsal and production preflight
 
 Private archive run `1795657988` exposed an ordering defect after the first transition from a legacy-authored edition. The v3 sync record used old acquisition timestamps, so the status API still selected the legacy run after the new dashboard became visible. The publisher restored the predecessor on the failed postcommit check. In a separate process, run `1795658518` verified legacy snapshot 32 / sync 71, the original dashboard payload, its durable Team State proof, Tonight content and the League, Tonight and all 30 Board identities. The public SHA-256 was `404ab5ee55b459664a0e5d1c74643ea6c5b74ca80e0c5beb2f25816499f037f9`. Revision `1e13dd0c04345836369b5c8bb84a48df1c42a54a` records the writer's actual completion time and preserves the provider acquisition timestamps in the source binding.

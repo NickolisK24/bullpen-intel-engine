@@ -8,6 +8,7 @@ from time import CLOCK_MONOTONIC, clock_gettime, perf_counter
 
 from sqlalchemy import URL, text
 
+from sync_v3 import runtime_binding
 from sync_v3.render_staging import HOST, OWNER, connect
 from sync_v3.staging_publication_target import TARGET
 
@@ -94,12 +95,12 @@ def reviewed_board_populations(cur, password, user, digest, binding):
     names = [f'sync_v3_board_review_{team}' for team in teams]
     with closing(_connect(user, password)) as target, target, target.cursor() as target_cur:
         target_cur.execute('SET TRANSACTION READ ONLY')
-        target_cur.execute("""SELECT DISTINCT ON (job_name) id, publication_outcome FROM public.sync_runs
-            WHERE job_name=ANY(%s) AND source='sync_v3_staging' AND status='success'
+        target_cur.execute(f"""SELECT DISTINCT ON (job_name) id, publication_outcome FROM public.sync_runs
+            WHERE job_name=ANY(%s) AND source='{runtime_binding.RUN_SOURCE}' AND status='success'
             AND stage='reviewed' AND publication_outcome->>'generation'=%s ORDER BY job_name,id DESC""", (names, digest))
         reviews = target_cur.fetchall()
-        target_cur.execute("""SELECT id, publication_outcome, started_at FROM public.sync_runs
-            WHERE job_name='sync_v3_canonical_cycle' AND source='sync_v3_staging' AND status='success'
+        target_cur.execute(f"""SELECT id, publication_outcome, started_at FROM public.sync_runs
+            WHERE job_name='sync_v3_canonical_cycle' AND source='{runtime_binding.RUN_SOURCE}' AND status='success'
               AND stage='canonical_ready' ORDER BY id DESC LIMIT 1""")
         projection = target_cur.fetchone()
         if not projection or (projection[1]['generation'], projection[1]['day']) != (digest, binding['product_day']):
@@ -125,7 +126,7 @@ def reviewed_board_populations(cur, password, user, digest, binding):
 
 def product_clock(binding):
     from sync_v3.staging_publication_target import ARCHIVE_TARGET
-    if 'product_day' in binding and TARGET != ARCHIVE_TARGET:
+    if runtime_binding.PRODUCTION or 'product_day' in binding and TARGET != ARCHIVE_TARGET:
         return nullcontext()
     from freezegun import freeze_time
     return freeze_time(f"{binding.get('product_day', binding['availability_reference'])} 12:00:00", real_asyncio=True)
@@ -238,10 +239,14 @@ def private_app(password, *, user=OWNER, read_only=False):
         raise ValueError('Private product rehearsal requires a fresh process with the scheduler disabled')
 
     class PrivateProduct(TestingConfig):
+        TESTING = not runtime_binding.PRODUCTION
         TRUSTED_PUBLIC_SERVING_ENABLED = True
 
         @staticmethod
         def init_app(app):
+            if runtime_binding.PRODUCTION:
+                app.config['SQLALCHEMY_DATABASE_URI'] = runtime_binding.production_url(user, password, read_only=read_only)
+                return
             options = {'sslmode':'require', 'connect_timeout':'10'}
             if read_only:
                 options['options'] = '-c default_transaction_read_only=on'
@@ -313,7 +318,7 @@ def legacy_predecessor_receipt(snapshot, day):
     from services.team_state_vnext_production_proof import observe_committed_publication_proof
     from services.tonight_read_model import CONTRACT, content_sha256
 
-    if snapshot.source == 'v3_private_publication' or 'v3_source_generation' in (snapshot.payload or {}):
+    if snapshot.source == runtime_binding.SNAPSHOT_SOURCE or 'v3_source_generation' in (snapshot.payload or {}):
         raise ValueError('The requested predecessor is already a v3 edition')
     observed = observe_committed_publication_proof(snapshot)
     if observed['status'] != 'proof_valid':
@@ -353,7 +358,7 @@ def rehearse_legacy_edition(password, digest, day):
                                                       is_published=True).one_or_none()
             if latest is None:
                 previous = DashboardSnapshot.query.filter_by(snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
-                                                              source='v3_private_publication').order_by(DashboardSnapshot.id.desc()).first()
+                                                              source=runtime_binding.SNAPSHOT_SOURCE).order_by(DashboardSnapshot.id.desc()).first()
                 if (not previous or previous.payload['v3_source_generation']['generation'] != digest
                         or db.session.get(SyncRun, previous.sync_run_id).stage != 'private_rolled_back'):
                     raise ValueError('The competitive predecessor has not completed its verified rollback')
@@ -405,6 +410,12 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         prior = DashboardSnapshot.query.filter_by(snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                                                   is_published=True).one_or_none()
+        if runtime_binding.PRODUCTION:
+            supplied_root = os.environ.get('STAGING_LEGACY_PREDECESSOR')
+            if not supplied_root or not prior:
+                raise ValueError('Production requires the selected handoff predecessor')
+            if prior.source == runtime_binding.SNAPSHOT_SOURCE and prior.payload.get('v3_handoff_root') != json.loads(supplied_root):
+                raise ValueError('Production replay belongs to another handoff')
         if prior and (prior.payload.get('v3_source_generation') or {}).get('generation') == binding['generation']:
             if prior.payload['v3_source_generation'] == binding:
                 verify_frozen_states(prior, binding)
@@ -414,13 +425,16 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
                 raise ValueError('Generation replay has a different source receipt')
         legacy_pin = None
         supplied = os.environ.get('STAGING_LEGACY_PREDECESSOR')
-        if prior and prior.source != 'v3_private_publication':
+        if prior and prior.source != runtime_binding.SNAPSHOT_SOURCE:
             legacy_pin = json.loads(supplied) if supplied else None
             require_legacy_predecessor(prior, legacy_pin)
             if (binding['data_through'] < legacy_pin['database_edition']['data_through']
                     or binding['availability_reference'] < legacy_pin['database_edition']['availability']):
                 raise ValueError('First handoff would regress the current product dates')
-        elif supplied:
+        elif supplied and runtime_binding.PRODUCTION and prior:
+            if (prior.payload or {}).get('v3_handoff_root') != json.loads(supplied):
+                raise ValueError('Production predecessor belongs to another handoff')
+        elif supplied or runtime_binding.PRODUCTION:
             raise ValueError('The pinned legacy predecessor is no longer selected')
         # The binding retains provider acquisition times. Operational status orders real
         # writer executions by completion, including when an older archived source is replayed.
@@ -428,18 +442,20 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         invoked = os.environ.get('STAGING_CYCLE_STARTED_AT')
         now = db.session.execute(clock).scalar_one()
         started = datetime.fromisoformat(invoked).astimezone(timezone.utc).replace(tzinfo=None) if invoked else now
-        run = SyncRun(job_name=sync_metadata.JOB_DAILY_SYNC, source='sync_v3_staging', status='success', stage='acquired',
+        run = SyncRun(job_name=sync_metadata.JOB_DAILY_SYNC, source=runtime_binding.RUN_SOURCE, status='success', stage='acquired',
                       started_at=started, completed_at=now,
                       latest_workload_date=date.fromisoformat(binding['data_through']), records_processed=binding['source_count'])
         db.session.add(run)
         db.session.flush()
         snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
-            sync_run_id=run.id, source='v3_private_publication', publish=False, commit=False, raise_errors=True)
+            sync_run_id=run.id, source=runtime_binding.SNAPSHOT_SOURCE, publish=False, commit=False, raise_errors=True)
         verify_board_rosters(snapshot, binding)
         prior_runs = [] if not prior else [r.id for r in SyncRun.query.filter_by(
             published_dashboard_snapshot_id=prior.id).order_by(SyncRun.id)]
         snapshot.payload = dict(snapshot.payload, v3_source_generation=binding, v3_predecessor=prior.id if prior else None,
                                 v3_predecessor_runs=prior_runs)
+        if runtime_binding.PRODUCTION:
+            snapshot.payload = dict(snapshot.payload, v3_handoff_root=json.loads(supplied))
         if legacy_pin is not None:
             snapshot.payload = dict(snapshot.payload, v3_legacy_predecessor=legacy_pin)
         try:
@@ -542,7 +558,7 @@ def verify_http(app, binding, snapshot_id, run_id):
     canonical_date = db.session.execute(text('SELECT max(game_date) FROM game_logs')).scalar_one()
     if (metadata.get('metadata_source') != 'sync_runs' or str(canonical_date) != metadata['data']['latest_workload_date']
             or (latest.get('stage') != 'private_rolled_back' and str(canonical_date) != binding['data_through'])
-            or not latest.get('id') or latest.get('source') != 'sync_v3_staging'):
+            or not latest.get('id') or latest.get('source') != runtime_binding.RUN_SOURCE):
         raise ValueError('Private sync status lacks the archived acquisition identity or workload date')
     if latest['id'] != run_id and latest.get('stage') != 'private_rolled_back':
         raise ValueError('Private sync status cites a different active edition')
@@ -616,18 +632,18 @@ def http_paths(app, paths):
         return tuple(client.get(base + path, timeout=45, allow_redirects=False) for path in paths)
 
 
-def restore_predecessor(digest, snapshot_id, *, user=OWNER):
+def restore_predecessor(digest, snapshot_id, *, user=OWNER, in_transaction=False):
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
     from scripts.rehearse_selected_publication import verify_frozen_states
     from utils.db import db
 
-    with db.session.begin():
+    with nullcontext() if in_transaction else db.session.begin():
         if tuple(db.session.execute(text('SELECT current_database(),current_user')).one()) != (TARGET, user):
             raise ValueError('Unexpected private rollback target')
         db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         current = db.session.get(DashboardSnapshot, snapshot_id)
-        if (not current or current.source != 'v3_private_publication'
+        if (not current or current.source != runtime_binding.SNAPSHOT_SOURCE
                 or current.payload['v3_source_generation']['generation'] != digest):
             raise ValueError('Private rollback receipt differs')
         prev_id = current.payload['v3_predecessor']
@@ -660,20 +676,54 @@ def restore_predecessor(digest, snapshot_id, *, user=OWNER):
         return prev_id
 
 
+def restore_handoff_root(snapshot_id, digest, pin, user):
+    """Restore the first legacy selector and all intervening links in one transaction."""
+    from models.dashboard_snapshot import DashboardSnapshot
+    from utils.db import db
+
+    with db.session.begin():
+        db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
+        tip = db.session.get(DashboardSnapshot, snapshot_id)
+        if (not tip or tip.payload.get('v3_handoff_root') != pin or
+                tip.payload['v3_source_generation']['generation'] != digest):
+            raise ValueError('Rollback tip differs from the approved handoff')
+        selected = DashboardSnapshot.query.filter_by(snapshot_type=tip.snapshot_type, is_published=True).one()
+        root_id = pin['database_edition']['snapshot']
+        if selected.id == root_id:
+            require_legacy_predecessor(selected, pin)
+            return root_id
+        if selected.id != tip.id:
+            raise ValueError('Production selector advanced before rollback')
+        visited = set()
+        while tip.id != root_id:
+            if tip.id in visited or tip.payload.get('v3_handoff_root') != pin:
+                raise ValueError('Broken production publication predecessor chain')
+            visited.add(tip.id)
+            previous = restore_predecessor(tip.payload['v3_source_generation']['generation'], tip.id,
+                                           user=user, in_transaction=True)
+            if previous is None:
+                raise ValueError('Production predecessor disappeared before the pinned edition')
+            tip = db.session.get(DashboardSnapshot, previous)
+        require_legacy_predecessor(tip, pin)
+        return tip.id
+
+
 def exercise_rollback(password, digest, snapshot_id, *, user=OWNER):
     from models.dashboard_snapshot import DashboardSnapshot
     from utils.db import db
 
     app = private_app(password, user=user)
     with app.app_context():
-        predecessor = restore_predecessor(digest, snapshot_id, user=user)
+        pin = json.loads(os.environ['STAGING_LEGACY_PREDECESSOR']) if runtime_binding.PRODUCTION else None
+        predecessor = (restore_handoff_root(snapshot_id, digest, pin, user) if pin else
+                       restore_predecessor(digest, snapshot_id, user=user))
         if predecessor:
             previous = db.session.get(DashboardSnapshot, predecessor)
-            legacy = db.session.get(DashboardSnapshot, snapshot_id).payload.get('v3_legacy_predecessor')
+            legacy = pin or db.session.get(DashboardSnapshot, snapshot_id).payload.get('v3_legacy_predecessor')
             if legacy:
                 from scripts.verify_public_sync_edition import verify
                 day = legacy['database_edition']['product_day']
-                with product_clock(dict(availability_reference=day)), http_session(app) as (client, base):
+                with (nullcontext() if pin else product_clock(dict(availability_reference=day))), http_session(app) as (client, base):
                     counts = verify(client, base, predecessor, previous.sync_run_id)
                 if counts['public_edition_sha256'] != legacy['public_edition_sha256']:
                     raise ValueError('Restored public edition differs from the archived legacy receipt')
@@ -710,7 +760,7 @@ def verify_product_surfaces(password, digest, *, user=OWNER, inventory=False):
         snapshot = DashboardSnapshot.query.filter_by(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                                                      is_published=True).one()
         binding = snapshot.payload['v3_source_generation']
-        if snapshot.source != 'v3_private_publication' or binding['generation'] != digest:
+        if snapshot.source != runtime_binding.SNAPSHOT_SOURCE or binding['generation'] != digest:
             raise ValueError('Unexpected private product selector')
         ident = snapshot.id, snapshot.sync_run_id
         through, day = binding['data_through'], binding['availability_reference']
