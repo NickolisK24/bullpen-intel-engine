@@ -679,9 +679,13 @@ def restore_predecessor(digest, snapshot_id, *, user=OWNER, in_transaction=False
 def restore_handoff_root(snapshot_id, digest, pin, user):
     """Restore the first legacy selector and all intervening links in one transaction."""
     from models.dashboard_snapshot import DashboardSnapshot
+    from models.sync_run import SyncRun
+    from services.tonight_v1_serving import current_tonight_reference_date
     from utils.db import db
 
     with db.session.begin():
+        if pin['database_edition']['product_day'] != current_tonight_reference_date().isoformat():
+            raise ValueError('The pinned public Tonight edition is outside its baseball date; selector preserved')
         db.session.execute(text('LOCK TABLE dashboard_snapshots, sync_runs IN SHARE ROW EXCLUSIVE MODE NOWAIT'))
         tip = db.session.get(DashboardSnapshot, snapshot_id)
         if (not tip or tip.payload.get('v3_handoff_root') != pin or
@@ -690,6 +694,9 @@ def restore_handoff_root(snapshot_id, digest, pin, user):
         selected = DashboardSnapshot.query.filter_by(snapshot_type=tip.snapshot_type, is_published=True).one()
         root_id = pin['database_edition']['snapshot']
         if selected.id == root_id:
+            run = db.session.get(SyncRun, tip.sync_run_id)
+            if run.stage != 'private_rolled_back' or SyncRun.query.filter_by(published_dashboard_snapshot_id=tip.id).first():
+                raise ValueError('Selected root and rolled-back tip receipts disagree')
             require_legacy_predecessor(selected, pin)
             return root_id
         if selected.id != tip.id:

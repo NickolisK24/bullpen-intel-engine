@@ -1,4 +1,5 @@
 """Pinned production connection and authority boundaries for the existing primary."""
+
 import os
 import re
 
@@ -27,8 +28,15 @@ def production_url(role, password, *, read_only=False):
         options['sslrootcert'] = os.environ['SYNC_V3_SSL_ROOT_CERT']
     if read_only:
         options['options'] = '-c default_transaction_read_only=on'
-    return URL.create('postgresql+psycopg2', username=role if direct else f'{role}.{PROJECT}',
-                      password=password, host=host, port=5432, database=DATABASE, query=options)
+    return URL.create(
+        'postgresql+psycopg2',
+        username=role if direct else f'{role}.{PROJECT}',
+        password=password,
+        host=host,
+        port=5432,
+        database=DATABASE,
+        query=options,
+    )
 
 
 def connect_runtime(role, password):
