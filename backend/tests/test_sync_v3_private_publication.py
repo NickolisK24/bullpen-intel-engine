@@ -284,3 +284,36 @@ def test_resumed_pitching_lines_require_every_pitch_in_one_official_session():
     plays.append(plate_appearance(1, '2026-06-17T19:55:00Z'))
     with pytest.raises(ValueError, match='dates or counts'):
         session_dates(original,resumed,feed,lines)
+
+
+def test_public_rollback_receipt_distinguishes_equal_size_board_rosters():
+    from unittest.mock import Mock
+    from scripts.verify_public_sync_edition import verify
+    from services.mlb_club_directory import MLB_TEAM_IDS
+
+    state = {'public_state': 'normal'}
+    authority = dict(snapshot_id=8, sync_run_id=19, data_through='2017-08-28',
+                     availability_reference_date='2017-08-29')
+    roster = {team: [team] for team in MLB_TEAM_IDS}
+
+    def get(url, timeout):
+        if url.endswith('/team-states'):
+            body = dict(publication_authority=authority, teams=[dict(team_id=team, team_state=state)
+                        for team in MLB_TEAM_IDS])
+        elif '/tonight?' in url:
+            body = dict(edition=dict(publication=dict(dashboard_snapshot_id=8, sync_run_id=19),
+                        data_through='2017-08-28', availability_reference_date='2017-08-29'), games=[])
+        else:
+            team = int(url.split('/')[-3])
+            body = dict(publication_identity=dict(authority, team_id=team, represented_date='2017-08-28'),
+                        team_state=state, active_bullpen=dict(arms=[dict(pitcher_id=n) for n in roster[team]]))
+        return Mock(json=lambda: body)
+
+    session = Mock(get=get)
+    original = verify(session, 'https://example.test', 8, 19)
+    roster[111] = [99]
+    changed = verify(session, 'https://example.test', 8, 19)
+    assert changed['board_arms'] == original['board_arms']
+    assert changed['public_edition_sha256'] != original['public_edition_sha256']
+    roster[111] = [111]
+    assert verify(session, 'https://example.test', 8, 19)['public_edition_sha256'] == original['public_edition_sha256']
