@@ -154,6 +154,17 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
                 extra, official_slate = current_edition_inputs(cur, date.fromisoformat(league['data_through']),
                                                             league['availability_reference'], offseason=offseason)
                 reviewed_board_populations(cur, worker_password, user, digest, extra)
+                if not offseason:
+                    from sync_v3.intelligence_history import DOMAINS
+                    from sync_v3.product_reads import tonight_rotation
+                    cur.execute("""SELECT h.mlb_id,h.facts#>'{windows,7,pressure}' FROM candidate.generation_inputs i
+                                JOIN candidate.workload_history h ON h.id=i.snapshot
+                                WHERE i.generation=%s AND h.subject='team' AND h.methodology=%s""",
+                                (digest, DOMAINS['rotation'][1]))
+                    rotations = {str(team): tonight_rotation(pressure) for team, pressure in cur}
+                    if set(rotations) != {str(team) for team in MLB_TEAM_IDS}:
+                        raise ValueError('Competitive rotation coverage lacks a club')
+                    extra['reviewed_tonight_rotation'] = rotations
             if not offseason:
                 from sync_v3.generation import generation_date_decision
                 represented = date.fromisoformat(league['data_through'])
@@ -463,6 +474,14 @@ def verify_slate(cards, binding):
         for side in ('home', 'away'):
             team = card[side]
             state = binding['teams'][str(team['team_id'])]['state']
+            if 'reviewed_tonight_rotation' in binding:
+                rotation = binding['reviewed_tonight_rotation'][str(team['team_id'])]
+                keys = ('short_start_count', 'bullpen_innings', 'games_analyzed')
+                observed = team.get('rotation')
+                if ((rotation is None) != (observed is None)
+                        or rotation and any(rotation[key] != observed.get(key) for key in keys)):
+                    raise ValueError(f"Tonight rotation for {team['team_id']} differs from qualified final lines: "
+                                     f"{rotation} / {observed}")
             if any(team['team_state'][key] != state[key] for key in ('public_state', 'public_label')):
                 raise ValueError('Private Tonight club differs from the frozen Team State')
 

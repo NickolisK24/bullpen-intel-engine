@@ -770,13 +770,26 @@ def _board_role(arm, observed_role):
     return build_pitcher_labels(role=observed_role if eligibility else None, eligibility=eligibility)['role']
 
 
+def tonight_rotation(pressure):
+    from services.rotation_support_pressure import _baseball_innings, _split_limitation_reasons
+    from services.tonight_read_model import _rotation
+
+    if pressure and pressure.get('games_analyzed'):
+        limits = _split_limitation_reasons(
+            pressure['excluded_game_reasons'], games_in_window=pressure['games_in_window'],
+            games_analyzed=pressure['games_analyzed'], source_window_partial=bool(pressure['games_excluded']))
+        pressure = dict(pressure, status='partial' if limits else 'complete',
+                        bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
+    return _rotation(pressure)
+
+
 def read_game_cards(connection, *, revision=None, game_pk=None):
     """Serve the same historical game card to the isolated slate and game detail."""
     from datetime import date
     from services import tonight_read_model as tonight
     from services.current_bullpen_comparison import _aligned_domain, named_role_rest
     from services.rotation_support_pressure import (
-        KIND_BULLPEN_GAME, KIND_OPENER_BULK, _baseball_innings, _split_limitation_reasons,
+        KIND_BULLPEN_GAME, KIND_OPENER_BULK,
     )
     from sync_v3.history import METHODOLOGY
 
@@ -893,12 +906,6 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
             state = row['team_state']
             rest = _board_date_rest(facts[team, reads]) if state['available'] else None
             pressure = facts[team, rotation]['windows']['7']['pressure']
-            if pressure and pressure.get('games_analyzed'):
-                limitations = _split_limitation_reasons(
-                    pressure['excluded_game_reasons'], games_in_window=pressure['games_in_window'],
-                    games_analyzed=pressure['games_analyzed'], source_window_partial=bool(pressure['games_excluded']))
-                pressure = dict(pressure, status='partial' if limitations else 'complete',
-                                bullpen_innings=_baseball_innings(pressure['bullpen_outs_required']))
             key_arms, public_usage, active, named = [], {}, [], []
             # A key-arm ranking needs a complete identity map for this club.
             board_arms = facts[team, reads].get('board_date_arms', {})
@@ -939,7 +946,7 @@ def read_game_cards(connection, *, revision=None, game_pk=None):
                                rest=tonight._rest(rest), workload_7d=tonight._workload_7d(overview),
                                multi_day_usage=dict(three_in_four_count=tonight._three_in_four_count(
                                    [dict(pitcher_id=pid) for pid in ids], usage) if ids else None),
-                               rotation=tonight._rotation(pressure), key_arms=tonight._key_arms(key_arms, public_usage), change_refs=[])
+                               rotation=tonight_rotation(pressure), key_arms=tonight._key_arms(key_arms, public_usage), change_refs=[])
         result['games'] = sorted((tonight._game_card(row, sides[row.away_team_id], sides[row.home_team_id])
                                   for row in games), key=tonight._game_order)
         performances = {team: _performance_window(facts[team, DOMAINS['group_performance'][1]], 'season') for team in clubs}
