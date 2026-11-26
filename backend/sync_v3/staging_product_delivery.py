@@ -422,10 +422,14 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
                 raise ValueError('First handoff would regress the current product dates')
         elif supplied:
             raise ValueError('The pinned legacy predecessor is no longer selected')
-        def utc(value):
-            return datetime.fromisoformat(value).astimezone(timezone.utc).replace(tzinfo=None)
+        # The binding retains provider acquisition times. Operational status orders real
+        # writer executions by completion, including when an older archived source is replayed.
+        clock = text("SELECT clock_timestamp() AT TIME ZONE 'UTC'")
+        invoked = os.environ.get('STAGING_CYCLE_STARTED_AT')
+        now = db.session.execute(clock).scalar_one()
+        started = datetime.fromisoformat(invoked).astimezone(timezone.utc).replace(tzinfo=None) if invoked else now
         run = SyncRun(job_name=sync_metadata.JOB_DAILY_SYNC, source='sync_v3_staging', status='success', stage='acquired',
-                      started_at=utc(binding['first_source_at']), completed_at=utc(binding['last_source_at']),
+                      started_at=started, completed_at=now,
                       latest_workload_date=date.fromisoformat(binding['data_through']), records_processed=binding['source_count'])
         db.session.add(run)
         db.session.flush()
@@ -459,6 +463,7 @@ def publish(binding, worker_password, *, user=OWNER, source_user='sync_v3_worker
         edition, _ = generate_tonight_v1_for_snapshot(snapshot, reference_date=date.fromisoformat(day), commit=False)
         verify_tonight_edition(edition.payload, (snapshot.id, run.id), binding, day)
         verify_slate(edition.payload['games'], binding)
+        run.completed_at = db.session.execute(clock).scalar_one()
         return snapshot.id, True
 
 
