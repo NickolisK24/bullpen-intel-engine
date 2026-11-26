@@ -171,6 +171,11 @@ def exercise(host):
     with pytest.raises(ValueError, match='Callable definer'):
         handoff('legacy', 'v3')
     statements('postgres', 'DROP FUNCTION public.unreviewed()')
+    with closing(connect('postgres')) as old_writer, old_writer.cursor() as cur:
+        cur.execute('SET LOCAL ROLE service_role')
+        cur.execute('UPDATE public.pitchers SET active=false WHERE false')
+        with pytest.raises(psycopg2.errors.LockNotAvailable):
+            handoff('legacy', 'v3')
     handoff('legacy', 'v3')
     for role in ('service_role', LEGACY, API, binding.PROJECTOR, binding.WORKER):
         with pytest.raises(psycopg2.errors.InsufficientPrivilege):

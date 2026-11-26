@@ -30,12 +30,9 @@ EXCLUDED = (
 PREVIEW = Path(__file__).resolve().parents[2] / 'docs/sync-v3/preview-service-role-fence.sql'
 
 
-def prepare(cur, revision):
-    from sync_v3 import staging_projector as projector, staging_publisher as publisher
+def governed_relations(cur):
     from scripts.database_migrations import target_head
 
-    if not re.fullmatch('[0-9a-f]{40}', revision or ''):
-        raise ValueError('Exact tested revision required')
     cur.execute('SELECT version_num FROM public.alembic_version')
     if cur.fetchall() != [(target_head(),)]:
         raise ValueError('Unexpected product migration head')
@@ -46,6 +43,15 @@ def prepare(cur, revision):
     governed_names = set(re.findall(r"\('([a-z_]+)'\)", PREVIEW.read_text().split('), targets AS')[0]))
     if actual != governed_names | set(EXCLUDED):
         raise ValueError('Product relation inventory differs from the reviewed handoff')
+    return governed_names
+
+
+def prepare(cur, revision):
+    from sync_v3 import staging_projector as projector, staging_publisher as publisher
+
+    if not re.fullmatch('[0-9a-f]{40}', revision or ''):
+        raise ValueError('Exact tested revision required')
+    governed_relations(cur)
     for role in (b.WORKER, b.PROJECTOR, b.PUBLISHER, API, LEGACY, 'sync_v3_reviewer'):
         cur.execute(
             sql.SQL(
@@ -261,10 +267,14 @@ def transition(cur, old, new, revision, pin, *, drain=None):
         raise ValueError('Control state or revision changed')
     if revision != state[1] or old != 'legacy' and pin != state[2]:
         raise ValueError('Rollback must use the same tested revision and pinned predecessor')
+    # A service-role client can already have executed DML before its ACL is revoked.
+    # Order every outstanding governed write against the transfer, including prepared transactions.
+    relations = [sql.Identifier('public', table) for table in sorted(governed_relations(cur))]
+    cur.execute(sql.SQL('LOCK TABLE {} IN SHARE MODE NOWAIT').format(sql.SQL(', ').join(relations)))
     if new in ('legacy', 'v3'):
         cur.execute(
             """SELECT id,sync_run_id FROM public.dashboard_snapshots
-            WHERE snapshot_type='bullpen_dashboard' AND is_published FOR UPDATE"""
+            WHERE snapshot_type='bullpen_dashboard' AND is_published FOR UPDATE NOWAIT"""
         )
         if (
             pin.get('database') != b.DATABASE
@@ -297,7 +307,7 @@ def transition(cur, old, new, revision, pin, *, drain=None):
         prohibit_sessions(cur, [b.WORKER, b.PROJECTOR, b.PUBLISHER])
         # Remove effective data grants even if an external pool retains an authenticated frontend.
         for role in (b.WORKER, b.PROJECTOR, b.PUBLISHER):
-            for kind in ('TABLES', 'SEQUENCES', 'FUNCTIONS'):
+            for kind in ('TABLES', 'SEQUENCES'):
                 cur.execute(
                     sql.SQL('REVOKE ALL ON ALL {} IN SCHEMA public, candidate FROM {}').format(
                         sql.SQL(kind), sql.Identifier(role)
