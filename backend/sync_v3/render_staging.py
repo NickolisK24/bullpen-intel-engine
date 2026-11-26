@@ -131,7 +131,7 @@ def bootstrap(password):
                         # receipts. A superseded checkpoint returns to normal dated preparation below.
                         import subprocess
                         import sys
-                        env = runtime_environment('STAGING_PRODUCT_PUBLISHER_PASSWORD')
+                        env = runtime_environment('STAGING_PRODUCT_PUBLISHER_PASSWORD', 'STAGING_LEGACY_PREDECESSOR')
                         env.update(STAGING_PRODUCT_GENERATION=resume_digest, STAGING_CYCLE_STARTED_AT=started_at.isoformat())
                         print(json.dumps(dict(private_primary_resume=dict(day=str(day), phase=phase,
                                              generation=resume_digest, acquisition=report['receipts']))), flush=True)
@@ -178,6 +178,7 @@ def bootstrap(password):
         projection.check_returncode()
         task = 'publish-with-scoped-login'
     operations = {
+        'prepare-legacy-predecessor': ('legacy-predecessor', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
         'verify-reader-edition': ('read', ('STAGING_PRODUCT_READER_PASSWORD',)),
         'publish-with-scoped-login': ('publish', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
         'rollback-with-scoped-login': ('rollback', ('STAGING_PRODUCT_PUBLISHER_PASSWORD',)),
@@ -186,7 +187,7 @@ def bootstrap(password):
     if task in operations:
         import sys
         operation, secrets = operations[task]
-        env = runtime_environment(*secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT')
+        env = runtime_environment(*secrets, 'STAGING_PRODUCT_GENERATION', 'STAGING_ROLLBACK_SNAPSHOT', 'STAGING_LEGACY_PREDECESSOR')
         if task == 'publish-with-scoped-login' and started_at is not None:
             env['STAGING_CYCLE_STARTED_AT'] = started_at.isoformat()
         os.execve(sys.executable, [sys.executable, '-m', 'sync_v3.render_staging', operation], env)
@@ -500,7 +501,7 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'publish-reviewed', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'publish-reviewed', 'legacy-predecessor', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
     args = parser.parse_args()
     try:
         if args.operation in ('publish', 'publish-reviewed', 'rollback'):
@@ -527,6 +528,11 @@ if __name__ == '__main__':
                 result['cycle_started_at'] = started_at.isoformat()
                 result['invocation_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
             print(json.dumps(dict(private_scoped_publication=dict(result, role=PUBLISHER))), flush=True)
+        elif args.operation == 'legacy-predecessor':
+            from sync_v3.staging_product_delivery import rehearse_legacy_edition
+            result = rehearse_legacy_edition(os.environ['STAGING_PRODUCT_PUBLISHER_PASSWORD'],
+                                             os.environ['STAGING_PRODUCT_GENERATION'], primary_product_day())
+            print(json.dumps(dict(private_legacy_predecessor=result)), flush=True)
         elif args.operation == 'project-schedules':
             from sync_v3.staging_projector import project_dated_schedules
             result = project_dated_schedules(os.environ['STAGING_PROJECTOR_PASSWORD'], os.environ['STAGING_WORKER_PASSWORD'],

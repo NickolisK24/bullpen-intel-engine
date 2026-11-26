@@ -43,7 +43,7 @@ def verify(session, base_url, snapshot, sync, binding=None):
     if binding:
         from sync_v3.staging_product_delivery import verify_slate
         verify_slate(tonight['games'], binding)
-    arms = {}
+    arm_ids = {}
     for team, state in sorted(states.items()):
         board = read(f'/api/bullpen/teams/{team}/board-v2/core')
         identity = board['publication_identity']
@@ -54,11 +54,17 @@ def verify(session, base_url, snapshot, sync, binding=None):
         pitchers = [row['pitcher_id'] for row in board['active_bullpen']['arms']]
         if len(pitchers) != len(set(pitchers)):
             raise ValueError(f'Duplicate Board pitcher for club {team}')
-        arms[team] = len(pitchers)
+        arm_ids[team] = sorted(pitchers)
     if league_edition() != (authority, states):
         raise ValueError('The published edition changed during verification')
+    from hashlib import sha256
+    from services.tonight_read_model import content_sha256
+    frozen = dict(snapshot=snapshot, sync=sync, data_through=through, availability=reference,
+                  states=states, board_pitchers=arm_ids, tonight=content_sha256(tonight))
+    fingerprint = sha256(json.dumps(frozen, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return dict(snapshot=snapshot, sync=sync, data_through=through, availability=reference,
-                clubs=len(states), board_arms=arms, games=len(tonight['games']),
+                public_edition_sha256=fingerprint,
+                clubs=len(states), board_arms={team: len(staff) for team, staff in arm_ids.items()}, games=len(tonight['games']),
                 compared_generation=binding['generation'] if binding else None,
                 measured_at=datetime.now(timezone.utc).isoformat(), seconds=round(monotonic()-started, 2))
 
@@ -69,8 +75,11 @@ if __name__ == '__main__':
     parser.add_argument('--snapshot', type=int, required=True)
     parser.add_argument('--sync', type=int, required=True)
     parser.add_argument('--binding', type=Path, help='Independently reviewed source-generation receipt')
+    parser.add_argument('--expect-public-sha256', help='Public edition fingerprint captured before the handoff')
     args = parser.parse_args()
     with requests.Session() as session:
         result = verify(session, args.base_url, args.snapshot, args.sync,
                         json.loads(args.binding.read_text()) if args.binding else None)
+    if args.expect_public_sha256 and result['public_edition_sha256'] != args.expect_public_sha256:
+        parser.exit(1, 'Public edition differs from the approved rollback receipt\n')
     print(json.dumps(result))
