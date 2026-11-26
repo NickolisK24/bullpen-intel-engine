@@ -273,6 +273,18 @@ def test_final_game_creates_two_team_game_split_rows_with_calendar_context(app):
         assert away.starter_identity_status == TeamGamePitchingSplit.STARTER_KNOWN
 
 
+def test_off_day_and_streak_use_the_qualified_season_calendar_outside_the_product_window(app):
+    with app.app_context():
+        day = date(2017, 8, 28)
+        _seed_game(7001, day)
+        _seed_complete_pitching_lines(7001, day)
+        dates = {116: {day - timedelta(days=n) for n in range(18)}, 142: {day}}
+        split_service.recompute_team_game_pitching_splits_for_game(7001, playable_dates_by_team=dates)
+        home, away = _split(116, 7001), _split(142, 7001)
+        assert not home.off_day_before and home.consecutive_game_day_count_entering == 17
+        assert away.off_day_before and away.consecutive_game_day_count_entering == 0
+
+
 def test_missing_starter_identity_marks_split_partial_and_safe_unknown(app):
     with app.app_context():
         game_day = date(2026, 6, 11)

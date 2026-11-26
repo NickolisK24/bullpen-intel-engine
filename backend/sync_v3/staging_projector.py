@@ -16,10 +16,12 @@ READ |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
 INSERT |= ROSTER_EVIDENCE | {'roster_status_snapshots', 'completed_game_contexts'}
 UPDATE.update({'roster_status_snapshots', 'evidence_objects'})
 READ.update({'evidence_citations', 'evidence_objects'})
+for privileges in (READ, INSERT, UPDATE):
+    privileges.add('team_game_pitching_splits')
 INVALIDATION_FIELDS = {'recompute_status', 'recompute_reason_codes', 'invalidated_at', 'invalidated_by_source_table',
                        'invalidated_by_source_pk', 'last_corrected_at', 'correction_count', 'correction_source', 'updated_at'}
 INVALIDATION_POLICY = """USING (recompute_status='current') WITH CHECK (recompute_status='recompute_needed'
-    AND invalidated_by_source_table='game_logs' AND invalidated_by_source_pk IS NOT NULL)"""
+    AND invalidated_by_source_table IN ('game_logs','team_game_pitching_splits') AND invalidated_by_source_pk IS NOT NULL)"""
 CHECKPOINT = """WITH CHECK (source='sync_v3_staging' AND status='success'
     AND published_dashboard_snapshot_id IS NULL AND
     ((stage='reviewed' AND job_name ~ '^sync_v3_board_review_[0-9]+$')
@@ -114,6 +116,43 @@ def record_checkpoint(digest, day, through, sources, started):
         return record.id
 
 
+def project_competitive_splits(source, through, window_days):
+    """Populate the rotation and recent relief-work inputs from the qualified pitching ledger."""
+    from datetime import timedelta
+    from services.appearance_ledger import _expected_final_games
+    from services.mlb_club_directory import MLB_TEAM_IDS
+    from services.team_game_pitching_splits import recompute_team_game_pitching_splits_for_game
+    from sync_v3.competition_calendar import calendar_games
+    from sync_v3.discovery import competition_calendar_request
+    from sync_v3.evidence import latest_qualified_source, replay
+    from utils.db import db
+
+    request = competition_calendar_request(through.year)
+    with source, source.cursor() as cur:
+        calendar = latest_qualified_source(cur, request.endpoint, request.params())
+        games = calendar_games(request.params(), replay(cur, calendar).body)
+    playable = {team: set() for team in MLB_TEAM_IDS}
+    for day, row, game in games.values():
+        if row['status_state'] in ('scheduled', 'final'):
+            for side in ('home_team_id', 'away_team_id'):
+                dates = playable[row[side]]
+                dates.add(day)
+                if game.get('resumedFromDate') and row['original_game_date']:
+                    dates.add(row['original_game_date'])
+    with db.session.begin():
+        start = through - timedelta(days=window_days-1)
+        expected = _expected_final_games(start, through)
+        rows = 0
+        for pk, played in sorted(expected.items()):
+            if pk not in games or games[pk][0] != played or games[pk][1]['status_state'] != 'final':
+                raise ValueError(f'Dated calendar and final-game ledger disagree for {pk}')
+            result = recompute_team_game_pitching_splits_for_game(pk, game_date=played, playable_dates_by_team=playable)
+            if result['status'] != 'processed' or result['rows_total'] != 2:
+                raise ValueError(f'Missing starter and relief split for final {pk}')
+            rows += result['rows_total']
+    return dict(calendar=calendar, games=len(expected), team_games=rows)
+
+
 def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False, review_seconds=185):
     from services.mlb_api import MLBApiClient
     from sync_v3.current_worker import verify_target
@@ -145,7 +184,9 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
                         if window['missing_games'] and window['recovered']:
                             return dict(phase='canonical_pending', generation=digest, workload=window)
                         raise ValueError(f"Competitive workload coverage is incomplete: {window['reason']}")
-                    sources = set(window['receipts'].values())
+                    splits = project_competitive_splits(source, through, window['window_days'])
+                    print(json.dumps(dict(private_rotation_splits=splits)), flush=True)
+                    sources = set(window['receipts'].values()) | {splits['calendar']}
                 else:
                     competition = project_offseason_competition(source, client, competition_day, scoped=True)
                     sources = set(competition.pop('source_receipts'))

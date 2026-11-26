@@ -77,6 +77,7 @@ def recompute_team_game_pitching_splits_for_game(
     *,
     game: dict | None = None,
     game_date: date | None = None,
+    playable_dates_by_team=None,
     sync_run_id=None,
 ) -> dict:
     """Recompute stored split/calendar facts for one MLB game.
@@ -118,6 +119,8 @@ def recompute_team_game_pitching_splits_for_game(
     calendar_statuses = []
     reason_codes = []
     for context in contexts:
+        if playable_dates_by_team is not None:
+            context['playable_dates'] = playable_dates_by_team[context['team_id']]
         values = _split_values(
             context,
             logs_by_team.get(context['team_id'], []),
@@ -384,7 +387,9 @@ def _calendar_values(context, *, schedule_ambiguous, extra_inning_indicator):
             'calendar_reason_codes': _dedupe(reasons),
         }
 
-    game_dates = _playable_game_dates(row.team_id)
+    game_dates = context.get('playable_dates')
+    if game_dates is None:
+        game_dates = _playable_game_dates(row.team_id)
     same_day_count = _same_day_game_count(row.team_id, row.game_date)
     linkage_status = _linkage_status([row], schedule_ambiguous=schedule_ambiguous)
     if schedule_ambiguous:
@@ -395,7 +400,7 @@ def _calendar_values(context, *, schedule_ambiguous, extra_inning_indicator):
         'off_day_before': (row.game_date - timedelta(days=1)) not in game_dates,
         'off_day_after': (row.game_date + timedelta(days=1)) not in game_dates,
         'consecutive_game_day_count_entering': _consecutive_game_days_entering(
-            row.team_id,
+            game_dates,
             row.game_date,
         ),
         'series_game_number': row.series_game_number,
@@ -538,8 +543,7 @@ def _same_day_game_count(team_id, game_date):
     )
 
 
-def _consecutive_game_days_entering(team_id, game_date):
-    dates = _playable_game_dates(team_id)
+def _consecutive_game_days_entering(dates, game_date):
     count = 0
     cursor = game_date - timedelta(days=1)
     while cursor in dates:
