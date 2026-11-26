@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 import os
 import json
 from pathlib import Path
-from time import monotonic
+from time import CLOCK_MONOTONIC, CLOCK_REALTIME, clock_gettime
 
 import requests
 
@@ -12,7 +12,7 @@ from services.mlb_club_directory import MLB_TEAM_IDS
 
 
 def verify(session, base_url, snapshot, sync, binding=None):
-    started = monotonic()
+    started = clock_gettime(CLOCK_MONOTONIC)
 
     def read(path):
         response = session.get(base_url.rstrip('/') + path, timeout=30)
@@ -67,7 +67,8 @@ def verify(session, base_url, snapshot, sync, binding=None):
                 public_edition_sha256=fingerprint, tonight_sha256=frozen['tonight'], product_day=edition.get('baseball_date'),
                 clubs=len(states), board_arms={team: len(staff) for team, staff in arm_ids.items()}, games=len(tonight['games']),
                 compared_generation=binding['generation'] if binding else None,
-                measured_at=datetime.now(timezone.utc).isoformat(), seconds=round(monotonic()-started, 2))
+                measured_at=datetime.fromtimestamp(clock_gettime(CLOCK_REALTIME), timezone.utc).isoformat(),
+                seconds=round(clock_gettime(CLOCK_MONOTONIC)-started, 2))
 
 
 def capture_legacy_predecessor(served):
