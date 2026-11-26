@@ -27,6 +27,10 @@ def open_generation_source(password, user):
     return source
 
 
+class ReviewedGenerationAdvanced(ValueError):
+    """The primary worker must refresh this generation before it can be published."""
+
+
 def current_edition_inputs(cur, through, availability, *, offseason):
     """Bind the actual product day to qualified schedules, transactions and dated club rosters."""
     from services.mlb_club_directory import MLB_TEAM_IDS
@@ -113,7 +117,7 @@ def reviewed_board_populations(cur, password, user, digest, binding):
     from sync_v3.staging_board_history import inputs_still_current
     receipts.update(projection[1]['sources'])
     if not inputs_still_current(cur, receipts):
-        raise ValueError('Reviewed Board workload evidence has advanced since reconciliation')
+        raise ReviewedGenerationAdvanced('Reviewed Board workload evidence has advanced since reconciliation')
     binding.update(reviewed_board_mlb_ids=populations, board_review_runs=review_ids,
                    canonical_checkpoint=projection[0], canonical_started_at=projection[2].isoformat()+'+00:00')
     binding['current_source_ids'] = sorted(set(binding['current_source_ids']) | receipts)
@@ -137,8 +141,9 @@ def source_receipt(worker_password, digest, user='sync_v3_worker'):
             league = _league(cur, None, digest, compare_latest=True)
             review = league['selection_review']
             offseason = review['status'] == 'season_complete_withholding'
-            if (review['status'] not in ('core_comparison_complete', 'season_complete_withholding')
-                    or review['latest_inventory_digest'] != digest):
+            if review['latest_inventory_digest'] != digest:
+                raise ReviewedGenerationAdvanced('A newer inventory supersedes the reviewed generation')
+            if review['status'] not in ('core_comparison_complete', 'season_complete_withholding'):
                 raise ValueError(f'Generation review withheld: {review["status"]} {review["reason_codes"]}')
             if (league['generation'] != digest or league['status'] != 'candidate_preview'
                     or not league['data_through'] or league['selection_revision'] is not None):

@@ -117,6 +117,30 @@ def bootstrap(password):
                     subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'project'], env=env, check=True)
                     print(json.dumps(dict(current_cycle_pending=dict(day=str(day), generation=resume_digest))), flush=True)
                     return
+                if resume_digest:
+                    from sync_v3.primary_date import edition_scope
+                    with source, source.cursor() as cur:
+                        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                        scope = edition_scope(cur, day, after_finals=phase=='postgame')
+                        cur.execute("""SELECT digest FROM candidate.generations WHERE represented=%s
+                            AND manifest->>'availability_reference'=%s ORDER BY creation_xid DESC LIMIT 1""",
+                            (scope['through'], scope['availability']))
+                        latest = cur.fetchone()
+                    if not scope['offseason'] and latest == (resume_digest,):
+                        # The publisher independently verifies the latest source inventory and all club
+                        # receipts. A superseded checkpoint returns to normal dated preparation below.
+                        import subprocess
+                        import sys
+                        env = runtime_environment('STAGING_PRODUCT_PUBLISHER_PASSWORD')
+                        env.update(STAGING_PRODUCT_GENERATION=resume_digest, STAGING_CYCLE_STARTED_AT=started_at.isoformat())
+                        print(json.dumps(dict(private_primary_resume=dict(day=str(day), phase=phase,
+                                             generation=resume_digest, acquisition=report['receipts']))), flush=True)
+                        promotion = subprocess.run([sys.executable, '-m', 'sync_v3.render_staging', 'publish-reviewed'],
+                                                   env=env, check=False)
+                        if promotion.returncode == 0:
+                            return
+                        if promotion.returncode != 75:
+                            promotion.check_returncode()
                 qualified = prepare(source, password, day, after_finals=phase=='postgame',
                                     for_projection=True, resume_digest=resume_digest)
                 if not qualified['ready']:
@@ -336,7 +360,7 @@ def bootstrap(password):
         print(json.dumps(dict(private_eligibility=result)), flush=True)
         return
     if task in ('publish-generation', 'rollback-generation', 'inspect-publication-access'):
-        from sync_v3.staging_product_delivery import exercise, exercise_rollback
+        from sync_v3.staging_product_delivery import ReviewedGenerationAdvanced, exercise, exercise_rollback
         import resource
         started = monotonic()
         digest = os.environ['STAGING_PRODUCT_GENERATION']
@@ -476,24 +500,29 @@ def acquire(password):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
+    parser.add_argument('operation', choices=('bootstrap', 'acquire', 'read', 'publish', 'publish-reviewed', 'rollback', 'project', 'project-before-publish', 'project-schedules'))
     args = parser.parse_args()
     try:
-        if args.operation in ('publish', 'rollback'):
+        if args.operation in ('publish', 'publish-reviewed', 'rollback'):
             from sync_v3.staging_publisher import PUBLISHER, check_scope, _connect, TARGET
-            from sync_v3.staging_product_delivery import exercise, exercise_rollback
+            from sync_v3.staging_product_delivery import ReviewedGenerationAdvanced, exercise, exercise_rollback
             password = os.environ['STAGING_PRODUCT_PUBLISHER_PASSWORD']
             digest = os.environ['STAGING_PRODUCT_GENERATION']
             with closing(_connect(PUBLISHER, password)) as target, target, target.cursor() as cur:
                 check_scope(cur, TARGET)
-            if args.operation == 'publish':
-                result = exercise(password, password, digest, user=PUBLISHER, source_user=PUBLISHER)
+            if args.operation in ('publish', 'publish-reviewed'):
+                try:
+                    result = exercise(password, password, digest, user=PUBLISHER, source_user=PUBLISHER)
+                except ReviewedGenerationAdvanced:
+                    if args.operation != 'publish-reviewed':
+                        raise
+                    parser.exit(75)
             else:
                 result = exercise_rollback(password, digest, int(os.environ['STAGING_ROLLBACK_SNAPSHOT']), user=PUBLISHER)
             import resource
             usage = resource.getrusage(resource.RUSAGE_SELF)
             result.update(peak_rss_kib=usage.ru_maxrss, process_cpu_seconds=usage.ru_utime+usage.ru_stime)
-            if args.operation == 'publish' and 'STAGING_CYCLE_STARTED_AT' in os.environ:
+            if args.operation != 'rollback' and 'STAGING_CYCLE_STARTED_AT' in os.environ:
                 started_at = datetime.fromisoformat(os.environ['STAGING_CYCLE_STARTED_AT'])
                 result['cycle_started_at'] = started_at.isoformat()
                 result['invocation_through_http_seconds'] = (datetime.now(timezone.utc)-started_at).total_seconds()
