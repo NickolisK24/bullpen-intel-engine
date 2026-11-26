@@ -285,6 +285,20 @@ def test_off_day_and_streak_use_the_qualified_season_calendar_outside_the_produc
         assert away.off_day_before and away.consecutive_game_day_count_entering == 0
 
 
+def test_only_an_official_sole_starter_supports_zero_relief_totals(app):
+    with app.app_context():
+        day = date(2017, 8, 22)
+        _seed_game(491967, day)
+        starter = _add_pitcher(3101, 116)
+        _add_log(starter, 491967, day, games_started=1, outs=27, pitches=99, batters_faced=29, balls=21)
+        db.session.flush()
+        for proof, expected in (({}, None), ({116: 3101}, 0)):
+            split_service.recompute_team_game_pitching_splits_for_game(491967, official_solo_starters=proof)
+            row = _split(116, 491967)
+            assert (row.bullpen_outs_recorded, row.bullpen_pitches_thrown) == (expected, expected)
+            assert _split(142, 491967).bullpen_outs_recorded is None
+
+
 def test_missing_starter_identity_marks_split_partial_and_safe_unknown(app):
     with app.app_context():
         game_day = date(2026, 6, 11)

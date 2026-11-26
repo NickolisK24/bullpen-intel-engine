@@ -116,7 +116,7 @@ def record_checkpoint(digest, day, through, sources, started):
         return record.id
 
 
-def project_competitive_splits(source, through, window_days):
+def project_competitive_splits(source, through, window_days, receipts):
     """Populate the rotation and recent relief-work inputs from the qualified pitching ledger."""
     from datetime import timedelta
     from services.appearance_ledger import _expected_final_games
@@ -126,6 +126,8 @@ def project_competitive_splits(source, through, window_days):
     from sync_v3.discovery import competition_calendar_request
     from sync_v3.evidence import latest_qualified_source, replay
     from utils.db import db
+
+    from sync_v3.workload import _game_workload
 
     request = competition_calendar_request(through.year)
     with source, source.cursor() as cur:
@@ -139,18 +141,35 @@ def project_competitive_splits(source, through, window_days):
                 dates.add(day)
                 if game.get('resumedFromDate') and row['original_game_date']:
                     dates.add(row['original_game_date'])
-    with db.session.begin():
+    box_sources = set()
+    with db.session.begin(), source, source.cursor() as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        daily = {day: {g['gamePk']: g for slate in replay(cur, oid).body['dates'] for g in slate['games']}
+                 for day, oid in receipts.items()}
         start = through - timedelta(days=window_days-1)
         expected = _expected_final_games(start, through)
         rows = 0
         for pk, played in sorted(expected.items()):
             if pk not in games or games[pk][0] != played or games[pk][1]['status_state'] != 'final':
                 raise ValueError(f'Dated calendar and final-game ledger disagree for {pk}')
-            result = recompute_team_game_pitching_splits_for_game(pk, game_date=played, playable_dates_by_team=playable)
+            game = daily[str(played)][pk]
+            qualified, reason = _game_workload(cur, game, played, receipts[str(played)], resolve_sessions=True)
+            if not qualified:
+                raise ValueError(f'Final {pk} lacks qualified pitching lines: {reason}')
+            facts, (box, _, *sessions) = qualified
+            box_sources.update([box, *sessions])
+            solo = {}
+            for side in game['teams'].values():
+                team = side['team']['id']
+                staff = [line for line in facts if line['team_id'] == team]
+                if len(staff) == 1 and staff[0]['is_starter']:
+                    solo[team] = staff[0]['pitcher_mlb_id']
+            result = recompute_team_game_pitching_splits_for_game(
+                pk, game_date=played, playable_dates_by_team=playable, official_solo_starters=solo)
             if result['status'] != 'processed' or result['rows_total'] != 2:
                 raise ValueError(f'Missing starter and relief split for final {pk}')
             rows += result['rows_total']
-    return dict(calendar=calendar, games=len(expected), team_games=rows)
+    return dict(calendar=calendar, games=len(expected), team_games=rows, source_receipts=sorted(box_sources))
 
 
 def recover_boards(password, source_password, digest, *, competition_day=None, competitive=False, review_seconds=185):
@@ -184,9 +203,9 @@ def recover_boards(password, source_password, digest, *, competition_day=None, c
                         if window['missing_games'] and window['recovered']:
                             return dict(phase='canonical_pending', generation=digest, workload=window)
                         raise ValueError(f"Competitive workload coverage is incomplete: {window['reason']}")
-                    splits = project_competitive_splits(source, through, window['window_days'])
+                    splits = project_competitive_splits(source, through, window['window_days'], window['receipts'])
+                    sources = set(window['receipts'].values()) | {splits['calendar']} | set(splits.pop('source_receipts'))
                     print(json.dumps(dict(private_rotation_splits=splits)), flush=True)
-                    sources = set(window['receipts'].values()) | {splits['calendar']}
                 else:
                     competition = project_offseason_competition(source, client, competition_day, scoped=True)
                     sources = set(competition.pop('source_receipts'))

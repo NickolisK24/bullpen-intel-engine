@@ -78,6 +78,7 @@ def recompute_team_game_pitching_splits_for_game(
     game: dict | None = None,
     game_date: date | None = None,
     playable_dates_by_team=None,
+    official_solo_starters=None,
     sync_run_id=None,
 ) -> dict:
     """Recompute stored split/calendar facts for one MLB game.
@@ -119,6 +120,8 @@ def recompute_team_game_pitching_splits_for_game(
     calendar_statuses = []
     reason_codes = []
     for context in contexts:
+        if official_solo_starters is not None:
+            context['official_solo_starter'] = official_solo_starters.get(context['team_id'])
         if playable_dates_by_team is not None:
             context['playable_dates'] = playable_dates_by_team[context['team_id']]
         values = _split_values(
@@ -325,6 +328,11 @@ def _split_values(context, team_log_rows, *, schedule_ambiguous, extra_inning_in
         'total_team_balls': total_team_balls,
         'source': SOURCE,
     }
+
+    if (starter_pitcher and not relievers and context.get('official_solo_starter') is not None
+            and starter_pitcher.mlb_id == context['official_solo_starter']):
+        for field in ('bullpen_outs_recorded', 'bullpen_pitches_thrown', 'bullpen_batters_faced', 'bullpen_balls'):
+            values[field] = 0
 
     if logs:
         _append_unknown_reasons(values, split_reasons)
