@@ -66,6 +66,32 @@ def manifest(conn):
                     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                     WHERE n.nspname=ANY(%s) ORDER BY 1,2,3""", (SCHEMAS,))
         evidence['routines'] = cur.fetchall()
+        # Resolve ACLs to role names: catalog OIDs differ between independent clusters.
+        cur.execute("""SELECT n.nspname,c.relname,c.relrowsecurity,c.relforcerowsecurity,
+                              pg_get_userbyid(c.relowner),pg_get_userbyid(a.grantor),
+                              CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+                              a.privilege_type,a.is_grantable
+                       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                       CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault(
+                           CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner))) a
+                       WHERE n.nspname=ANY(%s) AND c.relkind IN ('r','S') ORDER BY 1,2,5,6,7,8,9""", (SCHEMAS,))
+        evidence['relation_permissions'] = cur.fetchall()
+        cur.execute("""SELECT schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check
+                       FROM pg_policies WHERE schemaname=ANY(%s) ORDER BY 1,2,3""", (SCHEMAS,))
+        evidence['policies'] = cur.fetchall()
+        cur.execute("""SELECT n.nspname,c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid)
+                       FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+                       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY(%s)
+                       AND NOT t.tgisinternal ORDER BY 1,2,3""", (SCHEMAS,))
+        evidence['triggers'] = cur.fetchall()
+        cur.execute("""SELECT n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),
+                              pg_get_userbyid(p.proowner),pg_get_userbyid(a.grantor),
+                              CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+                              a.privilege_type,a.is_grantable
+                       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                       CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+                       WHERE n.nspname=ANY(%s) ORDER BY 1,2,3,4,5,6,7,8""", (SCHEMAS,))
+        evidence['routine_permissions'] = cur.fetchall()
         if 'public.alembic_version' not in evidence or 'public.dashboard_snapshots' not in evidence:
             raise ValueError('Expected the BaseballOS product schema')
     return cluster, evidence
