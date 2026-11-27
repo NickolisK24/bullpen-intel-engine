@@ -157,3 +157,13 @@ def test_production_handoff_on_migrated_postgres():
         pytest.skip('Requires disposable PostgreSQL')
     subprocess.run([sys.executable, '-m', 'tests.production_writer_rehearsal'],
                    env=dict(os.environ, SYNC_V3_DEPLOYMENT='production', AUTO_SYNC='false'), check=True)
+
+
+def test_logical_replacement_and_same_target_rollback():
+    import subprocess
+    import sys
+
+    if not os.environ.get('SYNC_V3_TEST_PG_BIN'):
+        pytest.skip('Requires disposable PostgreSQL')
+    subprocess.run([sys.executable, '-m', 'tests.replacement_rehearsal'],
+                   env=dict(os.environ, SYNC_V3_DEPLOYMENT='production', AUTO_SYNC='false'), check=True)
