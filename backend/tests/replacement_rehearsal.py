@@ -13,6 +13,7 @@ import psycopg2
 from psycopg2 import sql
 import pytest
 
+from scripts.check_live_replacement import check
 from scripts.verify_replacement_copy import compare
 from sync_v3.rehearse import isolated_cluster
 from sync_v3 import runtime_binding
@@ -60,7 +61,11 @@ def run():
             with pytest.raises(psycopg2.OperationalError, match='password authentication failed'):
                 connection(target, password=password)
             # Use the destination's independent fixture administrator to restore.
-            with closing(connection(source)) as held, tempfile.TemporaryDirectory() as temp:
+            with closing(connection(source)) as held, closing(connection(source)) as exporter, tempfile.TemporaryDirectory() as temp:
+                exporter.set_session(isolation_level='REPEATABLE READ', readonly=True)
+                with exporter.cursor() as cur:
+                    cur.execute('SELECT pg_export_snapshot()')
+                    snapshot = cur.fetchone()[0]
                 archive = Path(temp) / 'product.dump'
                 env = dict(os.environ, PGDATABASE='postgres', PGPORT='5432')
                 with closing(connection(source)) as freeze, freeze, freeze.cursor() as lock:
@@ -71,7 +76,7 @@ def run():
                         with writer, writer.cursor() as cur:
                             cur.execute("SET LOCAL lock_timeout='100ms'")
                             cur.execute("UPDATE public.users SET onboarded_at=now()")
-                    subprocess.run([clients / 'pg_dump', '-Fc', '-n', 'public', '-n', 'roster_history_repair',
+                    subprocess.run([clients / 'pg_dump', '--snapshot', snapshot, '-Fc', '-n', 'public', '-n', 'roster_history_repair',
                                     '-n', 'transaction_history_repair','-f', archive],
                                    env=dict(env, PGHOST=source, PGUSER='postgres'), check=True)
                     listing = subprocess.check_output([clients / 'pg_restore', '--list', archive], text=True)
@@ -87,12 +92,15 @@ def run():
                 with held, held.cursor() as cur:
                     cur.execute("UPDATE users SET email='source-only@example.invalid' WHERE email='migrated@example.invalid'")
                     assert cur.rowcount == 1
+                    cur.execute("SELECT nextval('public.users_id_seq')")
                 with closing(connection(target, 'isolated_restore')) as dest, dest, dest.cursor() as cur:
                     cur.execute("SELECT email FROM users")
                     assert cur.fetchall() == [('migrated@example.invalid',)]
                 with closing(connection(target, 'isolated_restore')) as dest:
                     with pytest.raises(ValueError, match='public.users'):
                         compare(held, dest)
+                with closing(connection(target, 'isolated_restore')) as dest:
+                    assert check(held, dest, snapshot, archive, clients / 'pg_restore') > 0
                 print(json.dumps(dict(**receipt, archive_bytes=archive.stat().st_size,
                                       elapsed_seconds=round(time.monotonic()-started, 2))), flush=True)
             # Local fixture now authenticates the test harness through its private socket again.

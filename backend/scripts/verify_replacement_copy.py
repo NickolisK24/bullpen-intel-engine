@@ -17,17 +17,15 @@ from psycopg2 import sql
 SCHEMAS = ['public', 'roster_history_repair', 'transaction_history_repair']
 
 
-def manifest(conn):
+def manifest(conn, *, snapshot=None):
     conn.set_session(isolation_level='REPEATABLE READ', readonly=True)
     with conn, conn.cursor() as cur:
+        if snapshot is not None:
+            cur.execute('SET TRANSACTION SNAPSHOT %s', (snapshot,))
         cur.execute("SET LOCAL search_path=pg_catalog")
         for option in ("TIME ZONE 'UTC'", "DateStyle='ISO, YMD'", "IntervalStyle='postgres'",
                        "bytea_output='hex'", "extra_float_digits=3"):
             cur.execute('SET LOCAL ' + option)
-        cur.execute("SET LOCAL timezone='UTC'")
-        cur.execute("SET LOCAL datestyle='ISO, YMD'")
-        cur.execute("SET LOCAL intervalstyle='iso_8601'")
-        cur.execute("SET LOCAL extra_float_digits=3")
         cur.execute("SELECT system_identifier::text FROM pg_control_system()")
         cluster = cur.fetchone()[0]
         cur.execute("""SELECT n.nspname,c.relname,c.relkind FROM pg_class c
