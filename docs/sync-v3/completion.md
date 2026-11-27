@@ -1,5 +1,11 @@
 # Sync v3 acceptance ledger
 
+## November 27 independent database replacement rehearsal
+
+NP-00 and NP-23 have a support-independent [replacement handoff](replacement-handoff.md). Two independently initialized PostgreSQL 17 clusters exercised a logical copy of the product migrations, legacy publication and historical repair routines. The destination rejected the source owner password. A held source owner changed an account after the cutoff; the destination preserved the copied account, and the content verifier detected the divergence. Source SHARE locks blocked a concurrent write. The destination ran the existing played-source replay, canonical projection, two atomic promotions, public League/Tonight/30 Board verification, independent application writes and same-target legacy rollback. Earlier hosted acquisition and retention evidence still applies.
+
+The existing project remains legacy-primary. The replacement project and cluster IDs require a reviewed release pin. Paid destination provisioning, full-size managed copy timing, destination pool/key challenges, public traffic transfer and observation remain open. The previous provider-drain requirement applies only to an in-place transfer.
+
 ## November 26 production-role rehearsal and exclusive-writer handoff
 
 The [operator procedure](production-handoff.md) binds the existing primary to dedicated production roles and an exact build. The new isolated rehearsal migrates all 89 product tables, runs the actual publication builder through a legacy edition and two v3 promotions, and restores the first legacy edition through both successors. It checks the public League, Tonight and all 30 Boards under the proposed API role, compares the restored fingerprint, exercises unrelated account and traffic writes, and challenges the outgoing and service-role grants. Its source replay uses the played fixture. The earlier hosted tests below independently exercised current and competitive MLB acquisition, persistent retention, interruption and public delivery. A production-shaped played fixture also required publisher SELECT on play-by-play events and ingestion completion evidence.

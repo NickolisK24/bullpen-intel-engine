@@ -2,6 +2,8 @@
 
 Use the isolated rehearsal, the NP-00 census and the named private Render receipts in the [acceptance ledger](completion.md). The production target is Supabase project `jbhzvzlqrledmlqrlzim`, database `postgres`, with product migration `e241f709cd36`. Render workspace is `tea-d15pjmodl3ps7381ofe0`. Run the commands below from `backend/` in the tested checkout. Set `REV` to the exact CI-tested commit deployed on the v3 service. Archive its SHA, build/deploy ID, role receipts, provider drain receipt and public JSON receipts outside the service. Use masked bindings and a verified Supabase CA file throughout.
 
+For an independent new project use the [replacement handoff](replacement-handoff.md). The procedure below applies to the existing project.
+
 **Status.** This package prepares production operations. Before requesting cutover approval, obtain the provider's supported operation and impact for disconnecting **already authenticated frontend clients** on every enabled project pool endpoint. Record whether the dedicated pool is enabled. Pooler backend PIDs and samples of idle activity cannot establish complete disconnection. The held-client check below supplements the provider operation.
 
 | Order and operation | Impact and authorization | Execution and acceptance |

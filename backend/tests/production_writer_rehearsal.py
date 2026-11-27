@@ -27,7 +27,7 @@ from utils.db import db
 REVISION = 'a' * 40
 
 
-def exercise(host):
+def exercise(host, transfer=None):
     def connect(role):
         return psycopg2.connect(host=host, port=5432, dbname='postgres', user=role)
 
@@ -71,12 +71,16 @@ def exercise(host):
         DATABASE_MIGRATION_MODE='owner',
     )
     subprocess.run([sys.executable, '-m', 'flask', '--app', 'app', 'db', 'upgrade'], env=env, check=True)
-    with closing(connect('postgres')) as admin, admin, admin.cursor() as cur:
-        prepare(cur, REVISION)
-        cur.execute('GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role')
-        cur.execute('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role')
-        cur.execute('ALTER ROLE baseballos_product_api LOGIN')
-        cur.execute('ALTER ROLE baseballos_legacy_sync LOGIN')
+    def prepare_roles():
+        with closing(connect('postgres')) as admin, admin, admin.cursor() as cur:
+            prepare(cur, REVISION)
+            cur.execute('GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role')
+            cur.execute('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role')
+            cur.execute('ALTER ROLE baseballos_product_api LOGIN')
+            cur.execute('ALTER ROLE baseballos_legacy_sync LOGIN')
+
+    if transfer is None:
+        prepare_roles()
 
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
@@ -89,7 +93,7 @@ def exercise(host):
     with app_for('postgres').app_context():
         day = public_serving_authority.product_current_date()
         _seed_teams(day)
-    legacy_app = app_for(LEGACY)
+    legacy_app = app_for(LEGACY if transfer is None else 'postgres')
     legacy_app.config.update(TRUSTED_PUBLIC_SERVING_ENABLED=True, TEAM_STATE_PUBLICATION_PROOF_REQUIRED=True)
     public_serving_authority.install_public_serving_authority(legacy_app)
     with legacy_app.app_context():
@@ -128,6 +132,11 @@ def exercise(host):
         db.session.remove()
         db.engine.dispose()
 
+    replacement = None
+    if transfer is not None:
+        host, replacement = transfer(host)
+        prepare_roles()
+
     os.environ.update(APP_ENV='test', TEST_DATABASE_URL=str(url(API)), DATABASE_URL=str(url(API)))
     from app import app as public_app
     from scripts.verify_public_sync_edition import verify as verify_http
@@ -154,7 +163,8 @@ def exercise(host):
                     revision=REVISION,
                     endpoints=['DIRECT', 'SESSION', 'TRANSACTION'],
                     provider_operation='isolated-socket-fixture',
-                ),
+                ) if replacement is None else None,
+                replacement=replacement,
             )
 
     with closing(connect(LEGACY)) as held:

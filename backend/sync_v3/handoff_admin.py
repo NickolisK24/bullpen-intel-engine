@@ -255,7 +255,7 @@ def fence_service_role(cur):
     return len(changes)
 
 
-def transition(cur, old, new, revision, pin, *, drain=None):
+def transition(cur, old, new, revision, pin, *, drain=None, replacement=None):
     cur.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (LOCK,))
     if not cur.fetchone()[0]:
         raise ValueError('A v3 job still owns the handoff lock')
@@ -283,16 +283,34 @@ def transition(cur, old, new, revision, pin, *, drain=None):
         ):
             raise ValueError('Pinned legacy selector differs')
     if new == 'v3':
-        if (
-            not isinstance(drain, dict)
-            or drain.get('project') != b.PROJECT
-            or drain.get('revision') != revision
-            or drain.get('endpoints')
-            not in (['DIRECT', 'SESSION', 'TRANSACTION'], ['DIRECT', 'SESSION', 'TRANSACTION', 'DEDICATED'])
-            or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', drain.get('provider_operation') or '')
-        ):
-            raise ValueError('Require a successful provider pool drain receipt for this project and revision')
-        cur.execute('UPDATE sync_v3_control.authority SET drain_receipt=%s WHERE singleton', (Json(drain),))
+        if b.PROJECT != b.ORIGINAL_PROJECT:
+            cur.execute('SELECT system_identifier::text FROM pg_control_system()')
+            cluster = cur.fetchone()[0]
+            if (
+                drain is not None
+                or cluster == b.ORIGINAL_CLUSTER
+                or cluster != b.REPLACEMENT_CLUSTER
+                or not isinstance(replacement, dict)
+                or replacement.get('source_cluster') != b.ORIGINAL_CLUSTER
+                or replacement.get('target_cluster') != cluster
+                or replacement.get('revision') != revision
+                or not re.fullmatch('[0-9a-f]{64}', replacement.get('content_sha256') or '')
+            ):
+                raise ValueError('Verified logical copy between the two reviewed clusters required')
+            evidence = replacement
+        else:
+            if (
+                replacement is not None
+                or not isinstance(drain, dict)
+                or drain.get('project') != b.PROJECT
+                or drain.get('revision') != revision
+                or drain.get('endpoints')
+                not in (['DIRECT', 'SESSION', 'TRANSACTION'], ['DIRECT', 'SESSION', 'TRANSACTION', 'DEDICATED'])
+                or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', drain.get('provider_operation') or '')
+            ):
+                raise ValueError('Require a successful provider pool drain receipt for this project and revision')
+            evidence = drain
+        cur.execute('UPDATE sync_v3_control.authority SET drain_receipt=%s WHERE singleton', (Json(evidence),))
         if state[2] is not None:
             raise ValueError('A rolled-back handoff requires a newly reviewed runtime provisioning')
         prohibit_sessions(cur, [LEGACY])
@@ -331,7 +349,9 @@ def main():
     parser.add_argument('operation', choices=('prepare', 'activate', 'begin-rollback', 'release-legacy'))
     parser.add_argument('--revision')
     parser.add_argument('--receipt', type=Path)
-    parser.add_argument('--pool-drain', type=Path)
+    receipts = parser.add_mutually_exclusive_group()
+    receipts.add_argument('--pool-drain', type=Path)
+    receipts.add_argument('--replacement-copy', type=Path)
     args = parser.parse_args()
     if not b.PRODUCTION:
         parser.error('Set SYNC_V3_DEPLOYMENT=production explicitly')
@@ -375,6 +395,7 @@ def main():
                 args.revision,
                 json.loads(args.receipt.read_text())['legacy_predecessor'],
                 drain=json.loads(args.pool_drain.read_text()) if args.pool_drain else None,
+                replacement=json.loads(args.replacement_copy.read_text()) if args.replacement_copy else None,
             )
     print(json.dumps({'committed': args.operation}))
 

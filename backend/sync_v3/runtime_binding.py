@@ -7,7 +7,11 @@ import psycopg2
 from sqlalchemy import URL
 
 PRODUCTION = os.environ.get('SYNC_V3_DEPLOYMENT') == 'production'
-PROJECT = 'jbhzvzlqrledmlqrlzim'
+ORIGINAL_PROJECT = 'jbhzvzlqrledmlqrlzim'
+# Pin a newly provisioned project in a reviewed release before replacement activation.
+PROJECT = ORIGINAL_PROJECT
+ORIGINAL_CLUSTER = '7632885393857617092'
+REPLACEMENT_CLUSTER = None
 DATABASE = 'postgres'
 WORKER = 'sync_v3_worker'
 PROJECTOR = 'baseballos_v3_projector'
