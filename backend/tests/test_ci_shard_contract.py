@@ -449,7 +449,7 @@ DEV_REQUIREMENTS_CACHE_KEY = 'backend/requirements-dev.txt'
 
 # The only workflows allowed to install the dev/test layer. Everything else —
 # including the production sync path — stays on the runtime set.
-DEV_REQUIREMENTS_WORKFLOWS = frozenset({'ci.yml', 'phantom_game_log_guard.yml', 'sync-v3-shadow.yml'})
+DEV_REQUIREMENTS_WORKFLOWS = frozenset({'ci.yml', 'phantom_game_log_guard.yml', 'sync-v3-shadow.yml', 'sync-v3-rehearsal.yml'})
 
 # ci.yml jobs that must install the dev/test layer: one collects the suite, the
 # others run it.
@@ -539,6 +539,16 @@ def test_only_test_consuming_workflows_install_the_dev_requirements():
         'these workflows do not run tests and must install the runtime '
         f'requirements only: {leaked}'
     )
+
+
+def test_rehearsal_dev_dependencies_are_confined_to_disposable_copy():
+    with open(os.path.join(WORKFLOWS_DIR, 'sync-v3-rehearsal.yml'), encoding='utf-8') as handle:
+        jobs = yaml.safe_load(handle)['jobs']
+    installers = [step for job in jobs.values() for step in job['steps']
+                  if DEV_REQUIREMENTS_REF in step.get('run', '')]
+    assert len(installers) == 1
+    assert installers[0]['if'] == "inputs.phase == 'disposable-copy'"
+    assert 'tests.managed_rehearsal_fixture' in installers[0]['run']
 
 
 def test_the_production_sync_workflow_stays_on_the_runtime_requirements():

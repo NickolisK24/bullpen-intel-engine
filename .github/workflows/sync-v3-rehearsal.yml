@@ -208,7 +208,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install PostgreSQL 17 tools and application dependencies
+      - name: Install PostgreSQL 17 tools
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$REHEARSAL_REVISION"
@@ -218,10 +218,14 @@ jobs:
           fi
           echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
           echo SYNC_V3_TEST_PG_BIN=/usr/lib/postgresql/17/bin >> "$GITHUB_ENV"
-          python -m pip install -r requirements-dev.txt
       - name: Exercise the complete private copy on disposable socket-only databases
         if: inputs.phase == 'disposable-copy'
-        run: python -m tests.managed_rehearsal_fixture
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m tests.managed_rehearsal_fixture
+      - name: Install application runtime dependencies
+        if: inputs.phase == 'full-size'
+        run: python -m pip install -r requirements.txt
       - name: Run the approved full-size replacement rehearsal
         if: inputs.phase == 'full-size'
         env:
