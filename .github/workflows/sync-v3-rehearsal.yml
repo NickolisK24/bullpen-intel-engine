@@ -1,0 +1,102 @@
+name: Sync v3 rehearsal connectivity
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Use source-snapshot only after destination approval and export-role activation
+        type: choice
+        options: [preflight, source-snapshot]
+        default: preflight
+        required: true
+
+permissions: {}
+concurrency:
+  group: sync-v3-rehearsal-connectivity
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Measure available archive space and memory
+        run: |
+          df -B1 --output=avail "$RUNNER_TEMP"
+          awk '/MemAvailable:/ {print "Available memory (KiB):", $2}' /proc/meminfo
+          echo "A full copy must fit one hosted job (360 minutes including verification)."
+      - name: Check source route and optional destination TLS
+        env:
+          EXPORT_URL: ${{ secrets.BASEBALLOS_V3_EXPORT_URL }}
+          ROOT_CA: ${{ secrets.BASEBALLOS_V3_POSTGRES_CA_PEM }}
+          TARGET_HOST: ${{ vars.BASEBALLOS_V3_REHEARSAL_TARGET_HOST }}
+          PHASE: ${{ inputs.phase }}
+        run: |
+          set -eu
+          umask 077
+          python3 - <<'PY'
+          import os, re, socket, ssl, struct, subprocess, tempfile
+          from urllib.parse import unquote, urlsplit
+
+          ref = "jbhzvzlqrledmlqrlzim"
+          url = urlsplit(os.environ["EXPORT_URL"])
+          host = url.hostname or ""
+          user = unquote(url.username or "")
+          direct = host == f"db.{ref}.supabase.co" and user == "baseballos_v3_export"
+          pooled = host.endswith(".pooler.supabase.com") and user == f"baseballos_v3_export.{ref}"
+          if not (direct or pooled) or (url.port or 5432) != 5432:
+              raise SystemExit("Supply the dedicated export URL on the direct or session route.")
+
+          ca = os.environ["ROOT_CA"]
+          context = ssl.create_default_context()
+          if ca:
+              context.load_verify_locations(cadata=ca)
+          def probe(endpoint):
+              with socket.create_connection((endpoint, 5432), timeout=10) as sock:
+                  sock.sendall(struct.pack("!II", 8, 80877103))
+                  if sock.recv(1) != b"S":
+                      raise SystemExit("PostgreSQL TLS negotiation refused.")
+                  with context.wrap_socket(sock, server_hostname=endpoint):
+                      pass
+
+          probe(host)
+          print("Source DNS and hostname-verified PostgreSQL TLS passed.", flush=True)
+          target = os.environ["TARGET_HOST"]
+          if target:
+              if not re.fullmatch(r"db\.[a-z0-9]{20}\.supabase\.co", target) or target == f"db.{ref}.supabase.co":
+                  raise SystemExit("Expected an independent destination direct hostname.")
+              probe(target)
+              print("Destination direct DNS and TLS passed.")
+          else:
+              print("Destination connectivity pending assignment of a project reference.")
+
+          if os.environ["PHASE"] == "source-snapshot":
+              if not target:
+                  raise SystemExit("Destination endpoint required for source snapshot phase.")
+              with tempfile.NamedTemporaryFile(mode="w") as cert:
+                  cert.write(ca)
+                  cert.flush()
+                  env = dict(PATH=os.environ["PATH"], PGHOST=host, PGPORT="5432",
+                             PGUSER=user, PGDATABASE="postgres", PGPASSWORD=unquote(url.password or ""),
+                             PGSSLMODE="verify-full", PGCONNECT_TIMEOUT="10",
+                             PGSSLROOTCERT=cert.name if ca else ssl.get_default_verify_paths().cafile)
+                  def psql():
+                      return subprocess.Popen(["psql","-XqAt","-v","ON_ERROR_STOP=1"],
+                          env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL, text=True)
+                  with psql() as exporter:
+                      try:
+                          exporter.stdin.write("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();\n")
+                          exporter.stdin.flush()
+                          snapshot = exporter.stdout.readline().strip()
+                          if not re.fullmatch(r"[0-9A-Fa-f-]+", snapshot):
+                              raise SystemExit("Dedicated login or snapshot export failed.")
+                          with psql() as reader:
+                              reader.communicate("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n"
+                                  f"SET TRANSACTION SNAPSHOT '{snapshot}';\nSELECT 1;\nROLLBACK;\n", timeout=30)
+                              if reader.returncode:
+                                  raise SystemExit("Independent session could not import snapshot.")
+                      finally:
+                          exporter.stdin.close()
+                          exporter.wait(timeout=15)
+                  print("Two dedicated read-only sessions shared a snapshot.")
+          PY
