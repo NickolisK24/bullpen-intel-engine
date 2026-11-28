@@ -5,7 +5,7 @@ on:
       phase:
         description: Use source-snapshot only after destination approval and export-role activation
         type: choice
-        options: [preflight, source-snapshot]
+        options: [preflight, source-snapshot, disposable-copy, full-size]
         default: preflight
         required: true
 
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   probe:
+    if: inputs.phase == 'preflight' || inputs.phase == 'source-snapshot'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -185,3 +186,48 @@ jobs:
           test -z "$(docker ps -aq --filter name=^/sync-v3-fixture$)"
           trap - EXIT
           echo "Synthetic restore preserved the held snapshot. Private archive and fixture removed."
+
+  replacement:
+    if: inputs.phase == 'disposable-copy' || (inputs.phase == 'full-size' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 350
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SYNC_V3_DEPLOYMENT: production
+      AUTO_SYNC: 'false'
+      REHEARSAL_REVISION: f974493d687a0222c66fbd71fbbea01c512b490f
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REHEARSAL_REVISION }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PostgreSQL 17 tools and application dependencies
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REHEARSAL_REVISION"
+          if [[ ! -x /usr/lib/postgresql/17/bin/initdb ]]; then
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+            sudo apt-get install -y --no-install-recommends postgresql-17
+          fi
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+          echo SYNC_V3_TEST_PG_BIN=/usr/lib/postgresql/17/bin >> "$GITHUB_ENV"
+          python -m pip install -r requirements-dev.txt
+      - name: Exercise the complete private copy on disposable socket-only databases
+        if: inputs.phase == 'disposable-copy'
+        run: python -m tests.managed_rehearsal_fixture
+      - name: Run the approved full-size replacement rehearsal
+        if: inputs.phase == 'full-size'
+        env:
+          EXPORT_URL: ${{ secrets.BASEBALLOS_V3_EXPORT_URL }}
+          DESTINATION_URL: ${{ secrets.BASEBALLOS_V3_REHEARSAL_DESTINATION_URL }}
+          REHEARSAL_PROJECT_REF: ${{ vars.BASEBALLOS_V3_REHEARSAL_REF }}
+          REHEARSAL_CLUSTER_ID: ${{ vars.BASEBALLOS_V3_REHEARSAL_CLUSTER_ID }}
+          REHEARSAL_STARTED_AT: ${{ vars.BASEBALLOS_V3_REHEARSAL_STARTED_AT }}
+        run: python -m scripts.managed_replacement_rehearsal
