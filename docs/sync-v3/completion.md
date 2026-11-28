@@ -1,5 +1,11 @@
 # Sync v3 acceptance ledger
 
+## November 28 full-size runner integration on disposable databases
+
+GitHub Actions ran the manual `disposable-copy` phase on ubuntu-24.04 using implementation `6e4da10c6ce57eaa3bf6be3e0f8c4f23b96785a5`. PostgreSQL 17 restored a 1,007,650-byte synthetic archive from the dedicated exporter into an independent cluster, including the explicit export grantee ACLs. The live-snapshot comparison passed, including 88 archived sequences. Both replay editions passed private League, Tonight and 30-club Board verification. Same-target rollback reproduced the original public fingerprint. GitHub skipped the managed credential step. The workflow syntax passed actionlint. These results close the runner integration item below. Full-size elapsed time, live role authentication, restore disk/WAL high-water marks and provider billing remain pending. [Actions run 46164204058](https://github.com/NickolisK24/bullpen-intel-engine/actions/runs/46164204058) · [Migration implementation](https://github.com/NickolisK24/bullpen-intel-engine/pull/1018) · [Manual dispatcher](https://github.com/NickolisK24/bullpen-intel-engine/pull/1019)
+
+For a separately approved window, keep the organization bootstrap and destination readback tokens outside the copy job. Create only the authorized Small project in us-east-2. Independently verify the 32 GB ceiling, allocated size, Small compute, destination session endpoint and PostgreSQL system identifier before opening source access. The Owner installs the approved temporary source role, supplies the two scoped URLs as Actions secrets and sets the temporary destination ref, cluster ID and UTC window start as repository variables. Dispatch `full-size` on `main`. Monitor incremental usage every 15 minutes during restore, cancel and clean up at a $4 projection, and keep total projected spend within the $5 monitored budget. Work ends by hour seven or the earlier hosted job timeout. Close source access, remove the temporary bindings, delete the exact destination and verify its absence and production health by hour eight. This procedure grants no production cutover authority.
+
 ## Closed attempt and prerequisites for a separately approved retry
 
 The deleted November 28 destination is closed. The stop was a Management API authorization failure. The existing backup and hosted-runner evidence stand.
