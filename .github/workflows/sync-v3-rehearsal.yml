@@ -1,0 +1,142 @@
+name: Sync v3 rehearsal connectivity
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Use source-snapshot only after destination approval and export-role activation
+        type: choice
+        options: [preflight, source-snapshot]
+        default: preflight
+        required: true
+
+permissions: {}
+concurrency:
+  group: sync-v3-rehearsal-connectivity
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Measure available archive space and memory
+        run: |
+          df -B1 --output=avail "$RUNNER_TEMP"
+          awk '/MemAvailable:/ {print "Available memory (KiB):", $2}' /proc/meminfo
+          echo "A full copy must fit one hosted job (360 minutes including verification)."
+      - name: Exercise snapshot lifetime and private archive handling with synthetic data
+        run: |
+          set -euo pipefail
+          umask 077
+          scratch=$(mktemp -d "$RUNNER_TEMP/sync-v3.XXXXXXXX")
+          cleanup() {
+            docker rm -fv sync-v3-fixture >/dev/null 2>&1 || true
+            rm -rf -- "$scratch"
+          }
+          trap cleanup EXIT
+          # No network interface or published port. Local trust is confined to the fixture.
+          docker run -d --network none --name sync-v3-fixture -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
+          for attempt in {1..60}; do
+            if docker exec sync-v3-fixture pg_isready -h 127.0.0.1 -U postgres >/dev/null; then break; fi
+            sleep 1
+          done
+          sql() { docker exec -i sync-v3-fixture psql -XqAt -v ON_ERROR_STOP=1 -U postgres "$@"; }
+          sql -c 'CREATE TABLE fixture AS SELECT 1 AS n'
+          coproc HOLDER { sql; }
+          holder_pid=$HOLDER_PID
+          printf '%s\n' 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;' 'SELECT pg_export_snapshot();' >&"${HOLDER[1]}"
+          read -r -t 30 snapshot <&"${HOLDER[0]}"
+          sql -c 'INSERT INTO fixture VALUES (2)'
+          docker exec sync-v3-fixture pg_dump -U postgres -Fc -t fixture --snapshot="$snapshot" postgres > "$scratch/fixture.dump"
+          sql -c 'CREATE DATABASE restored'
+          docker exec -i sync-v3-fixture pg_restore -U postgres -d restored --exit-on-error < "$scratch/fixture.dump"
+          test "$(sql -d restored -c 'SELECT count(*) FROM fixture')" = 1
+          printf '%s\n' 'ROLLBACK;' '\q' >&"${HOLDER[1]}"
+          wait "$holder_pid"
+          test "$(stat -c %a "$scratch")" = 700
+          test "$(stat -c %a "$scratch/fixture.dump")" = 600
+          cleanup
+          test ! -e "$scratch"
+          test -z "$(docker ps -aq --filter name=^/sync-v3-fixture$)"
+          trap - EXIT
+          echo "Synthetic restore preserved the held snapshot. Private archive and fixture removed."
+      - name: Check source route and optional destination TLS
+        env:
+          SOURCE_HOST: ${{ vars.BASEBALLOS_V3_SOURCE_HOST || 'db.jbhzvzlqrledmlqrlzim.supabase.co' }}
+          EXPORT_URL: ${{ inputs.phase == 'source-snapshot' && secrets.BASEBALLOS_V3_EXPORT_URL || '' }}
+          ROOT_CA: ${{ secrets.BASEBALLOS_V3_POSTGRES_CA_PEM }}
+          TARGET_HOST: ${{ vars.BASEBALLOS_V3_REHEARSAL_TARGET_HOST }}
+          PHASE: ${{ inputs.phase }}
+        run: |
+          set -eu
+          umask 077
+          python3 - <<'PY'
+          import os, re, socket, ssl, struct, subprocess, tempfile
+          from urllib.parse import unquote, urlsplit
+
+          ref = "jbhzvzlqrledmlqrlzim"
+          host = os.environ["SOURCE_HOST"]
+          if host != f"db.{ref}.supabase.co" and not re.fullmatch(r"aws-\d+-us-east-2\.pooler\.supabase\.com", host):
+              raise SystemExit("Expected the production direct hostname or its regional session pooler.")
+          ca = os.environ["ROOT_CA"]
+          context = ssl.create_default_context()
+          if ca:
+              context.load_verify_locations(cadata=ca)
+          def probe(endpoint):
+              with socket.create_connection((endpoint, 5432), timeout=10) as sock:
+                  sock.sendall(struct.pack("!II", 8, 80877103))
+                  if sock.recv(1) != b"S":
+                      raise SystemExit("PostgreSQL TLS negotiation refused.")
+                  with context.wrap_socket(sock, server_hostname=endpoint):
+                      pass
+
+          probe(host)
+          print("Source DNS and hostname-verified PostgreSQL TLS passed.", flush=True)
+          target = os.environ["TARGET_HOST"]
+          if target:
+              if not re.fullmatch(r"db\.[a-z0-9]{20}\.supabase\.co", target) or target == f"db.{ref}.supabase.co":
+                  raise SystemExit("Expected an independent destination direct hostname.")
+              probe(target)
+              print("Destination direct DNS and TLS passed.")
+          else:
+              print("Destination connectivity pending assignment of a project reference.")
+
+          if os.environ["PHASE"] == "source-snapshot":
+              url = urlsplit(os.environ["EXPORT_URL"])
+              if url.hostname != host:
+                  raise SystemExit("Dedicated export route differs from the preflight route.")
+              user = unquote(url.username or "")
+              direct = host == f"db.{ref}.supabase.co" and user == "baseballos_v3_export"
+              pooled = host.endswith(".pooler.supabase.com") and user == f"baseballos_v3_export.{ref}"
+              if not (direct or pooled) or (url.port or 5432) != 5432:
+                  raise SystemExit("Supply the dedicated export URL on the direct or session route.")
+              if not target:
+                  raise SystemExit("Destination endpoint required for source snapshot phase.")
+              with tempfile.NamedTemporaryFile(mode="w") as cert:
+                  cert.write(ca)
+                  cert.flush()
+                  env = dict(PATH=os.environ["PATH"], PGHOST=host, PGPORT="5432",
+                             PGUSER=user, PGDATABASE="postgres", PGPASSWORD=unquote(url.password or ""),
+                             PGSSLMODE="verify-full", PGCONNECT_TIMEOUT="10",
+                             PGSSLROOTCERT=cert.name if ca else ssl.get_default_verify_paths().cafile)
+                  def psql():
+                      return subprocess.Popen(["psql","-XqAt","-v","ON_ERROR_STOP=1"],
+                          env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL, text=True)
+                  with psql() as exporter:
+                      try:
+                          exporter.stdin.write("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();\n")
+                          exporter.stdin.flush()
+                          snapshot = exporter.stdout.readline().strip()
+                          if not re.fullmatch(r"[0-9A-Fa-f-]+", snapshot):
+                              raise SystemExit("Dedicated login or snapshot export failed.")
+                          with psql() as reader:
+                              reader.communicate("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n"
+                                  f"SET TRANSACTION SNAPSHOT '{snapshot}';\nSELECT 1;\nROLLBACK;\n", timeout=30)
+                              if reader.returncode:
+                                  raise SystemExit("Independent session could not import snapshot.")
+                      finally:
+                          exporter.stdin.close()
+                          exporter.wait(timeout=15)
+                  print("Two dedicated read-only sessions shared a snapshot.")
+          PY
