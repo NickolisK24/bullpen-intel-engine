@@ -20,7 +20,10 @@ def run():
             target = dict(source, host=target_owner.info.host)
             with closing(psycopg2.connect(**source)) as admin, admin, admin.cursor() as cur:
                 cur.execute('CREATE ROLE baseballos_v3_export LOGIN BYPASSRLS')
-                cur.execute('GRANT pg_read_all_data TO baseballos_v3_export')
+                for schema in ('public', 'roster_history_repair', 'transaction_history_repair'):
+                    cur.execute(f'GRANT USAGE ON SCHEMA {schema} TO baseballos_v3_export')
+                    cur.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO baseballos_v3_export')
+                    cur.execute(f'GRANT SELECT ON ALL SEQUENCES IN SCHEMA {schema} TO baseballos_v3_export')
                 cur.execute('GRANT EXECUTE ON FUNCTION pg_control_system() TO baseballos_v3_export')
             source['user'] = SOURCE_USER
             with target_owner, target_owner.cursor() as cur:

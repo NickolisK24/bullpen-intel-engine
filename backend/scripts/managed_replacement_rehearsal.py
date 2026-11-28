@@ -191,6 +191,9 @@ def rehearse(source, target, expected_source, expected_target, directory, revisi
                         (SCHEMAS[1:] + ['candidate','sync_v3_control'],))
             if any(cur.fetchone()):
                 raise ValueError('Expected an empty destination')
+            # pg_dump preserves explicit source ACLs. Their grantee must exist for the atomic restore.
+            cur.execute('CREATE ROLE baseballos_v3_export NOLOGIN NOINHERIT NOSUPERUSER NOCREATEROLE '
+                        'NOCREATEDB NOREPLICATION NOBYPASSRLS')
         copy(source, target, dest, directory, report)
         dest.set_session(readonly=False)
         product(dest, target, revision, report)
