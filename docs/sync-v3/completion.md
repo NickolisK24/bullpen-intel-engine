@@ -1,5 +1,13 @@
 # Sync v3 acceptance ledger
 
+## November 28 attended managed rehearsal
+
+The attended session began at 15:51:50 UTC. Supabase returned HTTP 201 for `baseballos-sync-v3-rehearsal` in us-east-2 with requested Small compute and fresh credentials. The provider recorded creation at 15:46:22.038973 UTC and assigned reference `daotjbsqzjrjctzgiwad`.
+
+The Owner reported a successful Dashboard save, Small compute with 2 GB memory at $0.0206/hour, 2 GB allocated disk and a 32 GB maximum autoscaled disk. After the save, both Management API disk reads returned HTTP 403 for missing `infra_disk_config_read`. The compute add-on read returned HTTP 403 for missing `infra_add_ons_read`. The required independent readback failed. The source export login stayed inactive. No production data was exported or restored, and full-size comparison, publication, API verification and rollback were not exercised.
+
+The exact-reference deletion request returned HTTP 403 for missing `project_admin_write`, and the Owner was asked to perform manual cleanup. At 15:59:40 UTC the project inventory showed the temporary reference absent and production reference `jbhzvzlqrledmlqrlzim` present. The interval from provider creation to confirmed absence was 13 minutes 18 seconds. No rehearsal transfer or restore usage accrued. The final billed amount awaits provider reporting. Legacy remained production-primary.
+
 ## November 28 production backup inventory
 
 The BaseballOS operator verified in the Supabase Dashboard that project `jbhzvzlqrledmlqrlzim` had a **Completed** physical backup dated **2026-11-28 06:43:32 UTC**. The Dashboard offered **Restore to New Project**. Its workflow listed database schema, data, indexes, roles, permissions and users as transferable. Storage objects, Auth settings, API keys, Edge Functions and certain database settings require separate handling. No restore was initiated. A successful recovery from this backup has not been tested.
