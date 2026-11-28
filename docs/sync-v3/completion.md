@@ -1,5 +1,23 @@
 # Sync v3 acceptance ledger
 
+## Closed attempt and prerequisites for a separately approved retry
+
+The deleted November 28 destination is closed. The stop was a Management API authorization failure. The existing backup and hosted-runner evidence stand.
+
+| Identity and operation | Minimum Management API permission | Evidence |
+| --- | --- | --- |
+| Organization bootstrap, list project references | `projects_read` | Authenticated GET /v1/projects returned 200. |
+| Organization bootstrap, create one Small project | `organization_projects_create` | The previous create returned 201 with Small requested. |
+| New destination only, GET billing/addons | `infra_add_ons_read` | Reads compute selection. The old binding returned 403. |
+| New destination only, GET config/disk, config/disk/autoscale and config/disk/util | `infra_disk_config_read` | Reads allocated disk, maximum and utilization. The old binding returned 403. |
+| Optional destination-only API deletion | `project_admin_write` | DELETE /v1/projects/{ref} is supported. Owner manual deletion and independent inventory confirmation remain the selected cleanup procedure. |
+
+The Owner sets the maximum in the destination Dashboard. POST config/disk requires `infra_disk_config_write` and changes allocated disk attributes. Its published schema has no maximum-autoscale field. Neither disk write, add-on write nor project administration is needed on the destination readback token. Keep the organization bootstrap binding separate. Issue the destination token for the newly assigned reference only, then bind it separately for api.supabase.com. Its actual project-specific GETs can first run after creation. [Management API schema](https://api.supabase.com/api/v1-json)
+
+A read-only production pg_roles lookup found no role named baseballos_v3_export. The authorized source setup must create and grant that role before a login can succeed. The existing Actions workflow accepts BASEBALLOS_V3_EXPORT_URL from Actions secrets for its source-snapshot phase and a separate destination host variable. Its preflight verified the source network route and isolated snapshot behavior. It does not execute the full managed copy. Actual secret installation, destination connectivity and dedicated-role authentication remain unverified. Before another billable request, finish the manual full-copy runner entry point using the existing replacement-handoff tools, including destination-only credential delivery, an IPv4-reachable destination session or direct route, archive handling, the six-hour job timeout and failure cleanup. Keep passwords out of logs, PRs and artifacts.
+
+For an approved retry, record UTC start and billing baseline. Create the named Small us-east-2 project, record its ref, set the maximum to 32 GB in Dashboard, and use the separate token for independent compute, allocation and maximum readback. Verify destination connectivity and identity before using the approved scoped source-export procedure. Use fresh Actions secrets and the production IPv4 session pooler on 5432. Hold the read-only snapshot through dump, restore and full comparison, including archived sequence checks. Close source access promptly. Run private publication, API and same-target rollback checks while legacy stays production-primary. Check projected incremental spend every 15 minutes during restore, including transfer and disk. Begin cleanup at $4 projected against the $5 monitored budget. Stop work by hour seven. On failure or completion, close temporary logins, remove private archives and secrets, have the Owner delete the exact temporary reference, and confirm absence plus production health by hour eight. Record actual results and reconcile billing when available. Production cutover requires separate authorization.
+
 ## November 28 attended managed rehearsal
 
 The attended session began at 15:51:50 UTC. Supabase returned HTTP 201 for `baseballos-sync-v3-rehearsal` in us-east-2 with requested Small compute and fresh credentials. The provider recorded creation at 15:46:22.038973 UTC and assigned reference `daotjbsqzjrjctzgiwad`.
