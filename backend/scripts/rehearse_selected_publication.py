@@ -17,7 +17,6 @@ from models.sync_run import SyncRun
 from models.team_state_publication_proof import TeamStatePublicationProof
 from scripts.rehearse_selected_roster import prepare_departure, reconcile_departure, verify_published_membership
 from scripts.rehearse_selected_schedule import pinned_schedule, reconcile_schedule
-from scripts.rehearse_trusted_publication import assert_rehearsal_target
 from services import dashboard_snapshot
 from services.mlb_club_directory import MLB_TEAM_IDS
 from sync_v3.acquisition_receipt import played_day_evidence
@@ -131,6 +130,8 @@ def _reconcile_confirmed_finals(cur, finals, represented, run_id):
 def rehearse_handoff(owner, *, revision, generation, predecessor, sync_run_id, reconcile_finals=False,
                      reconcile_schedules=False, require_mapped_arms=False, roster_departure=None):
     """Keep the selector pinned until the independent target transaction commits."""
+    from scripts.rehearse_trusted_publication import assert_rehearsal_target
+
     assert_rehearsal_target()
     if (reconcile_finals or reconcile_schedules or roster_departure) and sync_run_id is not None:
         raise ValueError('Source reconciliation requires the selected v3 acquisition')
@@ -275,6 +276,8 @@ def main():
                         help='Fill one missing off-active, forty-man snapshot from matching dated roster receipts')
     parser.add_argument('--product-day', type=date.fromisoformat, required=True)
     args = parser.parse_args()
+    from scripts.rehearse_trusted_publication import assert_rehearsal_target
+
     url = urlparse(assert_rehearsal_target())
     params = parse_qs(url.query)
     hosts = params.get('host', [])

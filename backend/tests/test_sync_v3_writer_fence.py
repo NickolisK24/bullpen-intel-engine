@@ -167,3 +167,15 @@ def test_logical_replacement_and_same_target_rollback():
         pytest.skip('Requires disposable PostgreSQL')
     subprocess.run([sys.executable, '-m', 'tests.replacement_rehearsal'],
                    env=dict(os.environ, SYNC_V3_DEPLOYMENT='production', AUTO_SYNC='false'), check=True)
+
+
+def test_managed_rehearsal_with_dedicated_source_login():
+    import subprocess
+    import sys
+
+    bindir = os.environ.get('SYNC_V3_TEST_PG_BIN')
+    if not bindir:
+        pytest.skip('Requires disposable PostgreSQL')
+    subprocess.run([sys.executable, '-m', 'tests.managed_rehearsal_fixture'],
+                   env=dict(os.environ, SYNC_V3_DEPLOYMENT='production', AUTO_SYNC='false',
+                            PATH=bindir + os.pathsep + os.environ['PATH']), check=True)
