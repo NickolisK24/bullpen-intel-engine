@@ -27,7 +27,7 @@ from utils.db import db
 REVISION = 'a' * 40
 
 
-def exercise(host, transfer=None):
+def exercise(host, transfer=None, *, restored_product=None):
     def connect(role):
         return psycopg2.connect(host=host, port=5432, dbname='postgres', user=role)
 
@@ -79,7 +79,7 @@ def exercise(host, transfer=None):
             cur.execute('ALTER ROLE baseballos_product_api LOGIN')
             cur.execute('ALTER ROLE baseballos_legacy_sync LOGIN')
 
-    if transfer is None:
+    if transfer is None and restored_product is None:
         prepare_roles()
 
     from models.dashboard_snapshot import DashboardSnapshot
@@ -93,7 +93,7 @@ def exercise(host, transfer=None):
     with app_for('postgres').app_context():
         day = public_serving_authority.product_current_date()
         _seed_teams(day)
-    legacy_app = app_for(LEGACY if transfer is None else 'postgres')
+    legacy_app = app_for(LEGACY if transfer is None and restored_product is None else 'postgres')
     legacy_app.config.update(TRUSTED_PUBLIC_SERVING_ENABLED=True, TEAM_STATE_PUBLICATION_PROOF_REQUIRED=True)
     public_serving_authority.install_public_serving_authority(legacy_app)
     with legacy_app.app_context():
@@ -131,6 +131,9 @@ def exercise(host, transfer=None):
         )
         db.session.remove()
         db.engine.dispose()
+
+    if restored_product is not None:
+        return restored_product(host)
 
     replacement = None
     if transfer is not None:
