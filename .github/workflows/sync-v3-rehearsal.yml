@@ -199,7 +199,7 @@ jobs:
     env:
       SYNC_V3_DEPLOYMENT: production
       AUTO_SYNC: 'false'
-      REHEARSAL_REVISION: 6e4da10c6ce57eaa3bf6be3e0f8c4f23b96785a5
+      REHEARSAL_REVISION: 1471dd22470755dcd06f9921b4fb996527dee88e
     steps:
       - uses: actions/checkout@v4
         with:
