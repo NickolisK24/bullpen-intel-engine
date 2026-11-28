@@ -199,7 +199,7 @@ jobs:
     env:
       SYNC_V3_DEPLOYMENT: production
       AUTO_SYNC: 'false'
-      REHEARSAL_REVISION: f974493d687a0222c66fbd71fbbea01c512b490f
+      REHEARSAL_REVISION: 6e4da10c6ce57eaa3bf6be3e0f8c4f23b96785a5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -230,4 +230,9 @@ jobs:
           REHEARSAL_PROJECT_REF: ${{ vars.BASEBALLOS_V3_REHEARSAL_REF }}
           REHEARSAL_CLUSTER_ID: ${{ vars.BASEBALLOS_V3_REHEARSAL_CLUSTER_ID }}
           REHEARSAL_STARTED_AT: ${{ vars.BASEBALLOS_V3_REHEARSAL_STARTED_AT }}
-        run: python -m scripts.managed_replacement_rehearsal
+        run: |
+          set -euo pipefail
+          started=$(date --date="$REHEARSAL_STARTED_AT" +%s)
+          remaining=$((started + 7 * 3600 - $(date +%s)))
+          (( remaining > 0 && remaining <= 7 * 3600 ))
+          timeout --kill-after=10s "${remaining}s" python -m scripts.managed_replacement_rehearsal
