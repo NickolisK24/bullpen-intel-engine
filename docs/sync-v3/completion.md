@@ -1,5 +1,11 @@
 # Sync v3 acceptance ledger
 
+## November 28 production backup inventory
+
+The BaseballOS operator verified in the Supabase Dashboard that project `jbhzvzlqrledmlqrlzim` had a **Completed** physical backup dated **2026-11-28 06:43:32 UTC**. The Dashboard offered **Restore to New Project**. Its workflow listed database schema, data, indexes, roles, permissions and users as transferable. Storage objects, Auth settings, API keys, Edge Functions and certain database settings require separate handling. No restore was initiated. A successful recovery from this backup has not been tested.
+
+This satisfies the approved source-export procedure’s backup availability check. The scoped source export remains authorized. A read-only project listing showed only the production project; the full-size export and its 48-hour login window await a verified rehearsal destination within the approved 32 GB disk ceiling and $5 total for 48 hours.
+
 ## November 27 independent database replacement rehearsal
 
 NP-00 and NP-23 have a support-independent [replacement handoff](replacement-handoff.md). Two independently initialized PostgreSQL 17 clusters exercised a logical copy of the product migrations, legacy publication and historical repair routines. The destination rejected the source owner password. A held source owner changed an account after the cutoff; the destination preserved the copied account, and the content verifier detected the divergence. Source SHARE locks blocked a concurrent write. The destination ran the existing played-source replay, canonical projection, two atomic promotions, public League/Tonight/30 Board verification, independent application writes and same-target legacy rollback. Earlier hosted acquisition and retention evidence still applies.
