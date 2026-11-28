@@ -24,6 +24,36 @@ jobs:
           df -B1 --output=avail "$RUNNER_TEMP"
           awk '/MemAvailable:/ {print "Available memory (KiB):", $2}' /proc/meminfo
           echo "A full copy must fit one hosted job (360 minutes including verification)."
+      - name: Exercise snapshot lifetime and private archive handling with synthetic data
+        run: |
+          set -euo pipefail
+          umask 077
+          scratch=$(mktemp -d "$RUNNER_TEMP/sync-v3.XXXXXXXX")
+          cleanup() {
+            docker rm -f sync-v3-fixture >/dev/null 2>&1 || true
+            rm -rf -- "$scratch"
+          }
+          trap cleanup EXIT
+          # No network interface or published port. Local trust is confined to the fixture.
+          docker run -d --network none --name sync-v3-fixture -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17 >/dev/null
+          for attempt in {1..60}; do
+            if docker exec sync-v3-fixture pg_isready -U postgres >/dev/null; then break; fi
+            sleep 1
+          done
+          sql() { docker exec -i sync-v3-fixture psql -XqAt -v ON_ERROR_STOP=1 -U postgres "$@"; }
+          sql -c 'CREATE TABLE fixture AS SELECT 1 AS n'
+          coproc HOLDER { sql; }
+          holder_pid=$HOLDER_PID
+          printf '%s\n' 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;' 'SELECT pg_export_snapshot();' >&"${HOLDER[1]}"
+          read -r -t 30 snapshot <&"${HOLDER[0]}"
+          sql -c 'INSERT INTO fixture VALUES (2)'
+          docker exec sync-v3-fixture pg_dump -U postgres -Fc -t fixture --snapshot="$snapshot" postgres > "$scratch/fixture.dump"
+          sql -c 'CREATE DATABASE restored'
+          docker exec -i sync-v3-fixture pg_restore -U postgres -d restored --exit-on-error < "$scratch/fixture.dump"
+          test "$(sql -d restored -c 'SELECT count(*) FROM fixture')" = 1
+          printf '%s\n' 'ROLLBACK;' '\q' >&"${HOLDER[1]}"
+          wait "$holder_pid"
+          echo "Synthetic restore preserved the held snapshot."
       - name: Check source route and optional destination TLS
         env:
           EXPORT_URL: ${{ secrets.BASEBALLOS_V3_EXPORT_URL }}
